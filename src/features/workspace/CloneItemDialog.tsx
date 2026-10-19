@@ -36,7 +36,12 @@ import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
-import { ChapterSelect, chapterByName, NewChapterInput } from './ChapterSelect';
+import {
+  ChapterSelect,
+  chapterByName,
+  FIELD_WIDTH,
+  NewChapterInput,
+} from './ChapterSelect';
 
 /** What a clone copies: a file (into a workspace only) or a material; an
  * empty workspaceId is a standalone material. */
@@ -246,26 +251,15 @@ export function CloneItemDialog({
   const noDestination = !(workspacesPending || editable.length || !isFile);
   return (
     <SimpleDialog
-      footer={
-        <>
-          <Button
-            disabled={isSubmitting}
-            onClick={onClose}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={isSubmitting || !destination || workspacesPending}
-            size="lg"
-            type="submit"
-            variant="accent"
-          >
-            {isSubmitting ? <Spinner /> : m.action_clone()}
-          </Button>
-        </>
+      action={
+        <Button
+          disabled={isSubmitting || !destination || workspacesPending}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
+          {isSubmitting ? <Spinner /> : m.action_clone()}
+        </Button>
       }
       // While pending the dialog stays: the request ends in the copy or in
       // its refusal shown here (the success path closes it itself).
@@ -274,7 +268,7 @@ export function CloneItemDialog({
       }}
       onSubmit={submit}
       open
-      showCloseButton={!isSubmitting}
+      pending={isSubmitting}
       title={cloneTitle(item)}
       width={560}
     >
@@ -302,6 +296,7 @@ export function CloneItemDialog({
             >
               <SelectTrigger
                 aria-label={m.question_ui_workspace()}
+                className={FIELD_WIDTH}
                 disabled={workspacesPending || isSubmitting}
                 layout="row"
                 loading={workspacesPending}

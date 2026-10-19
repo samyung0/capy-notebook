@@ -296,8 +296,8 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 		(SELECT count(*) FROM chapters WHERE workspace_id=$1),
 		(SELECT count(*) FROM files WHERE workspace_id=$1 AND trashed_at IS NULL),
 		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND parent_material_id IS NULL AND trashed_at IS NULL),
-		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),
-		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),0)`,
+		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),
+		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),0)`,
 		id).Scan(&st.Chapters, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
 	if err == nil {
 		err = s.workspaceIndexCounts(ctx, id, &st)
@@ -1949,12 +1949,14 @@ type AttemptParams struct {
 	Sort       string // date, score, quiz, workspace
 	Ascending  bool
 	Workspaces []string
+	Kinds      []string // quiz, flashcards; empty is both
 	Offset     int
 	Limit      int
 }
 
-// ListAttempts pages the user's attempts, sorted and filtered by the quiz's
-// current workspace. The second value is whether more follow.
+// ListAttempts pages the user's quiz and flashcard attempts, sorted and
+// filtered by kind and by the item's current workspace. The second value is
+// whether more follow.
 func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams) ([]Attempt, bool, error) {
 	order := map[string]string{
 		"score":     "a.correct / NULLIF(a.total, 0)",
@@ -1968,15 +1970,18 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	if p.Ascending {
 		dir = "ASC"
 	}
-	var workspaces []string
+	var workspaces, kinds []string
 	if len(p.Workspaces) > 0 {
 		workspaces = p.Workspaces
 	}
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT a.id, a.material_id, m.workspace_id, w.icon_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
+	if len(p.Kinds) > 0 {
+		kinds = p.Kinds
+	}
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT `+attemptCols+`
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2))
+		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
 		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
-		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset)
+		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset, kinds)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1984,7 +1989,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	out := []Attempt{}
 	for rows.Next() {
 		var a Attempt
-		if err := rows.Scan(&a.ID, &a.MaterialID, &a.WorkspaceID, &a.IconID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
+		if err := rows.Scan(attemptDest(&a)...); err != nil {
 			return nil, false, err
 		}
 		out = append(out, a)
@@ -1999,11 +2004,28 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	return out, more, nil
 }
 
+// attemptCols and attemptDest read one attempt row (a, m and w aliased).
+const attemptCols = `a.id, a.material_id, m.workspace_id, w.icon_id, a.kind, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.started_at, a.taken_at`
+
+func attemptDest(a *Attempt) []any {
+	return []any{&a.ID, &a.MaterialID, &a.WorkspaceID, &a.IconID, &a.Kind, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.StartedAt, &a.TakenAt}
+}
+
+// startedBefore keeps a browser-sent start time only when it is not after
+// now, the attempt's end.
+func startedBefore(started *time.Time, now time.Time) *time.Time {
+	if started == nil || started.After(now) {
+		return nil
+	}
+	t := started.UTC()
+	return &t
+}
+
 // CreateAttempt stores the attempt and, for a workspace quiz, rates each
 // question and marks the quiz done in the user's study progress. A quiz
 // embedded in a note is a quick check: its graded attempt is returned without
 // an id and nothing is stored.
-func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage) (Attempt, error) {
+func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage, startedAt *time.Time) (Attempt, error) {
 	q, err := s.GetQuiz(ctx, materialID)
 	if err != nil {
 		return Attempt{}, err
@@ -2018,9 +2040,10 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	if total > 0 {
 		pct = int(float64(correct) / float64(total) * 100.0)
 	}
+	now := time.Now().UTC()
 	a := Attempt{
-		ID: uid("at"), MaterialID: linkedMaterial, WorkspaceID: &mt.WorkspaceID, QuizName: quizName, WorkspaceName: workspaceName,
-		Chapters: chapters, Correct: correct, Total: total, Pct: pct, TakenAt: time.Now().UTC(),
+		ID: uid("at"), MaterialID: linkedMaterial, WorkspaceID: &mt.WorkspaceID, Kind: "quiz", QuizName: quizName, WorkspaceName: workspaceName,
+		Chapters: chapters, Correct: correct, Total: total, Pct: pct, StartedAt: startedBefore(startedAt, now), TakenAt: now,
 	}
 	if a.Chapters == nil {
 		a.Chapters = []string{}
@@ -2043,8 +2066,8 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return Attempt{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at, answers, questions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, a.ID, a.MaterialID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.TakenAt, []byte(answers), []byte(questions))
+	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, a.ID, a.MaterialID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.StartedAt, a.TakenAt, []byte(answers), []byte(questions))
 	if err != nil {
 		return Attempt{}, err
 	}
@@ -2061,10 +2084,10 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 // the owner via the attempts.user_id column recorded at submit time.
 func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetail, error) {
 	var d AttemptDetail
-	err := s.pool.QueryRow(ctx, `SELECT a.id, a.material_id, m.workspace_id, w.icon_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at, a.answers, a.questions
+	err := s.pool.QueryRow(ctx, `SELECT `+attemptCols+`, a.answers, a.questions
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
 		WHERE a.id=$1 AND a.user_id=$2`, id, userID).
-		Scan(&d.ID, &d.MaterialID, &d.WorkspaceID, &d.IconID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
+		Scan(append(attemptDest(&d.Attempt), &d.Answers, &d.Questions)...)
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}

@@ -26,8 +26,8 @@ import { Badge } from '@/components/ui/Badge';
 import { GoogleIcon, OneDriveIcon } from '@/components/ui/BrandIcons';
 import { Button } from '@/components/ui/Button';
 import {
-  DialogClose,
   DialogFooter,
+  DialogPrimary,
   SimpleDialog,
 } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
@@ -570,7 +570,7 @@ function SourceList({
         <Popover>
           <PopoverTrigger asChild>
             <IconButton
-              className="text-fg-muted"
+              className="-translate-y-px text-fg-muted"
               icon="info"
               label={m.source_parse_info_label()}
               size="xs"
@@ -593,7 +593,8 @@ function SourceList({
                 name={fileIconName(source)}
               />
               <span
-                className="t-subtitle min-w-0 flex-1 truncate"
+                // Phones: one step smaller, like the drop zone's heading.
+                className="t-body sm:t-subtitle min-w-0 flex-1 truncate font-semibold"
                 title={source.name}
               >
                 {source.name}
@@ -606,7 +607,7 @@ function SourceList({
                   provider={source.provider}
                 />
               )}
-              <span className="t-meta text-fg-muted">
+              <span className="t-meta text-fg-muted max-sm:text-xs">
                 {formatSize(source.sizeBytes, source.sizeEstimate)} ·{' '}
                 {source.kind.toUpperCase()}
               </span>
@@ -731,8 +732,7 @@ function SourceFooter({
     );
   return (
     <DialogFooter className="shrink-0 flex-wrap items-center">
-      {/* Phones give the cost summary its own line so the buttons can split. */}
-      <div className="t-meta basis-full text-fg-muted empty:hidden sm:flex-1 sm:basis-0">
+      <div className="t-meta text-fg-muted empty:hidden max-sm:basis-full sm:flex-1">
         {analysisTotals.pages > 0 &&
           m.source_analysis_summary({
             cost: (estimatedCreditMicros / 1_000_000).toLocaleString(),
@@ -740,12 +740,7 @@ function SourceFooter({
             text: analysisTotals.textPages,
           })}
       </div>
-      <div className="flex flex-1 justify-between gap-2 sm:flex-none">
-        <DialogClose asChild>
-          <Button className="-ml-4 sm:ml-0" size="lg" variant="ghost-hover">
-            {m.action_cancel()}
-          </Button>
-        </DialogClose>
+      <DialogPrimary>
         <Button
           disabled={sources.length === 0 || blocked}
           onClick={onSubmit}
@@ -754,7 +749,7 @@ function SourceFooter({
         >
           {label}
         </Button>
-      </div>
+      </DialogPrimary>
     </DialogFooter>
   );
 }
@@ -1306,7 +1301,7 @@ export function AddSourceDialog({
   if (retryFile) {
     return (
       <SimpleDialog
-        cardScrollContainerClassName="max-h-[min(680px,88dvh)] overflow-hidden"
+        cardScrollContainerClassName="max-h-[min(680px,88dvh)] overflow-hidden max-sm:pb-[calc(--spacing(4)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]"
         className="max-w-3xl"
         onClose={closeDialog}
         open={open}
@@ -1348,7 +1343,7 @@ export function AddSourceDialog({
 
   return (
     <SimpleDialog
-      cardScrollContainerClassName="max-h-[min(680px,88dvh)] overflow-hidden"
+      cardScrollContainerClassName="max-h-[min(680px,88dvh)] overflow-hidden max-sm:pb-[calc(--spacing(4)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]"
       className="max-w-3xl"
       onClose={closeDialog}
       onCloseAutoFocus={(event) => {
@@ -1380,7 +1375,7 @@ export function AddSourceDialog({
         }}
       >
         <Tabs
-          className="-mx-3 w-auto sm:mx-0"
+          className="dialog-tabs-bleed w-auto"
           onChange={setMode}
           tabs={[
             {
@@ -1407,15 +1402,20 @@ export function AddSourceDialog({
             {uploads.sources.length === 0 ? (
               <button
                 className={cn(
-                  'flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-5 transition-colors hover:bg-surface-hover-bg sm:py-8',
+                  'flex flex-col items-center gap-1.5 rounded-card border-2 border-line border-dashed px-6 py-4 transition-colors hover:bg-surface-hover-bg sm:gap-2 sm:py-8',
                   isDragOver && 'border-solid-accent-1 bg-tint-accent-1/60'
                 )}
                 disabled={!uploadPolicy || !canAdd}
                 onClick={() => inputRef.current?.click()}
                 type="button"
               >
-                <Icon className="non-scaling-svg size-7" name="upload" />
-                <p className="t-subtitle">{m.source_upload_computer()}</p>
+                <Icon
+                  className="non-scaling-svg size-6 sm:size-7"
+                  name="upload"
+                />
+                <p className="t-body font-semibold">
+                  {m.source_upload_computer()}
+                </p>
                 <p className="t-meta text-fg-muted">{m.source_upload_hint()}</p>
               </button>
             ) : (
@@ -1430,7 +1430,7 @@ export function AddSourceDialog({
               >
                 <Icon className="size-6.5 shrink-0" name="upload" />
                 <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="t-subtitle">
+                  <span className="t-body font-semibold">
                     {m.source_upload_computer()}
                   </span>
                   <span className="t-meta text-fg-muted">

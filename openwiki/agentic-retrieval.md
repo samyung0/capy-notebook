@@ -2681,10 +2681,11 @@ file and Workspace settings, and the usual thread and composer.
 Back, a citation or a created file returns to the file and leaves a chip at
 the bottom left (back arrow, title, ✕) that reopens the conversation.
 
-The page fits above the keyboard because index.html asks Chrome on Android for
-`interactive-widget=resizes-content` and `useKeyboardHeight` keeps the app
-shell at the visual viewport's height (`--app-height`) for iOS Safari, which
-pans the page under the keyboard instead.
+The keyboard covers the page instead of resizing it (Chrome's default
+`resizes-visual`; iOS Safari always overlays), so the header and the open file
+keep their size. `useKeyboardHeight` sets `--keyboard-inset` to the height the
+keyboard covers; the dock's field and the chat page's bottom padding add it, so
+only the composer lifts above the keyboard.
 
 ### Build flow and the Library switch
 

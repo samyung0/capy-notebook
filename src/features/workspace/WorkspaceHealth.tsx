@@ -7,7 +7,7 @@ import { meQuery, useMe, useWorkspace, workspaceQuery } from '@/api/hooks';
 import { showErrorToast } from '@/api/queryClient';
 import { AccountState, StorageUsageLevel, type Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { SimpleDialog, useIsPhone } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
@@ -217,22 +217,33 @@ function StorageDialog({
   open: boolean;
   status: StorageStatus;
 }) {
+  const phone = useIsPhone();
+  const subscription = (
+    <Button asChild rounded="large" size="md">
+      <Link search={{ tab: 'subscription' }} to="/billing">
+        {m.account_banner_subscription()}
+      </Link>
+    </Button>
+  );
   return (
     <SimpleDialog
+      action={phone && status.payer && subscription}
       footer={
         status.payer ? (
           <>
             <Button asChild rounded="large" size="md" variant="ghost-hover">
               <Link to="/settings">{m.account_banner_settings()}</Link>
             </Button>
-            <Button asChild rounded="large" size="md">
-              <Link search={{ tab: 'subscription' }} to="/billing">
-                {m.account_banner_subscription()}
-              </Link>
-            </Button>
+            {!phone && subscription}
           </>
         ) : (
-          <Button onClick={onClose} rounded="large" size="md">
+          // Phones close from the header.
+          <Button
+            className="max-sm:hidden"
+            onClick={onClose}
+            rounded="large"
+            size="md"
+          >
             {m.action_close()}
           </Button>
         )

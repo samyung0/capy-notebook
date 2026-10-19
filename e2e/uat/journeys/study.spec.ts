@@ -218,7 +218,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   await page.getByRole('button', { name: m.flashcards_show_answer() }).click();
   assert.equal(await clicked(page, '/api/review/ratings', m.srs_good()), 204);
   await expect(
-    page.getByRole('heading', { name: m.flashcards_session_done() })
+    page.getByRole('button', { name: m.flashcards_study_again() })
   ).toBeVisible();
 
   // Continue opens the first item that is not done: the quiz not yet taken.

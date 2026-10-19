@@ -129,6 +129,11 @@ const loadPreview = () =>
 const LazyMaterialPreview = lazy(() =>
   loadPreview().then((m) => ({ default: m.MaterialPreview }))
 );
+const StudyProgress = lazy(() =>
+  import('@/features/study/StudyProgress').then((mod) => ({
+    default: mod.StudyProgress,
+  }))
+);
 type PreviewComponent =
   | typeof LazyMaterialPreview
   | typeof import('./MaterialPreview').MaterialPreview;
@@ -148,12 +153,24 @@ export function CenterContent({
   onAddFile,
   onModeChange,
   onOpenSettings,
+  onOpenItem,
+  onOpenProgress,
+  onOpenTrackProgress,
+  progress = false,
   requestedMode = null,
   workspaceId,
   leading,
   oneColumn,
   standalone = false,
 }: {
+  /** Opens an item from the Study progress page. */
+  onOpenItem?: (item: OpenItem) => void;
+  /** Opens the Study progress page; a quick action when no file is open. */
+  onOpenProgress?: () => void;
+  /** Opens workspace settings at the Track progress switch. */
+  onOpenTrackProgress?: () => void;
+  /** Shows the Study progress page while no file is open. */
+  progress?: boolean;
   /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
@@ -211,7 +228,11 @@ export function CenterContent({
         leading={leading}
         onAddFile={onAddFile}
         oneColumn={oneColumn}
+        onOpenItem={onOpenItem}
+        onOpenProgress={onOpenProgress}
         onOpenSettings={onOpenSettings}
+        onOpenTrackProgress={onOpenTrackProgress}
+        progress={progress}
         workspaceId={standalone ? '' : workspaceId}
       />
     );
@@ -801,13 +822,21 @@ function EmptyCenter({
   leading,
   oneColumn,
   onAddFile,
+  onOpenItem,
+  onOpenProgress,
   onOpenSettings,
+  onOpenTrackProgress,
+  progress,
   workspaceId,
 }: {
   leading?: ReactNode;
   oneColumn?: OneColumnChrome;
   onAddFile?: () => void;
+  onOpenItem?: (item: OpenItem) => void;
+  onOpenProgress?: () => void;
   onOpenSettings?: () => void;
+  onOpenTrackProgress?: () => void;
+  progress?: boolean;
   workspaceId: string;
 }) {
   const sm = useMediaQuery('(min-width: 640px)');
@@ -854,17 +883,34 @@ function EmptyCenter({
           </div>
         )}
       </div>
-      <div className="grid flex-1 place-items-center p-4 sm:p-6">
-        {workspaceId ? (
-          <RecentInWorkspace
-            actions={<QuickActions onOpenSettings={onOpenSettings} />}
-            onAddFile={onAddFile}
-            workspaceId={workspaceId}
-          />
-        ) : (
-          <PickAFile />
-        )}
-      </div>
+      {progress && workspaceId && onOpenItem && onOpenTrackProgress ? (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Suspense fallback={null}>
+            <StudyProgress
+              onOpenItem={onOpenItem}
+              onOpenTrackProgress={onOpenTrackProgress}
+              workspaceId={workspaceId}
+            />
+          </Suspense>
+        </div>
+      ) : (
+        <div className="grid flex-1 place-items-center p-4 sm:p-6">
+          {workspaceId ? (
+            <RecentInWorkspace
+              actions={
+                <QuickActions
+                  onOpenProgress={onOpenProgress}
+                  onOpenSettings={onOpenSettings}
+                />
+              }
+              onAddFile={onAddFile}
+              workspaceId={workspaceId}
+            />
+          ) : (
+            <PickAFile />
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -881,7 +927,13 @@ function PickAFile({ actions }: { actions?: ReactNode }) {
 
 /** Workspace shortcuts under the recent files: as tall as a file tree row,
  * muted until hovered. */
-function QuickActions({ onOpenSettings }: { onOpenSettings?: () => void }) {
+function QuickActions({
+  onOpenProgress,
+  onOpenSettings,
+}: {
+  onOpenProgress?: () => void;
+  onOpenSettings?: () => void;
+}) {
   return (
     <div className="flex flex-col items-start">
       {onOpenSettings && (
@@ -895,10 +947,10 @@ function QuickActions({ onOpenSettings }: { onOpenSettings?: () => void }) {
           {m.workspace_settings()}
         </Button>
       )}
-      {/* TODO: open the study progress page once it exists. */}
       <Button
         className="h-8 px-3 text-xs"
         iconLeft="knowledge"
+        onClick={onOpenProgress}
         size="sm"
         variant="ghost-muted"
       >

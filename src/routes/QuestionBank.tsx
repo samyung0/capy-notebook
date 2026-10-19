@@ -33,7 +33,7 @@ import {
   commentBankQuestionBodyTextMax,
 } from '@/api/gen/validators';
 import type { BankTopicProgress } from '@/api/types';
-import { ErrorState } from '@/components/app/ErrorState';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import {
   FilterPopover,
   type FilterSection,
@@ -48,7 +48,7 @@ import {
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { PhoneTopRow } from '@/components/app/Sidebar';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
@@ -2020,12 +2020,15 @@ function ContinueSection({
   const next = latest.nextQuestionId;
   return (
     <section>
-      <h2 className="t-large-card-title">
-        {next ? m.question_ui_continue() : m.question_ui_topic_finished()}
-      </h2>
-      <p className="t-meta mb-1 text-fg-muted">
-        {latestPath.slice(0, -1).join(' · ')}
-      </p>
+      {/* Text sits at the wide gutter; the trail map stays edge to edge. */}
+      <div className="wide-inset">
+        <h2 className="t-large-card-title">
+          {next ? m.question_ui_continue() : m.question_ui_topic_finished()}
+        </h2>
+        <p className="t-meta mb-1 text-fg-muted">
+          {latestPath.slice(0, -1).join(' · ')}
+        </p>
+      </div>
       <TrailMap
         answeredPositions={latest.answeredPositions}
         finishKey={finishKey('topic', latest.topicId, latest.total)}
@@ -2036,7 +2039,7 @@ function ContinueSection({
         questionIds={latest.questionIds}
         topicId={latest.topicId}
       />
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="wide-inset mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
           <h3 className="t-large-card-title">{latestPath.at(-1)}</h3>
           <p className="mt-1 text-fg-muted text-sm">
@@ -2115,17 +2118,14 @@ function TopicName({
   );
 }
 
+/** A failed page load between loaded questions. */
 function BankError({ error, onRetry }: { error: Error; onRetry: () => void }) {
-  const { description, icon, title } = describeError(error);
   return (
-    <ErrorState
-      action={<ErrorAction onClick={onRetry}>{m.action_retry()}</ErrorAction>}
-      className="py-10"
-      description={description}
+    <InlineErrorState
+      className="py-6"
       errorId={unexpectedErrorId(error)}
-      icon={icon}
-      title={title}
-      variant="panel"
+      message={describeError(error).title}
+      onRetry={onRetry}
     />
   );
 }
@@ -2148,7 +2148,7 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
   });
   return (
     <SimpleDialog
-      footer={
+      action={
         <Button
           disabled={isPending}
           rounded="large"

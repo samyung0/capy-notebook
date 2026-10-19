@@ -1,4 +1,9 @@
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import {
+  useNavigate,
+  useParams,
+  useRouter,
+  useSearch,
+} from '@tanstack/react-router';
 import {
   type ReactNode,
   useCallback,
@@ -58,12 +63,16 @@ import {
   type AddSourceMode,
   resumedConnect,
 } from '@/features/workspace/AddSourceDialog';
-import { isWorkspaceReadOnly } from '@/features/workspace/access';
+import {
+  canManageWorkspaceSettings,
+  isWorkspaceReadOnly,
+} from '@/features/workspace/access';
 import { ChatPanel } from '@/features/workspace/ChatPanel';
 import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
 import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
+import type { SettingsTab } from '@/features/workspace/settingsTabs';
 import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
@@ -126,6 +135,7 @@ export default function WorkspaceOpen() {
   const params = useParams({ strict: false });
   const workspaceId = (params as { workspaceId: string }).workspaceId;
   const navigate = useNavigate();
+  const router = useRouter();
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
 
   // Other failures without data go to the error boundary.
@@ -187,15 +197,39 @@ export default function WorkspaceOpen() {
         }
       : searchedOpenItem;
 
-  function setOpenItem(item: OpenItem | null) {
+  /** `push` keeps the page behind in history (the Study progress page). */
+  function setOpenItem(item: OpenItem | null, push = false) {
     if (!confirmViewerReplacement()) return;
     setCitationTarget(null);
     setFilesOpen(false);
     navigate({
-      replace: true,
+      replace: !push,
       search: searchFromOpenItem(item),
       to: '.',
     });
+  }
+
+  /** Workspace settings at `tab`, kept in the URL so a link can open it.
+   * Opening, switching tabs and closing replace the entry, so the dialog
+   * adds no history. */
+  function setSettingsTab(tab: SettingsTab | undefined) {
+    // The live URL, not this render's: a dialog closing because the app is
+    // leaving (Back, Clone, Delete) finds no settings there and stays put.
+    const latest = router.latestLocation.search as WorkspaceOpenSearch;
+    if (tab === latest.settings) return;
+    navigate({
+      replace: true,
+      search: (previous) => ({ ...previous, settings: tab }),
+      to: '.',
+    });
+  }
+
+  /** The Study progress page takes the centre pane; Back returns here. */
+  function openProgress() {
+    if (!confirmViewerReplacement()) return;
+    setCitationTarget(null);
+    setFilesOpen(false);
+    navigate({ search: { progress: true }, to: '.' });
   }
 
   function openCitation(citation: Citation) {
@@ -239,7 +273,6 @@ export default function WorkspaceOpen() {
   const [chapterForm, setChapterForm] = useState<
     { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
   >(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [resumeProvider] = useState(() => resumedConnect(workspaceId));
   const [addSource, setAddSource] = useState<AddSourceMode | null>(
     resumeProvider ? 'import' : null
@@ -284,7 +317,9 @@ export default function WorkspaceOpen() {
   const rowProps = {
     // Viewers open settings too, for the one row they can use: reset their
     // own study progress.
-    onOpenSettings: () => setSettingsOpen(true),
+    // Viewers only have their own Track progress (Others) and Reset.
+    onOpenSettings: () =>
+      setSettingsTab(canManageWorkspaceSettings(ws) ? 'general' : 'others'),
   };
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
   // pager) clear: the chat dock stays a button above it.
@@ -311,6 +346,11 @@ export default function WorkspaceOpen() {
         },
       ];
   const settingsItems: MenuItem[] = [
+    {
+      icon: 'knowledge',
+      label: m.workspace_study_progress(),
+      onClick: openProgress,
+    },
     {
       icon: 'settings',
       label: m.workspace_settings(),
@@ -398,8 +438,8 @@ export default function WorkspaceOpen() {
   // visible one draws the tab row.
   const noRow = () => null;
   // The Files dropdown's tree: the workspace as a plain row the size of a file
-  // row (no switcher; Back leaves the workspace), Workspace settings pinned
-  // under it, and the add actions in the header's ⋮ instead of the plus.
+  // row (no switcher; Back leaves the workspace), Add file, Workspace settings
+  // and Study pinned under it; Add chapter stays in the header's ⋮.
   const filesDropdown = (
     <FilesPanel
       beforeReplace={confirmViewerReplacement}
@@ -407,6 +447,7 @@ export default function WorkspaceOpen() {
       footer={
         <div className="flex shrink-0 flex-col border-divider border-t px-2.5 py-1.5">
           {[
+            ...addItems.slice(0, 1),
             ...settingsItems,
             ...(readOnly && canClone
               ? [
@@ -419,7 +460,7 @@ export default function WorkspaceOpen() {
               : []),
           ].map((action) => (
             <button
-              className="flex items-center gap-1.5 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+              className="flex h-7.5 items-center gap-1.75 rounded-button px-2 text-left hover:bg-surface-hover-bg"
               key={action.label}
               onClick={() => {
                 setFilesOpen(false);
@@ -466,6 +507,7 @@ export default function WorkspaceOpen() {
       <div className="min-h-0 flex-1" hidden={railTab !== 'study'}>
         <StudyPanel
           onOpenItem={setOpenItem}
+          onOpenProgress={openProgress}
           renderTabRow={railTab === 'study' ? railRow : noRow}
           workspaceId={workspaceId}
         />
@@ -535,7 +577,11 @@ export default function WorkspaceOpen() {
               to: '.',
             });
           }}
+          onOpenItem={(item) => setOpenItem(item, true)}
+          onOpenProgress={openProgress}
           onOpenSettings={rowProps.onOpenSettings}
+          onOpenTrackProgress={() => setSettingsTab('others')}
+          progress={!!search.progress}
           readOnly={readOnly}
           requestedMode={search.mode ?? null}
           workspaceId={workspaceId}
@@ -655,8 +701,10 @@ export default function WorkspaceOpen() {
         )}
       </div>
       <WorkspaceSettingsDialog
-        onClose={() => setSettingsOpen(false)}
-        open={settingsOpen}
+        onClose={() => setSettingsTab(undefined)}
+        onTabChange={setSettingsTab}
+        open={!!search.settings}
+        tab={search.settings}
         workspace={ws}
       />
       {canClone && (

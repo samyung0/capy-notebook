@@ -55,6 +55,7 @@ const render = () =>
     <QueryClientProvider client={new QueryClient()}>
       <StudyPanel
         onOpenItem={() => {}}
+        onOpenProgress={() => {}}
         renderTabRow={() => null}
         workspaceId="ws"
       />

@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/Button';
 import { CoverArt, useCoverPaint } from '@/components/ui/CoverArt';
 import {
   Dialog,
+  DialogCancel,
   DialogContent,
   DialogFooter,
   DialogTitle,
+  useIsPhone,
 } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -197,6 +199,20 @@ export function CoverPicker({
   );
   const entry = STYLES.find((item) => item.style === draft.style)!;
   const paint = useCoverPaint(ownerId, card.name, draft);
+  const phone = useIsPhone();
+  const useButton = (
+    <Button
+      onClick={() => {
+        onChange(draft);
+        onOpenChange(false);
+      }}
+      size="lg"
+      type="button"
+      variant="accent"
+    >
+      {m.cover_use()}
+    </Button>
+  );
   return (
     <Dialog
       onOpenChange={(next) => {
@@ -206,7 +222,9 @@ export function CoverPicker({
       open={open}
     >
       <DialogContent aria-describedby={undefined} className="max-w-[912px]">
-        <DialogTitle className="shrink-0 pr-8">{m.cover_choose()}</DialogTitle>
+        <DialogTitle action={phone && useButton} className="shrink-0 pr-8">
+          {m.cover_choose()}
+        </DialogTitle>
         <div className="mt-3 flex flex-col gap-5 md:flex-row">
           <div className="grid grid-cols-2 content-start gap-2 md:w-[46%]">
             {STYLES.map((item) => (
@@ -311,41 +329,29 @@ export function CoverPicker({
             </div>
           </div>
         </div>
-        <DialogFooter className="shrink-0 flex-row">
-          {value && (
-            <Button
-              className="mr-auto"
-              onClick={() => {
-                onChange(null);
-                onOpenChange(false);
-              }}
-              size="lg"
-              type="button"
-              variant="danger-light"
-            >
-              {m.cover_remove()}
-            </Button>
-          )}
-          <Button
-            onClick={() => onOpenChange(false)}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
-          <Button
-            onClick={() => {
-              onChange(draft);
-              onOpenChange(false);
-            }}
-            size="lg"
-            type="button"
-            variant="accent"
-          >
-            {m.cover_use()}
-          </Button>
-        </DialogFooter>
+        {(value || !phone) && (
+          <DialogFooter className="shrink-0 flex-row">
+            {value && (
+              <Button
+                onClick={() => {
+                  onChange(null);
+                  onOpenChange(false);
+                }}
+                size="lg"
+                type="button"
+                variant="danger-light"
+              >
+                {m.cover_remove()}
+              </Button>
+            )}
+            {!phone && (
+              <>
+                <DialogCancel />
+                {useButton}
+              </>
+            )}
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

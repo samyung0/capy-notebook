@@ -24,6 +24,8 @@ type StudyItem struct {
 	FileID     *string `json:"fileId,omitempty"`
 	MaterialID *string `json:"materialId,omitempty"`
 	State      string  `json:"state" enum:"started,done,removed"`
+	// UpdatedAt is the state's last change, e.g. when it was marked read.
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type StudySummary struct {
@@ -230,7 +232,7 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	if out.Enabled, err = s.StudyEnabled(ctx, userID, wsID); err != nil {
 		return out, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT sp.file_id, sp.material_id, sp.state FROM study_progress sp
+	rows, err := s.pool.Query(ctx, `SELECT sp.file_id, sp.material_id, sp.state, sp.updated_at FROM study_progress sp
 		LEFT JOIN files f ON f.id=sp.file_id LEFT JOIN materials m ON m.id=sp.material_id
 		WHERE sp.user_id=$1 AND sp.workspace_id=$2 AND f.trashed_at IS NULL AND m.trashed_at IS NULL`, userID, wsID)
 	if err != nil {
@@ -238,7 +240,7 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	}
 	for rows.Next() {
 		var it StudyItem
-		if err := rows.Scan(&it.FileID, &it.MaterialID, &it.State); err != nil {
+		if err := rows.Scan(&it.FileID, &it.MaterialID, &it.State, &it.UpdatedAt); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -248,16 +250,16 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	rows, err = s.pool.Query(ctx, `SELECT a.id, a.material_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
-		FROM attempts a JOIN materials m ON m.id=a.material_id
-		WHERE a.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+	rows, err = s.pool.Query(ctx, `SELECT `+attemptCols+`
+		FROM attempts a JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
+		WHERE a.user_id=$1 AND m.workspace_id=$2 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND a.kind='quiz'
 		ORDER BY a.taken_at DESC LIMIT 5`, userID, wsID)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var a Attempt
-		if err := rows.Scan(&a.ID, &a.MaterialID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
+		if err := rows.Scan(attemptDest(&a)...); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -448,7 +450,20 @@ type Rating struct {
 	Score      *float64
 	// Session records the answer in its review session, when it has one.
 	Session *SessionAnswer
+	// Attempt records a card's rating in its flashcard attempt, when it has one.
+	Attempt *FlashcardAttemptRef
 }
+
+// FlashcardAttemptRef is the flashcard attempt a rating belongs to, minted by
+// the browser when studying a set begins.
+type FlashcardAttemptRef struct {
+	ID        string
+	StartedAt time.Time
+}
+
+// ErrFlashcardAttempt refuses a rating whose attempt is another user's, another
+// set's or a quiz attempt.
+var ErrFlashcardAttempt = errors.New("the attempt belongs to another set")
 
 // RateItem records one review rating and the progress it implies.
 func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time.Time) error {
@@ -483,6 +498,13 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 		return ErrStudyRating
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
+		// Writing attempt history takes the account lock first, as a quiz
+		// attempt does, so a suspended or purged account records none.
+		if in.Attempt != nil {
+			if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
+				return err
+			}
+		}
 		if err := lockRating(ctx, tx, userID, mt.ID); err != nil {
 			return err
 		}
@@ -495,6 +517,11 @@ func (s *Store) RateItem(ctx context.Context, userID string, in Rating, now time
 		}
 		if in.Session != nil {
 			if err := recordAnswerTx(ctx, tx, userID, mt, *target, r, in.Session, now); err != nil {
+				return err
+			}
+		}
+		if in.Attempt != nil && target.Kind == "card" && mt.WorkspaceID != "" {
+			if err := recordCardTx(ctx, tx, userID, mt, *target, int(r), *in.Attempt, now); err != nil {
 				return err
 			}
 		}
@@ -792,4 +819,171 @@ func (s *Store) AgentStudyProgress(ctx context.Context, userID, wsID string, now
 		out.WeakChapters = out.WeakChapters[:3]
 	}
 	return out, nil
+}
+
+// recordCardTx adds one rating of a workspace set's card to its flashcard
+// attempt, creating the attempt with its first rating. Cards keep the order
+// they were first rated in, with their faces as studied; the score counts
+// cards whose first rating is Good or Easy. The caller holds lockRating, so
+// one attempt's ratings never race.
+func recordCardTx(ctx context.Context, tx pgx.Tx, userID string, mt Material, card studyItem, rating int, ref FlashcardAttemptRef, now time.Time) error {
+	var owner, kind string
+	var materialID *string
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT user_id, kind, material_id, questions FROM attempts WHERE id=$1`, ref.ID).
+		Scan(&owner, &kind, &materialID, &raw)
+	exists := err == nil
+	if err != nil && !isNoRows(err) {
+		return err
+	}
+	if exists && (owner != userID || kind != "flashcards" || materialID == nil || *materialID != mt.ID) {
+		return ErrFlashcardAttempt
+	}
+	var cards []AttemptCard
+	if exists {
+		if err := json.Unmarshal(raw, &cards); err != nil {
+			return err
+		}
+	}
+	found := false
+	for i := range cards {
+		if cards[i].ID == card.ItemID {
+			cards[i].Ratings = append(cards[i].Ratings, rating)
+			found = true
+		}
+	}
+	if !found {
+		cards = append(cards, AttemptCard{ID: card.ItemID, Front: card.Front, Back: card.Back, Image: card.Image, Ratings: []int{rating}})
+	}
+	good := 0
+	for _, c := range cards {
+		if c.Ratings[0] >= int(review.Good) {
+			good++
+		}
+	}
+	total := len(cards)
+	pct := good * 100 / total
+	encoded, err := json.Marshal(cards)
+	if err != nil {
+		return err
+	}
+	if exists {
+		_, err = tx.Exec(ctx, `UPDATE attempts SET questions=$2, correct=$3, total=$4, pct=$5, taken_at=$6 WHERE id=$1`,
+			ref.ID, encoded, good, total, pct, now)
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, kind, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
+		VALUES ($1,$2,$3,'flashcards',$4,$5,'{}',$6,$7,$8,$9,$10,'{}',$11)`,
+		ref.ID, mt.ID, userID, mt.Title, mt.WorkspaceName, good, total, pct, startedBefore(&ref.StartedAt, now), now, encoded)
+	return err
+}
+
+// ItemAttempts is one quiz or set with its size (questions or cards), the
+// user's attempt count and latest attempts, newest first, for the Study
+// progress page.
+type ItemAttempts struct {
+	MaterialID string    `json:"materialId"`
+	Size       int       `json:"size"`
+	Count      int       `json:"count"`
+	Recent     []Attempt `json:"recent" nullable:"false"`
+}
+
+// itemRecentAttempts is how many attempts the progress page lists per item;
+// the rest are in All results.
+const itemRecentAttempts = 3
+
+// WorkspaceAttempts returns every quiz and set of the workspace that is
+// neither trashed nor embedded, with the user's attempts of it.
+func (s *Store) WorkspaceAttempts(ctx context.Context, userID, wsID string) ([]ItemAttempts, error) {
+	sizes, err := s.itemCounts(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ItemAttempts, 0, len(sizes))
+	index := map[string]int{}
+	for _, it := range sizes {
+		index[it.MaterialID] = len(out)
+		out = append(out, ItemAttempts{MaterialID: it.MaterialID, Size: it.Size, Recent: []Attempt{}})
+	}
+	rows, err := s.pool.Query(ctx, `SELECT x.n, `+attemptCols+` FROM (
+			SELECT a.id, count(*) OVER (PARTITION BY a.material_id) AS n,
+				row_number() OVER (PARTITION BY a.material_id ORDER BY a.taken_at DESC, a.id) AS rn
+			FROM attempts a JOIN materials m ON m.id=a.material_id
+			WHERE a.user_id=$1 AND m.workspace_id=$2
+		) x JOIN attempts a ON a.id=x.id JOIN materials m ON m.id=a.material_id JOIN workspaces w ON w.id=m.workspace_id
+		WHERE x.rn <= $3 ORDER BY a.taken_at DESC, a.id`, userID, wsID, itemRecentAttempts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var n int
+		var a Attempt
+		if err := rows.Scan(append([]any{&n}, attemptDest(&a)...)...); err != nil {
+			return nil, err
+		}
+		i, ok := index[*a.MaterialID]
+		if !ok {
+			continue // trashed or embedded
+		}
+		if a.Chapters == nil {
+			a.Chapters = []string{}
+		}
+		out[i].Count = n
+		out[i].Recent = append(out[i].Recent, a)
+	}
+	return out, rows.Err()
+}
+
+// itemCounts is each untrashed, non-embedded quiz's and set's question or
+// card count, parsing only documents whose revision
+// the item cache does not hold.
+func (s *Store) itemCounts(ctx context.Context, wsID string) ([]ItemAttempts, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, revision FROM materials
+		WHERE workspace_id=$1 AND kind IN ('quiz','flashcards') AND trashed_at IS NULL AND parent_material_id IS NULL`, wsID)
+	if err != nil {
+		return nil, err
+	}
+	var out []ItemAttempts
+	var misses []string
+	missAt := map[string]int{}
+	for rows.Next() {
+		var id string
+		var revision int64
+		if err := rows.Scan(&id, &revision); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		parsedItems.Lock()
+		hit, ok := parsedItems.m[id]
+		parsedItems.Unlock()
+		if ok && hit.revision == revision {
+			out = append(out, ItemAttempts{MaterialID: id, Size: len(hit.items)})
+			continue
+		}
+		missAt[id] = len(out)
+		misses = append(misses, id)
+		out = append(out, ItemAttempts{MaterialID: id})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || len(misses) == 0 {
+		return out, err
+	}
+	rows, err = s.pool.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE id = ANY($1)`, misses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		mt, err := scanMaterial(rows)
+		if err != nil {
+			return nil, err
+		}
+		items, err := itemsOf(mt)
+		if err != nil {
+			return nil, err
+		}
+		out[missAt[mt.ID]].Size = len(items)
+	}
+	return out, rows.Err()
 }

@@ -1,19 +1,24 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { qk } from '@/api/client';
 import {
   useDeleteWorkspace,
   useResetWorkspaceStudy,
+  useSetWorkspaceStudyEnabled,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
+  workspaceStudyQuery,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
-import { ErrorState } from '@/components/app/ErrorState';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { DangerZone, SettingRow } from '@/components/app/tabPanel';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
+import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
@@ -21,35 +26,55 @@ import { canManageWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
+import type { SettingsTab } from './settingsTabs';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
 
+/** Workspace settings. `tab` and `onTabChange` keep the tab in the caller's
+ * URL (the workspace page); without them the dialog keeps its own. */
 export function WorkspaceSettingsDialog({
   workspace,
   open,
   onClose,
   initialTab = 'general',
+  tab: controlledTab,
+  onTabChange,
 }: {
-  initialTab?:
-    | 'general'
-    | 'sharing'
-    | 'indexing'
-    | 'statistics'
-    | 'others'
-    | 'danger';
+  initialTab?: SettingsTab;
+  tab?: SettingsTab;
+  onTabChange?: (tab: SettingsTab) => void;
   workspace: Workspace;
   open: boolean;
   onClose: () => void;
 }) {
-  // A viewer may only reset their own study progress: the dialog shows just
-  // that row.
+  // A viewer may only change their own study progress: the dialog shows just
+  // Others (Track progress) and Danger (Reset).
   const manage = canManageWorkspaceSettings(workspace);
-  const [tab, setTab] = useState<string>(manage ? initialTab : 'danger');
+  const allowed = (value: SettingsTab) =>
+    manage || value === 'others' || value === 'danger';
+  const [ownTab, setOwnTab] = useState<SettingsTab>(
+    allowed(initialTab) ? initialTab : 'others'
+  );
+  const requested = controlledTab ?? ownTab;
+  // While it fades out the URL has no tab: keep showing the last one.
+  const lastTab = useRef<SettingsTab>('general');
+  if (open) lastTab.current = allowed(requested) ? requested : 'others';
+  const tab = lastTab.current;
+  const setTab = (value: SettingsTab) =>
+    onTabChange ? onTabChange(value) : setOwnTab(value);
+  // Track progress is the requester's own switch, read while open.
+  const { data: study } = useQuery({
+    ...workspaceStudyQuery(workspace.id),
+    enabled: open,
+  });
+  const { isPending: savingStudy, mutate: setStudyEnabled } =
+    useSetWorkspaceStudyEnabled(workspace.id);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const { mutate: resetStudy, isPending: resetting } = useResetWorkspaceStudy(
     workspace.id
   );
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const { mutateAsync: update } = useUpdateWorkspace();
   const [cloneOpen, setCloneOpen] = useState(false);
   const { mutate: deleteWorkspace, isPending: deleting } = useDeleteWorkspace();
@@ -63,15 +88,11 @@ export function WorkspaceSettingsDialog({
     refetch,
   } = useWorkspaceStats(open ? workspace.id : '', { errorBoundary: false });
   const statsError = isError ? (
-    <ErrorState
-      {...describeError(error)}
-      action={
-        <ErrorAction onClick={() => void refetch()}>
-          {m.error_action_retry()}
-        </ErrorAction>
-      }
+    <InlineErrorState
+      className="py-6"
       errorId={unexpectedErrorId(error)}
-      variant="panel"
+      message={describeError(error).title}
+      onRetry={() => void refetch()}
     />
   ) : null;
   return (
@@ -83,8 +104,8 @@ export function WorkspaceSettingsDialog({
       title={m.workspace_settings()}
     >
       <Tabs
-        className="-mx-3 mt-2.5 w-auto whitespace-nowrap sm:mx-0"
-        onChange={setTab}
+        className="dialog-tabs-bleed w-auto whitespace-nowrap sm:mt-2.5"
+        onChange={(value) => setTab(value as SettingsTab)}
         tabs={[
           ...(manage
             ? [
@@ -92,11 +113,9 @@ export function WorkspaceSettingsDialog({
                 { label: m.workspace_sharing(), value: 'sharing' },
                 { label: m.workspace_indexing(), value: 'indexing' },
                 { label: m.workspace_stats_title(), value: 'statistics' },
-                ...(workspace.canClone
-                  ? [{ label: m.workspace_tab_others(), value: 'others' }]
-                  : []),
               ]
             : []),
+          { label: m.workspace_tab_others(), value: 'others' },
           {
             label: m.workspace_tab_danger(),
             tone: 'danger' as const,
@@ -175,21 +194,34 @@ export function WorkspaceSettingsDialog({
         {tab === 'indexing' && (
           <IndexingTab error={statsError} stats={stats} workspace={workspace} />
         )}
-        {tab === 'others' && workspace.canClone && (
+        {tab === 'others' && (
           <div className="flex flex-col gap-6">
             <SettingRow
-              hint={m.workspace_clone_hint()}
-              title={m.action_clone_workspace()}
+              hint={m.workspace_track_progress_hint()}
+              title={m.study_track_progress()}
             >
-              <Button
-                iconLeft="clone"
-                onClick={() => setCloneOpen(true)}
-                rounded="large"
-                variant="outline"
-              >
-                {m.action_clone()}
-              </Button>
+              <Switch
+                aria-label={m.study_track_progress()}
+                checked={!!study?.enabled}
+                disabled={!study || savingStudy}
+                onCheckedChange={(checked) => setStudyEnabled(checked)}
+              />
             </SettingRow>
+            {manage && workspace.canClone && (
+              <SettingRow
+                hint={m.workspace_clone_hint()}
+                title={m.action_clone_workspace()}
+              >
+                <Button
+                  iconLeft="clone"
+                  onClick={() => setCloneOpen(true)}
+                  rounded="large"
+                  variant="outline"
+                >
+                  {m.action_clone()}
+                </Button>
+              </SettingRow>
+            )}
             <CloneWorkspaceDialog
               open={cloneOpen}
               setOpen={setCloneOpen}
@@ -245,10 +277,14 @@ export function WorkspaceSettingsDialog({
         onClose={() => setConfirmDelete(false)}
         onConfirm={() => {
           deleteWorkspace(workspace.id, {
-            onSuccess: () => {
-              onClose();
-              navigate({ to: '/workspaces' });
-            },
+            // Leave before dropping the cache, or the open page refetches
+            // it; Back then fetches the deleted workspace and shows its error.
+            // Closing matters on /workspaces, where the page stays.
+            onSuccess: () =>
+              navigate({ to: '/workspaces' }).then(() => {
+                onClose();
+                qc.removeQueries({ queryKey: qk.workspace(workspace.id) });
+              }),
           });
         }}
         open={confirmDelete}

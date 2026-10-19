@@ -9,9 +9,9 @@ import {
   useUsage,
 } from '@/api/hooks';
 import type { Invoice } from '@/api/types';
-import { ErrorState } from '@/components/app/ErrorState';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { TabHeader } from '@/components/app/tabPanel';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { getLocale, m } from '@/i18n';
 import { track } from '@/lib/analytics';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
@@ -127,15 +127,11 @@ function Invoices() {
 
   if (isError) {
     return (
-      <ErrorState
-        {...describeError(error)}
-        action={
-          <ErrorAction onClick={() => void refetch()}>
-            {m.error_action_retry()}
-          </ErrorAction>
-        }
+      <InlineErrorState
+        className="py-6"
         errorId={unexpectedErrorId(error)}
-        variant="panel"
+        message={describeError(error).title}
+        onRetry={() => void refetch()}
       />
     );
   }

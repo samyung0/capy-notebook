@@ -7,6 +7,7 @@ import type {
   AccountStatus,
   AppNotification,
   Attempt,
+  AttemptCard,
   CalendarEvent,
   Chapter,
   Conversation,
@@ -1451,7 +1452,11 @@ const byPart = (answers: Record<string, Answer>) =>
     Object.entries(answers).map(([id, a]) => [`${id}:part`, a])
   );
 
-type SeedAttempt = Attempt & { answers?: Answers; questions?: Question[] };
+export type SeedAttempt = Attempt & {
+  answers?: Answers;
+  cards?: AttemptCard[];
+  questions?: Question[];
+};
 
 /** A seeded attempt graded the way the server stores one. */
 function seedAttempt(
@@ -1461,9 +1466,11 @@ function seedAttempt(
     SeedAttempt,
     | 'answers'
     | 'correct'
+    | 'kind'
     | 'materialId'
     | 'pct'
     | 'questions'
+    | 'startedAt'
     | 'total'
     | 'workspaceId'
   >,
@@ -1484,9 +1491,12 @@ function seedAttempt(
     ...fields,
     answers,
     correct,
+    kind: 'quiz',
     materialId: quiz.id,
     pct: Math.round((correct / graded.max) * 100),
     questions,
+    // Twelve minutes or so before submitting.
+    startedAt: new Date(Date.parse(fields.takenAt) - 12 * 60_000).toISOString(),
     total: graded.max,
     workspaceId: quiz.workspaceId,
   };
@@ -1495,6 +1505,7 @@ function seedAttempt(
 /** An attempt as lists carry it: the score, without answers or graded questions. */
 export const attemptSummary = ({
   answers: _,
+  cards: ___,
   questions: __,
   ...attempt
 }: SeedAttempt): Attempt => ({

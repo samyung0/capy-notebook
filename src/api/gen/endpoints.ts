@@ -193,6 +193,7 @@ import type {
   UsageReport,
   User,
   Workspace,
+  WorkspaceAttemptsOutputBody,
   WorkspaceCollaborator,
   WorkspaceMember,
   WorkspaceRecent,
@@ -9215,6 +9216,56 @@ export const getWorkspaceStudy = async (id: string, options?: RequestInit): Prom
 
   const data: getWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getWorkspaceStudyResponse
+}
+
+
+
+export type getWorkspaceAttemptsResponse200 = {
+  data: WorkspaceAttemptsOutputBody
+  status: 200
+}
+
+export type getWorkspaceAttemptsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceAttemptsResponseSuccess = (getWorkspaceAttemptsResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceAttemptsResponseError = (getWorkspaceAttemptsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceAttemptsResponse = (getWorkspaceAttemptsResponseSuccess | getWorkspaceAttemptsResponseError)
+
+export const getGetWorkspaceAttemptsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/attempts`
+}
+
+/**
+ * @summary Each quiz's and set's attempt count and latest attempts
+ */
+export const getWorkspaceAttempts = async (id: string, options?: RequestInit): Promise<getWorkspaceAttemptsResponse> => {
+
+  const res = await fetch(getGetWorkspaceAttemptsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceAttemptsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceAttemptsResponse
 }
 
 

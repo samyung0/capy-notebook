@@ -222,7 +222,11 @@ export function Sidebar({
             {m.app_name()}
           </p>
           {onNavigate && (
+            // The drawer's swipe handle adds 12px past the card's right
+            // edge; pull the X out so its glyph sits as far from the
+            // drawer's edge as the title does from the left.
             <IconButton
+              className="-mr-5.5"
               icon="x"
               label={m.action_close()}
               onClick={onNavigate}
