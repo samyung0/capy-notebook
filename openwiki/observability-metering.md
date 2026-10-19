@@ -327,19 +327,24 @@ unavailable. A steady count means the cap is too small for the
 rooms open at once. Next to it, the gauge
 `capy_collaboration_source_disk_held_bytes` is the bytes of the files loaded
 rooms hold, which is what a refusal compares with the cap (idle files go
-first and are not in it). A socket closed for sending updates past its
-user's allowance (close 4429 `collaboration-too-fast`, the update allowance
-in [plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals))
-is logged at warn as `connection over its update rate` with the room, the
-socket and the user id (never content), counted in
-`capy_collaboration_rate_limited_total`, and never captured; a draft send
-over it is refused `too_fast`, logged as `draft send refused` and counted in
-the same counter and in `capy_collaboration_draft_refusals_total{class="too_fast"}`.
-Capy's tab paces its own updates under the allowance, so a count that keeps
-growing means a runaway or hostile client (or one user's several busy tabs),
-and the warn lines name it. A socket that sends an update over 8 MiB is
-closed with 4413 `collaboration-update-too-large` and logged at warn as
-`update over the cap`, not counted: Capy never sends one. Sentry holds failures
+first and are not in it). A user put in a timeout for going past their
+update allowance or sending an update over 8 MiB (the update allowance in
+[plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals))
+is logged at warn as `user timed out` with the room, the socket and the user
+id (never content) when a socket's message starts it, counted once per
+timeout in `capy_collaboration_timeouts_total`, and never captured; a draft
+send that starts one is counted there too, and every draft send refused
+during one answers `too_fast`, logged as `draft send refused` and counted in
+`capy_collaboration_draft_refusals_total{class="too_fast"}`. Capy's tab
+paces its own messages under the allowance and splits updates into 2 MiB
+pieces, so a count that keeps growing means a runaway or hostile client (or
+one user's several busy tabs), and the warn lines name it. A socket refused
+for its client address's socket cap and a JOIN refused for its user's
+joined channel cap are logged at warn (`client address over its socket
+cap`, `user over the joined channel cap`, the user id only) and counted in
+`capy_collaboration_seat_refusals_total{seat="address"}` and
+`{seat="channel"}`; a socket closed for joining no room within 10 s is
+logged at warn as `socket closed before any join`. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal
@@ -1359,10 +1364,14 @@ Three layers, each doing what the ones below it cannot:
 | Go middleware | Clerk identity, plan, route class | per-user semantic limits |
 | Credits ledger | measured cost | spend, in money rather than requests |
 
-The collaboration server limits its own writers apart: each user's SYNC
-messages, over every socket and draft send, take from an update allowance (a
-burst, then a rate, in messages and bytes), and no update over 8 MiB enters
-a room ([plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals),
+The collaboration server limits its own writers apart: each user's SYNC,
+awareness and query messages, over every socket and draft send, take from an
+update allowance (a burst, then a rate, in messages and bytes; the step 1
+and query answers the room encodes for them are charged by their bytes), a
+user over it or sending an update over 8 MiB is in a timeout instead of
+disconnected, and sockets per client address, joined channels per user and
+awareness client ids per channel and room are capped
+([plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals),
 metrics above).
 
 The edge cannot express "200 AI requests an hour for this Clerk user" because

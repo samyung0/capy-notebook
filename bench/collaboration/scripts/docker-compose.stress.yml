@@ -42,5 +42,13 @@ services:
   collaboration:
     environment:
       SSL_CERT_FILE: /stress/tls/cert.pem
+      # Every peer is u_owner on one machine: one update allowance (step 1
+      # answers included) and one client address for all of them.
+      COLLABORATION_UPDATE_BURST: "100000000"
+      COLLABORATION_UPDATES_PER_SECOND: "1000000"
+      COLLABORATION_UPDATE_BURST_BYTES: "107374182400"
+      COLLABORATION_UPDATE_BYTES_PER_SECOND: "10737418240"
+      COLLABORATION_SOCKETS_PER_ADDRESS: "100000"
+      COLLABORATION_CHANNELS_PER_USER: "100000"
     volumes:
       - ${STRESS_TLS_DIR:?set by stress.ts}:/stress/tls:ro

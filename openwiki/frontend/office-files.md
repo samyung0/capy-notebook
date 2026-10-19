@@ -1403,16 +1403,17 @@ source, so a runtime that boots before the source loads gets
 `set-capabilities` first: the runtime keeps the last `canEdit` it was sent and
 applies it on `load`. A runtime that reloads during a handoff, a replacement,
 recovery, a discard or while connecting therefore opens paused (read-only and
-selectable) whichever message comes first. In edit mode the host also sends
-`sending` (`pending`, Epo 2026-10-18): true when the editor's own update
-goes to the room in pieces (over 2 MiB, `splitUpdate`; see
-[plate-editor](plate-editor.md#connection-lifetime-and-refusals)) and its
-first piece leaves, false once the room acknowledged the last piece or the
-room closed, and again after every boot. It is for the XLSX editor's loading
-cursor and its refusal of other edits until the last piece is sent, which a
-separate fork round adds; the runtime ignores it until then. It needs no
-`OFFICE_PROTOCOL_VERSION` bump: a runtime without it drops a message it does
-not know, and the host and runtime ship together. Pages stay white in
+selectable) whichever message comes first. While the tab holds back its
+collaboration messages (frames waiting for the update allowance, an
+update's pieces over 2 MiB waiting for the room's acknowledgement, or the
+user in a timeout; see
+[plate-editor](plate-editor.md#connection-lifetime-and-refusals)) the host
+takes no input: the iframe sits in `CollaborationHold`, inert and busy under
+a loading cursor (Epo 2026-10-18). In edit mode the host also sends the
+same state as `sending` (`pending`), whenever it changes and after every
+boot, for a runtime that shows its own loading state; the runtime ignores it
+for now. It needs no `OFFICE_PROTOCOL_VERSION` bump: a runtime without it
+drops a message it does not know, and the host and runtime ship together. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
