@@ -1266,15 +1266,21 @@ per-item endpoints sequentially, stop at the first failure, and remove only
 successful items from the selection. The error toast explains the failed
 operation; remaining items stay selected for a manual retry.
 
-`GET /api/files` and `GET /api/materials` list what the caller owns by
-default: files and materials in their own workspaces plus their standalone
-materials, which is what Files and Create show. `scope=member` adds every
-workspace where the caller is an explicit member, under the workspace list's
-rule that a deleted, deletion-pending or suspended owner hides the workspace. Link or
-public workspaces the caller has only opened never appear, and neither do other
-users' standalone materials. The dashboard's Recent Files uses member scope and
-offers Rename/Properties/Delete only where the workspace's `capabilities` allow
-editing; a standalone material there is always the caller's own.
+Listing scopes outside a workspace (Sam 2026-10-19). `GET /api/files`,
+`GET /api/materials` and `GET /api/trash` list by default what the caller pays
+for, wherever it sits: the Files page is the storage breakdown. Other people's
+uploads in a workspace the caller owns show inside the workspace (its trash
+with `workspaceId`, owner only), not there. `scope=member` lists instead what
+the caller can open: its own workspaces, those where it is an explicit member
+under a live owner (the workspace list's rule), and its standalone materials,
+never a row it only pays for; the dashboard's Recent uses it and offers
+Rename/Properties/Delete only where the workspace's `capabilities` allow
+editing. Global search (`Store.Search`) follows the same rule for workspaces,
+files and flashcard sets. Link or public workspaces the caller has only opened
+never appear in either. Past reviews and notifications keep the caller's
+history but blank the live workspace (and chapter) name once the caller can no
+longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
+and a notice's own snapshot (a removal's `workspaceName`) still shows.
 
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),

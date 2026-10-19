@@ -83,17 +83,24 @@ of a row is the account that uploaded, imported, cloned or created it, in any
 workspace: `files.user_id`, `upload_sessions.user_id`, `editor_assets.user_id`
 and `materials.owner_user_id` are set once at insert from the actor (a BEFORE
 INSERT trigger fills an omitted one from `created_by`, migration 0094) and
-never re-derived. A collaborator's upload, note, quiz, flashcard set, embedded
-item, pasted or chat-placed image, clone or deck is charged to the
-collaborator, so nobody can fill another account's quota. A workspace
+never re-derived. A collaborator's upload, note, quiz, flashcard set, clone or
+deck is charged to the collaborator. What goes inside a note, quiz or set
+(images, audio, an embedded quiz or set, pasted or chat-placed) is charged to
+that material's payer instead, as Google Docs does (Sam 2026-10-19):
+`lockEditorAssetScopeTx` returns the material's `owner_user_id`, and
+`createMaterialTx` gives an embedded row its parent's. A workspace
 ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
 still checks the recipient's owned-workspace and file caps). A member who
 leaves or is removed keeps paying for what it added; the items stay in the
-workspace, and the Files page (files, blocks, trash) still lists them. One the
-payer can no longer open is marked `lostAccess` (`lostAccessSQL`: not the
-owner and no reach as member, public share or redeemed link, or the owner's
-account is no longer live): no thumbnail or preview, the workspace name red
-behind an error icon, and the payer may delete it (trash, then purge) but not
+workspace, and the Files page (files, blocks, trash), which lists only what the
+caller pays for and so adds up to its storage meter (Sam 2026-10-19), still
+lists them. One the payer can no longer open is marked `lostAccess`
+(`lostAccessSQL`: not the owner and no reach as member, public share or
+redeemed link, or the owner's account is no longer live) and shows only its
+name, size, workspace and creation time (`lostFile`, `lostMaterialItem`; the
+updated and workspace sorts page on those shown values, so no cursor carries
+what it hides), the workspace name red behind an error icon, and the payer
+may delete it (trash, then purge) but not
 open or restore it (`PaysFor`, `lockTrashActorTx`, `lockTrashOwnerTx`). Trash
 offers Restore only where the caller may edit the workspace (`canRestore`). A
 deleted, deleting or suspended owner's workspace also loses its name there
@@ -385,10 +392,11 @@ Editor assets upload through the material that uses them
 (`/api/materials/{id}/editor-assets/uploads`, any editor of the material).
 Every asset names that material (`editor_assets.material_id`). A workspace
 material's asset also names the workspace. Every asset is charged to the
-uploader (an image added to someone else's note too). Every editor image
-(note, quiz, flashcard set, and a pasted copy through the children pass) is
-capped by the uploader's plan image cap, checked before any bytes are
-reserved; the material response carries the viewer's as `imageMaxBytes`. The browser
+material's payer, whoever uploads it (Sam 2026-10-19); the uploader still
+completes its own reservation. Every editor image (note, quiz, flashcard set,
+and a pasted copy through the children pass) is capped by the payer's plan
+image cap, checked before any bytes are reserved; the material response
+carries it as `imageMaxBytes`. The browser
 uploads an image under the cap unchanged and shrinks a larger one first
 (`src/lib/fitImage.ts`, called from `uploadEditorAsset`: long side to 2000 px,
 WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
