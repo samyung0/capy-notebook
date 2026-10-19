@@ -147,12 +147,44 @@ def refuse_other_environments(values, environment):
             fail(f"{key} is not allowed in {environment}")
 
 
-def render(values, environment, output, revision):
+def private_output(output, revision):
     if not re.fullmatch("[0-9a-f]{40}", revision):
         fail("revision must be a lowercase full Git SHA")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output, 0o700)
+    return output
+
+
+def build_values(values, environment, revision):
+    build = target_values(values, "build")
+    build.update(
+        VITE_APP_ENV=environment,
+        VITE_APP_URL=values.get("DEPLOYMENT_APP_URL", ""),
+        VITE_CLERK_PUBLISHABLE_KEY=values.get("CLERK_PUBLISHABLE_KEY", ""),
+        # Copied bank questions keep linking their figures here.
+        VITE_BANK_ASSETS_URL=values.get("BANK_ASSETS_URL", ""),
+        VITE_RELEASE_SHA=revision,
+        VITE_E2E_EDITOR_SEED="false",
+        VITE_LOAD_TEST_SEED="false",
+        VITE_USE_MSW="false",
+    )
+    if not build["VITE_APP_URL"] or not build["VITE_CLERK_PUBLISHABLE_KEY"]:
+        fail("DEPLOYMENT_APP_URL and CLERK_PUBLISHABLE_KEY are required")
+    return build
+
+
+def render_build(values, environment, output, revision):
+    """Only the SPA build's values: the build job runs third-party build code,
+    so the deploy job renders the Coolify and ingest configuration itself."""
+    output = private_output(output, revision)
+    build = build_values(values, environment, revision)
+    private_write(output / "build.json", json.dumps(build))
+    print(f"rendered {environment} build configuration; values redacted")
+
+
+def render(values, environment, output, revision):
+    output = private_output(output, revision)
     coolify = target_values(values, "coolify")
     refuse_other_environments(coolify, environment)
     password = values.get("POSTGRES_PASSWORD", "")
@@ -179,20 +211,7 @@ def render(values, environment, output, revision):
     # (Epo 2026-10-17).
     coolify["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
     private_write(output / "coolify.json", json.dumps(coolify))
-    build = target_values(values, "build")
-    build.update(
-        VITE_APP_ENV=environment,
-        VITE_APP_URL=values.get("DEPLOYMENT_APP_URL", ""),
-        VITE_CLERK_PUBLISHABLE_KEY=values.get("CLERK_PUBLISHABLE_KEY", ""),
-        # Copied bank questions keep linking their figures here.
-        VITE_BANK_ASSETS_URL=values.get("BANK_ASSETS_URL", ""),
-        VITE_RELEASE_SHA=revision,
-        VITE_E2E_EDITOR_SEED="false",
-        VITE_LOAD_TEST_SEED="false",
-        VITE_USE_MSW="false",
-    )
-    if not build["VITE_APP_URL"] or not build["VITE_CLERK_PUBLISHABLE_KEY"]:
-        fail("DEPLOYMENT_APP_URL and CLERK_PUBLISHABLE_KEY are required")
+    build = build_values(values, environment, revision)
     private_write(output / "build.json", json.dumps(build))
     queue = target_values(values, "ingest-queue")
     refuse_other_environments(queue, environment)
@@ -227,17 +246,13 @@ def render(values, environment, output, revision):
 
 
 def render_ops(values, environment, output, revision):
-    if not re.fullmatch("[0-9a-f]{40}", revision):
-        fail("revision must be a lowercase full Git SHA")
+    output = private_output(output, revision)
     ops = target_values(values, "ops")
     if ops["OPS_INGEST_PRIMARY_ENVIRONMENT"] != environment:
         fail("OPS_INGEST_PRIMARY_ENVIRONMENT must match the deployment environment")
     ops["VITE_CLERK_PUBLISHABLE_KEY"] = ops.pop("CLERK_PUBLISHABLE_KEY")
     ops["SENTRY_ENVIRONMENT"] = environment
     ops["RELEASE_SHA"] = revision
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(output, 0o700)
     private_write(output / "ops.json", json.dumps(ops))
     print(f"rendered {environment} Ops configuration; values redacted")
 
@@ -407,6 +422,7 @@ def main():
             "push",
             "render",
             "render-ops",
+            "render-build",
             "verify-ops-target",
             "apply-coolify",
             "build",
@@ -442,7 +458,11 @@ def main():
     else:
         if not args.environment or not args.output or not args.revision:
             fail("render requires --environment, --output, and --revision")
-        renderer = render_ops if args.command == "render-ops" else render
+        renderer = {
+            "render": render,
+            "render-ops": render_ops,
+            "render-build": render_build,
+        }[args.command]
         renderer(values, args.environment, args.output, args.revision)
 
 

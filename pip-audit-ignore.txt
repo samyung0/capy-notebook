@@ -1,0 +1,4 @@
+# pip-audit (CI job audit_python) fails on any advisory against uv.lock's
+# runtime set, parser/requirements.txt or pipeline/ppt-master-requirements.txt
+# that is not listed here: one advisory id per line (PYSEC-, GHSA- or CVE-),
+# then why it waits. Empty: nothing waits.

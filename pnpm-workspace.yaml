@@ -46,6 +46,26 @@ patchedDependencies:
 # - xmlbuilder2 3.x (its last 3.x is 3.1.1, and @platejs/docx-io needs ^3.1.1)
 #   pins js-yaml 3.14.1, which has merge-key DoS and prototype-pollution
 #   fixes in 3.15.2; docx-io never converts YAML.
+# - argparse 1.x (under mammoth and js-yaml 3) pulls in sprintf-js, whose
+#   precision DoS (GHSA-hp3w-g68c-fv3c) has no fixed release; argparse 2 has
+#   no sprintf-js. Both packages load argparse only in their command-line tools
+#   (bin/mammoth, bin/js-yaml.js), which nothing here runs and which argparse 2
+#   no longer serves; their libraries never import it.
 overrides:
   "geopattern>extend": 3.0.2
   "xmlbuilder2>js-yaml": 3.15.2
+  "argparse@<2": 2.0.1
+
+# `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
+# here. Each entry says why it waits.
+auditConfig:
+  ignoreGhsas:
+    # KaTeX: the trust bypass needs prototype pollution first, and `trust`
+    # stays off. 0.18.2 waits for the version wave (todo-security P4, KaTeX).
+    - GHSA-238p-pmpm-9mq7
+    # @tiptap/core under emails/editor's @maily-to/core: fixed only in tiptap
+    # 3.30.4+, but @maily-to/core 0.3.7 (its latest) needs tiptap 2 and imports
+    # BubbleMenu from @tiptap/react, which tiptap 3 moved to
+    # @tiptap/react/menus, so the override breaks the template editor. That
+    # editor is developer-local (`pnpm email:dev`) and never deployed.
+    - GHSA-cp6q-959q-f8rh

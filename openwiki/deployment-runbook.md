@@ -129,6 +129,9 @@ from the gateway over the docker network (`PIPELINE_URL=http://retrieval:8001`).
 If the domain is **already** on Cloudflare, skip nameserver migration.
 
 1. **Site.** Deploy `wrangler.jsonc` with `--env uat` or `--env production`.
+   Every wrangler file sets `workers_dev: false` and `preview_urls: false` at
+   its top level and in each environment, so even a deploy without `--env`
+   publishes no `workers.dev` or preview URL (developer decision 14b).
    The Worker serves `dist/`, renders `/w/{workspaceId}` from the live Go summary
    endpoint. The UAT zone routes `/api/*` directly through the tunnel as described
    in §1.0.1; production must provision the same tunnel and scriptless route
@@ -2288,9 +2291,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    configured DSNs so they match by construction; edit those DSNs first and
    `env:push` them after. Re-running only resets the passwords and re-grants, so
    it is also the way to pick up a migration that adds a column Ops reads. The grants name every
-   readable column. In particular, neither role can read `messages`, file
-   `content` or blob paths, job `payload`, email recipients or `payload`, or
-   `usage_events.metadata`. Apply them as the database owner:
+   readable column. In particular, neither role can read `messages` columns,
+   file names, content or blob paths, job `payload`, email recipients or
+   `payload`, or `usage_events.metadata`. The exception is the
+   `ops_assistant_turns` view below: its tool details can carry a chat search
+   query or a file title. Apply them as the database owner:
 
    ```bash
    docker exec -i db-<main-resource-uuid> psql -U capy -d capy \
@@ -2311,9 +2316,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    startup catalog. A missing grant therefore fails as a role-contract error,
    rather than as a later plan-catalog query error.
 
-   `ops_assistant_turns` exposes only an assistant message id, owning user id,
-   lifecycle status, trace id, and timestamp. Do not replace that view grant
-   with `SELECT` on `messages`.
+   `ops_assistant_turns` (migration 0014) exposes an assistant message id,
+   owning user id, lifecycle status, trace id and timestamp, plus each tool
+   call's name, outcome and detail capped at 240 characters, as decided
+   (human/observability-metering.md, 2026-09-13). A detail can quote what the
+   tool was given or found, such as a chat search query or a file title, so
+   operators can see those. Do not replace that view grant with `SELECT` on
+   `messages`.
 
    `edit_incidents` holds ids, kinds, reason tokens and sizes, never content.
    Migration 0066 grants `capy_ops` `SELECT` on it where the role already
@@ -3098,6 +3107,39 @@ The Cloudflare token needs Worker scripts/assets deployment access and
 Cloudflare Pages edit access for the interactive block frame (§2.3). Retire
 `CLOUDFLARE_PAGES_PROJECT` and `CLOUDFLARE_PAGES_BRANCH` in GitHub before the
 first new deployment; they are rejected as unknown inputs.
+
+**Workflow hardening.** Third-party actions are pinned by full commit SHA
+with the release in a comment. Dependabot (`.github/dependabot.yml`) opens one
+grouped weekly pull request that moves the pins and comments together, the
+composite actions under `.github/actions/` included. Every workflow declares
+its token scope, and every checkout sets `persist-credentials: false`: no step
+needs the token for git (the submodule and fork fetches are public, `gh` reads
+`GH_TOKEN`). A run script never expands `${{ }}`; values reach it through the
+step's `env`. Secrets sit only on the steps that use them, never in a
+workflow or job `env` or on an install or action step: the UAT journey job's
+secrets sit on its tunnel, ingest-check, journey and cleanup steps, and Deploy
+Ops passes the Coolify token only to its three Coolify steps. The SPA build
+job renders only the build values (`config.py render-build`); the deploy job
+renders the Coolify and ingest configuration, so it is never on disk while
+third-party build code runs. `SENTRY_AUTH_TOKEN` stays in the build values
+(developer decision 6b). `coolify-deploy.sh` hands curl the API token as a
+config line on stdin, never as an argument. `scripts/ci/hardening.test.mjs`
+(in `pnpm test:deployment`) holds these rules.
+
+**Dependency vulnerabilities.** CI runs one job per ecosystem and fails on a
+known advisory: `audit_rust` (`cargo deny check advisories` on
+`collaboration-rs`), `audit_go` (govulncheck on `server`, with the Go line the
+gateway and Ops images build with; it prints its counts and also fails on a
+listed id it no longer reports), `audit_pnpm` (`pnpm audit --prod`) and
+`audit_python` (pip-audit over `uv.lock`'s runtime set, `parser/requirements.txt`
+and `pipeline/ppt-master-requirements.txt`). An advisory that has to wait goes
+on that ecosystem's commented ignore list, with its reason:
+`collaboration-rs/deny.toml`, `server/govulncheck-ignore.txt`,
+`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml` and `pip-audit-ignore.txt`.
+Prefer a version bump or a commented `overrides` entry (the developer's rule,
+2026-10-20); an advisory stays listed only when its fix breaks something, and
+the entry says what. Drop an entry when its fix lands, for example the Go
+entries with the version wave.
 
 Required families include application origins, Clerk/webhook keys, Postgres,
 B2, collaboration/pipeline secrets, actual provider/mail/billing keys, Coolify

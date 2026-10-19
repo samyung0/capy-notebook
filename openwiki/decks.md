@@ -16,7 +16,10 @@ ppt-master (MIT, Copyright (c) 2025-2026 Hugo He) runs from its official
 distribution: the whole checkout at `deck.PPT_MASTER_COMMIT`, less icons,
 sounds and image-model comparison sheets, at `/opt/ppt-master`, with
 `deck.PPT_MASTER_DEPS` in its own virtualenv `/opt/ppt-master/.venv`
-(`pipeline/Dockerfile`, stage `ppt-master`). Its attribution guard refuses a
+(`pipeline/Dockerfile`, stage `ppt-master`), installed with `--require-hashes`
+from `pipeline/ppt-master-requirements.txt`: exact versions with hashes,
+regenerated with the command in its header after `PPT_MASTER_DEPS` changes
+(`test_deck.py` checks every name is pinned). Its attribution guard refuses a
 partial copy, so nothing is vendored piecemeal. The retrieval service calls two
 scripts as subprocesses (`retrieval/deck.py`, 180 s each):
 `svg_quality_checker.py <project> --quick-generate --canonical-authoring --stage final --json`
