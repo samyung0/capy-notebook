@@ -1,5 +1,11 @@
 package httpapi
 
+import (
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
 // Object keys are built only through these helpers so every source object lands
 // under one prefix. Three shapes used to coexist — `sources/blob_…` from the
 // presign flow against bare `blob_…` from the legacy multipart and import paths —
@@ -13,3 +19,16 @@ func sourceObjectKey(name string) string { return "sources/" + name }
 func incomingObjectKey(uploadID, name string) string {
 	return "incoming/" + uploadID + "/" + name
 }
+
+// keyExtension is the filename's extension as an object key suffix, kept only
+// when it is plain lowercase letters and digits: the name is user input, and
+// control or space characters must not reach a bucket key.
+func keyExtension(name string) string {
+	ext := strings.ToLower(filepath.Ext(name))
+	if !keyExtensionPattern.MatchString(ext) {
+		return ""
+	}
+	return ext
+}
+
+var keyExtensionPattern = regexp.MustCompile(`^\.[a-z0-9]{1,11}$`)

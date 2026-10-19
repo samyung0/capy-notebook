@@ -150,7 +150,7 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 		return out, ErrConflict
 	}
 	out.LeaseToken = uid("srclease")
-	out.SourceBlobPath = "sources/" + uid("source")
+	out.SourceBlobPath = "sources/" + ObjectKeyID("source")
 	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET lease_token=$3,source_blob_path=$4 WHERE file_id=$1 AND job_id=$2`, fileID, jobID, out.LeaseToken, out.SourceBlobPath); err != nil {
 		return out, err
 	}

@@ -210,6 +210,33 @@ def test_complete_without_finalized_status_retries(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    "object_path", ["sources/blob_x.pdf", "incoming/../sources/blob_x.pdf"]
+)
+def test_run_writes_only_under_incoming(monkeypatch, object_path):
+    def gateway(path, _body):
+        assert path.endswith("/acquire")
+        return 200, {
+            "status": "acquired",
+            "attemptToken": "tok",
+            "attemptObjectPath": object_path,
+            "maxBytes": 100,
+            "download": {"kind": "url", "url": "https://x.sharepoint.com/f"},
+        }
+
+    monkeypatch.setattr(import_stage, "_gateway", gateway)
+    monkeypatch.setattr(
+        import_stage, "_download", lambda *_a: pytest.fail("downloaded")
+    )
+    monkeypatch.setattr(
+        import_stage.blobstore, "write_bytes", lambda *_a: pytest.fail("uploaded")
+    )
+    with pytest.raises(import_stage.ImportFailure):
+        import_stage._run(
+            {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
+        )
+
+
+@pytest.mark.parametrize(
     ("filename", "content_type"),
     [
         (

@@ -151,7 +151,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 
 	assetID := randID("asset")
 	uploadID := randID("eau")
-	uploadPath := "editor-assets/incoming/" + uploadID + "/" + randID("blob") + ext
+	uploadPath := "editor-assets/incoming/" + uploadID + "/" + store.ObjectKeyID("blob") + ext
 	finalPath := editorAssetObjectKey(assetID, ext)
 	signed, err := a.blob.PresignPut(r.Context(), uploadPath, contentType, in.SizeBytes)
 	if err != nil {
@@ -175,7 +175,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func editorAssetObjectKey(assetID, ext string) string {
-	return "editor-assets/" + assetID + "/" + randID("blob") + ext
+	return "editor-assets/" + assetID + "/" + store.ObjectKeyID("blob") + ext
 }
 
 func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) {

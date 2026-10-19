@@ -133,7 +133,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blobPath, size, err := a.blob.Put(sourceObjectKey(randID("blob")), bytes.NewReader(req.Content))
+	blobPath, size, err := a.blob.Put(sourceObjectKey(store.ObjectKeyID("blob")), bytes.NewReader(req.Content))
 	if err != nil {
 		a.fail(w, err)
 		return

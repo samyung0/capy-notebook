@@ -11,7 +11,6 @@ import (
 	"log"
 	"mime"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -256,11 +255,8 @@ func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInp
 	}
 
 	uploadID := randID("up")
-	blobID := randID("blob")
-	ext := strings.ToLower(filepath.Ext(name))
-	if len(ext) > 12 {
-		ext = ""
-	}
+	blobID := store.ObjectKeyID("blob")
+	ext := keyExtension(name)
 	incoming := incomingObjectKey(uploadID, blobID+ext)
 	finalPath := sourceObjectKey(blobID + ext)
 	signed, err := a.blob.PresignPut(ctx, incoming, body.ContentType, body.SizeBytes)
@@ -327,7 +323,9 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 		_ = a.blob.Delete(ctx, session.ObjectPath)
 		return nil, huma.Error400BadRequest("uploaded size does not match the reserved size")
 	}
-	if info.ContentType != "" && info.ContentType != session.ContentType {
+	// The PUT signs its Content-Type, so B2 always reports one; an empty one
+	// is a mismatch, not a pass.
+	if info.ContentType != session.ContentType {
 		return nil, huma.Error400BadRequest("uploaded content type does not match the reservation")
 	}
 	if finalErr != nil {
@@ -630,11 +628,8 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 
 		uploadID := randID("up")
 		jobID := randID("imp")
-		blobID := randID("blob")
-		ext := strings.ToLower(filepath.Ext(meta.Name))
-		if len(ext) > 12 {
-			ext = ""
-		}
+		blobID := store.ObjectKeyID("blob")
+		ext := keyExtension(meta.Name)
 		pending = append(pending, store.NewSourceImport{
 			JobID: jobID,
 			Upload: store.NewUploadSession{
