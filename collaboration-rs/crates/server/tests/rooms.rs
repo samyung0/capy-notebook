@@ -2330,6 +2330,96 @@ async fn an_embed_token_for_another_note_is_refused() {
     assert!(String::from_utf8_lossy(&refused).contains("collaboration-note-closed"));
 }
 
+/// Security regression (rate-limit review r5 S-b): an embed whose note's
+/// channel leaves after the embed authenticated but while its room loads is
+/// refused `collaboration-note-closed` when the load ends, never joined
+/// without its note (it would take no place among the user's documents and
+/// never close with a note). The test holds the set's material lock so the
+/// load waits. Fails without the note re-check after the load.
+#[tokio::test]
+async fn an_embed_whose_note_leaves_while_its_room_loads_is_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut client) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let mut db = db(&env).await;
+    let lock = db.transaction().await.expect("transaction");
+    lock.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        &[&material_of(&set)],
+    )
+    .await
+    .expect("lock");
+    let mut payload = join_payload(
+        &set,
+        &embed_token(&set, &user, &note),
+        Some(client_protocol()),
+    );
+    var(&mut payload, 1);
+    client.send_on(2, 0, &payload).await;
+    // The embed authenticated once its room's load waits on the lock.
+    let mut waiting = false;
+    for _ in 0..250 {
+        let row = lock
+            .query_one(
+                "SELECT count(*) FROM pg_locks
+                 WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+                   AND ((classid::bigint << 32) | objid::bigint) = hashtextextended($1, 0)",
+                &[&material_of(&set)],
+            )
+            .await
+            .expect("locks");
+        if row.get::<_, i64>(0) > 0 {
+            waiting = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(waiting, "the embed's room load waits on the lock");
+    // The note leaves; a junk JOIN after it answers once the LEAVE is read.
+    client.send_on(1, 3, &[]).await;
+    client
+        .send_on(3, 0, &join_payload(&set, "junk", Some(client_protocol())))
+        .await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut heard = Vec::new();
+    while !heard.iter().any(|(channel, _, _)| *channel == 3) {
+        heard.extend(client.raw_until(deadline).await);
+    }
+    lock.rollback().await.expect("unlock");
+    // The room may announce JOINED before the socket hears that the load
+    // ended; the socket then refuses the channel.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let refusal = loop {
+        if let Some((_, _, payload)) = heard
+            .iter()
+            .find(|(channel, kind, _)| *channel == 2 && matches!(kind, 2 | 4))
+        {
+            break Some(String::from_utf8_lossy(payload).into_owned());
+        }
+        let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout_at(deadline, client.ws.next()).await
+        else {
+            break None;
+        };
+        let mut at = 0;
+        while at < bytes.len() {
+            let channel = read_var(&bytes, &mut at);
+            let kind = bytes[at];
+            at += 1;
+            let len = read_var(&bytes, &mut at) as usize;
+            heard.push((channel, kind, bytes[at..at + len].to_vec()));
+            at += len;
+        }
+    };
+    let refusal = refusal.expect("the embed is refused once its room loaded");
+    assert!(refusal.contains("collaboration-note-closed"), "{refusal}");
+}
+
 /// Security regression (Epo 2026-10-20): a note channel holds at most 64
 /// embed channels: the 65th closes its oldest (`collaboration-embed-closed`,
 /// the client joins it again when near the screen), and leaving the note
