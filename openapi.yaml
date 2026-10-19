@@ -1985,6 +1985,9 @@ components:
           type: boolean
         kind:
           $ref: "#/components/schemas/FileKind"
+        lostAccess:
+          description: The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
+          type: boolean
         name:
           type: string
         position:
@@ -2013,6 +2016,8 @@ components:
           description: Hour-stable presigned GET of the page-1 thumbnail; list rows only
           type: string
         workspaceId:
+          type: string
+        workspaceName:
           type: string
       required:
         - id
@@ -2089,6 +2094,8 @@ components:
           type: string
         previewUrl:
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         url:
           type: string
       required:
@@ -2826,6 +2833,8 @@ components:
           type: array
         sharePath:
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         title:
           type: string
         updatedAt:
@@ -2988,6 +2997,9 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/MaterialKind"
+        lostAccess:
+          description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
+          type: boolean
         preview:
           additionalProperties: true
           description: List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md
@@ -3996,10 +4008,6 @@ components:
           type: string
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerState:
-          $ref: "#/components/schemas/AccountState"
-        storageOwnerUsage:
-          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -4135,6 +4143,22 @@ components:
         - materialId
         - itemId
         - rating
+      type: object
+    RedeemShareLinkInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RedeemShareLinkInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        token:
+          description: A share link's {id}.{signature}
+          maxLength: 128
+          type: string
+      required:
+        - token
       type: object
     Ref:
       additionalProperties: false
@@ -4885,6 +4909,28 @@ components:
             - removed
           type: string
       type: object
+    ShareRedemption:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ShareRedemption.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - workspace
+            - material
+          type: string
+        materialKind:
+          $ref: "#/components/schemas/MaterialKind"
+      required:
+        - kind
+        - id
+      type: object
     ShareRole:
       enum:
         - editor
@@ -5519,6 +5565,8 @@ components:
         stateSeedSHA256:
           nullable: true
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         thumbnailStale:
           type: boolean
         workspaceId:
@@ -5668,6 +5716,11 @@ components:
       required:
         - limitCents
       type: object
+    StorageFullBy:
+      enum:
+        - self
+        - payer
+      type: string
     StorageUsageLevel:
       enum:
         - ok
@@ -6079,6 +6132,9 @@ components:
     TrashItem:
       additionalProperties: false
       properties:
+        canRestore:
+          description: "The caller may restore it: a standalone item, or edit access to its workspace"
+          type: boolean
         episodeId:
           type: string
         fileKind:
@@ -6090,6 +6146,9 @@ components:
             - source_file
             - material
           type: string
+        lostAccess:
+          description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only permanently delete it
+          type: boolean
         materialKind:
           type: string
         preview:
@@ -6122,6 +6181,7 @@ components:
         - trashedAt
         - purgeAfter
         - episodeId
+        - canRestore
       type: object
     TrashPage:
       additionalProperties: false
@@ -6744,10 +6804,6 @@ components:
           type: string
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerState:
-          $ref: "#/components/schemas/AccountState"
-        storageOwnerUsage:
-          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -8193,13 +8249,13 @@ paths:
           schema:
             description: Comma-separated workspace ids
             type: string
-        - description: "owned: the caller's workspaces; member: also every workspace they are a member of"
+        - description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
           explode: false
           in: query
           name: scope
           schema:
             default: owned
-            description: "owned: the caller's workspaces; member: also every workspace they are a member of"
+            description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
             enum:
               - owned
               - member
@@ -8254,7 +8310,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List files across the caller's owned or member workspaces
+      summary: List the files the caller pays for, or can open (scope=member)
       tags:
         - Content
   /api/files/{id}:
@@ -9013,13 +9069,13 @@ paths:
           schema:
             description: "Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"
             type: string
-        - description: "owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"
+        - description: "owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones"
           explode: false
           in: query
           name: scope
           schema:
             default: owned
-            description: "owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"
+            description: "owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones"
             enum:
               - owned
               - member
@@ -9074,7 +9130,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List notes, quizzes and flashcard sets across the caller's owned or member workspaces
+      summary: List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)
       tags:
         - Materials
     post:
@@ -10024,14 +10080,17 @@ paths:
       summary: Grade a signed-out attempt at a shared quiz
       tags:
         - Sharing
-  /api/public/workspaces/{id}/summary:
+  /api/public/workspaces/{token}/summary:
     get:
       operationId: getPublicWorkspaceSummary
       parameters:
-        - in: path
-          name: id
+        - description: The summary link's {id}.{signature}
+          in: path
+          name: token
           required: true
           schema:
+            description: The summary link's {id}.{signature}
+            maxLength: 128
             type: string
       responses:
         "200":
@@ -10056,10 +10115,13 @@ paths:
     head:
       operationId: headPublicWorkspaceSummary
       parameters:
-        - in: path
-          name: id
+        - description: The summary link's {id}.{signature}
+          in: path
+          name: token
           required: true
           schema:
+            description: The summary link's {id}.{signature}
+            maxLength: 128
             type: string
       responses:
         "200":
@@ -10538,6 +10600,31 @@ paths:
       summary: Global search
       tags:
         - Account
+  /api/share/redeem:
+    post:
+      operationId: redeemShareLink
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemShareLinkInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareRedemption"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Open a signed share link once
+      tags:
+        - Sharing
   /api/source-upload-policy:
     get:
       operationId: getSourceUploadPolicy
@@ -10804,7 +10891,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List trashed files and materials the caller owns
+      summary: List trashed files and materials the caller pays for, or a workspace's it owns
       tags:
         - Trash
   /api/trash/{kind}/{id}:

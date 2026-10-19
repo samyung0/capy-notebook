@@ -119,6 +119,39 @@ async def test_candidate_stages_parse_and_index_without_replacing_published(
         db.reset_source_refresh(token)
 
 
+@pytest.mark.asyncio
+async def test_candidate_attach_stops_for_a_deleting_payer(workspace):
+    """The file's payer (uploader pays) is fenced beside the owner and actor."""
+    from pipeline.jobs import TerminalError
+
+    job = candidate(workspace)
+    file_id = job["payload"]["fileId"]
+    payer = "u_" + secrets.token_hex(6)
+    with workspace._connect() as conn:
+        conn.execute(
+            "INSERT INTO users (id,name,email) VALUES (%s,'Payer',%s)",
+            (payer, payer + "@example.com"),
+        )
+        conn.execute("UPDATE files SET user_id=%s WHERE id=%s", (payer, file_id))
+        conn.execute(
+            "UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=%s",
+            (payer,),
+        )
+    token = db.bind_source_refresh(job)
+    try:
+        with pytest.raises(TerminalError, match="source account is unavailable"):
+            await store.attach_file_content(
+                workspace_id=workspace.id,
+                file_id=file_id,
+                content_hash="hash-b",
+                claim_job_id=job["id"],
+                source_revision=1,
+                source_etag="etag-b",
+            )
+    finally:
+        db.reset_source_refresh(token)
+
+
 @pytest.mark.parametrize("format", ["docx", "xlsx", "pptx", "text"])
 async def test_candidate_survives_newer_saves_but_requires_current_attempt(
     workspace, format

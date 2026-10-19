@@ -143,6 +143,7 @@ export type {
   RetryProcessingInputBody as RetryProcessingReq,
   SaveCanvasReq,
   SetModelPrefsReq,
+  ShareRedemption,
   SourceImportStatus,
   SourceUploadPolicy,
   SpendingLimitReq,
@@ -187,6 +188,7 @@ export { Privacy } from './gen/model/privacy';
 export { SearchKind } from './gen/model/searchKind';
 export { ShareRole } from './gen/model/shareRole';
 export { Slot } from './gen/model/slot';
+export { StorageFullBy } from './gen/model/storageFullBy';
 export { StorageUsageLevel } from './gen/model/storageUsageLevel';
 export { SubscriptionStatus } from './gen/model/subscriptionStatus';
 export { UserColor } from './gen/model/userColor';

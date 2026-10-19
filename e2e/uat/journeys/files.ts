@@ -288,14 +288,17 @@ export async function openFile(
   );
 }
 
+/** `uploader` uploads from its browser and pays for the file (uploader pays,
+ * Sam 2026-10-18): the run's owner unless another editor of the workspace. */
 export async function upload(
   run: UatRun,
   workspaceId: string,
   name: string,
   bytes: Buffer,
-  storeOnly = false
+  storeOnly = false,
+  uploader: Actor = run.owner
 ) {
-  const page = run.owner.page;
+  const page = uploader.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page
     .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
@@ -375,7 +378,7 @@ export async function upload(
   const stored = await run.blob(key);
   assert.equal(stored.sha256, sha256(bytes));
   assert.equal(stored.size, bytes.length);
-  assert.equal(row.user_id, run.owner.id);
+  assert.equal(row.user_id, uploader.id);
   if (storeOnly) {
     assert.equal(row.parse_mode, 'none');
     assert.equal(row.status, 'ready');
@@ -393,7 +396,7 @@ export async function upload(
   assert.equal(reservedRows[0]?.pending, 0);
   const storage = await run.query(
     'SELECT reserved_bytes,used_bytes FROM user_storage WHERE user_id=%s',
-    [run.owner.id]
+    [uploader.id]
   );
   assert.equal(Number(storage[0]?.reserved_bytes), 0);
   assert(Number(storage[0]?.used_bytes) >= bytes.length);

@@ -667,6 +667,16 @@ def _pipeline_source_cancellation(
     owner_user_id = str(workspace[0] or "")
     actor_user_id = str(payload.get("actorUserId") or "")
     expected_user_ids = {str(owner_user_id or ""), actor_user_id}
+    # The source's payer (its uploader or creator, uploader pays) is set once
+    # at insert, so an unlocked read is stable; its account joins the fence
+    # beside the owner and the actor. A missing source fails further down.
+    if material_id:
+        cur.execute("SELECT owner_user_id FROM materials WHERE id=%s", (material_id,))
+    else:
+        cur.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
+    payer = cur.fetchone()
+    if payer is not None and payer[0]:
+        expected_user_ids.add(str(payer[0]))
     if "" in expected_user_ids:
         return (
             "failed",
@@ -719,9 +729,17 @@ def _pipeline_source_cancellation(
         membership = cur.fetchone()
         shared_editor = False
         if payload.get("sourceRefresh") is True:
+            # A link workspace reaches a nonmember only through a redeemed
+            # link (Go's workspaceRoles); public is open, members always pass.
             cur.execute(
-                "SELECT privacy IN ('link','public') AND share_role='editor' FROM workspaces WHERE id=%s",
-                (workspace_id,),
+                """SELECT w.privacy IN ('link','public') AND w.share_role='editor'
+                  AND (w.privacy='public'
+                    OR EXISTS(SELECT 1 FROM workspace_members m
+                      WHERE m.workspace_id=w.id AND m.user_id=%s)
+                    OR EXISTS(SELECT 1 FROM workspace_link_grants g
+                      WHERE g.workspace_id=w.id AND g.user_id=%s))
+                FROM workspaces w WHERE w.id=%s""",
+                (actor_user_id, actor_user_id, workspace_id),
             )
             shared_editor = bool(cur.fetchone()[0])
         if not shared_editor and (membership is None or str(membership[0]) != "editor"):
@@ -746,11 +764,10 @@ def _pipeline_source_cancellation(
     source = cur.fetchone()
     if source is None:
         return ("failed", "lifecycle", "source_deleted", "source deleted")
-    source_workspace, source_owner, current_revision, current_etag = source
-    if (
-        str(source_workspace or "") != workspace_id
-        or str(source_owner or "") != owner_user_id
-    ):
+    # files.user_id is the uploader who pays (uploader pays), not the
+    # workspace owner, so only the workspace has to match.
+    source_workspace, _, current_revision, current_etag = source
+    if str(source_workspace or "") != workspace_id:
         return ("failed", "lifecycle", "source_deleted", "source moved")
     if payload.get("sourceRefresh") is True:
         if payload.get("sourcePublishedCheckpoint") == payload.get("sourceCheckpoint"):

@@ -70,6 +70,13 @@ type NotificationParams struct {
 // notificationWindow is how far back the list and the unread count reach.
 const notificationWindow = `n.at > now() - interval '30 days'`
 
+// notificationWorkspaceSQL is a notice's live workspace column, blank once
+// the recipient can no longer reach the workspace (Sam 2026-10-19). A pending
+// invite keeps it: it is how the invitee learns which workspace it is.
+func notificationWorkspaceSQL(column string) string {
+	return `CASE WHEN n.workspace_invite_id IS NULL AND ` + lostAccessSQL("n.workspace_id", "$1") + ` THEN '' ELSE COALESCE(` + column + `,'') END`
+}
+
 // ListNotifications returns the newest notifications of the last 30 days first. The cursor is an
 // opaque encoding of the complete (at,id) ordering tuple, so rows sharing a
 // timestamp cannot be skipped or repeated when new notifications arrive.
@@ -94,7 +101,7 @@ func (s *Store) ListNotifications(ctx context.Context, userID string, limit int,
 
 	rows, err := s.pool.Query(ctx, `SELECT n.id, n.kind, n.data, COALESCE(n.href,''),
 			n.at, n.read_at, COALESCE(n.workspace_id,''), COALESCE(n.workspace_invite_id,''),
-			COALESCE(w.name,''), COALESCE(w.icon_id,''),
+			`+notificationWorkspaceSQL("w.name")+`, `+notificationWorkspaceSQL("w.icon_id")+`,
 			COALESCE('/icons/' || NULLIF(m.avatar_icon_id,'') || '.svg', m.avatar_url,'')
 		FROM notifications n
 		LEFT JOIN workspaces w ON w.id=n.workspace_id

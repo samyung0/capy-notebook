@@ -294,6 +294,11 @@ const appRoutes = [
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
+  createRoute({
+    component: lazyPage(() => import('@/routes/OpenShareLink')),
+    getParentRoute: () => authShellRoute,
+    path: '/open/$token',
+  }),
   blocksRedirect('/create'),
   blocksRedirect('/quizzes'),
   blocksRedirect('/flashcards'),

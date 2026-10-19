@@ -607,6 +607,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if _, err := s.CloneWorkspace(ctx, clonerID, workspace.ID, WorkspaceCreate{Name: "Clone"}); err != nil {
 		t.Fatalf("public clone was not restored: %v", err)
 	}
+	redeemLink(t, s, clonerID, linkWorkspace.ID)
 	if _, err := s.WorkspaceAccess(ctx, clonerID, linkWorkspace.ID); err != nil {
 		t.Fatalf("link access was not restored: %v", err)
 	}
@@ -987,11 +988,24 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 		hostWorkspace.ID, leaverID); err != nil {
 		t.Fatal(err)
 	}
+	// The leaver pays for what it created in the host's workspace, so that
+	// goes with the account (uploader pays); the host's own note survives with
+	// its attribution anonymized.
 	material, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: leaverID, WorkspaceID: hostWorkspace.ID,
+		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Leaver note",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostMaterial, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: hostID, WorkspaceID: hostWorkspace.ID,
 		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Surviving note",
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET updated_by=$2 WHERE id=$1`, hostMaterial.ID, leaverID); err != nil {
 		t.Fatal(err)
 	}
 	inviteID := uid("inv")
@@ -1058,7 +1072,8 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 		{name: "mail", query: `SELECT count(*) FROM email_outbox WHERE id=$1`, args: []any{mailID}},
 		{name: "edit incidents", query: `SELECT count(*) FROM edit_incidents WHERE user_id=$1`, args: []any{leaverID}},
 		{name: "host workspace", query: `SELECT count(*) FROM workspaces WHERE id=$1`, args: []any{hostWorkspace.ID}, want: 1},
-		{name: "host material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{material.ID}, want: 1},
+		{name: "leaver material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{material.ID}},
+		{name: "host material", query: `SELECT count(*) FROM materials WHERE id=$1`, args: []any{hostMaterial.ID}, want: 1},
 	} {
 		var got int
 		if err := s.pool.QueryRow(ctx, check.query, check.args...).Scan(&got); err != nil {
@@ -1068,13 +1083,13 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 			t.Errorf("%s rows=%d, want %d", check.name, got, check.want)
 		}
 	}
-	var author *string
-	if err := s.pool.QueryRow(ctx, `SELECT created_by FROM materials WHERE id=$1`,
-		material.ID).Scan(&author); err != nil {
+	var editor *string
+	if err := s.pool.QueryRow(ctx, `SELECT updated_by FROM materials WHERE id=$1`,
+		hostMaterial.ID).Scan(&editor); err != nil {
 		t.Fatal(err)
 	}
-	if author != nil {
-		t.Fatalf("surviving material author=%q, want anonymized", *author)
+	if editor != nil {
+		t.Fatalf("surviving material editor=%q, want anonymized", *editor)
 	}
 	var name string
 	var email *string

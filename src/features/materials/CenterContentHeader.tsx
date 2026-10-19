@@ -513,9 +513,7 @@ export function Header({
             {!compact && (
               <>
                 <OfflineStatus />
-                <WorkspaceStatusButton
-                  workspaceId={standalone ? '' : workspaceId}
-                />
+                <WorkspaceStatusButton />
               </>
             )}
           </div>
@@ -550,9 +548,7 @@ export function Header({
           <>
             <OfflineStatus />
             <EditorSaveStatus layout="default" store={editorStatus} />
-            <WorkspaceStatusButton
-              workspaceId={standalone ? '' : workspaceId}
-            />
+            <WorkspaceStatusButton />
           </>
         )}
       </div>

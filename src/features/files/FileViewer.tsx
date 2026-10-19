@@ -2,12 +2,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { fileLinksQuery, useFileLinks, useWorkspace } from '@/api/hooks';
-import {
-  AccountState,
-  type Region,
-  type SourceFile,
-  StorageUsageLevel,
-  type ViewableFile,
+import type {
+  Region,
+  SourceFile,
+  StorageFullBy,
+  ViewableFile,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
@@ -17,7 +16,12 @@ import { ImageViewer } from '@/features/files/ImageViewer';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
-import { FileEmpty, FileError, FileLoading } from './FileStates';
+import {
+  FileEmpty,
+  FileError,
+  FileLoading,
+  StorageFullBanner,
+} from './FileStates';
 import {
   fileExt,
   IMAGE_MIN_ZOOM,
@@ -228,11 +232,7 @@ function FileViewerContent({
   }
   return (
     <ResolvedFileView
-      annotationsReadOnly={
-        frozen ||
-        workspace?.storageOwnerState === AccountState.over_quota_frozen ||
-        workspace?.storageOwnerUsage === StorageUsageLevel.full
-      }
+      annotationsReadOnly={frozen || !!links.storageFull}
       canEdit={canEdit}
       file={{ ...file, url: links.url }}
       imageZoom={imageZoom}
@@ -241,6 +241,7 @@ function FileViewerContent({
       onRetryLinks={() => refetchLinks()}
       page={page}
       regions={regions}
+      storageFull={links.storageFull}
     />
   );
 }
@@ -273,17 +274,19 @@ function ResolvedFileView({
   onRetryLinks,
   page,
   regions,
+  storageFull,
 }: Omit<FileViewerProps, 'citation' | 'file' | 'imageZoom'> & {
   /** PDF marks are open to every reader but not to a frozen account or while
-   * the owner is at its storage limit. */
+   * the file's payer is at its storage limit. */
   annotationsReadOnly: boolean;
-  /** Content controls follow the workspace capabilities, which a frozen
-   * account (the reader's or the owner's) or an owner at its storage limit
-   * turns off. */
+  /** Content controls follow the workspace capabilities, which the reader's
+   * frozen account turns off. */
   canEdit: boolean;
   file: ViewableFile;
   imageZoom: number;
   onRetryLinks: () => Promise<unknown>;
+  /** The file's payer (its uploader) is at its storage limit. */
+  storageFull?: StorageFullBy;
 }) {
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const retryPreview = async () => {
@@ -294,7 +297,7 @@ function ResolvedFileView({
   const ext = fileExt(file.name);
 
   if (file.kind === 'pdf' || ext === 'pdf') {
-    return lazyView(
+    const pdf = lazyView(
       <PdfView
         annotationFile={file}
         annotationsReadOnly={annotationsReadOnly}
@@ -304,6 +307,13 @@ function ResolvedFileView({
         regions={regions}
         url={file.url}
       />
+    );
+    if (!storageFull) return pdf;
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <StorageFullBanner by={storageFull} />
+        <div className="min-h-0 flex-1">{pdf}</div>
+      </div>
     );
   }
 

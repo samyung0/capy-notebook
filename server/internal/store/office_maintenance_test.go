@@ -6,6 +6,7 @@ import (
 	"errors"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -331,6 +332,9 @@ func TestExportOnlyPublication(t *testing.T) {
 	candidate, err := s.ClaimSourceRefresh(ctx, file, job.JobID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`^sources/source_[0-9a-f]{32}$`).MatchString(candidate.SourceBlobPath) {
+		t.Fatalf("refresh candidate key = %q, want a 128-bit id", candidate.SourceBlobPath)
 	}
 	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b"}
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {

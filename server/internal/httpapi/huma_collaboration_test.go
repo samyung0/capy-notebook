@@ -140,9 +140,8 @@ func TestInviteCreateRequestUsesPrivateIdentifier(t *testing.T) {
 }
 
 func TestWorkspaceAccessMetadataDistinguishesEditorsAndPublicViewers(t *testing.T) {
-	active := store.AccountStatus{State: store.AccountActive}
 	editor := apimodel.FromWorkspaceAccess(
-		store.Workspace{ID: "ws_1"}, store.RoleEditor, store.RoleEditor, active, false)
+		store.Workspace{ID: "ws_1"}, store.RoleEditor, store.RoleEditor, false)
 	if editor.IsOwner || editor.Role == nil || *editor.Role != store.RoleEditor ||
 		!editor.Capabilities.CanEdit {
 		t.Fatalf("editor access metadata is incorrect: %#v", editor)
@@ -150,33 +149,24 @@ func TestWorkspaceAccessMetadataDistinguishesEditorsAndPublicViewers(t *testing.
 
 	// A share-role editor holds content controls without a membership role.
 	shared := apimodel.FromWorkspaceAccess(
-		store.Workspace{ID: "ws_1"}, "", store.RoleEditor, active, false)
+		store.Workspace{ID: "ws_1"}, "", store.RoleEditor, false)
 	if shared.IsOwner || shared.Role != nil || !shared.Capabilities.CanEdit ||
 		shared.Capabilities.CanManageMembers {
 		t.Fatalf("share editor access metadata is incorrect: %#v", shared)
 	}
 
-	public := apimodel.FromWorkspaceAccess(store.Workspace{ID: "ws_2"}, "", "", store.AccountStatus{}, false)
+	public := apimodel.FromWorkspaceAccess(store.Workspace{ID: "ws_2"}, "", "", false)
 	if public.IsOwner || public.Role != nil || !public.Capabilities.CanView ||
 		public.Capabilities.CanEdit {
 		t.Fatalf("public viewer access metadata is incorrect: %#v", public)
 	}
 
-	// Frozen is read-only both ways: the requester's own account, and the
-	// owner's for every member.
+	// A frozen requester edits nowhere and cannot clone; the owner's state
+	// narrows only the items it pays for (uploader pays).
 	frozenActor := apimodel.FromWorkspaceAccess(
-		store.Workspace{ID: "ws_1"}, store.RoleEditor, store.RoleEditor, active, true)
-	frozenOwner := apimodel.FromWorkspaceAccess(
-		store.Workspace{ID: "ws_1"}, store.RoleEditor, store.RoleEditor,
-		store.AccountStatus{State: store.AccountOverQuotaFrozen}, false)
-	grace := apimodel.FromWorkspaceAccess(
-		store.Workspace{ID: "ws_1"}, store.RoleEditor, store.RoleEditor,
-		store.AccountStatus{State: store.AccountOverQuotaGrace}, false)
-	if frozenActor.Capabilities.CanEdit || frozenActor.CanClone ||
-		frozenOwner.Capabilities.CanEdit || !frozenOwner.CanClone ||
-		!grace.Capabilities.CanEdit {
-		t.Fatalf("frozen capabilities: actor %#v owner %#v grace %#v",
-			frozenActor.Capabilities, frozenOwner.Capabilities, grace.Capabilities)
+		store.Workspace{ID: "ws_1"}, store.RoleEditor, store.RoleEditor, true)
+	if frozenActor.Capabilities.CanEdit || frozenActor.CanClone {
+		t.Fatalf("frozen actor capabilities: %#v", frozenActor.Capabilities)
 	}
 }
 

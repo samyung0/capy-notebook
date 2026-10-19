@@ -14,15 +14,15 @@ func (s *Store) createReadyFile(ctx context.Context, wsID, createdBy, name, kind
 	}
 	defer tx.Rollback(ctx)
 
-	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
-	if err != nil {
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy); err != nil {
 		return File{}, err
 	}
 	chapterID, err = resolveUploadChapterID(ctx, tx, wsID, chapterID, chapterName)
 	if err != nil {
 		return File{}, err
 	}
-	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes); err != nil {
+	// The uploader pays.
+	if err := s.gateStorageTx(ctx, tx, createdBy, sizeBytes); err != nil {
 		return File{}, err
 	}
 	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
@@ -33,7 +33,7 @@ func (s *Store) createReadyFile(ctx context.Context, wsID, createdBy, name, kind
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, blob_path)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10)`,
-		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, blobPath); err != nil {
+		fileID, wsID, createdBy, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, blobPath); err != nil {
 		return File{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

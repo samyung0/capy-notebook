@@ -215,8 +215,6 @@ export const workspaces: Workspace[] = [
     role: 'owner',
     sharePath: '/w/ws_bio.WsDtCIGPdoZOSZL0',
     shareRole: 'viewer',
-    storageOwnerState: 'active',
-    storageOwnerUsage: 'ok',
     tags: ct('tag_1', 'tag_2'),
   },
   {
@@ -243,8 +241,6 @@ export const workspaces: Workspace[] = [
     role: 'owner',
     sharePath: '/w/ws_calc.UZ6Qw4jRVADIzzI1',
     shareRole: 'viewer',
-    storageOwnerState: 'active',
-    storageOwnerUsage: 'ok',
     tags: ct('tag_3', 'tag_4'),
   },
   {
@@ -271,8 +267,6 @@ export const workspaces: Workspace[] = [
     role: 'owner',
     sharePath: '/w/ws_hist.bVGQ2CHqnMetPMgB',
     shareRole: 'viewer',
-    storageOwnerState: 'active',
-    storageOwnerUsage: 'ok',
     tags: ct('tag_5', 'tag_6', 'tag_war'),
   },
   {
@@ -299,8 +293,6 @@ export const workspaces: Workspace[] = [
     role: 'owner',
     sharePath: '/w/ws_chem.c5KOZGPxH2RwP08Z',
     shareRole: 'viewer',
-    storageOwnerState: 'active',
-    storageOwnerUsage: 'ok',
     tags: ct('tag_7'),
   },
   {
@@ -327,8 +319,6 @@ export const workspaces: Workspace[] = [
     role: 'owner',
     sharePath: '/w/ws_eng.-sR-YQ2vLCQXEe2Q',
     shareRole: 'viewer',
-    storageOwnerState: 'active',
-    storageOwnerUsage: 'ok',
     tags: ct('tag_8', 'tag_9'),
   },
 ];
@@ -2193,6 +2183,7 @@ files
     trash.push({
       file,
       item: {
+        canRestore: true,
         episodeId: `episode_${file.id}`,
         fileKind: file.kind,
         id: file.id,
@@ -2217,6 +2208,7 @@ trash.unshift(
     .filter(({ trashed }) => trashed)
     .map(({ material }) => ({
       item: {
+        canRestore: true,
         episodeId: `episode_${material.id}`,
         id: material.id,
         kind: 'material' as const,

@@ -206,6 +206,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	if _, err := s.UpdateStandaloneMaterialPrivacy(ctx, ownerID, note.ID, "", PrivacyLink); err != nil {
 		t.Fatal(err)
 	}
+	redeemLink(t, s, readerID, note.ID)
 	role, err := s.MaterialEffectiveRole(ctx, readerID, quiz.ID)
 	if err != nil || role != RoleViewer {
 		t.Fatalf("link-shared note should expose its quiz to readers: role=%q err=%v", role, err)
@@ -300,7 +301,8 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 // A pasted quiz or flashcard block becomes the target note's own: its own row
 // keeps its id unless the block asks for a copy, another readable note's row
 // (live or trashed) is copied with its images and fresh card ids and charged
-// to the target's payer, every duplicate block gets a copy of its own, and an
+// to the target note's payer (Sam 2026-10-19, as its images are), every
+// duplicate block gets a copy of its own, and an
 // unreadable or purged one is left out.
 func TestAdoptEmbeddedMaterials(t *testing.T) {
 	s := openMaterialTestStore(t)
@@ -433,7 +435,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		t.Fatalf("copied card image = %+v, want its own copy", copiedCards[0].Image)
 	}
 	if f.used(ownerID) <= usedBefore+100 || f.used(editorID) != editorBefore {
-		t.Fatalf("charged owner %d, editor %d; want the target's payer charged",
+		t.Fatalf("charged owner %d, editor %d; want the target note's payer charged",
 			f.used(ownerID)-usedBefore, f.used(editorID)-editorBefore)
 	}
 
@@ -475,8 +477,8 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, ownerID, limit); err != nil {
 		t.Fatal(err)
 	}
-	// Over the quota the copy is left out and the call says so; the own row
-	// still answers.
+	// Over the note payer's quota the copy is left out and the call says so;
+	// the own row still answers.
 	if list, refused, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, blocks(own.ID, quiz.ID)); err != nil || !refused ||
 		list[0] != own.ID || list[1] != "" {
 		t.Fatalf("adopt over quota = %v refused %v, %v", list, refused, err)
@@ -748,6 +750,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	if _, err := s.UpdateStandaloneMaterialPrivacy(ctx, ownerID, note.ID, "", PrivacyLink); err != nil {
 		t.Fatal(err)
 	}
+	redeemLink(t, s, readerID, note.ID)
 	clone, err := s.CloneMaterial(ctx, readerID, note.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)

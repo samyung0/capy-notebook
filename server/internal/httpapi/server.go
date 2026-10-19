@@ -590,7 +590,7 @@ type chatAccess struct {
 	// editor) unless a frozen account makes the workspace read-only: it unlocks
 	// the pending-sources notice. role is what the agent-tool
 	// operations table is evaluated from; readOnly (frozen) and full (the
-	// owner at its storage limit) narrow it.
+	// actor, who pays for what the agent creates, at its storage limit) narrow it.
 	canEdit  bool
 	readOnly bool
 	full     bool
@@ -599,7 +599,7 @@ type chatAccess struct {
 
 // assertWSChat admits any effective role (owner, member, or link/public
 // visitor) and reports what the actor may do beyond chatting. Chat stays open
-// to frozen accounts; a frozen actor or owner makes the turn read-only.
+// to frozen accounts; a frozen actor makes the turn read-only.
 func (a *api) assertWSChat(w http.ResponseWriter, r *http.Request, wsID string) (chatAccess, bool) {
 	effective, err := a.s.WorkspaceEffectiveRole(r.Context(), uid(r), wsID)
 	if err != nil {
@@ -608,16 +608,14 @@ func (a *api) assertWSChat(w http.ResponseWriter, r *http.Request, wsID string) 
 	}
 	readOnly, full := false, false
 	if store.RoleCanEdit(effective) {
-		ownerID, err := a.s.WorkspaceOwnerID(r.Context(), wsID)
-		if err != nil {
+		// Only the actor's own account narrows the turn: what the agent creates
+		// is charged to the actor (uploader pays), and edits to others' items
+		// are gated per item.
+		if readOnly, err = a.readOnly(r.Context(), uid(r)); err != nil {
 			a.fail(w, err)
 			return chatAccess{}, false
 		}
-		if readOnly, err = a.readOnly(r.Context(), ownerID); err != nil {
-			a.fail(w, err)
-			return chatAccess{}, false
-		}
-		if full, err = a.ownerFull(r.Context(), ownerID); err != nil {
+		if full, err = a.ownerFull(r.Context(), uid(r)); err != nil {
 			a.fail(w, err)
 			return chatAccess{}, false
 		}
