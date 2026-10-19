@@ -459,24 +459,6 @@ impl Client {
         }
     }
 
-    /// Reads until the server closes the socket: its close code and reason,
-    /// or None if it stays open for 5 s.
-    async fn closed(&mut self) -> Option<(u16, String)> {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            match tokio::time::timeout_at(deadline, self.ws.next())
-                .await
-                .ok()??
-            {
-                Ok(Ws::Close(frame)) => {
-                    return frame.map(|frame| (frame.code.into(), frame.reason.to_string()));
-                }
-                Ok(_) => {}
-                Err(_) => return None,
-            }
-        }
-    }
-
     /// An update typing `text` into the first block, not sent.
     fn typed(&mut self, text: &str) -> Vec<u8> {
         let before = self.doc.transact().state_vector();
@@ -1107,7 +1089,7 @@ async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconne
     );
 }
 
-//// A small update allowance (40 messages, then 20 a second; the 8 MiB byte
+/// A small update allowance (40 messages, then 20 a second; the 8 MiB byte
 /// burst, refilled 1 byte a second), so a test can spend it.
 const SMALL_ALLOWANCE: [(&str, &str); 4] = [
     ("COLLABORATION_UPDATE_BURST", "40"),
@@ -1198,7 +1180,10 @@ async fn a_user_past_their_allowance_is_timed_out_on_every_socket() {
     // Once it ends, the first socket joins its room again and resyncs the
     // whole flood; a reader sees it, and no "z".
     tokio::time::sleep(Duration::from_millis(remaining + 200)).await;
+    first.drain().await;
     first.joined(&room, &token(&room, &user, "write")).await;
+    // Its step 2 answers the room's step 1, and is acknowledged.
+    assert!(first.until(6).await.is_some(), "the resync is acknowledged");
     let mut reader = Client::open(server.port).await;
     reader.joined(&room, &token(&room, &user, "read")).await;
     let flooded = format!("flood{}", "b".repeat(300));
