@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 import psycopg
 import test_library
 from psycopg.types.json import Jsonb
-from test_library import CURRENT, RETAINED
+from test_library import CURRENT, OLDER
 
 from pipeline.retrieval import library, tools
 from pipeline.retrieval.tools import ToolContext
@@ -162,7 +162,7 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
                 "CC BY-NC",
                 False,
             ),
-            (RETAINED, "fig_2", 5, 0, False, "older", "older", "", False),
+            (OLDER, "fig_2", 5, 0, False, "older", "older", "", False),
         ]:
             conn.execute(insert, params)
         conn.execute(
