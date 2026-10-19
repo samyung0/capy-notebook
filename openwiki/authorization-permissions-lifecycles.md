@@ -655,15 +655,20 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   uses those values; tags travel by value, since their ids are the source
   owner's.
 - A material whose stored content the current rules refuse (a later rule
-  tightening, e.g. a void element holding text) is not copied (Epo 2026-10-20):
-  a single material clone answers 422 `material_content_unreadable`, like its
-  read; a workspace clone leaves it out with the rows it embeds (or, for a
-  broken embedded row, with its note, since neither copy may hold a reference
-  to no row) and their assets, copies everything else, and answers
-  `skippedMaterials` (files left out), for which the dialog's toast says some
-  files were not copied. The source stays as it is. A file past the cloner's
-  per-file cap is left out and counted the same way, while a single file
-  clone refuses it with `file_too_large` (Epo 2026-10-20).
+  tightening, e.g. a void element holding text), or that is over the
+  material size caps, is not copied (Epo 2026-10-20): a single material clone
+  answers 422 `material_content_unreadable`, like its read, and its dialog
+  says the item cannot be copied; a workspace clone leaves it out with the
+  rows it embeds and their assets (a note whose embedded quiz or set is
+  unreadable goes whole, counted once, never copied with the reference
+  dropped), copies everything else, and answers `skippedMaterials` (files
+  left out), for which the dialog's toast says some files were not copied.
+  The source stays as it is. A file past the cloner's per-file cap is left
+  out and counted the same way, while a single file clone refuses it with
+  `file_too_large`. The 422 belongs to routes that read stored content
+  (`storedContentError` in `huma_register.go`): content a request sends
+  answers 400 and content we generate that fails our own validation a 500,
+  which reaches Sentry.
 - Clone source content is one repeatable-read SQL snapshot. Clones never lock a
   source workspace/material as a source (a copy into the source's own workspace
   takes its row as the destination, like any write) or wait for Yjs

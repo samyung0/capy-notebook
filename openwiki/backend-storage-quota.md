@@ -441,8 +441,8 @@ ones (`failed` with a served index, parts design Q2) under the same gates;
 pending, processing, and other failed files are omitted. A file past the cloner's per-file
 plan cap (`plan_limits.source_file_max_bytes`, the upload cap) is left out of
 the copy and counted in the answer's `skippedMaterials`, as is a material
-whose stored content the current rules refuse (Epo 2026-10-20); the clone's
-other limits still refuse it whole. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
+whose stored content the current rules refuse or that is over the material
+size caps (Epo 2026-10-20); the clone's other limits still refuse it whole. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
 document instead of retaining an unrenderable source id. The material's
 current content and cloned logical assets are the storage-accounted payload.
