@@ -1793,25 +1793,6 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 	return wsID, err
 }
 
-// MaterialIDsOwnedByUser is used to invalidate live collaboration rooms when
-// an account crosses into a non-authenticating lifecycle state.
-func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id FROM materials WHERE owner_user_id=$1`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
-}
-
 // ListMaterialRefs returns the unified, workspace-scoped list of versioned
 // Plate materials, newest first.
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
