@@ -142,9 +142,13 @@ func TestAStoredNoteARuleRefusesStillListsAndOpens(t *testing.T) {
 }
 
 // A workspace clone leaves out a material whose stored content the current
-// rules refuse, with the rows it embeds, copies everything else and tells the
-// cloner how many files it left out (Epo 2026-10-20); the source stays as it
-// is. Fails if the clone refuses the whole workspace or copies the note.
+// rules refuse or that is over the material size caps, with the rows it
+// embeds and their assets; a note whose embedded quiz is unreadable goes with
+// it, counted once. It copies everything else and tells the cloner how many
+// files it left out (Epo 2026-10-20); the source stays as it is. Fails if the
+// clone refuses the whole workspace, or copies the broken note, the note
+// whose quiz is broken (its quiz block dropped), the oversized note or the
+// broken note's asset (an orphan the cloner pays for).
 func TestAWorkspaceCloneSkipsAMaterialARuleRefuses(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
@@ -165,18 +169,46 @@ func TestAWorkspaceCloneSkipsAMaterialARuleRefuses(t *testing.T) {
 		}
 		return created.ID
 	}
-	create("Readable")
-	broken := create("Unreadable")
-	if _, err := st.CreateEmbeddedMaterial(ctx, "u_owner", broken, store.EmbeddedDraft{
-		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
-	}); err != nil {
-		t.Fatal(err)
+	embed := func(note string) string {
+		t.Helper()
+		quiz, err := st.CreateEmbeddedMaterial(ctx, "u_owner", note, store.EmbeddedDraft{
+			Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return quiz.ID
+	}
+	plant := func(id, content string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `UPDATE materials SET content=$2::jsonb WHERE id=$1`, id, content); err != nil {
+			t.Fatal(err)
+		}
 	}
 	stored := `{"schemaVersion":1,"value":[{"type":"p","id":"p1","children":[{"text":"say "},` +
 		`{"type":"mention","value":"Ada","children":[{"text":"hidden"}]},{"text":""}]}]}`
-	if _, err := pool.Exec(ctx, `UPDATE materials SET content=$2::jsonb WHERE id=$1`, broken, stored); err != nil {
+	create("Readable")
+	broken := create("Unreadable")
+	embed(broken)
+	plant(broken, stored)
+	if _, err := pool.Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type,
+		 size_bytes, status, completed_at)
+		VALUES ('asset_unreadable_clone', $1, $2, 'u_owner', 'u_owner', 'a.png', 'image', 'editor/asset_unreadable_clone',
+		 'image/png', 10, 'ready', now())`, source.ID, broken); err != nil {
 		t.Fatal(err)
 	}
+	plant(embed(create("Host of a broken quiz")), stored)
+	// Over the material node cap (Epo 2026-10-20: counts as refused).
+	paragraphs := make([]map[string]any, materialdoc.MaxNodes/2+1)
+	for i := range paragraphs {
+		paragraphs[i] = map[string]any{"type": "p", "id": fmt.Sprintf("p%d", i), "children": []any{map[string]any{"text": ""}}}
+	}
+	oversized, err := json.Marshal(map[string]any{"schemaVersion": 1, "value": paragraphs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plant(create("Oversized"), string(oversized))
 
 	rec := doAsUser(t, h, http.MethodPost, "/api/workspaces/"+source.ID+"/clone", "u_owner", map[string]any{"name": "Copy"})
 	if rec.Code != http.StatusCreated {
@@ -192,8 +224,8 @@ func TestAWorkspaceCloneSkipsAMaterialARuleRefuses(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, body.Workspace.ID)
 	})
-	if body.SkippedMaterials != 1 {
-		t.Errorf("skippedMaterials = %d, want 1", body.SkippedMaterials)
+	if body.SkippedMaterials != 3 {
+		t.Errorf("skippedMaterials = %d, want 3 (each note counted once)", body.SkippedMaterials)
 	}
 	var titles []string
 	if err := pool.QueryRow(ctx, `SELECT COALESCE(array_agg(title ORDER BY title), '{}') FROM materials WHERE workspace_id=$1`,
@@ -202,6 +234,14 @@ func TestAWorkspaceCloneSkipsAMaterialARuleRefuses(t *testing.T) {
 	}
 	if len(titles) != 1 || titles[0] != "Readable" {
 		t.Errorf("the copy holds %q, want only the readable note", titles)
+	}
+	var assets int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE workspace_id=$1`,
+		body.Workspace.ID).Scan(&assets); err != nil {
+		t.Fatal(err)
+	}
+	if assets != 0 {
+		t.Errorf("the copy holds %d editor assets, want none (the broken note's stays behind)", assets)
 	}
 	var kept string
 	if err := pool.QueryRow(ctx, `SELECT content::text FROM materials WHERE id=$1`, broken).Scan(&kept); err != nil {

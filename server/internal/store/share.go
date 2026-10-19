@@ -899,13 +899,18 @@ func (s *Store) snapshotWorkspaceForClone(
 		return workspaceCloneSnapshot{}, err
 	}
 	rows.Close()
-	// A material whose stored content the current rules refuse is left out,
-	// and the cloner is told how many files were (Epo 2026-10-20); the source
-	// stays as it is. A note and the rows it embeds go together: a copy of
-	// one without the other would hold a reference to no row.
+	// A material whose stored content the current rules refuse, or that is
+	// over the material size caps, is left out, and the cloner is told how
+	// many files were (Epo 2026-10-20); the source stays as it is. A note and
+	// the rows it embeds go together, counted once: a copy of one without the
+	// other would hold a reference to no row.
 	left := map[string]bool{}
 	for _, m := range snapshot.materials {
-		if _, err := materialdoc.Parse(m.content); errors.Is(err, materialdoc.ErrInvalid) {
+		metrics, err := materialdoc.Metrics(m.content)
+		if err == nil {
+			err = metrics.LimitError()
+		}
+		if errors.Is(err, materialdoc.ErrInvalid) {
 			left[m.material.ID] = true
 		} else if err != nil {
 			return workspaceCloneSnapshot{}, err
