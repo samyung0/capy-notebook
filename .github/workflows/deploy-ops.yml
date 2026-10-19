@@ -33,7 +33,7 @@ jobs:
     outputs:
       revision: ${{ steps.resolve.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: main
       - name: Resolve the revision the backend already serves
@@ -68,7 +68,7 @@ jobs:
       COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_OPS_RESOURCE_UUID }}
       COOLIFY_MAIN_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ needs.resolve_revision.outputs.revision }}
           fetch-depth: 0
