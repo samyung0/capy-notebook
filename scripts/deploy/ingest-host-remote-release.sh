@@ -271,3 +271,7 @@ for image in "$project-parser" "$project-pipeline"; do
     [[ "$keep" == *" $tag "* ]] || docker rmi "$image:$tag" >/dev/null || true
   done
 done
+# Each release builds on the host, so BuildKit cache grows with every deploy
+# and every manual build. Cache from the last three days stays so the next
+# release builds warm; a failed prune leaves the activated release alone.
+docker builder prune -f --filter until=72h >/dev/null || true
