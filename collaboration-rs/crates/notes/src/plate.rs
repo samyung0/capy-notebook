@@ -574,13 +574,20 @@ pub fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
 
 /// Whether a material reference carries an imported fence body (`pending`,
 /// the quiz's answer keys), which no stored document may hold: its room
-/// refuses to load, so no reader receives it, as Go's reads refuse it.
+/// refuses to load, so no reader receives it. A `pending` held at null is
+/// absent, as the store and Go's validator read it.
 pub fn holds_pending_reference<T: ReadTxn>(txn: &T) -> bool {
     any_element(txn, |element| {
         string_attribute(element, "type").as_deref() == Some(crate::material::MATERIAL_REF_TYPE)
             && element
                 .entry_item("pending")
-                .is_some_and(|entry| !entry.is_deleted())
+                .filter(|entry| !entry.is_deleted())
+                .is_some_and(|entry| {
+                    !matches!(
+                        entry_value("pending", entry),
+                        Ok(Any::Null | Any::Undefined)
+                    )
+                })
     })
 }
 

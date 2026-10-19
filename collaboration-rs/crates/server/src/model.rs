@@ -58,8 +58,8 @@ impl Model {
 
     /// How the room serves its stored document of material kind `kind` (Epo
     /// 2026-10-13): one holding a reference's imported fence body (the quiz's
-    /// answer keys) is refused, as Go's reads refuse it, so no reader receives
-    /// it; one the store would refuse (a type the embed catalog does not
+    /// answer keys, a `pending` not held at null) is refused, so no reader
+    /// receives it; one the store would refuse (a type the embed catalog does not
     /// list, or not for this kind, a closed element's extra key, a reference
     /// without its row, ...) or, in this quiz document, a question block kind
     /// the room does not admit, loads read-only: the reason, which the load
@@ -256,6 +256,19 @@ mod tests {
         });
         assert!(note_stored("note", &[body.clone(), fence]).is_err());
         assert_eq!(note_stored("note", &[body]), Ok(None));
+    }
+
+    /// A reference holding `pending` at null carries no fence body: the store
+    /// and Go accept it, so its room loads writable. Fails if the load check
+    /// counts the null entry and refuses a note every save path accepts.
+    #[test]
+    fn a_null_pending_loads() {
+        let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
+        let reference = json!({
+            "type": "material_ref", "id": "r", "materialId": "mat_quiz", "refKind": "quiz",
+            "pending": null, "children": [{ "text": "" }],
+        });
+        assert_eq!(note_stored("note", &[body, reference]), Ok(None));
     }
 
     /// A stored Plate document the store would refuse loads read-only
