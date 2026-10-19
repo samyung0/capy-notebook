@@ -188,3 +188,45 @@ it('sends a delete set larger than a piece in pieces after the structs', () => {
   expect(result).toEqual(whole);
   expect(receiver.getText('t').length).toBe(1500);
 });
+
+it('keeps each new block and the properties written with it in one piece', () => {
+  const editor = new Y.Doc();
+  let update: Uint8Array = new Uint8Array();
+  editor.on('update', (next: Uint8Array) => {
+    update = next;
+  });
+  editor.transact(() => {
+    const content = editor.get('content', Y.XmlText);
+    for (let index = 0; index < 300; index += 1) {
+      // As slate-yjs writes an element: the type, its properties, its text.
+      const block = new Y.XmlText();
+      block.setAttribute('type', 'p');
+      block.setAttribute('id', `b${index}`);
+      block.insert(0, `line ${index} `.repeat(1 + (index % 37)));
+      content.insertEmbed(content.length, block);
+    }
+  });
+  const pieces = splitUpdate(update, 4096);
+  expect(pieces.length).toBeGreaterThan(10);
+  for (const piece of pieces) {
+    const items = Y.decodeUpdate(piece).structs.filter(
+      (struct): struct is Y.Item => struct instanceof Y.Item
+    );
+    for (const block of items.filter(
+      (item) => item.content instanceof Y.ContentType
+    )) {
+      const properties = items.filter(
+        (item) =>
+          item.parentSub !== null &&
+          item.parent instanceof Y.ID &&
+          Y.compareIDs(item.parent, block.id)
+      );
+      expect(properties.map((item) => item.parentSub).sort()).toEqual([
+        'id',
+        'type',
+      ]);
+    }
+  }
+  const { result, whole } = applyInOrder(new Y.Doc(), update, pieces);
+  expect(result).toEqual(whole);
+});

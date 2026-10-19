@@ -4,6 +4,7 @@ import { authHeaders } from '@/api/auth';
 import type { SourceFile } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
+import { useCollaborationHeld } from '@/features/collaboration/held';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
@@ -475,15 +476,17 @@ export function useOfficeRuntime({
       });
   }, [editable, frameBoot, frameLoaded, mode, post, source.doc]);
 
-  // The editor's update still going to the room in pieces.
+  // The tab holds back its collaboration messages (pacing, pieces, a
+  // timeout): the host takes no edits meanwhile (`CollaborationHold`).
+  const sending = useCollaborationHeld();
   useEffect(() => {
     if (frameLoaded && mode === 'edit')
       post({
-        pending: source.sending,
+        pending: sending,
         type: 'sending',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [frameBoot, frameLoaded, mode, post, source.sending]);
+  }, [frameBoot, frameLoaded, mode, post, sending]);
 
   useEffect(() => {
     const doc = source.doc;

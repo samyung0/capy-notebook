@@ -40,8 +40,8 @@ import {
 import './xlsx-runtime.css';
 
 /**
- * The largest update one XLSX clear may send: the collaboration server's
- * per-message payload limit (`COLLABORATION_MAX_PAYLOAD_BYTES`, 2 MiB).
+ * The largest update one XLSX clear may send: one piece of what Capy sends
+ * the collaboration server (`PIECE_BYTES`, src/features/collaboration/pieces.ts).
  */
 const OFFICE_MESSAGE_MAX_BYTES = 2 * 1024 * 1024;
 

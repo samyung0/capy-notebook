@@ -1488,18 +1488,29 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(big)).toEqual([]);
   });
 
-  it('keeps a group whose later piece is refused as too fast, until a later page load', async () => {
-    const big = 'u_fast:material:mat_big';
+  /** A group of one 5 MiB row (three pieces): its key, text and update. */
+  async function bigGroup(key: string) {
     const doc = new Y.Doc();
     let update: Uint8Array = new Uint8Array();
     doc.once('update', (bytes: Uint8Array) => {
       update = bytes;
     });
-    doc.getText('content').insert(0, 'y'.repeat(5 * 1024 * 1024));
-    await putDrafts([
-      draft(`big-${crypto.randomUUID()}`, { data: update, key: big }),
-    ]);
+    const text = 'y'.repeat(5 * 1024 * 1024);
+    doc.getText('content').insert(0, text);
+    await putDrafts([draft(`big-${crypto.randomUUID()}`, { data: update, key })]);
     requests.length = 0;
+    return text;
+  }
+
+  /** The first request's body and the rows left, applied in order. */
+  async function heldText(key: string) {
+    const room = new Y.Doc();
+    Y.applyUpdate(room, requests[0].body);
+    for (const row of await readDrafts(key)) Y.applyUpdate(room, row.data);
+    return room.getText('content').toString();
+  }
+
+  function storeNext() {
     fetchDrafts.mockImplementationOnce(async (input, init) => {
       requests.push({
         body: new Uint8Array(init?.body as ArrayBuffer),
@@ -1508,13 +1519,37 @@ describe('the draft sweep sending', () => {
       });
       return Response.json({ type: 'checkpoint-persisted' });
     });
+  }
+
+  it('retries a group whose later piece is refused as too fast at the next trigger, with only its unsent pieces', async () => {
+    const big = 'u_fast:material:mat_big';
+    const text = await bigGroup(big);
+    storeNext();
     answer(429, 'too_fast');
     await sweepDrafts('u_fast', tokens(ROOM));
-    // The send stops at the refused piece; the rows stay as they were.
+    // The send stops at the refused piece; one row of the pieces not sent
+    // stays, unmarked.
     expect(requests).toHaveLength(2);
-    expect((await readDrafts(big)).map((row) => row.held ?? false)).toEqual([
-      false,
-    ]);
+    const left = await readDrafts(big);
+    expect(left.map((row) => row.held ?? false)).toEqual([false]);
+    expect(await heldText(big)).toBe(text);
+    // The next trigger of the same page load sends the rest.
+    await sweepDrafts('u_fast', tokens(ROOM), { cleanup: false });
+    expect(requests.length).toBeGreaterThan(2);
+    expect(await readDrafts(big)).toEqual([]);
+  });
+
+  it('keeps only the unsent pieces of a group whose later piece is refused', async () => {
+    const big = 'u_partial:material:mat_big';
+    const text = await bigGroup(big);
+    storeNext();
+    answer(422, 'limit');
+    await sweepDrafts('u_partial', tokens(ROOM));
+    expect(requests).toHaveLength(2);
+    const left = await readDrafts(big);
+    // The rest needs the stored piece, so it waits for the editor.
+    expect(left.map((row) => row.held ?? false)).toEqual([true]);
+    expect(await heldText(big)).toBe(text);
   });
 
   it("sends a quiz's keys with the keys token, and a file's rows one request per base", async () => {

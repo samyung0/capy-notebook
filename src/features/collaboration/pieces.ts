@@ -33,6 +33,9 @@ const SECTION_HEADER = 10;
  * - a struct over the limit whose content can be cut (text, JSON values,
  *   deleted runs) becomes runs of the same item, each after the one before
  *   (`sliceItem`, as Yjs splits items itself);
+ * - a new type (a note's block, a map) and the attribute entries written
+ *   right after it go in one piece, so no room sees a block without its
+ *   properties (`attributesOf`);
  * - the delete set comes last, after every struct it may name.
  * An update within the limit is returned as it is.
  */
@@ -91,12 +94,20 @@ export function splitUpdate(
       const queue = queues.get(client)!;
       let index = next.get(client)!;
       while (index < queue.length && ready(queue[index].struct)) {
-        const { bytes, struct } = queue[index];
-        add(bytes.byteLength + (piece.hasRun(client) ? 0 : RUN_HEADER));
-        piece.addStruct(struct, bytes);
-        done.set(client, struct.id.clock + struct.length);
-        index += 1;
-        left -= 1;
+        const end = index + 1 + attributesOf(queue, index);
+        add(
+          queue
+            .slice(index, end)
+            .reduce((sum, { bytes }) => sum + bytes.byteLength, 0) +
+            (piece.hasRun(client) ? 0 : RUN_HEADER)
+        );
+        do {
+          const { bytes, struct } = queue[index];
+          piece.addStruct(struct, bytes);
+          done.set(client, struct.id.clock + struct.length);
+          index += 1;
+          left -= 1;
+        } while (index < end && ready(queue[index].struct));
         progressed = true;
       }
       next.set(client, index);
@@ -122,6 +133,27 @@ export function splitUpdate(
     }
   if (!piece.empty()) pieces.push(piece.encode());
   return pieces;
+}
+
+/** How many structs after `queue[index]`, a new type, are its attribute
+ * entries (map entries whose parent it is), as Yjs writes them right after
+ * it in the same transaction. */
+function attributesOf(queue: Encoded[], index: number): number {
+  const type = queue[index].struct;
+  if (!(type instanceof Y.Item && type.content instanceof Y.ContentType))
+    return 0;
+  let count = 0;
+  for (const { struct } of queue.slice(index + 1)) {
+    if (
+      !(struct instanceof Y.Item) ||
+      struct.parentSub === null ||
+      !(struct.parent instanceof Y.ID) ||
+      !Y.compareIDs(struct.parent, type.id)
+    )
+      break;
+    count += 1;
+  }
+  return count;
 }
 
 /** One piece being filled: a run of structs per client, then deletes. */

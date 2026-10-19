@@ -5,6 +5,7 @@ import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import {
   itemSaveState,
   UndoButtons,
@@ -81,15 +82,17 @@ export function QuizEditor({
         ) : rooms.content && rooms.keys ? (
           <div className="grid gap-6">
             {rooms.offline && <SaveBanner state={rooms.offline} />}
-            <QuizForm
-              content={rooms.content.doc}
-              keys={rooms.keys.doc}
-              name={title}
-              questions={questions}
-              quizId={quizId}
-              status={rooms.status}
-              undo={rooms.undo}
-            />
+            <CollaborationHold>
+              <QuizForm
+                content={rooms.content.doc}
+                keys={rooms.keys.doc}
+                name={title}
+                questions={questions}
+                quizId={quizId}
+                status={rooms.status}
+                undo={rooms.undo}
+              />
+            </CollaborationHold>
           </div>
         ) : (
           <Skeleton className="h-64 w-full" />

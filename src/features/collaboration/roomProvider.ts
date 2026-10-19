@@ -5,6 +5,7 @@ import {
   removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import { setHeld } from './held';
 import { splitUpdate } from './pieces';
 import {
   joinPayload,
@@ -35,10 +36,6 @@ export interface RoomProviderConfig {
   onDestroy?: () => void;
   /** The socket dropped or the room was left. */
   onDisconnect?: () => void;
-  /** An update went out in pieces (`splitUpdate`): true when its first
-   * piece leaves, false once the server acknowledged the last one (or the
-   * room closed before it did). */
-  onSending?: (pending: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
@@ -48,11 +45,21 @@ export interface RoomProviderConfig {
   url: string;
 }
 
+/** The server's notice that the user is in a timeout (`TIMEOUT_TYPE`,
+ * collaboration-rs/crates/server/src/socket.rs). */
+const TIMEOUT_TYPE = 'update-timeout';
+
 /**
  * One room over the tab's shared collaboration socket (capy-sync 1): join
  * with a token, y-sync, awareness, stateless messages, ACK-counted unsynced
  * changes, in-band token refresh. The server never echoes this client's own
  * updates or awareness.
+ *
+ * In a timeout (Epo 2026-10-18) the room sends nothing and counts as not
+ * synced; edits made meanwhile stay in the document. When it ends the
+ * channel joins again on the same socket: the room's step 1 is answered with
+ * everything this client holds, and the room is synced again once its own
+ * step 2 arrives.
  */
 export class RoomProvider implements ChannelHandler {
   readonly awareness: Awareness;
@@ -66,8 +73,10 @@ export class RoomProvider implements ChannelHandler {
   private sent = 0;
   private acknowledged = 0;
   /** The `sent` count of a split update's last piece, until it is
-   * acknowledged. */
+   * acknowledged; the tab holds back meanwhile (`setHeld`). */
   private lastPiece: number | null = null;
+  /** The user is in a timeout: nothing is sent until it ends. */
+  private paused = false;
   private readonly config: RoomProviderConfig;
   private readonly socket: CollabSocket;
   private channel: number | null = null;
@@ -118,11 +127,24 @@ export class RoomProvider implements ChannelHandler {
   }
 
   sendStateless(payload: string) {
-    if (this.isAuthenticated) this.send(MessageKind.Stateless, text(payload));
+    if (this.isAuthenticated && !this.paused)
+      this.send(MessageKind.Stateless, text(payload));
   }
 
   onSocketOpen() {
     if (this.wanted) void this.join();
+  }
+
+  /** The user's timeout ended: the same channel joins again (the room
+   * sends its step 1 and this client answers with all it holds). */
+  onResume() {
+    if (!this.paused) return;
+    this.paused = false;
+    const channel = this.channel;
+    if (channel === null) return;
+    this.isAuthenticated = false;
+    this.resetCounts();
+    void this.sendJoin(channel);
   }
 
   onSocketClose() {
@@ -157,18 +179,28 @@ export class RoomProvider implements ChannelHandler {
         const count = new Reader(payload).varUint();
         this.acknowledged += count;
         this.setUnsynced(Math.max(0, this.unsyncedChanges - count));
-        if (this.lastPiece !== null && this.acknowledged >= this.lastPiece) {
-          this.lastPiece = null;
-          this.config.onSending?.(false);
-        }
+        if (this.lastPiece !== null && this.acknowledged >= this.lastPiece)
+          this.setLastPiece(null);
         return;
       }
       case MessageKind.Awareness:
         applyAwarenessUpdate(this.awareness, payload, this);
         return;
-      case MessageKind.Stateless:
-        this.config.onStateless?.({ payload: readText(payload) });
+      case MessageKind.Stateless: {
+        const event = readText(payload);
+        if (event.includes(TIMEOUT_TYPE)) {
+          const notice = JSON.parse(event) as {
+            remainingMs?: number;
+            type?: string;
+          };
+          if (notice.type === TIMEOUT_TYPE) {
+            this.pause(notice.remainingMs ?? 0);
+            return;
+          }
+        }
+        this.config.onStateless?.({ payload: event });
         return;
+      }
       case MessageKind.TokenRequest:
         void this.config
           .token()
@@ -186,8 +218,35 @@ export class RoomProvider implements ChannelHandler {
     if (this.channel !== null)
       this.socket.send(
         message(this.channel, kind, payload),
-        kind === MessageKind.Sync
+        kind === MessageKind.Sync ||
+          kind === MessageKind.Awareness ||
+          kind === MessageKind.QueryAwareness
       );
+  }
+
+  /** The user is in a timeout for `ms`: this room sends nothing and is not
+   * synced until it ends (`onResume`). */
+  private pause(ms: number) {
+    this.socket.timeOut(ms);
+    if (this.paused) return;
+    this.paused = true;
+    this.setLastPiece(null);
+    if (this.isSynced) {
+      this.isSynced = false;
+      this.config.onSynced?.({ state: false });
+    }
+  }
+
+  private setLastPiece(piece: number | null) {
+    this.lastPiece = piece;
+    setHeld(this, piece !== null);
+  }
+
+  private resetCounts() {
+    this.setUnsynced(0);
+    this.sent = 0;
+    this.acknowledged = 0;
+    this.setLastPiece(null);
   }
 
   /** An update or step 2 reply, in pieces of at most 2 MiB in order
@@ -197,21 +256,24 @@ export class RoomProvider implements ChannelHandler {
     update: Uint8Array
   ) {
     const pieces = splitUpdate(update);
-    if (pieces.length > 1 && this.lastPiece === null)
-      this.config.onSending?.(true);
     for (const piece of pieces) {
       this.sent += 1;
       this.setUnsynced(this.unsyncedChanges + 1);
       this.send(MessageKind.Sync, syncMessage(kind, piece));
     }
     if (pieces.length > 1 || this.lastPiece !== null)
-      this.lastPiece = this.sent;
+      this.setLastPiece(this.sent);
   }
 
   private async join() {
     if (this.channel !== null || !this.wanted) return;
     const channel = this.socket.channel(this);
     this.channel = channel;
+    await this.sendJoin(channel);
+  }
+
+  /** The channel's JOIN, with a fresh token. */
+  private async sendJoin(channel: number) {
     let token: string;
     try {
       token = await this.config.token();
@@ -250,6 +312,8 @@ export class RoomProvider implements ChannelHandler {
 
   private sync(payload: Uint8Array) {
     const { body, kind } = readSync(payload);
+    // The server charged this answer's bytes to the user's allowance.
+    if (kind === SyncKind.Step2) this.socket.charge(body.byteLength);
     if (kind === SyncKind.Step1) {
       // The server asks for everything it lacks: this reply carries this
       // client's offline or restored edits, and an unplaced update's resend.
@@ -280,13 +344,8 @@ export class RoomProvider implements ChannelHandler {
     this.isAuthenticated = false;
     this.isConnected = false;
     this.isSynced = false;
-    this.setUnsynced(0);
-    this.sent = 0;
-    this.acknowledged = 0;
-    if (this.lastPiece !== null) {
-      this.lastPiece = null;
-      this.config.onSending?.(false);
-    }
+    this.paused = false;
+    this.resetCounts();
     // Remote cursors go with the room.
     const remote = [...this.awareness.getStates().keys()].filter(
       (client) => client !== this.document.clientID
@@ -296,7 +355,7 @@ export class RoomProvider implements ChannelHandler {
   }
 
   private readonly documentUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin === this || !this.isAuthenticated) return;
+    if (origin === this || !this.isAuthenticated || this.paused) return;
     this.sendUpdate(SyncKind.Update, update);
   };
 
@@ -308,7 +367,7 @@ export class RoomProvider implements ChannelHandler {
     }: { added: number[]; removed: number[]; updated: number[] },
     origin: unknown
   ) => {
-    if (!this.isAuthenticated) return;
+    if (!this.isAuthenticated || this.paused) return;
     // A change applied from the server is not sent back, except this
     // client's own state, which y-protocols re-asserts with a newer clock when
     // the server outdates it.

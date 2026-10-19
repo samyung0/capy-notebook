@@ -104,10 +104,11 @@ export type OfficeHostMessage =
    */
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'focus-left' }
   /**
-   * The editor's own update is going to the room in pieces (Epo 2026-10-18,
-   * over 2 MiB: `splitUpdate`): true when its first piece leaves, false once
-   * the room acknowledged the last one or the room closed. The XLSX editor
-   * shows a loading cursor and refuses other edits meanwhile.
+   * The tab holds back its collaboration messages (Epo 2026-10-18): frames
+   * wait for the update allowance, an update's pieces (over 2 MiB,
+   * `splitUpdate`) wait for the room's acknowledgement, or the user is in a
+   * timeout. The host already takes no input meanwhile (`CollaborationHold`);
+   * the runtime may show its own state.
    */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;

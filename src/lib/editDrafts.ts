@@ -3,6 +3,7 @@ import { USE_MSW } from '@/api/auth';
 import { isAccountForbiddenError, isApiError } from '@/api/client';
 import type { MaterialCollaborationToken } from '@/api/types';
 import { tabAllowance } from '@/features/collaboration/allowance';
+import { setHeld } from '@/features/collaboration/held';
 import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import {
@@ -800,8 +801,8 @@ function roomToken(
  *   open;
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
- * - `retry`: no answer (offline) or the rows changed: tried at the next
- *   trigger;
+ * - `retry`: no answer (offline), the rows changed, or the user is in a
+ *   timeout (`too_fast`, Epo 2026-10-18): tried at the next trigger;
  * - `outdated`: the service refuses this build's client protocol (Capy was
  *   updated): nothing more goes until the page reloads, and no row changes.
  */
@@ -830,13 +831,13 @@ function sendableGroups(rows: DraftInfo[], room: string) {
 /** POST one group to the collaboration service's `/drafts` (its WebSocket
  * URL's host) with the editor's token, merged in the drafts worker and sent
  * as its pieces of at most 2 MiB, in order, each paced under the user's
- * update allowance (Epo 2026-10-18). A piece the service refuses stops the
- * send; the pieces before it are in the room, and the rows go again whole
- * later (what the room holds already changes nothing). */
+ * update allowance (Epo 2026-10-18). A piece the service does not take stops
+ * the send; the pieces before it are in the room, so the group's rows become
+ * one row of the pieces not sent (Epo 2026-10-18), which `refs` names. */
 async function sendGroup(
   token: RoomToken,
   group: { base?: string; refs: DraftRef[] }
-): Promise<Sent> {
+): Promise<{ refs: DraftRef[]; sent: Sent }> {
   let pieces: Uint8Array<ArrayBuffer>[] | null;
   try {
     pieces = await call<Uint8Array<ArrayBuffer>[] | null>({
@@ -845,15 +846,25 @@ async function sendGroup(
     });
   } catch (error) {
     console.warn('Drafts cannot be merged:', error);
-    return 'waits';
+    return { refs: group.refs, sent: 'waits' };
   }
-  if (!pieces) return 'retry';
-  for (const piece of pieces) {
+  if (!pieces) return { refs: group.refs, sent: 'retry' };
+  for (const [index, piece] of pieces.entries()) {
     const sent = await sendPiece(token, group, piece);
-    if (sent !== 'sent') return sent;
+    if (sent === 'sent') continue;
+    if (index === 0) return { refs: group.refs, sent };
+    const kept = await call<DraftRef | null>({
+      from: index,
+      op: 'unsent',
+      rows: group.refs,
+    });
+    return kept ? { refs: [kept], sent } : { refs: group.refs, sent: 'retry' };
   }
-  return 'sent';
+  return { refs: group.refs, sent: 'sent' };
 }
+
+/** What a draft send waiting for the allowance holds the tab back with. */
+const DRAFT_PACING = {};
 
 async function sendPiece(
   token: RoomToken,
@@ -861,7 +872,11 @@ async function sendPiece(
   body: Uint8Array<ArrayBuffer>
 ): Promise<Sent> {
   const wait = tabAllowance.reserve(body.byteLength);
-  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  if (wait > 0) {
+    setHeld(DRAFT_PACING, true);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    setHeld(DRAFT_PACING, false);
+  }
   const headers: Record<string, string> = {
     authorization: `Bearer ${token.token}`,
     'content-type': 'application/octet-stream',
@@ -892,6 +907,8 @@ async function sendPiece(
       return 'waits';
     case 'outdated':
       return 'outdated';
+    case 'too_fast':
+      return 'retry';
     default:
       return 'later';
   }
@@ -959,21 +976,21 @@ async function sweepDocument(
   const rows = await call<DraftInfo[]>({ key, op: 'rows' });
   for (const group of sendableGroups(rows, token.room)) {
     if (!current()) return false;
-    const sent = await sendGroup(token, group);
+    const { refs, sent } = await sendGroup(token, group);
     if (!current()) return false;
     if (sent === 'outdated') {
       outdated = true;
       markUpdateAvailable();
       return false;
     }
-    if (sent === 'sent') await deleteDrafts(group.refs);
+    if (sent === 'sent') await deleteDrafts(refs);
     else if (sent === 'refused' || sent === 'waits') {
       const draws =
         sent === 'refused' &&
-        (await call<boolean | null>({ op: 'draws', rows: group.refs }));
+        (await call<boolean | null>({ op: 'draws', rows: refs }));
       await markDrafts(
         key,
-        group.refs.map((row) => row.id),
+        refs.map((row) => row.id),
         draws ? 'refused' : 'held'
       );
     } else if (sent === 'retry') settled = false;

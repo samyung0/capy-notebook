@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import type { SourceFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
@@ -102,15 +103,17 @@ export default function DocxView({
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />
         )}
-        <iframe
-          allow={runtime.iframeAllow}
-          className="h-full w-full border-0"
-          key={runtime.iframeKey}
-          ref={runtime.iframeRef}
-          sandbox={runtime.iframeSandbox}
-          src={runtime.iframeUrl}
-          title={m.files_office_document_frame_title({ name: file.name })}
-        />
+        <CollaborationHold className="h-full w-full">
+          <iframe
+            allow={runtime.iframeAllow}
+            className="h-full w-full border-0"
+            key={runtime.iframeKey}
+            ref={runtime.iframeRef}
+            sandbox={runtime.iframeSandbox}
+            src={runtime.iframeUrl}
+            title={m.files_office_document_frame_title({ name: file.name })}
+          />
+        </CollaborationHold>
       </div>
     </div>
   );

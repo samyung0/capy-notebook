@@ -34,6 +34,10 @@ export type DraftRequest =
   /** Whether these exact rows draw on their own (no base they lack), or null
    * when one of them is gone or was rewritten since. */
   | { op: 'draws'; rows: DraftRef[] }
+  /** These exact rows' pieces from `from` on (the room holds the earlier
+   * ones), merged into their last row, the others deleted: the row kept, or
+   * null when one of them is gone or was rewritten since. */
+  | { op: 'unsent'; rows: DraftRef[]; from: number }
   /** Sets `flag` on these rows of a document. */
   | {
       op: 'mark';
@@ -369,6 +373,31 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
           ? splitUpdate(update)
           : drawsAlone(update);
       });
+    }
+    case 'unsent': {
+      let kept: DraftRef | null = null;
+      return transact(name, 'readwrite', (stores) => {
+        const found: EditDraft[] = [];
+        let waiting = message.rows.length;
+        for (const ref of message.rows) {
+          const current = stores.drafts.get(ref.id);
+          current.onsuccess = () => {
+            const row = current.result as EditDraft | undefined;
+            if (row?.seq === ref.seq) found.push(row);
+            if (--waiting || found.length !== message.rows.length) return;
+            const pieces = splitUpdate(mergedRows(found)).slice(message.from);
+            const last = [...found].sort(
+              (a, b) =>
+                Number(a.kind === 'update') - Number(b.kind === 'update') ||
+                a.seq - b.seq
+            )[found.length - 1];
+            stores.drafts.put({ ...last, data: Y.mergeUpdates(pieces) });
+            for (const row of found)
+              if (row.id !== last.id) deleteRow(stores, row);
+            kept = { id: last.id, key: last.key, seq: last.seq };
+          };
+        }
+      }).then(() => kept);
     }
     case 'mark': {
       const { flag } = message;

@@ -7,6 +7,7 @@ import { createSourceProvider } from '@/features/files/sourceProvider';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
 import { readDrafts, recordDrafts } from '@/lib/editDrafts';
 import { resetAllowance } from './allowance';
+import { isHeld } from './held';
 import { PIECE_BYTES } from './pieces';
 import {
   CLIENT_PROTOCOL,
@@ -23,7 +24,7 @@ import {
   Writer,
 } from './protocol';
 import { RoomProvider } from './roomProvider';
-import { CollabSocket, TOO_FAST_CODE } from './socket';
+import { CollabSocket } from './socket';
 
 vi.mock('@/api/auth', () => ({ USE_MSW: false }));
 
@@ -291,17 +292,15 @@ it('ends the room when the socket drops and rejoins once it reopens', async () =
   expect(second.take(MessageKind.Join)).toHaveLength(1);
 });
 
-it('after a too-fast close, rejoins once its doubled backoff passes and resends what the server lacks, its drafts kept', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  // No jitter: each backoff is its base.
-  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+it('in a timeout holds its edits, then joins again on the same socket and resyncs them, its drafts kept', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   const document = new Y.Doc();
-  const key = 'u_1:material:too-fast';
-  const onClose = vi.fn();
+  const key = 'u_1:material:timeout';
+  const onStateless = vi.fn();
   const provider: RoomProvider = new RoomProvider({
     document,
     name: 'material:m1:schema:1',
-    onClose,
+    onStateless,
     token: async () => 't',
     url: `wss://collab.test/${url++}`,
   });
@@ -314,9 +313,8 @@ it('after a too-fast close, rejoins once its doubled backoff passes and resends 
   });
   const server = new Y.Doc();
   server.getText('content').insert(0, 'shared ');
-  /** Opens `socket`, joins and syncs with the server's document. */
+  /** Joins on `socket` and syncs with the server's document: the channel. */
   const sync = async (socket: FakeSocket) => {
-    socket.open();
     await vi.advanceTimersByTimeAsync(0);
     const [join] = socket.take(MessageKind.Join);
     socket.deliver(
@@ -339,38 +337,45 @@ it('after a too-fast close, rejoins once its doubled backoff passes and resends 
           )
         );
     }
+    return join.channel;
   };
   provider.connect();
-  const first = FakeSocket.instances.at(-1) as FakeSocket;
-  await sync(first);
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  const channel = await sync(socket);
   expect(provider.isSynced).toBe(true);
+  socket.take(MessageKind.Awareness);
 
-  // An edit goes out, and the server closes the socket as too fast before
-  // applying it.
+  // An edit goes out, and the server puts the user in a timeout before
+  // applying it: the room pauses and the tab holds back.
   document.getText('content').insert(7, 'typed');
-  expect(first.take(MessageKind.Sync)).toHaveLength(1);
-  first.close(TOO_FAST_CODE);
-  expect(onClose).toHaveBeenCalled();
-  // The next socket waits out a backoff of 2 s, not the first drop's 1 s.
-  await vi.advanceTimersByTimeAsync(1999);
-  expect(FakeSocket.instances.at(-1)).toBe(first);
-  await vi.advanceTimersByTimeAsync(1);
-  const second = FakeSocket.instances.at(-1) as FakeSocket;
-  expect(second).not.toBe(first);
-  // The rejoin's step 2 carries the edit the server never applied.
-  await sync(second);
-  expect(server.getText('content').toString()).toBe('shared typed');
-  expect(FakeSocket.instances).toHaveLength(2);
-  // No receipt covered it: its row stays on this device.
-  const rows = await readDrafts(key);
-  expect(rows.filter((row) => row.kind === 'update')).toHaveLength(1);
+  expect(socket.take(MessageKind.Sync)).toHaveLength(1);
+  socket.deliver(
+    message(
+      channel,
+      MessageKind.Stateless,
+      text(JSON.stringify({ remainingMs: 3000, type: 'update-timeout' }))
+    )
+  );
+  expect(onStateless).not.toHaveBeenCalled();
+  expect(provider.isSynced).toBe(false);
+  expect(isHeld()).toBe(true);
+  // Nothing goes meanwhile; an edit stays in the document.
+  document.getText('content').insert(12, '!');
+  provider.sendStateless('{"type":"checkpoint-request"}');
+  expect(socket.sent).toEqual([]);
 
-  // Another too-fast close in the page load waits twice as long again.
-  second.close(TOO_FAST_CODE);
-  await vi.advanceTimersByTimeAsync(3999);
-  expect(FakeSocket.instances).toHaveLength(2);
-  await vi.advanceTimersByTimeAsync(1);
-  expect(FakeSocket.instances).toHaveLength(3);
+  // When it ends, the same channel joins again on the same socket, and its
+  // step 2 carries both edits the server never applied.
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(isHeld()).toBe(false);
+  expect(await sync(socket)).toBe(channel);
+  expect(server.getText('content').toString()).toBe('shared typed!');
+  expect(provider.isSynced).toBe(true);
+  expect(FakeSocket.instances).toHaveLength(1);
+  // No receipt covered them: their rows stay on this device.
+  const rows = await readDrafts(key);
+  expect(rows.filter((row) => row.kind === 'update').length).toBeGreaterThan(0);
   provider.destroy();
 });
 
@@ -412,11 +417,8 @@ function applyPieces(server: Y.Doc, sent: Message[]) {
   return { kinds: [...kinds], pending, small: largest <= PIECE_BYTES };
 }
 
-it('sends an update over 2 MiB in ordered pieces and reports sending until the last is acknowledged', async () => {
-  const onSending = vi.fn();
-  const { document, join, provider, server, socket } = await syncedRoom({
-    onSending,
-  });
+it('sends an update over 2 MiB in ordered pieces and holds the tab back until the last is acknowledged', async () => {
+  const { document, join, provider, server, socket } = await syncedRoom();
   const long = 'x'.repeat(5 * 1024 * 1024);
   document.getText('content').insert(0, long);
   const pieces = socket.take(MessageKind.Sync);
@@ -427,9 +429,9 @@ it('sends an update over 2 MiB in ordered pieces and reports sending until the l
     small: true,
   });
   expect(server.getText('content').toString()).toBe(long);
-  expect(onSending.mock.calls).toEqual([[true]]);
+  expect(isHeld()).toBe(true);
   expect(provider.unsyncedChanges).toBe(pieces.length);
-  // Each piece is acknowledged on its own; sending ends with the last.
+  // Each piece is acknowledged on its own; the hold ends with the last.
   socket.deliver(
     message(
       join.channel,
@@ -437,16 +439,15 @@ it('sends an update over 2 MiB in ordered pieces and reports sending until the l
       new Writer().varUint(pieces.length - 1).done()
     )
   );
-  expect(onSending.mock.calls).toEqual([[true]]);
+  expect(isHeld()).toBe(true);
   socket.deliver(
     message(join.channel, MessageKind.Ack, new Writer().varUint(1).done())
   );
-  expect(onSending.mock.calls).toEqual([[true], [false]]);
+  expect(isHeld()).toBe(false);
 });
 
 it('answers a resync with its step 2 in pieces', async () => {
-  const onSending = vi.fn();
-  const { document, join, socket } = await joined({ onSending });
+  const { document, join, provider, socket } = await joined();
   // Offline edits restored before the join: the step 2 carries them.
   document.getText('content').insert(0, 'y'.repeat(5 * 1024 * 1024));
   const server = new Y.Doc();
@@ -467,16 +468,18 @@ it('answers a resync with its step 2 in pieces', async () => {
     small: true,
   });
   expect(server.getText('content').length).toBe(5 * 1024 * 1024);
-  expect(onSending.mock.calls).toEqual([[true]]);
+  expect(isHeld()).toBe(true);
+  provider.destroy();
+  expect(isHeld()).toBe(false);
 });
 
 /**
  * Past the user's 8 MiB burst, pieces wait for the allowance (2 MiB a
- * second) instead of closing the socket, and a frame sent after them (a
- * checkpoint request) waits behind them.
+ * second) instead of timing the user out, the tab holding back meanwhile,
+ * and a frame sent after them (a checkpoint request) waits behind them.
  */
 it('paces pieces under the allowance and keeps later frames behind them', async () => {
-  const { document, provider, socket } = await syncedRoom();
+  const { document, join, provider, socket } = await syncedRoom();
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
   resetAllowance();
   document.getText('content').insert(0, 'z'.repeat(10 * 1024 * 1024));
@@ -488,6 +491,35 @@ it('paces pieces under the allowance and keeps later frames behind them', async 
   await vi.advanceTimersByTimeAsync(3000);
   expect(socket.sent.length).toBeGreaterThan(now);
   expect(socket.sent.at(-1)?.kind).toBe(MessageKind.Stateless);
+  const sent = socket.take(MessageKind.Sync).length + now;
+  socket.deliver(
+    message(join.channel, MessageKind.Ack, new Writer().varUint(sent).done())
+  );
+  expect(isHeld()).toBe(false);
+});
+
+/** The server charges a step 1's answer by its bytes: what this client sends
+ * next waits for the allowance to cover it. */
+it('waits after a large step 2 answer as the server charged it', async () => {
+  const { document, join, socket } = await joined();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  resetAllowance();
+  const server = new Y.Doc();
+  server.getText('content').insert(0, 'w'.repeat(9 * 1024 * 1024));
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(server))
+    )
+  );
+  socket.take(MessageKind.Sync);
+  // 1 MiB below zero: half a second before the next update goes.
+  document.getText('content').insert(0, 'a');
+  expect(socket.take(MessageKind.Sync)).toEqual([]);
+  await vi.advanceTimersByTimeAsync(600);
+  expect(socket.take(MessageKind.Sync)).toHaveLength(1);
 });
 
 // useSourceSession tells a peer's update from a local edit by

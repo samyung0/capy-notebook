@@ -1,4 +1,5 @@
 import { Allowance, tabAllowance } from './allowance';
+import { setHeld } from './held';
 import { decodeFrame, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
@@ -8,6 +9,8 @@ export interface ChannelHandler {
   onSocketClose(): void;
   /** The socket opened (again): a room that wants to be joined joins. */
   onSocketOpen(): void;
+  /** The user's timeout ended: a room paused by it joins again and resyncs. */
+  onResume(): void;
 }
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
@@ -22,13 +25,6 @@ const WARM_MS = 10_000;
  * one more (`MAX_PENDING_JOINS`, collaboration-rs/crates/server/src/socket.rs).
  * A note with many embeds on screen queues the rest here. */
 const MAX_PENDING_JOINS = 8;
-/** The server's close of a socket that sent updates past its user's rate
- * limit, or an update over its cap (`TOO_FAST`, `TOO_LARGE`,
- * collaboration-rs/crates/server/src/socket.rs). Each one in the page load
- * doubles the next reconnect's backoff, so a client that keeps tripping it
- * never loops; its rooms resync on the reconnect. */
-export const TOO_FAST_CODE = 4429;
-export const TOO_LARGE_CODE = 4413;
 
 /**
  * The tab's socket to one collaboration URL, shared by every room open in
@@ -59,6 +55,7 @@ export class CollabSocket {
     const socket = CollabSocket.for(url);
     const holder: ChannelHandler = {
       onMessage() {},
+      onResume() {},
       onSocketClose() {},
       onSocketOpen() {},
     };
@@ -75,12 +72,17 @@ export class CollabSocket {
   private queued: { bytes: Uint8Array<ArrayBuffer>; channel: number }[] = [];
   /** Frames waiting for the allowance (`reserve`), in order, each with the
    * time it may go; a frame sent behind them waits its turn. */
-  private outbox: { at: number; bytes: Uint8Array<ArrayBuffer> }[] = [];
+  private outbox: {
+    at: number;
+    bytes: Uint8Array<ArrayBuffer>;
+    charged: boolean;
+  }[] = [];
   private draining: ReturnType<typeof setTimeout> | undefined;
+  /** The user's timeout: it ends at this timer (`timeOut`). */
+  private timeout: ReturnType<typeof setTimeout> | undefined;
+  private timeoutEnds = 0;
   private nextChannel = 1;
   private attempts = 0;
-  /** Too-fast and too-large closes this page load. */
-  private tooFast = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
 
@@ -138,25 +140,64 @@ export class CollabSocket {
   }
 
   /**
-   * Sends a frame now, or after the frames waiting before it. A SYNC frame
-   * (`sync`) takes its share of the user's update allowance first and waits
-   * while the allowance is spent; nothing overtakes it, so a checkpoint
-   * request still follows the updates it covers.
+   * Sends a frame now, or after the frames waiting before it. A frame the
+   * server charges (`charged`: SYNC, awareness) takes its share of the
+   * user's update allowance first and waits while the allowance is spent;
+   * nothing overtakes it, so a checkpoint request still follows the updates
+   * it covers. In a timeout a charged frame is not sent (the server would
+   * drop it; the rooms resync after).
    */
-  send(bytes: Uint8Array<ArrayBuffer>, sync = false) {
+  send(bytes: Uint8Array<ArrayBuffer>, charged = false) {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
+    if (charged && this.timeout) return;
     const now = performance.now();
     const at = Math.max(
       now +
-        (sync ? (this.allowance ?? tabAllowance).reserve(bytes.byteLength) : 0),
+        (charged
+          ? (this.allowance ?? tabAllowance).reserve(bytes.byteLength)
+          : 0),
       this.outbox.at(-1)?.at ?? 0
     );
     if (at <= now && !this.outbox.length) {
       this.ws.send(bytes);
       return;
     }
-    this.outbox.push({ at, bytes });
+    this.outbox.push({ at, bytes, charged });
     this.drainLater();
+    this.updateHeld();
+  }
+
+  /** The server charged this user an answer of `size` bytes (a step 1's):
+   * what goes next waits for it. */
+  charge(size: number) {
+    (this.allowance ?? tabAllowance).charge(size);
+  }
+
+  /**
+   * The user is in a timeout for `ms` (the server said so on one of their
+   * channels; Epo 2026-10-18): charged frames waiting are dropped, none goes
+   * until it ends, then the allowance is full again and every room paused by
+   * it joins again on this socket and resyncs (`onResume`).
+   */
+  timeOut(ms: number) {
+    const ends = performance.now() + ms;
+    if (this.timeout && ends <= this.timeoutEnds) return;
+    this.timeoutEnds = ends;
+    clearTimeout(this.timeout);
+    this.timeout = setTimeout(() => {
+      this.timeout = undefined;
+      (this.allowance ?? tabAllowance).reset();
+      this.updateHeld();
+      for (const handler of [...this.handlers]) handler.onResume();
+    }, ms);
+    const now = performance.now();
+    this.outbox = this.outbox
+      .filter((frame) => !frame.charged)
+      .map((frame) => ({ ...frame, at: now }));
+    clearTimeout(this.draining);
+    this.draining = undefined;
+    this.drainLater();
+    this.updateHeld();
   }
 
   private drainLater() {
@@ -170,16 +211,26 @@ export class CollabSocket {
           if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(bytes);
         }
         this.drainLater();
+        this.updateHeld();
       },
       Math.max(0, this.outbox[0].at - performance.now())
     );
   }
 
-  /** The socket ended: what waited is dropped (rooms resync on rejoin). */
+  /** The tab holds back while frames wait or the user is in a timeout. */
+  private updateHeld() {
+    setHeld(this, this.outbox.length > 0 || this.timeout !== undefined);
+  }
+
+  /** The socket ended: what waited is dropped, and a timeout is forgotten
+   * (rooms resync on rejoin; the server tells them again if it runs). */
   private dropOutbox() {
     clearTimeout(this.draining);
     this.draining = undefined;
     this.outbox = [];
+    clearTimeout(this.timeout);
+    this.timeout = undefined;
+    this.updateHeld();
   }
 
   /** Sends a channel's JOIN, or holds it while eight others wait for theirs. */
@@ -239,7 +290,7 @@ export class CollabSocket {
         this.channels.get(message.channel)?.onMessage(message);
       }
     };
-    ws.onclose = (event) => {
+    ws.onclose = () => {
       if (this.ws !== ws) return;
       this.ws = null;
       this.status = 'disconnected';
@@ -247,8 +298,6 @@ export class CollabSocket {
       this.forgetJoins();
       this.dropOutbox();
       for (const handler of [...this.handlers]) handler.onSocketClose();
-      if (event.code === TOO_FAST_CODE || event.code === TOO_LARGE_CODE)
-        this.attempts = ++this.tooFast;
       if (this.handlers.size > 0) this.scheduleRetry();
     };
   }

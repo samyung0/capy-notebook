@@ -1,4 +1,5 @@
 import { YjsPlugin } from '@platejs/yjs/react';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { captureException } from '@sentry/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
@@ -1244,11 +1245,15 @@ export function NoteEditorCore({
                 ) : (
                   <>
                     <EditorScrollAreaContext.Provider value={scrollArea}>
-                      <NoteEditorContent
-                        discussions={discussions}
-                        readOnly={offlineLimit || outdated}
-                        shouldShowStats={shouldShowDocumentStats(documentStats)}
-                      />
+                      <CollaborationHold>
+                        <NoteEditorContent
+                          discussions={discussions}
+                          readOnly={offlineLimit || outdated}
+                          shouldShowStats={shouldShowDocumentStats(
+                            documentStats
+                          )}
+                        />
+                      </CollaborationHold>
                     </EditorScrollAreaContext.Provider>
                     <NoteAttribution
                       beforeStats={shouldShowDocumentStats(documentStats)}

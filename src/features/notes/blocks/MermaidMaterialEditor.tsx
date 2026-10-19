@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { qk } from '@/api/client';
@@ -142,13 +143,15 @@ export default function MermaidMaterialEditor({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
-      <LiveDiagram
-        history={room.history}
-        live={live}
-        provenance={provenance}
-        readOnly={itemEditingStopped(snapshot.offline)}
-        title={title}
-      />
+      <CollaborationHold className="flex min-h-0 flex-1 flex-col">
+        <LiveDiagram
+          history={room.history}
+          live={live}
+          provenance={provenance}
+          readOnly={itemEditingStopped(snapshot.offline)}
+          title={title}
+        />
+      </CollaborationHold>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { useMe } from '@/api/hooks';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
@@ -103,16 +104,18 @@ export function LiveFlashcards({
       {snapshot.access !== 'write' || itemEditingStopped(snapshot.offline) ? (
         grid
       ) : (
-        <FlashcardsEditor
-          action={action}
-          onEmpty={onEmpty}
-          room={room}
-          setId={setId}
-          showTitle={showTitle}
-          showUndo={showUndo}
-          status={snapshot.status}
-          title={title}
-        />
+        <CollaborationHold>
+          <FlashcardsEditor
+            action={action}
+            onEmpty={onEmpty}
+            room={room}
+            setId={setId}
+            showTitle={showTitle}
+            showUndo={showUndo}
+            status={snapshot.status}
+            title={title}
+          />
+        </CollaborationHold>
       )}
     </div>
   );
