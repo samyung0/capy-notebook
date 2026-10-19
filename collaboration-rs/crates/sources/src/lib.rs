@@ -32,7 +32,9 @@ use std::pin::Pin;
 use serde::{Deserialize, Serialize};
 
 /// The ceiling on any source state: WebSocket frames, downloads and the
-/// offline drafts a device holds. A room's own cap is [`state_cap`].
+/// offline drafts a device holds, and on a published source file. A room's
+/// own cap is [`state_cap`]. IMPORTANT: KEEP IN SYNC WITH sourceCeilingBytes
+/// IN server/internal/store/source_documents.go
 pub const MAX_SOURCE_STATE_BYTES: usize = 100 * 1024 * 1024;
 
 /// What a room's growth stays under its export cap by, so the export's own
@@ -42,11 +44,12 @@ pub const MAX_SOURCE_STATE_BYTES: usize = 100 * 1024 * 1024;
 pub const STATE_GROWTH_MARGIN_BYTES: u64 = 1024 * 1024;
 
 /// A room's state cap: its seed plus the export cap (the largest plan source
-/// file, which publication enforces) less the base file and a margin, within
-/// [`MAX_SOURCE_STATE_BYTES`] (Epo 2026-10-17). Pictures that came with the
-/// file are references in the seed but bytes in the export; inserted images
-/// are bytes in both. So a room never accepts edits its publication must
-/// refuse.
+/// file) less the base file and a margin, within [`MAX_SOURCE_STATE_BYTES`]
+/// (Epo 2026-10-17). Pictures that came with the file are references in the
+/// seed but bytes in the export; inserted images are bytes in both. So a
+/// room's edits keep its export under the plan limit. Publication still
+/// takes an export over it, up to the ceiling (Epo 2026-10-19); its base
+/// then leaves the room no growth, and the file opens at its size limit.
 pub fn state_cap(seed_bytes: u64, base_bytes: u64, export_cap: u64) -> u64 {
     let growth = export_cap.saturating_sub(base_bytes + STATE_GROWTH_MARGIN_BYTES);
     (seed_bytes + growth).min(MAX_SOURCE_STATE_BYTES as u64)
@@ -180,6 +183,8 @@ mod tests {
         assert_eq!(state_cap(2 * MIB, 4 * MIB, 30 * MIB), 27 * MIB);
         // A base at the export cap leaves the seed alone.
         assert_eq!(state_cap(2 * MIB, 30 * MIB, 30 * MIB), 2 * MIB);
+        // So does a base published over it.
+        assert_eq!(state_cap(2 * MIB, 40 * MIB, 30 * MIB), 2 * MIB);
         // Never past the ceiling every room shares.
         assert_eq!(
             state_cap(90 * MIB, MIB, 30 * MIB),

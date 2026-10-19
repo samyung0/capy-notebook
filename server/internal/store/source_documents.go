@@ -84,6 +84,11 @@ type SourceSession struct {
 // collaboration-rs/crates/sources/src/lib.rs
 const sourceGrowthMarginBytes = 1 << 20
 
+// sourceCeilingBytes: the most any source state or published source file
+// may be. IMPORTANT: KEEP IN SYNC WITH MAX_SOURCE_STATE_BYTES IN
+// collaboration-rs/crates/sources/src/lib.rs
+const sourceCeilingBytes = 100 << 20
+
 // sourceWriteReserveBytes: what room admission keeps free under the cap for
 // the room's own writes. IMPORTANT: KEEP IN SYNC WITH
 // STATE_WRITE_RESERVE_BYTES IN collaboration-rs/crates/sources/src/lib.rs

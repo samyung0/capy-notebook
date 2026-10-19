@@ -311,7 +311,11 @@ while transient: admission does not gate on them, and publication gates the net
 change of the file's bytes and its source row. Before a parse is paid for,
 finalize refuses (except for system jobs) what publication would certainly
 refuse: the new bytes minus the old, plus a source row with no state or
-effects, minus the current row. Reconciliation sums the same columns. Owner
+effects, minus the current row. The plan file limit does not refuse a
+publication (Epo 2026-10-19): an export over it publishes, up to the 100 MiB
+source ceiling, and the file freezes at its size limit (no growth budget;
+[office-files.md](frontend/office-files.md)). Such a file is still past the
+cap a clone checks, so a clone refuses it (`file_too_large`). Reconciliation sums the same columns. Owner
 changes transfer the charge with the file. A checkpoint is not gated on quota
 (edits are admitted by the room, see view-only at the limit); finalize and
 publication run under source/workspace/account locks and gate the net growth.

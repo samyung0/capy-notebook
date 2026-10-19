@@ -2195,14 +2195,19 @@ account change, close that user's connections through the collaboration
 eviction outbox; anything else (such as the owner's account state for a
 collaborator) takes effect within those 5 s, and every checkpoint rechecks each
 writer. Each room has its own state cap (`sources::state_cap`, Epo
-2026-10-17): its seed plus the export cap publication enforces (the largest
-plan source file, `max(plan_limits.source_file_max_bytes)`, read with the
-room's stored rows) less the base file and a 1 MiB margin, within the 100 MB
-ceiling every room shares (WebSocket frames, downloads, offline drafts).
+2026-10-17): its seed plus the export cap (the largest plan source file,
+`max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
+less the base file and a 1 MiB margin, within the 100 MB ceiling every room
+shares (WebSocket frames, downloads, offline drafts).
 Pictures that came with the file are references in the seed but bytes in the
 export, and an inserted image is in the state at least as large as in the
 export (a DOCX picture is a base64 data URL there, 4 bytes per 3; a PPTX one
-its bytes), so a room never accepts edits its publication must refuse. A
+its bytes), so a room's edits keep its export under the plan limit. An
+export over it still publishes (Epo 2026-10-19; `FinalizeSourceRefresh`
+refuses only past the source ceiling, Go's `sourceCeilingBytes`, KEEP IN SYNC
+with `MAX_SOURCE_STATE_BYTES`, which also stays the Rust export's hard stop),
+since its base and saved edits are already stored; after the rebuild its base
+leaves no growth budget, so the file opens at its size limit. A
 second use of an original picture binds the same package part
 (`bind_media_reference`), and DOCX paste carries text runs only, so no export
 writes an original twice. Admission keeps `STATE_WRITE_RESERVE_BYTES` (64 KiB)
