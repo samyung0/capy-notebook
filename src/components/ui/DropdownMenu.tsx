@@ -1,6 +1,7 @@
 import { Anchor as MenuAnchor } from '@radix-ui/react-menu';
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui';
 import * as React from 'react';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 import {
@@ -63,6 +64,7 @@ function DropdownMenuContent({
   animationClassName?: string;
 }) {
   const open = React.useContext(MenuOpenContext);
+  const held = useEditorHeld();
   const scope = useDropdownMenuScope();
   return (
     <DropdownMenuPrimitive.Portal {...scope}>
@@ -75,7 +77,7 @@ function DropdownMenuContent({
           className
         )}
         data-slot="dropdown-menu-content"
-        inert={!open}
+        inert={!open || held}
         sideOffset={sideOffset}
         {...props}
         onClickCapture={guardMenuEvent(open, props.onClickCapture)}
@@ -222,6 +224,7 @@ function DropdownMenuSubContent({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
   const open = React.useContext(MenuOpenContext);
+  const held = useEditorHeld();
   const scope = useDropdownMenuScope();
   return (
     <DropdownMenuPrimitive.Portal {...scope}>
@@ -233,7 +236,7 @@ function DropdownMenuSubContent({
           className
         )}
         data-slot="dropdown-menu-sub-content"
-        inert={!open}
+        inert={!open || held}
         sideOffset={sideOffset}
         {...props}
         onClickCapture={guardMenuEvent(open, props.onClickCapture)}

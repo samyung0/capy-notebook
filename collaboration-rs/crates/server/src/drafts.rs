@@ -5,9 +5,10 @@
 //! JOIN's) and, for a source, their base (`X-Capy-Base`), and the merged rows
 //! as one Yjs update; the URL is the same for every
 //! document, so one preflight covers a sweep. The request runs a channel's
-//! JOIN checks, is refused while the user is in a timeout, reads the body
-//! within `ydoc::MAX_UPDATE_BYTES` (a larger one times the user out) and a
-//! note's sync cap, takes it from the user's update allowance (the one their
+//! JOIN checks (refused while the user is in a timeout, before any lookup),
+//! reads the body within `ydoc::MAX_UPDATE_BYTES` (a larger one is too large,
+//! which the page leaves to the editor, and times the user out) and a note's
+//! sync cap, takes it from the user's update allowance (the one their
 //! sockets take from, `rate.rs`), checks the eviction lease again,
 //! and goes through the room's writer admission (the room loads if need be
 //! and unloads when idle, as usual), so open editors receive the update live;
@@ -277,7 +278,10 @@ async fn checked_and_stored(
     let (name, context) =
         crate::socket::authenticate(app.clone(), room.to_owned(), token.to_owned(), protocol)
             .await
-            .map_err(|refusal| Refused::new(refusal.class, refusal.message))?;
+            .map_err(|refusal| Refused {
+                remaining: refusal.remaining,
+                ..Refused::new(refusal.class, refusal.message)
+            })?;
     if context.access != Access::Write {
         return Err(Refused::new(Class::Permission, "the token is read-only"));
     }
@@ -300,20 +304,16 @@ async fn checked_and_stored(
         }
     }
     let user = &context.user_id;
-    let running = app.allowances.remaining(user, Instant::now());
-    if let Some(refusal) = running.and_then(|remaining| {
-        let verdict = Verdict::TimedOut {
-            remaining,
-            started: false,
-        };
-        Refused::timed_out(app, user, verdict)
-    }) {
-        return Err(refusal);
-    }
+    // Never sendable as it is: too large, which the page leaves for the
+    // editor to send in pieces, and the user is timed out as for any update
+    // over the cap.
     let Some(update) = read_within(body, ydoc::MAX_UPDATE_BYTES).await? else {
-        let verdict = app.allowances.time_out(user, Instant::now());
-        return Err(Refused::timed_out(app, user, verdict)
-            .unwrap_or_else(|| Refused::new(Class::TooLarge, "over the update cap")));
+        if let Verdict::TimedOut { started: true, .. } =
+            app.allowances.time_out(user, Instant::now())
+        {
+            app.stats.timeouts.fetch_add(1, Ordering::Relaxed);
+        }
+        return Err(Refused::new(Class::TooLarge, "over the update cap"));
     };
     if matches!(name, RoomName::Material { .. }) && update.len() > NOTE_MAX_SYNC_BYTES {
         return Err(Refused::new(Class::TooLarge, "past the writer's sync cap"));

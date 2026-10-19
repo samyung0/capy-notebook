@@ -257,8 +257,11 @@ struct Note {
 struct Source {
     room: sources::SourceRoom,
     format: sources::SourceFormat,
-    /// The room's state size by applied bytes, for the cap check.
+    /// The room's state size by applied bytes less what deletes freed, for
+    /// the cap check.
     estimate: sources::Estimate,
+    /// An Office room's seed state vector (`sources::Loaded::seed`).
+    seed: Option<StateVector>,
     checkpoint: u64,
     log_bytes: i64,
     log_rows: i64,
@@ -615,6 +618,7 @@ async fn load(
                 room,
                 format: loaded.format,
                 estimate: sources::Estimate::new(loaded.bytes),
+                seed: loaded.seed,
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
                 log_rows: loaded.rows as i64,
@@ -905,11 +909,11 @@ impl Room {
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
                 // A joiner's step 1 is answered with up to the whole state,
-                // encoded on the blocking pool, and charged to its user by
-                // the answer's bytes (Epo 2026-10-19).
+                // encoded on the blocking pool, and charged to its user's
+                // open budget by the answer's bytes (Epo 2026-10-19).
                 Some(since) => {
                     let diff = self.encoded(since).await;
-                    self.charge(key, diff.len());
+                    self.charge_open(key, diff.len());
                     self.send(key, Kind::Sync, &sync::encode(sync::STEP2, &diff));
                 }
                 None => self.on_sync(key, &payload),
@@ -917,7 +921,7 @@ impl Room {
             RoomCmd::Awareness(key, payload) => self.on_awareness(key, &payload),
             RoomCmd::QueryAwareness(key) => {
                 let sent = self.send_awareness_states(key);
-                self.charge(key, sent);
+                self.charge_open(key, sent);
             }
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
@@ -1623,12 +1627,13 @@ impl Room {
         }
     }
 
-    /// Charges a reply of `bytes` to the member's user's allowance.
-    fn charge(&self, key: MemberKey, bytes: usize) {
+    /// Charges a full-document answer of `bytes` to the member's user's open
+    /// budget (`rate.rs`).
+    fn charge_open(&self, key: MemberKey, bytes: usize) {
         if let Some(member) = self.members.get(&key) {
             self.app
                 .allowances
-                .charge(&member.context.user_id, bytes, Instant::now());
+                .charge_open(&member.context.user_id, bytes, Instant::now());
         }
     }
 
@@ -1681,7 +1686,8 @@ impl Room {
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
         if !(viewer || self.awareness.is_empty()) {
-            self.send_awareness_states(key);
+            let sent = self.send_awareness_states(key);
+            self.charge_open(key, sent);
         }
         // A quiz's readers get the matching and ordering lists as they stand.
         if let Kindly::Note(note) = &self.kind
@@ -2103,13 +2109,23 @@ impl Room {
             applied += marker.len();
             self.broadcast_update(None, marker);
         }
+        // A source room's estimate also takes off what the update's deletes
+        // freed (Epo 2026-10-19).
+        let seed = match &self.kind {
+            Kindly::Source(source) => Some(source.seed.as_ref()),
+            Kindly::Note(_) => None,
+        };
+        let apply = || match seed {
+            Some(seed) => ydoc::apply_freeing(&self.doc, update, seed),
+            None => ydoc::apply(&self.doc, update).map(|content| (content, 0)),
+        };
         let content = if heavy {
-            tokio::task::block_in_place(|| ydoc::apply(&self.doc, update))
+            tokio::task::block_in_place(apply)
         } else {
-            ydoc::apply(&self.doc, update)
+            apply()
         };
         self.applying = false;
-        let content = match content {
+        let (content, freed) = match content {
             Ok(content) => content,
             Err(error) => {
                 return Outcome::refused(
@@ -2120,7 +2136,7 @@ impl Room {
         };
         applied += content.len();
         if let Kindly::Source(source) = &mut self.kind {
-            source.estimate.bytes += applied as u64;
+            source.estimate.applied(applied as u64, freed);
         }
         self.ack(writer);
         if !content.is_empty() {
@@ -2349,17 +2365,15 @@ impl Room {
                 continue;
             }
             let held = current.and_then(|state| state.owner);
-            if !entry.removed() && held != Some(key) {
-                let live = self
-                    .awareness
-                    .values()
-                    .filter(|state| state.owner.is_some())
-                    .count();
-                if member.clients.len() >= MAX_CLIENTS_PER_MEMBER
-                    || (held.is_none() && live >= MAX_CLIENTS_PER_ROOM)
-                {
-                    continue;
-                }
+            // The room's cap counts every id it holds, removals not yet sent
+            // (forgotten at the next flush) included, so ids added and
+            // removed in a loop stay capped too.
+            if !entry.removed()
+                && held != Some(key)
+                && (member.clients.len() >= MAX_CLIENTS_PER_MEMBER
+                    || (current.is_none() && self.awareness.len() >= MAX_CLIENTS_PER_ROOM))
+            {
+                continue;
             }
             if let Some(previous) = held.filter(|previous| *previous != key) {
                 taken_over.push((previous, entry.client));

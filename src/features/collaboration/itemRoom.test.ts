@@ -4,12 +4,20 @@ import { ApiError } from '@/api/client';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
-const providers: { config: RoomProviderConfig; connects: number }[] = [];
+const providers: {
+  config: RoomProviderConfig;
+  connects: number;
+  stateless: string[];
+}[] = [];
 vi.mock('./roomProvider', () => ({
   RoomProvider: class {
-    record: { config: RoomProviderConfig; connects: number };
+    record: {
+      config: RoomProviderConfig;
+      connects: number;
+      stateless: string[];
+    };
     constructor(config: RoomProviderConfig) {
-      this.record = { config, connects: 0 };
+      this.record = { config, connects: 0, stateless: [] };
       providers.push(this.record);
     }
     connect() {
@@ -17,7 +25,9 @@ vi.mock('./roomProvider', () => ({
     }
     disconnect() {}
     destroy() {}
-    sendStateless() {}
+    sendStateless(payload: string) {
+      this.record.stateless.push(payload);
+    }
   },
 }));
 // The next token requests' answers: a token, or an error thrown.
@@ -38,6 +48,7 @@ const drafts = vi.hoisted(() => ({
   onStorage: undefined as ((ok: boolean) => void) | undefined,
   refused: 0,
   rows: [] as unknown[],
+  unsaved: true,
 }));
 vi.mock('@/lib/editDrafts', () => ({
   applyDrafts: vi.fn(),
@@ -58,7 +69,9 @@ vi.mock('@/lib/editDrafts', () => ({
     drafts.onStorage = options.onStorage;
     return {
       connected() {},
-      covered: async () => undefined,
+      covered: async () => {
+        drafts.unsaved = false;
+      },
       discard: async () => {
         drafts.discarded += 1;
       },
@@ -70,7 +83,9 @@ vi.mock('@/lib/editDrafts', () => ({
         drafts.refused += 1;
       },
       sequence: 1,
-      unsaved: true,
+      get unsaved() {
+        return drafts.unsaved;
+      },
     };
   },
   recoveryDocument: () => new Y.Doc(),
@@ -92,6 +107,7 @@ beforeEach(() => {
   drafts.refused = 0;
   drafts.discarded = 0;
   drafts.disposed = 0;
+  drafts.unsaved = true;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -119,6 +135,28 @@ it('ends once on a refused update and never rejoins', async () => {
   expect(drafts.refused).toBe(1);
   expect(onReplace).toHaveBeenCalledTimes(1);
   expect(provider.connects).toBe(1);
+  room.destroy();
+});
+
+// Saved means stored in the database (Epo 2026-10-19): edits the room
+// acknowledged still show syncing until the receipt of the store that holds
+// them, then saved.
+it('shows syncing until a store receipt covers the edits, then saved', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onUnsyncedChanges?.({ number: 1 });
+  expect(room.getSnapshot().status).toBe('syncing');
+  provider.config.onUnsyncedChanges?.({ number: 0 });
+  expect(room.getSnapshot().status).toBe('syncing');
+  const { id } = JSON.parse(provider.stateless.at(-1) ?? '{}');
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      checkpointIds: [id],
+      type: 'checkpoint-persisted',
+    }),
+  });
+  expect(room.getSnapshot().status).toBe('saved');
   room.destroy();
 });
 

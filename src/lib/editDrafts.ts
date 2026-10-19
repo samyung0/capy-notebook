@@ -4,6 +4,7 @@ import { isAccountForbiddenError, isApiError } from '@/api/client';
 import type { MaterialCollaborationToken } from '@/api/types';
 import { tabAllowance } from '@/features/collaboration/allowance';
 import { setHeld } from '@/features/collaboration/held';
+import { MAX_UPDATE_BYTES } from '@/features/collaboration/pieces';
 import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import {
@@ -871,6 +872,9 @@ async function sendPiece(
   group: { base?: string },
   body: Uint8Array<ArrayBuffer>
 ): Promise<Sent> {
+  // Over the service's cap (a struct that cannot be cut): never sendable as
+  // it is, so the editor gets it.
+  if (body.byteLength > MAX_UPDATE_BYTES) return 'waits';
   const wait = tabAllowance.reserve(body.byteLength);
   if (wait > 0) {
     setHeld(DRAFT_PACING, true);

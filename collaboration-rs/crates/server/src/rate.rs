@@ -1,9 +1,15 @@
 //! A user's update allowance (Epo 2026-10-18): a burst plus a sustained
 //! rate, in messages and in their bytes, far above what a person typing or
 //! pasting sends. It belongs to the user: their sockets and draft sends all
-//! take from it (SYNC, awareness and awareness queries; the room charges the
-//! replies it encodes for a step 1 or a query), and it is kept a minute after
-//! its last use, so a reconnect gets no fresh burst.
+//! take from it (SYNC, awareness, awareness queries and JOINs), and it is
+//! kept a minute after its last use, so a reconnect gets no fresh burst.
+//!
+//! Beside it, the user's open budget (Epo 2026-10-19): the full-document
+//! answers their opens receive (a step 1's, an awareness query's, the
+//! awareness sent on JOIN) are charged to it by their bytes once encoded. It
+//! refills continuously, full again over [OPEN_REFILL] from empty; spent, the
+//! user's next step 1 or query waits until it is back above zero (`socket.rs`),
+//! slowed, never refused.
 //!
 //! A user over it, or sending an update over `ydoc::MAX_UPDATE_BYTES`, is in
 //! a timeout (Epo 2026-10-18): nothing of theirs that could change a document
@@ -20,13 +26,30 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
 
-/// The allowance's sizes (`COLLABORATION_UPDATE_*`, `config.rs`).
+/// The allowance's sizes (`COLLABORATION_UPDATE_*`) and the open budget's
+/// (`COLLABORATION_OPEN_*`, `config.rs`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limits {
     pub burst_updates: u64,
     pub burst_bytes: u64,
     pub updates_per_second: u64,
     pub bytes_per_second: u64,
+    pub open_bytes: u64,
+    /// Seconds the open budget takes to refill from empty.
+    pub open_refill_seconds: u64,
+}
+
+/// The open budget (Epo 2026-10-19): about 80 MiB, enough to browse 3-4
+/// large documents.
+pub const OPEN_BYTES: u64 = 80 << 20;
+/// The open budget refills to full over 5 minutes from empty (Epo
+/// 2026-10-19), about 0.27 MiB a second.
+pub const OPEN_REFILL: Duration = Duration::from_secs(300);
+
+impl Limits {
+    fn open_per_second(&self) -> f64 {
+        self.open_bytes as f64 / self.open_refill_seconds as f64
+    }
 }
 
 /// How long an allowance is kept after its last use (and until it has
@@ -59,12 +82,13 @@ pub struct TimedOut {
 
 /// Two token buckets, full when first used. A message is over the limit when
 /// either bucket holds less than it costs (one message, its bytes); then
-/// nothing is taken. A reply charged after it was encoded may leave the byte
-/// bucket below zero.
+/// nothing is taken. Beside them the open budget, which an answer charged
+/// after it was encoded may leave below zero.
 #[derive(Debug)]
 struct Allowance {
     updates: f64,
     bytes: f64,
+    open: f64,
     at: Instant,
     /// The end of the user's last timeout.
     until: Option<Instant>,
@@ -77,6 +101,7 @@ impl Allowance {
         Allowance {
             updates: limits.burst_updates as f64,
             bytes: limits.burst_bytes as f64,
+            open: limits.open_bytes as f64,
             at: now,
             until: None,
             repeats: 0,
@@ -90,6 +115,7 @@ impl Allowance {
             .min(limits.burst_updates as f64);
         self.bytes =
             (self.bytes + elapsed * limits.bytes_per_second as f64).min(limits.burst_bytes as f64);
+        self.open = (self.open + elapsed * limits.open_per_second()).min(limits.open_bytes as f64);
     }
 
     fn remaining(&self, now: Instant) -> Option<Duration> {
@@ -141,6 +167,7 @@ impl Allowance {
             && self.updates + seconds * limits.updates_per_second as f64
                 >= limits.burst_updates as f64
             && self.bytes + seconds * limits.bytes_per_second as f64 >= limits.burst_bytes as f64
+            && self.open + seconds * limits.open_per_second() >= limits.open_bytes as f64
             && self.until.is_none_or(|end| now >= end + REPEAT_WINDOW)
     }
 }
@@ -227,14 +254,24 @@ impl Allowances {
         self.announce(user, verdict, now)
     }
 
-    /// Charges a reply's `bytes` encoded for `user` (a step 1's answer, an
-    /// awareness query's): the allowance may go below zero, and the user's
-    /// next message waits for it to come back.
-    pub fn charge(&self, user: &str, bytes: usize, now: Instant) {
+    /// Charges a full-document answer's `bytes` encoded for `user` (a step
+    /// 1's, an awareness query's, the awareness sent on JOIN) to their open
+    /// budget, which may go below zero.
+    pub fn charge_open(&self, user: &str, bytes: usize, now: Instant) {
         self.with(user, now, |allowance| {
             allowance.refill(&self.limits, now);
-            allowance.bytes -= bytes as f64;
+            allowance.open -= bytes as f64;
         });
+    }
+
+    /// How long `user`'s next step 1 or query waits: until their open budget
+    /// is back above zero.
+    pub fn open_wait(&self, user: &str, now: Instant) -> Option<Duration> {
+        let per_second = self.limits.open_per_second();
+        self.with(user, now, |allowance| {
+            allowance.refill(&self.limits, now);
+            (allowance.open < 0.0).then(|| Duration::from_secs_f64(-allowance.open / per_second))
+        })
     }
 
     /// How long `user`'s running timeout has left.
@@ -268,6 +305,8 @@ mod tests {
         burst_bytes: 8 << 20,
         updates_per_second: 60,
         bytes_per_second: 2 << 20,
+        open_bytes: OPEN_BYTES,
+        open_refill_seconds: OPEN_REFILL.as_secs(),
     };
 
     fn secs(seconds: f64) -> Duration {
@@ -420,26 +459,28 @@ mod tests {
         );
     }
 
-    /// A step 1's answer is charged by its bytes once encoded (Epo
-    /// 2026-10-19): the next message waits until the allowance covers it.
+    /// Full-document answers draw on the open budget, not the allowance
+    /// (Epo 2026-10-19): spent, the next open waits until it is back above
+    /// zero, refilling 80 MiB over 5 minutes.
     #[test]
-    fn a_charged_reply_holds_back_the_next_message() {
+    fn answers_spend_the_open_budget_and_the_next_open_waits_for_it() {
         let start = Instant::now();
         let allowances = Allowances::new(LIMITS, start);
-        allowances.charge("u1", 20 << 20, start);
-        // 12 MiB below zero: 6 s to cover a 1 byte message.
-        let Verdict::TimedOut { remaining, started } = allowances.take("u1", 1, start) else {
-            panic!("the next message fits");
-        };
-        assert!(started);
-        assert!(
-            (remaining.as_secs_f64() - 6.0).abs() < 0.01,
-            "{remaining:?}"
-        );
+        allowances.charge_open("u1", 60 << 20, start);
+        assert_eq!(allowances.open_wait("u1", start), None);
+        // 20 MiB below zero: 75 s at 80 MiB per 300 s.
+        allowances.charge_open("u1", 40 << 20, start);
+        let wait = allowances
+            .open_wait("u1", start)
+            .expect("the next open waits");
+        assert!((wait.as_secs_f64() - 75.0).abs() < 0.01, "{wait:?}");
+        assert_eq!(allowances.open_wait("u1", start + wait + secs(0.01)), None);
+        // The edit allowance is untouched, and another user's budget is full.
         assert_eq!(
-            allowances.take("u1", 1, start + remaining + secs(0.001)),
-            Verdict::Taken
+            passed(&allowances, "u1", start, Duration::ZERO, 10, 300),
+            300
         );
+        assert_eq!(allowances.open_wait("u2", start), None);
     }
 
     /// Every socket of the user hears that a timeout began.

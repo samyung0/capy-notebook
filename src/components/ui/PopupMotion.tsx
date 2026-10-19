@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { cn } from '@/lib/cn';
 
 /** Keeps a closing popup at its last anchor without animating its positioning transform. */
@@ -29,6 +30,7 @@ export function PopupMotion({
   const [present, setPresent] = useState(open);
   const [lastOpen, setLastOpen] = useState({ children, style });
   const animationRef = useRef<HTMLDivElement>(null);
+  const held = useEditorHeld();
 
   if (open && !present) setPresent(true);
   if (open && (lastOpen.children !== children || lastOpen.style !== style)) {
@@ -64,7 +66,7 @@ export function PopupMotion({
     <div
       aria-hidden={!open || undefined}
       className={positionClassName}
-      inert={!open}
+      inert={!open || held}
       ref={positionRef}
       style={open ? style : lastOpen.style}
     >

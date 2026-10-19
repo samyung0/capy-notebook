@@ -191,8 +191,9 @@ it('sends a delete set larger than a piece in pieces after the structs', () => {
 
 /** A note of paragraphs written as slate-yjs writes elements (the type, its
  * properties, its text), with `insert` added between them in a transaction
- * of its own: the whole state and the clocks [from, to) that insert took. */
-function noteAround(insert: () => Y.XmlText) {
+ * of its own (the element it returns, or what it writes into the content):
+ * the whole state and the clocks [from, to) that insert took. */
+function noteAround(insert: (content: Y.XmlText) => Y.XmlText | undefined) {
   const editor = new Y.Doc();
   const content = editor.get('content', Y.XmlText);
   const paragraphs = (from: number) =>
@@ -207,7 +208,10 @@ function noteAround(insert: () => Y.XmlText) {
     });
   paragraphs(0);
   const from = Y.getState(editor.store, editor.clientID);
-  editor.transact(() => content.insertEmbed(content.length, insert()));
+  editor.transact(() => {
+    const element = insert(content);
+    if (element) content.insertEmbed(content.length, element);
+  });
   const to = Y.getState(editor.store, editor.clientID);
   paragraphs(20);
   return {
@@ -273,6 +277,37 @@ it('keeps a new chart with its whole figure map and properties in one piece, whe
     return element;
   });
   expect(chart.to - chart.from).toBeGreaterThan(100);
+  expect(cutEverywhere(chart)).toEqual({ split: [], wrong: 0 });
+});
+
+function series(name: string) {
+  const points = new Y.Array();
+  for (let index = 0; index < 30; index += 1) {
+    const point = new Y.Map();
+    point.set('x', index);
+    point.set('label', `${name} ${index} `.repeat(1 + (index % 4)));
+    points.push([point]);
+  }
+  return points;
+}
+
+// Rate-limit review r3 S3: a resync's state garbage-collects a replaced
+// series into structs that name no parent, between the chart's figure and
+// its `id` and `type`; the chart still goes in one piece.
+it('keeps a chart whose series was replaced in one piece, across its garbage-collected structs', () => {
+  const chart = noteAround((content) => {
+    const element = new Y.XmlText();
+    const block = new Y.Map();
+    element.setAttribute('block', block as never);
+    content.insertEmbed(content.length, element);
+    block.set('series', series('first'));
+    block.set('series', series('second'));
+    block.set('title', new Y.Text('Revenue by quarter'));
+    element.setAttribute('id', 'chart-1');
+    element.setAttribute('type', 'chart');
+  });
+  const { structs } = Y.decodeUpdate(chart.update);
+  expect(structs.some((struct) => struct instanceof Y.GC)).toBe(true);
   expect(cutEverywhere(chart)).toEqual({ split: [], wrong: 0 });
 });
 

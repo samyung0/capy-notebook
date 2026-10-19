@@ -9,9 +9,12 @@ import * as Y from 'yjs';
  * photo's binary, a format mark, a type) goes whole.
  */
 export const PIECE_BYTES = 2 * 1024 * 1024;
-/** The largest new type kept whole with its subtree: the server's 8 MiB
- * update cap less its framing. */
-const SUBTREE_BYTES = 8 * 1024 * 1024 - 64 * 1024;
+/** The largest update the server takes (`MAX_UPDATE_BYTES`); one over it
+ * times the user out, so a piece over it is never sent. */
+export const MAX_UPDATE_BYTES = 8 * 1024 * 1024;
+/** The largest new type kept whole with its subtree: the server's update
+ * cap less its framing. */
+const SUBTREE_BYTES = MAX_UPDATE_BYTES - 64 * 1024;
 
 type Struct = Y.Item | Y.GC | Y.Skip;
 interface Encoded {
@@ -156,9 +159,19 @@ function subtreeOf(queue: Encoded[], index: number): number {
   const nested = (id: Y.ID | null) =>
     id !== null && id.client === client && id.clock > clock && id.clock < end;
   let count = 0;
+  // A deleted nested type's children are garbage-collected into structs that
+  // name no parent (a resync's state holds them): a run of them stays inside
+  // when a nested item follows it.
+  let collected = { bytes: 0, count: 0 };
   for (let at = index + 1; at < queue.length; at += 1) {
     const { struct } = queue[at];
-    if (!(struct instanceof Y.Item) || struct.id.clock !== end) break;
+    if (struct.id.clock !== end) break;
+    end += struct.length;
+    if (!(struct instanceof Y.Item)) {
+      collected.bytes += queue[at].bytes.byteLength;
+      collected.count += 1;
+      continue;
+    }
     // A struct names its parent only when it has no origins; otherwise it
     // shares its origin's.
     const inside =
@@ -166,9 +179,9 @@ function subtreeOf(queue: Encoded[], index: number): number {
         ? Y.compareIDs(struct.parent, root.id) || nested(struct.parent)
         : nested(struct.origin) || nested(struct.rightOrigin);
     if (!inside) break;
-    end += struct.length;
-    bytes += queue[at].bytes.byteLength;
-    count += 1;
+    bytes += collected.bytes + queue[at].bytes.byteLength;
+    count += collected.count + 1;
+    collected = { bytes: 0, count: 0 };
   }
   return bytes > SUBTREE_BYTES ? 0 : count;
 }

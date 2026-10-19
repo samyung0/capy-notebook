@@ -338,13 +338,17 @@ during one answers `too_fast`, logged as `draft send refused` and counted in
 `capy_collaboration_draft_refusals_total{class="too_fast"}`. Capy's tab
 paces its own messages under the allowance and splits updates into 2 MiB
 pieces, so a count that keeps growing means a runaway or hostile client (or
-one user's several busy tabs), and the warn lines name it. A socket refused
-for its client address's socket cap and a JOIN refused for its user's
-joined channel cap are logged at warn (`client address over its socket
-cap`, `user over the joined channel cap`, the user id only) and counted in
-`capy_collaboration_seat_refusals_total{seat="address"}` and
-`{seat="channel"}`; a socket closed for joining no room within 10 s is
-logged at warn as `socket closed before any join`. Sentry holds failures
+one user's several busy tabs), and the warn lines name it. A JOIN costs one
+message of the allowance, so a join loop is a timeout too. A socket refused
+for its client address's socket cap is logged at warn (`client address over
+its socket cap`) and counted in
+`capy_collaboration_seat_refusals_total{seat="address"}`; a channel closed as
+its user's oldest when they joined one past their 22 is counted in
+`capy_collaboration_oldest_closed_total`; a socket closed for joining no room
+within 10 s is logged at warn as `socket closed before any join`, and one
+that missed timeout announcements (too many at once) as `timeout
+announcements missed`. Full-document answers slowed by a spent open budget
+are not counted: they wait, nothing is refused. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal

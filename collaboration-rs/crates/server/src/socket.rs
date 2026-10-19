@@ -7,9 +7,12 @@
 //! SYNC, awareness, query and stateless messages are dropped on every socket
 //! until it ends, and each joined channel of theirs hears it (on join too)
 //! with only the time left (`update-timeout`); their editors pause, then
-//! join again on the same socket and resync. A socket must join a room
-//! within [JOIN_DEADLINE]; a client address holds a capped number of sockets
-//! and a user a capped number of joined channels (`seats.rs`).
+//! join again on the same socket and resync. A JOIN costs one message of the
+//! allowance. A step 1 or an awareness query waits while its user's open
+//! budget is spent (`rate.rs`). A socket must join a room within
+//! [JOIN_DEADLINE]; a client address holds a capped number of sockets, and a
+//! user's join past their cap closes their oldest joined channel
+//! (`seats.rs`).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::Ordering;
@@ -18,6 +21,7 @@ use std::time::{Duration, Instant};
 use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
 use bytes::Bytes;
 use serde_json::json;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::access::{self, AccessError};
@@ -29,7 +33,7 @@ use crate::observe::{Level, log};
 use crate::protocol::{self, Kind, Message};
 use crate::rate::{TimedOut, Verdict};
 use crate::room::{self, RoomCmd};
-use crate::seats::Seat;
+use crate::seats::{Closing, Membership, Seat};
 
 /// A writer's access is revalidated at most this often per channel.
 const RECHECK: Duration = Duration::from_secs(5);
@@ -54,6 +58,10 @@ const JOIN_DEADLINE: Duration = Duration::from_secs(10);
 /// What a timed-out user's channels hear (`update-timeout` in
 /// src/features/collaboration/roomProvider.ts).
 pub const TIMEOUT_TYPE: &str = "update-timeout";
+/// Why a channel closed as its user's oldest when they joined one past their
+/// cap (`OLDEST_CLOSED_REASON` in src/features/collaboration/roomProvider.ts):
+/// the client joins it again only once the user comes back to it.
+pub const OLDEST_CLOSED_REASON: &str = "collaboration-oldest-closed";
 
 enum Channel {
     /// Queued messages and the JOIN attempt (a later JOIN on the channel
@@ -65,8 +73,16 @@ enum Channel {
         context: Context,
         checked: Option<Instant>,
         /// Its place among the user's joined channels.
-        _seat: Seat,
+        membership: Membership,
     },
+}
+
+/// A channel's step 1 and awareness query waiting for the user's open
+/// budget: the latest of each.
+#[derive(Default)]
+struct Opening {
+    step1: Option<Bytes>,
+    query: bool,
 }
 
 pub struct Refusal {
@@ -77,6 +93,9 @@ pub struct Refusal {
     /// Counted and logged as an authentication failure: every refusal but a
     /// full source disk store's, which its room load logs and counts.
     authentication: bool,
+    /// The user is in a timeout, with this long left: a channel hears it
+    /// and joins again once it ends; a draft send answers too-fast.
+    pub remaining: Option<Duration>,
 }
 
 impl Refusal {
@@ -87,6 +106,16 @@ impl Refusal {
             message: message.into(),
             class: Class::Unavailable,
             authentication: true,
+            remaining: None,
+        }
+    }
+
+    fn timed_out(user: &str, remaining: Duration) -> Self {
+        Refusal {
+            class: Class::TooFast,
+            authentication: false,
+            remaining: Some(remaining),
+            ..Refusal::plain(format!("{user} is in a timeout"))
         }
     }
 
@@ -99,6 +128,7 @@ impl Refusal {
                 _ => Class::Permission,
             },
             authentication: true,
+            remaining: None,
         }
     }
 
@@ -115,15 +145,8 @@ impl Refusal {
 }
 
 type AuthResult = (u64, u64, Result<(RoomName, Context), Refusal>);
-/// A join's answer: channel, attempt, and the joined room (with the user's
-/// channel seat) or the refusal.
-type JoinResult = (
-    u64,
-    u64,
-    RoomName,
-    Context,
-    Result<(RoomHandle, Seat), Refusal>,
-);
+/// A join's answer: channel, attempt, and the joined room or the refusal.
+type JoinResult = (u64, u64, RoomName, Context, Result<RoomHandle, Refusal>);
 
 /// Joins `name`'s room (loading it if need be). A room that just unloaded
 /// fails the send or the join: look up again once.
@@ -207,10 +230,18 @@ pub async fn authenticate(
             ),
             class: Class::Outdated,
             authentication: true,
+            remaining: None,
         });
     }
     if app.evictions.blocks(&room, false) {
         return Err(Refusal::plain("collaboration room is being reset"));
+    }
+    // The token first (CPU only), then the user's timeout: a bad token or a
+    // timed-out user costs no lookup.
+    let claims = auth::verify(&token, &app.config.secret, &room, auth::now_seconds())
+        .map_err(|error| Refusal::token(&error))?;
+    if let Some(remaining) = app.allowances.remaining(&claims.sub, Instant::now()) {
+        return Err(Refusal::timed_out(&claims.sub, remaining));
     }
     if room_evicting(&app, &room).await.map_err(Refusal::plain)? {
         return Err(match name {
@@ -221,8 +252,6 @@ pub async fn authenticate(
             RoomName::Material { .. } => Refusal::plain("collaboration room is being compacted"),
         });
     }
-    let claims = auth::verify(&token, &app.config.secret, &room, auth::now_seconds())
-        .map_err(|error| Refusal::token(&error))?;
     let mut viewer = false;
     match &name {
         RoomName::Material {
@@ -361,6 +390,13 @@ struct Connection {
     timers: BTreeMap<(Instant, u64), bool>,
     /// When the socket closes unless a room joined by then.
     join_deadline: Option<Instant>,
+    /// What this socket hears when one of its channels is its user's oldest
+    /// past their cap.
+    closing_tx: mpsc::UnboundedSender<Closing>,
+    /// Step 1s and queries waiting for their user's open budget, and when
+    /// to look again.
+    opening: HashMap<u64, Opening>,
+    open_at: Option<Instant>,
 }
 
 /// Serves one socket; `_address` is its place among its client address's
@@ -372,6 +408,7 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
     let overflow = outbox.overflow();
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel();
     let (join_tx, mut join_rx) = mpsc::unbounded_channel();
+    let (closing_tx, mut closing_rx) = mpsc::unbounded_channel();
     let mut timeouts = app.allowances.subscribe();
     let mut connection = Connection {
         socket_id: format!("{}-{id}", app.instance_id),
@@ -386,6 +423,9 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
         joined_once: false,
         timers: BTreeMap::new(),
         join_deadline: Some(Instant::now() + JOIN_DEADLINE),
+        closing_tx,
+        opening: HashMap::new(),
+        open_at: None,
     };
     let mut socket = socket;
     loop {
@@ -420,7 +460,19 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
                 // Its queued messages go to the room now, and count.
                 connection.joined(channel, attempt, name, context, result).await;
             }
-            Ok(timeout) = timeouts.recv() => connection.timed_out(&timeout),
+            timeout = timeouts.recv() => match timeout {
+                Ok(timeout) => connection.timed_out(&timeout),
+                // Too many users timed out at once: this socket missed some
+                // announcements (their channels learn at their next join).
+                Err(RecvError::Lagged(missed)) => log(
+                    Level::Warn,
+                    "timeout announcements missed",
+                    json!({ "missed": missed, "socket_id": connection.socket_id }),
+                ),
+                Err(RecvError::Closed) => {}
+            },
+            Some((channel, id)) = closing_rx.recv() => connection.close_oldest(channel, id).await,
+            () = sleep_until(connection.open_at) => connection.on_opening().await,
             () = overflow.notified() => {
                 log(Level::Warn, "slow connection closed", json!({ "socket_id": connection.socket_id }));
                 break;
@@ -472,6 +524,7 @@ impl Connection {
 
     fn forget(&mut self, channel: u64) {
         crate::source_rooms::end_join(&self.app, (self.id, channel));
+        self.opening.remove(&channel);
         if let Some(Channel::Authenticating(queue, _)) = self.channels.remove(&channel) {
             self.queued.0 -= queue.len();
             self.queued.1 -= queue
@@ -505,8 +558,8 @@ impl Connection {
     }
 
     /// The join deadline passed: true when the socket must close (no room
-    /// joined, none authenticating); a join still authenticating gets
-    /// another [JOIN_DEADLINE].
+    /// joined, none authenticating); a join still authenticating (its token
+    /// held, `on_message`) gets another [JOIN_DEADLINE].
     fn join_overdue(&mut self) -> bool {
         let authenticating = self
             .channels
@@ -555,6 +608,14 @@ impl Connection {
                 let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
             }
             self.forget(channel);
+            // A bad token is refused here, before any lookup, so it never
+            // holds the join deadline open.
+            if let Err(error) =
+                auth::verify(&token, &self.app.config.secret, &room, auth::now_seconds())
+            {
+                self.refuse(channel, &Refusal::token(&error));
+                return true;
+            }
             let pending = self
                 .channels
                 .values()
@@ -600,7 +661,8 @@ impl Connection {
 
     /// A joined channel's message goes to its room, after the writer recheck
     /// for updates. SYNC, awareness and query messages take from the user's
-    /// allowance; in a timeout they and stateless messages are dropped.
+    /// allowance; in a timeout they and stateless messages are dropped. A
+    /// step 1 or query waits while the user's open budget is spent.
     async fn forward(&mut self, message: Message) {
         let channel = message.channel;
         let Some(Channel::Joined {
@@ -654,9 +716,23 @@ impl Connection {
             }
             return;
         }
+        let step1 = decoded.is_some_and(|(kind, _)| kind == protocol::sync::STEP1);
+        if (step1 || message.kind == Kind::QueryAwareness)
+            && let Some(wait) = self.app.allowances.open_wait(&context.user_id, now)
+        {
+            let opening = self.opening.entry(channel).or_default();
+            if step1 {
+                opening.step1 = Some(message.payload.clone());
+            } else {
+                opening.query = true;
+            }
+            let at = now + wait;
+            self.open_at = Some(self.open_at.map_or(at, |open_at| open_at.min(at)));
+            return;
+        }
         let command = match message.kind {
             Kind::Sync => {
-                let writes = decoded.is_some_and(|(kind, _)| kind != protocol::sync::STEP1);
+                let writes = decoded.is_some() && !step1;
                 if writes
                     && context.access == Access::Write
                     && checked.is_none_or(|at| at.elapsed() >= RECHECK)
@@ -704,6 +780,61 @@ impl Connection {
             _ => return,
         };
         let _ = room.tx.send(command).await;
+    }
+
+    /// Waiting step 1s and queries go to their rooms once their user's open
+    /// budget is back; the rest wait on.
+    async fn on_opening(&mut self) {
+        self.open_at = None;
+        let now = Instant::now();
+        let channels: Vec<u64> = self.opening.keys().copied().collect();
+        for channel in channels {
+            let Some(Channel::Joined { room, context, .. }) = self.channels.get(&channel) else {
+                self.opening.remove(&channel);
+                continue;
+            };
+            if let Some(wait) = self.app.allowances.open_wait(&context.user_id, now) {
+                let at = now + wait;
+                self.open_at = Some(self.open_at.map_or(at, |open_at| open_at.min(at)));
+                continue;
+            }
+            let room = room.clone();
+            let Some(opening) = self.opening.remove(&channel) else {
+                continue;
+            };
+            let key = (self.id, channel);
+            if let Some(payload) = opening.step1 {
+                let _ = room.tx.send(RoomCmd::Sync(key, payload)).await;
+            }
+            if opening.query {
+                let _ = room.tx.send(RoomCmd::QueryAwareness(key)).await;
+            }
+        }
+    }
+
+    /// One of this socket's channels was its user's oldest when they joined
+    /// one past their cap (Epo 2026-10-19): it closes, unless it joined again
+    /// since.
+    async fn close_oldest(&mut self, channel: u64, id: u64) {
+        let Some(Channel::Joined {
+            membership, room, ..
+        }) = self.channels.get(&channel)
+        else {
+            return;
+        };
+        if membership.id != id {
+            return;
+        }
+        let room = room.clone();
+        self.app.stats.oldest_closed.fetch_add(1, Ordering::Relaxed);
+        self.send(
+            channel,
+            Kind::Closed,
+            &protocol::closed(0, OLDEST_CLOSED_REASON),
+        );
+        self.channels.remove(&channel);
+        self.forget(channel);
+        let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
     }
 
     /// A writer whose access changed: `room-read-only` for a read-only
@@ -764,25 +895,38 @@ impl Connection {
         }
         let (name, context) = match result {
             Ok(joined) => joined,
+            Err(Refusal {
+                remaining: Some(remaining),
+                ..
+            }) => {
+                self.send_timeout(channel, remaining);
+                self.forget(channel);
+                return;
+            }
             Err(refusal) => {
                 self.refuse(channel, &refusal);
                 return;
             }
         };
-        let Some(seat) = self.app.user_channels.take(&context.user_id) else {
-            self.app.stats.seat_refusals[1].fetch_add(1, Ordering::Relaxed);
-            log(
-                Level::Warn,
-                "user over the joined channel cap",
-                json!({ "room": name.to_string(), "user_id": context.user_id }),
-            );
-            let refusal = Refusal {
-                authentication: false,
-                ..Refusal::plain("user over the joined channel cap")
-            };
-            self.refuse(channel, &refusal);
+        // A JOIN costs one message of the allowance (Epo 2026-10-19), so a
+        // join loop runs into a timeout like any other.
+        let verdict = self
+            .app
+            .allowances
+            .take(&context.user_id, 0, Instant::now());
+        if let Verdict::TimedOut { remaining, started } = verdict {
+            if started {
+                self.app.stats.timeouts.fetch_add(1, Ordering::Relaxed);
+                log(
+                    Level::Warn,
+                    "user timed out",
+                    json!({ "room": name.to_string(), "socket_id": self.socket_id, "user_id": context.user_id }),
+                );
+            }
+            self.send_timeout(channel, remaining);
+            self.forget(channel);
             return;
-        };
+        }
         let key = (self.id, channel);
         let (app, tx, out, socket) = (
             self.app.clone(),
@@ -791,12 +935,10 @@ impl Connection {
             self.socket_id.clone(),
         );
         tokio::spawn(async move {
-            let result = join_room(&app, &name, &context, key, out, socket)
-                .await
-                .map(|handle| (handle, seat));
+            let result = join_room(&app, &name, &context, key, out, socket).await;
             if let Err(unsent) = tx.send((channel, attempt, name, context, result)) {
                 // The socket closed meanwhile: leave the room it joined.
-                if let (.., Ok((handle, _))) = unsent.0 {
+                if let (.., Ok(handle)) = unsent.0 {
                     let _ = handle.tx.send(RoomCmd::Leave(key)).await;
                 }
             }
@@ -811,10 +953,10 @@ impl Connection {
         attempt: u64,
         name: RoomName,
         context: Context,
-        result: Result<(RoomHandle, Seat), Refusal>,
+        result: Result<RoomHandle, Refusal>,
     ) {
         let current = self.authenticating(channel, attempt);
-        let (handle, seat) = match result {
+        let handle = match result {
             Ok(joined) => joined,
             Err(refusal) => {
                 if current {
@@ -839,6 +981,10 @@ impl Connection {
         self.joined_once = true;
         self.join_deadline = None;
         self.arm_token(channel, &context);
+        let membership = self
+            .app
+            .joined
+            .join(&context.user_id, channel, &self.closing_tx);
         // A user in a timeout hears it on each channel they join.
         let timeout = self
             .app
@@ -851,7 +997,7 @@ impl Connection {
                 name,
                 context,
                 checked: None,
-                _seat: seat,
+                membership,
             },
         );
         if let Some(remaining) = timeout {

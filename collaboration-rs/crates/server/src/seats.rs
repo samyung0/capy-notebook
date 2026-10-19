@@ -1,16 +1,19 @@
 //! What one key may hold at once (Epo 2026-10-19, per-tenant fairness):
-//! sockets per client address (`http.rs`) and joined channels per user
-//! (`socket.rs`). A [Seat] is held while its socket or channel lives and
-//! gives its place back when dropped.
+//! sockets per client address (`http.rs`), refused past the cap, and joined
+//! channels per user (`socket.rs`), where a join past the cap closes the
+//! user's oldest joined channel instead. A [Seat] or [Membership] is held
+//! while its socket or channel lives and gives its place back when dropped.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
+
+use tokio::sync::mpsc;
 
 /// Sockets one client address may hold open (`COLLABORATION_SOCKETS_PER_ADDRESS`).
 pub const SOCKETS_PER_ADDRESS: u64 = 500;
-/// Channels one user may have joined at once, over all their sockets
-/// (`COLLABORATION_CHANNELS_PER_USER`).
-pub const CHANNELS_PER_USER: u64 = 128;
+/// Documents one user may have joined at once over all their sockets, about
+/// 7 per device on 3 devices (Epo 2026-10-19, `COLLABORATION_JOINED_PER_USER`).
+pub const JOINED_PER_USER: u64 = 22;
 
 type Held = Arc<Mutex<HashMap<String, u64>>>;
 
@@ -63,6 +66,89 @@ impl Drop for Seat {
     }
 }
 
+/// What a socket hears when one of its channels is a user's oldest past the
+/// cap: the channel and its membership's id (a channel joined again since
+/// has another).
+pub type Closing = (u64, u64);
+
+#[derive(Debug)]
+struct Joiner {
+    id: u64,
+    channel: u64,
+    socket: mpsc::UnboundedSender<Closing>,
+}
+
+#[derive(Debug, Default)]
+struct Users {
+    next: u64,
+    by_user: HashMap<String, VecDeque<Joiner>>,
+}
+
+/// Each user's joined channels, oldest first, up to `cap`.
+#[derive(Debug)]
+pub struct Joined {
+    cap: usize,
+    users: Arc<Mutex<Users>>,
+}
+
+/// A joined channel's place among its user's, given back on drop.
+#[derive(Debug)]
+pub struct Membership {
+    pub id: u64,
+    user: String,
+    users: Arc<Mutex<Users>>,
+}
+
+impl Joined {
+    pub fn new(cap: u64) -> Self {
+        Joined {
+            cap: usize::try_from(cap).unwrap_or(usize::MAX),
+            users: Arc::default(),
+        }
+    }
+
+    /// `user` joined `channel` on the socket that hears `socket`: past the
+    /// cap their oldest joined channel's socket hears that it closes.
+    pub fn join(
+        &self,
+        user: &str,
+        channel: u64,
+        socket: &mpsc::UnboundedSender<Closing>,
+    ) -> Membership {
+        let mut users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
+        users.next += 1;
+        let id = users.next;
+        let joined = users.by_user.entry(user.to_owned()).or_default();
+        joined.push_back(Joiner {
+            id,
+            channel,
+            socket: socket.clone(),
+        });
+        while joined.len() > self.cap {
+            if let Some(oldest) = joined.pop_front() {
+                let _ = oldest.socket.send((oldest.channel, oldest.id));
+            }
+        }
+        Membership {
+            id,
+            user: user.to_owned(),
+            users: self.users.clone(),
+        }
+    }
+}
+
+impl Drop for Membership {
+    fn drop(&mut self) {
+        let mut users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(joined) = users.by_user.get_mut(&self.user) {
+            joined.retain(|joiner| joiner.id != self.id);
+            if joined.is_empty() {
+                users.by_user.remove(&self.user);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,5 +162,21 @@ mod tests {
         assert!(seats.take("b").is_some());
         drop(first);
         assert!(seats.take("a").is_some());
+    }
+
+    #[test]
+    fn a_join_past_the_cap_closes_the_users_oldest_channel() {
+        let joined = Joined::new(2);
+        let (socket, mut heard) = mpsc::unbounded_channel();
+        let first = joined.join("a", 1, &socket);
+        let second = joined.join("a", 2, &socket);
+        let _other = joined.join("b", 9, &socket);
+        assert!(heard.try_recv().is_err());
+        let _third = joined.join("a", 3, &socket);
+        assert_eq!(heard.try_recv().ok(), Some((1, first.id)));
+        // A channel that left gives its place back.
+        drop(second);
+        let _fourth = joined.join("a", 4, &socket);
+        assert!(heard.try_recv().is_err());
     }
 }

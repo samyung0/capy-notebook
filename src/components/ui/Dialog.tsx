@@ -2,6 +2,7 @@ import { useRouter } from '@tanstack/react-router';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import * as React from 'react';
 import { Card } from '@/components/ui/Card';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Button } from './Button';
@@ -61,6 +62,7 @@ function DialogContent({
   cardClassName?: string;
   cardScrollContainerClassName?: string;
 }) {
+  const held = useEditorHeld();
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -72,6 +74,7 @@ function DialogContent({
           className
         )}
         data-slot="dialog-content"
+        inert={held}
         // check github issues for pointer event collisions between dialog and sonner
         // https://github.com/radix-ui/primitives/issues/2690#issuecomment-1945449832
         onPointerDownOutside={(e) => {

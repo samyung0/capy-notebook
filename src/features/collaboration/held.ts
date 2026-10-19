@@ -30,5 +30,5 @@ function subscribe(listener: () => void) {
 }
 
 export function useCollaborationHeld() {
-  return useSyncExternalStore(subscribe, isHeld, () => false);
+  return useSyncExternalStore(subscribe, isHeld, isHeld);
 }

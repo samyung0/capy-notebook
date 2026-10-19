@@ -5,6 +5,7 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useCollaborationHeld } from './held';
 import type { ItemRoomSnapshot, ItemRoomStatus } from './itemRoom';
 import type { UndoTarget } from './undo';
 
@@ -24,6 +25,7 @@ const STATUS: Record<
 > = {
   connecting: { icon: 'cloudSync', label: m.editor_connecting },
   offline: { icon: 'cloudOff', label: m.editor_status_offline },
+  saved: { icon: 'CloudIcon', label: m.editor_status_saved },
   synced: { icon: 'CloudIcon', label: m.editor_status_synced },
   syncing: { icon: 'cloudSync', label: m.editor_status_syncing },
   unavailable: null,
@@ -68,12 +70,23 @@ export function UndoButtons({
   header?: boolean;
   footer?: boolean;
 }) {
-  const canUndo = useSyncExternalStore(manager.subscribe, manager.canUndo);
-  const canRedo = useSyncExternalStore(manager.subscribe, manager.canRedo);
+  const { subscribe } = manager;
+  const canUndo = useSyncExternalStore(
+    subscribe,
+    manager.canUndo,
+    manager.canUndo
+  );
+  const canRedo = useSyncExternalStore(
+    subscribe,
+    manager.canRedo,
+    manager.canRedo
+  );
+  // The header copy portals out of the editor's inert wrapper.
+  const held = useCollaborationHeld();
   return (
     <span className="flex items-center">
       <ToolbarButton
-        disabled={!canUndo}
+        disabled={held || !canUndo}
         label={m.editor_undo()}
         onClick={() => manager.undo()}
       >
@@ -86,7 +99,7 @@ export function UndoButtons({
         />
       </ToolbarButton>
       <ToolbarButton
-        disabled={!canRedo}
+        disabled={held || !canRedo}
         label={m.editor_redo()}
         onClick={() => manager.redo()}
       >

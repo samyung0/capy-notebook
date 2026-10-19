@@ -1,4 +1,5 @@
 import * as PopoverPrimitive from '@radix-ui/react-popover';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { cn } from '@/lib/cn';
 import { PopupMotion } from './PopupMotion';
 
@@ -40,6 +41,7 @@ export function FloatingBlockToolbar({
   open,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content> & { open: boolean }) {
+  const held = useEditorHeld();
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
@@ -55,7 +57,7 @@ export function FloatingBlockToolbar({
         // Pair with `collisionBoundary` so it hides with its block when that
         // scrolls out of a clipped area.
         hideWhenDetached
-        inert={!open}
+        inert={!open || held}
         onOpenAutoFocus={(event) => event.preventDefault()}
         side="bottom"
         sideOffset={8}

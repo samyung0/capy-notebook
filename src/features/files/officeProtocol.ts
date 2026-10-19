@@ -107,8 +107,9 @@ export type OfficeHostMessage =
    * The tab holds back its collaboration messages (Epo 2026-10-18): frames
    * wait for the update allowance, an update's pieces (over 2 MiB,
    * `splitUpdate`) wait for the room's acknowledgement, or the user is in a
-   * timeout. The host already takes no input meanwhile (`CollaborationHold`);
-   * the runtime may show its own state.
+   * timeout. A DOCX or PPTX editor pauses meanwhile (`set-capabilities`
+   * with canEdit false); the XLSX editor stays editable there and takes this
+   * flag instead, refusing edits with a busy cursor.
    */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;

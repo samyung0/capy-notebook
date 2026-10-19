@@ -54,10 +54,15 @@ import { LOCAL_EDIT } from './yText';
  * replaced by a fresh one (`onReplace`): it never rejoins with what was
  * refused (REVIEW1 M1, M5). */
 
+/** `syncing` lasts until the store holding this device's edits answered
+ * (its receipt), not only until the room acknowledged them: Saved means
+ * stored in the database (Epo 2026-10-19). `synced`: joined with nothing of
+ * this device's to store. */
 export type ItemRoomStatus =
   | 'connecting'
   | 'synced'
   | 'syncing'
+  | 'saved'
   | 'offline'
   | 'unavailable';
 
@@ -163,6 +168,8 @@ export class ItemRoom {
     synced: false,
   };
   private unsynced = 0;
+  /** A receipt covered this device's edits (shown as saved). */
+  private stored = false;
   private destroyed = false;
   private ended = false;
   /** Rejoins with a fresh token, backing off while it keeps failing (as a
@@ -223,8 +230,9 @@ export class ItemRoom {
     for (const listener of this.listeners) listener();
   }
 
-  private live() {
-    return this.unsynced > 0 ? 'syncing' : 'synced';
+  private live(): ItemRoomStatus {
+    if (this.unsynced > 0 || this.recorder?.unsaved) return 'syncing';
+    return this.stored ? 'saved' : 'synced';
   }
 
   private tokenRequest() {
@@ -492,6 +500,9 @@ export class ItemRoom {
         for (const [id, sequence] of this.pending)
           if (sequence <= covered) this.pending.delete(id);
         void this.recorder?.covered(covered).then(() => this.markUnsent());
+        this.stored = true;
+        if (this.snapshot.synced && this.snapshot.status !== 'offline')
+          this.set({ status: this.live() });
         return;
       }
       case 'document-rejected':

@@ -59,13 +59,15 @@ pub struct Config {
     /// (bench/collaboration/reports/2026-10-18-update-rates.md), the burst
     /// for a DOCX paste of about 5,000 paragraphs (two updates each), the
     /// rate three times the fastest key repeat. The byte burst is at least
-    /// the largest update (`ydoc::MAX_UPDATE_BYTES`).
+    /// the largest update (`ydoc::MAX_UPDATE_BYTES`). The open budget beside
+    /// it (Epo 2026-10-19). An operator lowering any of these makes tabs
+    /// time out (the client paces by the defaults, `allowance.ts`).
     pub update_limits: crate::rate::Limits,
     /// Sockets one client address may hold, and channels one user may have
-    /// joined (`seats.rs`): stress stacks with one address and one user
-    /// raise them.
+    /// joined before a join closes their oldest (`seats.rs`): stress stacks
+    /// with one address and one user raise them.
     pub sockets_per_address: u64,
-    pub channels_per_user: u64,
+    pub joined_per_user: u64,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -144,6 +146,12 @@ impl Config {
             burst_bytes: positive(env, "COLLABORATION_UPDATE_BURST_BYTES", 8 << 20)?,
             updates_per_second: positive(env, "COLLABORATION_UPDATES_PER_SECOND", 200)?,
             bytes_per_second: positive(env, "COLLABORATION_UPDATE_BYTES_PER_SECOND", 2 << 20)?,
+            open_bytes: positive(env, "COLLABORATION_OPEN_BYTES", crate::rate::OPEN_BYTES)?,
+            open_refill_seconds: positive(
+                env,
+                "COLLABORATION_OPEN_REFILL_SECONDS",
+                crate::rate::OPEN_REFILL.as_secs(),
+            )?,
         };
         // A smaller burst would refuse an update the rooms take, every time.
         if update_limits.burst_bytes < ydoc::MAX_UPDATE_BYTES as u64 {
@@ -214,10 +222,10 @@ impl Config {
                 "COLLABORATION_SOCKETS_PER_ADDRESS",
                 crate::seats::SOCKETS_PER_ADDRESS,
             )?,
-            channels_per_user: positive(
+            joined_per_user: positive(
                 env,
-                "COLLABORATION_CHANNELS_PER_USER",
-                crate::seats::CHANNELS_PER_USER,
+                "COLLABORATION_JOINED_PER_USER",
+                crate::seats::JOINED_PER_USER,
             )?,
         })
     }
@@ -269,10 +277,12 @@ mod tests {
                 burst_bytes: 8 << 20,
                 updates_per_second: 200,
                 bytes_per_second: 2 << 20,
+                open_bytes: 80 << 20,
+                open_refill_seconds: 300,
             }
         );
         assert_eq!(config.sockets_per_address, 500);
-        assert_eq!(config.channels_per_user, 128);
+        assert_eq!(config.joined_per_user, 22);
     }
 
     #[test]

@@ -1410,9 +1410,11 @@ user in a timeout; see
 [plate-editor](plate-editor.md#connection-lifetime-and-refusals)) a DOCX or
 PPTX editor is paused the same way (`canEdit: false`, Epo 2026-10-18). In
 edit mode the host also sends that state as `sending` (`pending`), whenever
-it changes and after every boot: the XLSX editor turns read-only with a busy
-cursor on it (the viewer's `sending`, from the XLSX pieces round) instead of
-pausing. It needs no `OFFICE_PROTOCOL_VERSION` bump: a runtime without it
+it changes and after every boot: the runtime keeps it in state and passes it
+to `XlsxEditorHost`, which hands it to the fork's `XlsxEditor` (its `sending`
+prop, from the XLSX pieces round): the XLSX editor refuses edits with a busy
+cursor instead of pausing, once the BetterOffice pin carries the prop (until
+then the editor ignores it). It needs no `OFFICE_PROTOCOL_VERSION` bump: a runtime without it
 drops a message it does not know, and the host and runtime ship together. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
@@ -2185,15 +2187,27 @@ controls Saved. A failed DOCX input queue stays pending until the session ends.
 
 Each incoming source update is checked without copying the room: contributor
 markers against the decoded update, and size against an estimate kept from the
-room's applied update bytes. The writer's access is revalidated at most every
+room's applied update bytes, less the payload bytes each update's deletes free
+(Epo 2026-10-19, `ydoc::apply_freeing`): counted after the apply and before
+the commit over the transaction's own delete set, so the cost follows the
+deleted structs; a string's bytes, a binary's length and a value's strings and
+buffers, never the item headers or the deleted markers, and only items that
+existed before the update, that the commit collected, and (Office) newer than
+the seed, whose content a delete only marks in the stored change. Overwrites,
+deletes and replaced pictures no longer drift the estimate toward refusals,
+and it stays an upper bound of the state. The writer's access is revalidated at most every
 5 s per connection. Membership, role and share changes, and a user's own
 account change, close that user's connections through the collaboration
 eviction outbox; anything else (such as the owner's account state for a
 collaborator) takes effect within those 5 s, and every checkpoint rechecks each
 writer. Only when the estimate passes the 100 MB cap is the
 exact size computed, at most once per 1,000 updates (`MEASURE_EVERY` in
-`collaboration-rs/crates/sources/src/admit.rs`, about 13 ms per MB of state;
-an update past the estimate meanwhile is refused by it alone), with the
+`collaboration-rs/crates/sources/src/admit.rs`, about 13 ms per MB of state)
+or sooner once the estimate grew 8 MiB since the last measure
+(`MEASURE_GROWTH`, the allowance's byte burst: a large action's pieces over
+existing cells near the cap are measured, not refused; at most one measure
+per 4 s per writer); an update past the estimate otherwise is refused by it
+alone, with the
 update's apply to the measured copy limited to `ydoc::MAX_WORK` steps (Epo
 2026-10-19); an update over the cap gets an unrecoverable
 `source-checkpoint-failed` message, so the client resets to the last saved

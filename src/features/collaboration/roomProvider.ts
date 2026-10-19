@@ -6,7 +6,7 @@ import {
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { setHeld } from './held';
-import { splitUpdate } from './pieces';
+import { MAX_UPDATE_BYTES, splitUpdate } from './pieces';
 import {
   joinPayload,
   type Message,
@@ -48,6 +48,12 @@ export interface RoomProviderConfig {
 /** The server's notice that the user is in a timeout (`TIMEOUT_TYPE`,
  * collaboration-rs/crates/server/src/socket.rs). */
 const TIMEOUT_TYPE = 'update-timeout';
+/** Why the server closed a channel as its user's oldest when they joined
+ * one past their cap (`OLDEST_CLOSED_REASON`, same file). */
+export const OLDEST_CLOSED_REASON = 'collaboration-oldest-closed';
+/** Why a room stopped: an update holds a piece over the server's cap, which
+ * no resend can fix. */
+export const UPDATE_TOO_LARGE_REASON = 'collaboration-update-too-large';
 
 /**
  * One room over the tab's shared collaboration socket (capy-sync 1): join
@@ -60,6 +66,15 @@ const TIMEOUT_TYPE = 'update-timeout';
  * channel joins again on the same socket: the room's step 1 is answered with
  * everything this client holds, and the room is synced again once its own
  * step 2 arrives.
+ *
+ * Closed as the user's oldest joined channel (a user holds at most 22, Epo
+ * 2026-10-19) the room waits, not synced, and joins again once the user comes
+ * back to it: the tab shows again, or an edit here. Joining at once would
+ * close their next oldest.
+ *
+ * An update holding a piece over the server's cap (a struct that cannot be
+ * cut) is never sent: the room stops and closes, and joins again only when
+ * remounted, so it neither loops on timeouts nor drops the edit.
  */
 export class RoomProvider implements ChannelHandler {
   readonly awareness: Awareness;
@@ -77,6 +92,10 @@ export class RoomProvider implements ChannelHandler {
   private lastPiece: number | null = null;
   /** The user is in a timeout: nothing is sent until it ends. */
   private paused = false;
+  /** Closed as the user's oldest: joins again on the user's return. */
+  private parked = false;
+  /** An update over the server's cap: no more joins. */
+  private stopped = false;
   private readonly config: RoomProviderConfig;
   private readonly socket: CollabSocket;
   private channel: number | null = null;
@@ -102,7 +121,7 @@ export class RoomProvider implements ChannelHandler {
   }
 
   connect() {
-    if (this.destroyed || this.wanted) return;
+    if (this.destroyed || this.wanted || this.stopped) return;
     this.wanted = true;
     this.socket.attach(this);
     if (this.socket.status === 'connected') void this.join();
@@ -111,6 +130,7 @@ export class RoomProvider implements ChannelHandler {
   disconnect() {
     if (!this.wanted) return;
     this.wanted = false;
+    this.unpark();
     const joined = this.channel !== null;
     if (joined) this.send(MessageKind.Leave);
     this.endChannel();
@@ -132,7 +152,7 @@ export class RoomProvider implements ChannelHandler {
   }
 
   onSocketOpen() {
-    if (this.wanted) void this.join();
+    if (this.wanted && !this.parked) void this.join();
   }
 
   /** The user's timeout ended: the same channel joins again (the room
@@ -143,7 +163,6 @@ export class RoomProvider implements ChannelHandler {
     const channel = this.channel;
     if (channel === null) return;
     this.isAuthenticated = false;
-    this.resetCounts();
     void this.sendJoin(channel);
   }
 
@@ -169,7 +188,8 @@ export class RoomProvider implements ChannelHandler {
       case MessageKind.Closed: {
         const event = readClosed(payload);
         this.endChannel();
-        this.config.onClose?.(event);
+        if (event.reason === OLDEST_CLOSED_REASON) this.park();
+        else this.config.onClose?.(event);
         return;
       }
       case MessageKind.Sync:
@@ -237,6 +257,27 @@ export class RoomProvider implements ChannelHandler {
     }
   }
 
+  /** Closed as the user's oldest: join again when the tab shows next, or
+   * on an edit here (`documentUpdate`). */
+  private park() {
+    this.parked = true;
+    if (typeof document !== 'undefined')
+      document.addEventListener('visibilitychange', this.visibilityChange);
+  }
+
+  private unpark() {
+    if (!this.parked) return;
+    this.parked = false;
+    if (typeof document !== 'undefined')
+      document.removeEventListener('visibilitychange', this.visibilityChange);
+  }
+
+  private readonly visibilityChange = () => {
+    if (document.visibilityState !== 'visible') return;
+    this.unpark();
+    if (this.wanted && this.socket.status === 'connected') void this.join();
+  };
+
   private setLastPiece(piece: number | null) {
     this.lastPiece = piece;
     setHeld(this, piece !== null);
@@ -256,6 +297,10 @@ export class RoomProvider implements ChannelHandler {
     update: Uint8Array
   ) {
     const pieces = splitUpdate(update);
+    if (pieces.some((piece) => piece.byteLength > MAX_UPDATE_BYTES)) {
+      this.stop();
+      return;
+    }
     for (const piece of pieces) {
       this.sent += 1;
       this.setUnsynced(this.unsyncedChanges + 1);
@@ -263,6 +308,14 @@ export class RoomProvider implements ChannelHandler {
     }
     if (pieces.length > 1 || this.lastPiece !== null)
       this.setLastPiece(this.sent);
+  }
+
+  /** The room stops for an update no resend can fix; the edit stays in the
+   * document (and its drafts) for a remount. */
+  private stop() {
+    this.stopped = true;
+    this.disconnect();
+    this.config.onClose?.({ code: 0, reason: UPDATE_TOO_LARGE_REASON });
   }
 
   private async join() {
@@ -295,6 +348,9 @@ export class RoomProvider implements ChannelHandler {
   }
 
   private joined(_writable: boolean) {
+    // A join after a timeout counts afresh from here, so waiters on the
+    // unsynced count see it go to zero only after the resync.
+    this.resetCounts();
     this.isAuthenticated = true;
     this.isConnected = true;
     this.config.onAuthenticated?.();
@@ -312,8 +368,6 @@ export class RoomProvider implements ChannelHandler {
 
   private sync(payload: Uint8Array) {
     const { body, kind } = readSync(payload);
-    // The server charged this answer's bytes to the user's allowance.
-    if (kind === SyncKind.Step2) this.socket.charge(body.byteLength);
     if (kind === SyncKind.Step1) {
       // The server asks for everything it lacks: this reply carries this
       // client's offline or restored edits, and an unplaced update's resend.
@@ -355,7 +409,14 @@ export class RoomProvider implements ChannelHandler {
   }
 
   private readonly documentUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin === this || !this.isAuthenticated || this.paused) return;
+    if (origin === this) return;
+    if (this.parked) {
+      // An edit here: the user came back to this room.
+      this.unpark();
+      if (this.wanted && this.socket.status === 'connected') void this.join();
+      return;
+    }
+    if (!this.isAuthenticated || this.paused) return;
     this.sendUpdate(SyncKind.Update, update);
   };
 

@@ -2,8 +2,9 @@
  * The collaboration server's update allowance per user (Epo 2026-10-18;
  * its defaults in collaboration-rs/crates/server/src/config.rs): a burst of
  * 10,000 messages or 8 MiB, then 200 messages and 2 MiB a second, shared by
- * the user's sockets and draft sends; SYNC, awareness and awareness queries
- * take from it, and the server charges each step 1 answer's bytes. A tab
+ * the user's sockets and draft sends; SYNC, awareness, awareness queries
+ * and JOINs take from it (full-document answers draw on a separate open
+ * budget the server keeps, which slows opens and never times out). A tab
  * paces what it sends under it (`tabAllowance`: its socket and its draft
  * sends), so a large update's pieces wait instead of timing the user out.
  * Another tab of the same user draws from the same server allowance unseen
@@ -45,13 +46,6 @@ export class Allowance {
         -this.bytes / PER_SECOND.bytes
       ) * 1000
     );
-  }
-
-  /** Charges an answer of `size` bytes the server charged this user (a step
-   * 1's), so what is sent next waits for it as the server's allowance does. */
-  charge(size: number) {
-    this.refill();
-    this.bytes -= size;
   }
 
   /** Full again: a timeout ended, and pacing starts from the defaults. */

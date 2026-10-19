@@ -23,7 +23,11 @@ import {
   text,
   Writer,
 } from './protocol';
-import { RoomProvider } from './roomProvider';
+import {
+  OLDEST_CLOSED_REASON,
+  RoomProvider,
+  UPDATE_TOO_LARGE_REASON,
+} from './roomProvider';
 import { CollabSocket } from './socket';
 
 vi.mock('@/api/auth', () => ({ USE_MSW: false }));
@@ -498,28 +502,56 @@ it('paces pieces under the allowance and keeps later frames behind them', async 
   expect(isHeld()).toBe(false);
 });
 
-/** The server charges a step 1's answer by its bytes: what this client sends
- * next waits for the allowance to cover it. */
-it('waits after a large step 2 answer as the server charged it', async () => {
-  const { document, join, socket } = await joined();
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-  resetAllowance();
-  const server = new Y.Doc();
-  server.getText('content').insert(0, 'w'.repeat(9 * 1024 * 1024));
-  socket.deliver(
-    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
-    message(
-      join.channel,
-      MessageKind.Sync,
-      syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(server))
-    )
-  );
-  socket.take(MessageKind.Sync);
-  // 1 MiB below zero: half a second before the next update goes.
-  document.getText('content').insert(0, 'a');
+/** A user holds at most 22 joined documents (Epo 2026-10-19): a room the
+ * server closed as its user's oldest joins again once the user comes back to
+ * it (the tab shows again, or an edit here), not at once, which would close
+ * their next oldest. */
+it('waits after closing as the user’s oldest until the tab shows again or an edit', async () => {
+  const page = Object.assign(new EventTarget(), {
+    visibilityState: 'visible',
+  });
+  vi.stubGlobal('document', page);
+  const showing = async (state: string) => {
+    page.visibilityState = state;
+    page.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    return socket.take(MessageKind.Join);
+  };
+  const { document, events, join, socket } = await syncedRoom();
+  const oldest = closedPayload(0, OLDEST_CLOSED_REASON);
+  socket.deliver(message(join.channel, MessageKind.Closed, oldest));
+  expect(events.closed).not.toHaveBeenCalled();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toEqual([]);
+  expect(await showing('hidden')).toEqual([]);
+  const [again] = await showing('visible');
+  expect(again).toBeDefined();
+
+  socket.deliver(message(again.channel, MessageKind.Closed, oldest));
+  await flush();
+  expect(socket.take(MessageKind.Join)).toEqual([]);
+  document.getText('content').insert(0, 'back');
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+});
+
+/** An update holding a piece over the server's cap (a struct that cannot be
+ * cut) never goes: the room stops and closes once instead of looping on
+ * timeouts (rate-limit review r3 S8). */
+it('stops instead of sending a piece over the server’s cap', async () => {
+  const { document, events, socket } = await syncedRoom();
+  document.getMap('m').set('blob', new Uint8Array(9 * 1024 * 1024));
   expect(socket.take(MessageKind.Sync)).toEqual([]);
-  await vi.advanceTimersByTimeAsync(600);
-  expect(socket.take(MessageKind.Sync)).toHaveLength(1);
+  expect(events.closed).toHaveBeenCalledWith({
+    code: 0,
+    reason: UPDATE_TOO_LARGE_REASON,
+  });
+  socket.close();
+  FakeSocket.instances.at(-1)?.open();
+  await flush();
+  expect(
+    FakeSocket.instances.flatMap((ws) => ws.take(MessageKind.Join))
+  ).toEqual([]);
 });
 
 // useSourceSession tells a peer's update from a local edit by
@@ -594,6 +626,41 @@ it('holds joins past the eight the server authenticates at once', async () => {
   expect(new Reader(next[1].payload).varString()).toBe('material:m9:schema:1');
 });
 
+// A JOIN during a timeout is answered with the notice instead of JOINED
+// (Epo 2026-10-19): each such channel keeps its place among the eight and
+// joins again from it when the timeout ends.
+it('joins again from its own place after a JOIN answered with a timeout', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  const address = `wss://collab.test/${url++}`;
+  const rooms = Array.from(
+    { length: 8 },
+    (_, i) =>
+      new RoomProvider({
+        document: new Y.Doc(),
+        name: `material:t${i}:schema:1`,
+        token: async () => `token-${i}`,
+        url: address,
+      })
+  );
+  for (const room of rooms) room.connect();
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const first = socket.take(MessageKind.Join);
+  expect(first).toHaveLength(8);
+  const notice = text(
+    JSON.stringify({ remainingMs: 1000, type: 'update-timeout' })
+  );
+  socket.deliver(
+    ...first.map((join) => message(join.channel, MessageKind.Stateless, notice))
+  );
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(socket.take(MessageKind.Join).map((join) => join.channel)).toEqual(
+    first.map((join) => join.channel)
+  );
+  for (const room of rooms) room.destroy();
+});
+
 it('lets the room that joins use the socket its token warmed', async () => {
   const address = `wss://collab.test/${url++}`;
   CollabSocket.warm(address);
@@ -609,8 +676,8 @@ it('closes a warmed socket no room joined once its hold and the idle delay pass'
   const socket = FakeSocket.instances.at(-1) as FakeSocket;
   expect(socket.url).toBe(address);
   socket.open();
-  // Held 10 s for the room, then the idle close's 5 s.
-  vi.advanceTimersByTime(15_000 - 1);
+  // Held 8 s for the room, then the idle close's 5 s.
+  vi.advanceTimersByTime(13_000 - 1);
   expect(socket.readyState).toBe(1);
   vi.advanceTimersByTime(1);
   expect(socket.readyState).toBe(3);

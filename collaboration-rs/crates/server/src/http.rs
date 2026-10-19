@@ -2,7 +2,7 @@
 //! a liveness probe, metrics and the internal routes (service secret) and the
 //! browser's draft send (`drafts.rs`: origin and room token).
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::Ordering;
 
 use axum::body::Bytes;
@@ -74,14 +74,37 @@ fn json_response(status: StatusCode, value: Value) -> Response {
         .into_response()
 }
 
-/// The client address a socket counts toward: Cloudflare's
-/// `CF-Connecting-IP` in front of the deployed service, else the peer's.
+/// The client address a socket counts toward, read as the gateway's limiter
+/// reads it (server/internal/obs/access.go `ClientIP`): Cloudflare's
+/// `CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
+/// peer's. An IPv6 address counts by its /64, the block one host gets. The
+/// headers are trusted while the origin is reachable through the tunnel alone
+/// (deployment-runbook.md).
 fn client_address(headers: &HeaderMap, peer: Option<SocketAddr>) -> Option<String> {
-    headers
-        .get("cf-connecting-ip")
-        .and_then(|value| value.to_str().ok())
+    let header = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.is_empty())
+    };
+    let address = header("cf-connecting-ip")
         .map(str::to_owned)
-        .or_else(|| peer.map(|peer| peer.ip().to_string()))
+        .or_else(|| {
+            header("x-forwarded-for")
+                .and_then(|forwarded| forwarded.split(',').next())
+                .map(|first| first.trim().to_owned())
+        })
+        .or_else(|| peer.map(|peer| peer.ip().to_string()))?;
+    Some(
+        match address.parse::<IpAddr>().map(|ip| ip.to_canonical()) {
+            Ok(IpAddr::V6(ip)) => {
+                let [a, b, c, d, ..] = ip.segments();
+                format!("{a:x}:{b:x}:{c:x}:{d:x}::/64")
+            }
+            Ok(ip) => ip.to_string(),
+            Err(_) => address,
+        },
+    )
 }
 
 /// Any path upgrades to a WebSocket, as Hocuspocus listens; plain requests 404.
@@ -107,7 +130,7 @@ async fn fallback(
     }
     let address = client_address(&headers, peer.map(|Extension(ConnectInfo(peer))| peer));
     let Some(seat) = address.and_then(|address| app.address_sockets.take(&address)) else {
-        app.stats.seat_refusals[0].fetch_add(1, Ordering::Relaxed);
+        app.stats.seat_refusals.fetch_add(1, Ordering::Relaxed);
         log(Level::Warn, "client address over its socket cap", json!({}));
         return (StatusCode::TOO_MANY_REQUESTS, "too many sockets").into_response();
     };
@@ -600,7 +623,7 @@ pub(crate) mod tests {
             .unwrap(),
         );
         let limits = config.update_limits;
-        let (sockets, channels) = (config.sockets_per_address, config.channels_per_user);
+        let (sockets, joined) = (config.sockets_per_address, config.joined_per_user);
         std::sync::Arc::new(crate::app::App {
             instance_id: "test".into(),
             config,
@@ -613,7 +636,7 @@ pub(crate) mod tests {
             stats: Default::default(),
             allowances: crate::rate::Allowances::new(limits, std::time::Instant::now()),
             address_sockets: crate::seats::Seats::new(sockets),
-            user_channels: crate::seats::Seats::new(channels),
+            joined: crate::seats::Joined::new(joined),
             health: Default::default(),
             unplaced: Default::default(),
             projection_failures: Default::default(),
@@ -701,5 +724,39 @@ pub(crate) mod tests {
         let source = include_str!("http.rs");
         let code = &source[..source.find("#[cfg(test)]").unwrap()];
         assert!(code.contains(".read_buffer_size(READ_BUFFER)"));
+    }
+
+    /// Security regression (rate-limit review r3 S10): a socket counts toward
+    /// the address the gateway's limiter reads, an IPv6 one toward its /64,
+    /// so one host's block does not open sockets past the cap.
+    #[test]
+    fn a_socket_counts_toward_its_client_address_and_ipv6_toward_its_64() {
+        let peer = Some(SocketAddr::from(([192, 0, 2, 9], 4000)));
+        let address = |pairs: &[(&'static str, &str)]| {
+            let mut headers = HeaderMap::new();
+            for (name, value) in pairs {
+                headers.insert(*name, value.parse().unwrap());
+            }
+            client_address(&headers, peer)
+        };
+        assert_eq!(address(&[]).as_deref(), Some("192.0.2.9"));
+        assert_eq!(
+            address(&[("x-forwarded-for", "198.51.100.7, 192.0.2.1")]).as_deref(),
+            Some("198.51.100.7")
+        );
+        assert_eq!(
+            address(&[
+                ("cf-connecting-ip", "203.0.113.5"),
+                ("x-forwarded-for", "198.51.100.7")
+            ])
+            .as_deref(),
+            Some("203.0.113.5")
+        );
+        let first = address(&[("cf-connecting-ip", "2001:db8:1:2:aaaa::1")]);
+        assert_eq!(first.as_deref(), Some("2001:db8:1:2::/64"));
+        assert_eq!(
+            first,
+            address(&[("cf-connecting-ip", "2001:db8:1:2:bbbb::9")])
+        );
     }
 }

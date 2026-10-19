@@ -1,5 +1,6 @@
 import { Popover as PopoverPrimitive } from 'radix-ui';
 import type * as React from 'react';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 
 import { cn } from '@/lib/cn';
 
@@ -32,6 +33,7 @@ function PopoverContent({
   alignWidthToTrigger?: boolean;
   container?: React.ComponentProps<typeof PopoverPrimitive.Portal>['container'];
 }) {
+  const held = useEditorHeld();
   return (
     <PopoverPrimitive.Portal container={container}>
       <PopoverPrimitive.Content
@@ -42,6 +44,7 @@ function PopoverContent({
           className
         )}
         data-slot="popover-content"
+        inert={held}
         sideOffset={sideOffset}
         {...props}
       />

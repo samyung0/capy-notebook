@@ -840,6 +840,79 @@ pub fn apply(doc: &Doc, update: Update) -> Result<Vec<u8>, yrs::error::UpdateErr
     Ok(committed_update(txn))
 }
 
+/// [apply], and the payload bytes the update's deletes gave back to the
+/// garbage collection (Epo 2026-10-19: a source room's estimate takes them
+/// off): a string's bytes, a binary's length, a value's strings and buffers.
+/// Item headers and the deleted markers stay, so the state shrinks by at
+/// least this. Counted after the apply and before the commit, while the
+/// deleted items still hold their content, over the transaction's own delete
+/// set: items that existed before it, at or past `since` (an Office room's
+/// seed, whose content a delete only marks in the stored change). An item
+/// the commit did not collect (kept) does not count.
+pub fn apply_freeing(
+    doc: &Doc,
+    update: Update,
+    since: Option<&StateVector>,
+) -> Result<(Vec<u8>, u64), yrs::error::UpdateError> {
+    let mut txn = doc.transact_mut();
+    txn.apply_update(update)?;
+    let deleted = deleted_payloads(&txn, since);
+    let changed = committed_update(txn);
+    let txn = doc.transact();
+    let freed = deleted
+        .into_iter()
+        .filter(|(id, _)| {
+            ReadTxn::store(&txn)
+                .get_item(id)
+                .is_none_or(|item| matches!(item.content(), yrs::block::ItemContent::Deleted(_)))
+        })
+        .map(|(_, bytes)| bytes)
+        .sum();
+    Ok((changed, freed))
+}
+
+/// The items `txn` deleted that existed before it (and at or past `since`),
+/// with their payload bytes: one walk over its delete set's blocks.
+fn deleted_payloads(txn: &yrs::TransactionMut<'_>, since: Option<&StateVector>) -> Vec<(ID, u64)> {
+    use yrs::block::ItemContent;
+    let value = |any: &yrs::Any| match any {
+        yrs::Any::String(text) => text.len() as u64,
+        yrs::Any::Buffer(bytes) => bytes.len() as u64,
+        _ => 0,
+    };
+    let before = txn.before_state();
+    let store = ReadTxn::store(txn);
+    let mut deleted = Vec::new();
+    for (client, ranges) in txn.delete_set().iter() {
+        let floor = since.map_or(0, |seed| seed.get(client));
+        let existed = before.get(client);
+        for range in ranges.iter() {
+            let (start, end) = (range.start.max(floor), range.end.min(existed));
+            if start >= end {
+                continue;
+            }
+            for (block, item) in store.blocks_in(client, start..end) {
+                let Some(item) = item else { continue };
+                if block.clock < start || block.clock + block.len > end {
+                    continue;
+                }
+                let bytes = match item.content() {
+                    ItemContent::String(text) => text.as_str().len() as u64,
+                    ItemContent::Binary(bytes) => bytes.len() as u64,
+                    ItemContent::Any(values) => values.iter().map(value).sum(),
+                    ItemContent::Embed(any) => value(any),
+                    ItemContent::JSON(values) => values.iter().map(|v| v.len() as u64).sum(),
+                    _ => 0,
+                };
+                if bytes > 0 {
+                    deleted.push((block.id(), bytes));
+                }
+            }
+        }
+    }
+    deleted
+}
+
 /// The live contributor marker items, which a stored row carries deleted.
 pub fn live_markers<T: ReadTxn>(txn: &T) -> Vec<ID> {
     let Some(map) = txn.get_map(CONTRIBUTORS_ROOT) else {

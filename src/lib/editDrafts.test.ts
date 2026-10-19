@@ -1555,6 +1555,26 @@ describe('the draft sweep sending', () => {
     expect(await heldText(big)).toBe(text);
   });
 
+  // Rate-limit review r3 S8: a piece over the service's cap (a struct that
+  // cannot be cut) is never sent, so it neither times the user out nor
+  // retries; the editor gets it.
+  it('leaves a piece over the service cap to the editor without sending it', async () => {
+    const key = 'u_over:material:mat_over';
+    const doc = new Y.Doc();
+    let update: Uint8Array = new Uint8Array();
+    doc.once('update', (bytes: Uint8Array) => {
+      update = bytes;
+    });
+    doc.getMap('m').set('blob', new Uint8Array(9 * 1024 * 1024));
+    await putDrafts([
+      draft(`over-${crypto.randomUUID()}`, { data: update, key }),
+    ]);
+    requests.length = 0;
+    await sweepDrafts('u_over', tokens(ROOM));
+    expect(requests).toHaveLength(0);
+    expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
+  });
+
   it("sends a quiz's keys with the keys token, and a file's rows one request per base", async () => {
     const quiz = 'u_items:material:q_1:keys';
     const keysRoom = 'keys:q_1:schema:1';

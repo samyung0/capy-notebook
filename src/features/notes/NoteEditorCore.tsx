@@ -37,7 +37,10 @@ import type {
 } from '@/api/types';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
-import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
+import {
+  CollaborationHold,
+  EditorHoldScope,
+} from '@/features/collaboration/CollaborationHold';
 import '@/features/collaboration/platePlugin';
 import { FileLoading } from '@/features/files/FileStates';
 import {
@@ -1220,61 +1223,65 @@ export function NoteEditorCore({
   ]);
 
   return (
-    <NoteBlockDialogsProvider noteId={material.id}>
-      <div className="flex max-h-full flex-1 flex-col overflow-auto">
-        <Plate editor={editor} onValueChange={changeValue}>
-          <CollaborationProvider
-            currentUserId={currentUserId}
-            discussions={discussions}
-          >
-            {/* Offline past the bound, or refused as outdated: nothing may
-             * edit until reconnect or reload. */}
-            <div className="contents" inert={offlineLimit || outdated}>
-              <NoteToolbar />
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto" ref={setScrollArea}>
-              <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
-                {/* The room replaces the projection copy the moment it syncs,
-                 * so painting that copy first renders the whole document
-                 * twice — seconds of it on a near-limit note. Anything other
-                 * than a healthy handshake still paints, otherwise a broken
-                 * collaboration service would leave a readable note hidden
-                 * behind a spinner. */}
-                {handshaking ? (
-                  <FileLoading message={m.editor_connecting()} />
-                ) : (
-                  <>
-                    <EditorScrollAreaContext.Provider value={scrollArea}>
-                      <CollaborationHold>
-                        <NoteEditorContent
-                          discussions={discussions}
-                          readOnly={offlineLimit || outdated}
-                          shouldShowStats={shouldShowDocumentStats(
-                            documentStats
-                          )}
-                        />
-                      </CollaborationHold>
-                    </EditorScrollAreaContext.Provider>
-                    <NoteAttribution
-                      beforeStats={shouldShowDocumentStats(documentStats)}
-                      embedCredits={material.embedCredits}
-                      embeds={embeds}
-                      provenance={material.provenance}
-                    />
-                    <DocumentStatsFooter
-                      limitError={documentLimitError}
-                      stats={documentStats}
-                    />
-                  </>
-                )}
+    <EditorHoldScope>
+      <NoteBlockDialogsProvider noteId={material.id}>
+        <div className="flex max-h-full flex-1 flex-col overflow-auto">
+          <Plate editor={editor} onValueChange={changeValue}>
+            <CollaborationProvider
+              currentUserId={currentUserId}
+              discussions={discussions}
+            >
+              {/* Offline past the bound, or refused as outdated: nothing may
+               * edit until reconnect or reload. Held back: until sent. */}
+              <div className="contents" inert={offlineLimit || outdated}>
+                <CollaborationHold className="contents">
+                  <NoteToolbar />
+                </CollaborationHold>
               </div>
-            </div>
-            {!(offlineLimit || outdated) && <EditorCommandPalette />}
-            {!(offlineLimit || outdated) &&
-              editorAiEnabled(allowExternalAssets) && <AiMenu />}
-          </CollaborationProvider>
-        </Plate>
-      </div>
-    </NoteBlockDialogsProvider>
+              <div className="min-h-0 flex-1 overflow-auto" ref={setScrollArea}>
+                <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
+                  {/* The room replaces the projection copy the moment it syncs,
+                   * so painting that copy first renders the whole document
+                   * twice — seconds of it on a near-limit note. Anything other
+                   * than a healthy handshake still paints, otherwise a broken
+                   * collaboration service would leave a readable note hidden
+                   * behind a spinner. */}
+                  {handshaking ? (
+                    <FileLoading message={m.editor_connecting()} />
+                  ) : (
+                    <>
+                      <EditorScrollAreaContext.Provider value={scrollArea}>
+                        <CollaborationHold>
+                          <NoteEditorContent
+                            discussions={discussions}
+                            readOnly={offlineLimit || outdated}
+                            shouldShowStats={shouldShowDocumentStats(
+                              documentStats
+                            )}
+                          />
+                        </CollaborationHold>
+                      </EditorScrollAreaContext.Provider>
+                      <NoteAttribution
+                        beforeStats={shouldShowDocumentStats(documentStats)}
+                        embedCredits={material.embedCredits}
+                        embeds={embeds}
+                        provenance={material.provenance}
+                      />
+                      <DocumentStatsFooter
+                        limitError={documentLimitError}
+                        stats={documentStats}
+                      />
+                    </>
+                  )}
+                </div>
+              </div>
+              {!(offlineLimit || outdated) && <EditorCommandPalette />}
+              {!(offlineLimit || outdated) &&
+                editorAiEnabled(allowExternalAssets) && <AiMenu />}
+            </CollaborationProvider>
+          </Plate>
+        </div>
+      </NoteBlockDialogsProvider>
+    </EditorHoldScope>
   );
 }

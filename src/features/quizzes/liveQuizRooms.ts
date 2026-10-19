@@ -13,13 +13,15 @@ import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { Question } from '@/features/questions/types';
 import { readQuestions } from './liveQuiz';
 
-/** The worse of two room states, as the header's save status reads it. */
+/** The worse of two room states, as the header's save status reads it:
+ * one room's stored edits beside another with nothing to store is saved. */
 function combined(a: ItemRoomStatus, b: ItemRoomStatus): ItemRoomStatus {
   const rank: ItemRoomStatus[] = [
     'unavailable',
     'offline',
     'connecting',
     'syncing',
+    'saved',
     'synced',
   ];
   return rank[Math.min(rank.indexOf(a), rank.indexOf(b))];

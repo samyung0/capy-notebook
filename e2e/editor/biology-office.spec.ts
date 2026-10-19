@@ -1824,6 +1824,11 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await expect
       .poll(() => updates.evaluate((seen) => seen.count), { timeout: 30_000 })
       .toBeGreaterThan(0);
+    // Saved means stored (Epo 2026-10-19): Syncing until the receipt.
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'syncing'
+    );
     await receipts(false);
     // Every key lands and saves before the next step counts updates: the
     // rest of "Hello" can still be in the editor's input queue here.

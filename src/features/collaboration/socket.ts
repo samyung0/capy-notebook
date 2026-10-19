@@ -19,8 +19,10 @@ const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 /** A socket with no room left closes after this long (a quick remount reuses it). */
 const IDLE_CLOSE_MS = 5000;
-/** How long `warm` holds a socket open for the room expected on it. */
-const WARM_MS = 10_000;
+/** How long `warm` holds a socket open for the room expected on it: under
+ * the server's 10 s deadline for a socket that joins no room
+ * (`JOIN_DEADLINE`, collaboration-rs/crates/server/src/socket.rs). */
+const WARM_MS = 8000;
 /** Joins the server authenticates at once per socket; it closes the socket on
  * one more (`MAX_PENDING_JOINS`, collaboration-rs/crates/server/src/socket.rs).
  * A note with many embeds on screen queues the rest here. */
@@ -167,12 +169,6 @@ export class CollabSocket {
     this.updateHeld();
   }
 
-  /** The server charged this user an answer of `size` bytes (a step 1's):
-   * what goes next waits for it. */
-  charge(size: number) {
-    (this.allowance ?? tabAllowance).charge(size);
-  }
-
   /**
    * The user is in a timeout for `ms` (the server said so on one of their
    * channels; Epo 2026-10-18): charged frames waiting are dropped, none goes
@@ -233,9 +229,11 @@ export class CollabSocket {
     this.updateHeld();
   }
 
-  /** Sends a channel's JOIN, or holds it while eight others wait for theirs. */
+  /** Sends a channel's JOIN, or holds it while eight others wait for theirs.
+   * A channel whose JOIN the server answered with a timeout notice keeps its
+   * place and joins again from it when the timeout ends. */
   join(channel: number, bytes: Uint8Array<ArrayBuffer>) {
-    if (this.pending.size < MAX_PENDING_JOINS) {
+    if (this.pending.has(channel) || this.pending.size < MAX_PENDING_JOINS) {
       this.pending.add(channel);
       this.send(bytes);
     } else this.queued.push({ bytes, channel });

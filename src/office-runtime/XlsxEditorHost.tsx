@@ -63,6 +63,7 @@ export function XlsxEditorHost({
   onThumbnailer,
   onZoomChange,
   readOnly,
+  sending,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
@@ -89,6 +90,11 @@ export function XlsxEditorHost({
   onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
+  /**
+   * The tab holds back its collaboration messages (pacing, an update's
+   * pieces, a timeout): the grid refuses edits with a loading cursor.
+   */
+  sending?: boolean;
 }) {
   const apiRef = useRef<XlsxEditorApi | null>(null);
   useEffect(() => {
@@ -218,6 +224,9 @@ export function XlsxEditorHost({
         }}
         onSave={onSave}
         readOnly={readOnly}
+        // The pinned fork takes `sending` from editor/xlsx-pieces on; until
+        // that pin lands the editor ignores it.
+        {...{ sending }}
         showCustomNumberFormat={false}
         showFontPicker={!narrow}
         showFontSizePicker={!narrow}
