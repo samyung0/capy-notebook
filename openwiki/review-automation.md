@@ -13,7 +13,7 @@ schedule and nothing deploys on push.
 
 | Runs in Actions                                                                   | Runs locally                                                                                              |
 | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `ci.yml`: lint, types, unit, Go/Postgres, pipeline, Playwright, boundary contract | `$review-repository` skill: reviewer lanes, challenger, report                                            |
+| `ci.yml`: lint, types, unit, Go/Postgres, pipeline, Playwright, boundary contract, dependency advisories | `$review-repository` skill: reviewer lanes, challenger, report                                            |
 | `uat-quality.yml`: smoke, release SHA, authorization and lifecycle checks | Codex Security source scan, `scripts/review/codex-security-scan.sh`, posts `source/codex-security`        |
 | `perf.yml`: editor budgets plus warn-only delta table                             | Strix dynamic UAT scan, `scripts/review/strix-scan.sh`, posts `uat/strix`                                 |
 | `promote-production.yml`: reruns both gates, then deploys                          | Ingest capacity benchmarks in `bench/parsers` against the ingest host (UAT is capped at one slice/worker) |
@@ -107,6 +107,11 @@ when any workflow declares `schedule` or contains a scanner invocation
 when `deploy-uat.yml` has any trigger besides `workflow_dispatch`, or when
 `promote-production.yml` drops the UAT gate, the perf call, or the
 `production` environment.
+
+`scripts/ci/hardening.test.mjs` (in `pnpm test:deployment`) fails when a
+third-party action is not pinned to a commit, a job has no declared token
+scope, a secret reaches a workflow or job `env` or an install or action step,
+or a dependency-vulnerability job leaves `ci.yml` (deployment-runbook §12.7).
 
 ## Coverage gaps
 
