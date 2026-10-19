@@ -120,25 +120,100 @@ func TestAStoredNoteARuleRefusesStillListsAndOpens(t *testing.T) {
 	}
 	quiz, quizToken := item("quiz", quizContent)
 	set, setToken := item("flashcards", setContent)
-	for _, read := range []struct{ method, path, user string }{
-		{http.MethodGet, "/api/quizzes/" + quiz, "u_owner"},
-		{http.MethodGet, "/api/quizzes/" + quiz + "/edit", "u_owner"},
-		{http.MethodGet, "/api/flashcards/" + set + "/cards", "u_owner"},
-		{http.MethodGet, "/api/public/quizzes/" + quizToken, ""},
-		{http.MethodGet, "/api/public/quizzes/" + quizToken + "/assets/asset_1", ""},
-		{http.MethodPost, "/api/public/quizzes/" + quizToken + "/grade", ""},
-		{http.MethodGet, "/api/public/flashcards/" + setToken, ""},
-		{http.MethodGet, "/api/public/flashcards/" + setToken + "/assets/asset_1", ""},
-	} {
-		var body any
-		if read.method == http.MethodPost {
-			body = map[string]any{"answers": map[string]any{}}
-		}
-		rec := doReq(t, h, read.method, read.path, read.user, body)
+	noAnswers := map[string]any{"answers": map[string]any{}}
+	expectUnreadable(t, h, []unreadableRead{
+		{http.MethodGet, "/api/quizzes/" + quiz, "u_owner", nil},
+		{http.MethodGet, "/api/quizzes/" + quiz + "/edit", "u_owner", nil},
+		{http.MethodPost, "/api/quizzes/" + quiz + "/attempts", "u_owner", noAnswers},
+		{http.MethodPatch, "/api/quizzes/" + quiz + "/sharing", "u_owner", map[string]any{"privacy": "link"}},
+		{http.MethodGet, "/api/flashcards/" + set + "/cards", "u_owner", nil},
+		{http.MethodGet, "/api/public/quizzes/" + quizToken, "", nil},
+		{http.MethodGet, "/api/public/quizzes/" + quizToken + "/assets/asset_1", "", nil},
+		{http.MethodPost, "/api/public/quizzes/" + quizToken + "/grade", "", noAnswers},
+		{http.MethodGet, "/api/public/flashcards/" + setToken, "", nil},
+		{http.MethodGet, "/api/public/flashcards/" + setToken + "/assets/asset_1", "", nil},
+	})
+}
+
+type unreadableRead struct {
+	method, path, user string
+	body               any
+}
+
+// expectUnreadable asserts each route answers 422 material_content_unreadable.
+func expectUnreadable(t *testing.T, h http.Handler, reads []unreadableRead) {
+	t.Helper()
+	for _, read := range reads {
+		rec := doReq(t, h, read.method, read.path, read.user, read.body)
 		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "material_content_unreadable") {
 			t.Errorf("%s %s = %d %s, want the unreadable state", read.method, read.path, rec.Code, rec.Body.String())
 		}
 	}
+}
+
+// Study reads a quiz's stored content to rate, check and rank its questions:
+// once a rule refuses it, the workspace's Study tab, its attempts, a new or
+// resumed review, Learning's Review tab, and rating or checking
+// one of its questions answer 422 material_content_unreadable, never a 500
+// (Epo 2026-10-20). Fails if any of those routes maps the error to a 500.
+func TestStudyOfAQuizARuleRefusesIsUnreadable(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	pool := st.Pool()
+	ws, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Study a broken quiz", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws.ID) })
+	question := func(id string) string {
+		return `{"id":"` + id + `","stem":[],"parts":[{"id":"` + id + `:part:1","blocks":[{"type":"text","text":"True?"}],` +
+			`"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}`
+	}
+	content, err := materialdoc.QuizDocument(json.RawMessage(`[`+question("q1")+`,`+question("q2")+`]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiz, err := st.CreateMaterial(ctx, store.Material{
+		CreatedBy: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "quiz", Title: "Broken later",
+		Content: content, Privacy: "private",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := doReq(t, h, http.MethodPut, "/api/workspaces/"+ws.ID+"/study/enabled", "u_owner",
+		map[string]any{"enabled": true}); rec.Code != http.StatusNoContent {
+		t.Fatalf("study on = %d %s", rec.Code, rec.Body.String())
+	}
+	answers := map[string]any{"q1:part:1": true, "q2:part:1": true}
+	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/attempts", "u_owner",
+		map[string]any{"answers": answers}); rec.Code != http.StatusCreated {
+		t.Fatalf("attempt = %d %s", rec.Code, rec.Body.String())
+	}
+	// A review session left after its first answer, to resume.
+	const session = "6f1c2a8e-0000-4000-8000-000000000001"
+	if rec := doReq(t, h, http.MethodPost, "/api/review/check", "u_owner", map[string]any{
+		"materialId": quiz.ID, "itemId": "q1", "answers": map[string]any{"q1:part:1": true},
+		"session": map[string]any{"id": session, "workspaceId": ws.ID, "group": "workspace", "items": []any{
+			map[string]any{"materialId": quiz.ID, "itemId": "q1"}, map[string]any{"materialId": quiz.ID, "itemId": "q2"},
+		}},
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("first review answer = %d %s", rec.Code, rec.Body.String())
+	}
+	stored := `{"schemaVersion":1,"value":[{"type":"p","id":"p1","children":[{"text":"say "},` +
+		`{"type":"mention","value":"Ada","children":[{"text":"hidden"}]},{"text":""}]}]}`
+	// A new revision, so no parsed copy of the old content answers for it.
+	if _, err := pool.Exec(ctx, `UPDATE materials SET content=$2::jsonb, revision=revision+1 WHERE id=$1`, quiz.ID, stored); err != nil {
+		t.Fatal(err)
+	}
+	expectUnreadable(t, h, []unreadableRead{
+		{http.MethodGet, "/api/workspaces/" + ws.ID + "/study", "u_owner", nil},
+		{http.MethodGet, "/api/workspaces/" + ws.ID + "/study/attempts", "u_owner", nil},
+		{http.MethodGet, "/api/workspaces/" + ws.ID + "/review", "u_owner", nil},
+		{http.MethodGet, "/api/review/sessions/" + session, "u_owner", nil},
+		{http.MethodGet, "/api/review/overview", "u_owner", nil},
+		{http.MethodPost, "/api/review/ratings", "u_owner", map[string]any{"materialId": quiz.ID, "itemId": "q1", "rating": 3}},
+		{http.MethodPost, "/api/review/check", "u_owner", map[string]any{"materialId": quiz.ID, "itemId": "q1", "answers": map[string]any{}}},
+	})
 }
 
 // A workspace clone leaves out a material whose stored content the current

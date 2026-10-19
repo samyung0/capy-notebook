@@ -64,7 +64,7 @@ func (a *api) getFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*fl
 	}
 	res, err := a.s.GetFlashcardSet(ctx, in.ID)
 	if err != nil {
-		return nil, storedContentError(ctx, in.ID, err)
+		return nil, hErr(err)
 	}
 	res.IsOwner = role == store.RoleOwner
 	if res.CanEdit, res.CanEditContent, err = a.canEditMaterial(ctx, in.ID, role); err != nil {
