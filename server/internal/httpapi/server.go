@@ -53,6 +53,8 @@ type Config struct {
 	ClerkWebhookSecret string
 	AuthDisabled       bool
 	DevUserID          string
+	// BYOKEnabled turns on saving and removing provider keys (off by default).
+	BYOKEnabled bool
 	// E2EAuth enables X-E2E-User-Id identity headers (disposable E2E only).
 	E2EAuth                bool
 	E2ESecret              string

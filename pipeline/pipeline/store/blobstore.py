@@ -8,9 +8,11 @@ parser container reads the same local file.
 ``fetch_local`` is synchronous (boto3 + file IO block); the worker calls it via
 ``asyncio.to_thread`` so the event loop is never blocked.
 
-The knowledge library's source PDFs live in a second private bucket with its own
-restricted key (``KNOWLEDGE_BASE_B2_*``); it reuses the same client factory and
-the same bounded download, parameterized by bucket and client.
+The knowledge library's source PDFs live in a second private bucket shared by
+UAT and production. The service's key for it (``KNOWLEDGE_BASE_B2_*``) is
+read-only, so this module only reads it; the builder on the developer PC
+uploads with its own writer key. It reuses the same client factory and the
+same bounded download, parameterized by bucket and client.
 """
 
 from __future__ import annotations
@@ -70,7 +72,7 @@ def _s3_client_once():
 
 
 def library_client():
-    """Client for the knowledge-base bucket: its own endpoint and restricted key."""
+    """Client for the knowledge-base bucket: its own endpoint and read-only key."""
     global _library_client
     if not cfg.knowledge_base_b2_bucket:
         raise ValueError("KNOWLEDGE_BASE_B2_* is not configured")
@@ -332,7 +334,7 @@ def library_download_file(
 
 def library_presign_get(object_key: str, expires: int) -> str:
     """A GET URL for one knowledge-base object (`presign_get` is bound to the
-    app bucket); the builder's review batches reference page images this way."""
+    app bucket)."""
     return library_client().generate_presigned_url(
         "get_object",
         Params={"Bucket": cfg.knowledge_base_b2_bucket, "Key": object_key},

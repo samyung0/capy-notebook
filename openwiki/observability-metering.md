@@ -677,7 +677,11 @@ than reported input is still refused as
 `cached_gt_input` and charged in full.
 The web app offers no key entry since 2026-10-16 (Settings → LLM has no keys
 section), so the BYOK paths below stay in the backend but no user can reach
-them, and UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
+them: saving or removing a key (`PUT /api/me/llm-credentials`, `DELETE
+/api/me/llm-credentials/{provider}`) answers 404 unless the API runs with
+`BYOK_ENABLED=true`, which no deployment sets. Before BYOK returns, stored
+keys need associated data (user and provider) and a key version, and a
+user-supplied base URL needs an SSRF policy. UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
 reranker and descriptor rows. Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
 (`model_configs_credit_rates_check`). Platform chat/generate/editor/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs

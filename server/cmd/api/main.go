@@ -428,6 +428,7 @@ func main() {
 		}
 	}
 	cfg := httpapi.Config{
+		BYOKEnabled:            env("BYOK_ENABLED", "false") == "true",
 		Bank:                   bankStore,
 		BankAssets:             bankAssets,
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
