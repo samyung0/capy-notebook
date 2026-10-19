@@ -39,11 +39,14 @@ type EditorAsset struct {
 // two upload flows share the table (and therefore one reservation trigger and
 // one sweeper) while their destinations stay separate.
 type EditorAssetUpload struct {
-	ID           string
-	AssetID      string
-	WorkspaceID  string
-	MaterialID   string
+	ID          string
+	AssetID     string
+	WorkspaceID string
+	MaterialID  string
+	// UserID is the material's payer, charged for the reservation; CreatedBy
+	// reserved it and is the only account that completes it.
 	UserID       string
+	CreatedBy    string
 	ObjectPath   string
 	FinalPath    string
 	ContentType  string
@@ -144,12 +147,12 @@ func (s *Store) EditorAssetObjectPath(ctx context.Context, assetID string) (stri
 }
 
 const editorAssetUploadCols = `id, asset_id, COALESCE(workspace_id,''), COALESCE(material_id,''), user_id,
-	object_path, final_path, content_type, declared_size, status, expires_at`
+	COALESCE(created_by,''), object_path, final_path, content_type, declared_size, status, expires_at`
 
 func scanEditorAssetUpload(row interface{ Scan(...any) error }) (EditorAssetUpload, error) {
 	var upload EditorAssetUpload
 	err := row.Scan(&upload.ID, &upload.AssetID, &upload.WorkspaceID, &upload.MaterialID, &upload.UserID,
-		&upload.ObjectPath, &upload.FinalPath, &upload.ContentType, &upload.DeclaredSize,
+		&upload.CreatedBy, &upload.ObjectPath, &upload.FinalPath, &upload.ContentType, &upload.DeclaredSize,
 		&upload.Status, &upload.ExpiresAt)
 	return upload, err
 }

@@ -93,7 +93,7 @@ func validateEditorAssetMetadata(
 
 // editorAssetScope is where a material's editor assets live: always the
 // material, so its saves and purge delete them, and its workspace when it has
-// one, which pays.
+// one.
 type editorAssetScope struct {
 	workspaceID, materialID string
 	// The payer's plan limits, which cap each asset (EditorAssetBytes).
@@ -102,8 +102,8 @@ type editorAssetScope struct {
 }
 
 // editorAssetScopeFor admits an editor of the route's material and resolves the
-// scope: the material plus its workspace when it has one. The uploader pays
-// (Sam 2026-10-18). The store transaction rechecks both.
+// scope: the material plus its workspace when it has one. The material's
+// payer pays (Sam 2026-10-19). The store transaction rechecks both.
 func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (editorAssetScope, bool) {
 	materialID := id(r)
 	err := a.s.AssertMaterialEditor(r.Context(), uid(r), materialID)
@@ -189,8 +189,9 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		a.fail(w, err)
 		return
 	}
-	// Only the uploader, who pays, completes its reservation (Sam 2026-10-18).
-	if upload.WorkspaceID != scope.workspaceID || upload.MaterialID != scope.materialID || upload.UserID != uid(r) {
+	// Only the account that reserved the upload completes it (Sam 2026-10-18);
+	// the material's payer is charged (Sam 2026-10-19).
+	if upload.WorkspaceID != scope.workspaceID || upload.MaterialID != scope.materialID || upload.CreatedBy != uid(r) {
 		a.fail(w, store.ErrNotFound)
 		return
 	}
