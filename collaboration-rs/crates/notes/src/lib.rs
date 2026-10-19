@@ -30,6 +30,7 @@ pub mod catalog;
 pub mod children;
 pub mod commands;
 pub mod edit;
+pub mod index_text;
 pub mod json;
 pub mod limits;
 pub mod markdown;

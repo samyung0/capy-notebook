@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -249,5 +250,33 @@ func TestClosedPartMarkschemeNamesThePartAndTheRule(t *testing.T) {
 	want := fmt.Sprintf("part %v: a short answer has no markscheme; explain it in solution", part["id"])
 	if err == nil || err.Error() != "invalid question: "+want {
 		t.Fatalf("got %v, want %q", err, want)
+	}
+}
+
+// TestRepairFigureFollowsTheSharedFixtures: Go's repair of a live figure
+// (its index text's) is the collaboration server's and the browser's, on
+// the fixtures all three read.
+func TestRepairFigureFollowsTheSharedFixtures(t *testing.T) {
+	raw, err := os.ReadFile("testdata/repairs/figures.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Name     string         `json:"name"`
+		Block    map[string]any `json:"block"`
+		Repaired map[string]any `json:"repaired"`
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		before, _ := json.Marshal(c.Block)
+		got := RepairFigure(c.Block)
+		if !reflect.DeepEqual(got, c.Repaired) {
+			t.Errorf("%s: got %v", c.Name, got)
+		}
+		if after, _ := json.Marshal(c.Block); string(after) != string(before) {
+			t.Errorf("%s: the input changed", c.Name)
+		}
 	}
 }

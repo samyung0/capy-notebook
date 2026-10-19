@@ -1,0 +1,102 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "value": [
+      {
+        "type": "p",
+        "id": "intro",
+        "children": [
+          {
+            "text": "Merged figures, as a whole-document write can store them"
+          }
+        ]
+      },
+      {
+        "type": "chart",
+        "id": "pie_two",
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "block": {
+          "type": "chart",
+          "kind": "pie",
+          "title": "Share",
+          "labels": ["a", "b"],
+          "series": [
+            {
+              "name": "First",
+              "values": [1, 2]
+            },
+            {
+              "name": "Second",
+              "values": [3, 4]
+            }
+          ]
+        }
+      },
+      {
+        "type": "plot",
+        "id": "line_short",
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "block": {
+          "type": "plot",
+          "kind": "line",
+          "title": "Line",
+          "xTitle": "t",
+          "yTitle": "v",
+          "series": [
+            {
+              "name": "One",
+              "points": [[0, 1]]
+            },
+            {
+              "name": "Two",
+              "points": [[0, 0], [1, 1]]
+            }
+          ]
+        }
+      },
+      {
+        "type": "chart",
+        "id": "bar_empty",
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "block": {
+          "type": "chart",
+          "kind": "bar",
+          "title": "Empty",
+          "labels": ["a"],
+          "series": []
+        }
+      }
+    ]
+  },
+  "items": {},
+  "blocks": [
+    {
+      "id": "intro",
+      "text": "Merged figures, as a whole-document write can store them"
+    },
+    {
+      "id": "pie_two",
+      "text": "Share\n|  | First |\n| --- | --- |\n| a | 1 |\n| b | 2 |"
+    },
+    {
+      "id": "line_short",
+      "text": "Line\nx: t\ny: v\nTwo: (0, 0), (1, 1)"
+    },
+    {
+      "id": "bar_empty",
+      "text": "Empty"
+    }
+  ]
+}

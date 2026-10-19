@@ -303,7 +303,9 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                             continue;
                         }
                         // The content root takes no attributes; the exact check refuses it.
-                        if branch == self.content {
+                        // A figure's live block (a map) is measured exactly: its
+                        // repair on read can pad series past what the entry adds.
+                        if branch == self.content || !self.is_text(branch) {
                             return Err(Unbounded);
                         }
                         bytes += added;
@@ -334,7 +336,7 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
                         && branch
                             .item()
                             .and_then(|holder| holder.parent_sub().cloned())
-                            .is_some_and(|key| &*key == plate::SHARED_TEXT_KEY)
+                            .is_some_and(|key| plate::text_key(&key))
                     {
                         match item.content() {
                             ItemContent::String(text) => {

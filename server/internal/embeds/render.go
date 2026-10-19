@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -69,10 +70,22 @@ func Rust() []byte {
 	}
 
 	out.WriteString(`
+/// What an element gives its document's index text (` + "`index_text`" + `).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Index {
+    None,
+    Text,
+    Figure,
+    Mermaid,
+    Question,
+    Item,
+}
+
 /// One element type a material document may hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Element {
     pub name: &'static str,
+    pub index: Index,
     pub void: bool,
     pub inline: bool,
     /// Only stored as a top-level block.
@@ -84,6 +97,11 @@ pub struct Element {
     pub forbidden: &'static [&'static str],
     /// Keys held as shared text in a room, so typing merges.
     pub shared_text: &'static [&'static str],
+    /// Keys held as a shared map in a room, each entry replaced whole.
+    pub shared_map: &'static [&'static str],
+    /// Keys of a shared map's value held as a list of maps (entries with an
+    /// ` + "`id`" + ` matched by it, others by index).
+    pub shared_lists: &'static [&'static str],
     /// Paths naming editor assets (` + "`[]`" + ` walks a list).
     pub assets: &'static [&'static str],
     pub resizable: bool,
@@ -97,7 +115,7 @@ pub struct Element {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Embed {
     pub kind: &'static str,
-    /// ` + "`value`, `live_source` or `item`" + `.
+    /// ` + "`value`, `live_source`, `live_map` or `item`" + `.
     pub class: &'static str,
     /// The node type a note holds it as (` + "`material_ref`" + ` for an item).
     pub element: &'static str,
@@ -131,6 +149,7 @@ pub const ELEMENTS: &[Element] = &[
 		}
 		fmt.Fprintf(&out, `    Element {
         name: %q,
+        index: Index::%s,
         void: %t,
         inline: %t,
         top_level: %t,
@@ -138,13 +157,15 @@ pub const ELEMENTS: &[Element] = &[
         fields: %s,
         forbidden: %s,
         shared_text: %s,
+        shared_map: %s,
+        shared_lists: %s,
         assets: %s,
         resizable: %t,
         children: %s,
         materials: %s,
     },
-`, e.Type, e.Void, e.Inline, e.TopLevel, rustStrs(e.Required), fields, rustStrs(e.Forbidden),
-			rustStrs(e.SharedText), rustStrs(e.Assets), e.Resizable, rustStrs(e.Children), rustStrs(e.Materials))
+`, e.Type, rustIndex(e.Index), e.Void, e.Inline, e.TopLevel, rustStrs(e.Required), fields, rustStrs(e.Forbidden),
+			rustStrs(e.SharedText), rustStrs(e.SharedMap), rustStrs(e.SharedLists), rustStrs(e.Assets), e.Resizable, rustStrs(e.Children), rustStrs(e.Materials))
 	}
 	out.WriteString("];\n\npub const EMBEDS: &[Embed] = &[\n")
 	for _, e := range Embeds() {
@@ -189,6 +210,15 @@ pub fn material_kind(kind: &str) -> Option<&'static MaterialKind> {
 }
 `)
 	return out.Bytes()
+}
+
+// rustIndex is an index rule's Rust variant; an unknown rule stops the
+// generator (TestCatalogIsConsistent names it).
+func rustIndex(index Index) string {
+	if !slices.Contains(IndexRules, index) {
+		panic(fmt.Sprintf("unknown index rule %q", index))
+	}
+	return strings.ToUpper(string(index[:1])) + string(index[1:])
 }
 
 func rustStrs(values []string) string {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -202,5 +203,94 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 				t.Fatalf("a due note is admitted again: job=%s err=%v", next, err)
 			}
 		})
+	}
+}
+
+// A note's index text holds its embedded quizzes and flashcard sets at their
+// references, and an item's content write (a save or its room's projection)
+// marks the note dirty as the note's own edits do, clearing its last failure.
+func TestEmbeddedItemsIndexInTheirNote(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_note_items")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Items", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "With items",
+		Content: "body",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiz, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
+		Kind: "flashcards", Cards: [][2]string{{"front", "back"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := noteWithRefs(t, quiz, cards)
+	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	indexed := func() MaterialIndexText {
+		t.Helper()
+		text, err := s.MaterialIndexText(ctx, note.ID, ws.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if text.Text != materialdoc.JoinIndexBlocks(text.Blocks) {
+			t.Fatalf("text %q is not its blocks' join %+v", text.Text, text.Blocks)
+		}
+		return text
+	}
+	if text := indexed(); text.Text != "intro\n\nTrue?\n\nfront\nback" || len(text.Blocks) != 3 {
+		t.Fatalf("index text = %+v", text)
+	}
+	settle := func() {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `UPDATE materials SET index_dirty_at=NULL, index_error='boom' WHERE id=$1`,
+			note.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dirtied := func(how string) {
+		t.Helper()
+		if dirty, _, indexErr := noteIndexState(t, s, note.ID); !dirty || indexErr != nil {
+			t.Fatalf("after %s the note is dirty=%v err=%v", how, dirty, indexErr)
+		}
+	}
+
+	settle()
+	saved, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{ID: "c_new", Front: "osmosis", Back: "water"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateMaterial(ctx, cards.ID, MaterialPatch{Content: &saved, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	dirtied("a card set save")
+	if text := indexed(); text.Blocks[2].Text != "osmosis\nwater" {
+		t.Fatalf("after the save the index text = %+v", text)
+	}
+
+	settle()
+	if _, err := s.pool.Exec(ctx, `INSERT INTO material_yjs_documents (material_id, state, stored_version)
+		VALUES ($1, '\x00'::bytea, 1)`, quiz.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ProjectMaterialContent(ctx, quiz.ID, quizProjection(t, 1, 1, 10, "z"), 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	dirtied("a quiz room's projection")
+	if text := indexed(); text.Blocks[1].Text != "zxxxxxxxxx" {
+		t.Fatalf("after the projection the index text = %+v", text)
 	}
 }

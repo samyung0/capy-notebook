@@ -2,7 +2,8 @@
 //! Agent markdown through the embedded import against the Node server's
 //! converter on the same sources (synthetic constructs and the repository's
 //! own markdown pages): the same document and drafts, or the same error, but
-//! for the sources whose conversion changed on purpose since ([changed]).
+//! for the sources whose conversion changed on purpose since ([changed],
+//! [now_expected]).
 //! Generated ids are random on both sides and compared by first occurrence.
 //!
 //! Needs the bundle: `node markdown/build.mjs` (or NOTES_MARKDOWN_BUNDLE
@@ -41,6 +42,20 @@ fn normalize(value: &mut Value, ids: &mut HashMap<String, String>) {
         }
         Value::Array(items) => items.iter_mut().for_each(|item| normalize(item, ids)),
         _ => {}
+    }
+}
+
+/// The Node server's result as the conversion now gives it on purpose: a
+/// list nested past `LIST_INDENT_MAX` has its indents clamped to it on entry
+/// (Epo 2026-10-19).
+fn now_expected(name: &str, expected: &mut Value) {
+    if name != "deep list" {
+        return;
+    }
+    for node in expected["document"]["value"].as_array_mut().unwrap() {
+        if node["indent"].as_u64().unwrap() > notes::catalog::LIST_INDENT_MAX as u64 {
+            node["indent"] = notes::catalog::LIST_INDENT_MAX.into();
+        }
     }
 }
 
@@ -90,6 +105,7 @@ fn markdown_matches_the_node_server() {
             failures.extend(checked.err());
             continue;
         }
+        now_expected(name, &mut expected);
         normalize(&mut ours, &mut HashMap::new());
         normalize(&mut expected, &mut HashMap::new());
         if ours != expected {

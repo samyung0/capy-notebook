@@ -9,6 +9,7 @@ pub const HTML_EMBED_MAX_COUNT: usize = 10;
 pub const BLOCK_CAPTION_MAX: usize = 300;
 pub const MEDIA_WIDTH_MIN: usize = 20;
 pub const MEDIA_WIDTH_MAX: usize = 100;
+pub const LIST_INDENT_MAX: usize = 8;
 pub const CARD_FRONT_MAX: usize = 4000;
 pub const CARD_BACK_MAX: usize = 2000;
 pub const QUESTION_ANSWERS_MAX: usize = 100;
@@ -36,9 +37,11 @@ pub const QUESTION_MARKS_MAX: f64 = 20.0;
 pub const QUESTION_MARK_ITEM_MAX: usize = 1000;
 pub const QUESTION_METADATA_MAX: usize = 1000;
 pub const QUESTION_PARTS_MAX: usize = 26;
+pub const QUESTION_PLOT_LABEL_MAX: usize = 60;
 pub const QUESTION_PLOT_MARKS_MAX: usize = 8;
 pub const QUESTION_PLOT_POINTS_MAX: usize = 60;
 pub const QUESTION_PLOT_SERIES_MAX: usize = 4;
+pub const QUESTION_PLOT_TITLE_MAX: usize = 100;
 pub const QUESTION_SVG_BYTES_MAX: usize = 262144;
 pub const QUESTION_TABLE_COLUMNS_MAX: usize = 10;
 pub const QUESTION_TABLE_ROWS_MAX: usize = 30;
@@ -50,10 +53,22 @@ pub const QUIZ_OPEN_PARTS_MAX: usize = 20;
 pub const QUIZ_PARTS_MAX: usize = 100;
 pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
 
+/// What an element gives its document's index text (`index_text`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Index {
+    None,
+    Text,
+    Figure,
+    Mermaid,
+    Question,
+    Item,
+}
+
 /// One element type a material document may hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Element {
     pub name: &'static str,
+    pub index: Index,
     pub void: bool,
     pub inline: bool,
     /// Only stored as a top-level block.
@@ -65,6 +80,11 @@ pub struct Element {
     pub forbidden: &'static [&'static str],
     /// Keys held as shared text in a room, so typing merges.
     pub shared_text: &'static [&'static str],
+    /// Keys held as a shared map in a room, each entry replaced whole.
+    pub shared_map: &'static [&'static str],
+    /// Keys of a shared map's value held as a list of maps (entries with an
+    /// `id` matched by it, others by index).
+    pub shared_lists: &'static [&'static str],
     /// Paths naming editor assets (`[]` walks a list).
     pub assets: &'static [&'static str],
     pub resizable: bool,
@@ -78,7 +98,7 @@ pub struct Element {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Embed {
     pub kind: &'static str,
-    /// `value`, `live_source` or `item`.
+    /// `value`, `live_source`, `live_map` or `item`.
     pub class: &'static str,
     /// The node type a note holds it as (`material_ref` for an item).
     pub element: &'static str,
@@ -106,6 +126,7 @@ pub struct MaterialKind {
 pub const ELEMENTS: &[Element] = &[
     Element {
         name: "p",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -113,6 +134,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -120,6 +143,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h1",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -127,6 +151,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -134,6 +160,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h2",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -141,6 +168,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -148,6 +177,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h3",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -155,6 +185,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -162,6 +194,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h4",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -169,6 +202,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -176,6 +211,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h5",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -183,6 +219,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -190,6 +228,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h6",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -197,6 +236,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -204,6 +245,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "blockquote",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -211,6 +253,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -218,6 +262,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "hr",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -225,6 +270,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -232,6 +279,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "code_block",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -239,6 +287,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -246,6 +296,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "code_line",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -253,6 +304,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -260,6 +313,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "table",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -267,6 +321,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -274,6 +330,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "tr",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -281,6 +338,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -288,6 +347,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "td",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -295,6 +355,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -302,6 +364,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "th",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -309,6 +372,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -316,6 +381,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "toc",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -323,6 +389,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -330,6 +398,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "callout",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -337,6 +406,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -344,6 +415,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "column_group",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -351,6 +423,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -358,6 +432,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "column",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -365,6 +440,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -372,6 +449,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "equation",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -379,6 +457,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -386,6 +466,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "inline_equation",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -393,6 +474,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -400,6 +483,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "a",
+        index: Index::Text,
         void: false,
         inline: true,
         top_level: false,
@@ -407,6 +491,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -414,6 +500,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mention",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -421,6 +508,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -428,6 +517,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mention_input",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -435,6 +525,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -442,6 +534,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "slash_input",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -449,6 +542,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -456,6 +551,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "img",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -463,6 +559,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["url", "src"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &["assetId"],
         resizable: true,
         children: &[],
@@ -470,6 +568,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "audio",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -477,6 +576,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["url", "src"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &["assetId"],
         resizable: false,
         children: &[],
@@ -484,6 +585,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "video",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -491,6 +593,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["assetId", "url", "src"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: true,
         children: &[],
@@ -498,6 +602,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "placeholder",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -505,6 +610,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -512,6 +619,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "chart",
+        index: Index::Figure,
         void: true,
         inline: false,
         top_level: true,
@@ -519,6 +627,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: Some(&["type", "id", "block", "children", "width"]),
         forbidden: &[],
         shared_text: &[],
+        shared_map: &["block"],
+        shared_lists: &["series"],
         assets: &[],
         resizable: true,
         children: &[],
@@ -526,6 +636,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "plot",
+        index: Index::Figure,
         void: true,
         inline: false,
         top_level: true,
@@ -533,6 +644,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: Some(&["type", "id", "block", "children", "width"]),
         forbidden: &[],
         shared_text: &[],
+        shared_map: &["block"],
+        shared_lists: &["series"],
         assets: &[],
         resizable: true,
         children: &[],
@@ -540,6 +653,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "graph",
+        index: Index::Figure,
         void: true,
         inline: false,
         top_level: true,
@@ -547,6 +661,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: Some(&["type", "id", "block", "children", "width"]),
         forbidden: &[],
         shared_text: &[],
+        shared_map: &["block"],
+        shared_lists: &["elements"],
         assets: &[],
         resizable: true,
         children: &[],
@@ -554,6 +670,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "html_embed",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: true,
@@ -561,6 +678,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: Some(&["type", "id", "html", "caption", "children"]),
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -568,6 +687,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mermaid",
+        index: Index::Mermaid,
         void: false,
         inline: false,
         top_level: false,
@@ -575,6 +695,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["questions", "cards", "code"],
         shared_text: &["source"],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: true,
         children: &["mermaid_caption"],
@@ -582,6 +704,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mermaid_caption",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -589,6 +712,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -596,6 +721,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "material_ref",
+        index: Index::Item,
         void: true,
         inline: false,
         top_level: true,
@@ -603,6 +729,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["pending"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -610,6 +738,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "quiz",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -617,6 +746,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["questions", "cards", "code", "timeLimitMin"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &["quiz_question"],
@@ -624,6 +755,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "quiz_question",
+        index: Index::Question,
         void: true,
         inline: false,
         top_level: false,
@@ -631,6 +763,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["questions", "cards", "code", "questionType", "level", "points", "rubrics", "pairs", "acceptedAnswers", "hints", "correctOptionIds", "correctBoolean"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &["question.stem[].image.assetId", "question.parts[].blocks[].image.assetId", "question.parts[].solution[].image.assetId"],
         resizable: false,
         children: &[],
@@ -638,6 +772,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcards",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -645,6 +780,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["questions", "cards", "code"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &["flashcard"],
@@ -652,6 +789,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcard",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -659,6 +797,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &["questions", "cards", "code"],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &["image.assetId"],
         resizable: false,
         children: &["flashcard_front", "flashcard_back"],
@@ -666,6 +806,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcard_front",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -673,6 +814,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -680,6 +823,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcard_back",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -687,6 +831,8 @@ pub const ELEMENTS: &[Element] = &[
         fields: None,
         forbidden: &[],
         shared_text: &[],
+        shared_map: &[],
+        shared_lists: &[],
         assets: &[],
         resizable: false,
         children: &[],
@@ -697,7 +843,7 @@ pub const ELEMENTS: &[Element] = &[
 pub const EMBEDS: &[Embed] = &[
     Embed {
         kind: "chart",
-        class: "value",
+        class: "live_map",
         element: "chart",
         fence_lang: "chart",
         fence_body: "json",
@@ -708,7 +854,7 @@ pub const EMBEDS: &[Embed] = &[
     },
     Embed {
         kind: "plot",
-        class: "value",
+        class: "live_map",
         element: "plot",
         fence_lang: "plot",
         fence_body: "json",
@@ -719,7 +865,7 @@ pub const EMBEDS: &[Embed] = &[
     },
     Embed {
         kind: "graph",
-        class: "value",
+        class: "live_map",
         element: "graph",
         fence_lang: "graph",
         fence_body: "json",

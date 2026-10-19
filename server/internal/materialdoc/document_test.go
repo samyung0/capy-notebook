@@ -93,8 +93,9 @@ func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
 	if err := ValidateKind(encoded, "note"); err != nil {
 		t.Fatal(err)
 	}
-	text, err := ExtractIndexText(encoded)
-	if err != nil || text != "A graph\n\nData\n\nTrace" {
+	// The figures' text is in testdata/index_text; never the graph's SVG.
+	text, err := ExtractIndexText(encoded, nil)
+	if err != nil || strings.Contains(text, "svg") || !strings.HasPrefix(text, "A graph\n") {
 		t.Fatalf("index = %q, error = %v", text, err)
 	}
 	doc.Value = []map[string]any{{"type": "callout", "id": "container", "children": []any{graph}}}
@@ -115,7 +116,7 @@ func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text, err := ExtractIndexText(encoded); err != nil || text != "intro" {
+	if text, err := ExtractIndexText(encoded, nil); err != nil || text != "intro" {
 		t.Fatalf("index = %q, error = %v", text, err)
 	}
 	for name, value := range map[string][]map[string]any{
@@ -128,6 +129,20 @@ func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
 		if err := Validate(Envelope{SchemaVersion: SchemaVersion, Value: value}); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+}
+
+// Any block's indent stops at the catalog's ListIndentMax (Epo 2026-10-18),
+// as the browser and the collaboration server check.
+func TestBlockIndentStopsAtTheCatalogMax(t *testing.T) {
+	item := func(indent int) Envelope {
+		return Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{"type": "p", "id": "l1", "indent": indent, "listStyleType": "disc", "children": []any{textLeaf("deep")}}}}
+	}
+	if err := Validate(item(embeds.ListIndentMax)); err != nil {
+		t.Fatalf("indent %d: %v", embeds.ListIndentMax, err)
+	}
+	if err := Validate(item(embeds.ListIndentMax + 1)); err == nil {
+		t.Fatalf("indent %d accepted", embeds.ListIndentMax+1)
 	}
 }
 
@@ -799,29 +814,6 @@ func TestPlainMentionsKeepsOnlyLiveUsers(t *testing.T) {
 	}
 }
 
-func TestExtractIndexTextRendersMarkdownLikeBlocks(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[
-		{"type":"h2","id":"b1","children":[{"text":"Cells"}]},
-		{"type":"p","id":"b2","children":[{"text":"Intro "},{"type":"a","url":"x","children":[{"text":"link"}]}]},
-		{"type":"p","id":"b3","listStyleType":"disc","indent":1,"children":[{"text":"first"}]},
-		{"type":"p","id":"b4","listStyleType":"decimal","indent":2,"children":[{"text":"nested"}]},
-		{"type":"callout","id":"b5","children":[{"type":"p","children":[{"text":"note"}]}]},
-		{"type":"table","id":"b6","children":[{"type":"tr","children":[{"type":"th","children":[{"type":"p","children":[{"text":"a"}]}]},{"type":"td","children":[{"type":"p","children":[{"text":"b"}]}]}]}]},
-		{"type":"code_block","id":"b7","lang":"go","children":[{"type":"code_line","children":[{"text":"x := 1"}]}]},
-		{"type":"material_ref","id":"b8","materialId":"m","refKind":"quiz","children":[{"text":""}]},
-		{"type":"mermaid","id":"b9","source":"flowchart","children":[{"type":"mermaid_caption","children":[{"text":"cap"}]}]},
-		{"type":"p","id":"b10","children":[{"text":"   "}]}
-	]}`
-	text, err := ExtractIndexText(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "## Cells\n\nIntro link\n\n- first\n\n  1. nested\n\nnote\n\n| a | b |\n\n```go\nx := 1\n```"
-	if text != want {
-		t.Fatalf("index text = %q, want %q", text, want)
-	}
-}
-
 func TestResolvePendingRefsPointsFencesAtTheirRows(t *testing.T) {
 	raw := `{"schemaVersion":1,"value":[` +
 		`{"type":"material_ref","id":"r1","materialId":"","refKind":"quiz","pending":"questions: []","children":[{"text":""}]},` +
@@ -1077,5 +1069,64 @@ func TestDiagramAndMindmapAreNotNodeTypes(t *testing.T) {
 		if err := validateKind([]map[string]any{block(kind)}, kind); err == nil {
 			t.Fatalf("%s accepted a %s node", kind, kind)
 		}
+	}
+}
+
+// TestLiveFiguresReadButAreNotWritten: what a merge of two editors' changes
+// leaves in a live figure (Epo 2026-10-18), a chart or plot without series,
+// a pie with no positive total, a negative value or a second series, a line
+// of one point, is read in a stored note, taken in a room's projection and in
+// a whole-document note write (ValidateKind), while an agent's blocks
+// (ParseWrite), another kind's document and a question block refuse it.
+func TestLiveFiguresReadButAreNotWritten(t *testing.T) {
+	figure := func(block map[string]any) string {
+		raw, err := json.Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{
+			"type": block["type"], "id": "f1", "block": block, "children": []any{map[string]any{"text": ""}},
+		}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	chart := func(kind string, series ...any) map[string]any {
+		return map[string]any{"type": "chart", "kind": kind, "title": "T", "labels": []any{"a", "b"}, "series": append([]any{}, series...)}
+	}
+	values := func(v ...any) map[string]any { return map[string]any{"name": "S", "values": v} }
+	plot := func(series ...any) map[string]any {
+		return map[string]any{"type": "plot", "title": "P", "xTitle": "x", "yTitle": "y", "series": append([]any{}, series...)}
+	}
+	merged := map[string]map[string]any{
+		"no series":             chart("bar"),
+		"no positive total":     chart("pie", values(0, nil)),
+		"a negative pie":        chart("stacked", values(2, -1)),
+		"a second pie series":   chart("pie", values(1, 2), values(3, 4)),
+		"a plot without series": plot(),
+		"a line of one point":   plot(map[string]any{"name": "S", "points": []any{[]any{0, 0}}}),
+	}
+	for name, block := range merged {
+		raw := figure(block)
+		if _, err := Parse(raw); err != nil {
+			t.Errorf("%s: a stored note does not read: %v", name, err)
+		}
+		doc, err := decode(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewProjection(doc); err != nil {
+			t.Errorf("%s: a room's projection is refused: %v", name, err)
+		}
+		if err := ValidateKind(raw, "note"); err != nil {
+			t.Errorf("%s: a whole-document note write is refused: %v", name, err)
+		}
+		if _, err := ParseWrite(raw); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: an agent's blocks take it: %v", name, err)
+		}
+		if err := questions.ValidateBlock(block, questions.Policy{}); err == nil {
+			t.Errorf("%s: a question block takes it", name)
+		}
+	}
+	// Beyond the kept states a note write is still checked.
+	if err := ValidateKind(figure(chart("radar", values(1, 2))), "note"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an unknown chart kind is taken: %v", err)
 	}
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { blockIssues } from '@/features/questions/issues';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import {
   columnGroupFromWidths,
@@ -8,7 +9,7 @@ import {
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 
 describe('editor insertion command catalog', () => {
-  it.each(['chart', 'graph'])(
+  it.each(['chart', 'plot', 'graph'])(
     'inserts a %s only after its block dialog saves',
     (kind) => {
       const openVisual = vi.fn<NoteBlockDialogsApi['openVisual']>();
@@ -38,6 +39,37 @@ describe('editor insertion command catalog', () => {
       );
     }
   );
+  it('opens a new plot on a line through (0, 0) and (1, 1) that saves as it is', () => {
+    const openVisual = vi.fn<NoteBlockDialogsApi['openVisual']>();
+    EDITOR_COMMANDS.find((item) => item.id === 'plot')!.run(
+      {
+        api: { block: () => undefined },
+        selection: null,
+        tf: { focus: vi.fn(), insertNodes: vi.fn() },
+      },
+      {
+        createEmbedded: vi.fn(),
+        insertEmbedded: vi.fn(),
+        noteId: 'note',
+        openVisual,
+        openYouTube: vi.fn(),
+      }
+    );
+    const [draft] = openVisual.mock.calls[0];
+    expect(draft).toMatchObject({
+      kind: 'line',
+      series: [
+        {
+          name: '',
+          points: [
+            [0, 0],
+            [1, 1],
+          ],
+        },
+      ],
+    });
+    expect(blockIssues(draft)).toEqual([]);
+  });
   it('covers every grouped insertion surface with an icon', () => {
     const groups = new Set(EDITOR_COMMANDS.map((command) => command.group));
     expect(groups).toEqual(

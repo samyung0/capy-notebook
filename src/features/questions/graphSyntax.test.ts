@@ -6,6 +6,7 @@ import {
   parseRow,
   rowsFromElements,
   runtimeTerm,
+  syncRows,
 } from './graphSyntax';
 import type { GraphElement } from './types';
 import { validGraphTerm } from './validation';
@@ -163,6 +164,36 @@ describe('rows and elements', () => {
     expect(buildElements(rows).elements).toEqual([
       { coords: [0, 0], id: 'a', type: 'point' },
       { coords: [1, 1], id: 'b', name: "B'", type: 'point' },
+    ]);
+  });
+});
+
+describe('syncRows', () => {
+  const point = (id: string, x: number): GraphElement => ({
+    coords: [x, 0],
+    id,
+    name: id.toUpperCase(),
+    type: 'point',
+  });
+
+  it('keeps the same rows when the elements are the ones they give', () => {
+    const rows = rowsFromElements([point('a', 0), point('b', 1)]);
+    expect(syncRows(rows, buildElements(rows).elements)).toBe(rows);
+  });
+
+  it('takes a peer’s elements and keeps a row still being typed', () => {
+    const rows: GraphRow[] = [
+      ...rowsFromElements([point('a', 0), point('b', 1)]),
+      { key: 'typing', kind: 'expression', latex: 'segment(', style: {} },
+    ];
+    const [a] = rows;
+    const next = syncRows(rows, [point('a', 0), point('b', 5), point('c', 2)]);
+    expect(next[0]).toBe(a);
+    expect(next.map((row) => row.key)).toEqual(['a', 'b', 'typing', 'c']);
+    expect(buildElements(next).elements).toEqual([
+      point('a', 0),
+      point('b', 5),
+      point('c', 2),
     ]);
   });
 });

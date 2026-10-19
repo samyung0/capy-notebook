@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 
 use crate::catalog::{
     self, BLOCK_CAPTION_MAX, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES,
-    HTML_EMBED_MAX_COUNT, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
+    HTML_EMBED_MAX_COUNT, LIST_INDENT_MAX, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
 };
 use crate::questions::{self, Policy, js_trim};
 
@@ -288,16 +288,33 @@ pub fn youtube_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// A chart, plot or graph node's `block`: a question block of the node's
-/// type, valid as a question block, a graph drawn from its own SVG.
+/// A chart, plot or graph node's `block` as a writer outside a room sends it
+/// (an agent's edit, the content API): a question block of the node's type,
+/// valid as a question block, a graph drawn from its own SVG.
 pub fn figure_block(kind: &str, block: &Value) -> Check {
+    figure_block_in(kind, block, false)
+}
+
+/// [figure_block] as a room holds it, repaired: it may also have no series,
+/// and a pie or stacked chart no positive total (`questions::live_block`,
+/// Epo 2026-10-18). [assert_canonical] checks room documents with it.
+pub fn live_figure_block(kind: &str, block: &Value) -> Check {
+    figure_block_in(kind, block, true)
+}
+
+fn figure_block_in(kind: &str, block: &Value, live: bool) -> Check {
     let typed = block
         .as_object()
         .is_some_and(|b| b.get("type").and_then(Value::as_str) == Some(kind));
     if !typed {
         return fail("embed block type must match node type");
     }
-    let parsed = questions::block(block).map_err(ValidationError)?;
+    let parsed = if live {
+        questions::live_block(block)
+    } else {
+        questions::block(block)
+    }
+    .map_err(ValidationError)?;
     parsed.description_fits(false).map_err(ValidationError)?;
     if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
         // The TS raises this inside its try and re-wraps the message.
@@ -342,7 +359,7 @@ fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
         return fail("unexpected embed field");
     }
     validate_width(node)?;
-    figure_block(kind, block)
+    live_figure_block(kind, block)
 }
 
 fn validate_html_embed(node: &Node, depth: usize) -> Check {
@@ -451,6 +468,15 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
     }
     if !has_text_descendant(node) {
         return fail("element must contain a text descendant");
+    }
+    // Any block's indent (lists, indented paragraphs) stops at the
+    // catalog's LIST_INDENT_MAX (Epo 2026-10-18).
+    if node
+        .get("indent")
+        .and_then(Value::as_f64)
+        .is_some_and(|indent| indent > LIST_INDENT_MAX as f64)
+    {
+        return fail(format!("indent is over {LIST_INDENT_MAX} levels"));
     }
     // A type the catalog does not list is refused by the placement walk
     // (`placement`), as Go's `validateKind` refuses it.

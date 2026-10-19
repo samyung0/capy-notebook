@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use yrs::block::{ItemContent, UpdateParent};
-use yrs::branch::{Branch, BranchID};
+use yrs::branch::{Branch, BranchID, BranchPtr};
 use yrs::types::TypeRef;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, ReadTxn, Update};
@@ -211,12 +211,24 @@ fn element_len(
         if &**key == "children" || (leaf && runtime_comment(key)) {
             continue;
         }
-        if let Some(value) = json::any_len(value)? {
+        if let Some(value) = property_len(branch, key, value)? {
             len += json::escaped_len(key) + 3 + value;
             entries += 1;
         }
     }
     Ok(len + entries - 1)
+}
+
+/// Bytes of an element's property `key`: a figure's live block as the room
+/// holds it, the entries a read drops included (Epo 2026-10-18). Its own
+/// frame, so the element walk's stays as small as before.
+fn property_len(branch: &Branch, key: &str, value: &Any) -> Result<Option<usize>, ProjectionError> {
+    if plate::map_key(key)
+        && let Some(held) = plate::held_block_value(BranchPtr::from(branch))?
+    {
+        return Ok(Some(json::value_len(&held)));
+    }
+    Ok(json::any_len(value)?)
 }
 
 /// A writer's update the room may take (`validateUpdate`).
@@ -261,6 +273,8 @@ struct Shape {
     set: HashMap<BranchID, HashMap<Arc<str>, Vec<Written>>>,
     cleared: HashMap<BranchID, HashSet<Arc<str>>>,
     created: HashMap<BranchID, Option<BranchID>>,
+    /// The update writes into a figure's live block: measured exactly.
+    exact: bool,
 }
 
 /// An entry the update writes under a key: its id and last unit, the entry it
@@ -346,17 +360,32 @@ static FORBIDDEN: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::
     keys
 });
 
+/// The keys some element holds as a text ([plate::holds_text]) and as a map
+/// ([plate::holds_map]), each once.
+static TEXT_KEYS: std::sync::LazyLock<Vec<&'static str>> =
+    std::sync::LazyLock::new(|| shared_keys(|element| element.shared_text));
+static MAP_KEYS: std::sync::LazyLock<Vec<&'static str>> =
+    std::sync::LazyLock::new(|| shared_keys(|element| element.shared_map));
+
+fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = catalog::ELEMENTS.iter().flat_map(keys).copied().collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 8] = [
-    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source",
+const VALUE_KEYS: [&str; 9] = [
+    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source", "indent",
 ];
 
 /// Whether the store takes `value` under `key` on an element of type `kind`
 /// (`material::assert_canonical`): a reference names an item kind, a video
 /// is a YouTube id, a resizable block's width is one the handles write, an
-/// interactive block's html and caption fit, a figure's
-/// block is a valid question block of its type, a Mermaid source is a string
-/// (or its shared text).
+/// interactive block's html and caption fit, a figure's block is its live
+/// map (checked whole on the copy, [on_candidate]), a Mermaid source is a
+/// string (or its shared text), any block's indent stops at
+/// `LIST_INDENT_MAX`.
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
@@ -370,14 +399,14 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         (crate::material::HTML_EMBED_TYPE, "caption", value) => {
             matches!(value, Any::String(caption) if caption.chars().count() <= catalog::BLOCK_CAPTION_MAX)
         }
-        ("chart" | "plot" | "graph", "block", value) => json::any_to_value(value)
-            .is_ok_and(|block| crate::material::figure_block(kind, &block).is_ok()),
-        (plate::SHARED_TEXT_ELEMENT, plate::SHARED_TEXT_KEY, value) => {
-            matches!(value, Any::String(_))
-        }
+        // A figure's block only as its live map (Epo 2026-10-18), checked
+        // whole on the copy; never as one plain value.
+        (kind, key, value) if plate::holds_map(kind, key) => matches!(value, Any::Buffer(_)),
+        (kind, key, value) if plate::holds_text(kind, key) => matches!(value, Any::String(_)),
         (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
             matches!(value, Any::String(width) if crate::material::valid_width(width))
         }
+        (_, "indent", Any::Number(indent)) => *indent <= catalog::LIST_INDENT_MAX as f64,
         (crate::material::MATERIAL_REF_TYPE, "refKind", _)
         | ("video", "provider" | "videoId", _)
         | (crate::material::HTML_EMBED_TYPE, "html", _) => false,
@@ -502,23 +531,59 @@ fn plain_content<T: ReadTxn>(
             }
         })
     };
+    // Every new item placed first: a figure's map and lists are read by their
+    // own places below ([Parts]).
+    let located: Vec<(&yrs::block::Item, Place)> = incoming
+        .items()
+        .filter(|item| item.id().clock + item.len() > state.get(&item.id().client))
+        .filter_map(|item| place(item).map(|at| (item, at)))
+        .collect();
+    let mut parts = Parts {
+        txn,
+        state: &state,
+        incoming,
+        places: &places,
+        known: HashMap::new(),
+    };
     let mut media = HashSet::new();
     let mut typed = HashSet::new();
     // Elements made closed, and the other keys the update writes per element.
     let mut closed: HashSet<BranchID> = HashSet::new();
     let mut keyed: HashMap<BranchID, Vec<Arc<str>>> = HashMap::new();
-    // Elements given a source text, and the `type` values the update writes
-    // per element (whether each is `mermaid`).
-    let mut holders: HashSet<BranchID> = HashSet::new();
-    let mut types: HashMap<BranchID, Vec<bool>> = HashMap::new();
-    for item in incoming.items() {
+    // Elements given a source text (by its key), and the `type` values the
+    // update writes per element.
+    let mut holders: HashMap<BranchID, Arc<str>> = HashMap::new();
+    let mut types: HashMap<BranchID, Vec<Option<Arc<str>>>> = HashMap::new();
+    // Figures whose live block the update writes into (Epo 2026-10-17): read
+    // and checked whole on the copy ([on_candidate]).
+    let mut figures: HashSet<BranchID> = HashSet::new();
+    for (item, at) in located {
         let id = item.id();
-        if id.clock + item.len() <= state.get(&id.client) {
+        let parent = match &at {
+            Place::Entry(_, parent) | Place::Sequence(parent) => parent,
+        };
+        // Inside a figure's block: plain entries in the block and its list
+        // entries, lists of maps under the block, nothing else.
+        if let Some(part) = parts.of_parent(parent) {
+            let fits = match (&at, part, item.content()) {
+                (_, _, ItemContent::Deleted(_)) => true,
+                (Place::Entry(..), Part::Block(_) | Part::Entry(_), ItemContent::Any(values)) => {
+                    values.iter().all(plain)
+                }
+                (Place::Entry(key, _), Part::Block(_), ItemContent::Type(branch)) => {
+                    matches!(branch.type_ref(), TypeRef::Array) && plate::list_key(key)
+                }
+                (Place::Sequence(_), Part::List(_), ItemContent::Type(branch)) => {
+                    matches!(branch.type_ref(), TypeRef::Map)
+                }
+                _ => false,
+            };
+            if !fits {
+                return Err(Refusal::Content(FIGURE_SHAPE));
+            }
+            figures.insert(part.owner());
             continue;
         }
-        let Some(at) = place(item) else {
-            continue;
-        };
         let refused = match (&at, item.content()) {
             (_, ItemContent::Deleted(_)) => None,
             (Place::Entry(_, parent), _) if is_source(parent) => {
@@ -535,11 +600,21 @@ fn plain_content<T: ReadTxn>(
             }
             (Place::Entry(..), ItemContent::Any(values)) if values.iter().all(plain) => None,
             (Place::Entry(key, Some(parent)), ItemContent::Type(branch))
-                if &**key == plate::SHARED_TEXT_KEY
+                if plate::text_key(key)
                     && matches!(branch.type_ref(), TypeRef::Text)
                     && matches!(parent, BranchID::Nested(_)) =>
             {
-                holders.insert(parent.clone());
+                holders.insert(parent.clone(), key.clone());
+                None
+            }
+            // A figure's live block (Epo 2026-10-17), on an element: checked
+            // whole on the copy, its type there among them.
+            (Place::Entry(key, Some(parent)), ItemContent::Type(branch))
+                if plate::map_key(key)
+                    && matches!(branch.type_ref(), TypeRef::Map)
+                    && parts.is_element(parent) =>
+            {
+                figures.insert(parent.clone());
                 None
             }
             (Place::Entry(..), _) => Some("a non-plain attribute value"),
@@ -567,6 +642,10 @@ fn plain_content<T: ReadTxn>(
                 // A Mermaid source text (admitted above only as `source`).
                 ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Text) => {
                     Some(source_text())
+                }
+                // A figure's live block (admitted above only as `block`).
+                ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Map) => {
+                    Some(live_block())
                 }
                 _ => None,
             };
@@ -601,10 +680,13 @@ fn plain_content<T: ReadTxn>(
                     }
                 }
                 typed.insert(parent.clone());
-                types.entry(parent.clone()).or_default().push(matches!(
-                    values.last(),
-                    Some(Any::String(kind)) if &**kind == plate::SHARED_TEXT_ELEMENT
-                ));
+                types
+                    .entry(parent.clone())
+                    .or_default()
+                    .push(match values.last() {
+                        Some(Any::String(kind)) => Some(kind.clone()),
+                        _ => None,
+                    });
             }
             if matches!(&**key, "assetId" | "url" | "src") || (&**key == "type" && media_type()) {
                 media.insert(parent.clone());
@@ -614,20 +696,26 @@ fn plain_content<T: ReadTxn>(
             }
         }
     }
-    // A source text sits on a `mermaid` block only: one the update gives a
-    // source, or retypes while it holds one, is a `mermaid` afterwards.
-    for (element, mermaid) in &types {
-        if !mermaid.iter().all(|m| *m) && held_source(txn, incoming, element) {
-            holders.insert(element.clone());
+    // A source text sits on an element holding it (the catalog's
+    // `sharedText`: a `mermaid` block's source) only: one the update gives a
+    // source, or retypes while it holds one, is such an element afterwards.
+    // A figure's live block likewise, checked on the copy.
+    for element in types.keys() {
+        if let Some(key) = held_source(txn, incoming, element) {
+            holders.entry(element.clone()).or_insert(key);
+        }
+        if held_block(txn, element) {
+            figures.insert(element.clone());
         }
     }
-    for element in &holders {
+    for (element, key) in &holders {
         ydoc::steps::step(ydoc::steps::Walk::Content);
-        let mermaid = match types.get(element) {
-            Some(written) => written.iter().all(|m| *m),
-            None => held_type(txn, element).as_deref() == Some(plate::SHARED_TEXT_ELEMENT),
+        let holds = |kind: Option<&str>| kind.is_some_and(|kind| plate::holds_text(kind, key));
+        let fits = match types.get(element) {
+            Some(written) => written.iter().all(|kind| holds(kind.as_deref())),
+            None => holds(held_type(txn, element).as_deref()),
         };
-        if !mermaid {
+        if !fits {
             return Err(Refusal::Content("a Mermaid source outside a mermaid block"));
         }
     }
@@ -645,6 +733,15 @@ fn plain_content<T: ReadTxn>(
                     break;
                 };
                 clock = range.clock + range.len;
+                if let Some(item) = item
+                    && !item.is_deleted()
+                    && let Some(parent) = item.parent_branch()
+                    && let Some(figure) = held_figure(parent)
+                {
+                    // An entry, list entry or list of a figure's live block.
+                    figures.insert(figure);
+                    continue;
+                }
                 if let Some(item) = item
                     && !item.is_deleted()
                     && let Some(key) = item.parent_sub()
@@ -692,6 +789,10 @@ fn plain_content<T: ReadTxn>(
             })
     });
     media.extend(closed);
+    // A figure's live block is measured exactly too: its repair on read can
+    // make a deletion grow the value (a capped series moving up).
+    shape.exact = !figures.is_empty();
+    media.extend(figures);
     Ok(media)
 }
 
@@ -707,25 +808,183 @@ fn held_type<T: ReadTxn>(txn: &T, element: &BranchID) -> Option<String> {
     }
 }
 
-/// Whether a held element holds a source text this update leaves in place.
-fn held_source<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming, element: &BranchID) -> bool {
+/// The key of a source text a held element holds and this update leaves in
+/// place, if it holds one.
+fn held_source<T: ReadTxn>(
+    txn: &T,
+    incoming: &ydoc::Incoming,
+    element: &BranchID,
+) -> Option<Arc<str>> {
+    let branch = held_branch(txn, element)?;
+    for key in TEXT_KEYS.iter().copied() {
+        let held = entry_of(branch, key).is_some_and(|item| {
+            let id = item.id();
+            !item.is_deleted()
+                && !incoming.deletes(&id.client, id.clock, id.clock + item.len())
+                && matches!(item.content(), ItemContent::Type(text) if matches!(text.type_ref(), TypeRef::Text))
+        });
+        if held {
+            return Some(Arc::from(key));
+        }
+    }
+    None
+}
+
+/// Whether a held element holds a figure's live block (a map).
+fn held_block<T: ReadTxn>(txn: &T, element: &BranchID) -> bool {
     let Some(branch) = held_branch(txn, element) else {
         return false;
     };
-    entry_of(branch, plate::SHARED_TEXT_KEY).is_some_and(|item| {
-        let id = item.id();
-        !item.is_deleted()
-            && !incoming.deletes(&id.client, id.clock, id.clock + item.len())
-            && matches!(item.content(), ItemContent::Type(text) if matches!(text.type_ref(), TypeRef::Text))
+    MAP_KEYS.iter().any(|key| {
+        entry_of(branch, key).is_some_and(|item| {
+            !item.is_deleted()
+                && matches!(item.content(), ItemContent::Type(map) if matches!(map.type_ref(), TypeRef::Map))
+        })
     })
+}
+
+/// The element whose live block holds the held map or list `branch` (at most
+/// three levels up: block, list, list entry).
+fn held_figure(branch: yrs::branch::BranchPtr) -> Option<BranchID> {
+    let mut current = branch;
+    for _ in 0..3 {
+        if !matches!(current.type_ref(), TypeRef::Map | TypeRef::Array) {
+            return None;
+        }
+        let up = current.item()?.parent_branch()?;
+        if matches!(up.type_ref(), TypeRef::XmlText) {
+            return Some(up.id());
+        }
+        current = up;
+    }
+    None
+}
+
+/// Where a map or list sits inside a figure's live block, with the figure
+/// element ([Parts::of]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Part {
+    /// The block map (`block` of the element).
+    Block(yrs::ID),
+    /// A list of maps under the block (series, graph elements).
+    List(yrs::ID),
+    /// One map of such a list.
+    Entry(yrs::ID),
+}
+
+impl Part {
+    fn owner(self) -> BranchID {
+        match self {
+            Part::Block(element) | Part::List(element) | Part::Entry(element) => {
+                BranchID::Nested(element)
+            }
+        }
+    }
+}
+
+/// Resolves the types an update writes into: held, or new in it (placed by
+/// [plain_content]'s first pass), each resolved once.
+struct Parts<'a, T: ReadTxn> {
+    txn: &'a T,
+    state: &'a yrs::StateVector,
+    incoming: &'a ydoc::Incoming<'a>,
+    places: &'a HashMap<yrs::ID, Option<Place>>,
+    known: HashMap<yrs::ID, Option<Part>>,
+}
+
+impl<T: ReadTxn> Parts<'_, T> {
+    /// The type the item `id` makes and where it sits.
+    fn holder(&self, id: &yrs::ID) -> Option<(TypeRef, Option<Place>)> {
+        ydoc::steps::step(ydoc::steps::Walk::Content);
+        if id.clock < self.state.get(&id.client) {
+            let held = self.txn.store().get_item(id)?;
+            let ItemContent::Type(branch) = held.content() else {
+                return None;
+            };
+            let parent = held.parent_branch().map(|parent| parent.id());
+            let place = match held.parent_sub() {
+                Some(key) => Place::Entry(key.clone(), parent),
+                None => Place::Sequence(parent),
+            };
+            return Some((branch.type_ref().clone(), Some(place)));
+        }
+        let item = self.incoming.item_at(id)?;
+        let ItemContent::Type(branch) = item.content() else {
+            return None;
+        };
+        Some((
+            branch.type_ref().clone(),
+            self.places.get(id).cloned().flatten(),
+        ))
+    }
+
+    /// Whether `parent` is an element (a Y.XmlText).
+    fn is_element(&self, parent: &BranchID) -> bool {
+        let BranchID::Nested(id) = parent else {
+            return false;
+        };
+        matches!(self.holder(id), Some((TypeRef::XmlText, _)))
+    }
+
+    /// The part of a figure's block a parent is, if it is one.
+    fn of_parent(&mut self, parent: &Option<BranchID>) -> Option<Part> {
+        match parent {
+            Some(BranchID::Nested(id)) => self.of(id),
+            _ => None,
+        }
+    }
+
+    /// The part of a figure's block the type made by item `id` is: the
+    /// element's `block` map, a list in it, or a map in that list. At most
+    /// three holder lookups, however deep the update nests: a part is known
+    /// from its own holder and at most its parent's and grandparent's.
+    fn of(&mut self, id: &yrs::ID) -> Option<Part> {
+        if let Some(known) = self.known.get(id) {
+            return *known;
+        }
+        let part = match self.holder(id) {
+            Some((TypeRef::Map, Some(Place::Sequence(Some(BranchID::Nested(list)))))) => {
+                self.list_of(&list).map(Part::Entry)
+            }
+            Some((TypeRef::Array, _)) => self.list_of(id).map(Part::List),
+            Some((TypeRef::Map, _)) => self.block_of(id).map(Part::Block),
+            _ => None,
+        };
+        self.known.insert(*id, part);
+        part
+    }
+
+    /// The figure element whose `block` map the item `id` makes.
+    fn block_of(&self, id: &yrs::ID) -> Option<yrs::ID> {
+        match self.holder(id) {
+            Some((TypeRef::Map, Some(Place::Entry(key, Some(BranchID::Nested(element))))))
+                if plate::map_key(&key) && self.is_element(&BranchID::Nested(element)) =>
+            {
+                Some(element)
+            }
+            _ => None,
+        }
+    }
+
+    /// The figure element whose block holds the list the item `id` makes.
+    fn list_of(&self, id: &yrs::ID) -> Option<yrs::ID> {
+        match self.holder(id) {
+            Some((TypeRef::Array, Some(Place::Entry(key, Some(BranchID::Nested(block))))))
+                if plate::list_key(&key) =>
+            {
+                self.block_of(&block)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Whether admitting `update` takes the room's thread off the async workers
 /// (`block_in_place`): a large update ([ydoc::applies_inline]), or one that
 /// [Validator::admit] checks on a copy of the room: it touches a media
-/// block's attributes (REVIEW5 M1) or a closed element's keys, or writes a
-/// required key that Yjs's conflict order places (REVIEW5 R2b). `material`
-/// is the room's material kind.
+/// block's attributes (REVIEW5 M1), a closed element's keys or a figure's
+/// live block, or writes a required key that Yjs's conflict order places
+/// (REVIEW5 R2b). `material` is the room's material kind.
 pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize, material: &str) -> bool {
     let incoming = ydoc::Incoming::new(update);
     if !ydoc::applies_inline(txn, &incoming, bytes) {
@@ -754,6 +1013,14 @@ pub const FORBIDDEN_KEY: &str = "an element with a key it never carries";
 pub const UNLISTED_TYPE: &str = "a block type the embed catalog does not list for it";
 /// [Refusal::Content] for a closed element with a key outside its fields.
 pub const UNEXPECTED_KEY: &str = "an element with a key outside its fields";
+/// [Refusal::Content] for a figure's live block holding other than its
+/// entries: plain values, lists of maps of plain values.
+pub const FIGURE_SHAPE: &str = "a figure block holding other than its entries";
+/// [Refusal::Content] for a figure's block written as one plain value: rooms
+/// hold it as its map only (Epo 2026-10-18).
+pub const PLAIN_BLOCK: &str = "a figure block as one plain value";
+/// [Refusal::Content] for a live block map on an element that holds none.
+pub const STRAY_MAP: &str = "a figure block outside a chart, plot or graph";
 /// The key a markdown fence's body sat under on a reference without its row.
 const PENDING_KEY: &str = "pending";
 
@@ -788,6 +1055,9 @@ fn live_value(item: yrs::block::ItemPtr) -> Option<Any> {
         ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Text) => {
             Some(source_text())
         }
+        ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Map) => {
+            Some(live_block())
+        }
         _ => None,
     }
 }
@@ -797,6 +1067,14 @@ fn live_value(item: yrs::block::ItemPtr) -> Option<Any> {
 /// need.
 fn source_text() -> Any {
     Any::String(Arc::from(""))
+}
+
+/// What a figure's live block (a map, Epo 2026-10-17) stands for in the key
+/// checks: present, its value checked whole on the copy ([on_candidate]). A
+/// buffer, which no plain entry holds ([plain_content] refuses one), so no
+/// update can write it.
+fn live_block() -> Any {
+    Any::Buffer(Arc::from(Vec::new()))
 }
 
 /// A key's value after the update, read without applying it (REVIEW5 R2b).
@@ -992,7 +1270,12 @@ fn required_keys<T: ReadTxn>(
                     if let Some(value) = value.filter(|value| !matches!(value, Any::Undefined))
                         && !value_ok(name, key, &value)
                     {
-                        return Err(Refusal::Content(BAD_VALUE));
+                        // A figure's block takes its live map only.
+                        return Err(Refusal::Content(if plate::holds_map(name, key) {
+                            PLAIN_BLOCK
+                        } else {
+                            BAD_VALUE
+                        }));
                     }
                 }
             }
@@ -1036,6 +1319,40 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
             continue;
         }
         let attributes: HashMap<Arc<str>, Any> = plate::properties(&branch)?.into_iter().collect();
+        let kind = match attributes.get("type") {
+            Some(Any::String(kind)) => kind.to_string(),
+            _ => String::new(),
+        };
+        // A live block map sits on a figure only, and holds a block its store
+        // takes, read as the projection reads it (repaired, Epo 2026-10-17).
+        // Only a shared-map key may hold one ([plain_content]).
+        for key in MAP_KEYS.iter().copied() {
+            let map = entry_of(branch, key).is_some_and(|item| {
+                !item.is_deleted()
+                    && matches!(item.content(), ItemContent::Type(map) if matches!(map.type_ref(), TypeRef::Map))
+            });
+            if !map {
+                continue;
+            }
+            if !plate::holds_map(&kind, key) {
+                return Err(Refusal::Content(STRAY_MAP));
+            }
+            let block = attributes
+                .get(key)
+                .map(json::any_to_value)
+                .transpose()
+                .map_err(ProjectionError::from)?
+                .unwrap_or(Value::Null);
+            // Every held list entry is one a writer could write, the ones a
+            // read leaves out too (Epo 2026-10-18); the repaired block is one
+            // the room's store takes.
+            let held = plate::held_block_value(branch)?.unwrap_or(Value::Null);
+            if crate::questions::figure_entries(&held).is_err()
+                || crate::material::live_figure_block(&kind, &block).is_err()
+            {
+                return Err(Refusal::Content(BAD_VALUE));
+            }
+        }
         if let Some(Any::String(kind)) = attributes.get("type")
             && let Some(fields) = closed_fields(kind)
             && attributes
@@ -1125,7 +1442,8 @@ pub struct Validator {
     pub metrics: Option<Metrics>,
     /// Exact measurements taken (a copy of the room each).
     pub exact_checks: u64,
-    /// Copies of the room taken for the media and closed-field checks alone.
+    /// Copies of the room taken for the media, closed-field and figure
+    /// checks alone.
     pub media_copies: u64,
     /// Copies of the room taken to read required keys whose entries Yjs's
     /// conflict order places ([required_keys]).
@@ -1170,8 +1488,8 @@ impl Validator {
         if keeps_roots {
             let media = plain_content(&txn, &incoming, &mut shape, &self.material)?;
             if !media.is_empty() {
-                // Rare (an image inserted, a file named): the room is copied
-                // only when inspect did not already.
+                // An image inserted, a file named, a figure written: the room
+                // is copied only when inspect did not already.
                 let candidate = match trial.take() {
                     Some(trial) => trial,
                     None => {
@@ -1188,7 +1506,7 @@ impl Validator {
         // The exact measurement below decides anything else, and refuses a
         // root violation.
         let growth = match self.bound {
-            Some(_) if keeps_roots && plate::content_root(&txn).is_some() => {
+            Some(_) if keeps_roots && !shape.exact && plate::content_root(&txn).is_some() => {
                 crate::bound::growth(&txn, &incoming)
             }
             _ => None,
