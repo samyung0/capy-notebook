@@ -21,11 +21,28 @@ var ErrInvalidCursor = errors.New("invalid cursor")
 // marked LostAccess and carries no preview or thumbnail: they may only delete
 // it.
 
+// liveWorkspaceSQL is true when wsCol names a workspace whose owner's account
+// is live (not deleted, pending deletion or suspended); every other path
+// answers such a workspace with a non-disclosing 404.
+func liveWorkspaceSQL(wsCol string) string {
+	return `EXISTS (SELECT 1 FROM workspaces lw JOIN users lo ON lo.id=lw.user_id WHERE lw.id=` + wsCol + `
+		AND lo.deleted_at IS NULL AND lo.deletion_requested_at IS NULL AND lo.suspended_at IS NULL)`
+}
+
 // lostAccessSQL is true for a row in a workspace (wsCol, "" or NULL when
-// standalone; ownerCol its owner) that user neither owns nor belongs to.
-func lostAccessSQL(wsCol, ownerCol, user string) string {
-	return `COALESCE(` + wsCol + ` <> '' AND ` + ownerCol + ` <> ` + user + `
-		AND NOT EXISTS (SELECT 1 FROM workspace_members lost WHERE lost.workspace_id=` + wsCol + ` AND lost.user_id=` + user + `), false)`
+// standalone) that user can no longer open: neither owner nor reaching it
+// as member, through a public share or a redeemed link (linkReachSQL), or its
+// owner's account is no longer live.
+func lostAccessSQL(wsCol, user string) string {
+	return `COALESCE(` + wsCol + ` <> '' AND NOT EXISTS (SELECT 1 FROM workspaces la WHERE la.id=` + wsCol + `
+		AND (la.user_id=` + user + ` OR ` + linkReachSQL("la", user) + `)
+		AND ` + liveWorkspaceSQL("la.id") + `), false)`
+}
+
+// workspaceNameSQL hides a workspace's name once its owner's account is no
+// longer live, like every other read of that workspace.
+func workspaceNameSQL(wsCol, nameCol string) string {
+	return `CASE WHEN COALESCE(` + wsCol + `,'') <> '' AND NOT ` + liveWorkspaceSQL(wsCol) + ` THEN '' ELSE ` + nameCol + ` END`
 }
 
 // withExtra scans a listing row's columns plus extra trailing ones.
@@ -225,13 +242,13 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), m.workspace_name,
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), `+workspaceNameSQL("m.workspace_id", "m.workspace_name")+`,
 			m.chapter_id, COALESCE(c.name,''),
 			m.privacy, m.created_at, m.updated_at, m.size_bytes,
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
-			m.preview, `+lostAccessSQL("m.workspace_id", "w.user_id", "$1")+`
+			m.preview, `+lostAccessSQL("m.workspace_id", "$1")+`
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		LEFT JOIN users owner ON owner.id=w.user_id
@@ -334,7 +351,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, w.name, `+lostAccessSQL("f.workspace_id", "w.user_id", "$1")+
+	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+workspaceNameSQL("w.id", "w.name")+`, `+lostAccessSQL("f.workspace_id", "$1")+
 		` FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN users owner ON owner.id=w.user_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {

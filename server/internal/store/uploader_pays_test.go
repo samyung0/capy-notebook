@@ -123,6 +123,33 @@ func TestRemovedMemberSeesAndPurgesWhatItPaysFor(t *testing.T) {
 	if len(page.Items) != 1 || page.Items[0].ID != file.ID || !page.Items[0].LostAccess {
 		t.Fatalf("member's files = %+v, want its upload marked lost access", page.Items)
 	}
+	// A public share still reaches the workspace, so nothing is lost; a
+	// suspended owner's workspace is lost and loses its name too.
+	listed := func() File {
+		t.Helper()
+		page, err := s.ListOwnedFiles(ctx, member, FileListFilter{})
+		if err != nil || len(page.Items) != 1 {
+			t.Fatalf("member's files = %+v, %v", page.Items, err)
+		}
+		return page.Items[0]
+	}
+	for _, step := range []struct {
+		sql       string
+		lost      bool
+		workspace string
+	}{
+		{`UPDATE workspaces SET privacy='public' WHERE id=$1`, false, ws.Name},
+		{`UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=(SELECT user_id FROM workspaces WHERE id=$1)`, true, ""},
+		{`UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id=(SELECT user_id FROM workspaces WHERE id=$1)`, false, ws.Name},
+		{`UPDATE workspaces SET privacy='private' WHERE id=$1`, true, ws.Name},
+	} {
+		if _, err := s.pool.Exec(ctx, step.sql, ws.ID); err != nil {
+			t.Fatal(err)
+		}
+		if got := listed(); got.LostAccess != step.lost || got.WorkspaceName != step.workspace {
+			t.Fatalf("after %q: lost=%v workspace=%q, want %v %q", step.sql, got.LostAccess, got.WorkspaceName, step.lost, step.workspace)
+		}
+	}
 
 	trashed, err := s.TrashFile(ctx, owner, file.ID, AgentOperation{})
 	if err != nil {

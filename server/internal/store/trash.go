@@ -295,7 +295,7 @@ func decodeTrashCursor(cursor string) (*time.Time, string, error) {
 // what sits in workspaces they own (Sam 2026-10-18). An editor who trashed
 // someone else's item never sees it here. workspaceID narrows to one
 // workspace; empty spans them all plus standalone materials. LostAccess marks
-// an item in a workspace the caller no longer owns or belongs to.
+// an item in a workspace the caller can no longer open (lostAccessSQL).
 func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limit int, cursor string) (TrashPage, error) {
 	if limit <= 0 || limit > trashPageMax {
 		limit = trashPageMax
@@ -304,17 +304,17 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 	if err != nil {
 		return TrashPage{}, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT kind, id, title, sub_kind, workspace_id, workspace_name, size_bytes,
-			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview, `+lostAccessSQL("t.workspace_id", "t.workspace_owner", "$1")+`
+	rows, err := s.pool.Query(ctx, `SELECT kind, id, title, sub_kind, workspace_id, `+workspaceNameSQL("t.workspace_id", "t.workspace_name")+`, size_bytes,
+			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview, `+lostAccessSQL("t.workspace_id", "$1")+`
 		FROM (
 			SELECT 'source_file' AS kind, f.id, f.name AS title, f.kind AS sub_kind, f.workspace_id,
 				w.name AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id,
-				COALESCE(f.thumbnail_key, '') AS thumbnail_key, f.preview, w.user_id AS workspace_owner
+				COALESCE(f.thumbnail_key, '') AS thumbnail_key, f.preview
 			FROM files f JOIN workspaces w ON w.id=f.workspace_id
 			WHERE f.trashed_at IS NOT NULL AND (f.user_id=$1 OR w.user_id=$1) AND ($2='' OR f.workspace_id=$2)
 			UNION ALL
 			SELECT 'material', m.id, m.title, m.kind, COALESCE(m.workspace_id,''), m.workspace_name,
-				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id, '', m.preview, w.user_id
+				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id, '', m.preview
 			FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id
 			WHERE m.trashed_at IS NOT NULL AND (m.owner_user_id=$1 OR w.user_id=$1) AND m.parent_material_id IS NULL
 				AND ($2='' OR m.workspace_id=$2)

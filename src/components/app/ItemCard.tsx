@@ -164,6 +164,9 @@ export function ItemCard({
   pickKey?: string;
   selected?: boolean;
 }) {
+  // A lost workspace whose owner's account closed comes without its name.
+  const workspaceLabel =
+    workspaceLost && !workspace ? m.files_workspace_unavailable() : workspace;
   const pickable = pickKey !== undefined;
   const overlay = pickable && (
     <PickOverlay
@@ -195,11 +198,11 @@ export function ItemCard({
           </Title>
         </div>
         <div className="min-w-0">
-          {workspace && (
+          {workspaceLabel && (
             <WorkspaceCell
               iconId={workspaceIconId}
               lost={workspaceLost}
-              name={workspace}
+              name={workspaceLabel}
             />
           )}
         </div>
@@ -249,7 +252,7 @@ export function ItemCard({
       {/* A fixed-height line, so cards with and without a workspace match;
           pinned to the bottom when a wrapped title makes a row taller. */}
       <div className="mt-auto box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[13px] text-fg">
-        {workspace && (
+        {workspaceLabel && (
           <span
             className={cn(
               'hidden min-w-0 items-center gap-1.5 sm:flex',
@@ -271,7 +274,7 @@ export function ItemCard({
               )
             )}
             <span className="min-w-0 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight">
-              {workspace}
+              {workspaceLabel}
             </span>
             <span aria-hidden className="shrink-0">
               ·

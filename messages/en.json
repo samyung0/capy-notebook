@@ -2242,5 +2242,6 @@
   "storage_payer_full_strip": "Owner of the file has insufficient storage.",
   "storage_payer_full_body": "The file stays view-only until its owner frees space or upgrades.",
   "storage_self_full_strip": "Your storage is full.",
-  "files_lost_access": "You no longer have access to this workspace. You still pay for this item; delete it to free space."
+  "files_lost_access": "You no longer have access to this workspace. You still pay for this item; delete it to free space.",
+  "files_workspace_unavailable": "Unavailable workspace"
 }
