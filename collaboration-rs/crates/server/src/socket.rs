@@ -2,9 +2,14 @@
 //! own (JOIN runs every `onAuthenticate` check, which a draft send runs too),
 //! their messages queue until JOINED and then go to the room in order; a
 //! writer's access is rechecked at most every 5 s before its updates go on;
-//! tokens refresh in band. A socket sending SYNC messages past its user's
-//! allowance (`rate.rs`), or an update over `ydoc::MAX_UPDATE_BYTES`, is
-//! closed.
+//! tokens refresh in band. A user over their allowance (`rate.rs`), or
+//! sending an update over `ydoc::MAX_UPDATE_BYTES`, is in a timeout: their
+//! SYNC, awareness, query and stateless messages are dropped on every socket
+//! until it ends, and each joined channel of theirs hears it (on join too)
+//! with only the time left (`update-timeout`); their editors pause, then
+//! join again on the same socket and resync. A socket must join a room
+//! within [JOIN_DEADLINE]; a client address holds a capped number of sockets
+//! and a user a capped number of joined channels (`seats.rs`).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::Ordering;
@@ -22,7 +27,9 @@ use crate::drafts::Class;
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::observe::{Level, log};
 use crate::protocol::{self, Kind, Message};
+use crate::rate::{TimedOut, Verdict};
 use crate::room::{self, RoomCmd};
+use crate::seats::Seat;
 
 /// A writer's access is revalidated at most this often per channel.
 const RECHECK: Duration = Duration::from_secs(5);
@@ -41,15 +48,12 @@ pub const DEFAULT_REFUSAL: &str = "permission-denied";
 /// A client protocol its room family no longer (or not yet) accepts: the
 /// client stops and asks for a reload.
 pub const OUTDATED_REASON: &str = "collaboration-outdated";
-/// The close of a socket over its user's update allowance; the client
-/// reconnects once its backoff (doubled by each such close) passes, and
-/// resyncs (`TOO_FAST_CODE` in src/features/collaboration/socket.ts).
-pub const TOO_FAST: (u16, &str) = (4429, "collaboration-too-fast");
-/// The close of a socket that sent an update over the cap; the client backs
-/// off as for too fast (it sends pieces of at most 2 MiB).
-pub const TOO_LARGE: (u16, &str) = (4413, "collaboration-update-too-large");
-/// How long a closed socket is read for its client's close.
-const CLOSE_DRAIN: Duration = Duration::from_secs(2);
+/// A socket with no room joined (and none authenticating) after this long
+/// closes (Epo 2026-10-19): a client joins as soon as it opens one.
+const JOIN_DEADLINE: Duration = Duration::from_secs(10);
+/// What a timed-out user's channels hear (`update-timeout` in
+/// src/features/collaboration/roomProvider.ts).
+pub const TIMEOUT_TYPE: &str = "update-timeout";
 
 enum Channel {
     /// Queued messages and the JOIN attempt (a later JOIN on the channel
@@ -60,6 +64,8 @@ enum Channel {
         name: RoomName,
         context: Context,
         checked: Option<Instant>,
+        /// Its place among the user's joined channels.
+        _seat: Seat,
     },
 }
 
@@ -109,8 +115,15 @@ impl Refusal {
 }
 
 type AuthResult = (u64, u64, Result<(RoomName, Context), Refusal>);
-/// A join's answer: channel, attempt, and the joined room or the refusal.
-type JoinResult = (u64, u64, RoomName, Context, Result<RoomHandle, Refusal>);
+/// A join's answer: channel, attempt, and the joined room (with the user's
+/// channel seat) or the refusal.
+type JoinResult = (
+    u64,
+    u64,
+    RoomName,
+    Context,
+    Result<(RoomHandle, Seat), Refusal>,
+);
 
 /// Joins `name`'s room (loading it if need be). A room that just unloaded
 /// fails the send or the join: look up again once.
@@ -346,17 +359,20 @@ struct Connection {
     joined_once: bool,
     /// Token deadlines: (when, channel, expiry instead of refresh).
     timers: BTreeMap<(Instant, u64), bool>,
-    /// Why the socket closes after this frame: too fast or too large.
-    close: Option<(u16, &'static str)>,
+    /// When the socket closes unless a room joined by then.
+    join_deadline: Option<Instant>,
 }
 
-pub async fn serve(app: Shared, socket: WebSocket) {
+/// Serves one socket; `_address` is its place among its client address's
+/// sockets, given back when it closes.
+pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
     let id = app.next_connection.fetch_add(1, Ordering::Relaxed);
     app.stats.connections.fetch_add(1, Ordering::Relaxed);
     let (outbox, mut out_rx) = Outbox::new();
     let overflow = outbox.overflow();
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel();
     let (join_tx, mut join_rx) = mpsc::unbounded_channel();
+    let mut timeouts = app.allowances.subscribe();
     let mut connection = Connection {
         socket_id: format!("{}-{id}", app.instance_id),
         app: app.clone(),
@@ -369,7 +385,7 @@ pub async fn serve(app: Shared, socket: WebSocket) {
         attempts: 0,
         joined_once: false,
         timers: BTreeMap::new(),
-        close: None,
+        join_deadline: Some(Instant::now() + JOIN_DEADLINE),
     };
     let mut socket = socket;
     loop {
@@ -403,44 +419,26 @@ pub async fn serve(app: Shared, socket: WebSocket) {
             Some((channel, attempt, name, context, result)) = join_rx.recv() => {
                 // Its queued messages go to the room now, and count.
                 connection.joined(channel, attempt, name, context, result).await;
-                if connection.close.is_some() {
-                    break;
-                }
             }
+            Ok(timeout) = timeouts.recv() => connection.timed_out(&timeout),
             () = overflow.notified() => {
                 log(Level::Warn, "slow connection closed", json!({ "socket_id": connection.socket_id }));
                 break;
             }
             () = sleep_until(next_timer) => connection.on_timers(),
-        }
-    }
-    connection.close_all().await;
-    if let Some(close) = connection.close {
-        close_with(&mut socket, close).await;
-    }
-    app.stats.connections.fetch_sub(1, Ordering::Relaxed);
-}
-
-/// Sends the close, then reads what the client still sends until its close
-/// answers (at most `CLOSE_DRAIN`): a socket dropped with unread frames is
-/// reset, and the reset can lose the close frame on its way, so the client
-/// would not know why it was closed.
-async fn close_with(socket: &mut WebSocket, (code, reason): (u16, &'static str)) {
-    let close = CloseFrame {
-        code,
-        reason: reason.into(),
-    };
-    if socket.send(WsMessage::Close(Some(close))).await.is_err() {
-        return;
-    }
-    let _ = tokio::time::timeout(CLOSE_DRAIN, async {
-        while let Some(Ok(message)) = socket.recv().await {
-            if matches!(message, WsMessage::Close(_)) {
+            () = sleep_until(connection.join_deadline) => {
+                if !connection.join_overdue() {
+                    continue;
+                }
+                log(Level::Warn, "socket closed before any join", json!({ "socket_id": connection.socket_id }));
+                let close = CloseFrame { code: 1008, reason: "no room joined".into() };
+                let _ = socket.send(WsMessage::Close(Some(close))).await;
                 break;
             }
         }
-    })
-    .await;
+    }
+    connection.close_all().await;
+    app.stats.connections.fetch_sub(1, Ordering::Relaxed);
 }
 
 async fn sleep_until(deadline: Option<Instant>) {
@@ -499,11 +497,48 @@ impl Connection {
             return false;
         };
         for message in messages {
-            if !self.on_message(message).await || self.close.is_some() {
+            if !self.on_message(message).await {
                 return false;
             }
         }
         true
+    }
+
+    /// The join deadline passed: true when the socket must close (no room
+    /// joined, none authenticating); a join still authenticating gets
+    /// another [JOIN_DEADLINE].
+    fn join_overdue(&mut self) -> bool {
+        let authenticating = self
+            .channels
+            .values()
+            .any(|channel| matches!(channel, Channel::Authenticating(..)));
+        if self.joined_once || authenticating {
+            self.join_deadline = (!self.joined_once).then(|| Instant::now() + JOIN_DEADLINE);
+            return false;
+        }
+        true
+    }
+
+    /// A user's timeout began: each of their joined channels hears it.
+    fn timed_out(&self, timeout: &TimedOut) {
+        let remaining = timeout.until.saturating_duration_since(Instant::now());
+        for (channel, state) in &self.channels {
+            if let Channel::Joined { context, .. } = state
+                && *context.user_id == *timeout.user
+            {
+                self.send_timeout(*channel, remaining);
+            }
+        }
+    }
+
+    /// Only that the user is in a timeout and how long it has left (never
+    /// the allowance's numbers).
+    fn send_timeout(&self, channel: u64, remaining: Duration) {
+        let payload = json!({
+            "remainingMs": remaining.as_micros().div_ceil(1000) as u64,
+            "type": TIMEOUT_TYPE,
+        });
+        self.send(channel, Kind::Stateless, &protocol::text(&payload.to_string()));
     }
 
     async fn on_message(&mut self, message: Message) -> bool {
@@ -560,17 +595,16 @@ impl Connection {
     }
 
     /// A joined channel's message goes to its room, after the writer recheck
-    /// for updates.
+    /// for updates. SYNC, awareness and query messages take from the user's
+    /// allowance; in a timeout they and stateless messages are dropped.
     async fn forward(&mut self, message: Message) {
-        if self.close.is_some() {
-            return;
-        }
         let channel = message.channel;
         let Some(Channel::Joined {
             room,
             name,
             context,
             checked,
+            ..
         }) = self.channels.get(&channel)
         else {
             return;
@@ -578,33 +612,47 @@ impl Connection {
         let (room, name, context, checked) =
             (room.clone(), name.clone(), context.clone(), *checked);
         let key = (self.id, channel);
+        let now = Instant::now();
+        let decoded = (message.kind == Kind::Sync)
+            .then(|| protocol::sync::decode(&message.payload))
+            .and_then(Result::ok);
+        let allowances = &self.app.allowances;
+        let user = &context.user_id;
+        let verdict = match message.kind {
+            Kind::Sync => match decoded {
+                Some((_, body)) if body.len() > ydoc::MAX_UPDATE_BYTES => {
+                    Some(allowances.time_out(user, now))
+                }
+                // An update is charged by its body, which the cap bounds, so
+                // every update fits a full allowance.
+                Some((_, body)) => Some(allowances.take(user, body.len(), now)),
+                None => Some(allowances.take(user, message.payload.len(), now)),
+            },
+            Kind::Awareness => Some(allowances.take(user, message.payload.len(), now)),
+            Kind::QueryAwareness => Some(allowances.take(user, 0, now)),
+            Kind::Stateless => allowances
+                .remaining(user, now)
+                .map(|remaining| Verdict::TimedOut {
+                    remaining,
+                    started: false,
+                }),
+            _ => None,
+        };
+        if let Some(Verdict::TimedOut { started, .. }) = verdict {
+            if started {
+                self.app.stats.timeouts.fetch_add(1, Ordering::Relaxed);
+                // Expected only from a runaway or hostile client: logged, not reported.
+                log(
+                    Level::Warn,
+                    "user timed out",
+                    json!({ "room": name.to_string(), "socket_id": self.socket_id, "user_id": context.user_id }),
+                );
+            }
+            return;
+        }
         let command = match message.kind {
             Kind::Sync => {
-                let decoded = protocol::sync::decode(&message.payload);
-                if decoded
-                    .as_ref()
-                    .is_ok_and(|(_, body)| body.len() > ydoc::MAX_UPDATE_BYTES)
-                {
-                    self.refuse_socket(TOO_LARGE, "update over the cap", &name, &context);
-                    return;
-                }
-                if !self.app.allowances.take(
-                    &context.user_id,
-                    message.payload.len(),
-                    Instant::now(),
-                ) {
-                    self.app.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
-                    self.refuse_socket(
-                        TOO_FAST,
-                        "connection over its update rate",
-                        &name,
-                        &context,
-                    );
-                    return;
-                }
-                let writes = decoded
-                    .map(|(kind, _)| kind != protocol::sync::STEP1)
-                    .unwrap_or(false);
+                let writes = decoded.is_some_and(|(kind, _)| kind != protocol::sync::STEP1);
                 if writes
                     && context.access == Access::Write
                     && checked.is_none_or(|at| at.elapsed() >= RECHECK)
@@ -652,23 +700,6 @@ impl Connection {
             _ => return,
         };
         let _ = room.tx.send(command).await;
-    }
-
-    /// Expected only from a runaway or hostile client: logged, not reported;
-    /// the socket closes with `close`.
-    fn refuse_socket(
-        &mut self,
-        close: (u16, &'static str),
-        line: &str,
-        name: &RoomName,
-        context: &Context,
-    ) {
-        self.close = Some(close);
-        log(
-            Level::Warn,
-            line,
-            json!({ "room": name.to_string(), "socket_id": self.socket_id, "user_id": context.user_id }),
-        );
     }
 
     /// A writer whose access changed: `room-read-only` for a read-only
@@ -734,6 +765,20 @@ impl Connection {
                 return;
             }
         };
+        let Some(seat) = self.app.user_channels.take(&context.user_id) else {
+            self.app.stats.seat_refusals[1].fetch_add(1, Ordering::Relaxed);
+            log(
+                Level::Warn,
+                "user over the joined channel cap",
+                json!({ "room": name.to_string(), "user_id": context.user_id }),
+            );
+            let refusal = Refusal {
+                authentication: false,
+                ..Refusal::plain("user over the joined channel cap")
+            };
+            self.refuse(channel, &refusal);
+            return;
+        };
         let key = (self.id, channel);
         let (app, tx, out, socket) = (
             self.app.clone(),
@@ -742,10 +787,12 @@ impl Connection {
             self.socket_id.clone(),
         );
         tokio::spawn(async move {
-            let result = join_room(&app, &name, &context, key, out, socket).await;
+            let result = join_room(&app, &name, &context, key, out, socket)
+                .await
+                .map(|handle| (handle, seat));
             if let Err(unsent) = tx.send((channel, attempt, name, context, result)) {
                 // The socket closed meanwhile: leave the room it joined.
-                if let (.., Ok(handle)) = unsent.0 {
+                if let (.., Ok((handle, _))) = unsent.0 {
                     let _ = handle.tx.send(RoomCmd::Leave(key)).await;
                 }
             }
@@ -760,11 +807,11 @@ impl Connection {
         attempt: u64,
         name: RoomName,
         context: Context,
-        result: Result<RoomHandle, Refusal>,
+        result: Result<(RoomHandle, Seat), Refusal>,
     ) {
         let current = self.authenticating(channel, attempt);
-        let handle = match result {
-            Ok(handle) => handle,
+        let (handle, seat) = match result {
+            Ok(joined) => joined,
             Err(refusal) => {
                 if current {
                     self.refuse(channel, &refusal);
@@ -786,7 +833,13 @@ impl Connection {
             .map(|message| message.payload.len())
             .sum::<usize>();
         self.joined_once = true;
+        self.join_deadline = None;
         self.arm_token(channel, &context);
+        // A user in a timeout hears it on each channel they join.
+        let timeout = self
+            .app
+            .allowances
+            .remaining(&context.user_id, Instant::now());
         self.channels.insert(
             channel,
             Channel::Joined {
@@ -794,8 +847,12 @@ impl Connection {
                 name,
                 context,
                 checked: None,
+                _seat: seat,
             },
         );
+        if let Some(remaining) = timeout {
+            self.send_timeout(channel, remaining);
+        }
         for message in queue {
             self.forward(message).await;
         }

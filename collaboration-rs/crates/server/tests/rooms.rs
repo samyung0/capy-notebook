@@ -1107,7 +1107,7 @@ async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconne
     );
 }
 
-/// A small update allowance (40 messages, then 20 a second; the 8 MiB byte
+//// A small update allowance (40 messages, then 20 a second; the 8 MiB byte
 /// burst, refilled 1 byte a second), so a test can spend it.
 const SMALL_ALLOWANCE: [(&str, &str); 4] = [
     ("COLLABORATION_UPDATE_BURST", "40"),
@@ -1136,30 +1136,34 @@ async fn writer(env: &Env, port: u16, text: &str) -> (String, String, Client) {
 }
 
 impl Client {
-    /// Sends `count` one-letter updates at once; stops when the socket is
-    /// closed under it.
+    /// Sends `count` one-letter updates at once.
     async fn flood(&mut self, count: usize) {
         for _ in 0..count {
             let update = self.typed("b");
-            if self
-                .ws
-                .send(Ws::Binary(frame(1, 5, &sync(2, &update)).into()))
-                .await
-                .is_err()
-            {
-                break;
-            }
+            self.send(5, &sync(2, &update)).await;
         }
+    }
+
+    /// The next `update-timeout` notice: its time left in ms. It says
+    /// nothing else (never the allowance's numbers).
+    async fn timeout_notice(&mut self) -> u64 {
+        let (notice, _) = self.stateless("update-timeout").await;
+        let keys: Vec<&String> = notice.as_object().expect("an object").keys().collect();
+        assert_eq!(keys, ["remainingMs", "type"], "{notice}");
+        notice["remainingMs"].as_u64().expect("the time left")
     }
 }
 
-/// Security regression (Epo 2026-10-18): each user's SYNC messages have a
-/// burst and a sustained rate, in count and in bytes. A socket past either is
-/// closed as too fast (4429 `collaboration-too-fast`) and counted, while one
-/// typing at a person's pace stays open. Fails if the allowance is not
-/// enforced.
+/// Security regression (Epo 2026-10-18): a user past their allowance is put
+/// in a timeout instead of disconnected. Every socket of theirs hears it,
+/// with only the time left; nothing of theirs reaches the room until it
+/// ends; a channel joining meanwhile hears it on join; afterwards a channel
+/// joined again on the same socket resyncs what its client held. Another
+/// user typing at a person's pace is untouched. Fails if the allowance is
+/// not enforced, if a timeout reaches only the socket that began it, or if
+/// updates sent during it are applied.
 #[tokio::test]
-async fn a_socket_past_its_update_allowance_closes_as_too_fast() {
+async fn a_user_past_their_allowance_is_timed_out_on_every_socket() {
     let Some(env) = env() else { return };
     let server = start_configured(&env, env.api.as_deref(), &SMALL_ALLOWANCE).await;
     let (typist_user, typist_room, mut typist) = writer(&env, server.port, "rate").await;
@@ -1174,47 +1178,57 @@ async fn a_socket_past_its_update_allowance_closes_as_too_fast() {
             .await
     );
 
-    // Another user's flood of small updates runs out of the 40-update burst.
-    let (_, _, mut flood) = writer(&env, server.port, "flood").await;
-    flood.flood(300).await;
-    assert_eq!(
-        flood.closed().await,
-        Some((4429, "collaboration-too-fast".into()))
-    );
+    // Another user's two sockets (each join takes two: step 1, step 2); a
+    // flood of small updates on the first runs out of the 40-message burst.
+    let (user, room, mut first) = writer(&env, server.port, "flood").await;
+    let mut second = Client::open(server.port).await;
+    second.joined(&room, &token(&room, &user, "write")).await;
+    assert!(second.settle(|c| c.block_text() == "flood").await);
+    first.flood(300).await;
+    let remaining = first.timeout_notice().await;
+    assert!((1..=3000).contains(&remaining), "{remaining}");
+    assert!((1..=3000).contains(&second.timeout_notice().await));
+    // The second socket's edit meanwhile is dropped (it never resyncs).
+    second.type_text("z").await;
+    let mut third = Client::open(server.port).await;
+    third.join(&room, &token(&room, &user, "write")).await;
+    assert!(third.until(1).await.is_some());
+    assert!((1..=3000).contains(&third.timeout_notice().await));
 
-    // A third user's 1 MB update, sent again (it changes nothing more) until
-    // the 8 MiB byte burst is spent: the ninth is over.
-    let (_, _, mut paster) = writer(&env, server.port, "paste").await;
-    let paste = paster.typed(&"p".repeat(1_000_000));
-    for _ in 0..9 {
-        paster.send(5, &sync(2, &paste)).await;
-    }
-    assert_eq!(
-        paster.closed().await,
-        Some((4429, "collaboration-too-fast".into()))
-    );
-
-    // The typist's socket stayed open: its next update reaches a reader.
-    typist.type_text("c").await;
+    // Once it ends, the first socket joins its room again and resyncs the
+    // whole flood; a reader sees it, and no "z".
+    tokio::time::sleep(Duration::from_millis(remaining + 200)).await;
+    first.joined(&room, &token(&room, &user, "write")).await;
     let mut reader = Client::open(server.port).await;
-    reader
+    reader.joined(&room, &token(&room, &user, "read")).await;
+    let flooded = format!("flood{}", "b".repeat(300));
+    assert!(
+        reader.settle(|c| c.block_text() == flooded).await,
+        "{}",
+        reader.block_text()
+    );
+
+    // The typist was never timed out: its next update reaches a reader.
+    typist.type_text("c").await;
+    let mut typist_reader = Client::open(server.port).await;
+    typist_reader
         .joined(&typist_room, &token(&typist_room, &typist_user, "read"))
         .await;
-    assert!(reader.settle(|c| c.block_text().ends_with('c')).await);
+    assert!(typist_reader.settle(|c| c.block_text().ends_with('c')).await);
     let metrics = metrics_text(server.port).await;
     assert!(
         metrics
             .lines()
-            .any(|line| line == "capy_collaboration_rate_limited_total 2"),
+            .any(|line| line == "capy_collaboration_timeouts_total 1"),
         "{metrics}"
     );
 }
 
 /// Security regression (Epo 2026-10-18): the allowance is the user's, not
 /// the socket's. A socket that spent most of it, closed, leaves its user a
-/// reconnect that goes on from what was left: the second socket is over
-/// within a few updates, not after a fresh burst. Fails if each
-/// socket (or each reconnect) gets its own allowance.
+/// reconnect that goes on from what was left: the second socket is timed out
+/// within a few updates, not after a fresh burst. Fails if each socket (or
+/// each reconnect) gets its own allowance.
 #[tokio::test]
 async fn a_users_allowance_is_shared_by_their_sockets_and_reconnects() {
     let Some(env) = env() else { return };
@@ -1233,26 +1247,20 @@ async fn a_users_allowance_is_shared_by_their_sockets_and_reconnects() {
     );
     // A fresh allowance would take 30 more after the join's two.
     second.flood(30).await;
-    assert_eq!(
-        second.closed().await,
-        Some((4429, "collaboration-too-fast".into()))
-    );
+    assert!(second.timeout_notice().await > 0);
 }
 
 /// Security regression (Epo 2026-10-18): a draft send takes from the same
-/// allowance as its user's sockets. With the allowance spent on a socket, a
-/// send is refused 429 `too_fast` and counted; nothing reaches the room.
-/// Fails if draft sends bypass the allowance.
+/// allowance as its user's sockets, and is refused while the user is in a
+/// timeout: 429 `too_fast` with the time left, counted; nothing reaches the
+/// room. Fails if draft sends bypass the allowance or the timeout.
 #[tokio::test]
 async fn a_draft_send_takes_from_the_users_allowance() {
     let Some(env) = env() else { return };
     let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
     let (user, room, mut editor) = writer(&env, server.port, "drafts").await;
     editor.flood(100).await;
-    assert_eq!(
-        editor.closed().await,
-        Some((4429, "collaboration-too-fast".into()))
-    );
+    assert!(editor.timeout_notice().await > 0);
     let (status, answer) = send_drafts(
         server.port,
         &room,
@@ -1261,10 +1269,9 @@ async fn a_draft_send_takes_from_the_users_allowance() {
         drafted(&editor.doc, typed_into_note(" late")),
     )
     .await;
-    assert_eq!(
-        (status, answer),
-        (429, serde_json::json!({ "class": "too_fast" }))
-    );
+    assert_eq!((status, &answer["class"]), (429, &serde_json::json!("too_fast")));
+    let remaining = answer["remainingMs"].as_u64().expect("the time left");
+    assert!((1..=300_000).contains(&remaining), "{answer}");
     let metrics = metrics_text(server.port).await;
     assert!(
         metrics
@@ -1274,14 +1281,14 @@ async fn a_draft_send_takes_from_the_users_allowance() {
     );
 }
 
-/// Security regression (Epo 2026-10-18): no room takes an update over 8 MiB.
-/// A socket sending one is closed (4413 `collaboration-update-too-large`)
-/// before the room reads it, and a text source's draft send over it is
-/// refused 413 `too_large` before the body is read past the cap. Fails if
-/// either cap is removed (a note room would answer its own 4 MiB refusal on
-/// the channel; the source send would reach the allowance or the room).
+/// Security regression (Epo 2026-10-18): no room takes an update over 8 MiB;
+/// its sender is timed out. A socket sending one hears the timeout (and stays
+/// open) before the room reads it, and a text source's draft send over it is
+/// answered 429 `too_fast` with the time left before the body is read past
+/// the cap. Fails if either cap is removed (a note room would answer its own
+/// 4 MiB refusal on the channel; the source send would reach the room).
 #[tokio::test]
-async fn an_update_over_8_mib_is_refused_on_a_socket_and_a_draft_send() {
+async fn an_update_over_8_mib_times_its_user_out() {
     let Some(env) = env() else { return };
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
@@ -1289,10 +1296,7 @@ async fn an_update_over_8_mib_is_refused_on_a_socket_and_a_draft_send() {
     sender
         .send(5, &sync(2, &vec![0u8; 8 * 1024 * 1024 + 1]))
         .await;
-    assert_eq!(
-        sender.closed().await,
-        Some((4413, "collaboration-update-too-large".into()))
-    );
+    assert!((1..=3000).contains(&sender.timeout_notice().await));
     let (user, file) = text_file(&env, &gateway, "hello").await;
     let room = format!("source:{file}:epoch:1");
     let (status, answer) = send_drafts(
@@ -1303,12 +1307,342 @@ async fn an_update_over_8_mib_is_refused_on_a_socket_and_a_draft_send() {
         vec![0u8; 8 * 1024 * 1024 + 1],
     )
     .await;
-    assert_eq!(
-        (status, answer),
-        (413, serde_json::json!({ "class": "too_large" }))
+    assert_eq!((status, &answer["class"]), (429, &serde_json::json!("too_fast")));
+    assert!(answer["remainingMs"].as_u64().is_some_and(|ms| ms > 0));
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line == "capy_collaboration_timeouts_total 2"),
+        "{metrics}"
     );
 }
 
+/// Security regression (Epo 2026-10-19): awareness updates and awareness
+/// queries take from their user's allowance like SYNC messages: a flood of
+/// either times the user out. Fails if either is forwarded uncounted.
+#[tokio::test]
+async fn awareness_and_its_queries_take_from_the_users_allowance() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SMALL_ALLOWANCE).await;
+    let (_, _, mut presence) = writer(&env, server.port, "presence").await;
+    for clock in 1..=100 {
+        presence
+            .send(7, &awareness_update(4242, clock, "{\"cursor\":1}"))
+            .await;
+    }
+    assert!(presence.timeout_notice().await > 0);
+    let (_, _, mut asker) = writer(&env, server.port, "asker").await;
+    for _ in 0..100 {
+        asker.send(8, &[]).await;
+    }
+    assert!(asker.timeout_notice().await > 0);
+}
+
+impl Client {
+    /// Asks for the room's whole state (a step 1 with an empty state vector)
+    /// one answer at a time, up to `count` times, until a timeout notice: how
+    /// many step 2 answers came before it.
+    async fn ask_whole_state(&mut self, count: usize) -> usize {
+        for answers in 0..count {
+            self.send(5, &sync(0, &StateVector::default().encode_v1()))
+                .await;
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            'answer: loop {
+                let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                    tokio::time::timeout_at(deadline, self.ws.next()).await
+                else {
+                    panic!("no answer after {answers} answers");
+                };
+                let mut at = 0;
+                while at < bytes.len() {
+                    let _channel = read_var(&bytes, &mut at);
+                    let kind = bytes[at];
+                    at += 1;
+                    let len = read_var(&bytes, &mut at) as usize;
+                    let payload = &bytes[at..at + len];
+                    at += len;
+                    if kind == 9 && text_payload(payload).contains("update-timeout") {
+                        return answers;
+                    }
+                    if kind == 5 && payload.first() == Some(&1) {
+                        break 'answer;
+                    }
+                }
+            }
+        }
+        count
+    }
+
+    /// Reads (applying syncs) until nothing arrives for 300 ms, then forgets
+    /// what was read.
+    async fn drain(&mut self) {
+        while let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout(Duration::from_millis(300), self.ws.next()).await
+        {
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                if kind == 5 {
+                    self.on_sync(&payload).await;
+                }
+            }
+        }
+        self.inbox.clear();
+    }
+}
+
+/// Security regression (Epo 2026-10-19): a step 1's answer is charged to its
+/// user by the answer's bytes, so asking again and again for a large state
+/// runs out of the byte allowance: with a 1.5 MB note and the 8 MiB burst,
+/// six whole-state answers go (the join's and five), then the user is timed
+/// out. Fails if only the small request is charged.
+#[tokio::test]
+async fn a_step_1_answer_is_charged_by_its_bytes() {
+    let Some(env) = env() else { return };
+    let allowance = [
+        ("COLLABORATION_UPDATE_BURST", "10000"),
+        ("COLLABORATION_UPDATES_PER_SECOND", "100"),
+        ("COLLABORATION_UPDATE_BURST_BYTES", "8388608"),
+        ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1"),
+    ];
+    let server = start_configured(&env, env.api.as_deref(), &allowance).await;
+    let text = "w".repeat(1_500_000);
+    let (_, _, mut asker) = writer(&env, server.port, &text).await;
+    assert_eq!(asker.ask_whole_state(8).await, 5);
+}
+
+/// A note in a workspace of `owner`'s that `editor` edits too: (owner,
+/// editor, room).
+async fn shared_note(env: &Env, text: &str) -> (String, String, String) {
+    let client = db(env).await;
+    let (owner, editor) = (user(env).await, user(env).await);
+    let workspace = format!("ws_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','private')",
+            &[&workspace, &owner],
+        )
+        .await
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')",
+            &[&workspace, &editor],
+        )
+        .await
+        .expect("member");
+    let material = format!("m_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": text }] }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'IT', $4)",
+            &[&material, &owner, &workspace, &content],
+        )
+        .await
+        .expect("material");
+    (owner, editor, format!("material:{material}:schema:1"))
+}
+
+impl Client {
+    async fn send_on(&mut self, channel: u64, kind: u8, payload: &[u8]) {
+        self.ws
+            .send(Ws::Binary(frame(channel, kind, payload).into()))
+            .await
+            .expect("send");
+    }
+
+    /// Asks the room for its awareness states: (client, state) of each.
+    async fn awareness_states(&mut self, channel: u64) -> Vec<(u64, String)> {
+        self.drain().await;
+        self.send_on(channel, 8, &[]).await;
+        awareness_entries(&self.until(7).await.expect("awareness states"))
+    }
+}
+
+/// Security regression (Epo 2026-10-19): an awareness client id is its
+/// user's. Another member neither overwrites nor removes it, and one channel
+/// keeps at most four ids. Fails if the room takes an entry for a client id
+/// another user's channel holds, or keeps every id a channel sends.
+#[tokio::test]
+async fn a_member_writes_only_its_own_awareness_client_ids_up_to_a_cap() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let mut mine = Client::open(server.port).await;
+    mine.joined(&room, &token(&room, &owner, "write")).await;
+    mine.send(7, &awareness_update(111, 1, "{\"name\":\"owner\"}"))
+        .await;
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &token(&room, &editor, "write")).await;
+    other
+        .send(7, &awareness_update(111, 5, "{\"name\":\"other\"}"))
+        .await;
+    other.send(7, &awareness_update(111, 6, "null")).await;
+    for client in 201..=210 {
+        other
+            .send(7, &awareness_update(client, 1, "{\"name\":\"many\"}"))
+            .await;
+    }
+    let states = mine.awareness_states(1).await;
+    assert!(
+        states.contains(&(111, "{\"name\":\"owner\"}".to_owned())),
+        "{states:?}"
+    );
+    let many = states.iter().filter(|(client, _)| *client > 200).count();
+    assert_eq!(many, 4, "{states:?}");
+}
+
+/// Security regression (Epo 2026-10-19): a room keeps at most 256 awareness
+/// client ids: 65 channels of four ids each leave 256 in its states. Fails
+/// if the room keeps every id its members send.
+#[tokio::test]
+async fn a_room_keeps_at_most_256_awareness_client_ids() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut client) = writer(&env, server.port, "crowd").await;
+    let write = token(&room, &user, "write");
+    for channel in 2..=66u64 {
+        client
+            .send_on(
+                channel,
+                0,
+                &join_payload(&room, &write, Some(client_protocol())),
+            )
+            .await;
+        assert!(client.until(1).await.is_some(), "channel {channel} joined");
+        for id in 0..4 {
+            let entry = awareness_update(channel * 10 + id, 1, "{\"n\":1}");
+            client.send_on(channel, 7, &entry).await;
+        }
+    }
+    assert_eq!(client.awareness_states(1).await.len(), 256);
+}
+
+/// Security regression (Epo 2026-10-19): a socket that has joined no room
+/// within about 10 s is closed, while one that joined stays open. Fails if
+/// an idle socket is kept.
+#[tokio::test]
+async fn a_socket_that_joins_no_room_closes() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, _, mut joined) = writer(&env, server.port, "joined").await;
+    let mut idle = Client::open(server.port).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    let closed = loop {
+        match tokio::time::timeout_at(deadline, idle.ws.next()).await {
+            Ok(Some(Ok(Ws::Close(frame)))) => {
+                break frame.map(|frame| (u16::from(frame.code), frame.reason.to_string()));
+            }
+            Ok(Some(Ok(_))) => {}
+            _ => break None,
+        }
+    };
+    assert_eq!(closed, Some((1008, "no room joined".into())));
+    joined.type_text("!").await;
+    assert!(joined.until(6).await.is_some(), "the joined socket still serves");
+}
+
+/// A socket from 127.0.0.1, or from `address` behind Cloudflare.
+async fn connect(
+    port: u16,
+    address: Option<&str>,
+) -> Result<
+    WebSocketStream<MaybeTlsStream<TcpStream>>,
+    tokio_tungstenite::tungstenite::Error,
+> {
+    let mut request = format!("ws://127.0.0.1:{port}/")
+        .into_client_request()
+        .expect("request");
+    request
+        .headers_mut()
+        .insert("origin", ORIGIN.parse().expect("origin"));
+    if let Some(address) = address {
+        request
+            .headers_mut()
+            .insert("cf-connecting-ip", address.parse().expect("address"));
+    }
+    tokio_tungstenite::connect_async(request)
+        .await
+        .map(|(ws, _)| ws)
+}
+
+/// Security regression (Epo 2026-10-19): a client address holds a capped
+/// number of sockets (Cloudflare's `CF-Connecting-IP` when present); one more
+/// is refused before the upgrade, and a closed one frees its place. Fails if
+/// sockets are not counted per address.
+#[tokio::test]
+async fn a_client_address_holds_a_capped_number_of_sockets() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_SOCKETS_PER_ADDRESS", "2")],
+    )
+    .await;
+    let first = connect(server.port, None).await.expect("first");
+    let _second = connect(server.port, None).await.expect("second");
+    let refused = connect(server.port, None).await;
+    assert!(
+        matches!(
+            &refused,
+            Err(tokio_tungstenite::tungstenite::Error::Http(response))
+                if response.status() == 429
+        ),
+        "{refused:?}"
+    );
+    assert!(connect(server.port, Some("203.0.113.7")).await.is_ok());
+    drop(first);
+    let mut reopened = None;
+    for _ in 0..50 {
+        if let Ok(ws) = connect(server.port, None).await {
+            reopened = Some(ws);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(reopened.is_some(), "a closed socket frees its place");
+}
+
+/// Security regression (Epo 2026-10-19): a user has a capped number of
+/// joined channels over all their sockets; one more join is refused, and a
+/// channel left frees its place. Fails if joined channels are not counted per
+/// user.
+#[tokio::test]
+async fn a_user_joins_a_capped_number_of_channels() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_CHANNELS_PER_USER", "2")],
+    )
+    .await;
+    let (user, room, mut client) = writer(&env, server.port, "channels").await;
+    let write = token(&room, &user, "write");
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &write).await;
+    other
+        .send_on(2, 0, &join_payload(&room, &write, Some(client_protocol())))
+        .await;
+    assert_eq!(
+        text_payload(&other.until(2).await.expect("refused")),
+        "permission-denied"
+    );
+    client.send_on(1, 3, &[]).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    other
+        .send_on(2, 0, &join_payload(&room, &write, Some(client_protocol())))
+        .await;
+    assert!(other.until(1).await.is_some(), "a left channel frees its place");
+}
 #[tokio::test]
 async fn redis_comments_and_user_evictions_reach_the_room() {
     let Some(env) = env() else { return };

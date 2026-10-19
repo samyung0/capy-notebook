@@ -5,27 +5,32 @@
 //! JOIN's) and, for a source, their base (`X-Capy-Base`), and the merged rows
 //! as one Yjs update; the URL is the same for every
 //! document, so one preflight covers a sweep. The request runs a channel's
-//! JOIN checks, reads the body within a writer's sync cap (at most
-//! `ydoc::MAX_UPDATE_BYTES`), takes it from the user's update allowance (the
-//! one their sockets take from, `rate.rs`), checks the eviction lease again,
+//! JOIN checks, is refused while the user is in a timeout, reads the body
+//! within `ydoc::MAX_UPDATE_BYTES` (a larger one times the user out) and a
+//! note's sync cap, takes it from the user's update allowance (the one their
+//! sockets take from, `rate.rs`), checks the eviction lease again,
 //! and goes through the room's writer admission (the room loads if need be
 //! and unloads when idle, as usual), so open editors receive the update live;
 //! the answer waits for the store that holds it and is the receipt for every
 //! row the request carried. The page sends a large group as pieces of at most
-//! 2 MiB, one request each, in order. A refusal answers its class alone; its
-//! detail is logged and counted by class.
+//! 2 MiB, one request each, in order. A refusal answers its class alone (a
+//! timeout also the time it has left, `remainingMs`); its detail is logged
+//! and counted by class.
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use futures::StreamExt;
 use serde_json::json;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 
 use crate::app::Shared;
 use crate::auth::{Access, Context, RoomName};
 use crate::observe::{Level, log};
+use crate::rate::Verdict;
 use crate::room::{self, Draft, Durable, NOTE_MAX_SYNC_BYTES, RoomCmd};
 
 /// The room the drafts grew from, a source's base, the client's protocol.
@@ -60,7 +65,8 @@ pub enum Class {
     /// The page's client protocol is outside its room family's (a stale
     /// tab): nothing more goes until the page reloads.
     Outdated,
-    /// Over the user's update allowance: tried again at a later page load.
+    /// The user is in a timeout (over their update allowance, or sending an
+    /// update over the cap): tried again at the sweep's next trigger.
     TooFast,
 }
 
@@ -111,6 +117,8 @@ impl Class {
 pub struct Refused {
     pub class: Class,
     pub message: String,
+    /// A timeout's time left, which the answer carries.
+    pub remaining: Option<Duration>,
 }
 
 impl Refused {
@@ -118,7 +126,22 @@ impl Refused {
         Refused {
             class,
             message: message.into(),
+            remaining: None,
         }
+    }
+
+    /// The user is in a timeout; `started` when this send began it.
+    fn timed_out(app: &Shared, user: &str, verdict: Verdict) -> Option<Self> {
+        let Verdict::TimedOut { remaining, started } = verdict else {
+            return None;
+        };
+        if started {
+            app.stats.timeouts.fetch_add(1, Ordering::Relaxed);
+        }
+        Some(Refused {
+            remaining: Some(remaining),
+            ..Refused::new(Class::TooFast, format!("{user} is in a timeout"))
+        })
     }
 }
 
@@ -147,12 +170,31 @@ fn refused(app: &Shared, room: Option<&str>, refusal: &Refused) -> Response {
         "draft send refused",
         json!({ "class": refusal.class.as_str(), "error": refusal.message, "room": room }),
     );
+    let mut body = json!({ "class": refusal.class.as_str() });
+    if let Some(remaining) = refusal.remaining {
+        body["remainingMs"] = json!(remaining.as_micros().div_ceil(1000) as u64);
+    }
     (
         refusal.class.status(),
         [(header::CONTENT_TYPE, "application/json")],
-        json!({ "class": refusal.class.as_str() }).to_string(),
+        body.to_string(),
     )
         .into_response()
+}
+
+/// The body, or none when it is longer than `cap`.
+async fn read_within(body: Body, cap: usize) -> Result<Option<Bytes>, Refused> {
+    let mut stream = body.into_data_stream();
+    let mut read = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk =
+            chunk.map_err(|error| Refused::new(Class::Malformed, format!("body: {error}")))?;
+        if read.len() + chunk.len() > cap {
+            return Ok(None);
+        }
+        read.extend_from_slice(&chunk);
+    }
+    Ok(Some(read.into()))
 }
 
 fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
@@ -257,22 +299,28 @@ async fn checked_and_stored(
             return Err(Refused::new(Class::Lineage, "the note's room moved on"));
         }
     }
-    let cap = match name {
-        RoomName::Material { .. } => NOTE_MAX_SYNC_BYTES,
-        RoomName::Source { .. } => ydoc::MAX_UPDATE_BYTES,
+    let user = &context.user_id;
+    let running = app.allowances.remaining(user, Instant::now());
+    if let Some(refusal) = running.and_then(|remaining| {
+        let verdict = Verdict::TimedOut {
+            remaining,
+            started: false,
+        };
+        Refused::timed_out(app, user, verdict)
+    }) {
+        return Err(refusal);
+    }
+    let Some(update) = read_within(body, ydoc::MAX_UPDATE_BYTES).await? else {
+        let verdict = app.allowances.time_out(user, Instant::now());
+        return Err(Refused::timed_out(app, user, verdict)
+            .unwrap_or_else(|| Refused::new(Class::TooLarge, "over the update cap")));
     };
-    let update = axum::body::to_bytes(body, cap)
-        .await
-        .map_err(|_| Refused::new(Class::TooLarge, "past the writer's sync cap"))?;
-    if !app
-        .allowances
-        .take(&context.user_id, update.len(), std::time::Instant::now())
-    {
-        app.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
-        return Err(Refused::new(
-            Class::TooFast,
-            format!("{} is over its update rate", context.user_id),
-        ));
+    if matches!(name, RoomName::Material { .. }) && update.len() > NOTE_MAX_SYNC_BYTES {
+        return Err(Refused::new(Class::TooLarge, "past the writer's sync cap"));
+    }
+    let verdict = app.allowances.take(user, update.len(), Instant::now());
+    if let Some(refusal) = Refused::timed_out(app, user, verdict) {
+        return Err(refusal);
     }
     // The lease and a local reset may have begun while the body arrived: a
     // JOIN joins at once after its checks, a send only now (REVIEW1 S2).

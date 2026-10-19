@@ -2,18 +2,22 @@
 //! a liveness probe, metrics and the internal routes (service secret) and the
 //! browser's draft send (`drafts.rs`: origin and room token).
 
-use axum::Router;
+use std::net::SocketAddr;
+use std::sync::atomic::Ordering;
+
 use axum::body::Bytes;
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
-use axum::extract::{Path, State, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, Path, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
+use axum::{Extension, Router};
 use serde_json::{Value, json};
 
 use crate::app::Shared;
 use crate::auth::{self, RoomName};
 use crate::health;
+use crate::observe::{Level, log};
 use crate::room::RoomCmd;
 
 pub fn router(app: Shared) -> Router {
@@ -70,10 +74,21 @@ fn json_response(status: StatusCode, value: Value) -> Response {
         .into_response()
 }
 
+/// The client address a socket counts toward: Cloudflare's
+/// `CF-Connecting-IP` in front of the deployed service, else the peer's.
+fn client_address(headers: &HeaderMap, peer: Option<SocketAddr>) -> Option<String> {
+    headers
+        .get("cf-connecting-ip")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+        .or_else(|| peer.map(|peer| peer.ip().to_string()))
+}
+
 /// Any path upgrades to a WebSocket, as Hocuspocus listens; plain requests 404.
 async fn fallback(
     State(app): State<Shared>,
     headers: HeaderMap,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     upgrade: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
 ) -> Response {
     let Ok(upgrade) = upgrade else {
@@ -90,12 +105,22 @@ async fn fallback(
     if !origin.is_some_and(|origin| app.config.allowed_origins.contains(origin)) {
         return (StatusCode::FORBIDDEN, "origin is not allowed").into_response();
     }
+    let address = client_address(&headers, peer.map(|Extension(ConnectInfo(peer))| peer));
+    let Some(seat) = address.and_then(|address| app.address_sockets.take(&address)) else {
+        app.stats.seat_refusals[0].fetch_add(1, Ordering::Relaxed);
+        log(
+            Level::Warn,
+            "client address over its socket cap",
+            json!({}),
+        );
+        return (StatusCode::TOO_MANY_REQUESTS, "too many sockets").into_response();
+    };
     let max = app.config.max_frame_bytes();
     upgrade
         .read_buffer_size(READ_BUFFER)
         .max_message_size(max)
         .max_frame_size(max)
-        .on_upgrade(move |socket| crate::socket::serve(app, socket))
+        .on_upgrade(move |socket| crate::socket::serve(app, socket, seat))
 }
 
 /// Each socket's read buffer, allocated when it opens (tungstenite's default
@@ -579,6 +604,7 @@ pub(crate) mod tests {
             .unwrap(),
         );
         let limits = config.update_limits;
+        let (sockets, channels) = (config.sockets_per_address, config.channels_per_user);
         std::sync::Arc::new(crate::app::App {
             instance_id: "test".into(),
             config,
@@ -590,6 +616,8 @@ pub(crate) mod tests {
             evictions: Default::default(),
             stats: Default::default(),
             allowances: crate::rate::Allowances::new(limits, std::time::Instant::now()),
+            address_sockets: crate::seats::Seats::new(sockets),
+            user_channels: crate::seats::Seats::new(channels),
             health: Default::default(),
             unplaced: Default::default(),
             projection_failures: Default::default(),

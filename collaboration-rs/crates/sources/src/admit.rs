@@ -2,7 +2,9 @@
 //! task before the apply: the state byte cap by estimate (persistence.ts
 //! `updateFitsRoom`), the Office root rule (officeRoots.ts
 //! `officeUpdateViolation`) and the ordering rule (`inspectUpdate`'s unheld).
-//! O(update) except the exact measure near the cap.
+//! O(update) except the exact measure near the cap, which runs at most once
+//! per [MEASURE_EVERY] updates with the update's apply work-limited (Epo
+//! 2026-10-19).
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -17,6 +19,27 @@ use yrs::{ClientID, Doc, ReadTxn, StateVector, Transact, Update};
 use crate::{MAX_SOURCE_STATE_BYTES, SourceFormat};
 
 const PPTX_META: &str = "pptx:meta";
+/// Updates between two exact measures of a room near its cap: one past the
+/// estimate meanwhile is refused by the estimate alone.
+pub const MEASURE_EVERY: u32 = 100;
+
+/// A source room's running state size: the bytes of the state and of each
+/// update applied since it was last measured, and the updates left before
+/// the next exact measure may run.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Estimate {
+    pub bytes: u64,
+    pub until_measure: u32,
+}
+
+impl Estimate {
+    pub fn new(bytes: u64) -> Self {
+        Estimate {
+            bytes,
+            until_measure: 0,
+        }
+    }
+}
 /// The one pptx:meta key a remote update may write (comment flavour).
 const PPTX_WRITABLE_META_KEY: &str = "commentFlavor";
 
@@ -56,7 +79,7 @@ pub fn admit_update(
     doc: &Doc,
     format: SourceFormat,
     update: &[u8],
-    estimate: &mut u64,
+    estimate: &mut Estimate,
 ) -> Admission {
     let decoded = match Update::decode_v1(update) {
         Ok(decoded) => decoded,
@@ -94,22 +117,44 @@ pub fn admit_update(
 }
 
 /// Whether the update keeps the room within the cap: by the estimate, and
-/// past it by one exact measure of the room plus the update, which also
-/// resets the estimate.
-fn fits_room(doc: &Doc, update: &[u8], estimate: &mut u64, cap: u64) -> Result<bool, String> {
-    if *estimate + update.len() as u64 <= cap {
+/// past it by one exact measure of the room plus the update (at most once
+/// per [MEASURE_EVERY] updates), which also resets the estimate. The
+/// update's apply to the measured copy is limited to `ydoc::MAX_WORK` steps.
+fn fits_room(
+    doc: &Doc,
+    update: &[u8],
+    estimate: &mut Estimate,
+    cap: u64,
+) -> Result<bool, String> {
+    estimate.until_measure = estimate.until_measure.saturating_sub(1);
+    if estimate.bytes + update.len() as u64 <= cap {
         return Ok(true);
     }
+    if estimate.until_measure > 0 {
+        return Ok(false);
+    }
+    estimate.until_measure = MEASURE_EVERY;
     let state = doc
         .transact()
         .encode_state_as_update_v1(&StateVector::default());
-    *estimate = state.len() as u64;
+    estimate.bytes = state.len() as u64;
     let candidate = ydoc::scratch_doc();
+    let decoded = Update::decode_v1(&state).map_err(|error| error.to_string())?;
+    candidate
+        .transact_mut()
+        .apply_update(decoded)
+        .map_err(|error| error.to_string())?;
     let mut txn = candidate.transact_mut();
-    for bytes in [&state[..], update] {
-        let decoded = Update::decode_v1(bytes).map_err(|error| error.to_string())?;
-        txn.apply_update(decoded)
-            .map_err(|error| error.to_string())?;
+    txn.limit_work(ydoc::MAX_WORK);
+    let decoded = Update::decode_v1(update).map_err(|error| error.to_string())?;
+    let costly = || format!("update would take yrs more than {} steps to place", ydoc::MAX_WORK);
+    match txn.apply_update(decoded) {
+        Ok(()) => {}
+        Err(yrs::error::UpdateError::WorkBudgetExceeded(_)) => return Err(costly()),
+        Err(error) => return Err(error.to_string()),
+    }
+    if txn.work() > ydoc::MAX_WORK {
+        return Err(costly());
     }
     let measured = txn.encode_state_as_update_v1(&StateVector::default()).len() as u64;
     Ok(measured <= cap)
@@ -216,7 +261,7 @@ mod tests {
     }
 
     fn verdict(room: &Doc, format: SourceFormat, update: &[u8]) -> Admission {
-        let mut estimate = 0;
+        let mut estimate = Estimate::default();
         admit_update(room, format, update, &mut estimate)
     }
 
@@ -375,31 +420,109 @@ mod tests {
                 .get_or_insert_text("source")
                 .insert(&mut client.transact_mut(), 0, "x")
         });
-        let mut estimate = 10;
+        let mut estimate = Estimate::new(10);
         assert_eq!(
             admit_update(&room, SourceFormat::Text, &typed, &mut estimate),
             Admission::Accept
         );
-        assert_eq!(estimate, 10);
+        assert_eq!(estimate.bytes, 10);
         // An estimate over the cap measures the room (and resets the estimate).
-        let mut estimate = MAX_SOURCE_STATE_BYTES as u64;
+        let mut estimate = Estimate::new(MAX_SOURCE_STATE_BYTES as u64);
         assert_eq!(
             admit_update(&room, SourceFormat::Text, &typed, &mut estimate),
             Admission::Accept
         );
         let exact = encode(&room, &StateVector::default()).len() as u64;
-        assert_eq!(estimate, exact);
+        assert_eq!(estimate.bytes, exact);
         // The exact measure refuses an update that takes the room past the cap.
-        let mut estimate = 0;
+        let mut estimate = Estimate::default();
         assert_eq!(
             fits_room(&room, &typed, &mut estimate, exact + 100),
             Ok(true)
         );
-        let mut estimate = exact + 100;
+        let mut estimate = Estimate::new(exact + 100);
         assert_eq!(
             fits_room(&room, &typed, &mut estimate, exact + 1),
             Ok(false)
         );
-        assert_eq!(estimate, exact);
+        assert_eq!(estimate.bytes, exact);
+    }
+
+    /// Near the cap the exact measure runs once per MEASURE_EVERY updates;
+    /// an update past the estimate meanwhile is refused by the estimate.
+    #[test]
+    fn the_exact_measure_runs_once_per_measure_every_updates() {
+        let room = Doc::with_client_id(1);
+        let text = room.get_or_insert_text("source");
+        text.insert(&mut room.transact_mut(), 0, "hello");
+        let client = Doc::with_client_id(2);
+        apply(&client, &encode(&room, &StateVector::default()));
+        let typed = delta(&client, || {
+            client
+                .get_or_insert_text("source")
+                .insert(&mut client.transact_mut(), 0, "x")
+        });
+        let exact = encode(&room, &StateVector::default()).len() as u64;
+        let cap = exact + 100;
+        let mut estimate = Estimate::new(cap);
+        assert_eq!(fits_room(&room, &typed, &mut estimate, cap), Ok(true));
+        assert_eq!(estimate.bytes, exact);
+        // Past the estimate again before MEASURE_EVERY updates: refused.
+        estimate.bytes = cap;
+        for _ in 1..MEASURE_EVERY {
+            assert_eq!(fits_room(&room, &typed, &mut estimate, cap), Ok(false));
+            assert_eq!(estimate.bytes, cap);
+        }
+        assert_eq!(fits_room(&room, &typed, &mut estimate, cap), Ok(true));
+        assert_eq!(estimate.bytes, exact);
+    }
+
+    /// The exact measure applies the update to a copy within ydoc::MAX_WORK
+    /// steps: a costlier one is refused instead of placed.
+    #[test]
+    fn the_exact_measure_limits_the_updates_work() {
+        use yrs::encoding::write::Write;
+        // 1,500 characters each typed at the start, then deleted, and an
+        // update of as many items with only a right origin, each a tombstone
+        // from the last back: yrs scans from the start to each right origin,
+        // 1,500 * 1,499 / 2 steps, past the budget.
+        let tombstones = 1_500u32;
+        let room = Doc::with_client_id(1);
+        let text = room.get_or_insert_text("source");
+        for _ in 0..tombstones {
+            text.insert(&mut room.transact_mut(), 0, "t");
+        }
+        text.remove_range(&mut room.transact_mut(), 0, tombstones);
+        let mut ids = Vec::new();
+        {
+            let _txn = room.transact();
+            let branch: &yrs::branch::Branch = text.as_ref();
+            let mut next = branch.start();
+            while let Some(item) = next {
+                ids.push(*item.id());
+                next = item.right();
+            }
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.write_var(1u32);
+        bytes.write_var(tombstones);
+        bytes.write_var(1_000u64);
+        bytes.write_var(0u32);
+        for right in ids.iter().rev() {
+            bytes.write_u8(0x40 | 4); // a right origin, a string
+            bytes.write_var(right.client.get());
+            bytes.write_var(right.clock);
+            bytes.write_string("x");
+        }
+        bytes.write_var(0u32);
+        let cap = MAX_SOURCE_STATE_BYTES as u64;
+        let mut estimate = Estimate::new(cap);
+        let measured = fits_room(&room, &bytes, &mut estimate, cap);
+        assert!(
+            measured
+                .as_ref()
+                .is_err_and(|error| error.contains("steps to place")),
+            "{measured:?}"
+        );
     }
 }

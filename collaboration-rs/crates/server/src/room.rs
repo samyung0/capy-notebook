@@ -39,6 +39,11 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
+/// Awareness client ids one channel may hold, and a room (Epo 2026-10-19):
+/// an editor sends its document's one, a new one only when Yjs renews it.
+/// A new id past either is not kept.
+pub const MAX_CLIENTS_PER_MEMBER: usize = 4;
+pub const MAX_CLIENTS_PER_ROOM: usize = 256;
 /// Why a note room holding a block the embed catalog does not list refuses
 /// every writer (Epo 2026-10-13): the browser shows it for the
 /// `unsupported_block` code.
@@ -207,6 +212,8 @@ struct Member {
 struct AwarenessEntry {
     entry: awareness::Entry,
     owner: Option<MemberKey>,
+    /// The user whose channel set it: only their channels write it.
+    user: String,
 }
 
 /// A note room's own state.
@@ -251,7 +258,7 @@ struct Source {
     room: sources::SourceRoom,
     format: sources::SourceFormat,
     /// The room's state size by applied bytes, for the cap check.
-    estimate: u64,
+    estimate: sources::Estimate,
     checkpoint: u64,
     log_bytes: i64,
     log_rows: i64,
@@ -607,7 +614,7 @@ async fn load(
             let source = Source {
                 room,
                 format: loaded.format,
-                estimate: loaded.bytes,
+                estimate: sources::Estimate::new(loaded.bytes),
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
                 log_rows: loaded.rows as i64,
@@ -898,15 +905,20 @@ impl Room {
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
                 // A joiner's step 1 is answered with up to the whole state,
-                // encoded on the blocking pool.
+                // encoded on the blocking pool, and charged to its user by
+                // the answer's bytes (Epo 2026-10-19).
                 Some(since) => {
                     let diff = self.encoded(since).await;
+                    self.charge(key, diff.len());
                     self.send(key, Kind::Sync, &sync::encode(sync::STEP2, &diff));
                 }
                 None => self.on_sync(key, &payload),
             },
             RoomCmd::Awareness(key, payload) => self.on_awareness(key, &payload),
-            RoomCmd::QueryAwareness(key) => self.send_awareness_states(key),
+            RoomCmd::QueryAwareness(key) => {
+                let sent = self.send_awareness_states(key);
+                self.charge(key, sent);
+            }
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
@@ -1496,7 +1508,7 @@ impl Room {
         // Else the room's estimate (a source room's applied bytes, a note's
         // stored ones), not an encode of the document on the room's thread.
         let size = bytes.or(Some(match &self.kind {
-            Kindly::Source(source) => source.estimate,
+            Kindly::Source(source) => source.estimate.bytes,
             kind => stored_bytes(kind).max(0) as u64,
         }));
         let list: Vec<Incident> = if users.is_empty() {
@@ -1611,6 +1623,15 @@ impl Room {
         }
     }
 
+    /// Charges a reply of `bytes` to the member's user's allowance.
+    fn charge(&self, key: MemberKey, bytes: usize) {
+        if let Some(member) = self.members.get(&key) {
+            self.app
+                .allowances
+                .charge(&member.context.user_id, bytes, Instant::now());
+        }
+    }
+
     fn join(
         &mut self,
         key: MemberKey,
@@ -1697,9 +1718,12 @@ impl Room {
         if let Kindly::Source(_) = &self.kind {
             self.app.handoff().closed(&self.name, member.channel_id);
         }
-        // Its awareness states go, as Hocuspocus removes a closed connection's.
+        // Its awareness states go, as Hocuspocus removes a closed connection's
+        // (not one another channel of its user took over since).
         for client in member.clients {
-            if let Some(state) = self.awareness.get_mut(&client) {
+            if let Some(state) = self.awareness.get_mut(&client)
+                && state.owner == Some(key)
+            {
                 if !state.entry.removed() {
                     state.entry.clock += 1;
                     state.entry.state = "null".into();
@@ -2016,7 +2040,8 @@ impl Room {
                     &self.doc.transact(),
                     &ydoc::Incoming::new(&update),
                     bytes.len(),
-                ) || source.estimate + bytes.len() as u64 > sources::MAX_SOURCE_STATE_BYTES as u64
+                ) || source.estimate.bytes + bytes.len() as u64
+                    > sources::MAX_SOURCE_STATE_BYTES as u64
             }
         };
         let mut admit = || match &mut self.kind {
@@ -2095,7 +2120,7 @@ impl Room {
         };
         applied += content.len();
         if let Kindly::Source(source) = &mut self.kind {
-            source.estimate += applied as u64;
+            source.estimate.bytes += applied as u64;
         }
         self.ack(writer);
         if !content.is_empty() {
@@ -2299,8 +2324,17 @@ impl Room {
                 without_uploads(entry);
             }
         }
+        // Ids another channel of the same user held until now.
+        let mut taken_over = Vec::new();
         for entry in entries {
             let current = self.awareness.get(&entry.client);
+            // A client id is its user's: another user's channel neither
+            // writes nor removes it (Epo 2026-10-19).
+            if current.is_some_and(|state| {
+                state.owner.is_some() && state.user != member.context.user_id
+            }) {
+                continue;
+            }
             // y-protocols: a newer clock wins; at the same clock a removal wins.
             let take = match current {
                 None => !entry.removed(),
@@ -2314,6 +2348,22 @@ impl Room {
             if !take {
                 continue;
             }
+            let held = current.and_then(|state| state.owner);
+            if !entry.removed() && held != Some(key) {
+                let live = self
+                    .awareness
+                    .values()
+                    .filter(|state| state.owner.is_some())
+                    .count();
+                if member.clients.len() >= MAX_CLIENTS_PER_MEMBER
+                    || (held.is_none() && live >= MAX_CLIENTS_PER_ROOM)
+                {
+                    continue;
+                }
+            }
+            if let Some(previous) = held.filter(|previous| *previous != key) {
+                taken_over.push((previous, entry.client));
+            }
             if entry.removed() {
                 member.clients.remove(&entry.client);
             } else {
@@ -2324,18 +2374,25 @@ impl Room {
                 entry.client,
                 AwarenessEntry {
                     owner: (!entry.removed()).then_some(key),
+                    user: member.context.user_id.clone(),
                     entry,
                 },
             );
+        }
+        for (previous, client) in taken_over {
+            if let Some(member) = self.members.get_mut(&previous) {
+                member.clients.remove(&client);
+            }
         }
         if !self.changed_awareness.is_empty() {
             self.schedule_flush();
         }
     }
 
-    fn send_awareness_states(&self, key: MemberKey) {
+    /// Sends the room's awareness states to a channel; returns their bytes.
+    fn send_awareness_states(&self, key: MemberKey) -> usize {
         if self.members.get(&key).is_none_or(|member| member.viewer) {
-            return;
+            return 0;
         }
         let entries: Vec<&awareness::Entry> = self
             .awareness
@@ -2343,13 +2400,12 @@ impl Room {
             .filter(|state| !state.entry.removed())
             .map(|state| &state.entry)
             .collect();
-        if !entries.is_empty() {
-            self.send(
-                key,
-                Kind::Awareness,
-                &awareness::encode(entries.into_iter()),
-            );
+        if entries.is_empty() {
+            return 0;
         }
+        let states = awareness::encode(entries.into_iter());
+        self.send(key, Kind::Awareness, &states);
+        states.len()
     }
 
     // ------------------------------------------------------------------ stateless

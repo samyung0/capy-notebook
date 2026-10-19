@@ -248,8 +248,12 @@ pub struct Stats {
     /// Source room loads refused because loaded rooms' files fill the disk
     /// store (Epo 2026-10-17).
     pub source_disk_refusals: AtomicU64,
-    /// Sockets closed and draft sends refused as too fast (`rate.rs`).
-    pub rate_limited: AtomicU64,
+    /// Timeouts begun: a user over their allowance or sending an update
+    /// over the cap (`rate.rs`).
+    pub timeouts: AtomicU64,
+    /// Sockets refused for their client address's cap, channels for their
+    /// user's (`seats.rs`).
+    pub seat_refusals: [AtomicU64; 2],
 }
 
 pub struct App {
@@ -265,6 +269,9 @@ pub struct App {
     pub stats: Stats,
     /// Every user's update allowance (`rate.rs`).
     pub allowances: crate::rate::Allowances,
+    /// Open sockets per client address, joined channels per user (`seats.rs`).
+    pub address_sockets: crate::seats::Seats,
+    pub user_channels: crate::seats::Seats,
     pub health: crate::health::Health,
     pub unplaced: crate::incidents::UnplacedOnce,
     pub projection_failures: crate::projection::Failures,

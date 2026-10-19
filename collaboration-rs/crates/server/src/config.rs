@@ -61,6 +61,11 @@ pub struct Config {
     /// rate three times the fastest key repeat. The byte burst is at least
     /// the largest update (`ydoc::MAX_UPDATE_BYTES`).
     pub update_limits: crate::rate::Limits,
+    /// Sockets one client address may hold, and channels one user may have
+    /// joined (`seats.rs`): stress stacks with one address and one user
+    /// raise them.
+    pub sockets_per_address: u64,
+    pub channels_per_user: u64,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -204,6 +209,16 @@ impl Config {
             },
             source_disk_bytes: required(env, "COLLABORATION_SOURCE_DISK_BYTES")?,
             update_limits,
+            sockets_per_address: positive(
+                env,
+                "COLLABORATION_SOCKETS_PER_ADDRESS",
+                crate::seats::SOCKETS_PER_ADDRESS,
+            )?,
+            channels_per_user: positive(
+                env,
+                "COLLABORATION_CHANNELS_PER_USER",
+                crate::seats::CHANNELS_PER_USER,
+            )?,
         })
     }
 
@@ -256,6 +271,8 @@ mod tests {
                 bytes_per_second: 2 << 20,
             }
         );
+        assert_eq!(config.sockets_per_address, 500);
+        assert_eq!(config.channels_per_user, 128);
     }
 
     #[test]
