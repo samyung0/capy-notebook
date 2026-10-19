@@ -1411,7 +1411,8 @@ Relace stopped reading its input; the provider pin is described in
 [Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
 Its catalog and capacity rows
 are UAT data. The caption prompt rides as the system message and the image as
-the user turn, since Relace refuses image input with no conversation context.
+the user turn (decided 2026-10-15, when Relace, GLM's host then, refused image
+input with no conversation context).
 On the `zai/glm-5.3-flash` row (served by Z.AI), which cannot turn thinking
 off, captioning sends `reasoning_effort: low`.
 

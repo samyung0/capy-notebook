@@ -818,7 +818,8 @@ Ops model catalog before allowing platform model calls. Each environment stores
 its own provider/model limits in `model_capacities`; new databases start
 without limits and missing capacity fails explicitly. Production uses GLM
 48 total / 40 interactive reserve (Z.AI holds about 50 calls in flight per key;
-migration 0097 moves an existing Relace GLM row there under that cap) and Qwen
+migration 0097 copies an existing Relace GLM row there under that cap; the relace
+row, kept for the previous release during the deploy, is removed by hand after it) and Qwen
 embedding 200 / 80. UAT and full local
 development must use limits appropriate to their own provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts

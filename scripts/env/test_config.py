@@ -418,6 +418,8 @@ class ConfigTest(unittest.TestCase):
                     "EVO_QUERY_MODEL",
                     "IMPORT_RELAY_ENQUEUE_URL",
                     "IMPORT_RELAY_SECRET",
+                    "RELACE_API_KEY",
+                    "RELACE_INGEST_API_KEY",
                 )
             )
         ]
@@ -432,10 +434,7 @@ class ConfigTest(unittest.TestCase):
                 side_effect=[
                     [],
                     current + retired + preserved,
-                    {},
-                    {},
-                    {},
-                    {},
+                    *[{}] * len(retired),
                     current + preserved,
                 ],
             ) as api,
@@ -447,10 +446,7 @@ class ConfigTest(unittest.TestCase):
             [
                 ("PATCH", "/envs/bulk"),
                 ("GET", "/envs"),
-                ("DELETE", "/envs/retired-0"),
-                ("DELETE", "/envs/retired-1"),
-                ("DELETE", "/envs/retired-2"),
-                ("DELETE", "/envs/retired-3"),
+                *[("DELETE", f"/envs/retired-{index}") for index in range(6)],
                 ("GET", "/envs"),
             ],
         )

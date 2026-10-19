@@ -371,7 +371,14 @@ def apply_coolify(values):
         if key.startswith("CAPY_")
         and key in MANIFEST
         and "coolify" in MANIFEST[key]["targets"]
-    } | {"EVO_QUERY_MODEL", "IMPORT_RELAY_ENQUEUE_URL", "IMPORT_RELAY_SECRET"}
+    } | {
+        "EVO_QUERY_MODEL",
+        "IMPORT_RELAY_ENQUEUE_URL",
+        "IMPORT_RELAY_SECRET",
+        # GLM left Relace for Z.AI (Epo 2026-10-20); ZAI_API_KEY replaces both.
+        "RELACE_API_KEY",
+        "RELACE_INGEST_API_KEY",
+    }
     obsolete = [
         row
         for row in actual

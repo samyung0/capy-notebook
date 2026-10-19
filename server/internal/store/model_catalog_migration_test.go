@@ -161,7 +161,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 	}
 }
 
-func TestZaiCapacityMigrationMovesTheRelaceRowUnderZAIsCap(t *testing.T) {
+func TestZaiCapacityMigrationCopiesTheRelaceRowUnderZAIsCap(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
 	tx, err := s.pool.Begin(ctx)
@@ -201,7 +201,8 @@ func TestZaiCapacityMigrationMovesTheRelaceRowUnderZAIsCap(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if joined := strings.Join(got, ", "); joined != "tencent 30/24, zai 48/40" {
+	// The relace row stays for the previous release's containers mid-deploy.
+	if joined := strings.Join(got, ", "); joined != "relace 100/80, tencent 30/24, zai 48/40" {
 		t.Fatalf("GLM capacities: %s", joined)
 	}
 }

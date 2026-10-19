@@ -164,8 +164,6 @@ interactions:
       - Mon, 19 Oct 2026 16:57:57 GMT
       ga-traceid:
       - fd069d54925c2a9dcf6ce094df2b7fa6
-      set-cookie:
-      - acw_tc=ac11677c17924290678808942e0857d606ae32b74710713bd4e4db98e19fc6;path=/;HttpOnly;Max-Age=1800
       transfer-encoding:
       - chunked
       vary:

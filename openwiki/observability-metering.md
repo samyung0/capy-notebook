@@ -1461,9 +1461,11 @@ DeepSeek and DeepInfra totals follow their published account/model concurrency
 limits; the reserves are application policy. GLM's 48 calls in flight with 40
 reserved for interactive use (decision 2026-10-20) stay under Z.AI's measured
 hold of about 50 per key, past which connections hang about 21 s and fail; ingest
-uses no GLM once page reads run on DeepSeek. Migration `0097` moves an existing
-`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40 and drops the
-relace row (the `tencent` row stays as history). Z.AI 429s appear under Health
+uses no GLM once page reads run on DeepSeek. Migration `0097` copies an existing
+`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40. It keeps the
+relace row, which retrieval containers on the previous release still lease
+against while a deploy rolls out; an operator removes it by hand afterwards
+(the `tencent` row stays as history). Z.AI 429s appear under Health
 "Busy models". An interactive
 429 fails at once with the busy message when its `Retry-After` is past the 3 s
 interactive retry budget; ingest calls wait and retry within their 120 s budget. See the script for assumptions and
