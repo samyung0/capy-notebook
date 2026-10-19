@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -139,5 +140,47 @@ func TestSourceUploadCompletionRefusesBytesThatDoNotMatchTheObject(t *testing.T)
 	if err := th.st.Pool().QueryRow(context.Background(),
 		`SELECT status FROM upload_sessions WHERE id=$1 AND file_id IS NULL`, upload).Scan(&status); err != nil || status != "pending" {
 		t.Fatalf("upload after a refused completion: status=%q err=%v", status, err)
+	}
+}
+
+// Object keys carry 128 random bits and a plain extension only, and a
+// completion whose object reports no Content-Type is a mismatch (security
+// review E-F1, E-F2, E-F5, 2026-10-19).
+func TestSourceUploadKeysAndTypeCheck(t *testing.T) {
+	bucket := blob.NewMemory()
+	th := openThumbnailHarnessWith(t, bucket)
+	ws := uploadWorkspace(t, th)
+	for _, tc := range []struct{ name, ext string }{
+		{"Notes.PDF", ".pdf"},
+		{"odd.p df", ""},
+		{"tab.pd\tf", ""},
+		{"long.abcdefghijkl", ""},
+	} {
+		rec := doReq(t, th.h, http.MethodPost, "/api/workspaces/"+ws+"/sources/uploads", "u_owner", map[string]any{
+			"name": tc.name, "parseMode": "none", "sizeBytes": 4, "contentType": "application/octet-stream",
+			"batchId": fmt.Sprintf("sb_%d", time.Now().UnixNano()), "batchTotal": 1,
+		})
+		expectStatus(t, rec, http.StatusCreated, "reserve "+tc.name)
+		var reserved struct {
+			UploadID string `json:"uploadId"`
+			URL      string `json:"url"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &reserved); err != nil {
+			t.Fatal(err)
+		}
+		got := strings.TrimPrefix(reserved.URL, "memory-put://")
+		key := regexp.MustCompile(`^incoming/up_[0-9a-f]{10}/blob_[0-9a-f]{32}` + regexp.QuoteMeta(tc.ext) + `$`)
+		if !key.MatchString(got) {
+			t.Fatalf("%q key = %q, want 128-bit blob id and extension %q", tc.name, got, tc.ext)
+		}
+		if tc.ext != ".pdf" {
+			continue
+		}
+		// B2 reporting no type is not a pass.
+		if err := bucket.PutObjectOnce(context.Background(), got, []byte("%PDF"), "", ""); err != nil {
+			t.Fatal(err)
+		}
+		rec = doReq(t, th.h, http.MethodPost, "/api/workspaces/"+ws+"/sources/uploads/"+reserved.UploadID+"/complete", "u_owner", nil)
+		expectStatus(t, rec, http.StatusBadRequest, "complete with no content type")
 	}
 }

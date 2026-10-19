@@ -38,7 +38,7 @@ export function AppShell() {
   useKeyboardHeight();
 
   return (
-    <div className="t-body relative flex h-[var(--app-height,100dvh)] overflow-hidden bg-page text-fg">
+    <div className="t-body relative flex h-dvh overflow-hidden bg-page text-fg">
       {/* Phones open the nav from the page panel's menu button instead. */}
       {!hideSidebar && (
         <>

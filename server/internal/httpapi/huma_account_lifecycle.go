@@ -84,11 +84,7 @@ func (a *api) deletionPreflight(ctx context.Context, _ *struct{}) (*deletionPref
 	if err != nil {
 		return nil, hErr(err)
 	}
-	owners, err := a.workspaceStatuses(ctx, doomed...)
-	if err != nil {
-		return nil, err
-	}
-	out.WorkspacesToDestroy = apimodel.FromWorkspaces(doomed, owners)
+	out.WorkspacesToDestroy = apimodel.FromWorkspaces(doomed)
 
 	out.Subscription, err = a.liveSubscriptionBlocker(ctx, uid)
 	if err != nil {

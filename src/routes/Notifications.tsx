@@ -107,9 +107,9 @@ export default function Notifications() {
     <PanelWithInvertedRadius
       header={<PageHeader title={m.notifications_title()} />}
     >
-      {/* Learning's padding; the actions sit at the panel's right edge, the
+      {/* The wide gutter; the actions sit at the panel's right edge, the
        * list keeps its reading width. */}
-      <div className="flex w-full flex-col px-4 sm:px-6 lg:px-10 xl:px-16">
+      <div className="page-px-wide flex w-full flex-col">
         <div className="flex items-center justify-end">
           <Button
             disabled={!unread?.count}

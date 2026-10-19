@@ -21,7 +21,7 @@ func TestSuspendedUserCannotWriteAttemptHistory(t *testing.T) {
 	}
 	if _, err := s.CreateAttempt(
 		ctx, userID, quiz.ID, 0, 1,
-		json.RawMessage(`{}`), json.RawMessage(`[]`),
+		json.RawMessage(`{}`), json.RawMessage(`[]`), nil,
 	); err == nil {
 		t.Fatal("suspended user created an attempt")
 	}
@@ -125,7 +125,7 @@ func TestListAttemptsSortsFiltersAndPages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		a, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, correct, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot))
+		a, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, correct, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

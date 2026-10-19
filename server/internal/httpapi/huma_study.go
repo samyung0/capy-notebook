@@ -80,6 +80,7 @@ type studyPreferencesInput struct {
 func (a *api) registerStudy(api huma.API) {
 	const tag = "Study"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study", "getWorkspaceStudy", tag, "Study progress in a workspace", http.StatusOK, a.getWorkspaceStudy)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/study/attempts", "getWorkspaceAttempts", tag, "Each quiz's and set's attempt count and latest attempts", http.StatusOK, a.getWorkspaceAttempts)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/study/enabled", "setWorkspaceStudy", tag, "Turn study progress on or off in a workspace", http.StatusNoContent, a.setWorkspaceStudy)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/study/items", "setStudyItem", tag, "Mark a file or material read, unread or removed", http.StatusNoContent, a.setStudyItem)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
@@ -103,7 +104,32 @@ func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*stu
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// Quick review questions are checked on the server, like a session's.
+	for i, it := range res.QuickReview {
+		if it.Question != nil {
+			res.QuickReview[i].Question = questions.LearnerView(it.Question)
+		}
+	}
 	return &studyOutput{Body: res}, nil
+}
+
+type workspaceAttemptsOutput struct {
+	Body struct {
+		Items []store.ItemAttempts `json:"items" nullable:"false"`
+	}
+}
+
+func (a *api) getWorkspaceAttempts(ctx context.Context, in *workspaceIDInput) (*workspaceAttemptsOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	items, err := a.s.WorkspaceAttempts(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out := &workspaceAttemptsOutput{}
+	out.Body.Items = items
+	return out, nil
 }
 
 func (a *api) setWorkspaceStudy(ctx context.Context, in *studyEnabledInput) (*Empty, error) {
@@ -247,11 +273,15 @@ func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty
 	if _, err := a.materialRead(ctx, in.Body.MaterialID); err != nil {
 		return nil, hErr(err)
 	}
+	var attempt *store.FlashcardAttemptRef
+	if ref := in.Body.Attempt; ref != nil {
+		attempt = &store.FlashcardAttemptRef{ID: ref.ID, StartedAt: ref.StartedAt}
+	}
 	err := a.s.RateItem(ctx, userID(ctx), store.Rating{
 		MaterialID: in.Body.MaterialID, ItemID: in.Body.ItemID, Rating: &in.Body.Rating,
-		Session: sessionAnswer(in.Body.Session),
+		Session: sessionAnswer(in.Body.Session), Attempt: attempt,
 	}, time.Now())
-	if errors.Is(err, store.ErrStudyRating) || errors.Is(err, store.ErrStudyEmbedded) || errors.Is(err, store.ErrReviewSession) {
+	if errors.Is(err, store.ErrStudyRating) || errors.Is(err, store.ErrStudyEmbedded) || errors.Is(err, store.ErrReviewSession) || errors.Is(err, store.ErrFlashcardAttempt) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &Empty{}, hErr(err)

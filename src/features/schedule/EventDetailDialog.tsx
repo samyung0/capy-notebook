@@ -1,6 +1,11 @@
 import type { CalendarEvent, Label } from '@/api/types';
 import { Badge } from '@/components/ui/Badge';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  useIsPhone,
+} from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
@@ -17,24 +22,26 @@ export function EventDetailDialog({
   onClose: () => void;
   onEdit?: (event: CalendarEvent) => void;
 }) {
+  const phone = useIsPhone();
+  const edit = event && onEdit && (
+    <IconButton
+      className="max-sm:-mr-2.5 sm:absolute sm:top-4 sm:right-14"
+      icon="write"
+      label={m.action_edit()}
+      onClick={() => onEdit(event)}
+      size="md"
+      variant="ghost-hover"
+    />
+  );
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open={!!event}>
       <DialogContent className="max-w-md">
         {event && (
           <>
-            <DialogTitle className="pr-20 pb-4">
+            <DialogTitle action={phone && edit} className="pr-20 pb-4">
               <span className="min-w-0 truncate">{event.title}</span>
             </DialogTitle>
-            {onEdit && (
-              <IconButton
-                className="absolute top-4 right-14"
-                icon="write"
-                label={m.action_edit()}
-                onClick={() => onEdit(event)}
-                size="md"
-                variant="ghost-hover"
-              />
-            )}
+            {!phone && edit}
 
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">

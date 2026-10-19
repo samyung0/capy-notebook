@@ -243,7 +243,7 @@ func (a *api) bankCopyIntoQuiz(ctx context.Context, workspaceID, quizID string, 
 	}
 	// The learner's and the quiz owner's accounts, as for any content edit.
 	if err := a.editErr(ctx, quiz.OwnerUserID); err != nil {
-		return hErr(err)
+		return hErr(store.HideOtherAccountLock(err, userID(ctx)))
 	}
 	if err := a.s.StorageFullErr(ctx, quiz.OwnerUserID); err != nil {
 		return hErr(err)

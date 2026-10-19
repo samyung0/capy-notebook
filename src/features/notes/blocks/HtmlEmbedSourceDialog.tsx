@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { Input, InputError, InputField } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
 import {
@@ -54,32 +54,15 @@ export default function HtmlEmbedSourceDialog({
   const captionText = useWatch({ control, name: 'caption' });
   return (
     <SimpleDialog
-      footer={
-        onSave ? (
-          <>
-            <Button
-              onClick={onClose}
-              size="lg"
-              type="button"
-              variant="ghost-hover"
-            >
-              {m.action_cancel()}
-            </Button>
-            <Button size="lg" type="submit" variant="accent">
-              {m.action_save()}
-            </Button>
-          </>
-        ) : (
-          <Button
-            onClick={onClose}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_close()}
+      action={
+        onSave && (
+          <Button size="lg" type="submit" variant="accent">
+            {m.action_save()}
           </Button>
         )
       }
+      // Read-only: Close alone, which phones leave to the header.
+      footer={!onSave && <DialogCancel label={m.action_close()} />}
       onClose={onClose}
       onSubmit={
         onSave &&

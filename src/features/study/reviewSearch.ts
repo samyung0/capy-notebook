@@ -1,4 +1,5 @@
 import type {
+  AttemptKind,
   AttemptParams,
   AttemptSort,
   PastReviewHas,
@@ -97,6 +98,7 @@ export const RESULT_SORT_DEFAULT: AttemptSort = 'date';
 export type ResultsSearch = {
   sort?: AttemptSort;
   dir?: 'asc';
+  kind?: string;
   workspace?: string;
 };
 
@@ -109,11 +111,19 @@ export function parseResultsSearch(
   if (search.dir === 'asc') out.dir = 'asc';
   const workspace = commaList(text(search.workspace));
   if (workspace.length) out.workspace = workspace.join(',');
+  const kind = attemptKinds(text(search.kind));
+  if (kind.length) out.kind = kind.join(',');
   return out;
 }
 
+const attemptKinds = (value?: string): AttemptKind[] =>
+  commaList(value).filter(
+    (k): k is AttemptKind => k === 'quiz' || k === 'flashcards'
+  );
+
 export const resultParams = (search: ResultsSearch): AttemptParams => ({
   dir: search.dir,
+  kinds: attemptKinds(search.kind),
   sort: search.sort,
   workspaceIds: commaList(search.workspace),
 });

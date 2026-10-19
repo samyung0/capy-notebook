@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -318,5 +319,27 @@ func TestImportAcquireReportsLeaseTerminalAndResume(t *testing.T) {
 	closed := acquire()
 	if closed.Code != http.StatusOK || decode(closed)["status"] != "failed" {
 		t.Fatalf("closed acquire status=%d body=%s", closed.Code, closed.Body.String())
+	}
+}
+
+// An imported object that reports no Content-Type is a type mismatch, not a
+// pass (security review E-F2, 2026-10-19).
+func TestImportCompleteRefusesAnUntypedObject(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	ctx := context.Background()
+	payload := []byte("plain text")
+	job := newImportJob(t, st, "ws_e2e_private", "u_owner", payload)
+	claimed, err := st.AcquireSourceImport(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mem.PutObjectOnce(ctx, claimed.AttemptObjectPath, payload, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/import/complete", pipeSecret, map[string]any{
+		"jobId": job.ID, "attemptToken": claimed.LeaseToken, "actualSize": len(payload),
+	})
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "object_type_mismatch") {
+		t.Fatalf("untyped complete status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

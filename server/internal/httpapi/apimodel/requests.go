@@ -207,7 +207,14 @@ type UpdateQuizMetadataReq struct {
 type Answers = map[string]any
 
 type CreateAttemptReq struct {
-	Answers Answers `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	Answers   Answers    `json:"answers" nullable:"false" doc:"The learner's answers by part id"`
+	StartedAt *time.Time `json:"startedAt,omitempty" doc:"When the learner opened the quiz, for the minutes taken"`
+}
+
+// FlashcardAttemptRef is the flashcard attempt a card's rating belongs to.
+type FlashcardAttemptRef struct {
+	ID        string    `json:"id" format:"uuid" doc:"Minted by the browser when studying the set begins"`
+	StartedAt time.Time `json:"startedAt"`
 }
 
 // GradeAnonymousQuizReq is a signed-out attempt at a shared quiz.
@@ -432,6 +439,16 @@ type MicrosoftDriveHost struct {
 
 /* ------------------------------------------------------------------ helpers */
 
+// decodeCards reads a flashcard attempt's cards (store.AttemptCard JSON).
+func decodeCards(raw []byte) []store.AttemptCard {
+	out := []store.AttemptCard{}
+	_ = json.Unmarshal(raw, &out)
+	if out == nil {
+		out = []store.AttemptCard{}
+	}
+	return out
+}
+
 // decodeQuestions turns stored question JSON into a free-form array for output.
 func decodeQuestions(raw []byte) []map[string]any {
 	out := []map[string]any{}
@@ -509,10 +526,11 @@ type SetStudyItemReq struct {
 // RateReviewItemReq rates a flashcard (rating) or a question answered in
 // review (score).
 type RateReviewItemReq struct {
-	MaterialID string            `json:"materialId" minLength:"1"`
-	ItemID     string            `json:"itemId" minLength:"1"`
-	Rating     int               `json:"rating" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check"`
-	Session    *ReviewSessionRef `json:"session,omitempty" doc:"The review session the rating belongs to; the first answer records it"`
+	MaterialID string               `json:"materialId" minLength:"1"`
+	ItemID     string               `json:"itemId" minLength:"1"`
+	Rating     int                  `json:"rating" minimum:"1" maximum:"4" doc:"A flashcard's button: 1 Again .. 4 Easy; questions are rated by POST /api/review/check"`
+	Session    *ReviewSessionRef    `json:"session,omitempty" doc:"The review session the rating belongs to; the first answer records it"`
+	Attempt    *FlashcardAttemptRef `json:"attempt,omitempty" doc:"The flashcard attempt the rating belongs to; the first rating records it (workspace sets only)"`
 }
 
 // ReportEditIncidentReq is one editing incident only the browser sees, where

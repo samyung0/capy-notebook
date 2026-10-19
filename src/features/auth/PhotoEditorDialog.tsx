@@ -153,40 +153,31 @@ export function PhotoEditorDialog({
 
   return (
     <SimpleDialog
+      action={
+        <Button
+          disabled={!bitmap || applying}
+          onClick={() => void apply()}
+          size="lg"
+          type="button"
+          variant="accent"
+        >
+          {m.action_apply()}
+        </Button>
+      }
       footer={
-        <>
-          <Button
-            className="mr-auto"
-            disabled={applying}
-            onClick={onClose}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={applying}
-            onClick={() => setView(START)}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_reset()}
-          </Button>
-          <Button
-            disabled={!bitmap || applying}
-            onClick={() => void apply()}
-            size="lg"
-            type="button"
-            variant="accent"
-          >
-            {m.action_apply()}
-          </Button>
-        </>
+        <Button
+          disabled={applying}
+          onClick={() => setView(START)}
+          size="lg"
+          type="button"
+          variant="ghost-hover"
+        >
+          {m.action_reset()}
+        </Button>
       }
       onClose={onClose}
       open={!!source}
+      pending={applying}
       title={m.photo_editor_title()}
       width={480}
     >

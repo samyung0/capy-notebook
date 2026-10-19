@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 import { Icon, type IconName } from './Icon';
 
 export const BASE_BUTTON_STYLE =
-  'inline-flex relative rounded-button min-w-0 text-sm cursor-pointer select-none items-center justify-center whitespace-nowrap font-semibold leading-none outline-none transition-all duration-150 ease-out focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50';
+  'inline-flex relative rounded-button min-w-0 text-sm cursor-pointer select-none items-center justify-center whitespace-nowrap font-semibold leading-none outline-none transition-all duration-150 ease-out focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] data-pressed:scale-[0.96] disabled:pointer-events-none disabled:opacity-50';
 
 export const buttonVariants = cva(BASE_BUTTON_STYLE, {
   // Radius classes live here because compound classes come after every

@@ -179,6 +179,7 @@ export function SourceTextView({
         reloading={source.discarding}
         replaced={source.replaced}
         slowed={editing && source.slowed}
+        storageFull={source.session?.storageFull}
       />
       <div className="min-h-0 flex-1 overflow-auto">
         {editing ? (

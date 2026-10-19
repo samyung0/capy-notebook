@@ -323,3 +323,47 @@ def test_the_lease_reaper_parks_a_note_whose_worker_died(workspace):
         ("failed",)
     ]
     assert _note_state(workspace, material_id) == (None, "lease expired", True)
+
+
+def test_a_note_job_stops_while_the_notes_payer_is_deleting(workspace):
+    """A note's payer is its creator (uploader pays), fenced beside the
+    workspace owner and the actor."""
+    payer = "u_" + secrets.token_hex(6)
+    material_id = "mat_" + secrets.token_hex(6)
+    with workspace._connect() as conn:
+        conn.execute(
+            "INSERT INTO users (id,name,email) VALUES (%s,'Payer',%s)",
+            (payer, payer + "@example.com"),
+        )
+        conn.execute(
+            "INSERT INTO materials (id, workspace_id, owner_user_id, created_by, kind, title) "
+            "VALUES (%s, %s, %s, %s, 'note', 'Payer note')",
+            (material_id, workspace.id, payer, payer),
+        )
+    payload = {
+        "materialId": material_id,
+        "workspaceId": workspace.id,
+        "actorUserId": workspace.user_id,
+    }
+
+    def cancellation():
+        with workspace._connect() as conn, conn.transaction(), conn.cursor() as cur:
+            return db._pipeline_source_cancellation(cur, payload, file_lock="SHARE")
+
+    assert cancellation() is None
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=%s",
+            (payer,),
+        )
+    try:
+        assert cancellation() == (
+            "failed",
+            "lifecycle",
+            "account_deletion",
+            "account deletion requested",
+        )
+    finally:
+        with workspace._connect() as conn:
+            conn.execute("DELETE FROM materials WHERE id=%s", (material_id,))
+            conn.execute("DELETE FROM users WHERE id=%s", (payer,))

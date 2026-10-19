@@ -191,7 +191,7 @@ export function RailMap({
       <div
         aria-hidden
         className={cn(
-          'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 lg:-mx-10 xl:-mx-16 [&::-webkit-scrollbar]:hidden',
+          'scroll-fade-x page-bleed-wide overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
           board && '@container'
         )}
         data-finish-scroll
@@ -323,10 +323,15 @@ export function RailMap({
   );
 }
 
-/** Learning's empty Progress: unnamed stations with two to six stops each
- * (five or six at the first, under the notice board),
- * drawn afresh on every visit, nothing studied. */
-export function PlaceholderRailMap() {
+/** An empty railway: unnamed stations with two to six stops each (five or
+ * six at the first, under the notice board), drawn afresh on every visit,
+ * nothing studied. The board says what the map will show (Learning's empty
+ * Progress) unless given other words (progress off). */
+export function PlaceholderRailMap({
+  board = { text: m.learning_no_progress(), title: m.learning_empty_title() },
+}: {
+  board?: { title: string; text: string };
+}) {
   const [items] = useState(() =>
     PLACEHOLDER_CHAPTERS.flatMap((_, chapter) =>
       Array.from(
@@ -347,10 +352,7 @@ export function PlaceholderRailMap() {
   );
   return (
     <RailMap
-      board={{
-        text: m.learning_no_progress(),
-        title: m.learning_empty_title(),
-      }}
+      board={board}
       chapters={PLACEHOLDER_CHAPTERS}
       items={items}
       workspaceId="placeholder"

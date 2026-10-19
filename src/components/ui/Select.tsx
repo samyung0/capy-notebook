@@ -19,7 +19,7 @@ function SelectGroup({
 }: React.ComponentProps<typeof SelectPrimitive.Group>) {
   return (
     <SelectPrimitive.Group
-      className={cn('scroll-my-1 p-1', className)}
+      className={cn('scroll-my-1', className)}
       data-slot="select-group"
       {...props}
     />
@@ -110,16 +110,11 @@ function SelectContent({
   position = 'popper',
   align = 'center',
   variant,
-  layout,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content> & {
   /** The editor toolbar popover look with compact rows. Pair with
    * SelectItem size="menu". */
   variant?: 'menu';
-  /** Pairs with SelectTrigger layout="row" and the other 40px phone
-   * triggers: on phones the list takes the toolbar menu's proportions (4px
-   * inset, 28px rows, 14px text) so it doesn't dwarf the trigger. */
-  layout?: 'row';
 }) {
   const held = useEditorHeld();
   return (
@@ -128,11 +123,13 @@ function SelectContent({
         align={align}
         className={cn(
           'motion-popup data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-button border border-overlay-line bg-overlay shadow-pop data-[align-trigger=true]:animate-none',
+          // At least the trigger's width, padding and border included.
           position === 'popper' &&
-            'data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
-          variant === 'menu' && 'min-w-44 rounded-lg px-1 py-1.5',
-          layout === 'row' &&
-            'max-sm:p-1 max-sm:[&_[data-slot=select-group]]:p-0 max-sm:[&_[data-slot=select-item][data-size=md]]:h-7 max-sm:[&_[data-slot=select-item][data-size=md]]:rounded-lg max-sm:[&_[data-slot=select-item][data-size=md]]:py-0 max-sm:[&_[data-slot=select-item][data-size=md]]:pr-8 max-sm:[&_[data-slot=select-item][data-size=md]]:pl-2 max-sm:[&_[data-slot=select-item][data-size=md]]:text-sm',
+            'min-w-[max(--spacing(36),var(--radix-select-trigger-width))] data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
+          // The same inset as Menu, so rows sit evenly inside the border.
+          'px-1 py-1.5',
+          variant === 'menu' &&
+            'min-w-[max(--spacing(44),var(--radix-select-trigger-width))] rounded-lg',
           className
         )}
         data-align-trigger={position === 'item-aligned'}
@@ -143,7 +140,7 @@ function SelectContent({
       >
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
-          className="data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)"
+          className="data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full"
           data-position={position}
         >
           {children}
@@ -175,7 +172,8 @@ const selectItemVariants = cva(
     },
     variants: {
       size: {
-        md: 'px-3.25 py-2.5',
+        // Menu's rows, with room on the right for the check.
+        md: 'py-2 pr-8 pl-2.5 leading-(--body-line-height)',
         // Matches ToolbarPopoverItem.
         menu: 'h-7 rounded-lg py-0 pr-8 pl-2 text-sm leading-(--body-line-height) hover:bg-surface-hover-bg/80 data-highlighted:bg-surface-hover-bg/80',
         sm: 'px-2.5 py-2 text-xs',
@@ -213,7 +211,7 @@ function SelectItem({
       disabled={disabled}
       {...props}
     >
-      <div className="pointer-events-none absolute right-2 flex size-4 items-center justify-center font-medium">
+      <div className="pointer-events-none absolute right-2.5 flex size-4 items-center justify-center font-medium">
         <SelectPrimitive.ItemIndicator>
           <Icon className="pointer-events-none" name="check" />
         </SelectPrimitive.ItemIndicator>

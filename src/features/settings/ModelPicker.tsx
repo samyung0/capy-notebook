@@ -11,7 +11,6 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
-  joinModelLabel,
   modelRefValue,
   optionRef,
   parseModelRef,
@@ -37,7 +36,7 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
   return (
     <span className="flex min-w-0 items-center gap-2 in-data-[slot=select-item]:pr-6">
       <span className="min-w-0 truncate">
-        {joinModelLabel(option.providerName, option.modelName)}
+        {option.modelName}
         {option.isDefault ? ` · ${m.settings_llm_default()}` : ''}
       </span>
       {option.available ? null : (
@@ -103,7 +102,7 @@ export function ModelPicker({
               placeholder={loading ? undefined : m.model_picker_label()}
             />
           </SelectTrigger>
-          <SelectContent layout="row">
+          <SelectContent>
             {models.map((option) => (
               <SelectItem
                 disabled={!option.available}
@@ -131,7 +130,7 @@ export function ModelPicker({
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent layout="row">
+            <SelectContent>
               <SelectItem value="instant">
                 {m.settings_llm_thinking_instant()}
               </SelectItem>

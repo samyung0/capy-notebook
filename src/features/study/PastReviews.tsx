@@ -4,6 +4,7 @@ import { usePastReviews, useReviewOverview } from '@/api/hooks';
 import type { PastReview, PastReviewSort, SessionScore } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
 import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
+import { PageBody } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import {
   ariaSort,
@@ -107,7 +108,7 @@ export function PastReviews() {
           setSearch({ has: undefined, workspace: undefined })
         }
       />
-      <div className="w-full shrink-0 grow px-2.5 pt-2 pb-6 sm:px-4">
+      <PageBody belowToolbar>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -190,7 +191,7 @@ export function PastReviews() {
             />
           </div>
         )}
-      </div>
+      </PageBody>
     </>
   );
 }

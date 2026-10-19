@@ -22,7 +22,7 @@ workspaceId?: string;
  */
 location?: string;
 /**
- * owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of
+ * owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones
  */
 scope?: ListOwnedMaterialsScope;
 sort?: ListOwnedMaterialsSort;

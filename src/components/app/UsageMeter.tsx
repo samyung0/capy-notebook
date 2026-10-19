@@ -13,16 +13,30 @@ export interface Segment {
 }
 
 /** Track with one coloured segment per share of the limit; a 2px surface
- * gap separates neighbours. */
+ * gap separates neighbours. `stripedFrom` (percent) hatches the empty track
+ * from that point to the end. */
 export function UsageBar({
   segments,
   limit,
+  stripedFrom,
 }: {
   segments: Segment[];
   limit: number;
+  stripedFrom?: number;
 }) {
   return (
-    <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-hover-bg">
+    <div
+      className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-right bg-surface-hover-bg bg-no-repeat"
+      style={
+        stripedFrom === undefined
+          ? undefined
+          : {
+              backgroundImage:
+                'repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text-muted) 40%, transparent) 0 2px, transparent 2px 6px)',
+              backgroundSize: `${100 - stripedFrom}% 100%`,
+            }
+      }
+    >
       {limit > 0 &&
         segments
           .filter((s) => s.amount > 0)

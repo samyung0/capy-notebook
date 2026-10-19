@@ -74,9 +74,11 @@ function TransferRow({
           />
         )}
       </div>
-      <div className="flex items-center gap-2">
+      {/* One fixed-height line, so a row keeps its height when its progress
+          bar turns into a status. */}
+      <div className="flex h-5 items-center gap-2">
         {status.kind === 'progress' || status.kind === 'indeterminate' ? (
-          <div className="-mt-1 flex w-full items-center pl-6">
+          <div className="flex w-full items-center pl-6">
             <ProgressBar
               className="flex-1"
               height={4}
@@ -88,7 +90,7 @@ function TransferRow({
             </span>
           </div>
         ) : (
-          <div className="mt-1 flex w-full items-center gap-2 pl-0.5">
+          <div className="flex w-full items-center gap-2 pl-0.5">
             <Icon
               className={cn(
                 'size-3.5 shrink-0',
@@ -197,11 +199,20 @@ export function SourceTransferPanel() {
     transfer,
   }));
   useElementLimitToasts(rows);
+  const kinds = rows.map(
+    ({ file, transfer }) => transferStatus(transfer, file).kind
+  );
+  const allDone = kinds.length > 0 && kinds.every((kind) => kind === 'done');
+  // Every file through: the panel closes itself after a moment.
+  useEffect(() => {
+    if (!allDone) return;
+    const timer = setTimeout(dismissSourceTransfers, 3000);
+    return () => clearTimeout(timer);
+  }, [allDone]);
   if (transfers.length === 0) return null;
-  const finished = rows.filter(({ file, transfer }) => {
-    const { kind } = transferStatus(transfer, file);
-    return kind !== 'progress' && kind !== 'indeterminate';
-  }).length;
+  const finished = kinds.filter(
+    (kind) => kind !== 'progress' && kind !== 'indeterminate'
+  ).length;
 
   return createPortal(
     <Card

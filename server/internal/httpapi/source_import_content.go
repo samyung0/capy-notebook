@@ -10,7 +10,7 @@ import (
 
 // getSourceImportContent proxies one selected provider object into the browser
 // analysis worker. Provider credentials stay server-side, and the response is
-// bounded by the workspace owner's source upload limit.
+// bounded by the caller's source upload limit.
 func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := id(r)
 	if !a.assertWS(w, r, workspaceID) {
@@ -36,7 +36,7 @@ func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	maxBytes, err := a.sourceMaxBytes(r.Context(), workspaceID)
+	maxBytes, err := a.sourceMaxBytes(r.Context(), uid(r))
 	if err != nil {
 		a.fail(w, err)
 		return

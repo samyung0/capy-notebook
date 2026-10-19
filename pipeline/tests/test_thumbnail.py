@@ -410,10 +410,11 @@ def test_a_reuse_never_shares_a_key_from_another_workspace(
             (other_workspace, owner),
         )
         conn.execute(
-            """INSERT INTO files (id, workspace_id, name, kind, size_bytes, status,
-                blob_path, source_sha256, thumbnail_key)
-            VALUES (%s, %s, 'deck.pdf', 'pdf', 1024, 'ready', %s, %s, %s)""",
-            (donor, other_workspace, f"sources/{donor}", sha, key),
+            """INSERT INTO files (id, workspace_id, user_id, name, kind, size_bytes,
+                status, blob_path, source_sha256, thumbnail_key)
+            SELECT %s, w.id, w.user_id, 'deck.pdf', 'pdf', 1024, 'ready', %s, %s, %s
+            FROM workspaces w WHERE w.id = %s""",
+            (donor, f"sources/{donor}", sha, key, other_workspace),
         )
     copy = workspace.add_file("deck.pdf")
     with workspace._connect() as conn:

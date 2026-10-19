@@ -23,12 +23,6 @@ The Netcup ingest host runs parser and ingest workloads for production, UAT,
 and local development. We plan to separate those environments when the budget
 allows it.
 
-## Personal Preferences and Defaults
-
-If `AGENTS.local.md` exists at repository root, read it and treat it as the developer-specific workflow preferences.
-Repository requirements comes from the rest of this file (`AGENTS.md`) and takes priority over `AGENTS.local.md`.
-If there are conflicts between rules, this file (`AGENTS.md`) takes precedence.
-
 ## Small Glossary
 
 Understand the following terms so we can communicate on the same page:
@@ -45,13 +39,13 @@ Understand the following terms so we can communicate on the same page:
 
 - Read `human` skill for coding tasks.
 - Keep things simple. Do not preserve existing complexity just because it already exists.
-- Do not introduce machinery because it looks architectually impressive. Understand the real constraint and push for the smallest model that solves the issue.
 - For betteroffice, plate editors and any editor related code, more machinery is fine as long as speed, performance and latency is prioritized, do throrough optimizations.
-- Tests are good, but endless smoke tests, "regression tests" for feature deletion, etc are not good. Make tests focused.
+- Make tests focused. In most cases you don't need check that wrong behaviors don't happen, test for the positives.
 - Comments are good way to clarify functionality and how code is used, but dont comment every line, make it concise.
 - Clean up dead codes and test cases if the changes deprecate it.
 - Avoid using type `any` unless absolutely necessary. Inferring types is good.
 - Avoid setting defaults and fallbacks without a human signoff, sometime failing explicitly is better than assigning a wrong behavior.
+- Use `rg` over `grep` and `bunx` (over `npx`) if available
 
 ## Documentation - OpenWiki (`openwiki/`)
 

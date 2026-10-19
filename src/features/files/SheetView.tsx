@@ -88,6 +88,7 @@ export default function SheetView({
         reloading={runtime.discarding}
         replaced={runtime.replaced}
         slowed={runtime.slowed}
+        storageFull={runtime.storageFull}
       />
       <OfficeHeader
         canEdit={canEdit}

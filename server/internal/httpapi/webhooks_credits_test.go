@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -198,5 +200,25 @@ func TestStripeWebhook_PaidProInvoiceRearmsAutoReload(t *testing.T) {
 	sendStripe(t, srv, "evt_renewal", "invoice.paid", pro("in_paid", 1000))
 	if !slices.Equal(f.creditCalls, []string{"arm user_1"}) {
 		t.Fatalf("calls = %q, want one arm for the paid invoice", f.creditCalls)
+	}
+}
+
+func TestCancelReloadRetryVoidsRetryingReloads(t *testing.T) {
+	f := newFakeStore()
+	f.retryingReloads = []string{"in_reload"}
+	voided := []string{}
+	a := &api{wh: f, stripeVoidInvoice: func(id string) error {
+		voided = append(voided, id)
+		return nil
+	}}
+
+	if _, err := a.cancelReloadRetry(auth.WithUserID(context.Background(), "user_1"), nil); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(voided, []string{"in_reload"}) {
+		t.Fatalf("voided = %q", voided)
+	}
+	if !slices.Equal(f.creditCalls, []string{"void in_reload"}) {
+		t.Fatalf("calls = %q", f.creditCalls)
 	}
 }

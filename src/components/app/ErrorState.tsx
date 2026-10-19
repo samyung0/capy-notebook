@@ -68,11 +68,11 @@ export function ErrorState({
             {description}
           </p>
         )}
-        {errorId && <ErrorId className="text-fg-muted" id={errorId} />}
       </div>
       {action && (
         <div className={variant === 'page' ? 'mt-4' : 'mt-3'}>{action}</div>
       )}
+      {errorId && <ErrorId className="mt-6 text-fg-muted" id={errorId} />}
     </div>
   );
 }
@@ -97,11 +97,11 @@ export function InlineErrorState({
       data-error-surface="inline"
       role="alert"
     >
-      <p className="text-fg-muted">{message}</p>
-      {errorId && <ErrorId className="text-fg-muted" id={errorId} />}
+      <p className="font-bold">{message}</p>
       <ErrorAction onClick={onRetry} size="sm">
         {m.error_action_retry()}
       </ErrorAction>
+      {errorId && <ErrorId className="mt-4 text-fg-muted" id={errorId} />}
     </div>
   );
 }

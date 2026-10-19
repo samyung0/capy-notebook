@@ -8,6 +8,7 @@
 import * as Sentry from '@sentry/react';
 import { isApiError } from '@/api/client';
 import { identifyAnalytics, identityKey } from '@/lib/analytics';
+import { scrubRecordingEvent, stripUrlTokensDeep } from '@/lib/urlTokens';
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 const APP_ENV =
@@ -17,15 +18,23 @@ const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
 export function initErrorReporting(): void {
   if (!SENTRY_DSN) return;
   Sentry.init({
+    // Share and invite tokens in page, request and breadcrumb URLs open
+    // what they name; only their shape leaves (stripUrlTokens).
+    beforeBreadcrumb: (breadcrumb) => stripUrlTokensDeep(breadcrumb),
     beforeSend: (event, hint) =>
-      isApiError(hint.originalException) ? null : event,
+      isApiError(hint.originalException) ? null : stripUrlTokensDeep(event),
     dsn: SENTRY_DSN,
     environment: APP_ENV,
     // Network failures during a stream are expected when a user navigates away
     // mid-answer, and would otherwise dominate the error volume.
     ignoreErrors: ['AbortError', 'Failed to fetch', 'NetworkError'],
     integrations: [
-      Sentry.replayIntegration({ blockAllMedia: true, maskAllText: true }),
+      Sentry.replayIntegration({
+        // Its page href, navigation and fetch spans hold the same URLs.
+        beforeAddRecordingEvent: scrubRecordingEvent,
+        blockAllMedia: true,
+        maskAllText: true,
+      }),
     ],
     release: RELEASE,
     replaysOnErrorSampleRate: 0.1,
@@ -37,6 +46,9 @@ export function initErrorReporting(): void {
     // transaction per keystroke-driven save.
     tracesSampleRate: 0.1,
   });
+  // Every other event (replay events with their url list, transactions)
+  // passes the same scrub.
+  Sentry.addEventProcessor((event) => stripUrlTokensDeep(event));
 }
 
 // React 19 routes caught render errors here, including our own boundaries.

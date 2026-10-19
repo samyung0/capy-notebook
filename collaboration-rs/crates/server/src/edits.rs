@@ -806,11 +806,6 @@ pub async fn edit_material(
     access::lock_material(&tx, &material_id).await?;
     let boundary = access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor)).await?;
     access::assert_access(&tx, &material_id, &actor, crate::auth::Access::Write).await?;
-    if boundary.owner_locked() {
-        return Err(DocumentError::Lifecycle(
-            "material owner account is locked".into(),
-        ));
-    }
     let select = "SELECT d.state, d.room_schema, d.stored_version, m.kind
                   FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
                   WHERE d.material_id=$1 FOR UPDATE OF d";
@@ -1001,7 +996,7 @@ pub async fn edit_material(
                 &operation.id,
                 &material_id,
                 &actor,
-                &boundary.owner_user_id,
+                &boundary.payer_user_id,
                 &workspace_id,
                 &schema,
                 &version,
@@ -1105,7 +1100,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     access::lock_material(&tx, &material_id)
         .await
         .map_err(|error| error.to_string())?;
-    let boundary = access::lock_boundary(
+    access::lock_boundary(
         &tx,
         &material_id,
         std::slice::from_ref(&command.actor_user_id),
@@ -1157,9 +1152,6 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
             && stored != current.get::<_, i64>("projected_version"))
     {
         return Err("material changed concurrently".into());
-    }
-    if boundary.owner_locked() {
-        return Err("material owner account is locked".into());
     }
     let base: Vec<u8> = current.get("state");
     let kind: String = current.get("kind");

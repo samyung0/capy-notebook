@@ -19,7 +19,6 @@ var (
 	ErrImportNotReady            = errors.New("source import is not ready")
 	ErrImportTooLarge            = errors.New("source import exceeds its byte limit")
 	ErrImportIdempotencyConflict = errors.New("source import idempotency key conflict")
-	errImportOwnerChanged        = errors.New("source import storage owner changed")
 )
 
 type SourceImportJob struct {
@@ -133,14 +132,7 @@ func (s *Store) CreateSourceImports(
 	ctx context.Context,
 	imports []NewSourceImport,
 ) ([]SourceImportJob, error) {
-	for range 3 {
-		jobs, err := s.createSourceImports(ctx, imports, nil)
-		if errors.Is(err, errImportOwnerChanged) {
-			continue
-		}
-		return jobs, err
-	}
-	return nil, errImportOwnerChanged
+	return s.createSourceImports(ctx, imports, nil)
 }
 
 type sourceImportRequestCompletion struct {
@@ -175,15 +167,8 @@ func (s *Store) CreateSourceImportsAndCompleteRequest(
 		batchID:     batchID,
 		rejected:    rejected,
 	}
-	for range 3 {
-		completion.stored = nil
-		_, err := s.createSourceImports(ctx, imports, &completion)
-		if errors.Is(err, errImportOwnerChanged) {
-			continue
-		}
-		return completion.stored, err
-	}
-	return nil, errImportOwnerChanged
+	_, err := s.createSourceImports(ctx, imports, &completion)
+	return completion.stored, err
 }
 
 func (s *Store) createSourceImports(
@@ -199,11 +184,14 @@ func (s *Store) createSourceImports(
 	if len(imports) == 0 && completion == nil {
 		return nil, nil
 	}
-	workspaceID := ""
+	// The requesting actor pays for every import (uploader pays). The handler
+	// builds every item from that one actor, so a mismatch is a bug, like a
+	// mismatched workspace.
+	workspaceID, payerID := "", ""
 	if completion != nil {
-		workspaceID = completion.workspaceID
+		workspaceID, payerID = completion.workspaceID, completion.actorUserID
 	} else {
-		workspaceID = imports[0].Upload.WorkspaceID
+		workspaceID, payerID = imports[0].Upload.WorkspaceID, imports[0].Upload.CreatedBy
 	}
 	var total int64
 	keys := make(map[string]struct{}, len(imports))
@@ -211,7 +199,7 @@ func (s *Store) createSourceImports(
 		if item.Upload.WorkspaceID != workspaceID {
 			return nil, errors.New("source imports must share a workspace")
 		}
-		if completion != nil && item.Upload.CreatedBy != completion.actorUserID {
+		if item.Upload.CreatedBy != payerID {
 			return nil, errors.New("source imports must share the request actor")
 		}
 		if item.Provider != "google" && item.Provider != "microsoft" {
@@ -241,38 +229,11 @@ func (s *Store) createSourceImports(
 	}
 	defer tx.Rollback(ctx)
 
-	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
-	if err != nil {
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, payerID); err != nil {
 		return nil, err
 	}
-	actors := map[string]struct{}{}
-	if completion != nil {
-		actors[completion.actorUserID] = struct{}{}
-	}
-	for _, item := range imports {
-		actorID := item.Upload.CreatedBy
-		actors[actorID] = struct{}{}
-	}
-	for actorID := range actors {
-		currentOwnerID, err := s.lockWorkspaceEditorMutationTx(
-			ctx, tx, workspaceID, actorID,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if currentOwnerID != ownerID {
-			return nil, errImportOwnerChanged
-		}
-	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 		return nil, err
-	}
-	currentOwnerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
-	if err != nil {
-		return nil, err
-	}
-	if currentOwnerID != ownerID {
-		return nil, errImportOwnerChanged
 	}
 	if completion != nil {
 		var storedWorkspace, storedFingerprint string
@@ -336,7 +297,7 @@ func (s *Store) createSourceImports(
 		}
 		return existing, nil
 	}
-	if err := s.reserveStorageTx(ctx, tx, ownerID, total); err != nil {
+	if err := s.reserveStorageTx(ctx, tx, payerID, total); err != nil {
 		return nil, err
 	}
 	if err := s.gateWorkspaceFilesTx(ctx, tx, workspaceID, len(imports)); err != nil {
@@ -355,7 +316,7 @@ func (s *Store) createSourceImports(
 			 object_path, final_path, name, kind, content_type, declared_size, reserved_size,
 			 parse_mode, expires_at, batch_id)
 			VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
-			u.ID, u.WorkspaceID, ownerID, nullStr(u.CreatedBy), u.ChapterID,
+			u.ID, u.WorkspaceID, payerID, nullStr(u.CreatedBy), u.ChapterID,
 			u.ChapterName, u.ObjectPath, u.FinalPath, u.Name, u.Kind,
 			u.ContentType, u.DeclaredSize, u.ParseMode,
 			u.ExpiresAt, nullStr(batchID)); err != nil {
@@ -543,16 +504,7 @@ func (s *Store) PrepareSourceImportUpload(
 	jobID, leaseToken string,
 	actualSize int64,
 ) (SourceImportJob, error) {
-	for range 3 {
-		job, err := s.prepareSourceImportUpload(
-			ctx, jobID, leaseToken, actualSize,
-		)
-		if errors.Is(err, errImportOwnerChanged) {
-			continue
-		}
-		return job, err
-	}
-	return SourceImportJob{}, errImportOwnerChanged
+	return s.prepareSourceImportUpload(ctx, jobID, leaseToken, actualSize)
 }
 
 func (s *Store) prepareSourceImportUpload(
@@ -569,30 +521,25 @@ func (s *Store) prepareSourceImportUpload(
 	}
 	defer tx.Rollback(ctx)
 
-	var workspaceID string
+	var workspaceID, payerID string
 	var actorID *string
-	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, j.actor_user_id
+	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, u.user_id, j.actor_user_id
 		FROM source_import_jobs j
 		JOIN upload_sessions u ON u.id=j.upload_session_id
-		WHERE j.id=$1`, jobID).Scan(&workspaceID, &actorID); err != nil {
+		WHERE j.id=$1`, jobID).Scan(&workspaceID, &payerID, &actorID); err != nil {
 		if isNoRows(err) {
 			return SourceImportJob{}, ErrNotFound
 		}
-		return SourceImportJob{}, err
-	}
-	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
-	if err != nil {
 		return SourceImportJob{}, err
 	}
 	actor := ""
 	if actorID != nil {
 		actor = *actorID
 	}
-	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor)
-	if err != nil {
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor); err != nil {
 		return SourceImportJob{}, err
 	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 		return SourceImportJob{}, err
 	}
 	job, err := scanSourceImport(tx.QueryRow(ctx, sourceImportSelect+
@@ -602,9 +549,6 @@ func (s *Store) prepareSourceImportUpload(
 	}
 	if err != nil {
 		return job, err
-	}
-	if job.StorageOwnerID != ownerID {
-		return job, errImportOwnerChanged
 	}
 	// A concurrent completion may already have committed. Replay its result
 	// without renewing a lease or changing the settled upload reservation.
@@ -622,7 +566,7 @@ func (s *Store) prepareSourceImportUpload(
 		if err := s.gateStorageTx(
 			ctx,
 			tx,
-			ownerID,
+			payerID,
 			actualSize-job.DeclaredSize,
 		); err != nil {
 			return job, err
@@ -693,16 +637,7 @@ func (s *Store) FinalizeSourceImport(
 	ctx context.Context,
 	jobID, leaseToken, sourceETag, sourceSHA256, parser string,
 ) (File, error) {
-	for range 3 {
-		file, err := s.finalizeSourceImport(
-			ctx, jobID, leaseToken, sourceETag, sourceSHA256, parser,
-		)
-		if errors.Is(err, errImportOwnerChanged) {
-			continue
-		}
-		return file, err
-	}
-	return File{}, errImportOwnerChanged
+	return s.finalizeSourceImport(ctx, jobID, leaseToken, sourceETag, sourceSHA256, parser)
 }
 
 func (s *Store) finalizeSourceImport(
@@ -715,30 +650,25 @@ func (s *Store) finalizeSourceImport(
 	}
 	defer tx.Rollback(ctx)
 
-	var workspaceID string
+	var workspaceID, payerID string
 	var actorID *string
-	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, j.actor_user_id
+	if err := tx.QueryRow(ctx, `SELECT u.workspace_id, u.user_id, j.actor_user_id
 		FROM source_import_jobs j
 		JOIN upload_sessions u ON u.id=j.upload_session_id
-		WHERE j.id=$1`, jobID).Scan(&workspaceID, &actorID); err != nil {
+		WHERE j.id=$1`, jobID).Scan(&workspaceID, &payerID, &actorID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
-		return File{}, err
-	}
-	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
-	if err != nil {
 		return File{}, err
 	}
 	actor := ""
 	if actorID != nil {
 		actor = *actorID
 	}
-	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor)
-	if err != nil {
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor); err != nil {
 		return File{}, err
 	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 		return File{}, err
 	}
 	job, err := scanSourceImport(tx.QueryRow(ctx, sourceImportSelect+
@@ -748,9 +678,6 @@ func (s *Store) finalizeSourceImport(
 	}
 	if err != nil {
 		return File{}, err
-	}
-	if job.StorageOwnerID != ownerID {
-		return File{}, errImportOwnerChanged
 	}
 	if job.Status == "succeeded" && job.FileID != nil {
 		file, err := scanFile(tx.QueryRow(ctx,
@@ -897,16 +824,7 @@ func (s *Store) failSourceImport(
 	jobID, leaseToken, code, message string,
 	ignoreLease bool,
 ) error {
-	for range 3 {
-		err := s.failSourceImportOnce(
-			ctx, jobID, leaseToken, code, message, ignoreLease,
-		)
-		if errors.Is(err, errImportOwnerChanged) {
-			continue
-		}
-		return err
-	}
-	return errImportOwnerChanged
+	return s.failSourceImportOnce(ctx, jobID, leaseToken, code, message, ignoreLease)
 }
 
 func (s *Store) failSourceImportOnce(
@@ -940,9 +858,6 @@ func (s *Store) failSourceImportOnce(
 	}
 	if err != nil {
 		return err
-	}
-	if job.StorageOwnerID != ownerID {
-		return errImportOwnerChanged
 	}
 	if job.Status == "succeeded" || job.Status == "failed" || job.Status == "cancelled" {
 		return tx.Commit(ctx)

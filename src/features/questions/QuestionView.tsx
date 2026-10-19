@@ -437,19 +437,27 @@ export function QuestionView({
   const label = (text: string) => <Label all={labels} text={text} />;
   // 1A: number, part label and text share one column grid so every text line
   // starts at the same x; marks stay smaller than the question text. The
-  // label column is as wide as the question's widest label.
+  // label column is as wide as the question's widest label. Below 36rem of
+  // the question's own width (phones, the Study panel) every layout reads as
+  // split does: number and marks on the top row, the stem full width under.
   return (
-    <article className="min-w-0 space-y-4 text-[15px] leading-relaxed">
+    <article className="@container/question min-w-0 space-y-4 text-[15px] leading-relaxed">
       <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline">
         {label(questionNumber == null ? '' : `${questionNumber}.`)}
-        <div className="min-w-0">
+        <div
+          className={cn(
+            'min-w-0',
+            firstInHeader &&
+              '@max-[36rem]/question:col-span-full @max-[36rem]/question:row-start-2 @max-[36rem]/question:pt-4'
+          )}
+        >
           {firstInHeader &&
             blocks(
               lead.slice(0, 1),
               merged ? { partId: question.parts[0].id } : {}
             )}
         </div>
-        <span className="flex items-center gap-1 whitespace-nowrap pl-1.5 text-fg-muted text-xs md:pl-2">
+        <span className="@max-[36rem]/question:col-start-3 @max-[36rem]/question:row-start-1 flex items-center gap-1 whitespace-nowrap pl-1.5 text-fg-muted text-xs md:pl-2">
           {lone && renderMarks
             ? renderMarks(question.parts[0])
             : showTotalMarks &&
@@ -462,7 +470,9 @@ export function QuestionView({
       <div
         className={cn(
           'grid min-w-0 gap-6',
-          question.layout === 'split' && 'md:grid-cols-2 md:gap-8'
+          // By the question's own width, so it stacks in the Study panel.
+          question.layout === 'split' &&
+            '@min-[36rem]/question:grid-cols-2 @min-[36rem]/question:gap-8'
         )}
       >
         {question.stem.length > Number(firstInHeader) && (
@@ -470,10 +480,12 @@ export function QuestionView({
             className={cn(
               'min-w-0',
               question.layout === 'paper' &&
-                'grid grid-cols-[auto_minmax(0,1fr)]'
+                'grid @max-[36rem]/question:grid-cols-1 grid-cols-[auto_minmax(0,1fr)]'
             )}
           >
-            {question.layout === 'paper' && label('')}
+            {question.layout === 'paper' && (
+              <span className="@max-[36rem]/question:hidden">{label('')}</span>
+            )}
             <div className="min-w-0 space-y-4">
               {blocks(
                 question.stem.slice(Number(firstInHeader)),
@@ -486,10 +498,19 @@ export function QuestionView({
         <ol className="min-w-0 space-y-6">
           {question.parts.map((part, index) => (
             <li
-              className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3"
+              className={cn(
+                'grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3',
+                // A lone part has no label: on narrow widths its empty column
+                // closes so the part lines up with the stem.
+                lone && '@max-[36rem]/question:grid-cols-[0_minmax(0,1fr)_auto]'
+              )}
               key={part.id}
             >
-              {label(lone ? '' : partLabel(index))}
+              {lone ? (
+                <span className="overflow-hidden">{label('')}</span>
+              ) : (
+                label(partLabel(index))
+              )}
               {partBlocks(part).length > 0 && (
                 <div className="min-w-0 space-y-3">
                   {blocks(partBlocks(part), { partId: part.id }, partOffset)}

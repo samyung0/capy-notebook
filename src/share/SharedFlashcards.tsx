@@ -10,6 +10,7 @@ import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
 import { cardCountBucket, track } from '@/lib/analytics';
 import { localCardStates, recordLocalCardReview } from '@/lib/localDb';
+import { redeemShareToken } from '@/lib/shareRedeem';
 import {
   newSrsState,
   reviewSrs,
@@ -67,12 +68,15 @@ export function SharedFlashcards({
 
   async function save(cardId: string, rating: SrsRating) {
     if (await signedIn()) {
-      await api
-        .post<void>('/review/ratings', {
-          itemId: cardId,
-          materialId: set.id,
-          rating: SRS_RATINGS.indexOf(rating) + 1,
-        })
+      // A signed-in visitor presents the link once, then rates by id.
+      await redeemShareToken(token)
+        .then(() =>
+          api.post<void>('/review/ratings', {
+            itemId: cardId,
+            materialId: set.id,
+            rating: SRS_RATINGS.indexOf(rating) + 1,
+          })
+        )
         .catch(() => failed(m.flashcards_review_failed()));
       return;
     }
@@ -94,7 +98,7 @@ export function SharedFlashcards({
       value={(assetId) => anonymousFlashcardAssetUrl(token, assetId)}
     >
       <StudyBody
-        actions={<PublicActionMenu id={set.id} kind="flashcards" />}
+        actions={<PublicActionMenu kind="flashcards" token={token} />}
         byline={<PublicByline author={set.author} updatedAt={set.updatedAt} />}
         cards={set.cards}
         footer={

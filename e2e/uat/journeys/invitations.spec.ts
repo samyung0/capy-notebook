@@ -49,7 +49,11 @@ test('signed-out invitation returns after sign-in and persists accepted membersh
       'Invitation password sign-in failed; credential-bearing browser details are omitted'
     );
   }
-  await expect(page).toHaveURL((url) => url.pathname === invitationPath);
+  // The boot module moved the invitation id into sessionStorage behind a
+  // placeholder before anything recorded the page (urlTokenStash.ts).
+  await expect(page).toHaveURL(
+    (url) => url.pathname === '/workspace-invites/-'
+  );
   expect(
     await run.query(
       'SELECT role FROM workspace_members WHERE workspace_id=%s AND user_id=%s',

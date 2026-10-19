@@ -1,4 +1,4 @@
-import type { SourceFile } from '@/api/types';
+import type { SourceFile, StorageFullBy } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import {
   FileBanner,
@@ -169,6 +169,7 @@ export function SourceBanners({
   reloading,
   replaced,
   slowed = false,
+  storageFull,
 }: {
   actions: FileBannerAction[];
   banner: SaveBannerState | null;
@@ -184,12 +185,18 @@ export function SourceBanners({
   /** The edit session's open waits on the user's open budget: after 5 s a
    * strip says so while the file loads. */
   slowed?: boolean;
+  /** The file's payer is at its storage limit, so it opens view-only. */
+  storageFull?: StorageFullBy;
 }) {
   const slowedLine = useSlowedLine(slowed);
   return (
     <>
       {slowedLine && <FileBanner message={m.editor_open_slowed()} />}
-      {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
+      {storageFull ? (
+        <StorageFullBanner by={storageFull} />
+      ) : (
+        readOnly && <FileBanner message={m.editor_read_only_strip()} />
+      )}
       {banner && (
         <SaveBanner onReload={onReload} reloading={reloading} state={banner} />
       )}
@@ -207,5 +214,19 @@ export function SourceBanners({
         replaced && <SourceReplacedBanner paused={paused} />
       )}
     </>
+  );
+}
+
+/** The strip under an item's header while its payer (whoever uploaded or
+ * created it) is at its storage limit: the item is view-only. */
+export function StorageFullBanner({ by }: { by: StorageFullBy }) {
+  return (
+    <FileBanner
+      message={
+        by === 'self'
+          ? m.storage_self_full_strip()
+          : m.storage_payer_full_strip()
+      }
+    />
   );
 }

@@ -960,6 +960,7 @@ export function useOfficeRuntime({
     setRuntimeMode,
     slowed: mode === 'edit' && source.slowed,
     status: source.status,
+    storageFull: source.session?.storageFull,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };
 }

@@ -142,6 +142,7 @@ export type {
   RetryProcessingInputBody as RetryProcessingReq,
   SaveCanvasReq,
   SetModelPrefsReq,
+  ShareRedemption,
   SourceImportStatus,
   SourceUploadPolicy,
   SpendingLimitReq,
@@ -186,6 +187,7 @@ export { Privacy } from './gen/model/privacy';
 export { SearchKind } from './gen/model/searchKind';
 export { ShareRole } from './gen/model/shareRole';
 export { Slot } from './gen/model/slot';
+export { StorageFullBy } from './gen/model/storageFullBy';
 export { StorageUsageLevel } from './gen/model/storageUsageLevel';
 export { SubscriptionStatus } from './gen/model/subscriptionStatus';
 export { UserColor } from './gen/model/userColor';
@@ -345,7 +347,8 @@ export type ReviewSession = Omit<GenReviewSession, 'items' | 'done'> & {
   items: ReviewItem[];
   done: ReviewAnswer[];
 };
-/** The Study tab's summary; Quick review items are cards, never questions. */
+/** The Study tab's summary; Quick review holds cards and single-part quick
+ * questions. */
 export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
   quickReview: ReviewItem[];
 };
@@ -387,8 +390,10 @@ export interface ReviewStart {
   mode?: ReviewMode;
 }
 export type AttemptSort = ListAttemptsSort;
+export type AttemptKind = import('./gen/model').Attempt['kind'];
 export interface AttemptParams {
   dir?: 'asc';
+  kinds?: AttemptKind[];
   sort?: AttemptSort;
   workspaceIds?: string[];
 }
@@ -412,7 +417,11 @@ export interface PastReviewParams {
 export type CreateQuizReq = Omit<GenCreateQuizReq, 'questions'> & {
   questions?: Question[];
 };
-export type { CreateAttemptReq } from './gen/model';
+export type {
+  AttemptCard,
+  CreateAttemptReq,
+  ItemAttempts,
+} from './gen/model';
 
 export type CreateMaterialReq = Omit<GenCreateMaterialReq, 'content'> & {
   content?: import('@/features/materials/document').MaterialDocument;

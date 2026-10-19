@@ -218,7 +218,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   await page.getByRole('button', { name: m.flashcards_show_answer() }).click();
   assert.equal(await clicked(page, '/api/review/ratings', m.srs_good()), 204);
   await expect(
-    page.getByRole('heading', { name: m.flashcards_session_done() })
+    page.getByRole('button', { name: m.flashcards_study_again() })
   ).toBeVisible();
 
   // Continue opens the first item that is not done: the quiz not yet taken.
@@ -297,13 +297,22 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     [finishedQuiz]: 'done',
     [set]: 'done',
   });
+  // Studying the set recorded a flashcard attempt: its one card rated Good.
   const attempts = await run.query(
-    'SELECT material_id,correct,total FROM attempts WHERE user_id=%s AND material_id=ANY(%s::text[])',
+    'SELECT material_id,kind,correct,total FROM attempts WHERE user_id=%s AND material_id=ANY(%s::text[]) ORDER BY taken_at',
     [run.owner.id, materials]
   );
   assert.deepEqual(
-    attempts.map((r) => [r.material_id, Number(r.correct), Number(r.total)]),
-    [[finishedQuiz, 1, 1]]
+    attempts.map((r) => [
+      r.material_id,
+      r.kind,
+      Number(r.correct),
+      Number(r.total),
+    ]),
+    [
+      [finishedQuiz, 'quiz', 1, 1],
+      [set, 'flashcards', 1, 1],
+    ]
   );
   // Rated once while studying, once in the review.
   const states = await run.query(

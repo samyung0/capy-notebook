@@ -1,6 +1,12 @@
+import { useQuery } from '@tanstack/react-query';
 import { createContext, type ReactNode, useEffect, useState } from 'react';
 import { createStore, type StoreApi } from 'zustand';
-import { useFile, useMaterial, useMaterials, useWorkspace } from '@/api/hooks';
+import {
+  materialQuery,
+  useFile,
+  useMaterials,
+  useWorkspace,
+} from '@/api/hooks';
 import type {
   AccessCapabilities,
   Chapter,
@@ -206,10 +212,10 @@ function useHeader(
     errorBoundary: false,
   });
   // Inside a workspace the list entry and the workspace's capabilities cover
-  // everything the header shows. Reading the material itself here would pull
-  // the whole document past the heavy-document gate, so the body is fetched
-  // only when the list cannot answer: the standalone page, or a material the
-  // list does not carry, which the gate cannot weigh either.
+  // what the header shows until the body opens. Reading the material itself
+  // here would pull the whole document past the heavy-document gate, so the
+  // body is fetched only when the list cannot answer: the standalone page, or
+  // a material the list does not carry, which the gate cannot weigh either.
   const inWorkspace =
     item.kind === 'material' && !standalone && workspaceId !== '';
   const { data: list, isPending: listPending } = useMaterials(
@@ -225,8 +231,13 @@ function useHeader(
     : undefined;
   const readBody =
     item.kind === 'material' && (!inWorkspace || (!listPending && !listed));
-  const { data: materialData } = useMaterial(readBody ? item.id : null, {
-    errorBoundary: false,
+  // Otherwise the body the pane opened is read from the cache: Edit is per
+  // item (its payer's storage and lifecycle, uploader pays), which the
+  // workspace's capabilities cannot say.
+  const { data: materialData } = useQuery({
+    ...materialQuery(item.kind === 'material' ? item.id : null),
+    enabled: readBody,
+    meta: { errorBoundary: false },
   });
   if (item.kind === 'file') {
     return {
@@ -238,9 +249,9 @@ function useHeader(
     };
   }
   const mt = listed ?? materialData;
-  const capabilities = listed
-    ? workspace?.capabilities
-    : materialData?.capabilities;
+  const capabilities =
+    materialData?.capabilities ??
+    (listed ? workspace?.capabilities : undefined);
   if (!mt || !capabilities) {
     return {
       canClone: false,
@@ -513,9 +524,7 @@ export function Header({
             {!compact && (
               <>
                 <OfflineStatus />
-                <WorkspaceStatusButton
-                  workspaceId={standalone ? '' : workspaceId}
-                />
+                <WorkspaceStatusButton />
               </>
             )}
           </div>
@@ -550,9 +559,7 @@ export function Header({
           <>
             <OfflineStatus />
             <EditorSaveStatus layout="default" store={editorStatus} />
-            <WorkspaceStatusButton
-              workspaceId={standalone ? '' : workspaceId}
-            />
+            <WorkspaceStatusButton />
           </>
         )}
       </div>
