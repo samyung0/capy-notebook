@@ -108,11 +108,7 @@ async fn fallback(
     let address = client_address(&headers, peer.map(|Extension(ConnectInfo(peer))| peer));
     let Some(seat) = address.and_then(|address| app.address_sockets.take(&address)) else {
         app.stats.seat_refusals[0].fetch_add(1, Ordering::Relaxed);
-        log(
-            Level::Warn,
-            "client address over its socket cap",
-            json!({}),
-        );
+        log(Level::Warn, "client address over its socket cap", json!({}));
         return (StatusCode::TOO_MANY_REQUESTS, "too many sockets").into_response();
     };
     let max = app.config.max_frame_bytes();

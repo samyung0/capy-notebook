@@ -1,9 +1,9 @@
 import { type ReactNode, Suspense, useEffect, useState } from 'react';
-import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceSession, ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
 import {

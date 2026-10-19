@@ -247,8 +247,8 @@ async fn serve(config: Config) -> Result<(), String> {
     // Upgraded sockets are not waited for: every room stores first, then the
     // listener stops and the process exits (clients reconnect elsewhere).
     // Each socket's client address counts toward its cap (`seats.rs`).
-    let service = http::router(app.clone())
-        .into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let service =
+        http::router(app.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     axum::serve(listener, service)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;

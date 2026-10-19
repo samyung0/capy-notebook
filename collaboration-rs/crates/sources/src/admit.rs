@@ -120,12 +120,7 @@ pub fn admit_update(
 /// past it by one exact measure of the room plus the update (at most once
 /// per [MEASURE_EVERY] updates), which also resets the estimate. The
 /// update's apply to the measured copy is limited to `ydoc::MAX_WORK` steps.
-fn fits_room(
-    doc: &Doc,
-    update: &[u8],
-    estimate: &mut Estimate,
-    cap: u64,
-) -> Result<bool, String> {
+fn fits_room(doc: &Doc, update: &[u8], estimate: &mut Estimate, cap: u64) -> Result<bool, String> {
     estimate.until_measure = estimate.until_measure.saturating_sub(1);
     if estimate.bytes + update.len() as u64 <= cap {
         return Ok(true);
@@ -147,7 +142,12 @@ fn fits_room(
     let mut txn = candidate.transact_mut();
     txn.limit_work(ydoc::MAX_WORK);
     let decoded = Update::decode_v1(update).map_err(|error| error.to_string())?;
-    let costly = || format!("update would take yrs more than {} steps to place", ydoc::MAX_WORK);
+    let costly = || {
+        format!(
+            "update would take yrs more than {} steps to place",
+            ydoc::MAX_WORK
+        )
+    };
     match txn.apply_update(decoded) {
         Ok(()) => {}
         Err(yrs::error::UpdateError::WorkBudgetExceeded(_)) => return Err(costly()),

@@ -1,9 +1,9 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { useMe } from '@/api/hooks';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import {
   itemEditingStopped,
   useItemRoom,

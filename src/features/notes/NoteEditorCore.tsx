@@ -1,5 +1,4 @@
 import { YjsPlugin } from '@platejs/yjs/react';
-import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { captureException } from '@sentry/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { Path } from 'platejs';
@@ -38,6 +37,7 @@ import type {
 } from '@/api/types';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import '@/features/collaboration/platePlugin';
 import { FileLoading } from '@/features/files/FileStates';
 import {

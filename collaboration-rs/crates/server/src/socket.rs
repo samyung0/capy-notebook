@@ -538,7 +538,11 @@ impl Connection {
             "remainingMs": remaining.as_micros().div_ceil(1000) as u64,
             "type": TIMEOUT_TYPE,
         });
-        self.send(channel, Kind::Stateless, &protocol::text(&payload.to_string()));
+        self.send(
+            channel,
+            Kind::Stateless,
+            &protocol::text(&payload.to_string()),
+        );
     }
 
     async fn on_message(&mut self, message: Message) -> bool {

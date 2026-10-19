@@ -2330,9 +2330,9 @@ impl Room {
             let current = self.awareness.get(&entry.client);
             // A client id is its user's: another user's channel neither
             // writes nor removes it (Epo 2026-10-19).
-            if current.is_some_and(|state| {
-                state.owner.is_some() && state.user != member.context.user_id
-            }) {
+            if current
+                .is_some_and(|state| state.owner.is_some() && state.user != member.context.user_id)
+            {
                 continue;
             }
             // y-protocols: a newer clock wins; at the same clock a removal wins.

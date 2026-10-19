@@ -4,8 +4,8 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
-import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
+import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
   UndoButtons,

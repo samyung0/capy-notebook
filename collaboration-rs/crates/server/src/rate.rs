@@ -432,7 +432,10 @@ mod tests {
             panic!("the next message fits");
         };
         assert!(started);
-        assert!((remaining.as_secs_f64() - 6.0).abs() < 0.01, "{remaining:?}");
+        assert!(
+            (remaining.as_secs_f64() - 6.0).abs() < 0.01,
+            "{remaining:?}"
+        );
         assert_eq!(
             allowances.take("u1", 1, start + remaining + secs(0.001)),
             Verdict::Taken
@@ -491,7 +494,10 @@ mod tests {
         };
         let allowances = Allowances::new(slow, start);
         assert_eq!(allowances.take("refilled", 10, start), Verdict::Taken);
-        assert_eq!(allowances.time_out("timed out", start), started(TIMEOUT_MIN));
+        assert_eq!(
+            allowances.time_out("timed out", start),
+            started(TIMEOUT_MIN)
+        );
         assert_eq!(
             passed(&allowances, "spent", start, Duration::ZERO, 10, 300),
             300

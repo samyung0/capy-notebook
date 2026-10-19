@@ -5,12 +5,12 @@ import { decodeFrame, type Message, MessageKind } from './protocol';
 /** One room on the socket (a RoomProvider). */
 export interface ChannelHandler {
   onMessage(message: Message): void;
+  /** The user's timeout ended: a room paused by it joins again and resyncs. */
+  onResume(): void;
   /** The socket closed: every channel on it ended. */
   onSocketClose(): void;
   /** The socket opened (again): a room that wants to be joined joins. */
   onSocketOpen(): void;
-  /** The user's timeout ended: a room paused by it joins again and resyncs. */
-  onResume(): void;
 }
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';

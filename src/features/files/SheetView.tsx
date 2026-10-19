@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import type { SourceFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { m } from '@/i18n';
 import { FileError, FileUnavailable, SourceBanners } from './FileStates';
 import { useReportEditorStatus } from './fileModeContext';

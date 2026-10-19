@@ -1497,7 +1497,9 @@ describe('the draft sweep sending', () => {
     });
     const text = 'y'.repeat(5 * 1024 * 1024);
     doc.getText('content').insert(0, text);
-    await putDrafts([draft(`big-${crypto.randomUUID()}`, { data: update, key })]);
+    await putDrafts([
+      draft(`big-${crypto.randomUUID()}`, { data: update, key }),
+    ]);
     requests.length = 0;
     return text;
   }

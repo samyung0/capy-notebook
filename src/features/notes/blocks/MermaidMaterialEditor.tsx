@@ -1,5 +1,4 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { qk } from '@/api/client';
@@ -9,6 +8,7 @@ import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import {
   itemEditingStopped,
   useItemRoom,

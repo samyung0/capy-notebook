@@ -1214,7 +1214,11 @@ async fn a_user_past_their_allowance_is_timed_out_on_every_socket() {
     typist_reader
         .joined(&typist_room, &token(&typist_room, &typist_user, "read"))
         .await;
-    assert!(typist_reader.settle(|c| c.block_text().ends_with('c')).await);
+    assert!(
+        typist_reader
+            .settle(|c| c.block_text().ends_with('c'))
+            .await
+    );
     let metrics = metrics_text(server.port).await;
     assert!(
         metrics
@@ -1269,7 +1273,10 @@ async fn a_draft_send_takes_from_the_users_allowance() {
         drafted(&editor.doc, typed_into_note(" late")),
     )
     .await;
-    assert_eq!((status, &answer["class"]), (429, &serde_json::json!("too_fast")));
+    assert_eq!(
+        (status, &answer["class"]),
+        (429, &serde_json::json!("too_fast"))
+    );
     let remaining = answer["remainingMs"].as_u64().expect("the time left");
     assert!((1..=300_000).contains(&remaining), "{answer}");
     let metrics = metrics_text(server.port).await;
@@ -1307,7 +1314,10 @@ async fn an_update_over_8_mib_times_its_user_out() {
         vec![0u8; 8 * 1024 * 1024 + 1],
     )
     .await;
-    assert_eq!((status, &answer["class"]), (429, &serde_json::json!("too_fast")));
+    assert_eq!(
+        (status, &answer["class"]),
+        (429, &serde_json::json!("too_fast"))
+    );
     assert!(answer["remainingMs"].as_u64().is_some_and(|ms| ms > 0));
     let metrics = metrics_text(server.port).await;
     assert!(
@@ -1548,17 +1558,17 @@ async fn a_socket_that_joins_no_room_closes() {
     };
     assert_eq!(closed, Some((1008, "no room joined".into())));
     joined.type_text("!").await;
-    assert!(joined.until(6).await.is_some(), "the joined socket still serves");
+    assert!(
+        joined.until(6).await.is_some(),
+        "the joined socket still serves"
+    );
 }
 
 /// A socket from 127.0.0.1, or from `address` behind Cloudflare.
 async fn connect(
     port: u16,
     address: Option<&str>,
-) -> Result<
-    WebSocketStream<MaybeTlsStream<TcpStream>>,
-    tokio_tungstenite::tungstenite::Error,
-> {
+) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, tokio_tungstenite::tungstenite::Error> {
     let mut request = format!("ws://127.0.0.1:{port}/")
         .into_client_request()
         .expect("request");
@@ -1641,7 +1651,10 @@ async fn a_user_joins_a_capped_number_of_channels() {
     other
         .send_on(2, 0, &join_payload(&room, &write, Some(client_protocol())))
         .await;
-    assert!(other.until(1).await.is_some(), "a left channel frees its place");
+    assert!(
+        other.until(1).await.is_some(),
+        "a left channel frees its place"
+    );
 }
 #[tokio::test]
 async fn redis_comments_and_user_evictions_reach_the_room() {
