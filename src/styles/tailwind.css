@@ -289,6 +289,14 @@
   @apply px-1 sm:px-3;
 }
 
+/* A dialog's tab strip: bleeds to the card edges like a page's, with the
+ * labels lined up with the dialog's padding. Pair with w-auto. Phones pull
+ * it up to the header, so the labels sit as far below the title as the title
+ * sits below the screen's top. */
+@utility dialog-tabs-bleed {
+  @apply -mx-4 px-1 max-sm:-mt-2 sm:-mx-5.5 sm:px-2.5;
+}
+
 @utility top-inset-bar-shape {
   width: var(--top-inset-bar-width);
   height: var(--top-inset-bar-height);

@@ -557,7 +557,8 @@ export function ChatPanel({
     >
       <div
         className={cn(
-          'pointer-events-auto absolute inset-0 flex flex-col overflow-hidden rounded-card-xl bg-surface shadow-card',
+          // The keyboard covers the page; the composer stays just above it.
+          'pointer-events-auto absolute inset-0 flex flex-col overflow-hidden rounded-card-xl bg-surface pb-(--keyboard-inset,0px) shadow-card',
           CHAT_DOCK_TRANSITION
         )}
         data-workspace-chat-page

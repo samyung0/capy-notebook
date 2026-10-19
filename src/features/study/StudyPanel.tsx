@@ -91,10 +91,13 @@ export function StudyPanel({
   workspaceId,
   renderTabRow,
   onOpenItem,
+  onOpenProgress,
 }: {
   workspaceId: string;
   renderTabRow: (actions: TabAction[]) => ReactNode;
   onOpenItem: (item: OpenItem) => void;
+  /** Opens the workspace's Study progress page in the centre pane. */
+  onOpenProgress: () => void;
 }) {
   const { data: workspace } = useWorkspace(workspaceId);
   const { data: study } = useWorkspaceStudy(workspaceId);
@@ -196,7 +199,14 @@ export function StudyPanel({
                   workspaceId={workspaceId}
                 />
                 {chapterRows.length > 0 && (
-                  <Section title={m.study_done()}>
+                  <Section
+                    aside={
+                      <UnderlineLink onClick={onOpenProgress}>
+                        {m.progress_all()}
+                      </UnderlineLink>
+                    }
+                    title={m.study_done()}
+                  >
                     {chapterRows.map((ch) => (
                       <div
                         className="flex items-center gap-1.5 rounded-button px-2 py-1.5"

@@ -157,9 +157,10 @@ export function ChatDock({
 
   return (
     <div
-      className="motion-chat-dock-row pointer-events-none absolute inset-x-4 bottom-4 data-[office=true]:bottom-[calc(var(--office-inset)+8px)]"
+      className="motion-chat-dock-row pointer-events-none absolute inset-x-4 bottom-[calc(--spacing(4)+var(--keyboard-inset,0px))] data-[office=true]:bottom-[calc(var(--office-inset)+8px)]"
       // The open field keeps the button's gap from the screen's edge on every
-      // file; only the button rises above an Office file's bottom chrome.
+      // file, lifted above the keyboard that covers the page; only the button
+      // rises above an Office file's bottom chrome.
       data-office={office && !open}
       data-workspace-chat-dock
     >

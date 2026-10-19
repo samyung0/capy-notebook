@@ -390,8 +390,10 @@ export interface ReviewStart {
   mode?: ReviewMode;
 }
 export type AttemptSort = ListAttemptsSort;
+export type AttemptKind = import('./gen/model').Attempt['kind'];
 export interface AttemptParams {
   dir?: 'asc';
+  kinds?: AttemptKind[];
   sort?: AttemptSort;
   workspaceIds?: string[];
 }
@@ -415,7 +417,11 @@ export interface PastReviewParams {
 export type CreateQuizReq = Omit<GenCreateQuizReq, 'questions'> & {
   questions?: Question[];
 };
-export type { CreateAttemptReq } from './gen/model';
+export type {
+  AttemptCard,
+  CreateAttemptReq,
+  ItemAttempts,
+} from './gen/model';
 
 export type CreateMaterialReq = Omit<GenCreateMaterialReq, 'content'> & {
   content?: import('@/features/materials/document').MaterialDocument;

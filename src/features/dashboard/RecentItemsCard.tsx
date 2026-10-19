@@ -175,7 +175,7 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
         view === 'grid' ? (
           <ItemSkeletonGrid count={8} dense />
         ) : (
-          <SkeletonList className="gap-0.5" count={8} rowHeight={54} />
+          <SkeletonList className="gap-2" count={8} rowHeight={54} />
         )
       ) : missing.length ? (
         <InlineErrorState
@@ -215,7 +215,7 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
           })}
         </ItemGrid>
       ) : (
-        <div className="-mx-1.5 flex flex-col gap-0.5">
+        <div className="-mx-1.5 flex flex-col gap-2">
           {items.map((item) => {
             const workspace = workspaces?.find(
               (ws) => ws.id === item.workspaceId

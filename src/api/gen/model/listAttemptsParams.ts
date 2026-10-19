@@ -11,9 +11,13 @@ export type ListAttemptsParams = {
 sort?: ListAttemptsSort;
 dir?: ListAttemptsDir;
 /**
- * Comma-separated workspace ids; the quiz's current workspace
+ * Comma-separated workspace ids; the quiz's or set's current workspace
  */
 workspaceId?: string;
+/**
+ * Comma-separated kinds: quiz, flashcards; empty is both
+ */
+kind?: string;
 /**
  * @minimum 0
  */

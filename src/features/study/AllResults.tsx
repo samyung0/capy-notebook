@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { useAttempts, useWorkspaces } from '@/api/hooks';
-import type { Attempt, AttemptSort } from '@/api/types';
+import type { Attempt, AttemptKind, AttemptSort } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
 import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
 import { PageBody } from '@/components/app/layout';
@@ -13,27 +13,37 @@ import {
   sortDirection,
 } from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
-import { formatPoints } from '@/features/quizzes/grade';
+import { materialKindLabel } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
+import { materialIconName } from '@/lib/fileIcons';
 import { csv, sortSearch } from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
+import { resultLink, scoreText } from './attempts';
 import {
   RESULT_SORT_DEFAULT,
   type ResultsSearch,
   resultParams,
 } from './reviewSearch';
 
-/** Learning → All results: quiz attempts with the list pages' workspace
- * filter and sorting column headers, sorted, filtered and paged by the
- * server. */
+const KINDS: AttemptKind[] = ['quiz', 'flashcards'];
+
+/** Learning → All results: quiz and flashcard attempts with the list pages'
+ * type and workspace filters and sorting column headers, sorted, filtered and
+ * paged by the server. */
 export function AllResults() {
   const search = useSearch({ strict: false }) as ResultsSearch;
   const params = useMemo(() => resultParams(search), [search]);
-  const { sort = RESULT_SORT_DEFAULT, dir, workspaceIds = [] } = params;
+  const {
+    sort = RESULT_SORT_DEFAULT,
+    dir,
+    kinds = [],
+    workspaceIds = [],
+  } = params;
   const {
     data,
     fetchNextPage,
@@ -63,17 +73,32 @@ export function AllResults() {
       setSearch(sortSearch('results', next, asc, RESULT_SORT_DEFAULT)),
     sort,
   };
-  // Attempts of a deleted quiz have no quiz to redo.
-  const redo = (quizId: string | null) =>
-    quizId
-      ? [
-          {
-            icon: 'refresh' as const,
-            label: m.quiz_redo(),
-            onClick: () =>
-              navigate({ params: { quizId }, to: '/quizzes/$quizId/attempt' }),
-          },
-        ]
+  // Attempts of a deleted quiz or set have nothing to redo.
+  const redo = ({ kind, materialId }: Attempt) =>
+    materialId
+      ? kind === 'flashcards'
+        ? [
+            {
+              icon: 'refresh' as const,
+              label: m.flashcards_study_again(),
+              onClick: () =>
+                navigate({
+                  params: { flashcardSetId: materialId },
+                  to: '/flashcards/$flashcardSetId',
+                }),
+            },
+          ]
+        : [
+            {
+              icon: 'refresh' as const,
+              label: m.quiz_redo(),
+              onClick: () =>
+                navigate({
+                  params: { quizId: materialId },
+                  to: '/quizzes/$quizId/attempt',
+                }),
+            },
+          ]
       : [];
   const menu = (a: Attempt) => (
     <div className="relative z-10 -my-2 flex justify-end">
@@ -82,13 +107,9 @@ export function AllResults() {
           {
             icon: 'list',
             label: m.quiz_check_result(),
-            onClick: () =>
-              navigate({
-                params: { attemptId: a.id },
-                to: '/quizzes/attempts/$attemptId',
-              }),
+            onClick: () => navigate(resultLink(a)),
           },
-          ...redo(a.materialId),
+          ...redo(a),
         ]}
       />
     </div>
@@ -98,6 +119,17 @@ export function AllResults() {
     <>
       <ListToolbar
         filters={[
+          {
+            key: 'kind',
+            label: m.files_filter_kind(),
+            onToggle: (value) =>
+              setSearch({ kind: csv(toggleValue(kinds, value)) }),
+            options: KINDS.map((kind) => ({
+              label: materialKindLabel(kind),
+              value: kind,
+            })),
+            selected: kinds,
+          },
           {
             emptyLabel: m.create_filter_no_workspaces(),
             key: 'workspace',
@@ -111,7 +143,9 @@ export function AllResults() {
             selected: workspaceIds,
           },
         ]}
-        onResetFilters={() => setSearch({ workspace: undefined })}
+        onResetFilters={() =>
+          setSearch({ kind: undefined, workspace: undefined })
+        }
       />
       <PageBody belowToolbar>
         {waitsForConnection(fetchStatus, data) ? (
@@ -131,7 +165,7 @@ export function AllResults() {
                   {
                     clamp: true,
                     id: 'quiz',
-                    label: m.quiz_col_quiz(),
+                    label: m.list_col_name(),
                     sort: 'quiz',
                   },
                   {
@@ -164,7 +198,7 @@ export function AllResults() {
               <div className="grid grid-cols-[minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(7rem,1fr)_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
                 {(
                   [
-                    ['quiz', m.quiz_col_quiz()],
+                    ['quiz', m.list_col_name()],
                     ['workspace', m.quiz_col_workspace()],
                     ['score', m.quiz_col_score()],
                     ['date', m.quiz_col_date()],
@@ -215,19 +249,19 @@ export function AllResults() {
   );
 }
 
-/** The quiz name, linking the whole row to the attempt's result. */
+/** The quiz's or set's icon and name, linking the whole row to the result. */
 function ResultLink({ attempt: a }: { attempt: Attempt }) {
   return (
-    <Link
-      className="wrap-break-word line-clamp-2 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
-      params={{ attemptId: a.id }}
-      to="/quizzes/attempts/$attemptId"
-    >
-      {a.quizName}
-    </Link>
+    <div className="flex min-w-0 items-center gap-2.5">
+      <FileIcon className="size-4" name={materialIconName(a.kind)} />
+      <Link
+        className="wrap-break-word line-clamp-2 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
+        {...resultLink(a)}
+      >
+        {a.quizName}
+      </Link>
+    </div>
   );
 }
 
-const scoreText = (a: Attempt) =>
-  `${formatPoints(a.correct)} / ${formatPoints(a.total)}`;
 const formatDate = (a: Attempt) => new Date(a.takenAt).toLocaleDateString();

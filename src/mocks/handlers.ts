@@ -2858,12 +2858,14 @@ export const handlers = [
   http.get('/api/attempts', ({ request }) => {
     const params = new URL(request.url).searchParams;
     const workspaces = params.get('workspaceId')?.split(',') ?? [];
+    const kinds = params.get('kind')?.split(',') ?? [];
     const sort = params.get('sort');
     const list = db.attempts
       .filter(
         (a) =>
-          !workspaces.length ||
-          (a.workspaceId !== null && workspaces.includes(a.workspaceId))
+          (!workspaces.length ||
+            (a.workspaceId !== null && workspaces.includes(a.workspaceId))) &&
+          (!kinds.length || kinds.includes(a.kind))
       )
       .sort(
         sortBy(
@@ -2893,12 +2895,16 @@ export const handlers = [
     return HttpResponse.json({
       ...at,
       answers: at.answers ?? {},
+      cards: at.cards ?? [],
       questions: at.questions ?? [],
     });
   }),
   // Grades every part, records the attempt and returns it with the keys.
   http.post('/api/quizzes/:id/attempts', async ({ params, request }) => {
-    const { answers } = (await request.json()) as { answers: Answers };
+    const { answers, startedAt } = (await request.json()) as {
+      answers: Answers;
+      startedAt?: string;
+    };
     const quizMt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
@@ -2911,10 +2917,12 @@ export const handlers = [
       chapters: quiz.chapters,
       correct: graded.awarded,
       id: uid('at'),
+      kind: 'quiz' as const,
       materialId: quiz.id,
       pct: Math.round((graded.awarded / graded.max) * 100),
       questions: graded.questions,
       quizName: quiz.name,
+      startedAt: startedAt ?? null,
       takenAt: new Date().toISOString(),
       total: graded.max,
       workspaceId: quizMt.workspaceId,

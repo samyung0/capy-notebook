@@ -372,6 +372,11 @@ components:
           type: string
         id:
           type: string
+        kind:
+          enum:
+            - quiz
+            - flashcards
+          type: string
         materialId:
           nullable: true
           type: string
@@ -379,6 +384,10 @@ components:
           format: int64
           type: integer
         quizName:
+          type: string
+        startedAt:
+          format: date-time
+          nullable: true
           type: string
         takenAt:
           format: date-time
@@ -395,13 +404,37 @@ components:
         - id
         - materialId
         - workspaceId
+        - kind
         - quizName
         - workspaceName
         - chapters
         - correct
         - total
         - pct
+        - startedAt
         - takenAt
+      type: object
+    AttemptCard:
+      additionalProperties: false
+      properties:
+        back:
+          type: string
+        front:
+          type: string
+        id:
+          type: string
+        image:
+          $ref: "#/components/schemas/CardImage"
+        ratings:
+          items:
+            format: int64
+            type: integer
+          type: array
+      required:
+        - id
+        - front
+        - back
+        - ratings
       type: object
     AttemptDetail:
       additionalProperties: false
@@ -415,6 +448,10 @@ components:
         answers:
           additionalProperties: {}
           type: object
+        cards:
+          items:
+            $ref: "#/components/schemas/AttemptCard"
+          type: array
         chapters:
           items:
             type: string
@@ -425,6 +462,11 @@ components:
         iconId:
           type: string
         id:
+          type: string
+        kind:
+          enum:
+            - quiz
+            - flashcards
           type: string
         materialId:
           nullable: true
@@ -438,6 +480,10 @@ components:
             type: object
           type: array
         quizName:
+          type: string
+        startedAt:
+          format: date-time
+          nullable: true
           type: string
         takenAt:
           format: date-time
@@ -453,15 +499,18 @@ components:
       required:
         - answers
         - questions
+        - cards
         - id
         - materialId
         - workspaceId
+        - kind
         - quizName
         - workspaceName
         - chapters
         - correct
         - total
         - pct
+        - startedAt
         - takenAt
       type: object
     AttemptsOutputBody:
@@ -1259,6 +1308,10 @@ components:
           additionalProperties: {}
           description: The learner's answers by part id
           type: object
+        startedAt:
+          description: When the learner opened the quiz, for the minutes taken
+          format: date-time
+          type: string
       required:
         - answers
       type: object
@@ -2095,6 +2148,20 @@ components:
         - front
         - back
       type: object
+    FlashcardAttemptRef:
+      additionalProperties: false
+      properties:
+        id:
+          description: Minted by the browser when studying the set begins
+          format: uuid
+          type: string
+        startedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - startedAt
+      type: object
     FlashcardSet:
       additionalProperties: false
       properties:
@@ -2562,6 +2629,27 @@ components:
           type: array
       required:
         - items
+      type: object
+    ItemAttempts:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        materialId:
+          type: string
+        recent:
+          items:
+            $ref: "#/components/schemas/Attempt"
+          type: array
+        size:
+          format: int64
+          type: integer
+      required:
+        - materialId
+        - size
+        - count
+        - recent
       type: object
     LLMCredential:
       additionalProperties: false
@@ -4014,6 +4102,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        attempt:
+          $ref: "#/components/schemas/FlashcardAttemptRef"
+          description: The flashcard attempt the rating belongs to; the first rating records it (workspace sets only)
         itemId:
           minLength: 1
           type: string
@@ -5607,8 +5698,12 @@ components:
             - done
             - removed
           type: string
+        updatedAt:
+          format: date-time
+          type: string
       required:
         - state
+        - updatedAt
       type: object
     StudyPreferences:
       additionalProperties: false
@@ -6690,6 +6785,22 @@ components:
         - capabilities
         - canClone
       type: object
+    WorkspaceAttemptsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/WorkspaceAttemptsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ItemAttempts"
+          type: array
+      required:
+        - items
+      type: object
     WorkspaceCollaborator:
       additionalProperties: false
       properties:
@@ -6956,12 +7067,19 @@ paths:
               - asc
               - desc
             type: string
-        - description: Comma-separated workspace ids; the quiz's current workspace
+        - description: Comma-separated workspace ids; the quiz's or set's current workspace
           explode: false
           in: query
           name: workspaceId
           schema:
-            description: Comma-separated workspace ids; the quiz's current workspace
+            description: Comma-separated workspace ids; the quiz's or set's current workspace
+            type: string
+        - description: "Comma-separated kinds: quiz, flashcards; empty is both"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated kinds: quiz, flashcards; empty is both"
             type: string
         - explode: false
           in: query
@@ -11798,6 +11916,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Study progress in a workspace
+      tags:
+        - Study
+  /api/workspaces/{id}/study/attempts:
+    get:
+      operationId: getWorkspaceAttempts
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAttemptsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Each quiz's and set's attempt count and latest attempts
       tags:
         - Study
   /api/workspaces/{id}/study/enabled:

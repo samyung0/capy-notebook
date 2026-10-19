@@ -162,7 +162,8 @@ export const listAttemptsQueryLimitMax = 100;
 export const ListAttemptsQueryParams = zod.object({
   "sort": zod.enum(['date', 'score', 'quiz', 'workspace']).default(listAttemptsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listAttemptsQueryDirDefault),
-  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; the quiz\'s current workspace'),
+  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; the quiz\'s or set\'s current workspace'),
+  "kind": zod.string().optional().describe('Comma-separated kinds: quiz, flashcards; empty is both'),
   "offset": zod.int().min(listAttemptsQueryOffsetMin).optional(),
   "limit": zod.int().min(1).max(listAttemptsQueryLimitMax).default(listAttemptsQueryLimitDefault)
 })
@@ -174,9 +175,11 @@ export const ListAttemptsResponse = zod.object({
   "correct": zod.number(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
+  "kind": zod.enum(['quiz', 'flashcards']),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
   "quizName": zod.string(),
+  "startedAt": zod.iso.datetime({"offset":true}).nullable(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
   "workspaceId": zod.string().nullable(),
@@ -196,14 +199,25 @@ export const GetAttemptParams = zod.object({
 export const GetAttemptResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.record(zod.string(), zod.unknown()),
+  "cards": zod.array(zod.object({
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
+  "ratings": zod.array(zod.int())
+})),
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
+  "kind": zod.enum(['quiz', 'flashcards']),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "quizName": zod.string(),
+  "startedAt": zod.iso.datetime({"offset":true}).nullable(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
   "workspaceId": zod.string().nullable(),
@@ -4707,20 +4721,32 @@ export const CreateAttemptParams = zod.object({
 })
 
 export const CreateAttemptBody = zod.object({
-  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id')
+  "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
+  "startedAt": zod.iso.datetime({"offset":true}).optional().describe('When the learner opened the quiz, for the minutes taken')
 })
 
 export const CreateAttemptResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.record(zod.string(), zod.unknown()),
+  "cards": zod.array(zod.object({
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
+  "ratings": zod.array(zod.int())
+})),
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
+  "kind": zod.enum(['quiz', 'flashcards']),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "quizName": zod.string(),
+  "startedAt": zod.iso.datetime({"offset":true}).nullable(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
   "workspaceId": zod.string().nullable(),
@@ -5071,6 +5097,10 @@ export const rateReviewItemBodySessionItemsMax = 50;
 
 
 export const RateReviewItemBody = zod.object({
+  "attempt": zod.object({
+  "id": zod.uuid().describe('Minted by the browser when studying the set begins'),
+  "startedAt": zod.iso.datetime({"offset":true})
+}).optional().describe('The flashcard attempt the rating belongs to; the first rating records it (workspace sets only)'),
   "itemId": zod.string().min(1),
   "materialId": zod.string().min(1),
   "rating": zod.int().min(1).max(rateReviewItemBodyRatingMax).describe('A flashcard\'s button: 1 Again .. 4 Easy; questions are rated by POST \/api\/review\/check'),
@@ -7089,7 +7119,8 @@ export const GetWorkspaceStudyResponse = zod.object({
   "items": zod.array(zod.object({
   "fileId": zod.string().optional(),
   "materialId": zod.string().optional(),
-  "state": zod.enum(['started', 'done', 'removed'])
+  "state": zod.enum(['started', 'done', 'removed']),
+  "updatedAt": zod.iso.datetime({"offset":true})
 })),
   "quickReview": zod.array(zod.object({
   "back": zod.string().optional(),
@@ -7108,9 +7139,11 @@ export const GetWorkspaceStudyResponse = zod.object({
   "correct": zod.number(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
+  "kind": zod.enum(['quiz', 'flashcards']),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
   "quizName": zod.string(),
+  "startedAt": zod.iso.datetime({"offset":true}).nullable(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
   "workspaceId": zod.string().nullable(),
@@ -7128,6 +7161,38 @@ export const GetWorkspaceStudyResponse = zod.object({
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 }).optional()
+})
+
+
+/**
+ * @summary Each quiz's and set's attempt count and latest attempts
+ */
+export const GetWorkspaceAttemptsParams = zod.object({
+  "id": zod.string()
+})
+
+export const GetWorkspaceAttemptsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "count": zod.int(),
+  "materialId": zod.string(),
+  "recent": zod.array(zod.object({
+  "chapters": zod.array(zod.string()),
+  "correct": zod.number(),
+  "iconId": zod.string().optional(),
+  "id": zod.string(),
+  "kind": zod.enum(['quiz', 'flashcards']),
+  "materialId": zod.string().nullable(),
+  "pct": zod.int(),
+  "quizName": zod.string(),
+  "startedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "takenAt": zod.iso.datetime({"offset":true}),
+  "total": zod.number(),
+  "workspaceId": zod.string().nullable(),
+  "workspaceName": zod.string()
+})),
+  "size": zod.int()
+}))
 })
 
 

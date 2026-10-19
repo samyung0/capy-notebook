@@ -26,9 +26,10 @@ Do not report the same failure through multiple surfaces.
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
 without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, or an unknown status without a code)
-shows its request's trace id under the copy as a small "Error ID: …" line with
-a copy button (`ErrorId`), so a user can quote it and an operator can find the
-logs and Sentry event. Only the surfaces where the error stays on screen show
+shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
+the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
+one click selects the whole line (`select-all`) so a user can copy and quote it,
+and an operator can find the logs and Sentry event. Only the surfaces where the error stays on screen show
 it, through `ErrorState`'s `errorId`:
 
 - boundary screens (`AppErrorBoundary`, `RouteErrorComponent`);
@@ -41,9 +42,7 @@ it, through `ErrorState`'s `errorId`:
 
 Typed refusals, exceptions without a request, toasts and status banners show
 none. The id comes from `ApiError.traceId` (see the trace id in
-`observability-metering.md`). These surfaces are alerts, so the id text is
-hidden from screen readers (the copy button names it), and a copy is announced
-through the line's own polite status.
+`observability-metering.md`).
 
 ### Form dialogs keep their errors
 
@@ -116,9 +115,13 @@ The owning component must then destructure and render the relevant query error
 state. Destructuring is required so TanStack Query's tracked-property proxy
 subscribes to those fields. A list that fails without data must never fall
 through to its empty state ("No workspaces yet" reads as data loss after a
-redeploy): a large region renders `ErrorState` `variant="panel"` with Retry
-(the dashboard workspaces), a small one `InlineErrorState`, one muted line and
-Retry (the dashboard recents card, search results). The /notifications page
+redeploy): a region that fills a page or a page tab renders `ErrorState`
+`variant="panel"` with Retry (Trash); anything smaller, and anything inside
+a dialog, renders `InlineErrorState`, one bold line and Retry (the dashboard
+recent workspaces and recents card, search results, Billing's invoices under
+the plan and its Details table, a question bank page that failed between loaded
+questions, workspace settings' Statistics tab and member list). Billing's Details table drops its loaded rows when any page fails,
+next pages included, and shows only the inline error. The /notifications page
 leaves its list to the route boundary.
 Filter and picker options may stay silently empty.
 
@@ -209,6 +212,9 @@ not offline use: without a service worker the app itself does not load offline.
 - Restored queries are marked stale, so each refetches on first use regardless
   of `staleTime`. A stored query whose refetch answers 401 or 404 drops its data,
   so a workspace the account lost shows the private state, not last visit's copy.
+- Deleting a workspace drops its cached queries once its page is left (the
+  settings dialog leaves for `/workspaces` first, or the open page would refetch
+  them), so Back to it fetches and shows the private state.
 - MSW development stores nothing: the mock database resets on reload.
 
 ## Boundary tiers

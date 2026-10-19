@@ -86,7 +86,7 @@ type ShareRedemption struct {
 // workspace or standalone material is link or public now, and remembers the
 // grant so later calls by bare id pass (workspaceRoles,
 // materialEffectiveAccess). Making the resource private clears the grants
-// (migration 0095). A forged token, or a private, trashed, embedded or
+// (migration 0096). A forged token, or a private, trashed, embedded or
 // workspace-filed material, is ErrNotFound.
 func (s *Store) RedeemShareToken(ctx context.Context, userID, token string) (ShareRedemption, error) {
 	id, ok := s.VerifyShareToken(token)

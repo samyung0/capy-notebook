@@ -396,6 +396,12 @@ const appRoutes = [
     ({ context: { queryClient: qc }, params }) =>
       qc.prefetchQuery(attemptQuery(params.attemptId))
   ),
+  page(
+    '/flashcards/attempts/$attemptId',
+    () => import('@/routes/AttemptResult'),
+    ({ context: { queryClient: qc }, params }) =>
+      qc.prefetchQuery(attemptQuery(params.attemptId))
+  ),
   createRoute({
     beforeLoad: () => {
       if (!features.schedule) throw redirect({ to: '/' });

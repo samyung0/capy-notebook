@@ -426,14 +426,18 @@ type AttemptDetail struct {
 	store.Attempt
 	Answers   map[string]any   `json:"answers" nullable:"false"`
 	Questions []map[string]any `json:"questions" nullable:"false"`
+	// Cards is a flashcard attempt's cards; empty for a quiz.
+	Cards []store.AttemptCard `json:"cards" nullable:"false"`
 }
 
 func FromAttemptDetail(d store.AttemptDetail) AttemptDetail {
-	return AttemptDetail{
-		Attempt:   d.Attempt,
-		Answers:   decodeAnswers(d.Answers),
-		Questions: decodeQuestions(d.Questions),
+	out := AttemptDetail{Attempt: d.Attempt, Answers: decodeAnswers(d.Answers), Questions: []map[string]any{}, Cards: []store.AttemptCard{}}
+	if d.Kind == "flashcards" {
+		out.Cards = decodeCards(d.Questions)
+		return out
 	}
+	out.Questions = decodeQuestions(d.Questions)
+	return out
 }
 
 // GradedQuiz is a graded signed-out attempt: every question with its key and,

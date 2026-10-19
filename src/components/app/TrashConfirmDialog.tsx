@@ -17,6 +17,7 @@ export function TrashConfirmDialog({
   return (
     <ConfirmDialog
       body={m.confirm_trash_body()}
+      confirmLabel={m.action_delete()}
       onClose={onClose}
       onConfirm={onConfirm}
       open={open}

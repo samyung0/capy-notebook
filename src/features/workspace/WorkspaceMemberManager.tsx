@@ -14,6 +14,7 @@ import type {
   CreateWorkspaceInviteReq,
   WorkspaceMember,
 } from '@/api/types';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
@@ -32,6 +33,7 @@ import {
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 
 function roleOptions(): Array<{ value: AssignableRole; label: string }> {
   return [
@@ -49,7 +51,11 @@ export function WorkspaceMemberManager({
     null
   );
   const [managedRole, setManagedRole] = useState<AssignableRole>('viewer');
-  const { data: membersData } = useWorkspaceMembers(workspaceId, true, {
+  const {
+    data: membersData,
+    error: membersError,
+    refetch: refetchMembers,
+  } = useWorkspaceMembers(workspaceId, true, {
     errorBoundary: false,
   });
   const { mutateAsync: createInvite } = useCreateWorkspaceInvite(workspaceId);
@@ -137,6 +143,14 @@ export function WorkspaceMemberManager({
         </Button>
       </form>
 
+      {!membersData && membersError && (
+        <InlineErrorState
+          className="py-6"
+          errorId={unexpectedErrorId(membersError)}
+          message={describeError(membersError).title}
+          onRetry={() => void refetchMembers()}
+        />
+      )}
       <div className="mt-4 flex flex-col gap-1.5">
         {membersData?.map((member) => (
           <div className="flex items-center gap-2 py-1" key={member.userId}>
