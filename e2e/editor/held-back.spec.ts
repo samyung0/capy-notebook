@@ -31,18 +31,18 @@ test('a note takes no edits while the tab holds back its messages', async ({
   const palette = `[aria-label="${m.editor_command_palette()}"]`;
   const undo = `button[aria-label="${m.editor_undo()}"]`;
 
-  await hold(true);
+  await hold(page, true);
   expect(await inert(page, '[data-slate-editor]')).toBe(true);
   expect(await inert(page, undo)).toBe(true);
   await page.keyboard.press('ControlOrMeta+k');
   await expect(page.locator(palette)).toHaveCount(0);
 
-  await hold(false);
+  await hold(page, false);
   expect(await inert(page, '[data-slate-editor]')).toBe(false);
   expect(await inert(page, undo)).toBe(false);
   await page.keyboard.press('ControlOrMeta+k');
   await expect(page.locator(palette)).toBeVisible();
   // An open palette takes no input once the tab holds back.
-  await hold(true);
+  await hold(page, true);
   expect(await inert(page, palette)).toBe(true);
 });
