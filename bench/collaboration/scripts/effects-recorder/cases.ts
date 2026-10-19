@@ -87,23 +87,6 @@ async function at(d: Driver, a: Peer, needle: string, where: 'start' | 'end' = '
   await a.click(needle, { at: where, scope });
 }
 
-/**
- * In a fresh frame a double click on a header or footer selects a body word
- * elsewhere instead of opening it (seen headless on every DOCX fixture); once
- * the frame has applied a remote update it opens. So header/footer cases run
- * with two peers: A types one character in the body and deletes it (two small
- * updates, no net text change), then B acts.
- */
-export async function wakeHeaders(d: Driver, bodyNeedle: string) {
-  const a = d.peer('A');
-  await d.step('A', 'precondition', `type and delete one character after "${bodyNeedle}" so B's frame applies a remote update`);
-  await a.click(bodyNeedle, { at: 'end' });
-  await a.type('x');
-  await d.wait(400);
-  await a.press('Backspace');
-  await d.wait(1500);
-}
-
 const DOCX: Case[] = [
   {
     id: 'docx-type-mid',
@@ -811,16 +794,14 @@ const DOCX: Case[] = [
     id: 'docx-header-type',
     rows: ['docx.edit.headers'],
     fixtures: ['comprehensive'],
-    peers: ['A', 'B'],
-    summary: 'peer B adds " (recorded)" at the end of the default header (after A\'s one-character body round trip, see wakeHeaders)',
+    summary: 'adds " (recorded)" at the end of the default header',
     async run(d, f) {
-      const b = d.peer('B');
-      await wakeHeaders(d, f.key === 'comprehensive' ? 'Centered paragraph' : 'CAPY_SECTION_SENTINEL');
-      await d.step('B', 'dblclick', 'header');
-      await b.openHeaderFooter(spot(f, 'header'), 'header');
-      await d.step('B', 'type');
-      await b.type(' (recorded)');
-      await b.press('Escape');
+      const a = d.peer();
+      await d.step('A', 'dblclick', 'header');
+      await a.openHeaderFooter(spot(f, 'header'), 'header');
+      await d.step('A', 'type');
+      await a.type(' (recorded)');
+      await a.press('Escape');
     },
   },
 
@@ -828,18 +809,14 @@ const DOCX: Case[] = [
     id: 'docx-footer-type',
     rows: ['docx.edit.headers'],
     fixtures: ['comprehensive', 'exchange-plan'],
-    peers: ['A', 'B'],
-    blocked:
-      'driver: a double click on a footer never opened it in the headless harness (comprehensive "Page N of M", exchange-plan PAGE-only footer), even after the remote-update precondition that makes headers open; footer typing is not recorded',
-    summary: 'peer B adds " (recorder footer)" to the footer (after A\'s one-character body round trip, see wakeHeaders)',
+    summary: 'adds " (recorder footer)" to the footer',
     async run(d, f) {
-      const b = d.peer('B');
-      await wakeHeaders(d, f.key === 'comprehensive' ? 'Centered paragraph' : spot(f, 'mid'));
-      await d.step('B', 'dblclick', 'footer');
-      await b.openHeaderFooter(f.key === 'comprehensive' ? 'Page ' : spot(f, 'footer'), 'footer');
-      await d.step('B', 'type');
-      await b.type(' (recorder footer)');
-      await b.press('Escape');
+      const a = d.peer();
+      await d.step('A', 'dblclick', 'footer');
+      await a.openHeaderFooter(f.key === 'comprehensive' ? 'Page ' : spot(f, 'footer'), 'footer');
+      await d.step('A', 'type');
+      await a.type(' (recorder footer)');
+      await a.press('Escape');
     },
   },
 

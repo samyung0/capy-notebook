@@ -1,7 +1,7 @@
 // The remaining parity rows' cases (edit-cases.md): toolbar formatting,
 // links, comment threads, header removal, picture resize, page-break delete,
 // table properties, cross-story undo; PPTX resize and border; XLSX copy/paste.
-import { type Case, wakeHeaders } from './cases';
+import type { Case } from './cases';
 
 export const MORE: Case[] = [
   {
@@ -108,18 +108,14 @@ export const MORE: Case[] = [
     id: 'docx-header-remove',
     rows: ['docx.edit.headers'],
     fixtures: ['feature-rich-docx'],
-    peers: ['A', 'B'],
-    blocked:
-      "driver: feature-rich-docx's header never opened on a double click in the headless harness (comprehensive's does, after the remote-update precondition), so its Options > Remove is not reached",
-    summary: 'peer B removes the header through its Options menu (after A\'s one-character body round trip)',
+    summary: 'removes the header through its Options menu',
     async run(d) {
-      const b = d.peer('B');
-      await wakeHeaders(d, 'CAPY_SECTION_SENTINEL');
-      await d.step('B', 'dblclick', 'header');
-      await b.openHeaderFooter('ROUND-TRIP PROOF', 'header');
-      await d.step('B', 'header options', 'Remove header');
-      await b.clickRole('button', /^Options/);
-      await b.clickRole('button', /^Remove /);
+      const a = d.peer();
+      await d.step('A', 'dblclick', 'header');
+      await a.openHeaderFooter('ROUND-TRIP PROOF', 'header');
+      await d.step('A', 'header options', 'Remove header');
+      await a.clickRole('button', /^Options/);
+      await a.clickRole('button', /^Remove /);
     },
   },
 
@@ -167,23 +163,21 @@ export const MORE: Case[] = [
     id: 'docx-undo-across-stories',
     rows: ['docx.edit.undo'],
     fixtures: ['comprehensive'],
-    peers: ['A', 'B'],
-    summary: 'peer B types in the body and in the header, then undoes both: no net change (A\'s body round trip first)',
+    summary: 'types in the body and in the header, then undoes both: no net change',
     async run(d) {
-      const b = d.peer('B');
-      await wakeHeaders(d, 'Right-aligned paragraph');
-      await b.click('Centered paragraph', { at: 'end' });
-      await d.step('B', 'type', ' body');
-      await b.type(' body');
+      const a = d.peer();
+      await a.click('Centered paragraph', { at: 'end' });
+      await d.step('A', 'type', ' body');
+      await a.type(' body');
       await d.wait(600);
-      await d.step('B', 'dblclick', 'header');
-      await b.openHeaderFooter('default header', 'header');
-      await d.step('B', 'type', ' head');
-      await b.type(' head');
+      await d.step('A', 'dblclick', 'header');
+      await a.openHeaderFooter('default header', 'header');
+      await d.step('A', 'type', ' head');
+      await a.type(' head');
       await d.wait(600);
-      await d.step('B', 'undo x2');
-      await b.press('ControlOrMeta+z');
-      await b.press('ControlOrMeta+z');
+      await d.step('A', 'undo x2');
+      await a.press('ControlOrMeta+z');
+      await a.press('ControlOrMeta+z');
     },
   },
 
