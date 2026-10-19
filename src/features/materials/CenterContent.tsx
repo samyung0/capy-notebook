@@ -35,6 +35,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import {
   recentIcon,
   recentThumbnail,
@@ -669,13 +670,16 @@ function LiveNotePreview({
   const [live, setLive] = useState<MaterialValue | null>(null);
   const first = useRef(painted);
   first.current = painted;
+  // The note's read channel, inside which its embeds join (Epo 2026-10-20).
+  const [seat] = useState(() => new NoteSeat());
   useEffect(() => {
     setLive(null);
     let leave: (() => void) | undefined;
     let gone = false;
     const timer = setTimeout(() => {
       void import('@/features/notes/liveNoteRead').then(({ readNoteLive }) => {
-        if (!gone) leave = readNoteLive(material.id, first.current, setLive);
+        if (!gone)
+          leave = readNoteLive(material.id, first.current, setLive, seat);
       });
     });
     return () => {
@@ -683,15 +687,17 @@ function LiveNotePreview({
       clearTimeout(timer);
       leave?.();
     };
-  }, [material.id]);
+  }, [material.id, seat]);
   return (
-    <Preview
-      content={material.content}
-      isStandalone={!material.workspaceId}
-      kind={material.kind}
-      title={material.title}
-      value={live ?? painted}
-    />
+    <NoteSeatContext.Provider value={seat}>
+      <Preview
+        content={material.content}
+        isStandalone={!material.workspaceId}
+        kind={material.kind}
+        title={material.title}
+        value={live ?? painted}
+      />
+    </NoteSeatContext.Provider>
   );
 }
 

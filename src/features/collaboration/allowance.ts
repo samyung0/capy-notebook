@@ -3,7 +3,8 @@
  * its defaults in collaboration-rs/crates/server/src/config.rs): a burst of
  * 10,000 messages or 8 MiB, then 200 messages and 2 MiB a second, shared by
  * the user's sockets and draft sends; SYNC, awareness, awareness queries
- * and JOINs take from it (full-document answers draw on a separate open
+ * and JOINs (one message, no bytes) take from it, and the tab's socket
+ * reserves each before sending it (full-document answers draw on a separate open
  * budget the server keeps, which slows opens and never times out). A tab
  * paces what it sends under it (`tabAllowance`: its socket and its draft
  * sends), so a large update's pieces wait instead of timing the user out.

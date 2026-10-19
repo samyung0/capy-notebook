@@ -958,6 +958,7 @@ export function useOfficeRuntime({
     sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
+    slowed: mode === 'edit' && source.slowed,
     status: source.status,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };
@@ -1003,11 +1004,6 @@ const OFFICE_NOTICE_TOASTS: Record<
 };
 
 /**
- * The notices a frame shows, each as its entry says: a `once` notice once per
- * frame (a new frame starts over), the others every time. `imageMaxBytes` is
- * the edit session's image cap, which the size notice names.
- */
-/**
  * The `set-capabilities` canEdit: an editable frame showing the room's
  * current document. While the tab holds back its collaboration messages
  * (pacing, pieces, a timeout; Epo 2026-10-18) a DOCX or PPTX editor pauses,
@@ -1028,6 +1024,11 @@ export function frameCanEdit({
   return editable && current && !(sending && format !== 'xlsx');
 }
 
+/**
+ * The notices a frame shows, each as its entry says: a `once` notice once per
+ * frame (a new frame starts over), the others every time. `imageMaxBytes` is
+ * the edit session's image cap, which the size notice names.
+ */
 export function officeNotices(toast: (title: string) => void) {
   const shown = new Set<OfficeNotice>();
   return {

@@ -871,15 +871,56 @@ pub fn apply_freeing(
     Ok((changed, freed))
 }
 
-/// The items `txn` deleted that existed before it (and at or past `since`),
-/// with their payload bytes: one walk over its delete set's blocks.
-fn deleted_payloads(txn: &yrs::TransactionMut<'_>, since: Option<&StateVector>) -> Vec<(ID, u64)> {
+/// An item's payload bytes: a string's, a binary's length, a value's strings
+/// and buffers (what an update carries of it beside its header).
+fn payload_bytes(content: &yrs::block::ItemContent) -> u64 {
     use yrs::block::ItemContent;
     let value = |any: &yrs::Any| match any {
         yrs::Any::String(text) => text.len() as u64,
         yrs::Any::Buffer(bytes) => bytes.len() as u64,
         _ => 0,
     };
+    match content {
+        ItemContent::String(text) => text.as_str().len() as u64,
+        ItemContent::Binary(bytes) => bytes.len() as u64,
+        ItemContent::Any(values) => values.iter().map(value).sum(),
+        ItemContent::Embed(any) => value(any),
+        ItemContent::JSON(values) => values.iter().map(|v| v.len() as u64).sum(),
+        _ => 0,
+    }
+}
+
+/// Whether the update answering a sync step 1 of `since` (all `txn` holds
+/// past it) is at least `limit` bytes. Counts a lower bound, one byte per
+/// struct plus its payload (of a struct `since` partly holds, a byte per
+/// clock past it), and stops at `limit`: a few hundred thousand structs at
+/// most, however large the document. The delete set every answer carries is
+/// not counted.
+pub fn answer_at_least<T: ReadTxn>(txn: &T, since: &StateVector, limit: usize) -> bool {
+    let store = txn.store();
+    let mut bytes = 0u64;
+    for (client, &clock) in txn.state_vector().iter() {
+        let from = since.get(client);
+        if from >= clock {
+            continue;
+        }
+        for (block, item) in store.blocks_in(client, from..clock) {
+            bytes += if block.clock < from {
+                u64::from(block.clock + block.len - from)
+            } else {
+                1 + item.map_or(0, |item| payload_bytes(item.content()))
+            };
+            if bytes >= limit as u64 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// The items `txn` deleted that existed before it (and at or past `since`),
+/// with their payload bytes: one walk over its delete set's blocks.
+fn deleted_payloads(txn: &yrs::TransactionMut<'_>, since: Option<&StateVector>) -> Vec<(ID, u64)> {
     let before = txn.before_state();
     let store = ReadTxn::store(txn);
     let mut deleted = Vec::new();
@@ -896,14 +937,7 @@ fn deleted_payloads(txn: &yrs::TransactionMut<'_>, since: Option<&StateVector>) 
                 if block.clock < start || block.clock + block.len > end {
                     continue;
                 }
-                let bytes = match item.content() {
-                    ItemContent::String(text) => text.as_str().len() as u64,
-                    ItemContent::Binary(bytes) => bytes.len() as u64,
-                    ItemContent::Any(values) => values.iter().map(value).sum(),
-                    ItemContent::Embed(any) => value(any),
-                    ItemContent::JSON(values) => values.iter().map(|v| v.len() as u64).sum(),
-                    _ => 0,
-                };
+                let bytes = payload_bytes(item.content());
                 if bytes > 0 {
                     deleted.push((block.id(), bytes));
                 }

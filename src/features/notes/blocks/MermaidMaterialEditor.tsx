@@ -139,7 +139,9 @@ export default function MermaidMaterialEditor({
   if (isOutdatedBanner(snapshot.offline) && !snapshot.synced)
     return <SaveBanner state="outdated" />;
   if (!(room && snapshot.synced && live))
-    return <FileLoading message={m.editor_connecting()} />;
+    return (
+      <FileLoading message={m.editor_connecting()} slowed={snapshot.slowed} />
+    );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}

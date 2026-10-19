@@ -1164,6 +1164,8 @@ class MockItemProvider implements ItemProvider {
 
   connect() {}
 
+  wake() {}
+
   announceOutdated() {
     this.disconnect();
     this.config.onAuthenticationFailed?.(outdated);

@@ -147,19 +147,22 @@ export class CollabSocket {
    * user's update allowance first and waits while the allowance is spent;
    * nothing overtakes it, so a checkpoint request still follows the updates
    * it covers. In a timeout a charged frame is not sent (the server would
-   * drop it; the rooms resync after).
+   * drop it; the rooms resync after). A JOIN (`join`) costs the server one
+   * message and none of its bytes; it goes in a timeout too (the server
+   * answers it with the notice).
    */
-  send(bytes: Uint8Array<ArrayBuffer>, charged = false) {
+  send(
+    bytes: Uint8Array<ArrayBuffer>,
+    cost: 'free' | 'charged' | 'join' = 'free'
+  ) {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const charged = cost === 'charged';
     if (charged && this.timeout) return;
     const now = performance.now();
-    const at = Math.max(
-      now +
-        (charged
-          ? (this.allowance ?? tabAllowance).reserve(bytes.byteLength)
-          : 0),
-      this.outbox.at(-1)?.at ?? 0
-    );
+    const allowance = this.allowance ?? tabAllowance;
+    const wait =
+      cost === 'free' ? 0 : allowance.reserve(charged ? bytes.byteLength : 0);
+    const at = Math.max(now + wait, this.outbox.at(-1)?.at ?? 0);
     if (at <= now && !this.outbox.length) {
       this.ws.send(bytes);
       return;
@@ -235,7 +238,7 @@ export class CollabSocket {
   join(channel: number, bytes: Uint8Array<ArrayBuffer>) {
     if (this.pending.has(channel) || this.pending.size < MAX_PENDING_JOINS) {
       this.pending.add(channel);
-      this.send(bytes);
+      this.send(bytes, 'join');
     } else this.queued.push({ bytes, channel });
   }
 
@@ -248,7 +251,7 @@ export class CollabSocket {
     while (this.pending.size < MAX_PENDING_JOINS && this.queued.length) {
       const next = this.queued.shift() as (typeof this.queued)[number];
       this.pending.add(next.channel);
-      this.send(next.bytes);
+      this.send(next.bytes, 'join');
     }
   }
 

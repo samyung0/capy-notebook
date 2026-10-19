@@ -8,11 +8,14 @@
 //! until it ends, and each joined channel of theirs hears it (on join too)
 //! with only the time left (`update-timeout`); their editors pause, then
 //! join again on the same socket and resync. A JOIN costs one message of the
-//! allowance. A step 1 or an awareness query waits while its user's open
-//! budget is spent (`rate.rs`). A socket must join a room within
+//! allowance. A large step 1 answer or an awareness query waits in its room
+//! while its user's open budget is spent (`room.rs`). A socket must join a room within
 //! [JOIN_DEADLINE]; a client address holds a capped number of sockets, and a
 //! user's join past their cap closes their oldest joined channel
-//! (`seats.rs`).
+//! (`seats.rs`). An embedded quiz's or set's channel joins inside its note's
+//! channel on the same socket (Epo 2026-10-20): its token names the note, it
+//! takes no place among the user's joined channels, a note holds a capped
+//! number of them, and they close with it.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::Ordering;
@@ -62,27 +65,36 @@ pub const TIMEOUT_TYPE: &str = "update-timeout";
 /// cap (`OLDEST_CLOSED_REASON` in src/features/collaboration/roomProvider.ts):
 /// the client joins it again only once the user comes back to it.
 pub const OLDEST_CLOSED_REASON: &str = "collaboration-oldest-closed";
+/// Embed channels one note channel holds at once (Epo 2026-10-20).
+pub const EMBEDS_PER_NOTE: usize = 64;
+/// Why an embed channel closed: its note joined one past [EMBEDS_PER_NOTE]
+/// (`EMBED_CLOSED_REASON` in src/features/collaboration/roomProvider.ts); the
+/// client joins it again once it is near the screen again.
+pub const EMBED_CLOSED_REASON: &str = "collaboration-embed-closed";
+/// Why an embed channel closed, or its JOIN was refused: its note's channel
+/// is not joined on this socket (`NOTE_CLOSED_REASON`, same file); the client
+/// joins it again when its note joins.
+pub const NOTE_CLOSED_REASON: &str = "collaboration-note-closed";
 
 enum Channel {
-    /// Queued messages and the JOIN attempt (a later JOIN on the channel
-    /// makes an earlier attempt's answers stale).
-    Authenticating(VecDeque<Message>, u64),
+    /// Queued messages, the JOIN attempt (a later JOIN on the channel makes
+    /// an earlier attempt's answers stale) and, for an embed, its note's
+    /// channel and that channel's attempt.
+    Authenticating(VecDeque<Message>, u64, Option<(u64, u64)>),
     Joined {
         room: RoomHandle,
         name: RoomName,
         context: Context,
         checked: Option<Instant>,
-        /// Its place among the user's joined channels.
-        membership: Membership,
+        /// The JOIN attempt it joined with.
+        attempt: u64,
+        /// Its place among the user's joined channels; an embed has none.
+        membership: Option<Membership>,
+        /// An embed's note channel.
+        parent: Option<u64>,
+        /// A note channel's embed channels, oldest first.
+        embeds: VecDeque<u64>,
     },
-}
-
-/// A channel's step 1 and awareness query waiting for the user's open
-/// budget: the latest of each.
-#[derive(Default)]
-struct Opening {
-    step1: Option<Bytes>,
-    query: bool,
 }
 
 pub struct Refusal {
@@ -107,6 +119,15 @@ impl Refusal {
             class: Class::Unavailable,
             authentication: true,
             remaining: None,
+        }
+    }
+
+    /// An embed's note channel is not joined on its socket.
+    fn note_closed() -> Self {
+        Refusal {
+            reason: NOTE_CLOSED_REASON.into(),
+            authentication: false,
+            ..Refusal::plain("the embed's note is not joined on this socket")
         }
     }
 
@@ -393,10 +414,6 @@ struct Connection {
     /// What this socket hears when one of its channels is its user's oldest
     /// past their cap.
     closing_tx: mpsc::UnboundedSender<Closing>,
-    /// Step 1s and queries waiting for their user's open budget, and when
-    /// to look again.
-    opening: HashMap<u64, Opening>,
-    open_at: Option<Instant>,
 }
 
 /// Serves one socket; `_address` is its place among its client address's
@@ -424,8 +441,6 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
         timers: BTreeMap::new(),
         join_deadline: Some(Instant::now() + JOIN_DEADLINE),
         closing_tx,
-        opening: HashMap::new(),
-        open_at: None,
     };
     let mut socket = socket;
     loop {
@@ -450,7 +465,7 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
                     }
                 }
                 Out::ChannelClosed(channel) => {
-                    connection.channels.remove(&channel);
+                    connection.remove_joined(channel).await;
                 }
             },
             Some((channel, attempt, result)) = auth_rx.recv() => {
@@ -472,12 +487,11 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
                 Err(RecvError::Closed) => {}
             },
             Some((channel, id)) = closing_rx.recv() => connection.close_oldest(channel, id).await,
-            () = sleep_until(connection.open_at) => connection.on_opening().await,
             () = overflow.notified() => {
                 log(Level::Warn, "slow connection closed", json!({ "socket_id": connection.socket_id }));
                 break;
             }
-            () = sleep_until(next_timer) => connection.on_timers(),
+            () = sleep_until(next_timer) => connection.on_timers().await,
             () = sleep_until(connection.join_deadline) => {
                 if !connection.join_overdue() {
                     continue;
@@ -524,8 +538,7 @@ impl Connection {
 
     fn forget(&mut self, channel: u64) {
         crate::source_rooms::end_join(&self.app, (self.id, channel));
-        self.opening.remove(&channel);
-        if let Some(Channel::Authenticating(queue, _)) = self.channels.remove(&channel) {
+        if let Some(Channel::Authenticating(queue, ..)) = self.channels.remove(&channel) {
             self.queued.0 -= queue.len();
             self.queued.1 -= queue
                 .iter()
@@ -601,11 +614,17 @@ impl Connection {
     async fn on_message(&mut self, message: Message) -> bool {
         let channel = message.channel;
         if message.kind == Kind::Join {
-            let Ok((room, token, client)) = protocol::decode_join(&message.payload) else {
+            let Ok(protocol::Join {
+                room,
+                token,
+                protocol: client,
+                parent,
+            }) = protocol::decode_join(&message.payload)
+            else {
                 return false;
             };
-            if let Some(Channel::Joined { room, .. }) = self.channels.get(&channel) {
-                let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            if let Some(joined) = self.remove_joined(channel).await {
+                let _ = joined.tx.send(RoomCmd::Leave((self.id, channel))).await;
             }
             self.forget(channel);
             // A bad token is refused here, before any lookup, so it never
@@ -629,10 +648,29 @@ impl Connection {
                 );
                 return false;
             }
+            // An embed joins inside its note's channel, joined on this socket
+            // now (Epo 2026-10-20).
+            let parent = match parent {
+                None => None,
+                Some(note) => match self.channels.get(&note) {
+                    Some(Channel::Joined {
+                        attempt,
+                        parent: None,
+                        name: RoomName::Material { keys: false, .. },
+                        ..
+                    }) if note != channel => Some((note, *attempt)),
+                    _ => {
+                        self.refuse(channel, &Refusal::note_closed());
+                        return true;
+                    }
+                },
+            };
             self.attempts += 1;
             let attempt = self.attempts;
-            self.channels
-                .insert(channel, Channel::Authenticating(VecDeque::new(), attempt));
+            self.channels.insert(
+                channel,
+                Channel::Authenticating(VecDeque::new(), attempt, parent),
+            );
             // A source join counts as in the room until it joins or fails.
             if room.starts_with("source:") {
                 crate::source_rooms::start_join(&self.app, (self.id, channel), &room);
@@ -646,7 +684,7 @@ impl Connection {
         }
         match self.channels.get_mut(&channel) {
             None => true,
-            Some(Channel::Authenticating(queue, _)) => {
+            Some(Channel::Authenticating(queue, ..)) => {
                 self.queued.0 += 1;
                 self.queued.1 += message.payload.len();
                 queue.push_back(message);
@@ -661,8 +699,7 @@ impl Connection {
 
     /// A joined channel's message goes to its room, after the writer recheck
     /// for updates. SYNC, awareness and query messages take from the user's
-    /// allowance; in a timeout they and stateless messages are dropped. A
-    /// step 1 or query waits while the user's open budget is spent.
+    /// allowance; in a timeout they and stateless messages are dropped.
     async fn forward(&mut self, message: Message) {
         let channel = message.channel;
         let Some(Channel::Joined {
@@ -717,19 +754,6 @@ impl Connection {
             return;
         }
         let step1 = decoded.is_some_and(|(kind, _)| kind == protocol::sync::STEP1);
-        if (step1 || message.kind == Kind::QueryAwareness)
-            && let Some(wait) = self.app.allowances.open_wait(&context.user_id, now)
-        {
-            let opening = self.opening.entry(channel).or_default();
-            if step1 {
-                opening.step1 = Some(message.payload.clone());
-            } else {
-                opening.query = true;
-            }
-            let at = now + wait;
-            self.open_at = Some(self.open_at.map_or(at, |open_at| open_at.min(at)));
-            return;
-        }
         let command = match message.kind {
             Kind::Sync => {
                 let writes = decoded.is_some() && !step1;
@@ -768,7 +792,7 @@ impl Connection {
                 Err(_) => return,
             },
             Kind::Leave => {
-                self.channels.remove(&channel);
+                self.remove_joined(channel).await;
                 self.timers
                     .retain(|(_, timer_channel), _| *timer_channel != channel);
                 RoomCmd::Leave(key)
@@ -782,59 +806,27 @@ impl Connection {
         let _ = room.tx.send(command).await;
     }
 
-    /// Waiting step 1s and queries go to their rooms once their user's open
-    /// budget is back; the rest wait on.
-    async fn on_opening(&mut self) {
-        self.open_at = None;
-        let now = Instant::now();
-        let channels: Vec<u64> = self.opening.keys().copied().collect();
-        for channel in channels {
-            let Some(Channel::Joined { room, context, .. }) = self.channels.get(&channel) else {
-                self.opening.remove(&channel);
-                continue;
-            };
-            if let Some(wait) = self.app.allowances.open_wait(&context.user_id, now) {
-                let at = now + wait;
-                self.open_at = Some(self.open_at.map_or(at, |open_at| open_at.min(at)));
-                continue;
-            }
-            let room = room.clone();
-            let Some(opening) = self.opening.remove(&channel) else {
-                continue;
-            };
-            let key = (self.id, channel);
-            if let Some(payload) = opening.step1 {
-                let _ = room.tx.send(RoomCmd::Sync(key, payload)).await;
-            }
-            if opening.query {
-                let _ = room.tx.send(RoomCmd::QueryAwareness(key)).await;
-            }
-        }
-    }
-
     /// One of this socket's channels was its user's oldest when they joined
     /// one past their cap (Epo 2026-10-19): it closes, unless it joined again
     /// since.
     async fn close_oldest(&mut self, channel: u64, id: u64) {
-        let Some(Channel::Joined {
-            membership, room, ..
-        }) = self.channels.get(&channel)
-        else {
+        let Some(Channel::Joined { membership, .. }) = self.channels.get(&channel) else {
             return;
         };
-        if membership.id != id {
+        if membership.as_ref().map(|membership| membership.id) != Some(id) {
             return;
         }
-        let room = room.clone();
         self.app.stats.oldest_closed.fetch_add(1, Ordering::Relaxed);
         self.send(
             channel,
             Kind::Closed,
             &protocol::closed(0, OLDEST_CLOSED_REASON),
         );
-        self.channels.remove(&channel);
+        let room = self.remove_joined(channel).await;
         self.forget(channel);
-        let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+        if let Some(room) = room {
+            let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
+        }
     }
 
     /// A writer whose access changed: `room-read-only` for a read-only
@@ -868,16 +860,84 @@ impl Connection {
             Kind::Closed,
             &protocol::closed(0, &error.to_string()),
         );
-        self.channels.remove(&channel);
+        self.remove_joined(channel).await;
         self.timers
             .retain(|(_, timer_channel), _| *timer_channel != channel);
         let _ = room.tx.send(RoomCmd::Leave((self.id, channel))).await;
     }
 
+    /// Takes a joined channel off this socket and gives back its room (the
+    /// caller leaves it, unless the room closed the channel itself): an
+    /// embed comes off its note's list, and a note's embed channels close
+    /// with it (Epo 2026-10-20), each hearing [NOTE_CLOSED_REASON].
+    async fn remove_joined(&mut self, channel: u64) -> Option<RoomHandle> {
+        if !matches!(self.channels.get(&channel), Some(Channel::Joined { .. })) {
+            return None;
+        }
+        let Some(Channel::Joined {
+            room,
+            parent,
+            embeds,
+            ..
+        }) = self.channels.remove(&channel)
+        else {
+            return None;
+        };
+        if let Some(Channel::Joined { embeds, .. }) =
+            parent.and_then(|note| self.channels.get_mut(&note))
+        {
+            embeds.retain(|embed| *embed != channel);
+        }
+        for embed in embeds {
+            self.close_embed(embed, NOTE_CLOSED_REASON).await;
+        }
+        Some(room)
+    }
+
+    /// Closes an embed channel, telling its client why, and leaves its room.
+    async fn close_embed(&mut self, embed: u64, reason: &str) {
+        if !matches!(self.channels.get(&embed), Some(Channel::Joined { .. })) {
+            return;
+        }
+        let Some(Channel::Joined { room, .. }) = self.channels.remove(&embed) else {
+            return;
+        };
+        self.send(embed, Kind::Closed, &protocol::closed(0, reason));
+        self.forget(embed);
+        let _ = room.tx.send(RoomCmd::Leave((self.id, embed))).await;
+    }
+
+    /// An embed channel joined inside its note's: past [EMBEDS_PER_NOTE] the
+    /// note's oldest embed channel closes.
+    async fn add_embed(&mut self, note: u64, embed: u64) {
+        let oldest = match self.channels.get_mut(&note) {
+            Some(Channel::Joined { embeds, .. }) => {
+                embeds.push_back(embed);
+                if embeds.len() > EMBEDS_PER_NOTE {
+                    embeds.pop_front()
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some(oldest) = oldest {
+            self.close_embed(oldest, EMBED_CLOSED_REASON).await;
+        }
+    }
+
+    /// Whether `note` is still the joined channel an embed named at its JOIN.
+    fn note_joined(&self, note: u64, attempt: u64) -> bool {
+        matches!(
+            self.channels.get(&note),
+            Some(Channel::Joined { attempt: current, .. }) if *current == attempt
+        )
+    }
+
     fn authenticating(&self, channel: u64, attempt: u64) -> bool {
         matches!(
             self.channels.get(&channel),
-            Some(Channel::Authenticating(_, current)) if *current == attempt
+            Some(Channel::Authenticating(_, current, _)) if *current == attempt
         )
     }
 
@@ -908,6 +968,33 @@ impl Connection {
                 return;
             }
         };
+        // An embed's token names its note (Go knows the material's parent):
+        // it joins only inside that note's channel, of the same user.
+        if let Some(Channel::Authenticating(_, _, Some((note, note_attempt)))) =
+            self.channels.get(&channel)
+        {
+            let (note, note_attempt) = (*note, *note_attempt);
+            let refusal = match self.channels.get(&note) {
+                Some(Channel::Joined {
+                    attempt,
+                    name: RoomName::Material { material_id, .. },
+                    context: note_context,
+                    ..
+                }) if *attempt == note_attempt => (context.parent.as_deref()
+                    != Some(material_id.as_str())
+                    || note_context.user_id != context.user_id)
+                    .then(|| {
+                        Refusal::access(&AccessError::Forbidden(
+                            "the material is not this note's embed".into(),
+                        ))
+                    }),
+                _ => Some(Refusal::note_closed()),
+            };
+            if let Some(refusal) = refusal {
+                self.refuse(channel, &refusal);
+                return;
+            }
+        }
         // A JOIN costs one message of the allowance (Epo 2026-10-19), so a
         // join loop runs into a timeout like any other.
         let verdict = self
@@ -969,8 +1056,20 @@ impl Connection {
             let _ = handle.tx.send(RoomCmd::Leave((self.id, channel))).await;
             return;
         }
+        // An embed's note may have left while its room loaded.
+        let parent = match self.channels.get(&channel) {
+            Some(Channel::Authenticating(_, _, parent)) => *parent,
+            _ => None,
+        };
+        if let Some((note, note_attempt)) = parent
+            && !self.note_joined(note, note_attempt)
+        {
+            let _ = handle.tx.send(RoomCmd::Leave((self.id, channel))).await;
+            self.refuse(channel, &Refusal::note_closed());
+            return;
+        }
         crate::source_rooms::end_join(&self.app, (self.id, channel));
-        let Some(Channel::Authenticating(queue, _)) = self.channels.remove(&channel) else {
+        let Some(Channel::Authenticating(queue, ..)) = self.channels.remove(&channel) else {
             return;
         };
         self.queued.0 -= queue.len();
@@ -981,10 +1080,13 @@ impl Connection {
         self.joined_once = true;
         self.join_deadline = None;
         self.arm_token(channel, &context);
-        let membership = self
-            .app
-            .joined
-            .join(&context.user_id, channel, &self.closing_tx);
+        // Only a note's (or any other document's) channel takes a place among
+        // the user's joined channels, never an embed's.
+        let membership = parent.is_none().then(|| {
+            self.app
+                .joined
+                .join(&context.user_id, channel, &self.closing_tx)
+        });
         // A user in a timeout hears it on each channel they join.
         let timeout = self
             .app
@@ -997,9 +1099,15 @@ impl Connection {
                 name,
                 context,
                 checked: None,
+                attempt,
                 membership,
+                parent: parent.map(|(note, _)| note),
+                embeds: VecDeque::new(),
             },
         );
+        if let Some((note, _)) = parent {
+            self.add_embed(note, channel).await;
+        }
         if let Some(remaining) = timeout {
             self.send_timeout(channel, remaining);
         }
@@ -1018,7 +1126,7 @@ impl Connection {
         self.timers.insert((now + left, channel), true);
     }
 
-    fn on_timers(&mut self) {
+    async fn on_timers(&mut self) {
         let now = Instant::now();
         let due: Vec<((Instant, u64), bool)> = self
             .timers
@@ -1034,7 +1142,7 @@ impl Connection {
                     Kind::Closed,
                     &protocol::closed(4401, "collaboration token expired"),
                 );
-                if let Some(Channel::Joined { room, .. }) = self.channels.remove(&channel) {
+                if let Some(room) = self.remove_joined(channel).await {
                     let _ = room.tx.try_send(RoomCmd::Leave((self.id, channel)));
                 }
             } else {

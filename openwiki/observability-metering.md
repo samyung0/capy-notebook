@@ -333,8 +333,9 @@ update allowance or sending an update over 8 MiB (the update allowance in
 is logged at warn as `user timed out` with the room, the socket and the user
 id (never content) when a socket's message starts it, counted once per
 timeout in `capy_collaboration_timeouts_total`, and never captured; a draft
-send that starts one is counted there too, and every draft send refused
-during one answers `too_fast`, logged as `draft send refused` and counted in
+send that starts one is counted there too (one over 8 MiB answers
+`too_large`, `class="too_large"`), and every draft send refused during one
+answers `too_fast`, logged as `draft send refused` and counted in
 `capy_collaboration_draft_refusals_total{class="too_fast"}`. Capy's tab
 paces its own messages under the allowance and splits updates into 2 MiB
 pieces, so a count that keeps growing means a runaway or hostile client (or

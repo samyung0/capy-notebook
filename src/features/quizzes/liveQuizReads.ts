@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { InNote, NoteSeat } from '@/features/collaboration/noteSeat';
 import { whileVisible } from '@/features/collaboration/whileVisible';
 import type { LearnerQuestion } from '@/features/questions/types';
 
@@ -14,28 +15,44 @@ import type { LearnerQuestion } from '@/features/questions/types';
 export function useLiveQuizQuestions(
   quizId: string,
   stored: LearnerQuestion[],
-  enabled = true
+  enabled = true,
+  { inside, wake }: InNote = {}
 ): LearnerQuestion[] {
   const [live, setLive] = useState<LearnerQuestion[] | null>(null);
   // A room that ended here (it moved to a new lineage) is joined afresh.
   const [generation, setGeneration] = useState(0);
+  const joined = useRef<{ wake: () => void } | null>(null);
+  useEffect(() => {
+    if (wake) joined.current?.wake();
+  }, [wake]);
   useEffect(() => {
     if (!enabled) return;
     // Left while the tab is hidden (REVIEW5 N5).
     return whileVisible(() =>
-      readLive(quizId, setLive, () => setGeneration((value) => value + 1))
+      readLive(quizId, setLive, () => setGeneration((value) => value + 1), {
+        inside,
+        joined,
+      })
     );
-  }, [quizId, enabled, generation]);
+  }, [quizId, enabled, inside, generation]);
   return live ?? stored;
 }
 
 /** Joins the quiz's content room on a read channel (never its keys; REVIEW5
- * N2) and hands every state of its questions to `onQuestions`; returns the
- * leave. */
+ * N2), inside its note's seat when embedded, and hands every state of its
+ * questions to `onQuestions`; returns the leave. `joined` holds the room
+ * while it is open. */
 export function readLive(
   quizId: string,
   onQuestions: (questions: LearnerQuestion[]) => void,
-  onReplace: () => void
+  onReplace: () => void,
+  {
+    inside,
+    joined,
+  }: {
+    inside?: NoteSeat | null;
+    joined?: { current: { wake: () => void } | null };
+  } = {}
 ) {
   let cancelled = false;
   let close: (() => void) | undefined;
@@ -44,7 +61,8 @@ export function readLive(
     import('./liveQuiz'),
   ]).then(([{ ItemRoom }, { readLearnerQuestions }]) => {
     if (cancelled) return;
-    const room = new ItemRoom(quizId, { onReplace, read: true });
+    const room = new ItemRoom(quizId, { inside, onReplace, read: true });
+    if (joined) joined.current = room;
     const update = () => {
       if (room.getSnapshot().synced)
         onQuestions(readLearnerQuestions(room.doc, room.lists));
@@ -52,7 +70,10 @@ export function readLive(
     room.subscribe(update);
     room.doc.on('update', update);
     void room.start();
-    close = () => room.destroy();
+    close = () => {
+      if (joined?.current === room) joined.current = null;
+      room.destroy();
+    };
   });
   return () => {
     cancelled = true;

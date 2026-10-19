@@ -12,17 +12,27 @@ import {
 import { ErrorAction } from '@/components/ui/Button';
 import { PaneLoading } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
+import { useSlowedLine } from '@/features/collaboration/SlowedOpen';
 import { m } from '@/i18n';
 import { useOnlineStatus } from '@/lib/online';
 import { fileIsIngesting, notIndexedMessage } from './fileUtils';
 
 export function FileLoading({
   message = m.files_loading_preview(),
+  slowed = false,
 }: {
   message?: string;
+  /** A room's open waits on the user's open budget: after 5 s it says so. */
+  slowed?: boolean;
 }) {
   const online = useOnlineStatus();
-  return <PaneLoading message={online ? message : m.connection_waiting()} />;
+  const line = useSlowedLine(slowed);
+  return (
+    <PaneLoading
+      detail={line ? m.editor_open_slowed() : undefined}
+      message={online ? message : m.connection_waiting()}
+    />
+  );
 }
 
 export function FileError({
@@ -158,6 +168,7 @@ export function SourceBanners({
   readOnly = false,
   reloading,
   replaced,
+  slowed = false,
 }: {
   actions: FileBannerAction[];
   banner: SaveBannerState | null;
@@ -170,9 +181,14 @@ export function SourceBanners({
   readOnly?: boolean;
   reloading: boolean;
   replaced: boolean;
+  /** The edit session's open waits on the user's open budget: after 5 s a
+   * strip says so while the file loads. */
+  slowed?: boolean;
 }) {
+  const slowedLine = useSlowedLine(slowed);
   return (
     <>
+      {slowedLine && <FileBanner message={m.editor_open_slowed()} />}
       {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
       {banner && (
         <SaveBanner onReload={onReload} reloading={reloading} state={banner} />

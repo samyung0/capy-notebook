@@ -311,7 +311,12 @@ func (a *api) createMaterialCollaborationToken(
 			schema = parsed
 		}
 	}
+	parent, err := a.s.MaterialParentID(ctx, in.ID)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
 	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"), schema)
+	claims.Parent = parent
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
 		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}

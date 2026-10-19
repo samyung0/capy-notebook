@@ -35,6 +35,7 @@ import {
   recordDrafts,
   recoveryDocument,
 } from '@/lib/editDrafts';
+import type { NoteSeat } from './noteSeat';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
 import { type UndoTarget, undoTarget } from './undo';
 import { markUnsent } from './unsentItems';
@@ -56,11 +57,10 @@ import { LOCAL_EDIT } from './yText';
 
 /** `syncing` lasts until the store holding this device's edits answered
  * (its receipt), not only until the room acknowledged them: Saved means
- * stored in the database (Epo 2026-10-19). `synced`: joined with nothing of
- * this device's to store. */
+ * stored in the database (Epo 2026-10-19), and a room that joined with
+ * nothing of this device's to store is saved too (Epo 2026-10-20). */
 export type ItemRoomStatus =
   | 'connecting'
-  | 'synced'
   | 'syncing'
   | 'saved'
   | 'offline'
@@ -93,6 +93,9 @@ export interface ItemRoomSnapshot {
   readOnlyCode: ReadOnlyCode | null;
   /** Edits that cannot join this room, shown for copying until Reload. */
   recovery: ItemRecovery | null;
+  /** Joined, its answer waiting on the user's open budget (Epo 2026-10-20):
+   * loading until it syncs, never offline meanwhile. */
+  slowed: boolean;
   status: ItemRoomStatus;
   /** The document holds the room's state (painted from it, editable). */
   synced: boolean;
@@ -107,7 +110,7 @@ export function itemEditingStopped(offline: ItemRoomSnapshot['offline']) {
 /** What a room needs of its provider (the MSW stand-in implements it too). */
 export type ItemProvider = Pick<
   RoomProvider,
-  'connect' | 'destroy' | 'disconnect' | 'sendStateless'
+  'connect' | 'destroy' | 'disconnect' | 'sendStateless' | 'wake'
 >;
 
 let mockFactory: ((config: RoomProviderConfig) => ItemProvider) | null = null;
@@ -143,11 +146,16 @@ export interface ItemRoomOptions {
   /** An editor's room: unsent edits are kept on this device under this
    * account (readers keep none). */
   drafts?: { actorId: string };
+  /** An embedded quiz's or set's room: it joins inside its note's channel
+   * (Epo 2026-10-20). */
+  inside?: NoteSeat | null;
   /** The room ended for good here (refused, moved): mount a fresh one. */
   onReplace?: () => void;
   /** A reader (a View, a study page): asks for a read channel even when the
    * user may write (REVIEW5 N2), so the server refuses anything it sends. */
   read?: boolean;
+  /** A note's own room (its View): the seat its embeds join inside. */
+  seat?: NoteSeat;
 }
 
 export class ItemRoom {
@@ -164,12 +172,11 @@ export class ItemRoom {
     offline: null,
     readOnlyCode: null,
     recovery: null,
+    slowed: false,
     status: 'connecting',
     synced: false,
   };
   private unsynced = 0;
-  /** A receipt covered this device's edits (shown as saved). */
-  private stored = false;
   private destroyed = false;
   private ended = false;
   /** Rejoins with a fresh token, backing off while it keeps failing (as a
@@ -231,8 +238,7 @@ export class ItemRoom {
   }
 
   private live(): ItemRoomStatus {
-    if (this.unsynced > 0 || this.recorder?.unsaved) return 'syncing';
-    return this.stored ? 'saved' : 'synced';
+    return this.unsynced > 0 || this.recorder?.unsaved ? 'syncing' : 'saved';
   }
 
   private tokenRequest() {
@@ -294,6 +300,7 @@ export class ItemRoom {
         this.rejoin();
       },
       onClose: ({ code, reason }) => {
+        this.set({ slowed: false });
         if (code === 4403) {
           this.unavailable();
           return;
@@ -327,12 +334,18 @@ export class ItemRoom {
         }
         this.refused();
       },
+      onSlowed: () => this.slowed(),
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
           if (this.snapshot.offline) this.recorder?.connected();
           this.reconnector.connected();
-          this.set({ offline: null, status: this.live(), synced: true });
+          this.set({
+            offline: null,
+            slowed: false,
+            status: this.live(),
+            synced: true,
+          });
           this.markUnsent();
           this.requestReceipt();
           return;
@@ -347,6 +360,7 @@ export class ItemRoom {
           this.set({ status: this.live() });
         if (number === 0) this.requestReceipt();
       },
+      parent: this.options.inside ?? undefined,
       token: async () => {
         if (cached) {
           const token = cached;
@@ -376,7 +390,14 @@ export class ItemRoom {
       },
       url: first.url,
     });
+    if (this.provider instanceof RoomProvider)
+      this.options.seat?.attach(this.provider);
     this.provider.connect();
+  }
+
+  /** An embed closed as its note's oldest is near the screen again. */
+  wake() {
+    this.provider?.wake();
   }
 
   /** A first open that failed for want of the network or the server: the
@@ -417,7 +438,7 @@ export class ItemRoom {
         if (doc) {
           this.set({
             recovery: { doc, refused: !!recovery[0].refused, rows: recovery },
-            status: 'synced',
+            status: 'saved',
             synced: true,
           });
           return false;
@@ -461,6 +482,23 @@ export class ItemRoom {
     });
   }
 
+  /** Joined, and the answer waits on the user's open budget: the room is
+   * reachable, so it loads instead of showing offline (an offline episode
+   * before it ends here). */
+  private slowed() {
+    if (this.stale || this.destroyed) return;
+    this.reconnector.slowed();
+    if (this.snapshot.offline) this.recorder?.connected();
+    this.set({
+      offline: null,
+      slowed: true,
+      status:
+        this.snapshot.status === 'offline'
+          ? 'connecting'
+          : this.snapshot.status,
+    });
+  }
+
   private goOffline() {
     if (this.stale) return;
     this.set({ status: 'offline' });
@@ -500,7 +538,6 @@ export class ItemRoom {
         for (const [id, sequence] of this.pending)
           if (sequence <= covered) this.pending.delete(id);
         void this.recorder?.covered(covered).then(() => this.markUnsent());
-        this.stored = true;
         if (this.snapshot.synced && this.snapshot.status !== 'offline')
           this.set({ status: this.live() });
         return;
@@ -569,6 +606,7 @@ export class ItemRoom {
 
   private end() {
     markUnsent(this, false);
+    this.options.seat?.attach(null);
     this.provider?.destroy();
     this.provider = null;
     queueMicrotask(() => this.options.onReplace?.());
@@ -633,6 +671,7 @@ export class ItemRoom {
     this.reconnector.dispose();
     markUnsent(this, false);
     void this.recorder?.dispose();
+    this.options.seat?.attach(null);
     this.provider?.destroy();
     this.undo.destroy();
     this.doc.destroy();
@@ -649,7 +688,19 @@ export class ItemRoom {
 export function useItemRoom(
   materialId: string | null,
   enabled = true,
-  { actorId, document }: { actorId?: string | null; document?: 'keys' } = {}
+  {
+    actorId,
+    document,
+    inside,
+    wake,
+  }: {
+    actorId?: string | null;
+    document?: 'keys';
+    /** An embed's note seat (`ItemRoomOptions.inside`). */
+    inside?: NoteSeat | null;
+    /** Bumped when an embed comes near the screen again (`ItemRoom.wake`). */
+    wake?: number;
+  } = {}
 ) {
   const [room, setRoom] = useState<ItemRoom | null>(null);
   const [generation, setGeneration] = useState(0);
@@ -658,6 +709,7 @@ export function useItemRoom(
     const created = new ItemRoom(materialId, {
       document,
       drafts: actorId ? { actorId } : undefined,
+      inside,
       onReplace: () => setGeneration((value) => value + 1),
     });
     setRoom(created);
@@ -666,7 +718,10 @@ export function useItemRoom(
       created.destroy();
       setRoom((current) => (current === created ? null : current));
     };
-  }, [materialId, enabled, document, actorId, generation]);
+  }, [materialId, enabled, document, actorId, inside, generation]);
+  useEffect(() => {
+    if (wake) room?.wake();
+  }, [room, wake]);
   const snapshot = useSyncExternalStore(
     room?.subscribe ?? noSubscribe,
     room?.getSnapshot ?? initialSnapshot,
@@ -683,6 +738,7 @@ const INITIAL: ItemRoomSnapshot = {
   offline: null,
   readOnlyCode: null,
   recovery: null,
+  slowed: false,
   status: 'connecting',
   synced: false,
 };

@@ -48,6 +48,10 @@ pub const MAX_CLIENTS_PER_ROOM: usize = 256;
 /// every writer (Epo 2026-10-13): the browser shows it for the
 /// `unsupported_block` code.
 pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can't edit";
+/// What a channel hears when its open waits on its user's open budget
+/// (`OPEN_SLOWED_TYPE` in src/features/collaboration/roomProvider.ts): the
+/// editor keeps loading and says so after a while, never offline.
+pub const OPEN_SLOWED_TYPE: &str = "open-slowed";
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -207,6 +211,33 @@ struct Member {
     unplaced: u32,
     /// Update and step 2 messages handled since the last ACK.
     acks: u64,
+    /// Its step 1 and awareness query waiting for its user's open budget.
+    opening: Option<Opening>,
+}
+
+/// A member's latest step 1 and awareness query while they wait on its
+/// user's open budget (Epo 2026-10-20), and its place among the waiting.
+struct Opening {
+    step1: Option<StateVector>,
+    query: bool,
+    order: u64,
+}
+
+/// A user's turn to encode a large answer (`Allowances::open_turn`): their
+/// next one waits until this one ends, charged by `bytes`. Dropped early (a
+/// panic in the encode), the turn ends anyway.
+struct OpenTurn {
+    app: Shared,
+    user: String,
+    bytes: usize,
+}
+
+impl Drop for OpenTurn {
+    fn drop(&mut self) {
+        self.app
+            .allowances
+            .end_turn(&self.user, self.bytes, Instant::now());
+    }
 }
 
 struct AwarenessEntry {
@@ -369,6 +400,10 @@ pub struct Room {
     child_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
+    /// When waiting opens look at their users' budgets again, and the next
+    /// one's place.
+    open_at: Option<Instant>,
+    openings: u64,
 }
 
 /// Spawns a room task; its handle goes into the registry. `actor` is the
@@ -761,6 +796,8 @@ async fn run(
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
         applying: false,
+        open_at: None,
+        openings: 0,
     };
     let log_bytes = match &room.kind {
         Kindly::Note(note) => note.log_bytes,
@@ -820,7 +857,7 @@ impl Room {
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        [self.flush_at, self.store_due(), self.idle_at]
+        [self.flush_at, self.store_due(), self.idle_at, self.open_at]
             .into_iter()
             .flatten()
             .min()
@@ -858,6 +895,10 @@ impl Room {
         if self.idle_at.is_some_and(|at| at <= now) {
             self.idle_at = None;
             self.start_projection().await;
+        }
+        if self.open_at.is_some_and(|at| at <= now) {
+            self.open_at = None;
+            self.release_openings().await;
         }
     }
 
@@ -908,21 +949,11 @@ impl Room {
             }
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
-                // A joiner's step 1 is answered with up to the whole state,
-                // encoded on the blocking pool, and charged to its user's
-                // open budget by the answer's bytes (Epo 2026-10-19).
-                Some(since) => {
-                    let diff = self.encoded(since).await;
-                    self.charge_open(key, diff.len());
-                    self.send(key, Kind::Sync, &sync::encode(sync::STEP2, &diff));
-                }
+                Some(since) => self.on_step1(key, since).await,
                 None => self.on_sync(key, &payload),
             },
             RoomCmd::Awareness(key, payload) => self.on_awareness(key, &payload),
-            RoomCmd::QueryAwareness(key) => {
-                let sent = self.send_awareness_states(key);
-                self.charge_open(key, sent);
-            }
+            RoomCmd::QueryAwareness(key) => self.on_query(key),
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
@@ -1245,6 +1276,7 @@ impl Room {
             token_id: "children-pass".into(),
             user_id: actor.to_owned(),
             viewer: false,
+            parent: None,
         };
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
@@ -1637,6 +1669,191 @@ impl Room {
         }
     }
 
+    /// A member's step 1, answered with up to the whole state (encoded on the
+    /// blocking pool) and charged to its user's open budget by the answer's
+    /// bytes (Epo 2026-10-19). An answer under `SMALL_ANSWER` goes at once
+    /// (Epo 2026-10-20). A larger one is encoded in its user's turn, so their
+    /// large answers are charged one at a time, and waits while the budget is
+    /// spent or another one of theirs is being encoded: the member then keeps
+    /// only its latest step 1 and hears once that its open is slowed. A
+    /// bounded walk tells a large answer before the encode (the encode checks
+    /// it after), so a waiting step 1 costs no encode.
+    async fn on_step1(&mut self, key: MemberKey, since: StateVector) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        if let Some(opening) = &mut member.opening {
+            opening.step1 = Some(since);
+            return;
+        }
+        let user = member.context.user_id.clone();
+        let small = crate::rate::SMALL_ANSWER;
+        if !ydoc::answer_at_least(&self.doc.transact(), &since, small) {
+            let diff = self.encoded(since.clone()).await;
+            if diff.len() < small {
+                self.charge_open(key, diff.len());
+                self.answer(key, &diff);
+                return;
+            }
+            match self.app.allowances.open_turn(&user, Instant::now()) {
+                Ok(()) => {
+                    let mut turn = self.turn(user);
+                    turn.bytes = self.answer(key, &diff);
+                }
+                Err(wait) => self.wait_to_open(key, Some(since), false, wait),
+            }
+            return;
+        }
+        match self.app.allowances.open_turn(&user, Instant::now()) {
+            Ok(()) => {
+                let mut turn = self.turn(user);
+                let diff = self.encoded(since).await;
+                turn.bytes = self.answer(key, &diff);
+            }
+            Err(wait) => self.wait_to_open(key, Some(since), false, wait),
+        }
+    }
+
+    fn turn(&self, user: String) -> OpenTurn {
+        OpenTurn {
+            app: self.app.clone(),
+            user,
+            bytes: 0,
+        }
+    }
+
+    /// Sends a step 1's answer; its bytes, or 0 when the member left.
+    fn answer(&self, key: MemberKey, diff: &[u8]) -> usize {
+        if !self.members.contains_key(&key) {
+            return 0;
+        }
+        self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff));
+        diff.len()
+    }
+
+    /// A member's awareness query: answered and charged at once, or kept
+    /// (the latest) while its user's open budget is spent.
+    fn on_query(&mut self, key: MemberKey) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        if let Some(opening) = &mut member.opening {
+            opening.query = true;
+            return;
+        }
+        let user = &member.context.user_id;
+        if let Some(wait) = self.app.allowances.open_wait(user, Instant::now()) {
+            self.wait_to_open(key, None, true, wait);
+            return;
+        }
+        let sent = self.send_awareness_states(key);
+        self.charge_open(key, sent);
+    }
+
+    /// The member's step 1 or query begins to wait `wait` for its user's open
+    /// budget; a step 1 tells its channel that the open is slowed.
+    fn wait_to_open(
+        &mut self,
+        key: MemberKey,
+        step1: Option<StateVector>,
+        query: bool,
+        wait: Duration,
+    ) {
+        let order = self.openings;
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        self.openings += 1;
+        let slowed = step1.is_some();
+        let opening = member.opening.get_or_insert(Opening {
+            step1: None,
+            query: false,
+            order,
+        });
+        opening.query |= query;
+        if step1.is_some() {
+            opening.step1 = step1;
+        }
+        if slowed {
+            let notice = json!({ "type": OPEN_SLOWED_TYPE }).to_string();
+            self.send(key, Kind::Stateless, &protocol::text(&notice));
+        }
+        self.look_again(wait);
+    }
+
+    fn look_again(&mut self, wait: Duration) {
+        let at = Instant::now() + wait;
+        self.open_at = Some(self.open_at.map_or(at, |open_at| open_at.min(at)));
+    }
+
+    /// Waiting step 1s and queries look at their users' budgets again, in
+    /// the order they began to wait: a user's large answers go one at a
+    /// time, each charged before the next is looked at, and the rest wait
+    /// on. A user in a timeout meanwhile joins again when it ends and asks
+    /// again then, so their waiting opens are dropped.
+    async fn release_openings(&mut self) {
+        let mut waiting: Vec<(u64, MemberKey)> = self
+            .members
+            .iter()
+            .filter_map(|(key, member)| {
+                member.opening.as_ref().map(|opening| (opening.order, *key))
+            })
+            .collect();
+        waiting.sort_unstable();
+        for (_, key) in waiting {
+            let Some(member) = self.members.get_mut(&key) else {
+                continue;
+            };
+            let Some(opening) = member.opening.take() else {
+                continue;
+            };
+            let user = member.context.user_id.clone();
+            if self
+                .app
+                .allowances
+                .remaining(&user, Instant::now())
+                .is_some()
+            {
+                continue;
+            }
+            if let Some(since) = opening.step1 {
+                match self.app.allowances.open_turn(&user, Instant::now()) {
+                    Ok(()) => {
+                        let mut turn = self.turn(user.clone());
+                        let diff = self.encoded(since).await;
+                        turn.bytes = self.answer(key, &diff);
+                    }
+                    Err(wait) => {
+                        let step1 = Some(since);
+                        self.keep_waiting(key, Opening { step1, ..opening }, wait);
+                        continue;
+                    }
+                }
+            }
+            if opening.query {
+                match self.app.allowances.open_wait(&user, Instant::now()) {
+                    Some(wait) => {
+                        let step1 = None;
+                        self.keep_waiting(key, Opening { step1, ..opening }, wait);
+                    }
+                    None => {
+                        let sent = self.send_awareness_states(key);
+                        self.charge_open(key, sent);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A waiting open looked again and waits on (its member handled nothing
+    /// meanwhile: the room awaits its encodes).
+    fn keep_waiting(&mut self, key: MemberKey, opening: Opening, wait: Duration) {
+        if let Some(member) = self.members.get_mut(&key) {
+            member.opening = Some(opening);
+        }
+        self.look_again(wait);
+    }
+
     fn join(
         &mut self,
         key: MemberKey,
@@ -1677,6 +1894,7 @@ impl Room {
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
+                opening: None,
             },
         );
         if unsupported && let Some(notice) = self.unsupported() {

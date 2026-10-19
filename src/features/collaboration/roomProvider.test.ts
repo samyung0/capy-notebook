@@ -6,8 +6,9 @@ import * as Y from 'yjs';
 import { createSourceProvider } from '@/features/files/sourceProvider';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
 import { readDrafts, recordDrafts } from '@/lib/editDrafts';
-import { resetAllowance } from './allowance';
+import { resetAllowance, tabAllowance } from './allowance';
 import { isHeld } from './held';
+import { NoteSeat } from './noteSeat';
 import { PIECE_BYTES } from './pieces';
 import {
   CLIENT_PROTOCOL,
@@ -24,6 +25,7 @@ import {
   Writer,
 } from './protocol';
 import {
+  EMBED_CLOSED_REASON,
   OLDEST_CLOSED_REASON,
   RoomProvider,
   UPDATE_TOO_LARGE_REASON,
@@ -232,6 +234,84 @@ it('reports a closed room while the socket stays open for others', async () => {
   expect(provider.isAuthenticated).toBe(false);
   expect(provider.socketStatus).toBe('connected');
   expect(other.isAuthenticated).toBe(true);
+});
+
+it('reports an open slowed by the open budget, not as a stateless message', async () => {
+  const onSlowed = vi.fn();
+  const { events, join, socket } = await joined({ onSlowed });
+  const slowed = text('{"type":"open-slowed"}');
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(join.channel, MessageKind.Stateless, slowed)
+  );
+  expect(onSlowed).toHaveBeenCalledTimes(1);
+  expect(events.stateless).not.toHaveBeenCalled();
+});
+
+/** Embedded quizzes and sets join inside their note's channel (Epo
+ * 2026-10-20): only while the note is joined, naming its channel, ended
+ * with it and joined again with it; closed as the note's oldest embed, one
+ * joins again once near the screen. */
+it('joins an embed inside its note, ending and joining again with it', async () => {
+  const { join: noteJoin, provider: note, socket } = await joined();
+  const seat = new NoteSeat();
+  seat.attach(note);
+  const closed = vi.fn();
+  const embed = new RoomProvider({
+    document: new Y.Doc(),
+    name: 'material:set:schema:1',
+    onClose: closed,
+    parent: seat,
+    token: async () => 'embed-token',
+    url: socket.url,
+  });
+  embed.connect();
+  await flush();
+  // The note has not joined yet: the embed waits for it.
+  expect(socket.take(MessageKind.Join)).toEqual([]);
+  socket.deliver(
+    message(noteJoin.channel, MessageKind.Joined, Uint8Array.of(1))
+  );
+  await flush();
+  const [first] = socket.take(MessageKind.Join);
+  const reader = new Reader(first.payload);
+  expect([reader.varString(), reader.varString(), reader.varUint()]).toEqual([
+    'material:set:schema:1',
+    'embed-token',
+    CLIENT_PROTOCOL,
+  ]);
+  expect(reader.varUint()).toBe(noteJoin.channel);
+  socket.deliver(message(first.channel, MessageKind.Joined, Uint8Array.of(1)));
+  expect(embed.isAuthenticated).toBe(true);
+
+  // The note's room closes: the embed ends with it, reporting no close, and
+  // joins again once the note has.
+  note.disconnect();
+  expect(embed.isAuthenticated).toBe(false);
+  expect(closed).not.toHaveBeenCalled();
+  note.connect();
+  await flush();
+  const [noteAgain] = socket.take(MessageKind.Join);
+  socket.deliver(
+    message(noteAgain.channel, MessageKind.Joined, Uint8Array.of(1))
+  );
+  await flush();
+  const [second] = socket.take(MessageKind.Join);
+  expect(second.payload.at(-1)).toBe(noteAgain.channel);
+  socket.deliver(
+    message(second.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      second.channel,
+      MessageKind.Closed,
+      closedPayload(0, EMBED_CLOSED_REASON)
+    )
+  );
+  await flush();
+  // Closed as the note's oldest embed: it waits until near the screen.
+  expect(socket.take(MessageKind.Join)).toEqual([]);
+  embed.wake();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
 });
 
 it('answers a token request in band', async () => {
@@ -530,9 +610,24 @@ it('waits after closing as the user’s oldest until the tab shows again or an e
   socket.deliver(message(again.channel, MessageKind.Closed, oldest));
   await flush();
   expect(socket.take(MessageKind.Join)).toEqual([]);
+  // An update applied to the document (a restored draft) is no edit here.
+  const restored = new Y.Doc();
+  restored.getText('other').insert(0, 'draft');
+  Y.applyUpdate(document, Y.encodeStateAsUpdate(restored), 'restore');
+  await flush();
+  expect(socket.take(MessageKind.Join)).toEqual([]);
   document.getText('content').insert(0, 'back');
   await flush();
   expect(socket.take(MessageKind.Join)).toHaveLength(1);
+});
+
+/** A JOIN costs the server one message of the user's allowance and none of
+ * its bytes (rate-limit review r4 N-b): the tab reserves it like the rest. */
+it('reserves one message of the allowance for each JOIN', async () => {
+  const reserve = vi.spyOn(tabAllowance, 'reserve');
+  await joined();
+  expect(reserve).toHaveBeenCalledWith(0);
+  reserve.mockRestore();
 });
 
 /** An update holding a piece over the server's cap (a struct that cannot be

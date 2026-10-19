@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
+import { NoteSeatContext } from '@/features/collaboration/noteSeat';
+import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
@@ -74,8 +76,12 @@ export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
  * screen, as in Edit (REVIEW5 S5). */
 function LiveSetStudy({ material }: { material: Material }) {
   const box = useRef<HTMLDivElement>(null);
-  const near = useNearScreen(box);
-  const cards = useLiveSetCards(material.id, setCards(material), near);
+  const { near, entered } = useNearScreen(box);
+  const inside = useContext(NoteSeatContext);
+  const cards = useLiveSetCards(material.id, setCards(material), near, {
+    inside,
+    wake: entered,
+  });
   return (
     <div ref={box}>
       <StudyBody
@@ -98,16 +104,19 @@ function LiveSetEdit({
   onEmpty: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const near = useNearScreen(box);
+  const { near, entered } = useNearScreen(box);
+  const inside = useContext(NoteSeatContext);
   return (
     <div ref={box}>
       <LiveFlashcards
         enabled={near}
+        inside={inside}
         onEmpty={onEmpty}
         setId={materialId}
         showTitle={false}
         showUndo={false}
         title=""
+        wake={entered}
       />
     </div>
   );
@@ -225,8 +234,12 @@ function LiveQuizStudy({
   grade: Parameters<typeof AttemptBody>[0]['grade'];
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const near = useNearScreen(box);
-  const questions = useLiveQuizQuestions(quiz.id, quiz.questions, near);
+  const { near, entered } = useNearScreen(box);
+  const inside = useContext(NoteSeatContext);
+  const questions = useLiveQuizQuestions(quiz.id, quiz.questions, near, {
+    inside,
+    wake: entered,
+  });
   return (
     <div ref={box}>
       <AttemptBody
@@ -252,9 +265,15 @@ function EmbedQuizEditor({
   onEmpty: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const near = useNearScreen(box);
+  const { near, entered } = useNearScreen(box);
+  const inside = useContext(NoteSeatContext);
   const [held, setHeld] = useState(false);
-  const rooms = useQuizRooms(quizId, { edit: true, enabled: near || held });
+  const rooms = useQuizRooms(quizId, {
+    edit: true,
+    enabled: near || held,
+    inside,
+    wake: entered,
+  });
   useEffect(() => {
     setHeld(rooms.status === 'syncing' || rooms.status === 'offline');
   }, [rooms.status]);
@@ -296,7 +315,10 @@ function EmbedQuizEditor({
         // Refused as outdated before it synced: nothing of the rooms to show.
         <SaveBanner state="outdated" />
       ) : (
-        <EmbedLoading />
+        <div className="flex flex-col gap-2">
+          <EmbedLoading />
+          <SlowedOpenLine slowed={rooms.slowed} />
+        </div>
       )}
     </div>
   );

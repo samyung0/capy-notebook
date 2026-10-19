@@ -1038,6 +1038,7 @@
   "editor_status_offline": "离线",
   "editor_status_unavailable": "协作不可用",
   "editor_status_reconnecting": "正在重新连接…",
+  "editor_open_slowed": "最近打开了很多大文件，打开速度已放慢。",
   "editor_status_unsaved": "未保存，正在重试…",
   "editor_save_failed": "保存失败",
   "editor_save_delayed": "保存已延迟。你最近的更改尚未保存。",

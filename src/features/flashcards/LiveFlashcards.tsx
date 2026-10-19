@@ -9,6 +9,8 @@ import {
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
 import { itemSaveState } from '@/features/collaboration/LiveItemControls';
+import type { InNote } from '@/features/collaboration/noteSeat';
+import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { FlashcardGrid } from './FlashcardGrid';
@@ -30,7 +32,9 @@ export function LiveFlashcards({
   showTitle,
   showUndo,
   enabled = true,
-}: {
+  inside,
+  wake,
+}: InNote & {
   setId: string;
   title: string;
   /** Sits right of the title. */
@@ -50,7 +54,7 @@ export function LiveFlashcards({
   const { room, snapshot } = useItemRoom(
     setId,
     (enabled || held) && !!actorId,
-    { actorId }
+    { actorId, inside, wake }
   );
   useEffect(() => {
     setHeld(snapshot.status === 'syncing' || snapshot.status === 'offline');
@@ -90,7 +94,12 @@ export function LiveFlashcards({
   if (snapshot.status === 'offline' && !snapshot.synced)
     return <QueryPausedState />;
   if (!(room && snapshot.synced))
-    return <Skeleton className="h-40 w-full rounded-card" />;
+    return (
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-40 w-full rounded-card" />
+        <SlowedOpenLine slowed={snapshot.slowed} />
+      </div>
+    );
   const grid = (
     <FlashcardGrid
       action={action}

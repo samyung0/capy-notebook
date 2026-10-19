@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 
-test('header distinguishes initial sync, pending edits and durable saves', async ({
+// A note that joined with nothing of this device's to store reads Saved, as
+// every format does (Epo 2026-10-20); pending edits read Syncing until the
+// receipt of the store that holds them.
+test('header distinguishes pending edits from durable saves', async ({
   page,
 }) => {
   await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
@@ -10,9 +13,9 @@ test('header distinguishes initial sync, pending edits and durable saves', async
   );
   const status = page.getByTestId('editor-save-state');
   await expect(editor).toBeVisible({ timeout: 30_000 });
-  await expect(status).toHaveAttribute('data-save-state', 'synced');
+  await expect(status).toHaveAttribute('data-save-state', 'saved');
   await expect(status.locator('svg')).toBeVisible();
-  const syncedIcon = await status.locator('svg').innerHTML();
+  const savedIcon = await status.locator('svg').innerHTML();
   await page
     .getByRole('button', { name: m.material_mode() })
     .press('Shift+Tab');
@@ -20,7 +23,7 @@ test('header distinguishes initial sync, pending edits and durable saves', async
   const tooltip = page.locator('[data-slot="tooltip-content"][data-open]');
   await expect(tooltip).toBeVisible();
   await expect(
-    tooltip.getByText(m.editor_status_synced(), { exact: true })
+    tooltip.getByText(m.editor_status_saved(), { exact: true })
   ).toBeVisible();
   await status.press('Tab');
 
@@ -69,7 +72,7 @@ test('header distinguishes initial sync, pending edits and durable saves', async
   await editor.press('ControlOrMeta+End');
   await page.keyboard.insertText(' first pending edit');
   await expect(status).toHaveAttribute('data-save-state', 'syncing');
-  expect(await status.locator('svg').innerHTML()).not.toBe(syncedIcon);
+  expect(await status.locator('svg').innerHTML()).not.toBe(savedIcon);
   await page.clock.runFor(1000);
   await expect(status).toHaveAttribute('data-save-state', 'syncing');
 

@@ -446,7 +446,11 @@ Remove per question and Add question, editing the quiz's content and keys
 rooms; the `FlashcardsEditor` grid with its hover toolbar and Add card, editing
 the set's room). An embed joins its rooms only while within about a viewport
 of the screen, stays joined 30 s after it leaves (`useNearScreen.ts`) and while
-it holds unacknowledged edits. Removing the last question or card removes the
+it holds unacknowledged edits. Its rooms join inside the note's channel (Epo
+2026-10-20; see [Socket and channel caps](#connection-lifetime-and-refusals)):
+the note editor and the live View hold the note's `NoteSeat`
+(`noteSeat.ts`, `NoteSeatContext`), and an embed's providers join only while
+the note's channel is joined, end with it and join again when it does. Removing the last question or card removes the
 block itself (the item follows the removed-block trash rule; Undo restores both). The static renderer takes the page's embed renderer from
 `EmbedViewContext` (the app's reads through the account and loads on demand; the
 share page feeds the note's public data). Blocks that need the browser in a read-only
@@ -853,9 +857,10 @@ The editor reports:
 - `Reconnecting…`: a later drop while the browser is online; the editor stays
   mounted and editable;
 - `Syncing…`: edits waiting for the checkpoint debounce or durable acknowledgment;
-- `Synced`: the initial room sync completed with no local work pending;
 - `Saved`: the server confirmed that a state containing this client's work was
-  committed;
+  committed, or the room synced with nothing of this client's to store (Epo
+  2026-10-20: the same in every format; only the PDF annotations' REST save
+  still shows `Synced` before its first write);
 - `Offline`: the room cannot be reached (the browser is offline, or
   reconnecting kept failing for 30 s); an editor that synced once keeps
   editing on this device (see [Offline editing](#offline-editing-and-drafts));
@@ -863,9 +868,10 @@ The editor reports:
 - `Collaboration unavailable`: the first connection never synced, or the
   provider could not start.
 
-The header shows these as Hugeicons cloud icons beside the title: Sync for
-Connecting, Reconnecting and Syncing, SavingDone01 for Synced, Check for Saved,
-Off for Offline, and a red Alert for Not saved and Collaboration unavailable.
+The header shows these as Hugeicons cloud icons beside the title: CloudUpload
+for Connecting, Reconnecting and Syncing, the plain Cloud for Saved (and the
+PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
+Collaboration unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
@@ -880,9 +886,9 @@ Until it, the state shows Syncing. Notes and sources report Saved only on that
 receipt (`NoteEditorCore.tsx`, `useSourceSession.ts`). A live item (a quiz, a
 flashcard set, a live Mermaid diagram) shows Syncing while the room has not
 acknowledged its updates and then until a receipt covers them (`itemRoom.ts`
-asks for it once they are acknowledged), then Saved; Synced when it joined with
-nothing of this device's to store. A press with no edit sends nothing, so it
-never shows Syncing ([office-files](office-files.md)).
+asks for it once they are acknowledged), then Saved, as it is when it joined
+with nothing of this device's to store. A press with no edit sends nothing, so
+it never shows Syncing ([office-files](office-files.md)).
 
 ### Connection lifetime and refusals
 
@@ -943,12 +949,35 @@ continuously back to full over 5 minutes from empty (`OPEN_REFILL`,
 `COLLABORATION_OPEN_REFILL_SECONDS`, about 0.27 MiB a second): the room
 charges a step 1's answer (up to the whole state), an awareness query's and
 the awareness it sends on JOIN by their bytes once encoded, so the budget may
-go below zero. Spent, the user's next step 1 or query waits on its socket
-until the budget is back above zero (the latest of each per channel), slowed,
-never refused; nothing else waits, and the edit allowance is untouched. The
-budget is the user's across rooms and sockets (in each server process), so
-rejoining spends it too; opening many large files gains nothing, and our bandwidth stays below
-the host's limits.
+go below zero. A step 1 answer under 256 KiB (`SMALL_ANSWER`, a returning
+member's resync) never waits (Epo 2026-10-20). A larger one waits in its room
+while the budget is spent, slowed, never refused, and so does an awareness
+query: the room checks the budget when it takes the step 1 off its queue,
+where the answer is charged, so a burst read before the first charge lands
+gets one answer, and each channel keeps only its latest step 1 and query
+while it waits (`room.rs` `on_step1`, `release_openings`). Whether an answer
+is that large is known from a walk over what lies past the asker's state
+that stops at 256 KiB (`ydoc::answer_at_least`), so a waiting step 1 costs no
+encode; the encode checks it again. A user's large answers are encoded one at
+a time (`Allowances::open_turn`): one waits while another is encoded, so
+answers waiting as the budget refills are released one by one, each charged
+before the next is looked at. A user in a timeout meanwhile asks again when it
+ends, so their waiting opens are dropped. Nothing else waits, and the edit
+allowance is untouched. The budget is the user's across rooms and sockets (in
+each server process), so rejoining spends it too; opening many large files
+gains nothing, and our bandwidth stays below the host's limits.
+
+A step 1 that begins to wait tells its channel once (a stateless
+`{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers). The editor
+keeps its normal loading state, and after 5 s it adds the line "Opening is
+slowed because many large files were opened recently." (`SlowedOpenLine`,
+`useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
+(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and as a strip
+over an Office or text source (`SourceBanners`). The room is reachable, so the
+reconnector never counts the wait as stuck (`roomReconnector().slowed`), and
+an editor that went offline before (a socket drop) leaves offline mode when
+the notice arrives instead of when the answer does: notes, items and sources
+alike.
 
 No room takes an update over 8 MiB (`ydoc::MAX_UPDATE_BYTES`, the byte
 burst, which `COLLABORATION_UPDATE_BURST_BYTES` may not go below): the
@@ -1001,7 +1030,8 @@ out of it consults the same flag: inside an editor (`EditorHoldScope`, at the
 note editor's root and in every `CollaborationHold`) the shared dialogs,
 popovers, dropdown and context menus, selects, floating toolbars and popups
 (`useEditorHeld` in `src/components/ui`) turn inert, an open one included
-(it stays open and takes input again once sent); the Ctrl+K palette neither
+(it stays open and takes input again once sent; its overlay and Escape still
+close it, dropping only the dialog's own form state, never document edits); the Ctrl+K palette neither
 opens nor runs a command (its listener is on `window`); the AI menu is a
 popup; the quiz and flashcard Undo and Redo buttons in the page header are
 disabled. A DOCX or PPTX editor pauses as for any other pause
@@ -1015,7 +1045,10 @@ prop ([office-files](office-files.md)).
 update over 8 MiB, is put in a timeout instead of disconnected (closing would
 protect nothing, since a script reconnects at once): no SYNC, awareness,
 query or stateless message of theirs goes on, on any socket, and a draft
-send is refused `too_fast` (429) with `remainingMs`, until it ends. A socket
+send is refused `too_fast` (429) with `remainingMs`, until it ends. A draft
+send over 8 MiB answers `too_large` (413), which the page leaves to the
+editor, and starts a timeout as an update over the cap on a socket does
+(Epo 2026-10-20, replacing the too-fast answer). A socket
 misses an announcement only when too many users time out at once (the
 broadcast lags, logged); its channels learn at their next join. It lasts
 until the allowance covers the refused message, at least 3 s so it is seen,
@@ -1055,8 +1088,32 @@ joined documents over all their sockets (`JOINED_PER_USER`,
 JOIN closes that user's oldest joined channel (`collaboration-oldest-closed`,
 counted in `capy_collaboration_oldest_closed_total`) instead of being
 refused. The closed room waits, not synced, and joins again once the user
-comes back to it: its tab shows again, or an edit is made in it; joining at
-once would close the user's next oldest. A room keeps at most 256 awareness
+comes back to it: its tab shows again, or an edit is made in it (a local
+transaction; an applied update such as a restored draft is none); joining at
+once would close the user's next oldest.
+
+**Embeds in their note's seat** (Epo 2026-10-20). An embedded quiz's or
+flashcard set's room (content, and a writer's quiz keys) joins inside its
+note's channel on the same socket: its JOIN names the note's channel after
+the client protocol (`joinPayload(room, token, note)`), and its token names
+the note (`parent`, which Go reads from the material's `parent_material_id`).
+The server joins it only when that channel is a joined note channel of the
+same user on this socket whose material is the token's `parent` (another
+note's embed is refused `collaboration-forbidden`; a channel that is not a
+joined note `collaboration-note-closed`). An embed channel takes no place
+among the user's 22 joined documents; a note channel holds at most 64
+(`EMBEDS_PER_NOTE`), and one more closes its oldest
+(`collaboration-embed-closed`): that room waits, as one closed as the user's
+oldest does, and joins again when its block comes near the screen again
+(`useNearScreen().entered`, `RoomProvider.wake`), its tab shows again or an
+edit is made in it. When the note's channel goes (left, closed, expired,
+joining again after a timeout) the server closes its embed channels
+(`collaboration-note-closed`) and the client ends them too, reporting no
+close; they join again once the note has joined. Each embed keeps its own
+document, storage, history, keys room and id; its own token refreshes and
+expiry apply as for any channel, and a JOIN costs one message of the
+allowance. With no note channel (an embedded set opened on its own study
+page, or under MSW) an item room joins as any document does. A room keeps at most 256 awareness
 client ids and a channel at most 4 (`MAX_CLIENTS_PER_ROOM`,
 `MAX_CLIENTS_PER_MEMBER`); a new id past either is not kept. The room's cap
 counts removed ids until their removal went out (the next flush forgets
@@ -1197,6 +1254,9 @@ design, option d), and the nudge's release file on 2026-10-17.
   before the gate show Offline until reloaded, with their edits kept. The
   embeds round's live figure maps (a slate-yjs patch change, Epo 2026-10-17)
   raised `CLIENT_PROTOCOL` to 4 and `MIN_MATERIAL` to 4; `MIN_SOURCE` stays 3.
+  The rate-limit round's open-slowed notice (both families) and an embed's
+  note channel in its JOIN (Epo 2026-10-20) raise both minimums with
+  `CLIENT_PROTOCOL` (numbers in `protocol.rs`).
 
 #### When to bump
 

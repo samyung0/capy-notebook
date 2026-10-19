@@ -41,7 +41,9 @@ import {
   CollaborationHold,
   EditorHoldScope,
 } from '@/features/collaboration/CollaborationHold';
+import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import '@/features/collaboration/platePlugin';
+import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { FileLoading } from '@/features/files/FileStates';
 import {
   createMaterialDocument,
@@ -553,6 +555,9 @@ export function NoteEditorCore({
   // header. Holding the full status here re-rendered the toolbar and palette on
   // the first keystroke of every edit (Saved to Syncing).
   const [handshaking, setHandshaking] = useState(true);
+  // The room's answer waits on the user's open budget (Epo 2026-10-20):
+  // loading, not offline, until it syncs.
+  const [slowed, setSlowed] = useState(false);
   const name = currentUserName;
 
   // Re-announcing a status the header already shows re-renders it for nothing.
@@ -569,12 +574,7 @@ export function NoteEditorCore({
 
   const markSyncing = useCallback(() => {
     // Pending work must not hide connection failures or finish the handshake.
-    if (
-      reportedStatus.current === 'synced' ||
-      reportedStatus.current === 'saved'
-    ) {
-      setStatus('syncing');
-    }
+    if (reportedStatus.current === 'saved') setStatus('syncing');
   }, [setStatus]);
 
   const hasUnsavedWork = useCallback(
@@ -641,6 +641,18 @@ export function NoteEditorCore({
   }, [setStatus, showOffline]);
   const goOfflineNow = useRef(goOffline);
   goOfflineNow.current = goOffline;
+  // The room joined and its answer waits on the open budget: reachable, so
+  // never offline meanwhile; an offline episode before it ends here.
+  const slowedNow = useRef(() => {});
+  slowedNow.current = () => {
+    reconnector.current?.slowed();
+    setSlowed(true);
+    if (!offlineMode.current) return;
+    offlineMode.current = false;
+    recorder.current?.connected();
+    reportOffline.current?.(null);
+    connecting();
+  };
   // Set once the editor exists; reports a room that turned read-only once.
   // `refusedConnect`: a (re)connect refused read-only, which only this
   // client sees; the service records the refusals it sends itself.
@@ -872,6 +884,7 @@ export function NoteEditorCore({
           onSyncChange: ({ isSynced }) => {
             roomSynced.current = isSynced;
             if (!isSynced || rejected.current) return;
+            setSlowed(false);
             hasSynced.current = true;
             reconnector.current?.connected();
             saveDelay.connected();
@@ -880,10 +893,11 @@ export function NoteEditorCore({
               recorder.current?.connected();
               reportOffline.current?.(null);
             }
+            // Nothing of this device's to store is saved (Epo 2026-10-20).
             setStatus(
               unsavedChanges.current || pendingCheckpoints.current.size > 0
                 ? 'syncing'
-                : 'synced'
+                : 'saved'
             );
             // Receipts requested while offline never reached the service,
             // and restored edits have none yet.
@@ -910,10 +924,12 @@ export function NoteEditorCore({
                     onAuthenticationFailed,
                     onClose: () => {
                       roomSynced.current = false;
+                      setSlowed(false);
                       reconnector.current?.closed(
                         socketOpen(roomProvider(editorRef.current)?.provider)
                       );
                     },
+                    onSlowed: () => slowedNow.current(),
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
@@ -979,6 +995,8 @@ export function NoteEditorCore({
     ydoc,
   ]);
 
+  // The channel its embedded quizzes and sets join inside (Epo 2026-10-20).
+  const [seat] = useState(() => new NoteSeat());
   const editor = usePlateEditor({
     // slate-react re-creates the element descriptors of every block in a
     // modified chunk, so the chunk size is the number of blocks a keystroke
@@ -1111,7 +1129,7 @@ export function NoteEditorCore({
     const online = () => {
       if (stale.current || reportedStatus.current !== 'offline') return;
       if (roomProvider(editor)?.isSynced)
-        setStatus(hasUnsavedWork() ? 'syncing' : 'synced');
+        setStatus(hasUnsavedWork() ? 'syncing' : 'saved');
       // Offline mode lasts until the room syncs again.
       else if (!offlineMode.current) connecting();
     };
@@ -1222,66 +1240,80 @@ export function NoteEditorCore({
     saveImmediately,
   ]);
 
+  useEffect(() => {
+    const provider = roomProvider(editor)?.provider;
+    seat.attach(provider instanceof RoomProvider ? provider : null);
+    return () => seat.attach(null);
+  }, [editor, seat]);
+
   return (
     <EditorHoldScope>
-      <NoteBlockDialogsProvider noteId={material.id}>
-        <div className="flex max-h-full flex-1 flex-col overflow-auto">
-          <Plate editor={editor} onValueChange={changeValue}>
-            <CollaborationProvider
-              currentUserId={currentUserId}
-              discussions={discussions}
-            >
-              {/* Offline past the bound, or refused as outdated: nothing may
-               * edit until reconnect or reload. Held back: until sent. */}
-              <div className="contents" inert={offlineLimit || outdated}>
-                <CollaborationHold className="contents">
-                  <NoteToolbar />
-                </CollaborationHold>
-              </div>
-              <div className="min-h-0 flex-1 overflow-auto" ref={setScrollArea}>
-                <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
-                  {/* The room replaces the projection copy the moment it syncs,
-                   * so painting that copy first renders the whole document
-                   * twice — seconds of it on a near-limit note. Anything other
-                   * than a healthy handshake still paints, otherwise a broken
-                   * collaboration service would leave a readable note hidden
-                   * behind a spinner. */}
-                  {handshaking ? (
-                    <FileLoading message={m.editor_connecting()} />
-                  ) : (
-                    <>
-                      <EditorScrollAreaContext.Provider value={scrollArea}>
-                        <CollaborationHold>
-                          <NoteEditorContent
-                            discussions={discussions}
-                            readOnly={offlineLimit || outdated}
-                            shouldShowStats={shouldShowDocumentStats(
-                              documentStats
-                            )}
-                          />
-                        </CollaborationHold>
-                      </EditorScrollAreaContext.Provider>
-                      <NoteAttribution
-                        beforeStats={shouldShowDocumentStats(documentStats)}
-                        embedCredits={material.embedCredits}
-                        embeds={embeds}
-                        provenance={material.provenance}
-                      />
-                      <DocumentStatsFooter
-                        limitError={documentLimitError}
-                        stats={documentStats}
-                      />
-                    </>
-                  )}
+      <NoteSeatContext.Provider value={seat}>
+        <NoteBlockDialogsProvider noteId={material.id}>
+          <div className="flex max-h-full flex-1 flex-col overflow-auto">
+            <Plate editor={editor} onValueChange={changeValue}>
+              <CollaborationProvider
+                currentUserId={currentUserId}
+                discussions={discussions}
+              >
+                {/* Offline past the bound, or refused as outdated: nothing may
+                 * edit until reconnect or reload. Held back: until sent. */}
+                <div className="contents" inert={offlineLimit || outdated}>
+                  <CollaborationHold className="contents">
+                    <NoteToolbar />
+                  </CollaborationHold>
                 </div>
-              </div>
-              {!(offlineLimit || outdated) && <EditorCommandPalette />}
-              {!(offlineLimit || outdated) &&
-                editorAiEnabled(allowExternalAssets) && <AiMenu />}
-            </CollaborationProvider>
-          </Plate>
-        </div>
-      </NoteBlockDialogsProvider>
+                <div
+                  className="min-h-0 flex-1 overflow-auto"
+                  ref={setScrollArea}
+                >
+                  <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
+                    {/* The room replaces the projection copy the moment it syncs,
+                     * so painting that copy first renders the whole document
+                     * twice — seconds of it on a near-limit note. Anything other
+                     * than a healthy handshake still paints, otherwise a broken
+                     * collaboration service would leave a readable note hidden
+                     * behind a spinner. */}
+                    {handshaking ? (
+                      <FileLoading
+                        message={m.editor_connecting()}
+                        slowed={slowed}
+                      />
+                    ) : (
+                      <>
+                        <EditorScrollAreaContext.Provider value={scrollArea}>
+                          <CollaborationHold>
+                            <NoteEditorContent
+                              discussions={discussions}
+                              readOnly={offlineLimit || outdated}
+                              shouldShowStats={shouldShowDocumentStats(
+                                documentStats
+                              )}
+                            />
+                          </CollaborationHold>
+                        </EditorScrollAreaContext.Provider>
+                        <NoteAttribution
+                          beforeStats={shouldShowDocumentStats(documentStats)}
+                          embedCredits={material.embedCredits}
+                          embeds={embeds}
+                          provenance={material.provenance}
+                        />
+                        <DocumentStatsFooter
+                          limitError={documentLimitError}
+                          stats={documentStats}
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+                {!(offlineLimit || outdated) && <EditorCommandPalette />}
+                {!(offlineLimit || outdated) &&
+                  editorAiEnabled(allowExternalAssets) && <AiMenu />}
+              </CollaborationProvider>
+            </Plate>
+          </div>
+        </NoteBlockDialogsProvider>
+      </NoteSeatContext.Provider>
     </EditorHoldScope>
   );
 }

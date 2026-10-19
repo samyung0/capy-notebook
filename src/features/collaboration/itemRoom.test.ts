@@ -392,3 +392,24 @@ it('says the reload loses edits this device could not store', async () => {
   expect(markUnsent).toHaveBeenLastCalledWith(room, true);
   room.destroy();
 });
+
+// Epo 2026-10-20: an open waiting on the user's open budget keeps loading,
+// even past the reconnect grace and after a socket drop showed offline.
+it('loads while its open is slowed, never offline, until it syncs', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  expect(room.getSnapshot().status).toBe('offline');
+  provider.config.onSlowed?.();
+  expect(room.getSnapshot()).toMatchObject({
+    offline: null,
+    slowed: true,
+    status: 'connecting',
+  });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(room.getSnapshot().status).toBe('connecting');
+  provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot().slowed).toBe(false);
+  room.destroy();
+});

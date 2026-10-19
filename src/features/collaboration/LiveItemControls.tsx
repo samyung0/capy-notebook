@@ -26,7 +26,6 @@ const STATUS: Record<
   connecting: { icon: 'cloudSync', label: m.editor_connecting },
   offline: { icon: 'cloudOff', label: m.editor_status_offline },
   saved: { icon: 'CloudIcon', label: m.editor_status_saved },
-  synced: { icon: 'CloudIcon', label: m.editor_status_synced },
   syncing: { icon: 'cloudSync', label: m.editor_status_syncing },
   unavailable: null,
 };

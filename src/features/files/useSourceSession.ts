@@ -174,6 +174,9 @@ export function useSourceSession(
     bytes: Uint8Array;
   } | null>(null);
   const [status, setStatus] = useState<SourceSaveState>('connecting');
+  // The room's answer waits on the user's open budget (Epo 2026-10-20):
+  // loading, not offline, until it syncs.
+  const [slowed, setSlowed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Saves failing or unconfirmed (`delayed`), the room unreachable
   // (`offline…`), or recovery (`refused`, `changed`: the session shows unsaved
@@ -712,6 +715,7 @@ export function useSourceSession(
         },
         onClose: () => {
           active.synced = false;
+          if (!cancelled) setSlowed(false);
           reconnect.closed(socketOpen(provider));
         },
         onDisconnect: () => {
@@ -729,6 +733,18 @@ export function useSourceSession(
             } else if (!offlineMode)
               setStatus(everSynced ? 'reconnecting' : 'connecting');
           }
+        },
+        // Joined, the answer waiting on the open budget: reachable, so never
+        // offline meanwhile (an offline episode before it ends here).
+        onSlowed: () => {
+          if (cancelled || active.recovery) return;
+          reconnect.slowed();
+          setSlowed(true);
+          if (!offlineMode) return;
+          offlineMode = false;
+          recorder?.connected();
+          setBanner((current) => (isRecoveryBanner(current) ? current : null));
+          setStatus(everSynced ? 'reconnecting' : 'connecting');
         },
         onStateless: ({ payload }) => {
           let event: {
@@ -855,6 +871,7 @@ export function useSourceSession(
         onSynced: ({ state }) => {
           if (state && !cancelled && !active.recovery) {
             active.synced = true;
+            setSlowed(false);
             reconnect.connected();
             delay.connected();
             if (offlineMode) {
@@ -1008,6 +1025,7 @@ export function useSourceSession(
     readOnly,
     replaced,
     save,
+    slowed,
     status: status === 'saved' && bufferDirty ? ('saving' as const) : status,
     synced,
     unavailable,

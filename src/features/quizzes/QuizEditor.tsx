@@ -10,6 +10,7 @@ import {
   itemSaveState,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
+import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
@@ -104,7 +105,10 @@ export function QuizEditor({
         // Opened offline (or the server failed): it joins once back.
         <QueryPausedState />
       ) : (
-        <Skeleton className="h-64 w-full" />
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-64 w-full" />
+          <SlowedOpenLine slowed={rooms.slowed} />
+        </div>
       )}
     </div>
   );

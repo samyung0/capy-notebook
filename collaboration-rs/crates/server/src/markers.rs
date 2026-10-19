@@ -324,6 +324,7 @@ mod tests {
             token_id: "t".into(),
             user_id: user.into(),
             viewer: false,
+            parent: None,
         }
     }
 

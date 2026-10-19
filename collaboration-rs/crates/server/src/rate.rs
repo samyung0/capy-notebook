@@ -8,8 +8,10 @@
 //! answers their opens receive (a step 1's, an awareness query's, the
 //! awareness sent on JOIN) are charged to it by their bytes once encoded. It
 //! refills continuously, full again over [OPEN_REFILL] from empty; spent, the
-//! user's next step 1 or query waits until it is back above zero (`socket.rs`),
-//! slowed, never refused.
+//! user's next step 1 answer of at least [SMALL_ANSWER] or query waits in its
+//! room until it is back above zero (`room.rs`), slowed, never refused. Such
+//! an answer is encoded during its user's turn ([Allowances::open_turn]), one
+//! at a time, so the budget is charged before the next one is looked at.
 //!
 //! A user over it, or sending an update over `ydoc::MAX_UPDATE_BYTES`, is in
 //! a timeout (Epo 2026-10-18): nothing of theirs that could change a document
@@ -45,6 +47,11 @@ pub const OPEN_BYTES: u64 = 80 << 20;
 /// The open budget refills to full over 5 minutes from empty (Epo
 /// 2026-10-19), about 0.27 MiB a second.
 pub const OPEN_REFILL: Duration = Duration::from_secs(300);
+/// A step 1 answer smaller than this never waits on the open budget (Epo
+/// 2026-10-20): a returning member's resync.
+pub const SMALL_ANSWER: usize = 256 << 10;
+/// How soon a large answer waiting behind its user's turn looks again.
+const TURN_RETRY: Duration = Duration::from_millis(100);
 
 impl Limits {
     fn open_per_second(&self) -> f64 {
@@ -94,6 +101,8 @@ struct Allowance {
     until: Option<Instant>,
     /// Further timeouts in a row, each within [REPEAT_WINDOW] of the last.
     repeats: u32,
+    /// A large answer of the user's is being encoded ([Allowances::open_turn]).
+    turn: bool,
 }
 
 impl Allowance {
@@ -105,7 +114,20 @@ impl Allowance {
             at: now,
             until: None,
             repeats: 0,
+            turn: false,
         }
+    }
+
+    /// How long the user's next large answer waits: until the open budget is
+    /// back above zero and no other one of theirs is being encoded.
+    fn open_wait(&mut self, limits: &Limits, now: Instant) -> Option<Duration> {
+        self.refill(limits, now);
+        if self.open < 0.0 {
+            return Some(Duration::from_secs_f64(
+                -self.open / limits.open_per_second(),
+            ));
+        }
+        self.turn.then_some(TURN_RETRY)
     }
 
     fn refill(&mut self, limits: &Limits, now: Instant) {
@@ -169,6 +191,7 @@ impl Allowance {
             && self.bytes + seconds * limits.bytes_per_second as f64 >= limits.burst_bytes as f64
             && self.open + seconds * limits.open_per_second() >= limits.open_bytes as f64
             && self.until.is_none_or(|end| now >= end + REPEAT_WINDOW)
+            && !self.turn
     }
 }
 
@@ -264,14 +287,37 @@ impl Allowances {
         });
     }
 
-    /// How long `user`'s next step 1 or query waits: until their open budget
-    /// is back above zero.
+    /// How long `user`'s next query or large step 1 answer waits: until
+    /// their open budget is back above zero and none of their large answers
+    /// is being encoded.
     pub fn open_wait(&self, user: &str, now: Instant) -> Option<Duration> {
-        let per_second = self.limits.open_per_second();
+        self.with(user, now, |allowance| {
+            allowance.open_wait(&self.limits, now)
+        })
+    }
+
+    /// `user`'s turn to encode a large answer, unless it waits ([`Self::open_wait`]):
+    /// their other large answers wait until [`Self::end_turn`] charged this one, so
+    /// answers released as the budget refills go one at a time.
+    pub fn open_turn(&self, user: &str, now: Instant) -> Result<(), Duration> {
+        self.with(user, now, |allowance| {
+            match allowance.open_wait(&self.limits, now) {
+                Some(wait) => Err(wait),
+                None => {
+                    allowance.turn = true;
+                    Ok(())
+                }
+            }
+        })
+    }
+
+    /// The turn ends: its answer of `bytes` is charged (0 when none went).
+    pub fn end_turn(&self, user: &str, bytes: usize, now: Instant) {
         self.with(user, now, |allowance| {
             allowance.refill(&self.limits, now);
-            (allowance.open < 0.0).then(|| Duration::from_secs_f64(-allowance.open / per_second))
-        })
+            allowance.open -= bytes as f64;
+            allowance.turn = false;
+        });
     }
 
     /// How long `user`'s running timeout has left.
@@ -481,6 +527,30 @@ mod tests {
             300
         );
         assert_eq!(allowances.open_wait("u2", start), None);
+    }
+
+    /// A large answer is encoded in its user's turn: another of theirs waits
+    /// until it is charged, then until the budget is back (Epo 2026-10-20:
+    /// released one at a time, not all at once).
+    #[test]
+    fn large_answers_take_turns_and_are_charged_before_the_next() {
+        let start = Instant::now();
+        let allowances = Allowances::new(LIMITS, start);
+        assert_eq!(allowances.open_turn("u1", start), Ok(()));
+        assert_eq!(allowances.open_turn("u1", start), Err(TURN_RETRY));
+        assert_eq!(allowances.open_wait("u1", start), Some(TURN_RETRY));
+        // Another user's turn is their own.
+        assert_eq!(allowances.open_turn("u2", start), Ok(()));
+        allowances.end_turn("u1", (OPEN_BYTES + (8 << 20)) as usize, start);
+        // 8 MiB below zero: 30 s at 80 MiB per 300 s.
+        let wait = allowances
+            .open_turn("u1", start)
+            .expect_err("the next waits for the budget");
+        assert!((wait.as_secs_f64() - 30.0).abs() < 0.01, "{wait:?}");
+        assert_eq!(
+            allowances.open_turn("u1", start + wait + secs(0.01)),
+            Ok(())
+        );
     }
 
     /// Every socket of the user hears that a timeout began.

@@ -172,9 +172,21 @@ pub fn outdated(minimum: u32, client: Option<u32>) -> bool {
     client < minimum || client > CLIENT_PROTOCOL
 }
 
-/// JOIN's payload: the room name, the token and the client protocol (none
-/// from a client before the version gate).
-pub fn decode_join(payload: &[u8]) -> Result<(String, String, Option<u32>), FrameError> {
+/// JOIN's payload.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Join {
+    pub room: String,
+    pub token: String,
+    /// The client protocol (none from a client before the version gate).
+    pub protocol: Option<u32>,
+    /// An embedded quiz's or set's note channel on the same socket, inside
+    /// which it joins (Epo 2026-10-20).
+    pub parent: Option<u64>,
+}
+
+/// JOIN's payload: the room name, the token, then optionally the client
+/// protocol and an embed's note channel.
+pub fn decode_join(payload: &[u8]) -> Result<Join, FrameError> {
     let mut at = 0;
     let room = read_string(payload, &mut at)?.to_owned();
     let token = read_string(payload, &mut at)?.to_owned();
@@ -183,7 +195,17 @@ pub fn decode_join(payload: &[u8]) -> Result<(String, String, Option<u32>), Fram
     } else {
         None
     };
-    Ok((room, token, protocol))
+    let parent = if at < payload.len() {
+        Some(read_var(payload, &mut at)?)
+    } else {
+        None
+    };
+    Ok(Join {
+        room,
+        token,
+        protocol,
+        parent,
+    })
 }
 
 /// A varstring payload (REFUSED, STATELESS, TOKEN).
@@ -345,18 +367,22 @@ mod tests {
     }
 
     #[test]
-    fn join_carries_the_client_protocol_after_the_token() {
+    fn join_carries_the_client_protocol_and_an_embeds_note_channel_after_the_token() {
         let mut payload = Vec::new();
         write_string(&mut payload, "material:abc:schema:1");
         write_string(&mut payload, "token");
-        let room = ("material:abc:schema:1".to_owned(), "token".to_owned());
+        let join = |protocol, parent| Join {
+            room: "material:abc:schema:1".into(),
+            token: "token".into(),
+            protocol,
+            parent,
+        };
         // A client from before the gate sends two fields.
-        assert_eq!(
-            decode_join(&payload).unwrap(),
-            (room.0.clone(), room.1.clone(), None)
-        );
+        assert_eq!(decode_join(&payload).unwrap(), join(None, None));
         write_var(&mut payload, 300);
-        assert_eq!(decode_join(&payload).unwrap(), (room.0, room.1, Some(300)));
+        assert_eq!(decode_join(&payload).unwrap(), join(Some(300), None));
+        write_var(&mut payload, 7);
+        assert_eq!(decode_join(&payload).unwrap(), join(Some(300), Some(7)));
     }
 
     #[test]

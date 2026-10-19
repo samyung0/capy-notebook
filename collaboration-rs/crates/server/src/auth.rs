@@ -37,6 +37,10 @@ pub struct Claims {
     pub jti: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// An embedded quiz's or set's note (Go names it): its channels join
+    /// only inside that note's (Epo 2026-10-20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
     pub room: String,
     pub schema: i64,
     pub sub: String,
@@ -53,6 +57,8 @@ pub struct Context {
     /// sends nor hears awareness (Epo 2026-10-10). Set at join from the
     /// material's access, never from the token.
     pub viewer: bool,
+    /// The token's note, for an embedded quiz or set.
+    pub parent: Option<String>,
 }
 
 impl From<&Claims> for Context {
@@ -63,6 +69,7 @@ impl From<&Claims> for Context {
             token_id: claims.jti.clone(),
             user_id: claims.sub.clone(),
             viewer: false,
+            parent: claims.parent.clone(),
         }
     }
 }
@@ -259,6 +266,7 @@ pub fn claims_for(room: &str, user: &str, access: Access, now: i64, seconds: i64
         iss: "capy-api".into(),
         jti: format!("tok_{now}_{user}"),
         name: None,
+        parent: None,
         room: room.into(),
         schema: RoomName::parse(room).map(|name| name.number()).unwrap_or(0),
         sub: user.into(),
