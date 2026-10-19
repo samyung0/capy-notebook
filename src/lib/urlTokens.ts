@@ -29,3 +29,18 @@ export function stripUrlTokensDeep<T>(value: T, depth = 0): T {
     record[key] = stripUrlTokensDeep(record[key], depth + 1);
   return value;
 }
+
+/** rrweb event types a replay records URLs in: Meta (4) carries the page
+ * href, Custom (5) the replay's breadcrumbs and performance spans (navigation
+ * and fetch URLs). The DOM frames (2, 3) are left whole: scrubbing every
+ * mutation would cost the page, and text is masked already. */
+const URL_RECORDING_TYPES = new Set([4, 5]);
+
+/** Replay's beforeAddRecordingEvent: strips URL tokens from the recording
+ * events that carry URLs. */
+export function scrubRecordingEvent<T extends { data?: unknown; type: number }>(
+  event: T
+): T {
+  if (URL_RECORDING_TYPES.has(event.type)) stripUrlTokensDeep(event.data);
+  return event;
+}

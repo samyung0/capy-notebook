@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stripUrlTokensDeep } from '@/lib/urlTokens';
+import { scrubRecordingEvent, stripUrlTokensDeep } from '@/lib/urlTokens';
 
 describe('stripUrlTokensDeep', () => {
   it('scrubs a Sentry event and breadcrumb wherever a token rides', () => {
@@ -31,5 +31,26 @@ describe('stripUrlTokensDeep', () => {
     expect(text).not.toContain(invite);
     expect(text).not.toContain('AbCdEfGhIjKlMnOp');
     expect(text).toContain('qz_0123456789');
+  });
+});
+
+describe('scrubRecordingEvent', () => {
+  it("strips a replay's page href and span URLs", () => {
+    const invite = 'Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFi';
+    const meta = scrubRecordingEvent({
+      data: { href: `https://app.test/workspace-invites/${invite}` },
+      type: 4,
+    });
+    const span = scrubRecordingEvent({
+      data: {
+        payload: {
+          description: `https://app.test/api/workspace-invites/${invite}/accept`,
+          op: 'resource.fetch',
+        },
+        tag: 'performanceSpan',
+      },
+      type: 5,
+    });
+    expect(JSON.stringify([meta, span])).not.toContain(invite);
   });
 });

@@ -39,3 +39,40 @@ func TestLogPathHashesTokenSegments(t *testing.T) {
 		}
 	}
 }
+
+// Performance transactions pass the same scrub as errors, and the calling
+// page's Referer and Origin never leave (security review B1, B2).
+func TestSentryTransactionsAndRefererAreScrubbed(t *testing.T) {
+	token := "qz_0123456789.AbCdEfGhIjKlMnOp"
+	invite := "Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFi"
+	options := sentryOptions(SentryConfig{Service: "api"}, 0.1)
+	event := func() *sentry.Event {
+		return &sentry.Event{
+			Type:        "transaction",
+			Transaction: "GET /api/public/quizzes/" + token,
+			Request: &sentry.Request{
+				URL: "https://api.example.test/api/public/quizzes/" + token,
+				Headers: map[string]string{
+					"Referer":    "https://app.example.test/workspace-invites/" + invite,
+					"Origin":     "https://app.example.test",
+					"User-Agent": "test",
+				},
+			},
+			Spans: []*sentry.Span{{Description: "POST /api/workspace-invites/" + invite + "/accept"}},
+		}
+	}
+	for name, send := range map[string]func(*sentry.Event, *sentry.EventHint) *sentry.Event{
+		"transaction": options.BeforeSendTransaction,
+		"error":       options.BeforeSend,
+	} {
+		out := send(event(), nil)
+		text := out.Transaction + out.Request.URL + out.Spans[0].Description
+		for header, value := range out.Request.Headers {
+			text += header + value
+		}
+		if strings.Contains(text, token) || strings.Contains(text, invite) || strings.Contains(text, "Referer") ||
+			out.Request.Headers["User-Agent"] != "test" || out.Tags["service"] != "api" {
+			t.Fatalf("%s left %q (headers %v)", name, text, out.Request.Headers)
+		}
+	}
+}

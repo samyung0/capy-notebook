@@ -8,7 +8,7 @@
 import * as Sentry from '@sentry/react';
 import { isApiError } from '@/api/client';
 import { identifyAnalytics, identityKey } from '@/lib/analytics';
-import { stripUrlTokensDeep } from '@/lib/urlTokens';
+import { scrubRecordingEvent, stripUrlTokensDeep } from '@/lib/urlTokens';
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 const APP_ENV =
@@ -29,7 +29,12 @@ export function initErrorReporting(): void {
     // mid-answer, and would otherwise dominate the error volume.
     ignoreErrors: ['AbortError', 'Failed to fetch', 'NetworkError'],
     integrations: [
-      Sentry.replayIntegration({ blockAllMedia: true, maskAllText: true }),
+      Sentry.replayIntegration({
+        // Its page href, navigation and fetch spans hold the same URLs.
+        beforeAddRecordingEvent: scrubRecordingEvent,
+        blockAllMedia: true,
+        maskAllText: true,
+      }),
     ],
     release: RELEASE,
     replaysOnErrorSampleRate: 0.1,
@@ -41,6 +46,9 @@ export function initErrorReporting(): void {
     // transaction per keystroke-driven save.
     tracesSampleRate: 0.1,
   });
+  // Every other event (replay events with their url list, transactions)
+  // passes the same scrub.
+  Sentry.addEventProcessor((event) => stripUrlTokensDeep(event));
 }
 
 // React 19 routes caught render errors here, including our own boundaries.
