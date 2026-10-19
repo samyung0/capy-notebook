@@ -8,6 +8,13 @@ import { trackItemCloned } from '@/lib/analytics';
 import { cloneErrorMessage } from './CloneItemDialog';
 import { WorkspaceFormDialog } from './WorkspaceFormDialog';
 
+/** The toast after a clone: a warning when it left files out. */
+export function clonedToast(skippedMaterials: number) {
+  return skippedMaterials > 0
+    ? { title: m.workspace_cloned_skipped(), variant: 'warning' as const }
+    : { title: m.workspace_cloned(), variant: 'success' as const };
+}
+
 /** Clone asks for the copy's name, description, icon, tags and cover,
  * prefilled from the source, and opens the copy once it exists; a refusal
  * shows in the form. Files the copy leaves out (stored content the current
@@ -67,11 +74,7 @@ export function CloneWorkspaceDialog({
           id: workspace.id,
         });
         trackItemCloned('workspace');
-        userToast(
-          skippedMaterials > 0
-            ? { title: m.workspace_cloned_skipped(), variant: 'warning' }
-            : { title: m.workspace_cloned(), variant: 'success' }
-        );
+        userToast(clonedToast(skippedMaterials));
         onCloned?.();
         await navigate({
           params: { workspaceId: cloned.id },
