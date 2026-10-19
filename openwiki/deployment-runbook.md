@@ -980,9 +980,19 @@ file, through a commit, then apply; run `--check` after any dashboard visit.
 Phases the file does not list stay manual: redirect rules (the old UAT host's
 redirect in §1.0.2), configuration rules and Managed Transforms.
 
-The first apply: run `--check`, add any live-only rule worth keeping (the UAT
-hosts' search-indexing exclusion from §1.0.2 is likely one) to the file, then
-apply.
+The first apply: save each phase's live rules for rollback, run `--check`, add
+any live-only rule worth keeping (the UAT hosts' search-indexing exclusion from
+§1.0.2 is likely one) to the file, then apply. Rolling back is a `PUT` of the
+saved `rules` to the same entry point.
+
+```bash
+zone=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones?name=capynotebook.com" | jq -r '.result[0].id')
+for phase in http_request_firewall_custom http_ratelimit http_request_cache_settings http_response_headers_transform; do
+  curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$zone/rulesets/phases/$phase/entrypoint" > "before-$phase.json"
+done
+```
 
 **Rate limiting rule** (`capy_api_rate_limit`). The edge layer only handles
 volumetric floods; semantic limits are in the gateway. 100 requests per 10
@@ -1399,6 +1409,9 @@ run also rewrites `/etc/docker/daemon.json` and restarts Docker when it differs.
    ansible-playbook playbook.yml --tags ssh,firewall --check --diff
    ansible-playbook playbook.yml --tags ssh,firewall
    ```
+   A check run cannot evaluate the ufw tasks on a host without ufw. Install
+   it first there (`apt-get install ufw`); it stays inactive until the play
+   enables it.
 4. In a second terminal, log in again with the key, and confirm a password
    login is refused before it asks: `ssh -o PubkeyAuthentication=no root@<host>`
    answers `Permission denied (publickey)`.
