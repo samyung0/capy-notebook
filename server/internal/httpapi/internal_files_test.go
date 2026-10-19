@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"testing"
 	"time"
 
@@ -110,9 +111,14 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	if file.Provenance == nil || len(file.Provenance.Books) != 1 || file.Provenance.License != "CC BY-SA 4.0" {
 		t.Fatalf("provenance = %+v", file.Provenance)
 	}
-	var payer, jobType string
-	if err := fx.st.Pool().QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); err != nil {
+	var payer, jobType, blobPath string
+	if err := fx.st.Pool().QueryRow(ctx, `SELECT user_id, blob_path FROM files WHERE id=$1`, fileID).Scan(&payer, &blobPath); err != nil {
 		t.Fatal(err)
+	}
+	// The deck's Put has no reservation guarding its key, so the key itself
+	// carries 128 random bits.
+	if !regexp.MustCompile(`^sources/blob_[0-9a-f]{32}$`).MatchString(blobPath) {
+		t.Fatalf("deck key = %q", blobPath)
 	}
 	if payer != fx.editor {
 		t.Fatalf("charged %s, want the chat's actor", payer)

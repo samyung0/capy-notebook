@@ -213,7 +213,12 @@ def test_complete_without_finalized_status_retries(monkeypatch):
     "object_path", ["sources/blob_x.pdf", "incoming/../sources/blob_x.pdf"]
 )
 def test_run_writes_only_under_incoming(monkeypatch, object_path):
-    def gateway(path, _body):
+    reported: list[dict] = []
+
+    def gateway(path, body):
+        if path.endswith("/fail"):
+            reported.append(body)
+            return 200, {}
         assert path.endswith("/acquire")
         return 200, {
             "status": "acquired",
@@ -230,10 +235,19 @@ def test_run_writes_only_under_incoming(monkeypatch, object_path):
     monkeypatch.setattr(
         import_stage.blobstore, "write_bytes", lambda *_a: pytest.fail("uploaded")
     )
-    with pytest.raises(import_stage.ImportFailure):
-        import_stage._run(
-            {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
-        )
+    job = {"id": "imp_1", "attempts": 1, "payload": {"importJobId": "imp_1"}}
+    with pytest.raises(import_stage.ImportFailure) as refused:
+        import_stage._run(job)
+    # The refusal ends the attempt under its lease rather than waiting it out.
+    import_stage.report(job, refused.value, retryable=False)
+    assert reported == [
+        {
+            "jobId": "imp_1",
+            "attemptToken": "tok",
+            "code": "invalid_payload",
+            "retryable": False,
+        }
+    ]
 
 
 @pytest.mark.parametrize(

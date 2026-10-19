@@ -255,10 +255,7 @@ func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInp
 	}
 
 	uploadID := randID("up")
-	blobID := store.ObjectKeyID("blob")
-	ext := keyExtension(name)
-	incoming := incomingObjectKey(uploadID, blobID+ext)
-	finalPath := sourceObjectKey(blobID + ext)
+	incoming, finalPath := sourceObjectKeys(uploadID, name)
 	signed, err := a.blob.PresignPut(ctx, incoming, body.ContentType, body.SizeBytes)
 	if err != nil {
 		return nil, hErr(err)
@@ -628,15 +625,14 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 
 		uploadID := randID("up")
 		jobID := randID("imp")
-		blobID := store.ObjectKeyID("blob")
-		ext := keyExtension(meta.Name)
+		incoming, finalPath := sourceObjectKeys(uploadID, meta.Name)
 		pending = append(pending, store.NewSourceImport{
 			JobID: jobID,
 			Upload: store.NewUploadSession{
 				ID: uploadID, WorkspaceID: wsID, CreatedBy: actor,
 				ChapterID: in.Body.ChapterID, ChapterName: chapterName,
-				ObjectPath: incomingObjectKey(uploadID, blobID+ext),
-				FinalPath:  sourceObjectKey(blobID + ext),
+				ObjectPath: incoming,
+				FinalPath:  finalPath,
 				Name:       meta.Name, Kind: kind, ContentType: contentType,
 				DeclaredSize: reservedSize, ParseMode: mode,
 				// Four import attempts of CAPY_IMPORT_JOB_TIMEOUT fit inside an

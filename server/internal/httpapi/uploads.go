@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // Object keys are built only through these helpers so every source object lands
@@ -18,6 +20,14 @@ func sourceObjectKey(name string) string { return "sources/" + name }
 // never completed costs nothing even if the outbox never hears about it.
 func incomingObjectKey(uploadID, name string) string {
 	return "incoming/" + uploadID + "/" + name
+}
+
+// sourceObjectKeys names a source upload's incoming and final objects: a
+// 128-bit blob id plus the filename's plain extension. Browser uploads and
+// cloud imports both take their keys here.
+func sourceObjectKeys(uploadID, name string) (incoming, final string) {
+	blob := store.ObjectKeyID("blob") + keyExtension(name)
+	return incomingObjectKey(uploadID, blob), sourceObjectKey(blob)
 }
 
 // keyExtension is the filename's extension as an object key suffix, kept only

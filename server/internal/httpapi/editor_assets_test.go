@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -132,8 +133,9 @@ func TestEditorAssetSignatureAllowed(t *testing.T) {
 func TestEditorAssetObjectKeyDoesNotUseOriginalName(t *testing.T) {
 	assetID := randID("asset")
 	key := editorAssetObjectKey(assetID, ".png")
-	if strings.Contains(key, "private-photo") || !strings.HasPrefix(key, "editor-assets/asset_") {
-		t.Fatalf("unexpected editor asset key %q", key)
+	if strings.Contains(key, "private-photo") ||
+		!regexp.MustCompile(`^editor-assets/asset_[0-9a-f]{10}/blob_[0-9a-f]{32}\.png$`).MatchString(key) {
+		t.Fatalf("unexpected editor asset key %q, want a 128-bit blob id", key)
 	}
 	if !strings.HasSuffix(key, ".png") {
 		t.Fatalf("object key lost validated extension: %q", key)
