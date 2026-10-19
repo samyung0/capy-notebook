@@ -317,7 +317,9 @@ class ConfigTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
                 config.render_build(values, "uat", temp, "a" * 40)
-            self.assertEqual(sorted(p.name for p in Path(temp).iterdir()), ["build.json"])
+            self.assertEqual(
+                sorted(p.name for p in Path(temp).iterdir()), ["build.json"]
+            )
             build = Path(temp, "build.json").read_text()
         self.assertEqual(json.loads(build)["VITE_APP_URL"], "https://app.example.com")
         self.assertNotIn("never-in-the-build", build)
