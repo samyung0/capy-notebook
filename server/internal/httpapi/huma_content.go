@@ -273,15 +273,27 @@ func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutp
 		return nil, hErr(err)
 	}
 	out := apimodel.FileLinks{URL: signed.URL, ExpiresAt: signed.ExpiresAt}
-	payer, err := a.s.FilePayerID(ctx, in.ID)
+	// The payer's full storage explains view-only only to those who could
+	// edit; a viewer was never editing (like materials and source sessions).
+	wsID, err := a.s.FileWorkspaceID(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	full, err := a.ownerFull(ctx, payer)
+	role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), wsID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out.StorageFull = store.FullBy(full, payer, userID(ctx))
+	if store.RoleCanEdit(role) {
+		payer, err := a.s.FilePayerID(ctx, in.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		full, err := a.ownerFull(ctx, payer)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		out.StorageFull = store.FullBy(full, payer, userID(ctx))
+	}
 	if preview != "" {
 		signedPreview, err := a.blob.PresignGetWithExpiry(ctx, preview)
 		if err != nil {

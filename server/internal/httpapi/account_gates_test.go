@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,11 +28,13 @@ type quotaFixture struct {
 	// owner acts as the throwaway over-quota user; pass "" as the actor.
 	owner http.Handler
 	// member acts as a seeded workspace editor whose own account is healthy;
-	// pass "u_editor" as the actor.
+	// pass "u_editor" as the actor ("u_viewer" is a viewer member).
 	member      http.Handler
 	store       *store.Store
 	workspaceID string
 	material    store.Material
+	// ballast is the owner's file that put it over the limit.
+	ballast store.File
 }
 
 // overQuotaFixture builds an API surface for one throwaway user who has lapsed
@@ -64,12 +67,17 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	ownerHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
+	// One bucket for both sides, holding the ballast file's bytes.
+	memory := blob.NewMemory()
+	if _, _, err := memory.Put("sources/"+userID, bytes.NewReader([]byte("%PDF"))); err != nil {
+		t.Fatal(err)
+	}
+	ownerHandler := httpapi.New(st, memory, nil, nil, "docling",
 		httpapi.Config{AuthDisabled: true, DevUserID: userID, CollaborationSecret: "collab-test-secret"})
-	memberHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
+	memberHandler := httpapi.New(st, memory, nil, nil, "docling",
 		httpapi.Config{
 			AuthDisabled: true, E2EAuth: true, E2ESecret: "e2e-test-secret",
-			E2EUserIDs: []string{"u_editor"}, CollaborationSecret: "collab-test-secret",
+			E2EUserIDs: []string{"u_editor", "u_viewer"}, CollaborationSecret: "collab-test-secret",
 		})
 
 	ws, err := st.CreateWorkspace(ctx, userID, store.WorkspaceCreate{Name: "Quota gate", Tags: nil})
@@ -77,7 +85,7 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
-		VALUES ($1,'u_editor','editor')`, ws.ID); err != nil {
+		VALUES ($1,'u_editor','editor'), ($1,'u_viewer','viewer')`, ws.ID); err != nil {
 		t.Fatal(err)
 	}
 	// Content that predates the lapse; what happens to it is the question.
@@ -103,8 +111,9 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 	if err := st.UpsertSubscription(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := uploadSource(ctx, st, ws.ID, userID, "ballast.pdf",
-		mustPlanLimits(t, st, store.PlanFree).StorageBytes+1, "sources/"+userID); err != nil {
+	ballast, err := uploadSource(ctx, st, ws.ID, userID, "ballast.pdf",
+		mustPlanLimits(t, st, store.PlanFree).StorageBytes+1, "sources/"+userID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	lapsed := time.Now().AddDate(0, 0, -lapsedDays).UTC()
@@ -125,6 +134,7 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 	}
 	return quotaFixture{
 		owner: ownerHandler, member: memberHandler, store: st, workspaceID: ws.ID, material: material,
+		ballast: ballast,
 	}
 }
 
@@ -190,6 +200,21 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 			map[string]any{"title": "Ask"})
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%q chat thread = %d body=%s", side.actor, rec.Code, rec.Body.String())
+		}
+	}
+	// A file's links carry the payer's full storage for those who could edit
+	// it; a viewer was never editing, so it gets no strip.
+	for _, side := range []struct {
+		h     http.Handler
+		actor string
+		full  string
+	}{{f.owner, "", "self"}, {f.member, "u_editor", "payer"}, {f.member, "u_viewer", ""}} {
+		rec := doReq(t, side.h, http.MethodGet, "/api/files/"+f.ballast.ID+"/links", side.actor, nil)
+		var links struct {
+			StorageFull string `json:"storageFull"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &links) != nil || links.StorageFull != side.full {
+			t.Fatalf("%q file links = %d body=%s, want full by %q", side.actor, rec.Code, rec.Body.String(), side.full)
 		}
 	}
 	// Refused before the model is even resolved, so no credits move (these
