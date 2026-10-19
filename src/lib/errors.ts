@@ -272,17 +272,24 @@ export function describeError(error: unknown): ErrorDescription {
     case 'quota':
       // Outside a workspace an account refusal is the requester's own frozen
       // account (inside one, deferStorageRefusal routes it to the status).
-      return isAccountRefusal(error)
-        ? {
-            action: 'subscription',
-            description: m.account_frozen_short(),
-            title: m.account_banner_frozen_title(),
-          }
-        : {
-            action: 'subscription',
-            description: m.error_quota_body(),
-            title: m.error_quota_title(),
-          };
+      if (isAccountRefusal(error))
+        return {
+          action: 'subscription',
+          description: m.account_frozen_short(),
+          title: m.account_banner_frozen_title(),
+        };
+      // Without numbers the item is another account's, and that account is
+      // full (uploader pays).
+      if (isStorageQuotaError(error) && !error.body?.ownerUserId)
+        return {
+          description: m.storage_payer_full_body(),
+          title: m.storage_payer_full_strip(),
+        };
+      return {
+        action: 'subscription',
+        description: m.error_quota_body(),
+        title: m.error_quota_title(),
+      };
     case 'files': {
       const limit =
         isFileLimitError(error) && typeof error.body?.filesLimit === 'number'
@@ -410,20 +417,13 @@ export function isStorageRefusal(error: unknown): boolean {
   return isAccountRefusal(error) || isStorageQuotaError(error);
 }
 
-let workspaceRefusals: {
-  handle: (error: unknown) => void;
-  isOwner: boolean;
-} | null = null;
+let workspaceRefusals: { handle: (error: unknown) => void } | null = null;
 const deferred = new WeakSet<object>();
 
 /** Registered by WorkspaceHealth while a workspace is open: it refreshes the
- * workspace and account and shows the workspace status instead. `isOwner`:
- * the viewer pays for this workspace. */
-export function handleWorkspaceRefusals(
-  handle: (error: unknown) => void,
-  isOwner: boolean
-) {
-  const current = { handle, isOwner };
+ * account and shows the viewer's own storage status instead. */
+export function handleWorkspaceRefusals(handle: (error: unknown) => void) {
+  const current = { handle };
   workspaceRefusals = current;
   return () => {
     if (workspaceRefusals === current) workspaceRefusals = null;
@@ -431,20 +431,15 @@ export function handleWorkspaceRefusals(
 }
 
 /** Inside a workspace, a frozen or storage refusal goes to the workspace
- * status (owner or member wording); true when it did, so the caller (the
- * mutation cache, or a surface with its own error toast) shows nothing of its
- * own. The status shows once per refusal however many surfaces see it.
- * Outside a workspace the caller keeps its own copy, and so does a member
- * whose own quota refused (a clone): a quota refusal carries the numbers only
- * for the charged account, and the workspace status speaks for its owner. */
+ * status (the viewer's own account, who pays for what they add); true when it
+ * did, so the caller (the mutation cache, or a surface with its own error
+ * toast) shows nothing of its own. The status shows once per refusal however
+ * many surfaces see it. Outside a workspace the caller keeps its own copy,
+ * and so does a quota refusal without numbers: another account pays for that
+ * item and is full (the numbers come only to the charged account). */
 export function deferStorageRefusal(error: unknown): boolean {
   if (!workspaceRefusals || !isStorageRefusal(error)) return false;
-  if (
-    isStorageQuotaError(error) &&
-    error.body?.ownerUserId &&
-    !workspaceRefusals.isOwner
-  )
-    return false;
+  if (isStorageQuotaError(error) && !error.body?.ownerUserId) return false;
   if (!deferred.has(error as object)) {
     deferred.add(error as object);
     workspaceRefusals.handle(error);

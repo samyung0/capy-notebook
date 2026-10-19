@@ -222,6 +222,19 @@ func TestBankCopiesWithCredits(t *testing.T) {
 		t.Fatalf("page copy into a NonCommercial note's quiz: %d %v", code, out)
 	}
 
+	// The owner appending to a suspended editor's quiz hears not found, never
+	// that editor's state or suspension reason (security review C2).
+	if _, err := st.Pool().Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='private reason' WHERE id='u_editor'`); err != nil {
+		t.Fatal(err)
+	}
+	rec := doReq(t, h, http.MethodPost, "/api/bank/copy", "u_owner", map[string]any{"questionIds": []string{"bq2"}, "workspaceId": "ws_e2e_private", "quizId": quiz.ID})
+	if _, err := st.Pool().Exec(ctx, `UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id='u_editor'`); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "private reason") || strings.Contains(rec.Body.String(), "suspended") {
+		t.Fatalf("copy into a suspended payer's quiz: %d %s", rec.Code, rec.Body.String())
+	}
+
 	// The model's own writes still may not claim a question credit.
 	forged := noteBody(msg, "f1", "Forged", "text")
 	forged["provenance"] = map[string]any{"books": []any{}, "questions": map[string]any{"q": map[string]any{"books": []any{}}}}

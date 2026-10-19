@@ -1,6 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { type CSSProperties, type ReactNode, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import {
+  invalidateStudy,
   useChapters,
   useFiles,
   useMaterials,
@@ -9,19 +11,28 @@ import {
   useWorkspace,
   useWorkspaceStudy,
 } from '@/api/hooks';
-import type { ReviewItem, ReviewSuggestion } from '@/api/types';
+import type { ReviewItem, UnfinishedSession } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Switch } from '@/components/ui/Switch';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
+import { relativeTime } from '@/features/materials/MaterialListCard';
 import type { OpenItem } from '@/features/materials/openItem';
-import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
+import type { Question } from '@/features/questions/types';
+import type { Answers } from '@/features/quizzes/grade';
+import { CheckedQuestion, QuestionItem } from '@/features/study/ReviewQuestion';
 import { StepNav } from '@/features/study/StepNav';
-import { answerStep, currentStep, useSteps } from '@/features/study/steps';
-import '@/features/study/railMap/railMap.css';
-import { UnderlineLink } from '@/components/ui/UnderlineLink';
+import {
+  answerStep,
+  currentStep,
+  nextStep,
+  previousStep,
+  type Steps,
+  useSteps,
+} from '@/features/study/steps';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
 import {
   readingOrder,
@@ -29,12 +40,11 @@ import {
 } from '@/features/workspace/workspaceContent';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { coverInk } from '@/lib/coverInk';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { iconUrl } from '@/lib/icon-catalog';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { reviewCard } from './ratings';
-import { groupName, REVIEW_MODE, reviewReason } from './reviewText';
 
 function itemTitle(item: WorkspaceContentItem): string {
   return item.type === 'file' ? item.data.name : item.data.title;
@@ -73,17 +83,21 @@ function Section({
   );
 }
 
-/** The workspace's Study tab: quick actions (read next, review), Quick review, done
+/** The workspace's Study tab: quick actions (read next, the whole workspace's
+ * review), Quick review, done
  * per chapter, recent quiz results and the progress switch. Every section
  * hides while it has nothing to show. */
 export function StudyPanel({
   workspaceId,
   renderTabRow,
   onOpenItem,
+  onOpenProgress,
 }: {
   workspaceId: string;
   renderTabRow: (actions: TabAction[]) => ReactNode;
   onOpenItem: (item: OpenItem) => void;
+  /** Opens the workspace's Study progress page in the centre pane. */
+  onOpenProgress: () => void;
 }) {
   const { data: workspace } = useWorkspace(workspaceId);
   const { data: study } = useWorkspaceStudy(workspaceId);
@@ -103,8 +117,6 @@ export function StudyPanel({
     return state !== 'done' && state !== 'removed';
   });
   const tracked = ordered.filter((it) => states.get(it.id) !== 'removed');
-  const doneCount = tracked.filter((it) => states.get(it.id) === 'done').length;
-  const cover = coverInk(workspace?.cover);
   // Untouched items are tracked too, so only a workspace with nothing tracked,
   // no attempts and nothing to review is empty.
   const nothingYet =
@@ -155,101 +167,46 @@ export function StudyPanel({
               </>
             ) : (
               <>
-                {(next || study.reviewable > 0) && (
-                  <Section title={m.study_quick_actions()}>
-                    <div className="flex flex-col gap-4 px-2 pt-1.5">
-                      {next && (
-                        <div className="flex items-center gap-2">
-                          <ItemIcon item={next} />
-                          <span className="line-clamp-1 flex-1 translate-y-px">
-                            {itemTitle(next)}
-                          </span>
-                          <UnderlineLink
-                            accent
-                            onClick={() =>
-                              onOpenItem({ id: next.id, kind: next.type })
-                            }
-                          >
-                            {m.study_continue()}
-                          </UnderlineLink>
-                        </div>
-                      )}
-                      {study.reviewable > 0 && (
-                        <div>
-                          <div className="flex items-start gap-2">
-                            <Icon
-                              className={cn(
-                                'mt-1 shrink-0 -translate-y-px',
-                                study.suggestion
-                                  ? REVIEW_MODE[study.suggestion.mode].className
-                                  : 'text-fg-muted'
-                              )}
-                              name={
-                                study.suggestion
-                                  ? REVIEW_MODE[study.suggestion.mode].icon
-                                  : 'refresh'
-                              }
-                              size={15}
-                            />
-                            {study.suggestion ? (
-                              <span className="flex min-w-0 flex-1 translate-y-px flex-col gap-1">
-                                <span>
-                                  {groupName(
-                                    study.suggestion.group,
-                                    study.suggestion.chapterName
-                                  ) || study.suggestion.workspaceName}
-                                </span>
-                                <span className="text-fg-muted text-xs">
-                                  {reviewReason(study.suggestion)}
-                                </span>
-                              </span>
-                            ) : (
-                              <>
-                                <span className="flex-1 translate-y-px">
-                                  {m.study_refresh_knowledge()}
-                                </span>
-                                <span className="translate-y-px text-fg-secondary text-sm">
-                                  {m.study_of({
-                                    done: doneCount,
-                                    total: tracked.length,
-                                  })}
-                                </span>
-                              </>
-                            )}
-                          </div>
-                          {/* Total progress, done of tracked: skipping items doesn't move it. */}
-                          <div className="mt-1.5 flex items-center justify-between gap-4 pl-6">
-                            <div
-                              className={cn(
-                                'min-w-0 max-w-[240px] flex-1',
-                                'rail-trail',
-                                cover && 'rail-colour'
-                              )}
-                              style={{ '--cover-ink': cover } as CSSProperties}
-                            >
-                              <MiniTrail
-                                answered={doneCount}
-                                topicId={workspaceId}
-                                total={Math.max(tracked.length, 1)}
-                              />
-                            </div>
-                            <ReviewLink
-                              suggestion={study.suggestion}
-                              workspaceId={workspaceId}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </Section>
-                )}
+                <Section title={m.study_quick_actions()}>
+                  <div className="flex flex-col gap-4 px-2 pt-1.5">
+                    {next && (
+                      <div className="flex items-center gap-2">
+                        <ItemIcon item={next} />
+                        <span className="line-clamp-1 flex-1 translate-y-px">
+                          {itemTitle(next)}
+                        </span>
+                        <UnderlineLink
+                          accent
+                          onClick={() =>
+                            onOpenItem({ id: next.id, kind: next.type })
+                          }
+                        >
+                          {m.study_continue()}
+                        </UnderlineLink>
+                      </div>
+                    )}
+                    <WorkspaceReview
+                      iconId={workspace?.iconId}
+                      reviewable={study.reviewable}
+                      unfinished={study.unfinished}
+                      workspaceId={workspaceId}
+                    />
+                  </div>
+                </Section>
                 {/* Stays mounted through refreshes; hides itself. */}
                 <QuickReview
                   items={study.quickReview}
                   workspaceId={workspaceId}
                 />
                 {chapterRows.length > 0 && (
-                  <Section title={m.study_done()}>
+                  <Section
+                    aside={
+                      <UnderlineLink onClick={onOpenProgress}>
+                        {m.progress_all()}
+                      </UnderlineLink>
+                    }
+                    title={m.study_done()}
+                  >
                     {chapterRows.map((ch) => (
                       <div
                         className="flex items-center gap-1.5 rounded-button px-2 py-1.5"
@@ -326,44 +283,72 @@ export function StudyPanel({
   );
 }
 
-/** Opens the suggested review, or the whole workspace's without one; Back
- * returns to the workspace. */
-function ReviewLink({
+/** The whole workspace's review: Continue review picks up its latest
+ * unfinished session, otherwise Review starts a new one. Either way the
+ * session is recorded with its first answer. */
+function WorkspaceReview({
   workspaceId,
-  suggestion,
+  iconId,
+  reviewable,
+  unfinished,
 }: {
   workspaceId: string;
-  suggestion?: ReviewSuggestion;
+  iconId?: string;
+  reviewable: number;
+  unfinished?: UnfinishedSession;
 }) {
   const navigate = useNavigate();
   return (
-    <UnderlineLink
-      onClick={() =>
-        navigate({
-          params: { workspaceId },
-          search: {
-            chapterId: suggestion?.chapterId,
-            from: 'workspace',
-            group: suggestion?.group ?? 'workspace',
-            reviewMode: suggestion?.mode,
-          },
-          to: '/learning/review/$workspaceId',
-        })
-      }
-    >
-      {m.study_review_button()}
-    </UnderlineLink>
+    <div className="flex items-start gap-2">
+      {iconId ? (
+        <img
+          alt=""
+          className="mt-0.5 size-3.75 shrink-0 rounded-[3px]"
+          height={15}
+          src={iconUrl(iconId)}
+          width={15}
+        />
+      ) : (
+        <span className="size-3.75 shrink-0" />
+      )}
+      <span className="flex min-w-0 flex-1 translate-y-px flex-col gap-1">
+        <span className="line-clamp-1">{m.study_whole_workspace()}</span>
+        {unfinished && (
+          <span className="text-fg-muted text-xs">
+            {m.study_review_progress({
+              answered: unfinished.answered,
+              total: unfinished.total,
+              when: relativeTime(unfinished.lastAnswerAt),
+            })}
+          </span>
+        )}
+      </span>
+      <UnderlineLink
+        disabled={!unfinished && !reviewable}
+        onClick={() =>
+          navigate({
+            params: { workspaceId },
+            search: unfinished
+              ? { from: 'workspace', session: unfinished.id }
+              : { from: 'workspace', group: 'workspace' },
+            to: '/learning/review/$workspaceId',
+          })
+        }
+      >
+        {unfinished ? m.learning_continue_review() : m.study_review_button()}
+      </UnderlineLink>
+    </div>
   );
 }
 
 type QuickPhase = 'open' | 'leaving' | 'gone';
 
-/** The Study tab's short practice: up to four flashcards (the server picks
- * them as a suggested review would; questions are left to review sessions).
- * Ratings are recorded like any review. The round is the list as it was when it
- * began, kept while ratings refresh the summary (rated items leave it); once
- * the last item is done the section dissolves into smoke and stays gone
- * until the workspace opens again. */
+/** The Study tab's short practice: up to four flashcards and single-part
+ * quick questions, picked by the server as a suggested review would. Ratings
+ * and checks are recorded like any review. The round is the list as it was
+ * when it began, kept while answers refresh the summary (answered items
+ * leave it); once the last item is done the section dissolves into smoke and
+ * stays gone until the workspace opens again. */
 function QuickReview({
   items,
   workspaceId,
@@ -393,16 +378,22 @@ function QuickReview({
         className={cn('min-h-0', leaving && 'motion-smoke-out')}
         inert={leaving}
       >
-        <QuickCards items={round} onDone={finish} workspaceId={workspaceId} />
+        <QuickItems items={round} onDone={finish} workspaceId={workspaceId} />
       </div>
     </div>
   );
 }
 
-/** One card at a time. Next skips a card to the end of the round; Previous
- * shows a rated one read only. The last rating keeps its card in place to
- * dissolve with the section. */
-function QuickCards({
+/** A card's rating, or a checked question with its key. */
+type QuickRecord =
+  | { rating: SrsRating }
+  | { answers: Answers; question: Question };
+
+/** One item at a time. Next skips an item to the end of the round; Previous
+ * shows an answered one read only. A rated card moves on at once, and the
+ * last rating keeps its card in place to dissolve with the section; a checked
+ * question stays to show its result until Next. */
+function QuickItems({
   items,
   onDone,
   workspaceId,
@@ -412,19 +403,33 @@ function QuickCards({
   workspaceId: string;
 }) {
   const keyOf = (it: ReviewItem) => `${it.materialId}/${it.itemId}`;
-  const steps = useSteps<SrsRating>(items.map(keyOf));
+  const steps = useSteps<QuickRecord>(items.map(keyOf));
   const [lastRating, setLastRating] = useState<SrsRating>();
   const stack = useCardStack();
+  const qc = useQueryClient();
   const { mutateAsync: rateItem } = useRateReviewItem(workspaceId);
   const shown = steps.current;
-  const card = shown && items.find((it) => keyOf(it) === shown.key);
-  if (!card) return null;
+  const item = shown && items.find((it) => keyOf(it) === shown.key);
+  if (!item) return null;
+  const record = shown.record;
+
+  /** A card swipes away only over another card. */
+  function move(after: Steps<QuickRecord>, back = false) {
+    const to = currentStep(after);
+    const next = to && items.find((it) => keyOf(it) === to.key);
+    stack.move(
+      item?.kind === 'card' && next?.kind === 'card'
+        ? reviewCard(item)
+        : undefined,
+      back
+    );
+  }
 
   function rate(rating: SrsRating) {
-    if (!card) return;
+    if (!item) return;
     rateItem({
-      itemId: card.itemId,
-      materialId: card.materialId,
+      itemId: item.itemId,
+      materialId: item.materialId,
       rating: SRS_RATINGS.indexOf(rating) + 1,
     }).catch(() =>
       userToast({
@@ -433,13 +438,25 @@ function QuickCards({
         variant: 'error',
       })
     );
-    if (!currentStep(answerStep(steps.steps, rating))) {
+    const after = answerStep(steps.steps, { rating });
+    if (!currentStep(after)) {
       setLastRating(rating);
       onDone();
       return;
     }
-    stack.move(reviewCard(card));
-    steps.answer(rating);
+    move(after);
+    steps.answer({ rating });
+  }
+
+  function next() {
+    const after = nextStep(steps.steps);
+    // Past the last checked question there is nothing left.
+    if (!currentStep(after)) {
+      onDone();
+      return;
+    }
+    move(after);
+    steps.next();
   }
 
   return (
@@ -447,7 +464,7 @@ function QuickCards({
       aside={
         <span className="t-meta px-1.5 text-fg-muted">
           {m.study_quick_position({
-            current: items.indexOf(card) + 1,
+            current: items.indexOf(item) + 1,
             total: items.length,
           })}
         </span>
@@ -455,24 +472,45 @@ function QuickCards({
       title={m.study_quick_review()}
     >
       <div className="flex flex-col gap-2 px-1.5 pt-1">
-        <CardStack
-          card={reviewCard(card)}
-          onRate={rate}
-          rated={shown.record ?? lastRating}
-          size="panel"
-          stack={stack}
-        />
-        <p className="t-meta text-center text-fg-muted">{card.materialTitle}</p>
+        {item.kind === 'card' ? (
+          <>
+            <CardStack
+              card={reviewCard(item)}
+              onRate={rate}
+              rated={record && 'rating' in record ? record.rating : lastRating}
+              size="panel"
+              stack={stack}
+            />
+            <p className="t-meta text-center text-fg-muted">
+              {item.materialTitle}
+            </p>
+          </>
+        ) : record && 'question' in record ? (
+          <CheckedQuestion
+            answers={record.answers}
+            question={record.question}
+            title={item.materialTitle}
+          />
+        ) : (
+          <QuestionItem
+            item={item}
+            key={shown.key}
+            onChecked={(graded, answers) => {
+              void invalidateStudy(qc, workspaceId);
+              steps.answer(
+                { answers, question: graded.question },
+                { stay: true }
+              );
+            }}
+          />
+        )}
         <StepNav
-          canNext={shown.past || steps.steps.queue.length > 1}
+          canNext={shown.past || steps.steps.queue.length > 1 || !!record}
           canPrevious={steps.steps.cursor > 0}
           className="pt-2"
-          onNext={() => {
-            stack.move(reviewCard(card));
-            steps.next();
-          }}
+          onNext={next}
           onPrevious={() => {
-            stack.move(reviewCard(card), true);
+            move(previousStep(steps.steps), true);
             steps.previous();
           }}
         />

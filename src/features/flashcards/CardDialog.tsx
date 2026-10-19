@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { editorImageMaxBytes, uploadEditorAsset } from '@/api/editorAssets';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { SimpleDialog, useIsPhone } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
@@ -13,7 +13,6 @@ import {
 import type { UndoTarget } from '@/features/collaboration/undo';
 import { useBoundText } from '@/features/collaboration/yText';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { fitImage, IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
@@ -76,6 +75,7 @@ export function CardDialog({
     }
   }
 
+  const phone = useIsPhone();
   // Removed by someone else (or Undo of its insert): nothing left to edit.
   useEffect(() => {
     if (!card) onClose();
@@ -83,15 +83,25 @@ export function CardDialog({
   if (!card) return null;
   return (
     <SimpleDialog
+      // Live-saved: phones show the status and Undo where Save would be.
+      action={
+        phone && (
+          <div className="flex items-center gap-1">
+            <LiveStatus status={status} />
+            <UndoButtons manager={undo} />
+          </div>
+        )
+      }
       footer={
         <>
-          <div className="mr-auto flex items-center gap-2">
-            <UndoButtons footer manager={undo} />
-            <LiveStatus status={status} />
-          </div>
+          {!phone && (
+            <div className="mr-auto flex items-center gap-2">
+              <UndoButtons footer manager={undo} />
+              <LiveStatus status={status} />
+            </div>
+          )}
           {onRemove && (
             <Button
-              className="hidden md:inline-flex"
               onClick={onRemove}
               size="lg"
               type="button"
@@ -114,28 +124,9 @@ export function CardDialog({
       }
       width={920}
     >
-      {/* Note-embedded sets pass no title: their name is never shown. Below md
-          Remove sits up here so the footer keeps two buttons. */}
-      {(setTitle || onRemove) && (
-        <div
-          className={cn(
-            '-mt-3 mb-3 flex items-center justify-between gap-3',
-            !setTitle && 'md:hidden'
-          )}
-        >
-          <p className="t-meta text-fg-muted">{setTitle}</p>
-          {onRemove && (
-            <Button
-              className="h-7 md:hidden"
-              onClick={onRemove}
-              size="sm"
-              type="button"
-              variant="danger-light"
-            >
-              {m.editor_remove_card()}
-            </Button>
-          )}
-        </div>
+      {/* Note-embedded sets pass no title: their name is never shown. */}
+      {setTitle && (
+        <p className="t-meta mb-3 text-fg-muted sm:-mt-3">{setTitle}</p>
       )}
       <div className="grid gap-7 md:grid-cols-2">
         <div className="flex flex-col gap-4">

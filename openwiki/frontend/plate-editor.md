@@ -70,8 +70,8 @@ The permission boundary is layered:
    room, the token's signature, issuer, audience, expiry, exact room, schema
    and access.
 4. It joins `read` channels (a viewer's, and the downgrade an editor receives
-   while their own or the storage owner's account is frozen, or the storage
-   owner is at its storage limit) read-only: a step 2 or update holding
+   while their own or the material's payer's account is frozen, or the payer
+   (its creator, uploader pays) is at its storage limit) read-only: a step 2 or update holding
    anything new closes the channel, so a modified browser cannot send Yjs
    document updates.
 5. View mounts only the static preview, without editor plugins or comment controls.
@@ -1498,9 +1498,11 @@ open-anyway. Absent list metadata always opens: the gate must never become a
 door the reader cannot pass. Nothing downloads the document before the reader
 chooses: `GET /api/materials/{id}` carries the whole `content` envelope, so the
 viewer header takes the title and kind from the list entry and the capabilities
-from the workspace (a workspace material's capabilities come from the same
-role), and reads the body only on the standalone page or for a material the
-list does not carry, which the gate cannot weigh anyway. The workspace route
+from the workspace until the body opens, then from the body the pane read (its
+query cache, no second request): Edit is per item, since the item's payer at
+its storage limit or frozen makes it view-only (uploader pays). It fetches the
+body itself only on the standalone page or for a material the list does not
+carry, which the gate cannot weigh anyway. The workspace route
 loader prefetches an open file for the same reason it leaves an open material
 alone. When the API cannot decode stored content it
 answers 422 `material_content_unreadable`, which `NoteEditor` and `MaterialBody`

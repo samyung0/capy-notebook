@@ -4,6 +4,7 @@ import { useLearningProgress } from '@/api/hooks';
 import type { ProgressMap, ProgressWorkspace } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { TabContent } from '@/components/app/tabPanel';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
@@ -250,7 +251,7 @@ export default function Learning() {
   return (
     <PanelWithInvertedRadius header={<PageHeader title={m.nav_learning()} />}>
       <Tabs
-        className="px-1 sm:px-3"
+        className="page-tabs-px"
         onChange={(next) =>
           navigate({
             replace: true,
@@ -273,15 +274,14 @@ export default function Learning() {
       ) : tab === 'results' ? (
         <AllResults />
       ) : (
-        // Settings' tab padding, without its width cap: the map runs to the
-        // panel's edges.
-        <div className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-8 sm:px-6 sm:pt-8 lg:px-10 xl:px-16">
+        // Without the reading width: the map runs to the panel's edges.
+        <TabContent fill>
           {tab === 'progress' ? (
             <Progress finished={finished} />
           ) : (
             <ReviewTab />
           )}
-        </div>
+        </TabContent>
       )}
     </PanelWithInvertedRadius>
   );

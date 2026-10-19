@@ -532,6 +532,19 @@ func (s *Store) SubscriptionForUser(ctx context.Context, userID string) (*Subscr
 	return &sub, nil
 }
 
+// LiveSubscriptionID is the user's subscription that still entitles them, for
+// the portal's cancel screen. ErrNotFound when there is none.
+func (s *Store) LiveSubscriptionID(ctx context.Context, userID string) (string, error) {
+	var id string
+	err := s.pool.QueryRow(ctx, `SELECT stripe_subscription_id FROM user_subscriptions
+		WHERE user_id=$1 AND status IN `+entitlingStatuses+`
+		ORDER BY current_period_end DESC NULLS LAST LIMIT 1`, userID).Scan(&id)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	return id, err
+}
+
 // UserIDBySubscription resolves the owner of a Stripe subscription id, for events
 // that carry the subscription but not the customer.
 func (s *Store) UserIDBySubscription(ctx context.Context, subscriptionID string) (string, error) {

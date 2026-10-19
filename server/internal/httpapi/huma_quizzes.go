@@ -41,7 +41,8 @@ type createAttemptInput struct {
 type attemptsInput struct {
 	Sort        string `query:"sort" enum:"date,score,quiz,workspace" default:"date"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
-	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids; the quiz's current workspace"`
+	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids; the quiz's or set's current workspace"`
+	Kind        string `query:"kind" doc:"Comma-separated kinds: quiz, flashcards; empty is both"`
 	Offset      int    `query:"offset" minimum:"0"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"30"`
 }
@@ -205,7 +206,7 @@ func (a *api) deleteQuiz(ctx context.Context, in *quizDeleteInput) (*Empty, erro
 
 func (a *api) listAttempts(ctx context.Context, in *attemptsInput) (*attemptsOutput, error) {
 	list, more, err := a.s.ListAttempts(ctx, userID(ctx), store.AttemptParams{
-		Sort: in.Sort, Ascending: in.Dir == "asc", Workspaces: commaValues(in.WorkspaceID),
+		Sort: in.Sort, Ascending: in.Dir == "asc", Workspaces: commaValues(in.WorkspaceID), Kinds: commaValues(in.Kind),
 		Offset: in.Offset, Limit: in.Limit,
 	})
 	if err != nil {
@@ -247,11 +248,11 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 		return nil, err
 	}
 	res, err := a.s.CreateAttempt(ctx, userID(ctx), in.ID, correct, total,
-		apimodel.EncodeRaw(answers), apimodel.EncodeQuestions(graded))
+		apimodel.EncodeRaw(answers), apimodel.EncodeQuestions(graded), in.Body.StartedAt)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &attemptDetailOutput{Body: apimodel.AttemptDetail{Attempt: res, Answers: answers, Questions: graded}}, nil
+	return &attemptDetailOutput{Body: apimodel.AttemptDetail{Attempt: res, Answers: answers, Questions: graded, Cards: []store.AttemptCard{}}}, nil
 }
 
 // projectedAnswers keeps the answers to parts the projection holds. A live

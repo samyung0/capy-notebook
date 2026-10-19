@@ -10,4 +10,5 @@ export interface StudyItem {
   fileId?: string;
   materialId?: string;
   state: StudyItemState;
+  updatedAt: string;
 }

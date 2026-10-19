@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelOption } from '@/api/types';
-import { joinModelLabel, sortModelOptions } from './llmOptions';
+import { sortModelOptions } from './llmOptions';
 
 function option(partial: Partial<ModelOption>): ModelOption {
   return {
@@ -16,12 +16,6 @@ function option(partial: Partial<ModelOption>): ModelOption {
 }
 
 describe('llm options', () => {
-  it('joins provider and model names', () => {
-    expect(joinModelLabel('DeepSeek', 'Flash')).toBe('DeepSeek Flash');
-    expect(joinModelLabel('  DeepSeek  ', '  Flash ')).toBe('DeepSeek Flash');
-    expect(joinModelLabel('', 'Flash')).toBe('Flash');
-  });
-
   it('puts locked models last and sorts the rest by label', () => {
     const sorted = sortModelOptions([
       option({

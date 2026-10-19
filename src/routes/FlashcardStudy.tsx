@@ -134,12 +134,13 @@ function Study({ setId }: { setId: string }) {
           source: flashcardsStudySource(window.location.pathname),
         })
       }
-      onRate={(card, rating) =>
+      onRate={(card, rating, attempt) =>
         // Every reader records their own progress, except in a set embedded in
-        // a note, which records nothing. One toast however many ratings fail
-        // in a row.
+        // a note, which records nothing; the server keeps the attempt for a
+        // workspace set. One toast however many ratings fail in a row.
         !set.parentMaterialId &&
         rateItem({
+          attempt,
           itemId: card.id,
           materialId: setId,
           rating: SRS_RATINGS.indexOf(rating) + 1,

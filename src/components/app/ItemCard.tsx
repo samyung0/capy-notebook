@@ -9,6 +9,7 @@ import {
 import { Card } from '@/components/ui/Card';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import type { PickContext } from '@/features/files/useFileSelection';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -130,6 +131,7 @@ export function ItemCard({
   title,
   workspace,
   workspaceIconId,
+  workspaceLost = false,
   details,
   meta,
   link,
@@ -145,6 +147,8 @@ export function ItemCard({
   /** The list's column; the grid card's bottom line, before `meta`. */
   workspace?: string;
   workspaceIconId?: string;
+  /** The viewer lost access to the workspace but still pays for the item. */
+  workspaceLost?: boolean;
   /** Question or card count, file size. */
   details?: string;
   /** Updated, added or expiry line: the grid card's bottom line. */
@@ -160,6 +164,9 @@ export function ItemCard({
   pickKey?: string;
   selected?: boolean;
 }) {
+  // A lost workspace whose owner's account closed comes without its name.
+  const workspaceLabel =
+    workspaceLost && !workspace ? m.files_workspace_unavailable() : workspace;
   const pickable = pickKey !== undefined;
   const overlay = pickable && (
     <PickOverlay
@@ -191,8 +198,12 @@ export function ItemCard({
           </Title>
         </div>
         <div className="min-w-0">
-          {workspace && (
-            <WorkspaceCell iconId={workspaceIconId} name={workspace} />
+          {workspaceLabel && (
+            <WorkspaceCell
+              iconId={workspaceIconId}
+              lost={workspaceLost}
+              name={workspaceLabel}
+            />
           )}
         </div>
         <p>{details}</p>
@@ -241,19 +252,29 @@ export function ItemCard({
       {/* A fixed-height line, so cards with and without a workspace match;
           pinned to the bottom when a wrapped title makes a row taller. */}
       <div className="mt-auto box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[13px] text-fg">
-        {workspace && (
-          <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
-            {workspaceIconId && (
-              <img
-                alt=""
-                className="size-4 shrink-0 -translate-y-px rounded-[3px]"
-                height={16}
-                src={iconUrl(workspaceIconId)}
-                width={16}
-              />
+        {workspaceLabel && (
+          <span
+            className={cn(
+              'hidden min-w-0 items-center gap-1.5 sm:flex',
+              workspaceLost && 'flex text-tint-error-fg'
+            )}
+            title={workspaceLost ? m.files_lost_access() : undefined}
+          >
+            {workspaceLost ? (
+              <Icon className="size-4 shrink-0 -translate-y-px" name="error" />
+            ) : (
+              workspaceIconId && (
+                <img
+                  alt=""
+                  className="size-4 shrink-0 -translate-y-px rounded-[3px]"
+                  height={16}
+                  src={iconUrl(workspaceIconId)}
+                  width={16}
+                />
+              )
             )}
             <span className="min-w-0 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight">
-              {workspace}
+              {workspaceLabel}
             </span>
             <span aria-hidden className="shrink-0">
               ·
@@ -346,7 +367,7 @@ export function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'grid w-full grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] sm:gap-4 lg:grid-cols-[repeat(auto-fill,minmax(210px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
+        'grid w-full grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] lg:grid-cols-[repeat(auto-fill,minmax(210px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
         className
       )}
       {...rest}

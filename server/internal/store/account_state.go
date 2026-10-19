@@ -124,6 +124,36 @@ func StorageUsageLevelFor(usedBytes, limitBytes int64) StorageUsageLevel {
 	return StorageUsageOK
 }
 
+// StorageFullBy names whose full storage makes an item view-only for the
+// viewer (uploader pays, Sam 2026-10-18): "self" when the viewer pays for it,
+// "payer" when another account does; empty when the payer has room.
+type StorageFullBy string
+
+const (
+	StorageFullSelf  StorageFullBy = "self"
+	StorageFullPayer StorageFullBy = "payer"
+)
+
+func (StorageFullBy) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(r, "StorageFullBy", "self", "payer")
+}
+
+// FullBy is StorageFullBy for an item payerID pays for, seen by viewerID.
+func FullBy(full bool, payerID, viewerID string) StorageFullBy {
+	switch {
+	case !full:
+		return ""
+	case payerID == viewerID:
+		return StorageFullSelf
+	}
+	return StorageFullPayer
+}
+
+// FilePayerID is the account a file is charged to, its uploader.
+func (s *Store) FilePayerID(ctx context.Context, fileID string) (string, error) {
+	return filePayer(ctx, s.pool, fileID)
+}
+
 // Full reports stored plus reserved bytes at or over the limit (grace
 // included): the content the account pays for is view-only.
 func (u StorageUsage) Full() bool {
@@ -232,7 +262,7 @@ func (s *Store) assertEditableTx(ctx context.Context, q rowQueryer, userIDs ...s
 // view-only, while organizing (rename, move, reorder, delete) goes on.
 func (s *Store) assertContentEditableTx(ctx context.Context, q rowQueryer, ownerID, actorID string) error {
 	if err := s.assertEditableTx(ctx, q, ownerID, actorID); err != nil {
-		return err
+		return HideOtherAccountLock(err, actorID)
 	}
 	return s.storageFullErr(ctx, q, ownerID)
 }

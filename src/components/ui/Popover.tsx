@@ -1,5 +1,5 @@
 import { Popover as PopoverPrimitive } from 'radix-ui';
-import type * as React from 'react';
+import * as React from 'react';
 
 import { cn } from '@/lib/cn';
 
@@ -9,13 +9,36 @@ function Popover({
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
+/** Toggles on pointerdown like the dropdown menus: the press replays as a
+ * keyboard-style click (`detail` 0) that Radix toggles on, and the real click
+ * after release is prevented so it does not toggle back. Preventing the
+ * pointerdown keeps focus from leaving the opened popover. */
 function PopoverTrigger({
+  onClick,
+  onPointerDown,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
+  const pressed = React.useRef(false);
   return (
     <PopoverAnchor asChild>
       <span className="inline-flex min-w-0 shrink-0">
-        <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
+        <PopoverPrimitive.Trigger
+          data-slot="popover-trigger"
+          onClick={(event) => {
+            onClick?.(event);
+            if (pressed.current && event.detail > 0) event.preventDefault();
+            pressed.current = false;
+          }}
+          onPointerDown={(event) => {
+            onPointerDown?.(event);
+            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey)
+              return;
+            event.preventDefault();
+            event.currentTarget.click();
+            pressed.current = true;
+          }}
+          {...props}
+        />
       </span>
     </PopoverAnchor>
   );

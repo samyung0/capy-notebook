@@ -350,11 +350,12 @@ class Workspace:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO files (id, workspace_id, chapter_id, name, kind,
-                                   size_bytes, status, blob_path)
-                VALUES (%s, %s, %s, %s, 'txt', 1024, 'ready', %s)
+                INSERT INTO files (id, workspace_id, user_id, chapter_id, name,
+                                   kind, size_bytes, status, blob_path)
+                SELECT %s, w.id, w.user_id, %s, %s, 'txt', 1024, 'ready', %s
+                FROM workspaces w WHERE w.id = %s
                 """,
-                (file_id, self.id, chapter_id, name, f"sources/{file_id}"),
+                (file_id, chapter_id, name, f"sources/{file_id}", self.id),
             )
         return file_id
 

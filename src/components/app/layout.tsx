@@ -1,4 +1,10 @@
-import { createContext, type ReactNode, type RefObject, useRef } from 'react';
+import {
+  type ComponentProps,
+  createContext,
+  type ReactNode,
+  type RefObject,
+  useRef,
+} from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
@@ -86,6 +92,30 @@ export function PanelWithInvertedRadius({
     </div>
   );
 }
+/**
+ * Body of a page without tabs (Dashboard, Workspaces, Files, the Learning
+ * tables): the normal gutter (`page-px`), 20/24px under the header. A list
+ * page's ListToolbar already spaces the list from the header, so
+ * `belowToolbar` keeps only a small gap. For the body under a page's tabs see
+ * TabContent.
+ */
+export function PageBody({
+  belowToolbar,
+  className,
+  ...props
+}: ComponentProps<'div'> & { belowToolbar?: boolean }) {
+  return (
+    <div
+      className={cn(
+        'page-px w-full shrink-0 grow pb-6',
+        belowToolbar ? 'pt-2' : 'pt-5 sm:pt-6',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
 export function Panel({
   children,
   className,
@@ -175,7 +205,7 @@ export function PageHeader({
     <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
       <div
         className={cn(
-          'flex min-w-0 items-center gap-10 px-4 pt-2 pb-0 sm:px-6 sm:pt-6 sm:pb-2',
+          'page-px flex min-w-0 items-center gap-10 pt-2 pb-0 sm:pt-6 sm:pb-2',
           className
         )}
       >

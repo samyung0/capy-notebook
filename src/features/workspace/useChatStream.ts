@@ -88,65 +88,128 @@ export function shouldApplyCitations(
   return version >= applied;
 }
 
+type PendingSources = { fileIds: string[]; omitted: boolean };
+
+/** One conversation's live state. A turn keeps streaming into its own thread
+ * after the learner starts or opens another conversation. */
+type Thread = {
+  conversationId: string | null;
+  messages: LiveMessage[];
+  pendingSources: PendingSources | null;
+  streaming: boolean;
+};
+
+const emptyThread = (): Thread => ({
+  conversationId: null,
+  messages: [],
+  pendingSources: null,
+  streaming: false,
+});
+
 /**
- * Client state machine for a single active conversation. Holds the message list,
- * drives the SSE stream, and tracks the in-flight assistant turn so blocks land
- * on the right bubble. Abort propagates through the fetch signal to the gateway.
+ * Client state machine for the shown conversation plus any turns still
+ * streaming in conversations the learner left. Holds each message list,
+ * drives the SSE streams, and tracks each in-flight assistant turn so blocks
+ * land on the right bubble. Abort propagates through the fetch signal to the
+ * gateway; leaving a conversation does not abort its turn.
  */
 export function useChatStream(workspaceId: string) {
   const qc = useQueryClient();
-  const [pendingSources, setPendingSources] = useState<{
-    fileIds: string[];
-    omitted: boolean;
-  } | null>(null);
-  const [messages, setMessages] = useState<LiveMessage[]>([]);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [streaming, setStreaming] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const [initialKey] = useState(tempId);
+  const [threads, setThreads] = useState<Record<string, Thread>>(() => ({
+    [initialKey]: emptyThread(),
+  }));
+  const [active, setActive] = useState(initialKey);
+  // Read by send, so a send right after startNew lands in the new thread.
+  const activeRef = useRef(initialKey);
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const abortRefs = useRef(new Map<string, AbortController>());
+  const shown = threads[active] ?? emptyThread();
 
-  const patch = useCallback((id: string, up: Partial<ChatMessage>) => {
-    setMessages((prev) =>
-      prev.map((msg) => (msg.id === id ? { ...msg, ...up } : msg))
+  const update = useCallback((key: string, up: (t: Thread) => Thread) => {
+    setThreads((prev) =>
+      prev[key] ? { ...prev, [key]: up(prev[key]) } : prev
     );
+  }, []);
+
+  const setMessagesIn = useCallback(
+    (key: string, up: (prev: LiveMessage[]) => LiveMessage[]) =>
+      update(key, (t) => ({ ...t, messages: up(t.messages) })),
+    [update]
+  );
+
+  const patch = useCallback(
+    (key: string, id: string, up: Partial<ChatMessage>) =>
+      setMessagesIn(key, (prev) =>
+        prev.map((msg) => (msg.id === id ? { ...msg, ...up } : msg))
+      ),
+    [setMessagesIn]
+  );
+
+  /** Shows `key`, dropping every other thread that has finished streaming. */
+  const show = useCallback((key: string, thread?: Thread) => {
+    activeRef.current = key;
+    setActive(key);
+    setThreads((prev) => {
+      const next: Record<string, Thread> = {};
+      for (const [k, t] of Object.entries(prev)) if (t.streaming) next[k] = t;
+      next[key] = thread ?? prev[key] ?? emptyThread();
+      return next;
+    });
   }, []);
 
   const hydrate = useCallback(
     (convId: string | null, history: ChatMessage[]) => {
-      setPendingSources(null);
-      setConversationId(convId);
-      setMessages(history);
+      // A conversation still streaming here is fresher than its history.
+      const live = Object.entries(threadsRef.current).find(
+        ([, t]) => t.streaming && convId && t.conversationId === convId
+      );
+      if (live) {
+        show(live[0]);
+        return;
+      }
+      show(tempId(), {
+        ...emptyThread(),
+        conversationId: convId,
+        messages: history,
+      });
     },
-    []
+    [show]
   );
 
-  const startNew = useCallback(() => {
-    abortRef.current?.abort();
-    setPendingSources(null);
-    setConversationId(null);
-    setMessages([]);
-  }, []);
+  const startNew = useCallback(() => show(tempId()), [show]);
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
+  const stop = useCallback(
+    () => abortRefs.current.get(activeRef.current)?.abort(),
+    []
+  );
 
   /** Swap one undoable effect in place: the Undo or Redo receipt's effect
    * (carrying the next step's undo ref), or the same effect with its undo
    * marked unavailable after a refusal, which disables the button. */
   const replaceEffect = useCallback(
     (operationId: string, next: ResourceEffect) => {
-      setMessages((prev) =>
-        prev.map((msg) => ({
-          ...msg,
-          activity: msg.activity?.map((block) =>
-            block.kind === 'tool'
-              ? {
-                  ...block,
-                  effects: block.effects?.map((effect) =>
-                    effect.undo?.operationId === operationId ? next : effect
-                  ),
-                }
-              : block
-          ),
-        }))
+      const swap = (msg: LiveMessage): LiveMessage => ({
+        ...msg,
+        activity: msg.activity?.map((block) =>
+          block.kind === 'tool'
+            ? {
+                ...block,
+                effects: block.effects?.map((effect) =>
+                  effect.undo?.operationId === operationId ? next : effect
+                ),
+              }
+            : block
+        ),
+      });
+      setThreads((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).map(([k, t]) => [
+            k,
+            { ...t, messages: t.messages.map(swap) },
+          ])
+        )
       );
     },
     []
@@ -176,7 +239,11 @@ export function useChatStream(workspaceId: string) {
       turn: Pick<ChatStreamBody, 'library' | 'openResource'>
     ) => {
       const trimmed = text.trim();
-      if (!trimmed || streaming) return;
+      const key = activeRef.current;
+      const thread = threadsRef.current[key];
+      if (!trimmed || thread?.streaming) return;
+      const setMessages = (up: (prev: LiveMessage[]) => LiveMessage[]) =>
+        setMessagesIn(key, up);
 
       const userMsg: ChatMessage = {
         content: trimmed,
@@ -186,6 +253,7 @@ export function useChatStream(workspaceId: string) {
       };
       const placeholderId = tempId();
       let currentId = placeholderId;
+      let conversationId = thread?.conversationId ?? null;
       let terminal = false;
       let citationVersion = -1;
       let citations = 0;
@@ -200,25 +268,31 @@ export function useChatStream(workspaceId: string) {
         });
       };
       track('chat_turn_sent', { hasScope: false, workspaceId });
-      setMessages((prev) => [
+      setThreads((prev) => ({
         ...prev,
-        userMsg,
-        {
-          activity: [],
-          content: '',
-          // The turn's start for step timings; history has the server's.
-          createdAt: new Date().toISOString(),
-          id: placeholderId,
-          key: placeholderId,
-          phase: 'planning',
-          role: 'assistant',
-          status: 'streaming',
+        [key]: {
+          ...(prev[key] ?? emptyThread()),
+          messages: [
+            ...(prev[key]?.messages ?? []),
+            userMsg,
+            {
+              activity: [],
+              content: '',
+              // The turn's start for step timings; history has the server's.
+              createdAt: new Date().toISOString(),
+              id: placeholderId,
+              key: placeholderId,
+              phase: 'planning',
+              role: 'assistant',
+              status: 'streaming',
+            },
+          ],
+          streaming: true,
         },
-      ]);
-      setStreaming(true);
+      }));
 
       const ac = new AbortController();
-      abortRef.current = ac;
+      abortRefs.current.set(key, ac);
 
       const fail = (message: string, code?: string) => {
         if (terminal || ac.signal.aborted) return;
@@ -249,7 +323,7 @@ export function useChatStream(workspaceId: string) {
         await streamChat(
           workspaceId,
           {
-            conversationId: conversationId ?? undefined,
+            conversationId: thread?.conversationId ?? undefined,
             ...turn,
             text: trimmed,
           },
@@ -293,7 +367,7 @@ export function useChatStream(workspaceId: string) {
                 })
               ),
             onBlockStart: (blockId) =>
-              patch(currentId, {
+              patch(key, currentId, {
                 currentBlockId: blockId,
                 currentBlockText: '',
               }),
@@ -301,21 +375,22 @@ export function useChatStream(workspaceId: string) {
               if (!shouldApplyCitations(version, citationVersion)) return;
               citationVersion = version;
               citations = next.length;
-              patch(currentId, { citations: next });
+              patch(key, currentId, { citations: next });
             },
             onDone: ({ status }) => {
               if (terminal) return;
               terminal = true;
               complete(status);
-              patch(currentId, {
+              patch(key, currentId, {
                 currentBlockId: undefined,
                 currentBlockText: '',
                 status,
               });
             },
             onError: fail,
-            onPendingSources: setPendingSources,
-            onPhase: (phase) => patch(currentId, { phase }),
+            onPendingSources: (sources) =>
+              update(key, (t) => ({ ...t, pendingSources: sources })),
+            onPhase: (phase) => patch(key, currentId, { phase }),
             onStart: ({
               messageId,
               conversationId: cid,
@@ -325,9 +400,11 @@ export function useChatStream(workspaceId: string) {
               modelVersion,
             }) => {
               currentId = messageId;
-              setConversationId(cid);
-              setMessages((prev) =>
-                prev.map((msg) =>
+              conversationId = cid;
+              update(key, (t) => ({
+                ...t,
+                conversationId: cid,
+                messages: t.messages.map((msg) =>
                   msg.id === placeholderId
                     ? {
                         ...msg,
@@ -339,8 +416,8 @@ export function useChatStream(workspaceId: string) {
                         providerSlug,
                       }
                     : msg
-                )
-              );
+                ),
+              }));
             },
             // Server times when the event carries them, else this clock.
             onToolEnd: (callId, result) => {
@@ -402,26 +479,37 @@ export function useChatStream(workspaceId: string) {
       } finally {
         if (ac.signal.aborted) {
           complete('aborted');
-          patch(currentId, { status: 'aborted' });
+          patch(key, currentId, { status: 'aborted' });
         }
-        setStreaming(false);
-        if (abortRef.current === ac) abortRef.current = null;
+        if (abortRefs.current.get(key) === ac) abortRefs.current.delete(key);
+        // A turn that finished after the learner left its conversation drops
+        // its thread; reopening it reads the history.
+        setThreads((prev) => {
+          if (!prev[key]) return prev;
+          if (key === activeRef.current)
+            return { ...prev, [key]: { ...prev[key], streaming: false } };
+          const rest = { ...prev };
+          delete rest[key];
+          return rest;
+        });
         void qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });
+        if (conversationId)
+          void qc.invalidateQueries({ queryKey: qk.messages(conversationId) });
       }
     },
-    [conversationId, qc, patch, streaming, workspaceId]
+    [qc, patch, setMessagesIn, update, workspaceId]
   );
 
   return {
     applyUndo,
-    conversationId,
+    conversationId: shown.conversationId,
     hydrate,
-    messages,
-    pendingSources,
+    messages: shown.messages,
+    pendingSources: shown.pendingSources,
     refuseUndo,
     send,
     startNew,
     stop,
-    streaming,
+    streaming: shown.streaming,
   };
 }

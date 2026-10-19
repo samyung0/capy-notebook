@@ -3,41 +3,19 @@ package store
 import (
 	"context"
 	"errors"
-	"fmt"
-
-	"github.com/jackc/pgx/v5"
 )
 
-// Ownership transfer lets an owner hand a workspace and its storage charges to
-// another member. It is independent of account deletion: deleting an account
-// hides every owned workspace during the grace window and destroys it at purge,
-// even when collaborators remain.
-//
-// The workspace's storage owner is denormalized onto four tables (files.user_id,
-// materials.owner_user_id, upload_sessions.user_id, editor_assets.user_id). Those
-// columns were only ever safe because nothing could change them after insert:
-// the owner-deriving triggers fire on insert and on a workspace move, never on a
-// workspace changing hands. Transfer therefore has to rewrite all four
-// explicitly, and every byte has to land on the recipient's counter in the same
-// transaction — see TestOwnerColumnsAreCoveredByTransfer, which fails if a fifth
-// owner column appears.
+// Ownership transfer hands a workspace to another member. It moves no storage
+// charges: every file, asset and material stays charged to the account that
+// uploaded or created it (uploader pays, Sam 2026-10-18). It is independent
+// of account deletion: deleting an account hides every owned workspace during
+// the grace window and destroys it at purge, even when collaborators remain.
 
 // ErrTransferSelf reports a transfer to the current owner.
 var ErrTransferSelf = errors.New("workspace already belongs to this user")
 
-// ownerColumns is every (table, column) pair carrying a denormalized storage
-// owner. Transfer rewrites each one; the accounting triggers on these tables
-// convert an owner change into the matching counter movement.
-var ownerColumns = []struct{ table, column string }{
-	{"files", "user_id"},
-	{"materials", "owner_user_id"},
-	{"upload_sessions", "user_id"},
-	{"editor_assets", "user_id"},
-	{"agent_edit_inverses", "owner_user_id"},
-}
-
-// TransferWorkspace moves a workspace and everything charged for it to another
-// member. Owner-only, and refused if the recipient cannot fit the bytes.
+// TransferWorkspace hands a workspace to another member. Owner-only, and
+// refused past the recipient's owned-workspace and file caps.
 func (s *Store) TransferWorkspace(
 	ctx context.Context,
 	actorID, workspaceID, recipientID string,
@@ -68,32 +46,18 @@ func (s *Store) TransferWorkspace(
 	if currentOwner != actorID {
 		return Workspace{}, ErrForbidden
 	}
-	// Workspace-scoped writes take the workspace lock before lifecycle and
-	// storage locks. Transfer uses the same order so it cannot deadlock with an
-	// upload/material insert while also making the owner immutable for this tx.
+	// Workspace-scoped writes take the workspace lock before lifecycle locks.
+	// A locked recipient reads as a non-member: its state and reason stay its
+	// own (review C2).
 	if err := s.lockAccountSessionsTx(ctx, tx, actorID, recipientID); err != nil {
-		return Workspace{}, err
+		return Workspace{}, HideOtherAccountLock(err, actorID)
 	}
 	recipientLimits, err := s.gateOwnedWorkspacesTx(ctx, tx, recipientID, 1)
 	if err != nil {
 		return Workspace{}, err
 	}
 
-	// Both counter rows are locked in a fixed order. Two transfers crossing
-	// between the same pair of users would otherwise deadlock.
-	first, second := actorID, recipientID
-	if second < first {
-		first, second = second, first
-	}
-	if err := s.lockStorageRowTx(ctx, tx, first); err != nil {
-		return Workspace{}, err
-	}
-	if err := s.lockStorageRowTx(ctx, tx, second); err != nil {
-		return Workspace{}, err
-	}
-
-	// The recipient has to be a live member. Handing a workspace to a stranger
-	// would charge them for bytes they never agreed to, and handing it to a
+	// The recipient has to be a live member; handing a workspace to a
 	// tombstone would strand it.
 	var recipientRole WorkspaceRole
 	err = tx.QueryRow(ctx, `SELECT wm.role
@@ -121,29 +85,9 @@ func (s *Store) TransferWorkspace(
 		}
 	}
 
-	bytes, err := s.workspaceChargedBytesTx(ctx, tx, workspaceID)
-	if err != nil {
-		return Workspace{}, err
-	}
-	// Gated on the recipient, not the sender: the sender is giving bytes up.
-	// Reservations count toward the request because they land on the recipient
-	// too, and an upload finishing after the transfer must still fit.
-	if err := s.gateStorageTx(ctx, tx, recipientID, bytes.used+bytes.reserved); err != nil {
-		return Workspace{}, err
-	}
-
 	if _, err := tx.Exec(ctx, `UPDATE workspaces SET user_id=$2 WHERE id=$1`,
 		workspaceID, recipientID); err != nil {
 		return Workspace{}, err
-	}
-	for _, col := range ownerColumns {
-		// Table and column names are from the fixed list above, never from input.
-		query := fmt.Sprintf(
-			`UPDATE %s SET %s=$2 WHERE workspace_id=$1 AND %s IS DISTINCT FROM $2`,
-			col.table, col.column, col.column)
-		if _, err := tx.Exec(ctx, query, workspaceID, recipientID); err != nil {
-			return Workspace{}, fmt.Errorf("transfer %s.%s: %w", col.table, col.column, err)
-		}
 	}
 
 	// Role swap. The outgoing owner keeps editor access rather than losing the
@@ -166,34 +110,6 @@ func (s *Store) TransferWorkspace(
 		return Workspace{}, err
 	}
 	return s.GetWorkspace(ctx, recipientID, workspaceID, false)
-}
-
-type workspaceBytes struct {
-	used     int64
-	reserved int64
-}
-
-// workspaceChargedBytesTx totals what the workspace costs its owner, split the
-// same way the counters are. Materials use owner_user_id rather than
-// workspace_id because a standalone material has no workspace, so only the ones
-// actually filed here move.
-func (s *Store) workspaceChargedBytesTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	workspaceID string,
-) (workspaceBytes, error) {
-	var out workspaceBytes
-	err := tx.QueryRow(ctx, `SELECT
-			COALESCE((SELECT sum(size_bytes) FROM files WHERE workspace_id=$1), 0)
-			+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
-				WHERE workspace_id=$1 AND status='ready'), 0)
-			+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE workspace_id=$1), 0)
-			+ COALESCE((SELECT sum(d.storage_bytes) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE f.workspace_id=$1),0)
-			+ COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE workspace_id=$1),0),
-			COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
-				WHERE workspace_id=$1 AND status='pending' AND expires_at > now()), 0)`,
-		workspaceID).Scan(&out.used, &out.reserved)
-	return out, err
 }
 
 // WorkspacesDestroyedByDeletion lists every workspace the user owns. Ownership

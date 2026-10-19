@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"testing"
 	"time"
 
@@ -110,12 +111,17 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	if file.Provenance == nil || len(file.Provenance.Books) != 1 || file.Provenance.License != "CC BY-SA 4.0" {
 		t.Fatalf("provenance = %+v", file.Provenance)
 	}
-	var payer, jobType string
-	if err := fx.st.Pool().QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); err != nil {
+	var payer, jobType, blobPath string
+	if err := fx.st.Pool().QueryRow(ctx, `SELECT user_id, blob_path FROM files WHERE id=$1`, fileID).Scan(&payer, &blobPath); err != nil {
 		t.Fatal(err)
 	}
-	if payer != fx.owner {
-		t.Fatalf("charged %s, want the workspace owner", payer)
+	// The deck's Put has no reservation guarding its key, so the key itself
+	// carries 128 random bits.
+	if !regexp.MustCompile(`^sources/blob_[0-9a-f]{32}$`).MatchString(blobPath) {
+		t.Fatalf("deck key = %q", blobPath)
+	}
+	if payer != fx.editor {
+		t.Fatalf("charged %s, want the chat's actor", payer)
 	}
 	if err := fx.st.Pool().QueryRow(ctx, `SELECT type FROM jobs WHERE payload->>'fileId'=$1`, fileID).Scan(&jobType); err != nil || jobType != "parse" {
 		t.Fatalf("job = %q, %v", jobType, err)
@@ -135,11 +141,11 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	}
 }
 
-func TestInternalFileRefusesAFullOwnerQuota(t *testing.T) {
+func TestInternalFileRefusesAFullActorQuota(t *testing.T) {
 	fx := openDeckFiles(t)
 	ctx := context.Background()
 	limit := mustPlanLimits(t, fx.st, store.PlanFree).StorageBytes
-	if _, err := uploadSource(ctx, fx.st, fx.ws, fx.owner, "ballast.pdf", limit, "sources/ballast_"+fx.owner); err != nil {
+	if _, err := uploadSource(ctx, fx.st, fx.ws, fx.editor, "ballast.pdf", limit, "sources/ballast_"+fx.editor); err != nil {
 		t.Fatal(err)
 	}
 	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)

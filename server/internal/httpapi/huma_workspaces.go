@@ -62,12 +62,11 @@ func (a *api) workspaceOutputFor(
 	if err != nil {
 		return nil, hErr(err)
 	}
-	statuses, err := a.workspaceStatuses(ctx, w)
+	actor, err := a.s.AccountAccess(ctx, userID(ctx))
 	if err != nil {
-		return nil, err
+		return nil, hErr(err)
 	}
-	return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(w, member, effective,
-		statuses[w.OwnerUserID], !statuses[userID(ctx)].CanEdit())}, nil
+	return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(w, member, effective, !actor.CanEdit())}, nil
 }
 
 func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*workspacesOutput, error) {
@@ -75,16 +74,15 @@ func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*wor
 	if err != nil {
 		return nil, hErr(err)
 	}
-	statuses, err := a.workspaceStatuses(ctx, res...)
+	actor, err := a.s.AccountAccess(ctx, userID(ctx))
 	if err != nil {
-		return nil, err
+		return nil, hErr(err)
 	}
-	actorReadOnly := !statuses[userID(ctx)].CanEdit()
+	actorReadOnly := !actor.CanEdit()
 	out := make([]apimodel.Workspace, len(res))
 	for i, workspace := range res {
 		effective := store.EffectiveRole(workspace.MemberRole, workspace.Privacy, workspace.ShareRole)
-		out[i] = apimodel.FromWorkspaceAccess(workspace, workspace.MemberRole, effective,
-			statuses[workspace.OwnerUserID], actorReadOnly)
+		out[i] = apimodel.FromWorkspaceAccess(workspace, workspace.MemberRole, effective, actorReadOnly)
 	}
 	return &workspacesOutput{Body: out}, nil
 }

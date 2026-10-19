@@ -418,9 +418,6 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 		return out, err
 	}
 	prefs := reviewPrefsOf(prefsRaw)
-	if info.Mode == nil {
-		prefs.Focus = "balanced"
-	}
 	items, history, err := s.scoredWorkspace(ctx, userID, wsID, prefs, now)
 	if err != nil {
 		return out, err
@@ -748,8 +745,6 @@ func (s *Store) ReviewOverview(ctx context.Context, userID string, now time.Time
 		return out, err
 	}
 	prefs := reviewPrefsOf(prefsRaw)
-	manual := prefs
-	manual.Focus = "balanced"
 	list, err := s.reviewableWorkspaces(ctx, userID)
 	if err != nil {
 		return out, err
@@ -841,25 +836,6 @@ func (s *Store) nameChapters(ctx context.Context, list []ReviewSuggestion) error
 	return rows.Err()
 }
 
-// workspaceSuggestion is the Study tab's: the workspace's strongest
-// suggestion among its scored items, nil when none passes.
-func (s *Store) workspaceSuggestion(ctx context.Context, wsID string, items []scored, history map[string][]review.Rating) (*ReviewSuggestion, error) {
-	// The learner is in the workspace now, so its interest is full.
-	list := groupSuggestions(items, history, 1)
-	if len(list) == 0 {
-		return nil, nil
-	}
-	top := list[:1]
-	top[0].WorkspaceID = wsID
-	if err := s.pool.QueryRow(ctx, `SELECT name, icon_id FROM workspaces WHERE id=$1`, wsID).Scan(&top[0].WorkspaceName, &top[0].IconID); err != nil {
-		return nil, err
-	}
-	if err := s.nameChapters(ctx, top); err != nil {
-		return nil, err
-	}
-	return &top[0], nil
-}
-
 /* ---------------------------------------------------------- past reviews */
 
 // SessionScore is a session's quiz or flashcard result: marks for questions,
@@ -923,7 +899,13 @@ func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewPara
 		args = append(args, p.Workspaces)
 		where = append(where, "rs.workspace_id = ANY($2)")
 	}
-	q := `WITH s AS (SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind, COALESCE(c.name, '') AS chapter,
+	// The caller's history stays, but names it can no longer reach are blank
+	// (Sam 2026-10-19), as on the Files page.
+	lost := lostAccessSQL("rs.workspace_id", "$1")
+	q := `WITH s AS (SELECT rs.id, rs.workspace_id,
+			CASE WHEN ` + lost + ` THEN '' ELSE w.name END AS name,
+			CASE WHEN ` + lost + ` THEN '' ELSE w.icon_id END AS icon_id,
+			rs.group_kind, CASE WHEN ` + lost + ` THEN '' ELSE COALESCE(c.name, '') END AS chapter,
 			rs.mode, rs.chapter_id, rs.started_at, rs.finished_at, rs.last_answer_at, jsonb_array_length(rs.items) AS served,
 			(SELECT count(*) FROM review_answers WHERE session_id=rs.id) AS answered,
 			(SELECT sum(correct) FROM review_answers WHERE session_id=rs.id AND kind='question') AS qc,

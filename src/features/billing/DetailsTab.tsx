@@ -2,10 +2,9 @@ import { useRef, useState } from 'react';
 import { listUsageEventsQueryLimitMax as PAGE_SIZE } from '@/api/gen/validators';
 import { useUsageEvents } from '@/api/hooks';
 import type { UsageEventParams, UsageEventSort } from '@/api/types';
-import { ErrorState } from '@/components/app/ErrorState';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import type { ColumnSort } from '@/components/app/SortHeader';
 import { TabHeader } from '@/components/app/tabPanel';
-import { ErrorAction } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { getLocale, m } from '@/i18n';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
@@ -87,15 +86,11 @@ export function DetailsTab() {
   };
 
   const body = isError ? (
-    <ErrorState
-      {...describeError(error)}
-      action={
-        <ErrorAction onClick={() => void refetch()}>
-          {m.error_action_retry()}
-        </ErrorAction>
-      }
+    <InlineErrorState
+      className="py-6"
       errorId={unexpectedErrorId(error)}
-      variant="panel"
+      message={describeError(error).title}
+      onRetry={() => void refetch()}
     />
   ) : isPending ? (
     <BillingTableSkeleton columns={columns()} />

@@ -133,14 +133,14 @@ export function SharedNote({
   document,
   ...props
 }: NoteProps & { document: MaterialDocument }) {
-  const { note } = props;
+  const { note, token } = props;
   return (
     <PublicPage>
       <QuizPageHeader
         actions={
           <>
             <NoteFontButton />
-            <PublicActionMenu id={note.id} kind="note" />
+            <PublicActionMenu kind="note" token={token} />
           </>
         }
         byline={

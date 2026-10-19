@@ -126,8 +126,8 @@ function Attempt({ quizId }: { quizId: string }) {
         </Link>
       }
       frame={PanelWithInvertedRadius}
-      grade={async (answers) => {
-        const attempt = await submit({ answers, quizId });
+      grade={async (answers, startedAt) => {
+        const attempt = await submit({ answers, quizId, startedAt });
         return {
           awarded: attempt.correct,
           max: attempt.total,

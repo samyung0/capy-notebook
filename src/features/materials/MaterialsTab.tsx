@@ -281,6 +281,14 @@ export function MaterialsTab({
   // Stable while `frozen` holds, so the memoised cards skip a pick's render.
   const menuFor = useCallback(
     (item: MaterialListItem): MenuItem[] => {
+      const remove: MenuItem = {
+        danger: true,
+        icon: 'trash',
+        label: m.action_delete(),
+        onClick: () => setDeleting(item),
+      };
+      // In a workspace the viewer left it can only be deleted (it still pays).
+      if (item.lostAccess) return [remove];
       const standalone = !item.workspaceId;
       const items: MenuItem[] = [];
       if (item.kind === 'quiz') {
@@ -327,12 +335,7 @@ export function MaterialsTab({
         label: m.content_properties(),
         onClick: () => setInspecting(item),
       });
-      items.push({
-        danger: true,
-        icon: 'trash',
-        label: m.action_delete(),
-        onClick: () => setDeleting(item),
-      });
+      items.push(remove);
       return items;
     },
     [frozen, navigate]

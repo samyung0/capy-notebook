@@ -172,6 +172,9 @@ type File struct {
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
+	// WorkspaceName and LostAccess: owned-list rows only (ListOwnedFiles).
+	WorkspaceName string `json:"workspaceName,omitempty"`
+	LostAccess    bool   `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
 }
 
 // FilePreview is {"text": ...}, a text source's first ~600 characters written
@@ -259,14 +262,31 @@ type Attempt struct {
 	WorkspaceID *string `json:"workspaceId"`
 	// IconID is that workspace's catalog icon, filled by the attempts list
 	// and a single result, which show it beside the workspace name.
-	IconID        *string   `json:"iconId,omitempty"`
-	QuizName      string    `json:"quizName"`
-	WorkspaceName string    `json:"workspaceName"`
-	Chapters      []string  `json:"chapters" nullable:"false"`
-	Correct       float64   `json:"correct"`
-	Total         float64   `json:"total"`
-	Pct           int       `json:"pct"`
-	TakenAt       time.Time `json:"takenAt"`
+	IconID *string `json:"iconId,omitempty"`
+	// Kind is quiz or flashcards; QuizName is the quiz's or set's name.
+	Kind          string   `json:"kind" enum:"quiz,flashcards"`
+	QuizName      string   `json:"quizName"`
+	WorkspaceName string   `json:"workspaceName"`
+	Chapters      []string `json:"chapters" nullable:"false"`
+	// Correct of Total: marks for a quiz, cards first rated Good or Easy of
+	// cards rated for a set.
+	Correct float64 `json:"correct"`
+	Total   float64 `json:"total"`
+	Pct     int     `json:"pct"`
+	// StartedAt is when the learner began; null for an attempt sent without it.
+	StartedAt *time.Time `json:"startedAt"`
+	// TakenAt is a quiz's submit time, or a set's latest rating.
+	TakenAt time.Time `json:"takenAt"`
+}
+
+// AttemptCard is one card of a flashcard attempt, in the order first rated,
+// with its faces as studied and every rating it got (1 Again .. 4 Easy).
+type AttemptCard struct {
+	ID      string                 `json:"id"`
+	Front   string                 `json:"front"`
+	Back    string                 `json:"back"`
+	Image   *materialdoc.CardImage `json:"image,omitempty"`
+	Ratings []int                  `json:"ratings" nullable:"false"`
 }
 
 // AttemptDetail carries the per-question payload for a single attempt's result

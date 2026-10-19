@@ -89,8 +89,8 @@ def _other_workspace(workspace, owner: str = "u_1", privacy: str = "private"):
             (ws, owner, privacy),
         )
         conn.execute(
-            "INSERT INTO files(id,workspace_id,name,kind,size_bytes,status,blob_path) VALUES(%s,%s,'image.png','png',20,'ready',%s)",
-            (file_id, ws, "sources/" + file_id),
+            "INSERT INTO files(id,workspace_id,user_id,name,kind,size_bytes,status,blob_path) SELECT %s,w.id,w.user_id,'image.png','png',20,'ready',%s FROM workspaces w WHERE w.id=%s",
+            (file_id, "sources/" + file_id, ws),
         )
     return ws, file_id
 

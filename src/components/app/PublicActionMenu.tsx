@@ -10,11 +10,12 @@ import { cn } from '@/lib/cn';
  * popover anchored to the button, so server-rendered pages need no script to
  * open it (publicChrome.ts places it where anchoring is unsupported). */
 export function PublicActionMenu({
-  id,
   kind,
+  token,
 }: {
-  id: string;
   kind: CloneKind;
+  /** The page's share token, `{id}.{signature}`. */
+  token: string;
 }) {
   return (
     <>
@@ -39,7 +40,7 @@ export function PublicActionMenu({
             BASE_BUTTON_STYLE,
             'flex w-full justify-start gap-2 px-2.5 py-2 font-medium text-fg leading-(--body-line-height) hover:bg-overlay-hover focus-visible:bg-overlay-hover'
           )}
-          href={cloneHref(kind, id)}
+          href={cloneHref(kind, token)}
           role="menuitem"
         >
           <Icon className="-translate-y-px" name="clone" />

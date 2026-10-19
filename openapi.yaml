@@ -372,6 +372,11 @@ components:
           type: string
         id:
           type: string
+        kind:
+          enum:
+            - quiz
+            - flashcards
+          type: string
         materialId:
           nullable: true
           type: string
@@ -379,6 +384,10 @@ components:
           format: int64
           type: integer
         quizName:
+          type: string
+        startedAt:
+          format: date-time
+          nullable: true
           type: string
         takenAt:
           format: date-time
@@ -395,13 +404,37 @@ components:
         - id
         - materialId
         - workspaceId
+        - kind
         - quizName
         - workspaceName
         - chapters
         - correct
         - total
         - pct
+        - startedAt
         - takenAt
+      type: object
+    AttemptCard:
+      additionalProperties: false
+      properties:
+        back:
+          type: string
+        front:
+          type: string
+        id:
+          type: string
+        image:
+          $ref: "#/components/schemas/CardImage"
+        ratings:
+          items:
+            format: int64
+            type: integer
+          type: array
+      required:
+        - id
+        - front
+        - back
+        - ratings
       type: object
     AttemptDetail:
       additionalProperties: false
@@ -415,6 +448,10 @@ components:
         answers:
           additionalProperties: {}
           type: object
+        cards:
+          items:
+            $ref: "#/components/schemas/AttemptCard"
+          type: array
         chapters:
           items:
             type: string
@@ -425,6 +462,11 @@ components:
         iconId:
           type: string
         id:
+          type: string
+        kind:
+          enum:
+            - quiz
+            - flashcards
           type: string
         materialId:
           nullable: true
@@ -438,6 +480,10 @@ components:
             type: object
           type: array
         quizName:
+          type: string
+        startedAt:
+          format: date-time
+          nullable: true
           type: string
         takenAt:
           format: date-time
@@ -453,15 +499,18 @@ components:
       required:
         - answers
         - questions
+        - cards
         - id
         - materialId
         - workspaceId
+        - kind
         - quizName
         - workspaceName
         - chapters
         - correct
         - total
         - pct
+        - startedAt
         - takenAt
       type: object
     AttemptsOutputBody:
@@ -1264,6 +1313,10 @@ components:
           additionalProperties: {}
           description: The learner's answers by part id
           type: object
+        startedAt:
+          description: When the learner opened the quiz, for the minutes taken
+          format: date-time
+          type: string
       required:
         - answers
       type: object
@@ -1935,6 +1988,9 @@ components:
           type: boolean
         kind:
           $ref: "#/components/schemas/FileKind"
+        lostAccess:
+          description: The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
+          type: boolean
         name:
           type: string
         position:
@@ -1963,6 +2019,8 @@ components:
           description: Hour-stable presigned GET of the page-1 thumbnail; list rows only
           type: string
         workspaceId:
+          type: string
+        workspaceName:
           type: string
       required:
         - id
@@ -2039,6 +2097,8 @@ components:
           type: string
         previewUrl:
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         url:
           type: string
       required:
@@ -2092,6 +2152,20 @@ components:
         - materialId
         - front
         - back
+      type: object
+    FlashcardAttemptRef:
+      additionalProperties: false
+      properties:
+        id:
+          description: Minted by the browser when studying the set begins
+          format: uuid
+          type: string
+        startedAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - startedAt
       type: object
     FlashcardSet:
       additionalProperties: false
@@ -2561,6 +2635,27 @@ components:
       required:
         - items
       type: object
+    ItemAttempts:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        materialId:
+          type: string
+        recent:
+          items:
+            $ref: "#/components/schemas/Attempt"
+          type: array
+        size:
+          format: int64
+          type: integer
+      required:
+        - materialId
+        - size
+        - count
+        - recent
+      type: object
     LLMCredential:
       additionalProperties: false
       properties:
@@ -2741,6 +2836,8 @@ components:
           type: array
         sharePath:
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         title:
           type: string
         updatedAt:
@@ -2903,6 +3000,9 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/MaterialKind"
+        lostAccess:
+          description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
+          type: boolean
         preview:
           additionalProperties: true
           description: List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md
@@ -3894,10 +3994,6 @@ components:
           type: string
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerState:
-          $ref: "#/components/schemas/AccountState"
-        storageOwnerUsage:
-          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -4011,6 +4107,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        attempt:
+          $ref: "#/components/schemas/FlashcardAttemptRef"
+          description: The flashcard attempt the rating belongs to; the first rating records it (workspace sets only)
         itemId:
           minLength: 1
           type: string
@@ -4030,6 +4129,22 @@ components:
         - materialId
         - itemId
         - rating
+      type: object
+    RedeemShareLinkInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RedeemShareLinkInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        token:
+          description: A share link's {id}.{signature}
+          maxLength: 128
+          type: string
+      required:
+        - token
       type: object
     Ref:
       additionalProperties: false
@@ -4757,6 +4872,28 @@ components:
             - removed
           type: string
       type: object
+    ShareRedemption:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ShareRedemption.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - workspace
+            - material
+          type: string
+        materialKind:
+          $ref: "#/components/schemas/MaterialKind"
+      required:
+        - kind
+        - id
+      type: object
     ShareRole:
       enum:
         - editor
@@ -5391,6 +5528,8 @@ components:
         stateSeedSHA256:
           nullable: true
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         thumbnailStale:
           type: boolean
         workspaceId:
@@ -5540,6 +5679,11 @@ components:
       required:
         - limitCents
       type: object
+    StorageFullBy:
+      enum:
+        - self
+        - payer
+      type: string
     StorageUsageLevel:
       enum:
         - ok
@@ -5559,8 +5703,12 @@ components:
             - done
             - removed
           type: string
+        updatedAt:
+          format: date-time
+          type: string
       required:
         - state
+        - updatedAt
       type: object
     StudyPreferences:
       additionalProperties: false
@@ -5649,8 +5797,8 @@ components:
         reviewable:
           format: int64
           type: integer
-        suggestion:
-          $ref: "#/components/schemas/ReviewSuggestion"
+        unfinished:
+          $ref: "#/components/schemas/UnfinishedSession"
       required:
         - enabled
         - items
@@ -5947,6 +6095,9 @@ components:
     TrashItem:
       additionalProperties: false
       properties:
+        canRestore:
+          description: "The caller may restore it: a standalone item, or edit access to its workspace"
+          type: boolean
         episodeId:
           type: string
         fileKind:
@@ -5958,6 +6109,9 @@ components:
             - source_file
             - material
           type: string
+        lostAccess:
+          description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only permanently delete it
+          type: boolean
         materialKind:
           type: string
         preview:
@@ -5990,6 +6144,7 @@ components:
         - trashedAt
         - purgeAfter
         - episodeId
+        - canRestore
       type: object
     TrashPage:
       additionalProperties: false
@@ -6612,10 +6767,6 @@ components:
           type: string
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerState:
-          $ref: "#/components/schemas/AccountState"
-        storageOwnerUsage:
-          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -6638,6 +6789,22 @@ components:
         - isOwner
         - capabilities
         - canClone
+      type: object
+    WorkspaceAttemptsOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/WorkspaceAttemptsOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ItemAttempts"
+          type: array
+      required:
+        - items
       type: object
     WorkspaceCollaborator:
       additionalProperties: false
@@ -6905,12 +7072,19 @@ paths:
               - asc
               - desc
             type: string
-        - description: Comma-separated workspace ids; the quiz's current workspace
+        - description: Comma-separated workspace ids; the quiz's or set's current workspace
           explode: false
           in: query
           name: workspaceId
           schema:
-            description: Comma-separated workspace ids; the quiz's current workspace
+            description: Comma-separated workspace ids; the quiz's or set's current workspace
+            type: string
+        - description: "Comma-separated kinds: quiz, flashcards; empty is both"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated kinds: quiz, flashcards; empty is both"
             type: string
         - explode: false
           in: query
@@ -7441,6 +7615,21 @@ paths:
       summary: Save auto-reload
       tags:
         - Billing & integrations
+  /api/billing/auto-reload/cancel-retry:
+    post:
+      operationId: cancelReloadRetry
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Stop Stripe retrying failed reloads
+      tags:
+        - Billing & integrations
   /api/billing/checkout:
     post:
       operationId: billingCheckout
@@ -7521,6 +7710,25 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Open billing portal
+      tags:
+        - Billing & integrations
+  /api/billing/portal/cancel-subscription:
+    post:
+      operationId: billingPortalCancel
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/URLResp"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Open the billing portal on its cancel screen
       tags:
         - Billing & integrations
   /api/billing/spending-limit:
@@ -8004,13 +8212,13 @@ paths:
           schema:
             description: Comma-separated workspace ids
             type: string
-        - description: "owned: the caller's workspaces; member: also every workspace they are a member of"
+        - description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
           explode: false
           in: query
           name: scope
           schema:
             default: owned
-            description: "owned: the caller's workspaces; member: also every workspace they are a member of"
+            description: "owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"
             enum:
               - owned
               - member
@@ -8065,7 +8273,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List files across the caller's owned or member workspaces
+      summary: List the files the caller pays for, or can open (scope=member)
       tags:
         - Content
   /api/files/{id}:
@@ -8824,13 +9032,13 @@ paths:
           schema:
             description: "Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"
             type: string
-        - description: "owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"
+        - description: "owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones"
           explode: false
           in: query
           name: scope
           schema:
             default: owned
-            description: "owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"
+            description: "owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones"
             enum:
               - owned
               - member
@@ -8885,7 +9093,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List notes, quizzes and flashcard sets across the caller's owned or member workspaces
+      summary: List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)
       tags:
         - Materials
     post:
@@ -9835,14 +10043,17 @@ paths:
       summary: Grade a signed-out attempt at a shared quiz
       tags:
         - Sharing
-  /api/public/workspaces/{id}/summary:
+  /api/public/workspaces/{token}/summary:
     get:
       operationId: getPublicWorkspaceSummary
       parameters:
-        - in: path
-          name: id
+        - description: The summary link's {id}.{signature}
+          in: path
+          name: token
           required: true
           schema:
+            description: The summary link's {id}.{signature}
+            maxLength: 128
             type: string
       responses:
         "200":
@@ -9867,10 +10078,13 @@ paths:
     head:
       operationId: headPublicWorkspaceSummary
       parameters:
-        - in: path
-          name: id
+        - description: The summary link's {id}.{signature}
+          in: path
+          name: token
           required: true
           schema:
+            description: The summary link's {id}.{signature}
+            maxLength: 128
             type: string
       responses:
         "200":
@@ -10323,6 +10537,31 @@ paths:
       summary: Global search
       tags:
         - Account
+  /api/share/redeem:
+    post:
+      operationId: redeemShareLink
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemShareLinkInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareRedemption"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Open a signed share link once
+      tags:
+        - Sharing
   /api/source-upload-policy:
     get:
       operationId: getSourceUploadPolicy
@@ -10589,7 +10828,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List trashed files and materials the caller owns
+      summary: List trashed files and materials the caller pays for, or a workspace's it owns
       tags:
         - Trash
   /api/trash/{kind}/{id}:
@@ -11682,6 +11921,31 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Study progress in a workspace
+      tags:
+        - Study
+  /api/workspaces/{id}/study/attempts:
+    get:
+      operationId: getWorkspaceAttempts
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAttemptsOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Each quiz's and set's attempt count and latest attempts
       tags:
         - Study
   /api/workspaces/{id}/study/enabled:

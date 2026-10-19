@@ -254,7 +254,13 @@ function BuyCredits({
                 })}
               </span>
             </span>
-            <Button onClick={onEditAutoReload} size="sm" variant="outline">
+            {/* The ghost padding would inset the label from the column edge. */}
+            <Button
+              className="-mr-4"
+              onClick={onEditAutoReload}
+              size="sm"
+              variant="ghost-hover"
+            >
               {m.action_edit()}
             </Button>
           </div>
@@ -322,7 +328,12 @@ function MonthlyLimit({
         </>
       )}
       <div className="mt-5">
-        <Button onClick={onChange} size="sm" variant="outline">
+        <Button
+          className="-ml-4"
+          onClick={onChange}
+          size="sm"
+          variant="ghost-hover"
+        >
           {limit ? m.billing_change_limit() : m.billing_set_limit()}
         </Button>
       </div>

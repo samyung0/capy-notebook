@@ -193,10 +193,26 @@ func GetRefund(refundID string) (RefundResult, error) {
 	return RefundResult{ID: current.ID, Status: current.Status}, nil
 }
 
-func CreatePortalSession(customerID, returnURL string) (string, error) {
+// CreatePortalSession opens the customer portal. A cancelSubscriptionID opens
+// it straight on that subscription's cancel screen and returns afterwards.
+func CreatePortalSession(customerID, returnURL, cancelSubscriptionID string) (string, error) {
 	params := &stripe.BillingPortalSessionParams{
 		Customer:  stripe.String(customerID),
 		ReturnURL: stripe.String(returnURL),
+	}
+	if cancelSubscriptionID != "" {
+		params.FlowData = &stripe.BillingPortalSessionFlowDataParams{
+			AfterCompletion: &stripe.BillingPortalSessionFlowDataAfterCompletionParams{
+				Redirect: &stripe.BillingPortalSessionFlowDataAfterCompletionRedirectParams{
+					ReturnURL: stripe.String(returnURL),
+				},
+				Type: stripe.String(string(stripe.BillingPortalSessionFlowAfterCompletionTypeRedirect)),
+			},
+			SubscriptionCancel: &stripe.BillingPortalSessionFlowDataSubscriptionCancelParams{
+				Subscription: stripe.String(cancelSubscriptionID),
+			},
+			Type: stripe.String(string(stripe.BillingPortalSessionFlowTypeSubscriptionCancel)),
+		}
 	}
 	s, err := bportalsession.New(params)
 	if err != nil {

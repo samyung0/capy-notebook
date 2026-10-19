@@ -68,7 +68,7 @@ func TestSourceBatchNotifiesOnceWhenEveryFileSettles(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := newBatchUpload(t, s, ws.ID, owner, batch, time.Now().Add(time.Hour))
-	file, err := s.FinalizeUploadSession(ctx, stored.ID, "etag", "", "")
+	file, err := s.FinalizeUploadSession(ctx, owner, stored.ID, "etag", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestIdleSourceBatchClosesWithUnsentFilesFailed(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := newBatchUpload(t, s, ws.ID, owner, batch, time.Now().Add(time.Hour))
-	if _, err := s.FinalizeUploadSession(ctx, stored.ID, "etag", "", ""); err != nil {
+	if _, err := s.FinalizeUploadSession(ctx, owner, stored.ID, "etag", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if got := takeBatchNotifications(t, s, ws.ID); len(got) != 0 {

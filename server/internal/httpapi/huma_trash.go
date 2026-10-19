@@ -42,7 +42,7 @@ type operationOutput struct {
 
 func (a *api) registerTrash(api huma.API) {
 	const tag = "Trash"
-	reg(api, http.MethodGet, "/api/trash", "listTrash", tag, "List trashed files and materials the caller owns", http.StatusOK, a.listTrash)
+	reg(api, http.MethodGet, "/api/trash", "listTrash", tag, "List trashed files and materials the caller pays for, or a workspace's it owns", http.StatusOK, a.listTrash)
 	reg(api, http.MethodPost, "/api/trash/{kind}/{id}/restore", "restoreTrashed", tag, "Restore a trashed file or material", http.StatusOK, a.restoreTrashed)
 	reg(api, http.MethodDelete, "/api/trash/{kind}/{id}", "purgeTrashed", tag, "Permanently delete a trashed file or material", http.StatusOK, a.purgeTrashed)
 }

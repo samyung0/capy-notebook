@@ -1,6 +1,6 @@
 import { useContext, useState } from 'react';
 import type * as Y from 'yjs';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { SimpleDialog, useIsPhone } from '@/components/ui/Dialog';
 import { UndoButtons } from '@/features/collaboration/LiveItemControls';
 import {
   EditorSaveStatus,
@@ -44,13 +44,25 @@ export default function MermaidSourceDialog({
   const [tooLarge, setTooLarge] = useState(false);
   const [history] = useState(editorHistory);
   const status = useContext(EditorStatusStoreContext);
+  const phone = useIsPhone();
   return (
     <SimpleDialog
+      // Autosaved: phones show the save status and Undo where Save would be.
+      action={
+        phone && (
+          <div className="flex items-center gap-1">
+            {status && <EditorSaveStatus layout="office" store={status} />}
+            <UndoButtons manager={history.target} />
+          </div>
+        )
+      }
       footer={
-        <div className="mr-auto flex items-center gap-2">
-          <UndoButtons footer manager={history.target} />
-          {status && <EditorSaveStatus layout="office" store={status} />}
-        </div>
+        !phone && (
+          <div className="mr-auto flex items-center gap-2">
+            <UndoButtons footer manager={history.target} />
+            {status && <EditorSaveStatus layout="office" store={status} />}
+          </div>
+        )
       }
       onClose={onClose}
       open
@@ -60,7 +72,7 @@ export default function MermaidSourceDialog({
       <div className="grid gap-4 md:grid-cols-2">
         <div className="flex min-w-0 flex-col">
           <MermaidCodeEditor
-            className="h-72 rounded-card border border-line bg-field"
+            className="h-72 rounded-card border border-line bg-field [--code-editor-bg:var(--color-field)]"
             errorLine={failure?.line ?? null}
             label={m.editor_mermaid_source()}
             maxBytes={HTML_EMBED_MAX_BYTES}

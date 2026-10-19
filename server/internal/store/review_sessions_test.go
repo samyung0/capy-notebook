@@ -199,6 +199,10 @@ func TestReviewSessionRecords(t *testing.T) {
 	if len(overview.Unfinished) != 1 || overview.Unfinished[0].Answered != 1 || overview.Workspaces[0].LastReviewedAt == nil {
 		t.Fatalf("overview = %+v", overview)
 	}
+	// The Study tab continues the same whole-workspace session.
+	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now()); err != nil || summary.Unfinished == nil || summary.Unfinished.ID != first.ID || summary.Unfinished.Total != 3 {
+		t.Fatalf("study summary unfinished = %+v, %v", summary.Unfinished, err)
+	}
 
 	// Someone else cannot answer into it.
 	other := newBlobTestUser(t, f.s, "u_review_sessions_other")
@@ -213,6 +217,9 @@ func TestReviewSessionRecords(t *testing.T) {
 	}
 	if err := rate(first, cards[2], 4); err != nil {
 		t.Fatal(err)
+	}
+	if summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now()); err != nil || summary.Unfinished != nil {
+		t.Fatalf("study summary after the last answer = %+v, %v", summary.Unfinished, err)
 	}
 	past, more, err := f.s.PastReviews(ctx, f.user, PastReviewParams{Sort: "date", Limit: 10})
 	if err != nil {

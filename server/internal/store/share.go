@@ -23,7 +23,11 @@ import (
 Sharing model: workspace privacy is inherited by everything inside it, while
 standalone materials keep their own privacy.
   - owner / member → read (and write per role)
-  - link/public    → signed-in callers may read; nonmembers receive share_role
+  - public         → signed-in nonmembers receive share_role
+  - link           → a signed-in nonmember receives share_role only after
+                     presenting the signed link once (RedeemShareToken), as
+                     Google's "anyone with the link" plus resource key (Sam
+                     2026-10-18); making it private clears those grants
   - private        → owner/members only (404 for everyone else)
 A caller's effective role is the more permissive of their membership and the
 share role. Roles are grants rather than caps: capping a member at their
@@ -41,13 +45,15 @@ func workspaceRoles(ctx context.Context, q rowQueryer, userID, wsID string) (mem
 	var owner string
 	var privacy Privacy
 	var shareRole ShareRole
-	err = q.QueryRow(ctx, `SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,'')
+	var linkGranted bool
+	err = q.QueryRow(ctx, `SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,''),
+			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
 		WHERE w.id=$1 AND owner.deleted_at IS NULL
 			AND owner.deletion_requested_at IS NULL
-			AND (owner.suspended_at IS NULL OR owner.id=$2)`, wsID, userID).Scan(&owner, &privacy, &shareRole, &member)
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, wsID, userID).Scan(&owner, &privacy, &shareRole, &member, &linkGranted)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}
@@ -60,7 +66,20 @@ func workspaceRoles(ctx context.Context, q rowQueryer, userID, wsID string) (mem
 	if owner == userID {
 		member = RoleOwner
 	}
+	// A link workspace reaches a nonmember only through a redeemed link.
+	if member == "" && privacy == PrivacyLink && !linkGranted {
+		return "", "", nil
+	}
 	return member, EffectiveRole(member, privacy, shareRole), nil
+}
+
+// linkReachSQL is true when the signed-in user may take a shared workspace's
+// share role: public, a member, or holding a redeemed link (workspaceRoles).
+// ws names the workspaces row alias, user the parameter.
+func linkReachSQL(ws, user string) string {
+	return `(` + ws + `.privacy='public'
+		OR EXISTS(SELECT 1 FROM workspace_members lm WHERE lm.workspace_id=` + ws + `.id AND lm.user_id=` + user + `)
+		OR EXISTS(SELECT 1 FROM workspace_link_grants lg WHERE lg.workspace_id=` + ws + `.id AND lg.user_id=` + user + `))`
 }
 
 // EffectiveRole is a member's grant raised by what the workspace hands to
@@ -184,7 +203,7 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 }
 
 // materialEffectiveAccess derives the caller's role on a material:
-//   - material or workspace owner: owner
+//   - standalone material's owner or workspace owner: owner
 //   - workspace member: their role, raised to the share role where the
 //     workspace is link/public
 //   - signed-in nonmember of a link/public workspace: the share role
@@ -204,17 +223,20 @@ func materialEffectiveAccess(
 	var workspacePrivacy *Privacy
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
+	var linkGranted bool
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, ''), m.parent_material_id
+			COALESCE(wm.role, ''), m.parent_material_id,
+			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials m
-		JOIN users material_owner ON material_owner.id=m.owner_user_id
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
+		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN workspace_members wm
 			ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE m.id=$1 AND m.trashed_at IS NULL AND material_owner.deleted_at IS NULL
-			AND material_owner.deletion_requested_at IS NULL
-			AND (material_owner.suspended_at IS NULL OR material_owner.id=$2)`, matID, userID).Scan(
+		WHERE m.id=$1 AND m.trashed_at IS NULL AND owner.deleted_at IS NULL
+			AND owner.deletion_requested_at IS NULL
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, matID, userID).Scan(
 		&materialOwner,
 		&materialPrivacy,
 		&wsID,
@@ -223,6 +245,7 @@ func materialEffectiveAccess(
 		&shareRole,
 		&memberRole,
 		&parentID,
+		&linkGranted,
 	)
 	if isNoRows(err) {
 		return "", ErrNotFound
@@ -234,16 +257,21 @@ func materialEffectiveAccess(
 	if parentID != nil {
 		return materialEffectiveAccess(ctx, q, userID, *parentID)
 	}
-	if materialOwner != nil && *materialOwner == userID {
+	// A workspace material's owner_user_id is its payer (uploader pays) and
+	// grants nothing: access follows the workspace.
+	if wsID == nil && materialOwner != nil && *materialOwner == userID {
 		return RoleOwner, nil
 	}
 	if workspaceOwner != nil && *workspaceOwner == userID {
 		return RoleOwner, nil
 	}
 
+	// A link resource reaches a nonmember only through a redeemed link.
 	workspaceShared := wsID != nil && workspacePrivacy != nil &&
-		(*workspacePrivacy == PrivacyLink || *workspacePrivacy == PrivacyPublic)
-	materialShared := wsID == nil && (materialPrivacy == PrivacyLink || materialPrivacy == PrivacyPublic)
+		(*workspacePrivacy == PrivacyPublic ||
+			(*workspacePrivacy == PrivacyLink && (memberRole != "" || linkGranted)))
+	materialShared := wsID == nil &&
+		(materialPrivacy == PrivacyPublic || (materialPrivacy == PrivacyLink && linkGranted))
 	var sharedRole WorkspaceRole
 	switch {
 	case workspaceShared && shareRole != nil:
@@ -388,7 +416,7 @@ func exploreCanClone(workspaceID string, member WorkspaceRole, privacy Privacy, 
 func (s *Store) ListPublicQuizzes(ctx context.Context, userID string) ([]PublicQuiz, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.provenance,
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
-		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
+		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
@@ -430,7 +458,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID string) ([]PublicQ
 func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID string) ([]PublicFlashcardSet, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+flashcardSetCols+`,
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
-		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
+		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
@@ -622,8 +650,7 @@ func insertCloneFileTx(
 	name string,
 	position int64,
 ) (*ThumbnailCopy, error) {
-	// files.user_id is the workspace owner (trigger); attribution travels with
-	// the copy, as it does for materials.
+	// The cloner pays and is credited (uploader pays).
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
 		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision)
@@ -1052,14 +1079,11 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 	if input.IconID != nil && !ValidIconID(*input.IconID) {
 		return Workspace{}, nil, 0, ErrNotFound
 	}
-	payer, err := s.clonePayerLock(ctx, userID, "")
-	if err != nil {
-		return Workspace{}, nil, 0, err
-	}
+	payer := clonePayerLock(userID)
 	var newID string
 	var copies []ThumbnailCopy
 	var skipped int
-	err = func() error {
+	err := func() error {
 		// A workspace snapshot owns the hierarchy fence so contained material
 		// deletion cannot race its counter and blob-reference copy.
 		conn, unlock, err := s.lockCloneSources(ctx, []cloneSourceLock{{
@@ -1163,23 +1187,10 @@ func bumpCloneCount(ctx context.Context, starter cloneTxStarter, query, sourceID
 }
 
 // clonePayerLock queues the clones one account pays for behind each other, so
-// they never collide on its storage counter: the actor pays for a workspace or
-// standalone copy, the target workspace's owner for a copy into it. The owner
-// read takes no lock; after a transfer in between the clone queues with the
-// old owner's clones (the backstop absorbs a collision), and the transaction
-// reads the payer again under the workspace row lock.
-func (s *Store) clonePayerLock(ctx context.Context, actorID, targetWorkspaceID string) (cloneSourceLock, error) {
-	payerID := actorID
-	if targetWorkspaceID != "" {
-		err := s.pool.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`, targetWorkspaceID).Scan(&payerID)
-		if isNoRows(err) {
-			return cloneSourceLock{}, ErrNotFound
-		}
-		if err != nil {
-			return cloneSourceLock{}, err
-		}
-	}
-	return cloneSourceLock{key: "clone-payer:" + payerID}, nil
+// they never collide on its storage counter. The cloner pays for every copy
+// (Sam 2026-10-18).
+func clonePayerLock(actorID string) cloneSourceLock {
+	return cloneSourceLock{key: "clone-payer:" + actorID}
 }
 
 func waitCloneRetry(ctx context.Context, attempt int) error {
@@ -1222,7 +1233,7 @@ func (s *Store) cloneWorkspaceOnce(
 		return "", nil, 0, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, src.OwnerUserID, userID); err != nil {
-		return "", nil, 0, ownerHidden(err, src.OwnerUserID, userID)
+		return "", nil, 0, HideOtherAccountLock(err, userID)
 	}
 	if err := assertCloneSourceTx(ctx, tx, userID, srcID); err != nil {
 		return "", nil, 0, err
@@ -1664,9 +1675,9 @@ type cloneDestination struct {
 }
 
 // lockCloneTargetTx admits a copy's destination in the order every workspace
-// write takes, workspace row then accounts: the target workspace's owner pays
-// and the actor must be its editor (a frozen owner or actor is refused); with
-// no workspace the actor pays. The source owner's account is locked with them.
+// write takes, workspace row then accounts: the actor must be the target
+// workspace's editor (a frozen owner or actor is refused). The actor pays
+// (Sam 2026-10-18). The source owner's account is locked with them.
 func (s *Store) lockCloneTargetTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -1681,13 +1692,13 @@ func (s *Store) lockCloneTargetTx(
 		return cloneDestination{}, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, sourceOwnerID, actorID, ownerID); err != nil {
-		return cloneDestination{}, ownerHidden(err, ownerID, actorID)
+		return cloneDestination{}, HideOtherAccountLock(err, actorID)
 	}
 	// The rows are already held; this adds the editor and frozen checks.
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, target.WorkspaceID, actorID); err != nil {
 		return cloneDestination{}, err
 	}
-	dest := cloneDestination{workspaceID: target.WorkspaceID, payerID: ownerID, members: map[string]bool{ownerID: true}}
+	dest := cloneDestination{workspaceID: target.WorkspaceID, payerID: actorID, members: map[string]bool{ownerID: true}}
 	if dest.chapterID, err = resolveUploadChapterID(ctx, tx, target.WorkspaceID, target.ChapterID, target.ChapterName); err != nil {
 		return cloneDestination{}, err
 	}
@@ -1730,12 +1741,14 @@ func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID str
 	return nil
 }
 
-// ownerHidden maps a locked (deleted, deletion-pending or suspended) owner to
-// not found for every actor but the owner: that owner's workspaces and content
-// are gone for everyone else, and the answer must not reveal why.
-func ownerHidden(err error, ownerID, actorID string) error {
+// HideOtherAccountLock maps another account's lifecycle lock (deleted,
+// deletion-pending or suspended) to not found: a locked owner's workspaces
+// and content are gone for everyone else, and a locked payer's state and
+// suspension reason are none of a co-editor's business (review C2). The
+// actor's own lock, and a frozen payer (whose items read as view-only), pass.
+func HideOtherAccountLock(err error, actorID string) error {
 	var locked *AccountLockedError
-	if ownerID != actorID && errors.As(err, &locked) && locked.UserID == ownerID {
+	if errors.As(err, &locked) && locked.UserID != actorID && locked.State != AccountOverQuotaFrozen {
 		return ErrNotFound
 	}
 	return err
@@ -1744,15 +1757,12 @@ func ownerHidden(err error, ownerID, actorID string) error {
 // CloneFile copies one ready or partial file into a workspace the actor
 // edits (files live in workspaces only): its published bytes (blob shared,
 // reference counted), saved edit state, captions, provenance and index, plus
-// the thumbnail the caller copies after the commit. The target owner pays.
+// the thumbnail the caller copies after the commit. The cloner pays.
 func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
-	payer, err := s.clonePayerLock(ctx, userID, target.WorkspaceID)
-	if err != nil {
-		return File{}, nil, err
-	}
+	payer := clonePayerLock(userID)
 	var newID string
 	var copies []ThumbnailCopy
-	err = func() error {
+	err := func() error {
 		// Copies of one file queue on its fence, so they never collide on its
 		// blob references.
 		conn, unlock, err := s.lockContainedCloneSource(ctx, "file", fileID, false, payer)
@@ -1794,7 +1804,7 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
 	if err != nil {
-		return "", nil, ownerHidden(err, sourceOwnerID, userID)
+		return "", nil, HideOtherAccountLock(err, userID)
 	}
 	files, err := snapshotCloneFilesTx(ctx, tx, `f.id=$1`, fileID)
 	if err != nil {
@@ -1810,7 +1820,7 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	if err := s.gateWorkspaceFilesTx(ctx, tx, dest.workspaceID, 1); err != nil {
 		return "", nil, err
 	}
-	// The payer's plan caps one file as it caps an upload (Epo 2026-10-12).
+	// The cloner's plan caps one file as it caps an upload (Epo 2026-10-12).
 	tier, err := s.effectivePlanTierForUser(ctx, tx, dest.payerID)
 	if err != nil {
 		return "", nil, err
@@ -1905,15 +1915,11 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 // one of its chapters) or, with no workspace, into a private standalone copy.
 // A note brings its embedded rows along under fresh ids; flashcards get fresh
 // card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
-// state and study progress are not copied. The target owner pays (the actor,
-// standalone).
+// state and study progress are not copied. The cloner pays.
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target CloneTarget) (Material, error) {
-	payer, err := s.clonePayerLock(ctx, userID, target.WorkspaceID)
-	if err != nil {
-		return Material{}, err
-	}
+	payer := clonePayerLock(userID)
 	var newID string
-	err = func() error {
+	err := func() error {
 		conn, unlock, err := s.lockContainedCloneSource(ctx, "material", matID, false, payer)
 		if err != nil {
 			return err
@@ -1971,7 +1977,7 @@ func (s *Store) cloneMaterialOnce(
 	// its workspace remain unlocked so accepted collaboration stores can finish.
 	dest, err := s.lockCloneTargetTx(ctx, tx, src.OwnerUserID, userID, target)
 	if err != nil {
-		return "", ownerHidden(err, src.OwnerUserID, userID)
+		return "", HideOtherAccountLock(err, userID)
 	}
 
 	// A note brings its embedded rows along; their references are rewritten
@@ -2181,7 +2187,7 @@ func (s *Store) cloneMaterialOnce(
 // lockCloneAccountsTx follows the normal ordered account lock discipline over
 // the source owner, the actor and the accounts that pay for the copy, and
 // refuses any of them that is locked (deleted, deletion pending, suspended):
-// callers map a locked owner to not found (ownerHidden).
+// callers map a locked owner to not found (HideOtherAccountLock).
 func lockCloneAccountsTx(
 	ctx context.Context,
 	tx pgx.Tx,

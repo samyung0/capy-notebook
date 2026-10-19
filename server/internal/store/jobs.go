@@ -36,7 +36,9 @@ func (s *Store) createSourceWithJobTx(ctx context.Context, tx pgx.Tx, wsID, crea
 		}
 	}
 
-	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
+	// The creator pays (uploader pays).
+	ownerID := createdBy
+	_, err = s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, createdBy)
 	if err != nil {
 		return File{}, "", err
 	}

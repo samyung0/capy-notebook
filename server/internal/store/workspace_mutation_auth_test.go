@@ -63,7 +63,7 @@ func TestUploadFinalizationRechecksCreatorMembership(t *testing.T) {
 		WHERE workspace_id=$1 AND user_id=$2`, workspace.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.FinalizeUploadSession(ctx, uploadID, "etag", "", ""); !errors.Is(err, ErrNotFound) {
+	if _, err := s.FinalizeUploadSession(ctx, editorID, uploadID, "etag", "", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("removed editor finalize error = %v, want not found", err)
 	}
 	var files int
@@ -113,6 +113,11 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
+	// A link reaches the visitor only once its signed link is presented.
+	if _, err := s.CreateConversation(ctx, visitorID, workspace.ID, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unredeemed link visitor chat error = %v, want not found", err)
+	}
+	redeemLink(t, s, visitorID, workspace.ID)
 	visitorConv, err := s.CreateConversation(ctx, visitorID, workspace.ID, "")
 	if err != nil {
 		t.Fatalf("link visitor chat error = %v", err)

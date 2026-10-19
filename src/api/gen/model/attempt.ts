@@ -4,16 +4,20 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AttemptKind } from './attemptKind.ts';
 
 export interface Attempt {
   chapters: string[];
   correct: number;
   iconId?: string;
   id: string;
+  kind: AttemptKind;
   /** @nullable */
   materialId: string | null;
   pct: number;
   quizName: string;
+  /** @nullable */
+  startedAt: string | null;
   takenAt: string;
   total: number;
   /** @nullable */

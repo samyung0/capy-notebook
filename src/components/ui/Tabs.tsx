@@ -1,6 +1,7 @@
 import { type KeyboardEvent, type ReactNode, useRef } from 'react';
 import { cn } from '@/lib/cn';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
+import { usePointerDownPress } from '@/lib/usePointerDownPress';
 
 type Tab = string | { value: string; label: ReactNode; tone?: 'danger' };
 
@@ -24,6 +25,7 @@ export function Tabs({
 }: TabsProps) {
   const rowRef = useRef<HTMLDivElement>(null);
   useHorizontalWheelScroll(rowRef);
+  const press = usePointerDownPress();
   const items = tabs.map(norm);
   const focusable = items.some((t) => t.value === value)
     ? value
@@ -62,6 +64,7 @@ export function Tabs({
     >
       {items.map((t, index) => {
         const active = t.value === value;
+        const { onClick, onPointerDown } = press(() => onChange?.(t.value));
         return (
           <button
             aria-selected={active}
@@ -77,8 +80,20 @@ export function Tabs({
                   : 'text-solid-error hover:text-tint-error-fg')
             )}
             key={t.value}
-            onClick={() => onChange?.(t.value)}
+            onClick={onClick}
             onKeyDown={(event) => onKeyDown(event, index)}
+            onPointerDown={(event) => {
+              // A swipe across an overflowing row scrolls it; that touch
+              // switches tabs on release instead.
+              const row = rowRef.current;
+              if (
+                event.pointerType === 'touch' &&
+                row &&
+                row.scrollWidth > row.clientWidth
+              )
+                return;
+              onPointerDown(event);
+            }}
             role="tab"
             tabIndex={t.value === focusable ? 0 : -1}
             type="button"

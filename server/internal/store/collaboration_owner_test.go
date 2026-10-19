@@ -53,8 +53,9 @@ func wantOverQuotaLock(t *testing.T, what string, err error) {
 }
 
 // Frozen is read-only in both directions: the frozen user edits nowhere, and
-// every role is read-only in a workspace the frozen account pays for. Deleting
-// and workspace chat stay open.
+// every role is read-only on what the frozen account pays for (uploader pays:
+// per item, so the rest of its workspace stays open). Deleting and workspace
+// chat stay open.
 func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -81,7 +82,7 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 		}
 		return mt
 	}
-	inFrozen, inHealthy := material(frozenWS, healthyUser), material(healthyWS, frozenUser)
+	inFrozen, inHealthy := material(frozenWS, frozenUser), material(healthyWS, frozenUser)
 	trashable := material(frozenWS, healthyUser)
 	discussion, err := s.CreateCommentDiscussion(ctx, inFrozen.ID, healthyUser, nil, nil, nil, 1, "", rich)
 	if err != nil {
@@ -90,6 +91,12 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 
 	pushFrozen(t, s, frozenUser, frozenWS.ID)
 
+	if _, err := s.AddChapter(ctx, healthyWS.ID, frozenUser, "Blocked"); err == nil {
+		t.Fatal("a frozen actor added a chapter")
+	}
+	if _, err := s.AddChapter(ctx, frozenWS.ID, healthyUser, "Open"); err != nil {
+		t.Fatalf("a healthy member keeps organizing a frozen owner's workspace: %v", err)
+	}
 	for _, c := range []struct {
 		name string
 		ws   Workspace
@@ -97,11 +104,9 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 		who  string
 	}{
 		{"frozen actor in a healthy workspace", healthyWS, inHealthy, frozenUser},
-		{"healthy member in a frozen owner's workspace", frozenWS, inFrozen, healthyUser},
+		{"healthy member on what a frozen account pays for", frozenWS, inFrozen, healthyUser},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := s.AddChapter(ctx, c.ws.ID, c.who, "Blocked")
-			wantOverQuotaLock(t, "chapter", err)
 			title := "Renamed"
 			_, err = s.UpdateMaterial(ctx, c.mt.ID, MaterialPatch{Title: &title, UpdatedBy: c.who})
 			wantOverQuotaLock(t, "rename", err)
@@ -173,7 +178,7 @@ func TestGraceBlocksOnlyStorageGrowth(t *testing.T) {
 }
 
 // At or over its storage limit (full, and grace, which is over the Free limit)
-// everything the owner pays for is view-only for owner and member alike:
+// everything an account pays for is view-only for owner and member alike:
 // content, comments, PDF marks and source edits are refused with the storage
 // code, while renaming, moving between chapters and trashing go on.
 func TestViewOnlyAtTheStorageLimit(t *testing.T) {
@@ -223,8 +228,12 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 				_, err = s.SavePDFAnnotation(ctx, who, pdf.ID, "", mark)
 				want("PDF mark", err)
 				session, err := s.SourceSession(ctx, who, text.ID)
-				if err != nil || session.Access != "read" {
-					t.Fatalf("%s source session = %q %v, want read", who, session.Access, err)
+				wantFull := StorageFullPayer
+				if who == owner {
+					wantFull = StorageFullSelf
+				}
+				if err != nil || session.Access != "read" || session.StorageFull != wantFull {
+					t.Fatalf("%s source session = %q %q %v, want read for %q", who, session.Access, session.StorageFull, err, wantFull)
 				}
 				want("source edit", s.CheckSourceAccess(ctx, who, text.ID, session.Epoch, true))
 				title := "Renamed by " + who
