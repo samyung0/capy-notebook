@@ -29,7 +29,7 @@ func TestCutoverResetMigration(t *testing.T) {
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, textFile.ID), "text-edit")
 	text := textFile.ID
 
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, Kind: "note", Title: "Cutover"})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, Kind: "note", Title: "Cutover", Content: materialTestContent(t, "")})
 	if err != nil {
 		t.Fatal(err)
 	}

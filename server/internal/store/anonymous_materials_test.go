@@ -158,7 +158,7 @@ func TestAnonymousNoteEmbeds(t *testing.T) {
 	ctx := context.Background()
 	f := editorAssetFixture{t: t, s: s, ctx: ctx}
 	ownerID := newBlobTestUser(t, s, "u_anon_embed_owner")
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Embeds", Content: "# Embeds\n\nbody"})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Embeds", Content: materialTestContent(t, "# Embeds\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}

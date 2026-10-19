@@ -74,7 +74,7 @@ func TestFrozenIsReadOnlyBothWays(t *testing.T) {
 	addWorkspaceEditor(t, s, frozenWS.ID, healthyUser)
 	material := func(ws Workspace, author string) Material {
 		mt, err := s.CreateMaterial(ctx, Material{
-			CreatedBy: author, WorkspaceID: ws.ID, Kind: "note", Title: "Note " + uid("t"),
+			CreatedBy: author, WorkspaceID: ws.ID, Kind: "note", Title: "Note " + uid("t"), Content: materialTestContent(t, ""),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -153,7 +153,7 @@ func TestGraceBlocksOnlyStorageGrowth(t *testing.T) {
 
 	var quota *QuotaExceededError
 	if _, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: ownerID, WorkspaceID: ws.ID, Kind: "note", Title: "Growth",
+		CreatedBy: ownerID, WorkspaceID: ws.ID, Kind: "note", Title: "Growth", Content: materialTestContent(t, ""),
 	}); !errors.As(err, &quota) || quota.LimitBytes != mustPlanLimits(t, s, PlanFree).StorageBytes {
 		t.Fatalf("grace growth = %v, want the Free hard quota", err)
 	}
@@ -204,7 +204,7 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, Kind: "note", Title: "Note"})
+			note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, Kind: "note", Title: "Note", Content: materialTestContent(t, "")})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -372,7 +372,7 @@ func TestFrozenEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	standalone, err := s.CreateMaterial(ctx, Material{CreatedBy: frozenUser, Kind: "note", Title: "Shared note", Privacy: PrivacyLink})
+	standalone, err := s.CreateMaterial(ctx, Material{CreatedBy: frozenUser, Kind: "note", Title: "Shared note", Content: materialTestContent(t, ""), Privacy: PrivacyLink})
 	if err != nil {
 		t.Fatal(err)
 	}

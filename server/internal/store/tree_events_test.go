@@ -75,7 +75,7 @@ func TestWorkspaceTreeNotifiesListVisibleWrites(t *testing.T) {
 
 	material, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name, Kind: "note", Title: "n",
-		Content: "# n", Privacy: "private",
+		Content: materialTestContent(t, "# n"), Privacy: "private",
 	})
 	if err != nil {
 		t.Fatal(err)
