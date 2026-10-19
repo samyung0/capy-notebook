@@ -105,10 +105,8 @@ purged.
 A `401` from the endpoint means the signing secret does not match the instance
 that sent the delivery. A `503` means `CLERK_WEBHOOK_SECRET` is still blank.
 
-The Clerk development instance has its own endpoint, pointed at a developer's
-tunnel (`https://dev-<name>.uat.capynotebook.com/webhooks/clerk`) rather than
-at `uat-api`. The two instances never share a signing secret, and a gateway
-verifies with exactly one.
+The Clerk development instance has no webhook endpoint: local runs provision
+users on their first request, and webhooks are only checked here.
 
 ### Cloud import consent
 

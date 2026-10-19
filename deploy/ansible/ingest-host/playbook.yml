@@ -79,7 +79,9 @@
           }
         - { path: /etc/docker, owner: root, group: root, mode: "0755" }
 
-    - name: Configure bounded Docker logs
+    # Image builds run on this host: the build cache is collected down to
+    # 20 GB, so parser and retrieval builds cannot fill the disk.
+    - name: Configure bounded Docker logs and build cache
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
         owner: root
@@ -91,6 +93,12 @@
             "log-opts": {
               "max-size": "20m",
               "max-file": "5"
+            },
+            "builder": {
+              "gc": {
+                "enabled": true,
+                "defaultKeepStorage": "20GB"
+              }
             }
           }
       notify: Restart Docker
@@ -133,6 +141,19 @@
         state: started
       when: ingest_configure_wireguard | default(true)
 
+    # nftables is this host's only firewall (no ufw beside it). The input
+    # chain denies by default and keeps open only loopback, established
+    # traffic, ICMP, SSH on 22 and WireGuard (its UDP port, then everything
+    # arriving on wg0 from the app host). SSH stays open to all (restricting it
+    # is not decided): GitHub's ingest deploys log in as the service account,
+    # and GitHub runners tunnel through it to the UAT database, which this
+    # host reaches over WireGuard like the UAT Redis and gateway. Outbound
+    # traffic is open except the parser's (output chain). The forward chain's
+    # drop policy blocks new inbound connections to any port a container
+    # publishes, TCP and UDP, IPv4 and IPv6 (the inet table): the job the
+    # DOCKER-USER rule does on the app host. Docker never edits this table, so
+    # a Docker restart leaves it in place, and nftables.service loads it at
+    # boot.
     - name: Configure the host firewall
       ansible.builtin.template:
         src: nftables.conf.j2
@@ -142,12 +163,14 @@
         mode: "0644"
         validate: nft -c -f %s
       notify: Reload nftables
+      tags: [firewall]
 
     - name: Enable the firewall
       ansible.builtin.systemd_service:
         name: nftables
         enabled: true
         state: started
+      tags: [firewall]
 
     # The parser's children run as the same user as its API process; with
     # scope 1 a process can trace only its own descendants.
@@ -234,18 +257,41 @@
         daemon_reload: true
       loop: "{{ ingest_watchdog_stacks }}"
 
-    - name: Keep SSH password login enabled
+    # Key-only SSH. Ansible connects as root with a key, so a root key must
+    # already be authorized; verify a key login in a second terminal before
+    # running this (openwiki/deployment-runbook.md, "Host lockdown").
+    - name: Read root's authorized SSH keys
+      ansible.builtin.stat:
+        path: /root/.ssh/authorized_keys
+      register: ingest_root_authorized_keys
+      tags: [ssh]
+
+    - name: Refuse key-only SSH without an authorized root key
+      ansible.builtin.assert:
+        that:
+          - ingest_root_authorized_keys.stat.exists
+          - ingest_root_authorized_keys.stat.size > 0
+        fail_msg: Authorize a root SSH key and log in with it before turning password logins off.
+      tags: [ssh]
+
+    - name: Allow SSH logins with keys only
       ansible.builtin.copy:
-        dest: /etc/ssh/sshd_config.d/90-capy-ingest.conf
+        src: "{{ playbook_dir }}/../shared/sshd-key-only.conf"
+        dest: /etc/ssh/sshd_config.d/10-capy-key-only.conf
         owner: root
         group: root
         mode: "0644"
-        content: |
-          PermitRootLogin yes
-          PasswordAuthentication yes
-          KbdInteractiveAuthentication no
-          X11Forwarding no
-      notify: Restart SSH
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload SSH
+      tags: [ssh]
+
+    # The drop-in this playbook used to write kept password logins on.
+    - name: Remove the old password-login drop-in
+      ansible.builtin.file:
+        path: /etc/ssh/sshd_config.d/90-capy-ingest.conf
+        state: absent
+      notify: Reload SSH
+      tags: [ssh]
 
   handlers:
     - name: Reload systemd
@@ -275,7 +321,16 @@
         daemon_reload: true
       loop: "{{ ingest_watchdog_stacks }}"
 
-    - name: Restart SSH
+    # Both listen on "Reload SSH" and run in this order: the whole effective
+    # configuration must pass `sshd -t` before sshd reloads it. A reload keeps
+    # open sessions.
+    - name: Check the SSH configuration
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+      listen: Reload SSH
+
+    - name: Reload the SSH service
       ansible.builtin.systemd_service:
         name: ssh
-        state: restarted
+        state: reloaded
+      listen: Reload SSH

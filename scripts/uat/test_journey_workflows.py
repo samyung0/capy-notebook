@@ -115,7 +115,8 @@ assert.equal(job.steps.find(s => s.name?.startsWith('Clean up')).if, 'always()')
 assert.equal(job.steps.find(s => s.uses?.startsWith('actions/upload-artifact')).if, 'always()');
 assert(!job['continue-on-error'] && !job.steps.some(s => s['continue-on-error']));
 const keys = read('deploy/env-manifest.json').keys;
-for (const [key, expression] of Object.entries(job.env)) {
+const scoped = [job.env, ...job.steps.map(s => s.env ?? {})].flatMap(Object.entries);
+for (const [key, expression] of scoped) {
   const match = expression.match(/^\$\{\{ (vars|secrets)\.([A-Z0-9_]+) \}\}$/);
   if (!match) continue;
   assert.equal(key, match[2]);
@@ -156,8 +157,9 @@ assert(!('measure_office_load' in quality.on.workflow_call.inputs));
 // The run id names the run directory, which must be lowercase (evidence.ts).
 for (const lane of [...lanes, ...measured]) assert.match(lane, /^[a-z]+$/);
 assert.equal(job.env.UAT_RUN_ID, '${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}');
-assert.equal(job.steps.find(s => s.name === 'Run critical-path journeys').run,
-  'pnpm e2e:uat:journeys --project=${{ matrix.lane }}');
+const journeys = job.steps.find(s => s.name === 'Run critical-path journeys');
+assert.equal(journeys.run, 'pnpm e2e:uat:journeys --project="$LANE"');
+assert.equal(journeys.env.LANE, '${{ matrix.lane }}');
 assert.equal(job.steps.find(s => s.uses?.startsWith('actions/upload-artifact')).with.name,
   'uat-journeys-${{ env.UAT_RUN_ID }}');
 // Playwright refuses an unknown or empty project only after preflight has run.

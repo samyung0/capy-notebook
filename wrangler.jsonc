@@ -9,6 +9,10 @@
   "minify": true,
   "compatibility_date": "2026-08-27",
   "compatibility_flags": ["nodejs_compat"],
+  // Off at the top level too, so a deploy without --env never publishes a
+  // workers.dev or preview URL.
+  "workers_dev": false,
+  "preview_urls": false,
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

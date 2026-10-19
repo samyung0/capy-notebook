@@ -374,10 +374,6 @@
       "targets": ["coolify", "ops", "quality"],
       "required_for": ["coolify", "ops"]
     },
-    "CLERK_WEBHOOK_HOST": {
-      "kind": "variable",
-      "targets": ["local"]
-    },
     "CLERK_WEBHOOK_SECRET": {
       "kind": "secret",
       "targets": ["coolify"],

@@ -55,8 +55,9 @@ jobs:
     outputs:
       revision: ${{ steps.resolve.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           ref: ${{ github.sha }}
       - name: Resolve the deployed UAT revision
         id: resolve
@@ -75,8 +76,9 @@ jobs:
           }
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
       - name: Check out the deployed revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           ref: ${{ steps.resolve.outputs.revision }}
       - name: Probe authorized UAT services
         env:
@@ -97,11 +99,12 @@ jobs:
     environment: uat
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           ref: ${{ needs.smoke.outputs.revision }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           cache: pnpm
           node-version: 22
@@ -125,7 +128,7 @@ jobs:
         run: pnpm e2e:uat
       - name: Upload Playwright evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           if-no-files-found: ignore
           name: deterministic-uat-quality-${{ github.run_id }}
@@ -147,6 +150,8 @@ jobs:
       fail-fast: false
       matrix:
         lane: ${{ fromJSON(inputs.measure_office_load && '["measure"]' || '["office","app","billing"]') }}
+    # Secrets sit only on the steps that use them, so installs and actions
+    # run without them.
     env:
       UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
       EXPECTED_REVISION: ${{ needs.smoke.outputs.revision }}
@@ -157,26 +162,18 @@ jobs:
       UAT_CLERK_TEST_MODE: ${{ vars.UAT_CLERK_TEST_MODE }}
       UAT_ACTOR_EMAIL_DOMAIN: ${{ vars.UAT_ACTOR_EMAIL_DOMAIN }}
       CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-      UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
       UAT_DATABASE_NAME: ${{ vars.UAT_DATABASE_NAME }}
       B2_BUCKET: ${{ vars.B2_BUCKET }}
       B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
       B2_REGION: ${{ vars.B2_REGION }}
-      B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
-      B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_PRICE_PRO: ${{ vars.STRIPE_PRICE_PRO }}
       UAT_STRIPE_ACCOUNT_ID: ${{ vars.UAT_STRIPE_ACCOUNT_ID }}
-      UAT_INBOX_TOKEN: ${{ secrets.UAT_INBOX_TOKEN }}
-      UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
       UAT_SENTRY_URL: ${{ vars.UAT_SENTRY_URL }}
       UAT_SENTRY_ORG: ${{ vars.UAT_SENTRY_ORG }}
       UAT_SENTRY_PROJECTS: ${{ vars.UAT_SENTRY_PROJECTS }}
       UAT_DB_SSH_HOST: ${{ vars.UAT_DB_SSH_HOST }}
       UAT_DB_SSH_USER: ${{ vars.UAT_DB_SSH_USER }}
       UAT_DB_SSH_PORT: ${{ vars.UAT_DB_SSH_PORT }}
-      UAT_DB_SSH_PRIVATE_KEY: ${{ secrets.UAT_DB_SSH_PRIVATE_KEY }}
       UAT_DB_SSH_KNOWN_HOSTS: ${{ vars.UAT_DB_SSH_KNOWN_HOSTS }}
       UAT_DB_FORWARD_HOST: ${{ vars.UAT_DB_FORWARD_HOST }}
       UAT_DB_FORWARD_PORT: ${{ vars.UAT_DB_FORWARD_PORT }}
@@ -184,47 +181,70 @@ jobs:
       INGEST_HOST: ${{ vars.INGEST_HOST }}
       INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER }}
       INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT }}
-      INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
-      INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           ref: ${{ needs.smoke.outputs.revision }}
           submodules: recursive
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.3.14"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
       - uses: ./vendor/betteroffice/.github/actions/wasm-toolchain
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: wasm-pack@0.15.0
       - uses: ./.github/actions/cache-betteroffice
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           cache: pnpm
           node-version: 22
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm office:prepare
         timeout-minutes: 30
       - run: uv sync --frozen
       - run: pnpm exec playwright install --with-deps chromium
       - name: Connect the read-only UAT database verifier
+        env:
+          UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
+          UAT_DB_SSH_PRIVATE_KEY: ${{ secrets.UAT_DB_SSH_PRIVATE_KEY }}
         run: scripts/uat/journey-tunnel.sh start
       - name: Verify the separately deployed ingest candidate
         id: ingest_release
         timeout-minutes: 3
+        env:
+          INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
+          INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
         run: scripts/uat/verify-journey-releases.sh before
       - name: Run critical-path journeys
         timeout-minutes: 95
-        run: pnpm e2e:uat:journeys --project=${{ matrix.lane }}
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          UAT_INBOX_TOKEN: ${{ secrets.UAT_INBOX_TOKEN }}
+          UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
+          LANE: ${{ matrix.lane }}
+        run: pnpm e2e:uat:journeys --project="$LANE"
       - name: Clean up this run's disposable resources
         if: always()
         timeout-minutes: 10
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          UAT_INBOX_TOKEN: ${{ secrets.UAT_INBOX_TOKEN }}
+          UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
         # Rerun only when the teardown's cleanup failed or never finished.
         run: |
           report="e2e/uat/journey-runs/$UAT_RUN_ID/cleanup.json"
@@ -236,13 +256,16 @@ jobs:
       - name: Recheck the ingest candidate after cleanup
         if: always() && steps.ingest_release.outcome == 'success'
         timeout-minutes: 3
+        env:
+          INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
+          INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
         run: scripts/uat/verify-journey-releases.sh after
       - name: Close the database tunnel
         if: always()
         run: scripts/uat/journey-tunnel.sh stop
       - name: Upload sanitized journey evidence and cleanup report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           if-no-files-found: ignore
           name: uat-journeys-${{ env.UAT_RUN_ID }}

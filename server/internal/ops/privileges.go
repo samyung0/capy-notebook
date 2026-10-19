@@ -749,36 +749,6 @@ func validateNoBroadWrites(ctx context.Context, pool *pgxpool.Pool) []string {
 	return nil
 }
 
-func validateNoTablePrivileges(ctx context.Context, pool *pgxpool.Pool) []string {
-	var table string
-	err := pool.QueryRow(ctx, `
-		SELECT format('%I.%I', n.nspname, c.relname)
-		FROM pg_class c
-		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v')
-		  AND (
-			has_table_privilege(current_user, c.oid, 'SELECT') OR
-			has_table_privilege(current_user, c.oid, 'INSERT') OR
-			has_table_privilege(current_user, c.oid, 'UPDATE') OR
-			has_table_privilege(current_user, c.oid, 'DELETE') OR
-			has_table_privilege(current_user, c.oid, 'TRUNCATE') OR
-			has_table_privilege(current_user, c.oid, 'REFERENCES') OR
-			has_table_privilege(current_user, c.oid, 'TRIGGER') OR
-			has_any_column_privilege(
-			  current_user, c.oid, 'SELECT,INSERT,UPDATE,REFERENCES'
-			)
-		  )
-		ORDER BY c.relname LIMIT 1
-	`).Scan(&table)
-	if err == nil {
-		return []string{"has table privilege on " + table}
-	}
-	if err != pgx.ErrNoRows {
-		return []string{"could not inspect table privileges"}
-	}
-	return nil
-}
-
 func validateOnlyFunctionExecutes(
 	ctx context.Context,
 	pool *pgxpool.Pool,
