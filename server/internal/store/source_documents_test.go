@@ -2138,6 +2138,8 @@ func TestSourceGrowthBudgetStopsAtZero(t *testing.T) {
 		{"base over the export cap", exportCap + 5<<20, SourceSession{}, 0},
 		// Less than admission's reserve left admits nothing: view only.
 		{"budget inside the reserve", exportCap - sourceGrowthMarginBytes - sourceWriteReserveBytes + 100, change, 0},
+		// A text state is the whole text: only the base counts (Epo 2026-10-20).
+		{"text state", 1000, SourceSession{BrowserSourceSession: BrowserSourceSession{Format: "text", State: make([]byte, 100)}}, exportCap - 1000 - sourceGrowthMarginBytes - sourceWriteReserveBytes},
 	} {
 		if got := SourceGrowthBudget(exportCap, tc.base, tc.session); got != tc.want {
 			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)

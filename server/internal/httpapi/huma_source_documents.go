@@ -163,12 +163,12 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 	}
 	// A pending rebuild is the collaboration service's.
 	session.RebuildPending, session.PublishedState, session.PublishedStateSeedSHA256, session.PublishedSourceSHA256 = false, nil, nil, ""
+	budget, err := a.sourceGrowthBudget(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	session.GrowthBudgetBytes = &budget
 	if session.Format != "text" {
-		budget, err := a.sourceGrowthBudget(ctx, session)
-		if err != nil {
-			return nil, err
-		}
-		session.GrowthBudgetBytes = &budget
 		// The browser opens a text state; an Office editor takes its
 		// document from the room's sync.
 		session.State, session.StateSeedSHA256, session.StateRows = nil, nil, nil

@@ -51,6 +51,7 @@ import {
 import {
   SOURCE_IFRAME_ORIGIN,
   sessionReported,
+  useSizeLimitView,
   useSourceSession,
 } from './useSourceSession';
 
@@ -80,24 +81,6 @@ export function replicaCatchUp(doc: Y.Doc, replicaState: Uint8Array) {
   return Y.encodeStateAsUpdate(
     doc,
     Y.encodeStateVectorFromUpdate(replicaState)
-  );
-}
-
-/**
- * Whether an Office edit open stops at the file's size limit: no growth
- * budget left (Epo 2026-10-17), and no drafts to show, whether recovery or
- * restored ones still being sent, which open so they can be seen, copied out
- * or discarded.
- */
-export function opensAtSizeLimit(source: {
-  dirty: boolean;
-  session?: { growthBudgetBytes?: number } | null;
-  status: string;
-}) {
-  return (
-    source.session?.growthBudgetBytes === 0 &&
-    source.status !== 'recovery' &&
-    !source.dirty
   );
 }
 
@@ -171,18 +154,15 @@ export function useOfficeRuntime({
     setJoined(false);
     setMode('view');
   }, [mode, pausedAtOpen, setMode]);
-  // A file with no growth budget left is at its size limit: it opens to view
-  // only, with a notice, instead of refusing its first change (Epo
-  // 2026-10-17). No edit frame loads for it (the load waits below). Drafts
-  // it holds (recovery, or restored ones being sent) still open, so they can
-  // be seen, copied out or discarded.
-  const atSizeLimit = opensAtSizeLimit(source);
-  useEffect(() => {
-    if (mode !== 'edit' || !atSizeLimit) return;
-    setJoined(false);
-    setMode('view');
-    userToast({ title: m.files_office_size_limit() });
-  }, [mode, atSizeLimit, setMode]);
+  // No edit frame loads for a file at its size limit (the load waits below).
+  const { atSizeLimit, sizeLimited } = useSizeLimitView(
+    source,
+    mode === 'edit',
+    () => {
+      setJoined(false);
+      setMode('view');
+    }
+  );
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const modeRef = useRef(mode);
@@ -973,6 +953,7 @@ export function useOfficeRuntime({
     sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
+    sizeLimited,
     status: source.status,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };

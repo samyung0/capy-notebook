@@ -2213,11 +2213,14 @@ second use of an original picture binds the same package part
 writes an original twice. Admission keeps `STATE_WRITE_RESERVE_BYTES` (64 KiB)
 free under the cap, so the contributor marker written after an update fits and
 the save's check against the cap stays exact; an agent edit is held to the
-same reserve and counts toward the room's running size. An Office file with no
+same reserve and counts toward the room's running size. A file with no
 growth budget left (`growthBudgetBytes` 0) opens to view only with a
-size-limit notice instead of Edit (`opensAtSizeLimit`), unless it holds drafts
-(recovery, or restored drafts being sent), which still open so they can be
-seen, copied out or discarded; a base within the margin and the reserve of
+size-limit notice instead of Edit (`opensAtSizeLimit`, `useSizeLimitView`),
+its mode control disabled from then on so it reads as not editable, unless it
+holds drafts (recovery, or restored drafts being sent), which still open so
+they can be seen, copied out or discarded. A text source follows the same
+rule (Epo 2026-10-20): its edit read carries a budget from its base alone,
+since a text state is the whole text rather than a change over the seed; a base within the margin and the reserve of
 the export cap leaves no growth. An image picked before the replica's first
 measure waits for it. A
 save's whole state and an agent edit's are held to the same cap. Only when

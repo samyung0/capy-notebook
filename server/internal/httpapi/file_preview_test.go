@@ -200,6 +200,39 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	}
 }
 
+// Epo 2026-10-20: a text source published over the plan file limit opens
+// view only like an Office file at its size limit, so its edit read carries
+// a growth budget too, from its base alone.
+func TestTextSourceOverThePlanLimitHasNoGrowthBudget(t *testing.T) {
+	ctx := context.Background()
+	st := openAccessTestStoreForPreview(t)
+	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled: true,
+		E2EAuth:      true,
+		E2ESecret:    "e2e-test-secret",
+		E2EUserIDs:   []string{"u_owner"},
+	})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Text limit", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
+	file, err := uploadSource(ctx, st, workspace.ID, "u_owner", "notes.md", 100, "sources/notes.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Published past the 30 MiB export cap of the test catalog.
+	if _, err = st.Pool().Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, int64(40<<20)); err != nil {
+		t.Fatal(err)
+	}
+	editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
+	if editor.Code != http.StatusOK ||
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"format":"text"`)) ||
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":0`)) {
+		t.Fatalf("text editor session = %d body=%s", editor.Code, editor.Body.String())
+	}
+}
+
 // Office inserts shrink images to the plan cap of the workspace owner, who
 // pays for the file, whatever the editor's own plan: only the editor read
 // carries it. The editor read also says when the file's card is older than

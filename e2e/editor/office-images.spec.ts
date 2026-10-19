@@ -287,7 +287,7 @@ test('a DOCX with no growth budget left opens to view only with the size-limit n
     sessionStorage.setItem('capy.mock.growthBudgetBytes.bio-office-docx', '0')
   );
   await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(page.getByText(m.files_office_size_limit())).toBeVisible({
+  await expect(page.getByText(m.files_size_limit())).toBeVisible({
     timeout: 30_000,
   });
   await expect(officeEditMenu(page, 'docx')).toHaveCount(0);
@@ -296,6 +296,10 @@ test('a DOCX with no growth budget left opens to view only with the size-limit n
     timeout: 60_000,
   });
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
+  // It reads as not editable (Epo 2026-10-20).
+  await expect(
+    page.getByRole('button', { name: m.material_mode() })
+  ).toBeDisabled();
 });
 
 test('pptx Insert › Image shrinks a picture toward the growth budget and refuses one that still does not fit', async ({

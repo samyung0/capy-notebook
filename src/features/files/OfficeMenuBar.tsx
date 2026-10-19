@@ -369,6 +369,7 @@ export function OfficeHeader({
     | 'saving'
     | 'sendMenuFile'
     | 'setRuntimeMode'
+    | 'sizeLimited'
   >;
 }) {
   const headerTarget = useContext(FileHeaderTarget);
@@ -377,7 +378,7 @@ export function OfficeHeader({
       canEdit={canEdit}
       disabled={
         runtime.mode === 'view'
-          ? !runtime.analysis
+          ? !runtime.analysis || runtime.sizeLimited
           : !runtime.ready ||
             runtime.saving ||
             runtime.handoff ||

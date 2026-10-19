@@ -8,6 +8,7 @@ import {
   isRecoveryBanner,
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
+import { userToast } from '@/components/ui/userToast';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import {
@@ -147,6 +148,47 @@ export function sourceHeaderStatus(
     case 'recovery':
       return 'error';
   }
+}
+
+/**
+ * Whether an edit open stops at the file's size limit: no growth budget left
+ * (Epo 2026-10-17; text too, 2026-10-20), and no drafts to show, whether
+ * recovery or restored ones still being sent, which open so they can be seen,
+ * copied out or discarded.
+ */
+export function opensAtSizeLimit(source: {
+  dirty: boolean;
+  session?: { growthBudgetBytes?: number } | null;
+  status: string;
+}) {
+  return (
+    source.session?.growthBudgetBytes === 0 &&
+    source.status !== 'recovery' &&
+    !source.dirty
+  );
+}
+
+/**
+ * A file at its size limit opens to view only, with a notice, instead of
+ * refusing its first change, and its mode control stays disabled from then on
+ * so it reads as not editable (Epo 2026-10-20). `toView` leaves the session.
+ */
+export function useSizeLimitView(
+  source: Parameters<typeof opensAtSizeLimit>[0],
+  editing: boolean,
+  toView: () => void
+) {
+  const atSizeLimit = opensAtSizeLimit(source);
+  const [limited, setLimited] = useState(false);
+  const toViewRef = useRef(toView);
+  toViewRef.current = toView;
+  useEffect(() => {
+    if (!editing || !atSizeLimit) return;
+    setLimited(true);
+    toViewRef.current();
+    userToast({ title: m.files_size_limit() });
+  }, [editing, atSizeLimit]);
+  return { atSizeLimit, sizeLimited: limited || atSizeLimit };
 }
 
 export function maintenancePaused(value: unknown): boolean {

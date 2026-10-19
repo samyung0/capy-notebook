@@ -48,9 +48,10 @@ type BrowserSourceSession struct {
 	// of the workspace owner, who pays for the file: inserted images over it
 	// are shrunk in the browser first.
 	ImageMaxBytes int64 `json:"imageMaxBytes,omitempty"`
-	// GrowthBudgetBytes: the browser's Office edit read only. What the room's
-	// state may still grow by as of the durable state (SourceGrowthBudget):
-	// the editor refuses an inserted image past it.
+	// GrowthBudgetBytes: the browser's edit read only. What the room's state
+	// may still grow by as of the durable state (SourceGrowthBudget): 0 opens
+	// the file to view only, and the Office editor refuses an inserted image
+	// past it.
 	GrowthBudgetBytes *int64 `json:"growthBudgetBytes,omitempty"`
 	// ThumbnailStale: the browser's Office edit read only. The file's card is
 	// older than its saved document (ThumbnailStale), so the editor uploads
@@ -94,16 +95,21 @@ const sourceCeilingBytes = 100 << 20
 // STATE_WRITE_RESERVE_BYTES IN collaboration-rs/crates/sources/src/lib.rs
 const sourceWriteReserveBytes = 64 << 10
 
-// SourceGrowthBudget is what an Office room may still admit: the export cap
+// SourceGrowthBudget is what a source room may still admit: the export cap
 // (the largest plan source file) less the base file, the margin, admission's
 // write reserve and the durable change over seed(base), its state and rows
 // (Epo 2026-10-17; the collaboration server's admission_cap of state_cap).
 // Never negative; 0 means nothing would be admitted, so the file opens to
 // view only.
 func SourceGrowthBudget(exportCap, baseBytes int64, session SourceSession) int64 {
-	grown := int64(len(session.State))
-	for _, row := range session.StateRows {
-		grown += int64(len(row))
+	// A text state is the whole text, not a change over the seed: only its
+	// base says whether the file is at its size limit (Epo 2026-10-20).
+	var grown int64
+	if session.Format != "text" {
+		grown = int64(len(session.State))
+		for _, row := range session.StateRows {
+			grown += int64(len(row))
+		}
 	}
 	return max(0, exportCap-baseBytes-sourceGrowthMarginBytes-sourceWriteReserveBytes-grown)
 }

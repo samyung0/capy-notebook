@@ -4,8 +4,8 @@ import {
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
-  opensAtSizeLimit,
 } from './useOfficeRuntime';
+import { opensAtSizeLimit } from './useSourceSession';
 
 // Capy's vitest has no DOM, so these elements are outside any dialog or menu
 // (`closest` finds nothing); the e2e checks an open menu.

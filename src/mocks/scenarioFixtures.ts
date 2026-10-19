@@ -298,14 +298,11 @@ export async function scenarioSourceSession(
     format: seed.format,
     // A small file's room under the 30 MiB export cap, less the margin,
     // unless a test set one.
-    growthBudgetBytes:
-      seed.format === 'text'
-        ? undefined
-        : Number(
-            (typeof sessionStorage !== 'undefined' &&
-              sessionStorage.getItem(growthBudgetKey(fileId))) ||
-              29 * 1024 ** 2
-          ),
+    growthBudgetBytes: Number(
+      (typeof sessionStorage !== 'undefined' &&
+        sessionStorage.getItem(growthBudgetKey(fileId))) ||
+        29 * 1024 ** 2
+    ),
     // The Free cap, as the mock materials carry.
     imageMaxBytes:
       seed.format === 'text' ? undefined : PLAN_LIMITS.free.imageMaxBytes,

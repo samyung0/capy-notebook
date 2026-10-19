@@ -14,7 +14,11 @@ import {
 import { useReportEditorStatus } from './fileModeContext';
 import { SourceTextEditor } from './SourceTextEditor';
 import { applySavedSource } from './sourceState';
-import { sourceHeaderStatus, useSourceSession } from './useSourceSession';
+import {
+  sourceHeaderStatus,
+  useSizeLimitView,
+  useSourceSession,
+} from './useSourceSession';
 
 export function SourceTextView({
   file,
@@ -45,6 +49,10 @@ export function SourceTextView({
     setJoined(false);
     setMode('view');
   }, [editing, pausedAtOpen, setMode]);
+  const { sizeLimited } = useSizeLimitView(source, editing, () => {
+    setJoined(false);
+    setMode('view');
+  });
   useEffect(() => {
     onDirtyChange?.(source.dirty);
     return () => onDirtyChange?.(false);
@@ -147,7 +155,7 @@ export function SourceTextView({
     >
       <FileModeControl
         canEdit={canEdit}
-        disabled={leaving || source.handoff || source.replaced}
+        disabled={leaving || source.handoff || source.replaced || sizeLimited}
         mode={mode}
         onChange={(mode) => {
           if (mode === 'edit') {
