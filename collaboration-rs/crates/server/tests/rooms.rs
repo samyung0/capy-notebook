@@ -3102,7 +3102,8 @@ async fn two_writers_converge_in_a_flashcard_set_and_it_stores() {
 
 /// A writer's update outside a set's shape is refused on entry (Epo
 /// 2026-10-18): the writer hears `document-rejected` and its channel
-/// closes, the room keeps its state and lineage, and the writer's editor
+/// closes, the other writer receives nothing of it, the room keeps its state
+/// and lineage, and the writer's editor
 /// remounts on a fresh document on the same socket, whose edit goes in.
 #[tokio::test]
 async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
@@ -3130,6 +3131,12 @@ async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
     assert!(
         a.until(4).await.is_some(),
         "the refused channel did not close"
+    );
+    // The other writer receives nothing of it and keeps its channel.
+    assert!(!b.hears(4, 300).await, "the other writer's channel closed");
+    assert!(
+        b.text().is_empty(),
+        "the other writer received the refused update"
     );
     // A key no card has.
     b.write(|doc| {
