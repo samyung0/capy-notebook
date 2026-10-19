@@ -1,23 +1,30 @@
 import { ErrorState } from '@/components/app/ErrorState';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
+import type { ShareKind } from '@/share/state';
 
-/** A failed public page's copy. A missing page (404) and a shared material
- * whose stored content a rule refuses (422 `material_content_unreadable`, the
- * app's "could not be loaded") send the reader back; only a loading failure
- * offers a retry, since retrying the others never helps. */
-export function failureCopy(status: number) {
+const UNREADABLE_TITLES: Record<ShareKind, () => string> = {
+  flashcards: m.share_unreadable_flashcards_title,
+  notes: m.share_unreadable_note_title,
+  quizzes: m.share_unreadable_quiz_title,
+};
+
+/** A failed public page's copy. A missing page (404) and a shared note, quiz
+ * or set whose stored content a rule refuses (422
+ * `material_content_unreadable`, named by its kind) send the reader back; only
+ * a loading failure offers a retry, since retrying the others never helps. */
+export function failureCopy(status: number, kind?: ShareKind) {
   if (status === 404)
     return {
       body: m.error_not_found_page_body(),
       retry: false,
       title: m.error_not_found_page_title(),
     };
-  if (status === 422)
+  if (status === 422 && kind)
     return {
-      body: m.material_decode_body(),
+      body: m.share_unreadable_body(),
       retry: false,
-      title: m.material_decode_title(),
+      title: UNREADABLE_TITLES[kind](),
     };
   return {
     body: m.summary_error_body(),
@@ -26,8 +33,14 @@ export function failureCopy(status: number) {
   };
 }
 
-export function SummaryFailure({ status }: { status: number }) {
-  const { body, retry, title } = failureCopy(status);
+export function SummaryFailure({
+  kind,
+  status,
+}: {
+  kind?: ShareKind;
+  status: number;
+}) {
+  const { body, retry, title } = failureCopy(status, kind);
   return (
     <ErrorState
       action={

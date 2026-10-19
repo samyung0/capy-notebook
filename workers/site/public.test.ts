@@ -180,6 +180,14 @@ describe('anonymous material routes', () => {
     const html = await page.text();
     expect(html).toContain('This note could not be loaded');
     expect(html).not.toContain('Try again');
+    // A shared quiz names its kind.
+    const quizPage = await handleSiteRequest(
+      request(`/share/quizzes/${TOKEN}`),
+      env,
+      unreadable()
+    );
+    expect(quizPage.status).toBe(422);
+    expect(await quizPage.text()).toContain('This quiz could not be loaded');
     const image = unreadable();
     const asset = await handleSiteRequest(
       request(`/p/notes/${TOKEN}/assets/asset_abc`),
