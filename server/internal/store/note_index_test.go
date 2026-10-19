@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
@@ -18,6 +21,16 @@ func noteIndexState(t *testing.T, s *Store, id string) (dirty bool, job *string,
 		t.Fatal(err)
 	}
 	return dirty, job, indexErr
+}
+
+// staleNote backdates a note's dirty mark past NoteIndexStale, so a change
+// under the token threshold is due.
+func staleNote(t *testing.T, s *Store, id string) {
+	t.Helper()
+	if _, err := s.pool.Exec(context.Background(),
+		`UPDATE materials SET index_dirty_at=now()-interval '11 minutes' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
@@ -64,6 +77,7 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 		t.Fatalf("index text = %+v", text)
 	}
 
+	staleNote(t, s, note.ID)
 	jobID, err := s.RequestMaterialIndex(ctx, note.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -172,6 +186,7 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			staleNote(t, s, note.ID)
 			jobID, err := s.RequestMaterialIndex(ctx, note.ID)
 			if err != nil {
 				t.Fatal(err)
@@ -199,6 +214,7 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 				}
 				edit(t, note.ID, ownerID, "edited after the failure")
 			}
+			staleNote(t, s, note.ID)
 			if next, err := s.RequestMaterialIndex(ctx, note.ID); err != nil || next == jobID {
 				t.Fatalf("a due note is admitted again: job=%s err=%v", next, err)
 			}
@@ -246,7 +262,7 @@ func TestEmbeddedItemsIndexInTheirNote(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if text.Text != materialdoc.JoinIndexBlocks(text.Blocks) {
+		if text.Text != materialdoc.JoinNoteBlocks(text.Blocks) {
 			t.Fatalf("text %q is not its blocks' join %+v", text.Text, text.Blocks)
 		}
 		return text
@@ -292,5 +308,181 @@ func TestEmbeddedItemsIndexInTheirNote(t *testing.T) {
 	dirtied("a quiz room's projection")
 	if text := indexed(); text.Blocks[1].Text != "zxxxxxxxxx" {
 		t.Fatalf("after the projection the index text = %+v", text)
+	}
+}
+
+// Epo 2026-10-17: a dirty note is reindexed once its change since the last
+// index (indexed_blocks) reaches NoteIndexTokens net tokens, or once it goes
+// stale; chat reads the same changes per turn, and a placeholder resolves to
+// its block's text on both sides.
+func TestNoteChangesGateReindexAndReadForChat(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	ownerID := newBlobTestUser(t, s, "u_note_changes")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Changes", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := func(texts ...string) string {
+		t.Helper()
+		nodes := []map[string]any{}
+		for i, text := range texts {
+			nodes = append(nodes, map[string]any{"type": "p", "id": fmt.Sprintf("p%d", i+1),
+				"children": []any{map[string]any{"text": text}}})
+		}
+		content, err := materialdoc.Marshal(materialdoc.Envelope{SchemaVersion: 1, Value: nodes})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return content
+	}
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Changing",
+		Content: doc("cells divide", "membranes"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pendingTokens := func() *int64 {
+		t.Helper()
+		var tokens *int64
+		if err := s.pool.QueryRow(ctx, `SELECT pending_tokens FROM materials WHERE id=$1`, note.ID).Scan(&tokens); err != nil {
+			t.Fatal(err)
+		}
+		return tokens
+	}
+
+	if _, err := s.RequestMaterialIndex(ctx, note.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a small fresh change is not due, got %v", err)
+	}
+	if tokens := pendingTokens(); tokens == nil || *tokens == 0 || *tokens >= NoteIndexTokens {
+		t.Fatalf("pending tokens = %v, want the small change measured", tokens)
+	}
+	pending, err := s.NotePendingChanges(ctx, ws.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || len(pending[0].Changes) != 2 || pending[0].Changes[0].Operation != "add" {
+		t.Fatalf("a never-indexed note reads as added blocks: %+v", pending)
+	}
+
+	// The index job ends: its blocks are the baseline.
+	indexed, err := s.MaterialIndexText(ctx, note.ID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := json.Marshal(indexed.Blocks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET indexed_blocks=$2, index_dirty_at=NULL, pending_tokens=NULL
+		WHERE id=$1`, note.ID, baseline); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := s.NotePendingChanges(ctx, ws.ID, nil); err != nil || len(pending) != 0 {
+		t.Fatalf("an indexed note has no changes: %+v %v", pending, err)
+	}
+
+	// A large edit clears the measure and is due at once.
+	long := strings.Repeat("界", NoteIndexTokens+10)
+	content := doc("cells divide", long)
+	if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Content: &content, UpdatedBy: ownerID}); err != nil {
+		t.Fatal(err)
+	}
+	if tokens := pendingTokens(); tokens != nil {
+		t.Fatalf("a content write keeps pending tokens %d", *tokens)
+	}
+	pending, err = s.NotePendingChanges(ctx, ws.ID, []string{note.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || len(pending[0].Changes) != 1 || pending[0].Changes[0].BlockID != "p2" ||
+		pending[0].Changes[0].Operation != "replace" {
+		t.Fatalf("pending changes = %+v", pending)
+	}
+	if other, err := s.NotePendingChanges(ctx, ws.ID, []string{"m_other"}); err != nil || len(other) != 0 {
+		t.Fatalf("narrowed to another note: %+v %v", other, err)
+	}
+	resolved, err := s.ResolveNoteChange(ctx, ws.ID, note.ID, "p2")
+	if err != nil || resolved.Before != "membranes" || resolved.After != long {
+		t.Fatalf("resolve = %+v %v", resolved, err)
+	}
+	if _, err := s.ResolveNoteChange(ctx, ws.ID, note.ID, "p9"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an unknown block resolves to %v", err)
+	}
+	if _, err := s.RequestMaterialIndex(ctx, note.ID); err != nil {
+		t.Fatalf("a change over the threshold is due: %v", err)
+	}
+}
+
+// TestNoteIndexSchedulerQuery runs NOTE_INDEX_SQL from
+// collaboration-rs/crates/sources/src/refresh.rs verbatim with its trigger
+// constants, which must equal Go admission's.
+func TestNoteIndexSchedulerQuery(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	noteSQL := schedulerSource(t, `(?s)const NOTE_INDEX_SQL: &str = "(.*?)";`)
+	tokens := schedulerSource(t, `const NOTE_INDEX_TOKENS: i64 = (\d+);`)
+	idle := schedulerSource(t, `const NOTE_INDEX_IDLE: &str = "(.*?)";`)
+	stale := schedulerSource(t, `const NOTE_INDEX_STALE: &str = "(.*?)";`)
+	if tokens != fmt.Sprint(NoteIndexTokens) || stale != "10 minutes" || NoteIndexStale != 10*time.Minute {
+		t.Fatalf("refresh.rs tokens %s stale %s, Go %d %s", tokens, stale, NoteIndexTokens, NoteIndexStale)
+	}
+	ownerID := newBlobTestUser(t, s, "u_note_scheduler")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Scheduled", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Scheduled",
+		Content: materialTestContent(t, "body"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := func(edited, dirty string, pending *int64) bool {
+		t.Helper()
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		// Only this note competes for the batch; the rollback restores the rest.
+		if _, err := tx.Exec(ctx, `UPDATE materials SET index_error='other test' WHERE id<>$1 AND index_dirty_at IS NOT NULL`, note.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE materials SET updated_at=now()-$2::interval,
+			index_dirty_at=now()-$3::interval, pending_tokens=$4 WHERE id=$1`, note.ID, edited, dirty, pending); err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM (`+noteSQL+`) n WHERE n.id=$4)`,
+			NoteIndexTokens, idle, stale, note.ID).Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+		return found
+	}
+	small, large := int64(NoteIndexTokens-1), int64(NoteIndexTokens)
+	for _, tc := range []struct {
+		name          string
+		edited, dirty string
+		pending       *int64
+		want          bool
+	}{
+		{"unmeasured and idle", "2 minutes", "2 minutes", nil, true},
+		{"unmeasured while typing", "1 second", "2 minutes", nil, false},
+		{"small and idle", "2 minutes", "2 minutes", &small, false},
+		{"large and idle", "2 minutes", "2 minutes", &large, true},
+		{"large while typing", "1 second", "2 minutes", &large, false},
+		{"small and stale", "1 second", "11 minutes", &small, true},
+	} {
+		if got := listed(tc.edited, tc.dirty, tc.pending); got != tc.want {
+			t.Errorf("%s: listed=%v", tc.name, got)
+		}
 	}
 }

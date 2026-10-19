@@ -1933,11 +1933,13 @@ async def _process_material_index_bound(job: dict) -> None:
             await asyncio.to_thread(_finish_material_index, job)
             return
         chunks = chunk_markdown(str(note.get("text") or ""))
+        blocks = note["blocks"]
         association = await store.attach_material_content(
             workspace_id=ws,
             material_id=material_id,
             content_hash="note:" + indexing.content_hash(chunks),
             claim_job_id=job["id"],
+            blocks=blocks,
         )
         embedded = 0
         if not association["ready"]:
@@ -1951,6 +1953,7 @@ async def _process_material_index_bound(job: dict) -> None:
                     previous_content_id=association["previous_content_id"],
                     chunks=chunks,
                     claim_job_id=job["id"],
+                    blocks=blocks,
                 )
             except BaseException:
                 await store.abandon_content(association["content_id"])

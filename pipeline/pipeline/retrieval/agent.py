@@ -359,7 +359,7 @@ async def _run_turn(
     _, pending_reserve, pending_omitted = pending.reserve(
         messages, ctx.pending_sources, spec, schemas
     )
-    if ctx.pending_sources.files:
+    if ctx.pending_sources.pending:
         yield ctx.pending_sources.event(pending_omitted)
     try:
         await ctx.pending_sources.validate()

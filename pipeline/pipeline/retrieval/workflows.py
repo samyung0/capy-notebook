@@ -70,7 +70,7 @@ async def generation_context(
         - compact.request_context(messages(""), model).total_tokens
     )
     if remaining < 0:
-        if changes.files:
+        if changes.pending:
             raise PendingSourceContextTooLarge(
                 [str(file["fileId"]) for file in changes.files]
             )
@@ -82,7 +82,7 @@ async def generation_context(
         file_ids=file_ids,
         budget=remaining,
     )
-    if not passages and not changes.files:
+    if not passages and not (changes.files or changes.notes):
         raise GenerateNoContent("The requested scope has no source content.")
     if not compact.fits_request(messages(context), model):
         # Passage estimates bound the read. Select the final prefix using the
@@ -96,7 +96,7 @@ async def generation_context(
             else:
                 high = middle - 1
         context, passages = "\n\n".join(pieces[:low]), passages[:low]
-        if not passages and not changes.files:
+        if not passages and not (changes.files or changes.notes):
             raise compact.ContextTooLarge(
                 "Source passages exceed the selected model's input limit."
             )

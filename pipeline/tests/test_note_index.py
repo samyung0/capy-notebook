@@ -37,6 +37,14 @@ def _text(**changed: str) -> str:
     return "\n\n".join(f"# {name}\n\n{body}" for name, body in sections.items())
 
 
+def _blocks(text: str) -> list[dict]:
+    """Go's MaterialIndexText.Blocks for a text: one block per paragraph."""
+    return [
+        {"id": f"p{i}", "text": part, "kind": "p"}
+        for i, part in enumerate(text.split("\n\n"))
+    ]
+
+
 def _rows(workspace, sql: str, params: tuple = ()) -> list[tuple]:
     with workspace._connect() as conn:
         return conn.execute(sql, params).fetchall()
@@ -167,7 +175,9 @@ def provider(workspace, monkeypatch):
 
     monkeypatch.setattr(elitellm, "embed_batch", embed_batch)
     monkeypatch.setattr(
-        worker, "_fetch_material_text", lambda *_a: {"text": state["text"]}
+        worker,
+        "_fetch_material_text",
+        lambda *_a: {"text": state["text"], "blocks": _blocks(state["text"])},
     )
     yield state
     if added:
@@ -185,6 +195,12 @@ def _alias(workspace, material_id: str) -> tuple[str, str] | None:
         (material_id,),
     )
     return rows[0] if rows else None
+
+
+def _baseline(workspace, material_id: str) -> list[dict] | None:
+    return _rows(
+        workspace, "SELECT indexed_blocks FROM materials WHERE id=%s", (material_id,)
+    )[0][0]
 
 
 def _note_state(workspace, material_id: str) -> tuple:
@@ -253,6 +269,7 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
     material_id = _note(workspace)
     await _run(workspace, _admit(workspace, material_id))
     first, _ = _alias(workspace, material_id)
+    assert _baseline(workspace, material_id) == _blocks(_text())
     provider["inputs"].clear()
 
     # Edit one section. Until the new content is ready the old one still
@@ -262,11 +279,14 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
 
     async def during():
         seen_during.append(_alias(workspace, material_id))
+        seen_during.append(_baseline(workspace, material_id))
 
     provider["during"] = during
     job = await _run(workspace, _admit(workspace, material_id))
 
-    assert seen_during == [(first, "ready")]
+    # The baseline Go diffs pending note changes against moves with the alias.
+    assert seen_during == [(first, "ready"), _blocks(_text())]
+    assert _baseline(workspace, material_id) == _blocks(provider["text"])
     assert len(provider["inputs"]) == 1 and "Xylem" in provider["inputs"][0]
     second, status = _alias(workspace, material_id)
     assert second != first and status == "ready"
@@ -293,6 +313,9 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
         ("failed",)
     ]
     assert _alias(workspace, material_id) == (second, "ready")
+    assert _baseline(workspace, material_id) == _blocks(
+        _text(Transport="Xylem carries water up from the roots.")
+    )
     assert _rows(
         workspace,
         "SELECT count(*) FROM rag_contents WHERE workspace_id=%s AND status='processing'",

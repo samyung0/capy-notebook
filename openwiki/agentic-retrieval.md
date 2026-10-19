@@ -3791,13 +3791,22 @@ path of `UpdateMaterial`) sets `materials.index_dirty_at` when a workspace
 note's content changes, clears `index_error`, and skips unchanged writes; a
 new workspace note is dirty from creation. A content write to an embedded
 quiz or flashcard set (its room's projection or a save) marks its parent note
-the same way (`markParentNoteDirtyTx`), so an item edit reindexes the note. The collaboration server's 5 s
-timer (`schedule_note_indexes`) asks Go to admit dirty notes that have been idle
-15 s, have no running job and no parked error, in workspaces with
-`auto_process` on. `POST /internal/collaboration/materials/{id}/index`
-(`RequestMaterialIndex`) reserves ingest credits on the workspace owner,
-inserts one `ingest` job carrying `materialId`, and records it in
-`index_job_id`; 409 means not due. A refusal a retry cannot fix (another
+the same way (`markParentNoteDirtyTx`), so an item edit reindexes the note,
+and clears `pending_tokens`. A dirty note is due once its change since the
+last index reaches 1,000 net tokens after 60 s idle, or once it has been dirty
+for 10 minutes (Epo 2026-10-17; `NOTE_INDEX_TOKENS`, `NOTE_INDEX_IDLE` and
+`NOTE_INDEX_STALE` in `sources/src/refresh.rs`, `NoteIndexTokens` and
+`NoteIndexStale` in `store/note_index.go`). The collaboration server's 5 s
+timer (`schedule_note_indexes`) runs `NOTE_INDEX_SQL`, which lists dirty notes
+with no running job and no parked error, in workspaces with `auto_process`
+on, that are idle and not yet measured (`pending_tokens` NULL) or measured at
+the threshold, or that are stale. It asks Go to admit each.
+`POST /internal/collaboration/materials/{id}/index` (`RequestMaterialIndex`)
+measures a note that is not stale: the net tokens of its changes (below) go
+into `pending_tokens`, and a change under the threshold is not due (409) until
+the next content write clears the measure or it goes stale. A due note gets
+ingest credits reserved on the workspace owner and one `ingest` job carrying
+`materialId`, recorded in `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
 `pendingNotes` in workspace settings until the note changes again; transient
 failures retry on the next tick. Notes have no Process: with `auto_process`
@@ -3842,7 +3851,10 @@ claims a new content row without moving the alias. It reuses vectors for
 unchanged chunk text from the note's previous content row, which stays
 aliased and searchable while the job runs, and writes the content with no
 descriptor. `publish_material_content` then marks the new row ready and moves
-the alias in one transaction, and the orphan trigger drops the old row. A
+the alias in one transaction, and the orphan trigger drops the old row. The
+alias move (here, or when the claim finds ready content) also stores the
+fetched `blocks` as `materials.indexed_blocks` (migration 0098): the baseline
+the note's pending changes are measured against. A
 failed job abandons its claimed row, so the note keeps its previous index. The
 attempt records `chunks_created` and, in `details`, `chunks_embedded`. A 404
 from Go (trashed, standalone, deleted) ends the job without work. The job's
@@ -3858,7 +3870,8 @@ or regions. The chat panel renders such a chip with the note glyph and opens
 the note in view mode. The agent's `list_sources` keeps notes as title, id
 and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
-clones copy note index rows with the file rows; a cloned note without an
+clones copy note index rows with the file rows, and a copied index keeps its
+`indexed_blocks`; a cloned note without an
 index, whose index is not current (dirty, a job rebuilding it, or a failed
 one), or whose index text the clone changed (a mention turned plain text, or
 an embedded item whose copy reads differently), starts dirty.
@@ -4059,6 +4072,28 @@ deletion during gathering returns `source_changed` and asks the user to retry.
 New authored edits alone leave the captured evidence valid. This check prevents
 combining an old pending delta with a newer index without retaining old indexes
 or keeping database transactions open during model calls.
+
+Notes get the same evidence from Go (Epo 2026-10-17). The same read calls
+`POST /api/internal/note-changes` (pipeline secret, bound to the workspace like
+`index-text`; generation calls it too), and `NotePendingChanges` computes, for
+each scoped note the index does not hold as it stands (dirty, being indexed or
+failed), its index blocks now (`MaterialIndexText`'s blocks from
+`materials.content`) against `indexed_blocks`, aligned by element id
+(`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. Each
+change names its `blockId`. Text changes have Office's shape: one span with
+40 UTF-16 units of context. Reordered blocks are moves without text. An
+embed's small change is a line diff of its index text. A chart, plot, graph or
+Mermaid change whose diff exceeds 150 tokens is a `data` placeholder labelled
+with its kind, title and a count (`chart "Rain": 40 of 104 cells changed`).
+`resolve_source_change` with `material_id` and `block_id` reads that block's
+index text before and after through `POST /api/internal/note-changes/resolve`,
+which acts as the turn's user (who must read the workspace). Index text holds
+no answer keys, so neither does any of this (2026-10-18). The read is of the
+stored content, as of the last projection; the live room comes with the Office
+live route. The notes' published index identities, read before the changes,
+are checked with the files'; a failed read keeps the turn going with the
+outdated notice. Notes have no Process and no overflow notification: an
+omitted note change waits for its reindex.
 
 The full provider request reserves this pending evidence within the selected
 model's window and the 250k effective ceiling, including output and safety

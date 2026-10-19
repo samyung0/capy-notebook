@@ -53,10 +53,22 @@ pub const REFRESH_DEFER_SQL: &str =
 
 pub const REPROCESS_DEFER_SQL: &str = "UPDATE source_documents SET reprocess_at=now()+interval '1 hour' WHERE file_id=$1 AND reprocess_at<=now()";
 
-/// Dirty workspace notes idle for 15 s (one index request each).
+/// Automatic note reindex (Epo 2026-10-17): this many net tokens changed
+/// since the last index after the idle window, or any change left unindexed
+/// for the stale window. Go admission (RequestMaterialIndex) measures the
+/// tokens into materials.pending_tokens and applies the same values.
+/// IMPORTANT: KEEP IN SYNC WITH NoteIndexTokens AND NoteIndexStale IN server/internal/store/note_index.go
+pub const NOTE_INDEX_TOKENS: i64 = 1000;
+pub const NOTE_INDEX_IDLE: &str = "60 seconds";
+pub const NOTE_INDEX_STALE: &str = "10 minutes";
+
+/// Dirty workspace notes due by the rule above (one index request each). A
+/// note whose change is not measured yet (pending_tokens NULL) is listed
+/// once idle, so Go measures it.
 pub const NOTE_INDEX_SQL: &str = "
   SELECT m.id FROM materials m JOIN workspaces w ON w.id=m.workspace_id
   WHERE m.kind='note' AND m.trashed_at IS NULL AND m.index_dirty_at IS NOT NULL
     AND m.index_job_id IS NULL AND m.index_error IS NULL AND w.auto_process
-    AND m.updated_at < now()-interval '15 seconds'
+    AND ((m.updated_at < now()-$2::text::interval AND (m.pending_tokens IS NULL OR m.pending_tokens>=$1))
+      OR m.index_dirty_at < now()-$3::text::interval)
   ORDER BY m.updated_at LIMIT 8";

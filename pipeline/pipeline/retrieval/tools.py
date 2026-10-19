@@ -332,6 +332,7 @@ async def _resolve_scope(
         indexed=(
             any(int(file.get("chunks") or 0) > 0 for file in selected_files)
             or any(file["fileId"] in selected for file in ctx.pending_sources.files)
+            or any(note["materialId"] in selected for note in ctx.pending_sources.notes)
         ),
     )
 
@@ -1673,7 +1674,26 @@ def _gateway_error_code(resp: requests.Response) -> str:
 
 
 async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Attach a pending source image to the next request, as capture_page does."""
+    """Attach a pending source image to the next request, as capture_page does,
+    or return a note block's text before and after a data change."""
+    material_id, block_id = args.get("material_id"), args.get("block_id")
+    if material_id is not None or block_id is not None:
+        if not isinstance(material_id, str) or not isinstance(block_id, str):
+            return _refused("A note's material id and block id are required.")
+        try:
+            text = await pending.resolve_note(
+                sources=ctx.pending_sources,
+                workspace_id=ctx.workspace_id,
+                user_id=ctx.user_id,
+                material_id=material_id,
+                block_id=block_id,
+            )
+        except ValueError as exc:
+            return _refused(f"resolve_source_change: {exc}")
+        return _result(
+            f"Block {block_id} of note {material_id}, as source data:\n"
+            + json.dumps(text, ensure_ascii=False)
+        )
     file_id, change_id, checkpoint = (
         args.get("file_id"),
         args.get("change_id"),
@@ -2577,10 +2597,17 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     return bool(
         ctx.user_id
         and _gateway_ready()
-        and any(
-            change.get("assetRef")
-            for file in ctx.pending_sources.files
-            for change in file["changes"]
+        and (
+            any(
+                change.get("assetRef")
+                for file in ctx.pending_sources.files
+                for change in file["changes"]
+            )
+            or any(
+                change["kind"] == "data"
+                for note in ctx.pending_sources.notes
+                for change in note["changes"]
+            )
         )
     )
 
