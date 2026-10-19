@@ -951,10 +951,10 @@ webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 
 ## 2. Cloudflare — rules
 
-The zone's WAF custom rules, rate limiting rules, cache rules and response
-header transform rules are code. One zone holds production and UAT, and
+The zone's WAF custom rules, cache rules and response header transform rules
+are code. One zone holds production and UAT, and
 [`deploy/cloudflare/rules.json`](../deploy/cloudflare/rules.json) lists every
-rule of those four phases for both environments.
+rule of those three phases for both environments.
 `scripts/deploy/cloudflare_rules.py` applies the file or checks the zone
 against it:
 
@@ -980,10 +980,10 @@ file, through a commit, then apply; run `--check` after any dashboard visit.
 Phases the file does not list stay manual: redirect rules (the old UAT host's
 redirect in §1.0.2), configuration rules and Managed Transforms.
 
-The first apply: save each phase's live rules for rollback, run `--check`, add
-any live-only rule worth keeping (the UAT hosts' search-indexing exclusion from
-§1.0.2 is likely one) to the file, then apply. Rolling back is a `PUT` of the
-saved `rules` to the same entry point.
+Before an apply that removes or replaces rules, save each phase's live rules
+for rollback; rolling back is a `PUT` of the saved `rules` to the same entry
+point. The file holds the UAT hosts' search-indexing exclusion from §1.0.2
+(`capy_uat_app_noindex`, its live `ref`).
 
 ```bash
 zone=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
@@ -994,18 +994,15 @@ for phase in http_request_firewall_custom http_ratelimit http_request_cache_sett
 done
 ```
 
-**Rate limiting rule** (`capy_api_rate_limit`). The edge layer only handles
-volumetric floods; semantic limits are in the gateway. 100 requests per 10
-seconds per IP on the API hosts and the app hosts' `/api`, production and UAT,
-blocked for 60 s, `/webhooks/` excluded. The rule names hosts and blocks for
-60 s, which needs the Pro plan: on Free a rate limiting rule may only match
-the path and blocks for 10 s. Free allows one rule and Pro two, which is why
-both environments share one. The window is 10 seconds, which is why anything
-expressed in requests-per-hour lives in the application instead.
-
-**Excluding `/webhooks/` is not optional.** Stripe and Clerk burst deliveries
-and retries from small sets of IPs. Rate limiting them can lose subscription or
-identity events.
+**No edge rate limiting rule yet.** The zone is on the Free plan, where a
+rate limiting rule may match only the path (no host), counts per IP over 10 s
+and blocks for 10 s, and the zone gets one rule. Production and UAT share the
+zone and their paths, so a production-only limit cannot be written; it needs
+the Pro plan (host in the expression, blocks up to an hour, two rules). Until
+then the gateway's limits are the only ones. When the rule is added it goes in
+the file's `http_ratelimit` phase and must leave `/webhooks/` out: Stripe and
+Clerk burst deliveries and retries from small sets of IPs, and rate limiting
+them can lose subscription or identity events.
 
 **WAF custom rule** (`capy_webhooks_skip_security`): requests under
 `/webhooks/` skip every security rule (the remaining custom rules, rate

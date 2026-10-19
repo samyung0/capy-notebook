@@ -20,21 +20,6 @@
         "enabled": true
       }
     ],
-    "http_ratelimit": [
-      {
-        "ref": "capy_api_rate_limit",
-        "description": "API, production and UAT: 100 requests per 10 s per IP, then blocked for 60 s; webhooks excluded",
-        "expression": "(http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\"} or (http.host in {\"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api\"))) and not starts_with(http.request.uri.path, \"/webhooks/\")",
-        "action": "block",
-        "ratelimit": {
-          "characteristics": ["cf.colo.id", "ip.src"],
-          "period": 10,
-          "requests_per_period": 100,
-          "mitigation_timeout": 60
-        },
-        "enabled": true
-      }
-    ],
     "http_request_cache_settings": [
       {
         "ref": "capy_backend_hosts_bypass_cache",
@@ -82,6 +67,18 @@
           "headers": {
             "Cache-Control": { "operation": "set", "value": "no-store" },
             "X-Content-Type-Options": { "operation": "set", "value": "nosniff" }
+          }
+        },
+        "enabled": true
+      },
+      {
+        "ref": "capy_uat_app_noindex",
+        "description": "The UAT app hosts are kept out of search indexes",
+        "expression": "http.host in {\"app.uat.capynotebook.com\" \"uat.capynotebook.com\"}",
+        "action": "rewrite",
+        "action_parameters": {
+          "headers": {
+            "X-Robots-Tag": { "operation": "set", "value": "noindex, nofollow" }
           }
         },
         "enabled": true

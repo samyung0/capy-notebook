@@ -83,9 +83,6 @@ class CheckTest(unittest.TestCase):
 
     def test_check_reports_each_kind_of_drift_and_writes_nothing(self):
         phases = in_sync()
-        rule(phases, "http_ratelimit", "capy_api_rate_limit")["ratelimit"][
-            "requests_per_period"
-        ] = 1000
         rule(phases, "http_request_cache_settings", "capy_app_api_bypass_cache")[
             "enabled"
         ] = False
@@ -107,9 +104,8 @@ class CheckTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(api.puts, [])
-        self.assertIn("  ~ capy_api_rate_limit:", out)
-        self.assertIn('"requests_per_period": 1000', out)
         self.assertIn("  ~ capy_app_api_bypass_cache:", out)
+        self.assertIn('"enabled": false', out)
         self.assertIn("  - hand: added by hand (live only)", out)
         self.assertIn("  + capy_ops_no_store_noindex:", out)
         self.assertIn("http_request_firewall_custom: drift", out)
@@ -125,7 +121,9 @@ class CheckTest(unittest.TestCase):
 class ApplyTest(unittest.TestCase):
     def test_apply_writes_the_files_rules_to_drifted_phases_only(self):
         phases = in_sync()
-        rule(phases, "http_ratelimit", "capy_api_rate_limit")["expression"] = "true"
+        rule(phases, "http_request_cache_settings", "capy_app_api_bypass_cache")[
+            "expression"
+        ] = "true"
         api = FakeApi(phases)
 
         code, out = run(api)
@@ -135,25 +133,27 @@ class ApplyTest(unittest.TestCase):
             api.puts,
             [
                 (
-                    f"/zones/{ZONE}/rulesets/phases/http_ratelimit/entrypoint",
-                    {"rules": CONFIG["phases"]["http_ratelimit"]},
+                    f"/zones/{ZONE}/rulesets/phases/http_request_cache_settings/entrypoint",
+                    {"rules": CONFIG["phases"]["http_request_cache_settings"]},
                 )
             ],
         )
-        self.assertIn("http_ratelimit: applied", out)
+        self.assertIn("http_request_cache_settings: applied", out)
         self.assertEqual(run(api, check=True)[0], 0)
 
     def test_apply_refuses_to_remove_live_only_rules_without_prune(self):
         phases = in_sync()
-        phases["http_ratelimit"].append(
-            {"ref": "hand", "description": "by hand", "action": "block"}
+        phases["http_request_cache_settings"].append(
+            {"ref": "hand", "description": "by hand", "action": "set_cache_settings"}
         )
         api = FakeApi(phases)
 
         code, out = run(api)
         self.assertEqual(code, 2)
         self.assertEqual(api.puts, [])
-        self.assertIn("refusing to remove live-only rules in http_ratelimit", out)
+        self.assertIn(
+            "refusing to remove live-only rules in http_request_cache_settings", out
+        )
 
         self.assertEqual(run(api, prune=True)[0], 0)
         self.assertEqual(len(api.puts), 1)
@@ -162,15 +162,15 @@ class ApplyTest(unittest.TestCase):
         class Normalizing(FakeApi):
             def put(self, path, body):
                 result = super().put(path, body)
-                for stored in self.phases["http_ratelimit"]:
-                    stored["ratelimit"]["requests_to_origin"] = False
+                for stored in self.phases["http_request_cache_settings"]:
+                    stored["action_parameters"]["origin_error_page_passthru"] = False
                 return result
 
         phases = in_sync()
-        del phases["http_ratelimit"]
+        del phases["http_request_cache_settings"]
         code, out = run(Normalizing(phases))
         self.assertEqual(code, 1)
-        self.assertIn("http_ratelimit: still differs after the apply", out)
+        self.assertIn("http_request_cache_settings: still differs after the apply", out)
 
 
 class TokenTest(unittest.TestCase):
@@ -214,23 +214,18 @@ class RulesFileTest(unittest.TestCase):
     def expression(self, phase, ref):
         return rule(CONFIG["phases"], phase, ref)["expression"]
 
-    def test_the_api_rate_limit_covers_both_environments_but_not_webhooks(self):
-        limit = rule(CONFIG["phases"], "http_ratelimit", "capy_api_rate_limit")
-        for host in ("api", "uat-api", "app", "app.uat", "uat"):
-            self.assertIn(f'"{host}.capynotebook.com"', limit["expression"])
-        self.assertTrue(
-            limit["expression"].endswith(
-                'and not starts_with(http.request.uri.path, "/webhooks/")'
-            )
+    def test_the_uat_app_hosts_are_kept_out_of_search_indexes(self):
+        noindex = rule(
+            CONFIG["phases"], "http_response_headers_transform", "capy_uat_app_noindex"
         )
-        self.assertEqual(limit["action"], "block")
+        for host in ("app.uat", "uat"):
+            self.assertIn(f'"{host}.capynotebook.com"', noindex["expression"])
         self.assertEqual(
-            limit["ratelimit"]["characteristics"], ["cf.colo.id", "ip.src"]
+            noindex["action_parameters"]["headers"]["X-Robots-Tag"]["value"],
+            "noindex, nofollow",
         )
-        self.assertEqual(limit["ratelimit"]["requests_per_period"], 100)
-        self.assertEqual(limit["ratelimit"]["period"], 10)
 
-    def test_webhooks_skip_the_rate_limit(self):
+    def test_webhooks_skip_the_security_rules(self):
         skip = rule(
             CONFIG["phases"],
             "http_request_firewall_custom",
