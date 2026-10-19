@@ -497,8 +497,8 @@ The prod file runs `/migrate` once per deploy, starts the API with
    `0007_drop_caption_images.sql`, `0008_parse_page_rates.sql`,
    `0009_default_chat_model.sql` came with the OpenDataLoader release and
    apply on the next deploy of an existing database; `0009` also moves the
-   catalog's chat slot default to `zai/glm-5.3-flash`, so the Relace GLM
-   capacity row and `RELACE_API_KEY` must be in place before that deploy).
+   catalog's chat slot default to `zai/glm-5.3-flash`, so the `zai` GLM
+   capacity row and `ZAI_API_KEY` must be in place before that deploy).
 6. **Domains** on the resource, after the first successful deploy (Coolify
    has to parse the compose file first). Enter **`http://`** — Cloudflare
    terminates TLS. Include the container port if the UI asks for one:
@@ -820,14 +820,16 @@ are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
 120/minute editor class are not env-overridable. Configure model capacity in the
 Ops model catalog before allowing platform model calls. Each environment stores
-its own transport provider/model limits in `model_capacities`; new databases start
+its own provider/model limits in `model_capacities`; new databases start
 without limits and missing capacity fails explicitly. Production uses GLM
-200 total / 120 interactive reserve and Qwen embedding 200 / 80. UAT and full local
+48 total / 40 interactive reserve (Z.AI holds about 50 calls in flight per key;
+migration 0097 copies an existing Relace GLM row there under that cap; the relace
+row, kept for the previous release during the deploy, is removed by hand after it) and Qwen
+embedding 200 / 80. UAT and full local
 development must use limits appropriate to their own provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
 only missing enabled platform-model capacities using the documented DeepSeek
-and DeepInfra concurrency limits, with a smaller application limit for Relace
-GLM because Relace enforces a per-key requests-per-minute budget. Its source links and
+and DeepInfra concurrency limits, and Z.AI's measured GLM limit. Its source links and
 allocation assumptions are in the SQL. Existing operator values are preserved.
 Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
@@ -1708,17 +1710,14 @@ those services start.
    to the import
    worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
-   (DeepSeek V4 Flash 0731 held on Relace; Ops reads it too, to flag a missing
-   credential), and the ingest account's Relace key for the ZAI GLM routing
-   exception, used by standalone-image captions and by the VLM read of
-   text-less document pages. GitHub holds that key as `RELACE_INGEST_API_KEY`
-   (a second Relace account) and the env renderer writes it into the ingest
-   queue env as `RELACE_API_KEY`; the app host's `retrieval` and `ops`
-   containers carry the chat account's own `RELACE_API_KEY`. The `uat`
-   environment has `RELACE_INGEST_API_KEY`; the `production` environment does
-   not yet, and it must be added before a production ingest deploy, since the
-   renderer writes an empty key without it and every scanned page would fail
-   its read. Those calls happen on this ingest host after it
+   (DeepSeek V4 Flash 0731 held on Relace) and the captioning pin (DeepSeek
+   V4.1 Flash 1017 held on DeepInfra: standalone-image captions and the VLM
+   read of text-less document pages; Ops reads the key too, to flag a missing
+   credential), and `ZAI_API_KEY` for GLM-5.3-Flash, the same Z.AI key the app
+   host's `retrieval` and `ops` containers carry. The `uat` environment has
+   `ZAI_API_KEY`; the `production` environment needs it before a production
+   deploy, since the renderer writes an empty key without it. Those calls
+   happen on this ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
    parser is OpenDataLoader 2.5.7 plus the refined repairs (`parser/odl/`);
@@ -1927,7 +1926,7 @@ The parser parses five documents at once (`CAPY_PARSE_WORKERS`, one per parse
 child). Depth 8 counts the documents in a parse child plus the waiting ones;
 one more concurrent request gets `429`, and the coordinator re-pends it as a
 capacity wait. A parse child renders a document's text-less pages as JPEGs
-into the bundle; the ingest worker's VLM reads them on Relace (at most 20
+into the bundle; the ingest worker's captioning-slot VLM reads them (at most 20
 calls in flight across the host), so the parser has no OCR stage or OCR
 backlog. The parse child counts each document's pages before parsing it, and
 the API process opens no source, and no file a child wrote, with MuPDF. A

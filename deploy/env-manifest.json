@@ -701,14 +701,6 @@
       "kind": "secret",
       "targets": ["local"]
     },
-    "RELACE_API_KEY": {
-      "kind": "secret",
-      "targets": ["coolify", "ops"]
-    },
-    "RELACE_INGEST_API_KEY": {
-      "kind": "secret",
-      "targets": ["ingest-queue"]
-    },
     "RELEASE_SHA": {
       "kind": "variable",
       "targets": ["local"]
@@ -1068,6 +1060,10 @@
     "WORKER_REPLICAS": {
       "kind": "variable",
       "targets": ["ingest-production"]
+    },
+    "ZAI_API_KEY": {
+      "kind": "secret",
+      "targets": ["coolify", "ingest-queue", "ops"]
     }
   }
 }

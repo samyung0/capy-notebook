@@ -97,8 +97,7 @@ class ConfigTest(unittest.TestCase):
             CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://uat.example.com",
-            RELACE_API_KEY="chat-key",
-            RELACE_INGEST_API_KEY="ingest-key",
+            ZAI_API_KEY="zai-key",
         )
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
@@ -109,11 +108,11 @@ class ConfigTest(unittest.TestCase):
                 "postgres://capy:a%40%2F%3A%3F%24%23%25%20b@10.77.0.3:5432/capy?sslmode=disable",
             )
             self.assertEqual(queue["GATEWAY_URL"], "http://10.77.0.3:8080")
-            self.assertEqual(queue["RELACE_API_KEY"], "ingest-key")
-            self.assertNotIn("RELACE_INGEST_API_KEY", queue)
+            # Chat and ingest share the one Z.AI platform key (Epo 2026-10-20).
+            self.assertEqual(queue["ZAI_API_KEY"], "zai-key")
             self.assertEqual(
-                json.loads(Path(temp, "coolify.json").read_text())["RELACE_API_KEY"],
-                "chat-key",
+                json.loads(Path(temp, "coolify.json").read_text())["ZAI_API_KEY"],
+                "zai-key",
             )
             self.assertNotIn(
                 "DATABASE_URL",
@@ -441,6 +440,8 @@ class ConfigTest(unittest.TestCase):
                     "EVO_QUERY_MODEL",
                     "IMPORT_RELAY_ENQUEUE_URL",
                     "IMPORT_RELAY_SECRET",
+                    "RELACE_API_KEY",
+                    "RELACE_INGEST_API_KEY",
                 )
             )
         ]
@@ -455,10 +456,7 @@ class ConfigTest(unittest.TestCase):
                 side_effect=[
                     [],
                     current + retired + preserved,
-                    {},
-                    {},
-                    {},
-                    {},
+                    *[{}] * len(retired),
                     current + preserved,
                 ],
             ) as api,
@@ -470,10 +468,7 @@ class ConfigTest(unittest.TestCase):
             [
                 ("PATCH", "/envs/bulk"),
                 ("GET", "/envs"),
-                ("DELETE", "/envs/retired-0"),
-                ("DELETE", "/envs/retired-1"),
-                ("DELETE", "/envs/retired-2"),
-                ("DELETE", "/envs/retired-3"),
+                *[("DELETE", f"/envs/retired-{index}") for index in range(6)],
                 ("GET", "/envs"),
             ],
         )

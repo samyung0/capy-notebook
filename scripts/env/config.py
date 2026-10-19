@@ -229,9 +229,6 @@ def render(values, environment, output, revision):
         GATEWAY_URL=f"http://{address}:8080",
     )
     queue["SENTRY_DSN"] = queue.pop("SENTRY_DSN_WORKER")
-    # Ingest calls Relace on its own account (Epo 2026-10-15); the pipeline
-    # reads the provider's one key name, so the queue env renames it.
-    queue["RELACE_API_KEY"] = queue.pop("RELACE_INGEST_API_KEY")
     private_write(output / f"{environment}.queue.env", dotenv(queue))
     target = "ingest-shared" if environment == "uat" else "ingest-production"
     shared = target_values(values, target)
@@ -389,7 +386,14 @@ def apply_coolify(values):
         if key.startswith("CAPY_")
         and key in MANIFEST
         and "coolify" in MANIFEST[key]["targets"]
-    } | {"EVO_QUERY_MODEL", "IMPORT_RELAY_ENQUEUE_URL", "IMPORT_RELAY_SECRET"}
+    } | {
+        "EVO_QUERY_MODEL",
+        "IMPORT_RELAY_ENQUEUE_URL",
+        "IMPORT_RELAY_SECRET",
+        # GLM left Relace for Z.AI (Epo 2026-10-20); ZAI_API_KEY replaces both.
+        "RELACE_API_KEY",
+        "RELACE_INGEST_API_KEY",
+    }
     obsolete = [
         row
         for row in actual
