@@ -147,6 +147,8 @@ jobs:
       fail-fast: false
       matrix:
         lane: ${{ fromJSON(inputs.measure_office_load && '["measure"]' || '["office","app","billing"]') }}
+    # Secrets sit only on the steps that use them, so installs and actions
+    # run without them.
     env:
       UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
       EXPECTED_REVISION: ${{ needs.smoke.outputs.revision }}
@@ -157,26 +159,18 @@ jobs:
       UAT_CLERK_TEST_MODE: ${{ vars.UAT_CLERK_TEST_MODE }}
       UAT_ACTOR_EMAIL_DOMAIN: ${{ vars.UAT_ACTOR_EMAIL_DOMAIN }}
       CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
-      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-      UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
       UAT_DATABASE_NAME: ${{ vars.UAT_DATABASE_NAME }}
       B2_BUCKET: ${{ vars.B2_BUCKET }}
       B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
       B2_REGION: ${{ vars.B2_REGION }}
-      B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
-      B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
-      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_PRICE_PRO: ${{ vars.STRIPE_PRICE_PRO }}
       UAT_STRIPE_ACCOUNT_ID: ${{ vars.UAT_STRIPE_ACCOUNT_ID }}
-      UAT_INBOX_TOKEN: ${{ secrets.UAT_INBOX_TOKEN }}
-      UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
       UAT_SENTRY_URL: ${{ vars.UAT_SENTRY_URL }}
       UAT_SENTRY_ORG: ${{ vars.UAT_SENTRY_ORG }}
       UAT_SENTRY_PROJECTS: ${{ vars.UAT_SENTRY_PROJECTS }}
       UAT_DB_SSH_HOST: ${{ vars.UAT_DB_SSH_HOST }}
       UAT_DB_SSH_USER: ${{ vars.UAT_DB_SSH_USER }}
       UAT_DB_SSH_PORT: ${{ vars.UAT_DB_SSH_PORT }}
-      UAT_DB_SSH_PRIVATE_KEY: ${{ secrets.UAT_DB_SSH_PRIVATE_KEY }}
       UAT_DB_SSH_KNOWN_HOSTS: ${{ vars.UAT_DB_SSH_KNOWN_HOSTS }}
       UAT_DB_FORWARD_HOST: ${{ vars.UAT_DB_FORWARD_HOST }}
       UAT_DB_FORWARD_PORT: ${{ vars.UAT_DB_FORWARD_PORT }}
@@ -184,8 +178,6 @@ jobs:
       INGEST_HOST: ${{ vars.INGEST_HOST }}
       INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER }}
       INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT }}
-      INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
-      INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -215,17 +207,39 @@ jobs:
       - run: uv sync --frozen
       - run: pnpm exec playwright install --with-deps chromium
       - name: Connect the read-only UAT database verifier
+        env:
+          UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
+          UAT_DB_SSH_PRIVATE_KEY: ${{ secrets.UAT_DB_SSH_PRIVATE_KEY }}
         run: scripts/uat/journey-tunnel.sh start
       - name: Verify the separately deployed ingest candidate
         id: ingest_release
         timeout-minutes: 3
+        env:
+          INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
+          INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
         run: scripts/uat/verify-journey-releases.sh before
       - name: Run critical-path journeys
         timeout-minutes: 95
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          UAT_INBOX_TOKEN: ${{ secrets.UAT_INBOX_TOKEN }}
+          UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
         run: pnpm e2e:uat:journeys --project=${{ matrix.lane }}
       - name: Clean up this run's disposable resources
         if: always()
         timeout-minutes: 10
+        env:
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          UAT_DATABASE_URL: ${{ secrets.UAT_DATABASE_URL }}
+          B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          UAT_INBOX_TOKEN: ${{ secrets.UAT_INBOX_TOKEN }}
+          UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
         # Rerun only when the teardown's cleanup failed or never finished.
         run: |
           report="e2e/uat/journey-runs/$UAT_RUN_ID/cleanup.json"
@@ -237,6 +251,9 @@ jobs:
       - name: Recheck the ingest candidate after cleanup
         if: always() && steps.ingest_release.outcome == 'success'
         timeout-minutes: 3
+        env:
+          INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
+          INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
         run: scripts/uat/verify-journey-releases.sh after
       - name: Close the database tunnel
         if: always()

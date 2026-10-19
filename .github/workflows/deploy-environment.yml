@@ -63,11 +63,14 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
-      - name: Render deployment configuration from GitHub
+      # Only the build's own values: the Coolify and ingest configuration is
+      # rendered in the deploy job, so it never sits on disk while
+      # third-party build code runs.
+      - name: Render the build configuration from GitHub
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
           CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
-        run: python3 scripts/env/config.py render --environment '${{ inputs.environment_name }}' --revision '${{ inputs.revision }}' --output "$RUNNER_TEMP/capy-config"
+        run: python3 scripts/env/config.py render-build --environment '${{ inputs.environment_name }}' --revision '${{ inputs.revision }}' --output "$RUNNER_TEMP/capy-config"
       # package.json's build gives the client vite build an 8 GB heap (its flag
       # overrides NODE_OPTIONS). Rollup's AST and scope graph for ~15k modules
       # holds ~2.9 GB live; hidden sourcemaps and the Sentry plugin lift the

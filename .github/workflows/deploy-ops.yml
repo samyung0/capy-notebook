@@ -60,11 +60,11 @@ jobs:
     environment:
       name: ${{ inputs.environment_name }}
       url: ${{ vars.DEPLOYMENT_OPS_URL }}
+    # The Coolify token sits only on the steps that call Coolify.
     env:
       TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
       DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
       COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
-      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
       COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_OPS_RESOURCE_UUID }}
       COOLIFY_MAIN_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
     steps:
@@ -92,6 +92,8 @@ jobs:
               exit 1
             }
       - name: Verify the separate Ops application
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: |
           [[ -n "$COOLIFY_RESOURCE_UUID" && -n "$COOLIFY_MAIN_RESOURCE_UUID" ]]
           python3 scripts/env/config.py verify-ops-target
@@ -101,8 +103,12 @@ jobs:
           CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
         run: python3 scripts/env/config.py render-ops --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-ops-config"
       - name: Synchronize and verify Ops configuration
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: python3 scripts/env/config.py apply-coolify --file "$RUNNER_TEMP/capy-ops-config/ops.json"
       - name: Deploy only the pinned Ops revision
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
         run: scripts/deploy/coolify-deploy.sh
       - name: Remove runner configuration
         if: always()

@@ -59,3 +59,31 @@ test('every job runs with a declared token scope', () => {
     }
   }
 });
+
+test('secrets sit on the steps that use them, never on a workflow, a job, an install or an action', () => {
+  for (const [file, workflow] of workflows) {
+    assert(!SECRET.test(JSON.stringify(workflow.env ?? {})), file);
+    for (const [name, job] of Object.entries(workflow.jobs)) {
+      assert(!SECRET.test(JSON.stringify(job.env ?? {})), `${file}: ${name}`);
+      for (const step of job.steps ?? []) {
+        if (!step.uses && !INSTALL.test(step.run ?? '')) continue;
+        const exposed = JSON.stringify([step.env ?? {}, step.with ?? {}]);
+        assert(
+          !SECRET.test(exposed),
+          `${file}: ${name}: ${step.name ?? step.uses ?? step.run}`
+        );
+      }
+    }
+  }
+});
+
+test('the SPA build job renders only the build values; the deploy job renders the rest', () => {
+  const { jobs } = parse(read('.github/workflows/deploy-environment.yml'));
+  const renders = (job) =>
+    job.steps
+      .map((step) => step.run ?? '')
+      .filter((run) => run.startsWith('python3 scripts/env/config.py render'))
+      .map((run) => run.split(' ')[2]);
+  assert.deepEqual(renders(jobs.build), ['render-build']);
+  assert.deepEqual(renders(jobs.deploy), ['render']);
+});

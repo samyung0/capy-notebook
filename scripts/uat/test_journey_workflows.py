@@ -115,7 +115,8 @@ assert.equal(job.steps.find(s => s.name?.startsWith('Clean up')).if, 'always()')
 assert.equal(job.steps.find(s => s.uses?.startsWith('actions/upload-artifact')).if, 'always()');
 assert(!job['continue-on-error'] && !job.steps.some(s => s['continue-on-error']));
 const keys = read('deploy/env-manifest.json').keys;
-for (const [key, expression] of Object.entries(job.env)) {
+const scoped = [job.env, ...job.steps.map(s => s.env ?? {})].flatMap(Object.entries);
+for (const [key, expression] of scoped) {
   const match = expression.match(/^\$\{\{ (vars|secrets)\.([A-Z0-9_]+) \}\}$/);
   if (!match) continue;
   assert.equal(key, match[2]);

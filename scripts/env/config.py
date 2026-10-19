@@ -147,38 +147,16 @@ def refuse_other_environments(values, environment):
             fail(f"{key} is not allowed in {environment}")
 
 
-def render(values, environment, output, revision):
+def private_output(output, revision):
     if not re.fullmatch("[0-9a-f]{40}", revision):
         fail("revision must be a lowercase full Git SHA")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output, 0o700)
-    coolify = target_values(values, "coolify")
-    refuse_other_environments(coolify, environment)
-    password = values.get("POSTGRES_PASSWORD", "")
-    if not password:
-        fail("POSTGRES_PASSWORD is required")
-    coolify["DATABASE_URL"] = (
-        f"postgres://capy:{quote(password, safe='')}@db:5432/capy?sslmode=disable"
-    )
-    coolify["RELEASE_SHA"] = revision
-    # Production pins the collaboration service to cores 2-3 of its 4 vCPU
-    # (cpuset in docker-compose.prod.yml), mainly so the Office engine worker
-    # has its own core; UAT's 2 vCPU stay unpinned. Runbook §1.1.
-    coolify["COLLABORATION_CPUSET"] = "2,3" if environment == "production" else ""
-    # Office engine child processes (save lane, background lane) and each
-    # one's memory cap: production 2 + 1 at 4 GiB (the box has swap), UAT 1 + 1
-    # at 3 GiB (Epo 2026-10-07).
-    production = environment == "production"
-    coolify["COLLABORATION_ENGINE_SAVE_PROCESSES"] = "2" if production else "1"
-    coolify["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"] = "1"
-    coolify["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"] = str(
-        (4 if production else 3) << 30
-    )
-    # The source rooms' disk store cap: production 10 GiB, UAT 5 GiB
-    # (Epo 2026-10-17).
-    coolify["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
-    private_write(output / "coolify.json", json.dumps(coolify))
+    return output
+
+
+def build_values(values, environment, revision):
     build = target_values(values, "build")
     build.update(
         VITE_APP_ENV=environment,
@@ -193,6 +171,47 @@ def render(values, environment, output, revision):
     )
     if not build["VITE_APP_URL"] or not build["VITE_CLERK_PUBLISHABLE_KEY"]:
         fail("DEPLOYMENT_APP_URL and CLERK_PUBLISHABLE_KEY are required")
+    return build
+
+
+def render_build(values, environment, output, revision):
+    """Only the SPA build's values: the build job runs third-party build code,
+    so the deploy job renders the Coolify and ingest configuration itself."""
+    output = private_output(output, revision)
+    build = build_values(values, environment, revision)
+    private_write(output / "build.json", json.dumps(build))
+    print(f"rendered {environment} build configuration; values redacted")
+
+
+def render(values, environment, output, revision):
+    output = private_output(output, revision)
+    coolify = target_values(values, "coolify")
+    refuse_other_environments(coolify, environment)
+    password = values.get("POSTGRES_PASSWORD", "")
+    if not password:
+        fail("POSTGRES_PASSWORD is required")
+    coolify["DATABASE_URL"] = (
+        f"postgres://capy:{quote(password, safe='')}@db:5432/capy?sslmode=disable"
+    )
+    coolify["RELEASE_SHA"] = revision
+    # Production pins the collaboration service to cores 2-3 of its 4 vCPU
+    # (cpuset in docker-compose.prod.yml), mainly so the Office engine worker
+    # has its own core; UAT's 2 vCPU stay unpinned. Runbook Â§1.1.
+    coolify["COLLABORATION_CPUSET"] = "2,3" if environment == "production" else ""
+    # Office engine child processes (save lane, background lane) and each
+    # one's memory cap: production 2 + 1 at 4 GiB (the box has swap), UAT 1 + 1
+    # at 3 GiB (Epo 2026-10-07).
+    production = environment == "production"
+    coolify["COLLABORATION_ENGINE_SAVE_PROCESSES"] = "2" if production else "1"
+    coolify["COLLABORATION_ENGINE_BACKGROUND_PROCESSES"] = "1"
+    coolify["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"] = str(
+        (4 if production else 3) << 30
+    )
+    # The source rooms' disk store cap: production 10 GiB, UAT 5 GiB
+    # (Epo 2026-10-17).
+    coolify["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
+    private_write(output / "coolify.json", json.dumps(coolify))
+    build = build_values(values, environment, revision)
     private_write(output / "build.json", json.dumps(build))
     queue = target_values(values, "ingest-queue")
     refuse_other_environments(queue, environment)
@@ -407,6 +426,7 @@ def main():
             "push",
             "render",
             "render-ops",
+            "render-build",
             "verify-ops-target",
             "apply-coolify",
             "build",
@@ -442,7 +462,9 @@ def main():
     else:
         if not args.environment or not args.output or not args.revision:
             fail("render requires --environment, --output, and --revision")
-        renderer = render_ops if args.command == "render-ops" else render
+        renderer = {"render-ops": render_ops, "render-build": render_build}.get(
+            args.command, render
+        )
         renderer(values, args.environment, args.output, args.revision)
 
 

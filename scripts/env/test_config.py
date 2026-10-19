@@ -302,6 +302,26 @@ class ConfigTest(unittest.TestCase):
             ("capy-notebook-uat", "https://s3.us-west-004.backblazeb2.com", "true"),
         )
 
+    def test_build_render_writes_only_the_build_values(self):
+        """(security regression: CI hardening, the Coolify config in the build job)"""
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="never-in-the-build",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render_build(values, "uat", temp, "a" * 40)
+            self.assertEqual(sorted(p.name for p in Path(temp).iterdir()), ["build.json"])
+            build = Path(temp, "build.json").read_text()
+        self.assertEqual(json.loads(build)["VITE_APP_URL"], "https://app.example.com")
+        self.assertNotIn("never-in-the-build", build)
+
     def test_coolify_payload_and_redacted_readback(self):
         secret = "never-disclose-this-value"
         values = {"POSTGRES_PASSWORD": secret, "OPENAI_API_KEY": ""}
