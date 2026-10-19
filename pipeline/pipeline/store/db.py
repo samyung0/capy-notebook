@@ -667,6 +667,16 @@ def _pipeline_source_cancellation(
     owner_user_id = str(workspace[0] or "")
     actor_user_id = str(payload.get("actorUserId") or "")
     expected_user_ids = {str(owner_user_id or ""), actor_user_id}
+    # The source's payer (its uploader or creator, uploader pays) is set once
+    # at insert, so an unlocked read is stable; its account joins the fence
+    # beside the owner and the actor. A missing source fails further down.
+    if material_id:
+        cur.execute("SELECT owner_user_id FROM materials WHERE id=%s", (material_id,))
+    else:
+        cur.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
+    payer = cur.fetchone()
+    if payer is not None and payer[0]:
+        expected_user_ids.add(str(payer[0]))
     if "" in expected_user_ids:
         return (
             "failed",

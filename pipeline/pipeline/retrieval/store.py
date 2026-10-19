@@ -292,7 +292,13 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
     if workspace is None:
         raise SourceSupersededError("source workspace was deleted")
     owner = str(workspace["user_id"])
-    actors = sorted({owner, str(refresh["actorUserId"])})
+    # The file's payer (uploader pays) is set once at insert; fence it too.
+    cur = await conn.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
+    payer = await cur.fetchone()
+    actors = sorted(
+        {owner, str(refresh["actorUserId"])}
+        | ({str(payer["user_id"])} if payer else set())
+    )
     cur = await conn.execute(
         "SELECT id,deleted_at,suspended_at,deletion_requested_at FROM users WHERE id=ANY(%s) ORDER BY id FOR SHARE",
         (actors,),
