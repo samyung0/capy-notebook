@@ -211,6 +211,10 @@ func (src Source) Check() error {
 		if strings.TrimSpace(src.ExcerptID) == "" || strings.TrimSpace(src.BookID) == "" || src.Version < 1 || src.URL != "" || src.Title != "" || len(src.Authors) > 0 || src.Publisher != "" || src.License != "" || src.LicenseURL != "" || src.RetrievedAt != "" {
 			return errors.New("library sources take excerptId, bookId and a positive version only")
 		}
+		// Library excerpt ids carry the book version that published them.
+		if !strings.HasSuffix(src.ExcerptID, fmt.Sprintf("_v%d", src.Version)) {
+			return errors.New("a library excerptId ends with _v<version> of the version it names")
+		}
 	case "web":
 		if src.ExcerptID != "" || src.BookID != "" || src.Version != 0 {
 			return errors.New("web sources take no excerpt fields")
@@ -445,7 +449,10 @@ func (s *Store) Provenance(ctx context.Context, sources []Source) (*store.Proven
 	return result, nil
 }
 
-// libraryBooks resolves excerpt references to the book versions they were read from.
+// libraryBooks resolves excerpt references to the book versions they were read
+// from. It needs only the version row: publishing a book drops the previous
+// version's excerpts, so an older version keeps its row and receipts alone.
+// CheckExcerpts confirms the excerpts themselves at publication.
 func (s *Store) libraryBooks(ctx context.Context, result *store.Provenance, excerptIDs, bookIDs []string, versions []int) error {
 	if s.library.dsn == "" {
 		return ErrUnavailable
@@ -457,7 +464,6 @@ func (s *Store) libraryBooks(ctx context.Context, result *store.Provenance, exce
 	rows, err := pool.Query(ctx, `SELECT w.excerpt_id,b.id,b.title,b.authors,b.edition,v.version,b.license,b.license_url,b.source_url
  FROM unnest($1::text[],$2::text[],$3::int[]) WITH ORDINALITY AS w(excerpt_id,book_id,version,position)
  JOIN library_books b ON b.id=w.book_id JOIN library_book_versions v ON v.book_id=b.id AND v.version=w.version
- JOIN library_excerpts e ON e.book_id=b.id AND e.content_id=v.content_id AND e.id=w.excerpt_id
  ORDER BY w.position`, excerptIDs, bookIDs, versions)
 	if err != nil {
 		return dbError(err)
@@ -489,6 +495,41 @@ func (s *Store) libraryBooks(ctx context.Context, result *store.Provenance, exce
 	}
 	return nil
 }
+
+// CheckExcerpts confirms every library source's excerpt is in the version it
+// names. Publication runs it, while that version is the book's current one.
+func (s *Store) CheckExcerpts(ctx context.Context, sources []Source) error {
+	excerptIDs, bookIDs, versions := []string{}, []string{}, []int{}
+	for _, source := range sources {
+		if source.Kind == "library" {
+			excerptIDs = append(excerptIDs, source.ExcerptID)
+			bookIDs = append(bookIDs, source.BookID)
+			versions = append(versions, source.Version)
+		}
+	}
+	if len(excerptIDs) == 0 {
+		return nil
+	}
+	if s.library.dsn == "" {
+		return ErrUnavailable
+	}
+	pool, err := s.library.connect(ctx)
+	if err != nil {
+		return err
+	}
+	var missing int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM unnest($1::text[],$2::text[],$3::int[]) AS w(excerpt_id,book_id,version)
+ WHERE NOT EXISTS (SELECT 1 FROM library_book_versions v JOIN library_excerpts e ON e.content_id=v.content_id
+  WHERE v.book_id=w.book_id AND v.version=w.version AND e.book_id=w.book_id AND e.id=w.excerpt_id)`,
+		excerptIDs, bookIDs, versions).Scan(&missing); err != nil {
+		return dbError(err)
+	}
+	if missing > 0 {
+		return fmt.Errorf("%w: %d library excerpts are not in the versions their sources name", ErrUnavailable, missing)
+	}
+	return nil
+}
+
 func (s *Store) Validate(q map[string]any) error {
 	return questions.Validate(q, questions.Policy{Bank: true, BankAssetsURL: s.assetsURL})
 }

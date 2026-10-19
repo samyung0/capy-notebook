@@ -1545,10 +1545,12 @@ topics and tagged excerpts the library holds under each) and topics with their
 `subjectId` and excerpt counts by role (the Topics tab shows the subject as a
 column and filters by subject), a filtered excerpt browser paging
 50 at a time, excerpt detail with chunk, figure and parser/chunker locators,
-model runs, and a per-book JSON export (`?version=` for a retained version)
-whose sha256 travels in `X-Capy-Export-Sha256` so another reviewer can verify
-the bytes they were handed. Every query follows the book's current content
-unless a version is named; every query is bounded; no route mutates.
+model runs, and a per-book JSON export of the current version whose sha256
+travels in `X-Capy-Export-Sha256` so another reviewer can verify the bytes
+they were handed. Older versions keep only their version rows and receipts
+(a publish retires the previous version), so the Books tab lists them without
+an export. Every query follows the book's current content; every query is
+bounded; no route mutates.
 
 `operator_audit_events` is the chronological record of accepted Ops mutations.
 Registry saves and manual reconciliation requests append an actor-role snapshot,

@@ -2,7 +2,7 @@
 
 The library is a separate database in the test Postgres container, created
 from ``LIBRARY_SCHEMA`` and seeded with one book at version 2 (four chunks,
-three excerpts) plus its retained version 1, which no read may ever see.
+three excerpts) plus rows of its older version 1, which no read may ever see.
 Vectors are one-hot so distances are predictable, and search is given its
 query vector directly, so no embedding call happens.
 """
@@ -24,7 +24,7 @@ from pipeline.retrieval import library, store
 from pipeline.retrieval.chunking import tokenize_for_search
 
 CURRENT = "ahss_v2"
-RETAINED = "ahss_v1"
+OLDER = "ahss_v1"
 PIN = ("deepinfra", "Qwen/Qwen3-Embedding-4B", 1, 2560)
 OPS_SCHEMA_FIXTURE = (
     Path(__file__).resolve().parents[2]
@@ -73,7 +73,7 @@ def _seed(dsn: str) -> None:
             2,
         ),
         (CURRENT, "c_shaky", "e_shaky", "Worked example nobody verified", 1),
-        (RETAINED, "c_old", "e_old", "Worked example from the older parse", 1),
+        (OLDER, "c_old", "e_old", "Worked example from the older parse", 1),
     ]
     excerpts = {
         # content, roles, topics, confidence, verified, chunk ids, figure ids
@@ -105,7 +105,7 @@ def _seed(dsn: str) -> None:
             [],
         ),
         "e_old": (
-            RETAINED,
+            OLDER,
             ["worked_example"],
             ["linear-regression"],
             0.95,
@@ -124,7 +124,7 @@ def _seed(dsn: str) -> None:
         )
         conn.execute(
             "INSERT INTO rag_contents VALUES(%s,'ready'),(%s,'ready')",
-            (RETAINED, CURRENT),
+            (OLDER, CURRENT),
         )
         conn.execute(
             "INSERT INTO rag_file_contents VALUES('ahss',%s,%s)",
@@ -137,9 +137,9 @@ def _seed(dsn: str) -> None:
         conn.execute(
             "INSERT INTO library_book_versions"
             "(book_id,version,content_id,status,source_run,corpus_identity,parser_release,parser_fingerprint,chunker_version,descriptor,summary,object_key)"
-            " VALUES('ahss',1,%s,'retained','run','id1','sha','fp','v10','old desc','old summary','books/old.pdf'),"
+            " VALUES('ahss',1,%s,'retired','run','id1','sha','fp','v10','old desc','old summary','books/old.pdf'),"
             "('ahss',2,%s,'current','run','id2','sha','fp','v10','desc','summary','books/sha.pdf')",
-            (RETAINED, CURRENT),
+            (OLDER, CURRENT),
         )
         conn.execute(
             "INSERT INTO library_figures VALUES(%s,'fig_1','ahss',7,'{0,0,10,10}',NULL,'page-1000-topleft','parser_image',0,'[]','[]','Ch 8',false,'[]',NULL,NULL)",
@@ -220,7 +220,7 @@ async def test_search_folds_chunks_into_excerpts_and_honours_role_filter(library
         "worked example", roles=["worked_example"], vector=_unit_vector(1)
     )
     assert [e.id for e in result.excerpts] == ["e_worked"], (
-        "the unverified excerpt and the retained version share the query axis "
+        "the unverified excerpt and the older version share the query axis "
         "and must never appear"
     )
     hit = result.excerpts[0]
@@ -328,7 +328,7 @@ async def test_hits_of_one_book_section_fold_into_its_best_ranked_chunk(library_
 async def test_the_last_page_of_an_excerpt_names_its_neighbours_in_the_book(
     library_db,
 ):
-    """By chunk order in the current version; the retained one never counts."""
+    """By chunk order in the current version; the older one never counts."""
     from pipeline.retrieval import tools
 
     read = await library.read_excerpt("e_worked")
@@ -481,7 +481,7 @@ async def test_read_excerpt_pages_by_chunk_index(library_db):
         await library.read_excerpt("e_worked", count=99)
 
 
-async def test_a_retained_book_version_is_invisible(library_db):
+async def test_an_older_book_version_is_invisible(library_db):
     """Only the content rag_file_contents points at is the library."""
     with pytest.raises(ValueError):
         await library.read_excerpt("e_old")
@@ -546,82 +546,59 @@ def loader(library_db, monkeypatch):
     return module
 
 
-async def test_loader_rollback_points_the_book_at_a_retained_version(
-    loader, library_db
-):
-    out = loader.rollback("ahss", 1)
-
-    versions = {v["version"]: v["status"] for v in out["books"][0]["versions"]}
-    assert versions == {1: "current", 2: "retained"}
-    assert out["books"][0]["version"] == 1
-    # The reader follows rag_file_contents, so the swap is what it sees.
-    assert (await library.read_excerpt("e_old")).excerpt.book_id == "ahss"
-    with pytest.raises(ValueError):
-        await library.read_excerpt("e_intro")
-
-    with pytest.raises(loader.PilotError):
-        loader.rollback("ahss", 1)  # already current
-    with pytest.raises(loader.PilotError):
-        loader.rollback("ahss", 9)
-
-
-async def test_loader_retire_drops_content_rows_and_keeps_the_receipts(
-    loader, library_db
-):
+def test_loader_retire_current_drops_content_and_keeps_the_receipts(loader, library_db):
+    """Publish retires the previous version in its own transaction: its content
+    rows go, its version row and model-run receipts stay, and the topic sweep
+    then drops a topic only that version carried."""
     with psycopg.connect(library_db, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO library_model_runs VALUES('ahss',%s,'tagging','normal','m',1,'{}','{}',NULL,NULL,NULL,'p')",
-            (RETAINED,),
+            (CURRENT,),
         )
-
-    with pytest.raises(loader.PilotError):
-        loader.retire("ahss", 2)  # the current version is not retirable
-
-    out = loader.retire("ahss", 1)
-
-    versions = {v["version"]: v["status"] for v in out["books"][0]["versions"]}
-    assert versions == {1: "retired", 2: "current"}
-    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_excerpts SET topic_ids='{factoring}' WHERE id='e_intro'"
+        )
+        assert loader.drop_unreferenced_topics(conn) == 0
+        with conn.transaction():
+            out = loader.retire_current(conn, "ahss")
+            dropped = loader.drop_unreferenced_topics(conn)
+        assert loader.retire_current(conn, "ahss") == {}, "nothing is current now"
         counts = {
             table: conn.execute(
-                f"SELECT count(*) FROM {table} WHERE content_id=%s", (RETAINED,)
+                f"SELECT count(*) FROM {table} WHERE content_id=%s", (CURRENT,)
             ).fetchone()[0]
-            for table in ("library_chunks", "library_excerpts", "library_model_runs")
+            for table in (
+                "library_chunks",
+                "library_excerpts",
+                "library_figures",
+                "library_model_runs",
+            )
         }
-        vectors = conn.execute(
-            "SELECT count(*) FROM rag_chunk_vectors_2560 WHERE chunk_id='c_old'"
+        statuses = dict(
+            conn.execute("SELECT version, status FROM library_book_versions")
+        )
+        older = conn.execute(
+            "SELECT count(*) FROM library_chunks WHERE content_id=%s", (OLDER,)
         ).fetchone()[0]
+        topics = [r[0] for r in conn.execute("SELECT id FROM library_topics")]
+    assert out == {
+        "version": 2,
+        "deleted": {
+            "rag_chunk_vectors_2560": 4,
+            "library_chunks": 4,
+            "library_excerpts": 3,
+            "library_figures": 1,
+        },
+    }
     assert counts == {
         "library_chunks": 0,
         "library_excerpts": 0,
+        "library_figures": 0,
         "library_model_runs": 1,
     }
-    assert vectors == 0
-    assert out["books"][0]["searchable_chunks"] == 4, "the live version is untouched"
-
-
-async def test_loader_drops_a_topic_only_when_no_kept_version_carries_it(
-    loader, library_db
-):
-    """A retained version's excerpts keep their topics, so a rollback never
-    points at excerpts whose topics are gone; retiring the version drops them."""
-    with psycopg.connect(library_db, autocommit=True) as conn:
-        conn.execute(
-            "UPDATE library_excerpts SET topic_ids='{factoring}' WHERE content_id=%s",
-            (RETAINED,),
-        )
-        assert loader.drop_unreferenced_topics(conn) == 0
-    loader.rollback("ahss", 1)
-    db = await library.pool()
-    async with db.connection() as conn:
-        assert [s["id"] for s in await library.catalog(conn)] == ["algebra"]
-
-    loader.rollback("ahss", 2)
-    out = loader.retire("ahss", 1)
-    assert out["topics_dropped"] == 1
-    with psycopg.connect(library_db, autocommit=True) as conn:
-        left = [r[0] for r in conn.execute("SELECT id FROM library_topics")]
-    assert left == ["linear-regression"]
+    assert statuses == {1: "retired", 2: "retired"}
+    assert older == 1, "only the current version is retired"
+    assert dropped == 1 and topics == ["linear-regression"]
 
 
 def test_loader_remove_deletes_every_row_of_the_book(loader, library_db):
@@ -630,11 +607,11 @@ def test_loader_remove_deletes_every_row_of_the_book(loader, library_db):
     with psycopg.connect(library_db, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO library_model_runs VALUES('ahss',%s,'tagging','normal','m',1,'{}','{}',NULL,NULL,NULL,'p')",
-            (RETAINED,),
+            (OLDER,),
         )
         conn.execute(
             "UPDATE library_excerpts SET topic_ids='{factoring}' WHERE content_id=%s",
-            (RETAINED,),
+            (OLDER,),
         )
         conn.execute("INSERT INTO files(id,name) VALUES('os','OpenIntro Statistics')")
         conn.execute("INSERT INTO rag_contents VALUES('os_v1','ready')")
@@ -681,7 +658,7 @@ def test_loader_remove_deletes_every_row_of_the_book(loader, library_db):
         }
         left["rag_contents"] = conn.execute(
             "SELECT count(*) FROM rag_contents WHERE id = ANY(%s)",
-            ([CURRENT, RETAINED],),
+            ([CURRENT, OLDER],),
         ).fetchone()[0]
         left["rag_chunk_vectors_2560"] = conn.execute(
             "SELECT count(*) FROM rag_chunk_vectors_2560"

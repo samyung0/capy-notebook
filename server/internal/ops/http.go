@@ -255,16 +255,9 @@ func NewHandler(
 				value, err := read.LibraryModelRuns(r.Context())
 				respond(w, value, err)
 			})
-			// A retained version stays exportable; no version means the current one.
+			// The export is the book's current version; older ones hold no content.
 			library.Get("/export/{bookID}", func(w http.ResponseWriter, r *http.Request) {
-				version, err := libraryExportVersion(r)
-				if err != nil {
-					respond(w, nil, err)
-					return
-				}
-				value, err := read.LibraryExport(
-					r.Context(), chi.URLParam(r, "bookID"), version,
-				)
+				value, err := read.LibraryExport(r.Context(), chi.URLParam(r, "bookID"))
 				if err != nil {
 					respond(w, nil, err)
 					return
@@ -317,18 +310,6 @@ func libraryExcerptFilter(r *http.Request) (LibraryExcerptFilter, error) {
 		filter.Page = page
 	}
 	return filter, nil
-}
-
-func libraryExportVersion(r *http.Request) (int, error) {
-	raw := r.URL.Query().Get("version")
-	if raw == "" {
-		return 0, nil
-	}
-	version, err := strconv.Atoi(raw)
-	if err != nil || version < 1 {
-		return 0, validation("version must be a positive integer")
-	}
-	return version, nil
 }
 
 // writeLibraryExport hashes the whole export before sending it: the digest is

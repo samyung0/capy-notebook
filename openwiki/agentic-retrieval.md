@@ -1629,7 +1629,7 @@ The tokenizer also maps the typographic ligatures `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ`
 (U+FB00–U+FB06) to their letters (decision 2026-09-24). Postgres indexes them
 as written, so a PDF's `ﬁnd` or `eﬀect` never met a typed `find` or
 `effect`; on 2026-09-24, 21,168 non-reference chunks across the shared
-library's current and retained versions carried one. Only the lexical input
+library's current and then-retained versions carried one. Only the lexical input
 changes; `text`, `indexed_text`, embeddings and `pipeline_identity` stay the
 same, so quotes and citations still match the printed PDF. Rows indexed
 before the mapping are rebuilt in place by
@@ -2043,11 +2043,10 @@ and are a column on `library_subjects`, never a filter. Topics are derived per
 book from its table of contents by the builder's topics stage (at most 96 per
 subject), carry `subject_id`, and live library-wide: a publish upserts the
 topics its book uses under the book's subject, then drops every topic no
-tagged excerpt on a current or retained book version references, so a
-rollback never lands on excerpts whose topics are gone; `retire` runs the same
-drop after deleting the version's rows, which is when a retained version's
-topics may go, and `remove` runs it after deleting a whole book. The pilot's 32
-topics all sit under `statistics`.
+tagged excerpt references. The same publish has already deleted the previous
+version's excerpts, so a topic only that version carried goes with it; `remove`
+runs the drop after deleting a whole book. The pilot's 32 topics all sit under
+`statistics`.
 
 Topic ids are unique library-wide (decision 2026-09-23). A book may tag its
 excerpts with another subject's topic without redefining it: its owner's
@@ -2065,19 +2064,20 @@ Versions are per book, not per dataset. There is one workspace row, the
 constant `library`, and one file per book. Publishing a book loads its content
 under a new content id, records version n+1 in `library_book_versions` with the
 receipts of that publish (source run, corpus identity, parser release and
-fingerprint, chunker, `object_key`, note), marks the previous version
-`retained` and swaps `rag_file_contents` in one transaction. The book's
+fingerprint, chunker, `object_key`, note), retires the previous version and
+swaps `rag_file_contents` in one transaction. Retiring deletes that version's
+chunks, vectors, excerpts and figures and keeps its version row and model-run
+receipts (`retire_current`). No older version is kept (decision 2026-10-19,
+which also retired the 420 versions retained until then), so a bad publish is
+undone by republishing from the book's saved run. The book's
 `descriptor` (the manifest attribution line) and `summary` (its top-level
 section titles joined with " · ", clipped to 1,000 characters; no model writes
 prose here since the summary stage was dropped on 2026-09-19) are written with
-that content, so they sit on the version row too and a rollback restores them
-with the content they describe. Excerpts, figures, chunks, vectors and model
-runs are keyed by content id; subjects and topics are library-wide. Every
-read here follows `rag_file_contents` to the current
-content, exactly as workspace search does, so a retained version is invisible
-to retrieval while staying exportable in ops. UAT and production read the same
-live library; nothing is pinned. A rollback points a book back at a retained
-version, and `retire` drops a retained version's content rows. `remove` takes a
+that content, so they sit on the version row too. Excerpts, figures, chunks,
+vectors and model runs are keyed by content id; subjects and topics are
+library-wide. Every read here follows `rag_file_contents` to the current
+content, exactly as workspace search does. UAT and production read the same
+live library; nothing is pinned. `remove` takes a
 book out of the library (decision 2026-09-25, first used for Modern Philosophy,
 whose own text is CC BY-NC-SA): in one transaction it deletes every version's
 content rows and model runs, the version rows, the book's `rag_file_contents`,
@@ -2160,6 +2160,10 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
   `capture_knowledge_page`. The
   loader records the key only after a `head_object` on that bucket succeeds,
   and refuses the publish otherwise (`knowledge_base_library.py publish`).
+  An approved privacy-edited copy can be a book's capture object (decision
+  2026-10-03, Lessons in Industrial Instrumentation and the American criminal
+  justice book); its key is then the copy's hash, while `library_books.sha256`
+  keeps the source's identity and the source PDF stays in the bucket.
 - Measured motivation (`bench/rag/reports/2026-09-17-knowledge-base-retrieval.md`):
   plain search lands on the expected topic for every first hit but reaches
   an expected role 58 of 110 times; role wording in the query does not move
@@ -2929,8 +2933,8 @@ build, and the knowledge library is one more source while the switch is on.
   page's Copy to quiz (`POST /api/bank/copy`, see
   [question-bank.md](question-bank.md#learner-progress-and-retraction)): Go
   reads the questions from the bank, resolves each one's sources
-  (`bank.Provenance`: library books at their historical version, openly
-  licensed web pages) and creates the quiz or appends after its last question
+  (`bank.Provenance`: library books at the version a question was written
+  from, resolved from that version's row, and openly licensed web pages) and creates the quiz or appends after its last question
   (`bankCopies`, `bankAppendCommands` in `huma_bank_progress.go`). Each copy's
   credit is kept in the quiz's provenance under its question id
   (`provenance.questions`), shown under that question (`QuestionCreditNote`),
