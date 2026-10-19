@@ -1318,8 +1318,10 @@ area in pieces of at most 100,000 cells (the engine's read cap) without
 skipping empty cells, up to the fork's `XLSX_COPY_MAX_CELLS` ceiling (5,000,000 cells), past
 which it shows the `copy-too-large` notice; a selection wholly past the used
 range sends nothing. A cut shows the same loading cursor and refuses edits
-while it reads, then clears only what its copy put on the clipboard; past the
-ceiling it clears nothing. A cell the keyboard reaches past the used range grows the scroll area
+while it reads, then clears the range it copied; past the ceiling it clears
+nothing. The latest copy or cut owns the clipboard: one still reading when a
+newer copy or cut starts stops reading and writes nothing, and such a cut
+clears nothing. A cell the keyboard reaches past the used range grows the scroll area
 to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
 Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
 200% page zoom), so cells past it are selected but not scrolled to, as in
@@ -1347,7 +1349,11 @@ caret, as Excel's Edit mode). Such an edit closes only once the browser's engine
 took it: keys typed meanwhile are dropped, a press elsewhere (from the cell
 editor or the formula bar), a sheet switch, a name box Enter or a row/column op
 waits for it and does nothing after a refusal, and the grid takes the focus back only if it
-stayed in the edit. Paste and agent writes store such a formula as text. Point mode (v1): while a formula waits for an operand, a click or
+stayed in the edit; a refusal that lands after the focus left the edit leaves
+the focus there. A formula-bar draft commits to the cell it started on,
+whatever moved the selection since (the menu's Select all, a press while
+sending), and while it is open a key that reaches the grid gives the focus back
+to the formula bar and does nothing else. Paste and agent writes store such a formula as text. Point mode (v1): while a formula waits for an operand, a click or
 drag writes the cell or range reference (pointing again replaces it, typing
 ends it), arrows point from the edited cell in an edit opened by typing (Shift
 extends, F2 or a click in the edit switches to caret movement) and commit and move where no
