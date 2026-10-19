@@ -476,13 +476,14 @@ fn an_emptied_set_gets_a_blank_card() {
     for writer in [&a, &b] {
         let (result, _) = admit(&mut validator, &room, &diff(writer, &room));
         assert!(matches!(result, Ok(Admission::Accepted)));
-        flashcards::repair(&mut room.transact_mut());
+        flashcards::repair(&mut room.transact_mut(), "card_fresh");
         let value = Kind::Flashcards.document_value(&room.transact());
         notes::material::assert_canonical(&value, "flashcards").unwrap();
     }
     let left = cards(&room);
     assert_eq!(left.len(), 1);
     assert!(left[0].front.is_empty() && left[0].back.is_empty());
+    assert_eq!(left[0].id, "card_fresh");
     // A set holding a card is left alone.
-    assert!(!flashcards::repair(&mut room.transact_mut()));
+    assert!(!flashcards::repair(&mut room.transact_mut(), "card_other"));
 }

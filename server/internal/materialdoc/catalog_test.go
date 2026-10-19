@@ -173,6 +173,13 @@ func TestValidatorFollowsTheCatalog(t *testing.T) {
 			if err := with(func(n []map[string]any) { nodeAt(n, s.path)[key] = "x" }); err == nil {
 				t.Errorf("a %s carrying %s is accepted", e.Type, key)
 			}
+			// Null counts as absent, as room admission reads it, unless a
+			// closed field set leaves the key out.
+			if e.Fields == nil || slices.Contains(e.Fields, key) {
+				if err := with(func(n []map[string]any) { nodeAt(n, s.path)[key] = nil }); err != nil {
+					t.Errorf("a %s holding %s at null is refused: %v", e.Type, key, err)
+				}
+			}
 		}
 		if e.Fields != nil {
 			if err := with(func(n []map[string]any) { nodeAt(n, s.path)["extra"] = "x" }); err == nil {

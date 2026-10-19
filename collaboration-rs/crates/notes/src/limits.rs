@@ -1623,14 +1623,17 @@ impl Structure {
                 checked.insert(parent.id());
             }
         }
-        // Deleted elements: a Mermaid block may lose its caption, and a
-        // mindmap or diagram its `mermaid` (its documents are small).
+        // A mindmap or diagram may lose its `mermaid` only by a retype away
+        // from one, or by deleting one or an element holding one: the copy
+        // then looks for another. The walk covers only what the update
+        // deletes, which goes once.
         let requires = catalog::material_kind(material).and_then(|kind| kind.requires);
-        let mut required = requires.is_some()
-            && self
-                .typed
-                .keys()
-                .any(|element| held_branch(txn, element).is_some_and(|b| b.item().is_some()));
+        let mut required = requires.is_some_and(|required| {
+            self.typed.iter().any(|(element, written)| {
+                held_type(txn, element).as_deref() == Some(required)
+                    && written.iter().any(|kind| kind.as_deref() != Some(required))
+            })
+        });
         let state = txn.state_vector();
         let store = txn.store();
         for (client, ranges) in incoming.delete_ranges() {
@@ -1652,7 +1655,13 @@ impl Structure {
                     {
                         continue;
                     }
-                    required |= requires.is_some();
+                    // Deleted elements: a Mermaid block may lose its caption,
+                    // and a mindmap or diagram its `mermaid`.
+                    if let (Some(kind), Some(element)) = (requires, plate::xml_text(item))
+                        && !required
+                    {
+                        required = plate::is_or_holds(element, kind);
+                    }
                     if let Some(parent) = item.parent_branch()
                         && let Some(parent_item) = parent.item()
                         && !parent_item.is_deleted()

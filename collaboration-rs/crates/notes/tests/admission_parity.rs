@@ -619,7 +619,7 @@ fn writes(kind: Option<&str>, root: bool) -> Vec<(String, Write)> {
 
 /// The sweep on one room: every single write of [writes] on every element,
 /// each from the room as seeded.
-fn sweep(kind: &str, seed_value: &[Value]) -> (usize, usize) {
+fn sweep(kind: &str, seed_value: &[Value], retypes_only: bool) -> (usize, usize) {
     let base = slate_yjs::state_from_value(seed_value, 1);
     let shape = load(&base, 1);
     let targets: Vec<(Option<String>, bool)> = elements(&shape)
@@ -635,7 +635,10 @@ fn sweep(kind: &str, seed_value: &[Value]) -> (usize, usize) {
     }
     let (mut admitted, mut refused) = (0, 0);
     for (index, (target, root)) in targets.iter().enumerate() {
-        for (what, write) in writes(target.as_deref(), *root) {
+        for (what, write) in writes(target.as_deref(), *root)
+            .into_iter()
+            .filter(|(what, _)| !retypes_only || what.starts_with("type "))
+        {
             let peer = load(&base, 2);
             let before = peer.transact().state_vector();
             let element = XmlTextRef::from(elements(&peer)[index]);
@@ -655,8 +658,8 @@ fn sweep(kind: &str, seed_value: &[Value]) -> (usize, usize) {
 }
 
 /// Every single catalog write on every element of a note, a mindmap and a
-/// diagram, from the room as seeded: whatever admission takes, the store
-/// takes once the repairs ran.
+/// diagram from the room as seeded, and every retype from its [dirty] seed:
+/// whatever admission takes, the store takes once the repairs ran.
 #[test]
 fn every_single_catalog_write_leaves_a_document_the_store_takes() {
     let note = every_block_note();
@@ -666,12 +669,94 @@ fn every_single_catalog_write_leaves_a_document_the_store_takes() {
         ("mindmap", &diagram),
         ("diagram", &diagram),
     ] {
-        let (admitted, refused) = sweep(kind, value);
-        assert!(
-            admitted > 0 && refused > 0,
-            "{kind}: {admitted} admitted, {refused} refused"
-        );
+        for (seed, retypes_only) in [(value.clone(), false), (dirty(kind, value), true)] {
+            let (admitted, refused) = sweep(kind, &seed, retypes_only);
+            assert!(
+                admitted > 0 && refused > 0,
+                "{kind}: {admitted} admitted, {refused} refused"
+            );
+        }
     }
+}
+
+/// A seed a sequence of writes reaches, so single writes from it find rows
+/// that depend on earlier state (a key held at null, then a retype): `value`
+/// plus a paragraph holding one empty leaf and one holding a Mermaid
+/// caption, and on every element each catalog key the store still takes
+/// there, at null for a key some type forbids, else at a value the store
+/// takes.
+fn dirty(kind: &str, value: &[Value]) -> Vec<Value> {
+    let mut nodes = value.to_vec();
+    nodes.push(json!({ "type": "p", "id": "dirty_void", "children": [{ "text": "" }] }));
+    nodes.push(json!({ "type": "p", "id": "dirty_fixed", "children": [
+        { "type": "mermaid_caption", "children": [{ "text": "Caption" }] },
+    ] }));
+    let forbidden: Vec<&str> = catalog::ELEMENTS
+        .iter()
+        .flat_map(|element| element.forbidden.iter().copied())
+        .collect();
+    let keys: Vec<&str> = key_pool()
+        .into_iter()
+        .filter(|key| {
+            !matches!(*key, "type" | "id" | "children" | "text" | "block")
+                && !key.starts_with("suggestion")
+        })
+        .collect();
+    let mut paths: Vec<Vec<usize>> = (0..nodes.len()).map(|index| vec![index]).collect();
+    let mut at = 0;
+    while at < paths.len() {
+        let node = node_at(&mut nodes, &paths[at]);
+        if let Some(children) = node["children"].as_array() {
+            for (index, child) in children.iter().enumerate() {
+                if child.get("type").is_some() {
+                    let mut path = paths[at].clone();
+                    path.push(index);
+                    paths.push(path);
+                }
+            }
+        }
+        at += 1;
+    }
+    // A note's block is checked alone (cheap); a kind that requires an
+    // element, whole.
+    let whole = catalog::material_kind(kind).is_some_and(|kind| kind.requires.is_some());
+    let takes = |nodes: &[Value], top: usize| {
+        let checked = if whole { nodes } else { &nodes[top..=top] };
+        material::assert_canonical(checked, kind).is_ok()
+    };
+    for path in paths {
+        for key in &keys {
+            if node_at(&mut nodes, &path).get(*key).is_some() {
+                continue;
+            }
+            let value = if forbidden.contains(key) {
+                Value::Null
+            } else {
+                match good_value(key) {
+                    Any::String(text) => Value::String(text.to_string()),
+                    _ => Value::Null,
+                }
+            };
+            node_at(&mut nodes, &path)[*key] = value;
+            if !takes(&nodes, path[0]) {
+                node_at(&mut nodes, &path)
+                    .as_object_mut()
+                    .unwrap()
+                    .remove(*key);
+            }
+        }
+    }
+    material::assert_canonical(&nodes, kind).unwrap();
+    nodes
+}
+
+/// The node at an index path from the top level.
+fn node_at<'a>(nodes: &'a mut [Value], path: &[usize]) -> &'a mut Value {
+    let mut node = &mut nodes[path[0]];
+    for &index in &path[1..] {
+        node = &mut node["children"][index];
+    }
+    node
 }
 
 /// Keys a write puts into a figure's live `block` map: its own fields, a

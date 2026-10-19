@@ -532,8 +532,13 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
 
 /// Whether `visit` holds for some element of the document (a Y.XmlText),
 /// walked with an explicit stack.
-fn any_element<T: ReadTxn>(txn: &T, mut visit: impl FnMut(BranchPtr) -> bool) -> bool {
-    let mut stack: Vec<BranchPtr> = content_root(txn).into_iter().collect();
+fn any_element<T: ReadTxn>(txn: &T, visit: impl FnMut(BranchPtr) -> bool) -> bool {
+    content_root(txn).is_some_and(|root| any_below(root, visit))
+}
+
+/// Whether `visit` holds for some element below `top`.
+fn any_below(top: BranchPtr, mut visit: impl FnMut(BranchPtr) -> bool) -> bool {
+    let mut stack = vec![top];
     while let Some(branch) = stack.pop() {
         let mut next = branch.start();
         while let Some(item) = next {
@@ -585,6 +590,12 @@ pub fn holds_element<T: ReadTxn>(txn: &T, kind: &str) -> bool {
     any_element(txn, |element| {
         string_attribute(element, "type").as_deref() == Some(kind)
     })
+}
+
+/// Whether `element` is of type `kind` or holds one below it.
+pub fn is_or_holds(element: BranchPtr, kind: &str) -> bool {
+    let is = |element: BranchPtr| string_attribute(element, "type").as_deref() == Some(kind);
+    is(element) || any_below(element, is)
 }
 
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.

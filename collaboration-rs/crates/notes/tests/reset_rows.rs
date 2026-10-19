@@ -368,7 +368,9 @@ fn two_writers_deleting_the_last_two_blocks_leave_a_paragraph() {
         Ok(Admission::Accepted)
     ));
     canonical(&doc, "note").unwrap();
-    assert_eq!(plate::value(&doc.transact()).unwrap()[0]["id"], "repaired");
+    // The paragraph's id is its own: no earlier block holds it.
+    let value = plate::value(&doc.transact()).unwrap();
+    assert!(value[0]["id"].as_str().unwrap().starts_with("repaired_"));
 }
 
 /// Two top-level blocks given one id (two writers moving one block at once
@@ -401,15 +403,18 @@ fn a_repeated_block_id_is_repaired_at_save() {
     );
 }
 
-/// A key a video forbids, written as null: admission takes null as absent,
-/// the video's own check refuses the key by its presence, so the entry
-/// repair removes it (found by the parity sweep).
+/// Security regression (room reset as last resort): a key held at null is
+/// absent to the store, as to the catalog and to admission: a key written at
+/// null, and one an element held at null before a retype made its type forbid
+/// it, leave a document the store takes. Fails with a presence check restored
+/// in the store.
 #[test]
-fn a_forbidden_key_written_as_null_is_removed_on_entry() {
+fn a_key_held_at_null_is_absent_to_the_store() {
     let value = vec![
         json!({ "type": "p", "id": "a", "children": [{ "text": "x" }] }),
         json!({ "type": "video", "id": "v", "provider": "youtube", "videoId": "dQw4w9WgXcQ",
             "children": [{ "text": "" }] }),
+        json!({ "type": "p", "id": "c", "children": [{ "text": "" }] }),
     ];
     let doc = room(&value);
     let null = edit(&doc, 2, |peer| {
@@ -417,6 +422,58 @@ fn a_forbidden_key_written_as_null_is_removed_on_entry() {
     });
     assert!(matches!(
         arrive(&doc, "note", &null),
+        Ok(Admission::Accepted)
+    ));
+    canonical(&doc, "note").unwrap();
+
+    // A paragraph holding a null `assetId` and a video's keys, then retyped.
+    let keys = edit(&doc, 3, |peer| {
+        let paragraph = block(peer, 2);
+        let mut txn = peer.transact_mut();
+        paragraph.insert_attribute(&mut txn, "assetId", Any::Null);
+        paragraph.insert_attribute(&mut txn, "provider", "youtube");
+        paragraph.insert_attribute(&mut txn, "videoId", "dQw4w9WgXcQ");
+    });
+    assert!(matches!(
+        arrive(&doc, "note", &keys),
+        Ok(Admission::Accepted)
+    ));
+    let retype = edit(&doc, 4, |peer| {
+        block(peer, 2).insert_attribute(&mut peer.transact_mut(), "type", "video");
+    });
+    assert!(matches!(
+        arrive(&doc, "note", &retype),
+        Ok(Admission::Accepted)
+    ));
+    canonical(&doc, "note").unwrap();
+
+    // A paragraph holding a source, a null `code` and a caption, then retyped
+    // to a Mermaid diagram.
+    let diagram = edit(&doc, 5, |peer| {
+        {
+            let mut txn = peer.transact_mut();
+            let root = plate::content_root(&txn).unwrap();
+            slate_yjs::insert_nodes(
+                &mut txn,
+                root,
+                0,
+                &[
+                    json!({ "type": "p", "id": "d", "source": "flowchart LR\n  A --> B",
+                    "children": [{ "type": "mermaid_caption", "children": [{ "text": "Flow" }] }] }),
+                ],
+            );
+        }
+        block(peer, 0).insert_attribute(&mut peer.transact_mut(), "code", Any::Null);
+    });
+    assert!(matches!(
+        arrive(&doc, "note", &diagram),
+        Ok(Admission::Accepted)
+    ));
+    let retype = edit(&doc, 6, |peer| {
+        block(peer, 0).insert_attribute(&mut peer.transact_mut(), "type", "mermaid");
+    });
+    assert!(matches!(
+        arrive(&doc, "note", &retype),
         Ok(Admission::Accepted)
     ));
     canonical(&doc, "note").unwrap();

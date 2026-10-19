@@ -57,9 +57,15 @@ fn require_id(node: &Node) -> Check {
     }
 }
 
+/// Whether a node carries `key`: null counts as absent, as the catalog's
+/// key rules (and admission) read it.
+fn carries(node: &Node, key: &str) -> bool {
+    node.get(key).is_some_and(|value| !value.is_null())
+}
+
 fn reject_opaque(node: &Node) -> Check {
     for key in ["questions", "cards", "code"] {
-        if node.contains_key(key) {
+        if carries(node, key) {
             return fail(format!("opaque {key} property is not canonical"));
         }
     }
@@ -122,7 +128,7 @@ fn validate_quiz(node: &Node) -> Check {
             }
         }
     }
-    if node.contains_key("timeLimitMin") {
+    if carries(node, "timeLimitMin") {
         return fail("quiz time limits are no longer supported");
     }
     Ok(())
@@ -147,7 +153,7 @@ fn validate_quiz_question(node: &Node, policy: &Policy) -> Check {
         "correctOptionIds",
         "correctBoolean",
     ] {
-        if node.contains_key(key) {
+        if carries(node, key) {
             return fail(format!("obsolete quiz property {key}"));
         }
     }
@@ -232,7 +238,7 @@ fn validate_media(node: &Node, kind: &str) -> Check {
         return fail(format!("{kind} requires an assetId"));
     }
     for key in ["url", "src"] {
-        if node.get(key).is_some_and(|value| !value.is_null()) {
+        if carries(node, key) {
             return fail(format!("{kind} cannot contain {key}"));
         }
     }
@@ -414,7 +420,7 @@ fn validate_material_ref(node: &Node) -> Check {
     if js_trim(material_id).is_empty() {
         return fail("materialId is required");
     }
-    if node.contains_key("pending") {
+    if carries(node, "pending") {
         return fail("material reference carries an imported fence body");
     }
     // The catalog's item kinds (Go's `refKinds`).
@@ -505,7 +511,7 @@ fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) 
         }
     }
     for key in element.forbidden {
-        if node.get(*key).is_some_and(|value| !value.is_null()) {
+        if carries(node, key) {
             return fail(format!("{name} cannot carry {key}"));
         }
     }
@@ -552,7 +558,7 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
                 return fail("videoId must be a valid YouTube video ID");
             }
             for key in ["assetId", "url", "src"] {
-                if node.contains_key(key) {
+                if carries(node, key) {
                     return fail(format!("YouTube video cannot contain {key}"));
                 }
             }

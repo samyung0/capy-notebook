@@ -153,15 +153,6 @@ enum Outcome {
         reason: String,
         class: Class,
     },
-    /// A material room's admission refused it (Epo 2026-10-18: refused on
-    /// entry, the room keeps its state and the writer stays connected): the
-    /// channel hears `payload` (`document-rejected`), its editor reloads the
-    /// room, and the channel stays open; a draft send answers with `class`.
-    Rejected {
-        payload: String,
-        reason: String,
-        class: Class,
-    },
 }
 
 impl Outcome {
@@ -1131,9 +1122,7 @@ impl Room {
                 Class::Unheld,
                 "the update needs content the room does not hold",
             )),
-            Outcome::Refused { reason, class, .. } | Outcome::Rejected { reason, class, .. } => {
-                Err(Refused::new(class, reason))
-            }
+            Outcome::Refused { reason, class, .. } => Err(Refused::new(class, reason)),
         };
         let _ = reply.send(answer);
     }
@@ -1938,10 +1927,6 @@ impl Room {
             Outcome::Refused {
                 payloads, reason, ..
             } => self.refuse(key, &payloads, &reason),
-            Outcome::Rejected { payload, .. } => {
-                self.send(key, Kind::Stateless, &protocol::text(&payload));
-                self.acked(key);
-            }
         }
     }
 
@@ -2074,12 +2059,15 @@ impl Room {
                         user_id: Some(context.user_id.clone()),
                     }],
                 );
-                return Outcome::Rejected {
-                    payload,
+                return Outcome::Refused {
+                    payloads: vec![payload],
                     reason: "invalid material document".into(),
                     class: Class::Limit,
                 };
             }
+            // Refused on entry (Epo 2026-10-18): the room keeps its state, the
+            // writer's editor reloads it on a fresh document and channel on
+            // the same socket, and only this channel closes.
             Verdict::Refused(error) => {
                 let payload = json!({
                     "code": "invalid_document",
@@ -2087,8 +2075,8 @@ impl Room {
                     "room": self.name,
                     "type": "document-rejected",
                 });
-                return Outcome::Rejected {
-                    payload: payload.to_string(),
+                return Outcome::Refused {
+                    payloads: vec![payload.to_string()],
                     reason: error,
                     class: Class::Malformed,
                 };
@@ -2156,6 +2144,9 @@ impl Room {
             return;
         };
         let (model, kind) = (note.model, note.kind.clone());
+        if !model.repairs() {
+            return;
+        }
         let repair = || {
             let update = ydoc::decode(bytes).ok()?;
             let mut txn = self.doc.transact_mut();

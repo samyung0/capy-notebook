@@ -260,15 +260,16 @@ fn card_prelim(card: &Card, order: &str) -> MapPrelim {
 
 /// A set left without a card gets one blank card, as a new set starts (Epo
 /// 2026-10-19: the canonical repair of an emptied set, on entry and at save;
-/// two writers each deleting one of the last two cards leave it so). Stops
-/// at the first live card. Whether it wrote one.
-pub fn repair(txn: &mut TransactionMut) -> bool {
+/// two writers each deleting one of the last two cards leave it so). `id` is
+/// the new card's, fresh (a card id is a global key). Stops at the first live
+/// card. Whether it wrote one.
+pub fn repair(txn: &mut TransactionMut, id: &str) -> bool {
     let root = txn.get_or_insert_map(ROOT);
     if root.iter(txn).next().is_some() {
         return false;
     }
     let card = Card {
-        id: "card_repaired".into(),
+        id: id.to_owned(),
         order: order::after(None),
         front: String::new(),
         back: String::new(),

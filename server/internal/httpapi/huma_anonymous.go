@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -113,6 +114,10 @@ func (a *api) getAnonymousNote(ctx context.Context, in *shareTokenInput) (*anony
 		return nil, err
 	}
 	note, err := a.s.AnonymousNote(ctx, id)
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		// A stored note a later rule refuses: the unreadable state, not a 500.
+		return nil, materialContentError(ctx, id, err)
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -133,6 +138,9 @@ func (a *api) getAnonymousNoteAsset(ctx context.Context, in *anonymousAssetInput
 		return nil, err
 	}
 	objectPath, contentType, err := a.s.AnonymousNoteAssetPath(ctx, id, in.AssetID)
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return nil, materialContentError(ctx, id, err)
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}

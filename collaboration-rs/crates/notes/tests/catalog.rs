@@ -177,6 +177,15 @@ fn the_store_follows_the_catalog() {
         for key in element.forbidden {
             let carrying = stored(&|nodes| node_at(nodes, &sample.path)[*key] = json!("x"));
             assert!(carrying.is_err(), "a {name} carrying {key} is stored");
+            // Null counts as absent, as admission reads it, unless a closed
+            // field set leaves the key out.
+            if element.fields.is_none_or(|fields| fields.contains(key)) {
+                let null = stored(&|nodes| node_at(nodes, &sample.path)[*key] = Value::Null);
+                assert!(
+                    null.is_ok(),
+                    "a {name} holding {key} at null is refused: {null:?}"
+                );
+            }
         }
         if element.fields.is_some() {
             let extra = stored(&|nodes| node_at(nodes, &sample.path)["extra"] = json!("x"));

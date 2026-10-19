@@ -696,8 +696,11 @@ func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error
 	}
 	if e.Void {
 		children, _ := node["children"].([]any)
-		leaf, _ := children[0].(map[string]any)
-		if text, isText := leaf["text"].(string); len(children) != 1 || !isText || text != "" {
+		var leaf map[string]any
+		if len(children) == 1 {
+			leaf, _ = children[0].(map[string]any)
+		}
+		if text, isText := leaf["text"].(string); !isText || text != "" {
 			return fmt.Errorf("%s holds one empty text leaf", e.Type)
 		}
 	}
@@ -813,7 +816,7 @@ func validateYouTube(node map[string]any) error {
 		return errors.New("videoId must be a valid YouTube video ID")
 	}
 	for _, key := range []string{"assetId", "url", "src"} {
-		if _, exists := node[key]; exists {
+		if node[key] != nil {
 			return fmt.Errorf("YouTube video cannot contain %s", key)
 		}
 	}
@@ -854,7 +857,7 @@ func validateQuiz(node map[string]any) error {
 		return err
 	}
 	children := node["children"].([]any)
-	if _, ok := node["timeLimitMin"]; ok {
+	if node["timeLimitMin"] != nil {
 		return errors.New("quiz time limits are no longer supported")
 	}
 	if len(children) == 1 {
@@ -897,7 +900,7 @@ func validateQuizQuestion(node map[string]any) error {
 		return errors.New("question id must match wrapper id")
 	}
 	for _, key := range []string{"questionType", "level", "points", "rubrics", "pairs", "acceptedAnswers", "hints", "correctOptionIds", "correctBoolean"} {
-		if _, exists := node[key]; exists {
+		if node[key] != nil {
 			return fmt.Errorf("obsolete quiz property %s", key)
 		}
 	}
@@ -990,7 +993,7 @@ func validateTextElement(node map[string]any) error {
 
 func rejectOpaque(node map[string]any) error {
 	for _, key := range []string{"questions", "cards", "code"} {
-		if _, ok := node[key]; ok {
+		if node[key] != nil {
 			return fmt.Errorf("opaque %s property is not canonical", key)
 		}
 	}

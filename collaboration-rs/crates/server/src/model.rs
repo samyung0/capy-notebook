@@ -113,9 +113,17 @@ impl Model {
     ) -> Vec<&'static str> {
         match self {
             Model::Note => notes::repair::on_entry(txn, update, kind),
-            Model::Item(items::Kind::Flashcards) => blank_card(txn),
+            // Only a deletion empties a set.
+            Model::Item(items::Kind::Flashcards) if !update.delete_set().is_empty() => {
+                blank_card(txn)
+            }
             Model::Item(_) => Vec::new(),
         }
+    }
+
+    /// Whether this document has repairs: a quiz's never does.
+    pub fn repairs(self) -> bool {
+        matches!(self, Model::Note | Model::Item(items::Kind::Flashcards))
     }
 
     /// The repairs a store refusal tries once before the room resets: an
@@ -142,7 +150,8 @@ impl Model {
 }
 
 fn blank_card(txn: &mut yrs::TransactionMut) -> Vec<&'static str> {
-    if items::flashcards::repair(txn) {
+    let id = format!("card_{}", uuid::Uuid::new_v4().simple());
+    if items::flashcards::repair(txn, &id) {
         vec!["a blank card in an emptied set"]
     } else {
         Vec::new()

@@ -1406,23 +1406,29 @@ else handled at save: a canonical repair, otherwise the room reset (Epo
 2026-10-18 and 2026-10-19). An update room admission refuses (a limit, a key
 or structure rule, an update outside the document's shape) answers its writer
 alone with a `document-rejected` stateless message (a limit's code and metrics,
-else `invalid_document`, no eviction id) and keeps its channel open: the client
-discards its now-forked Y.Doc instead of resending the update forever, and
-co-editors and the room are untouched. An update no writer may send at all
-(not Yjs, the contributor markers, a read-only channel's write) still closes
-its channel. Right after an admitted update goes in, the room repairs what a
-canonical form fixes cheaply, in one server transaction every editor gets in
-the same flush (`Model::repair_on_entry`, `notes::repair::on_entry`,
-`items::flashcards::repair`): an element's `text` and `suggestion` keys, and
-a key its type forbids written as null (a video's `assetId: null`, which the
-video's own check refuses by presence), are removed, a note left with no block gets an empty paragraph (two writers each
-deleting one of the last two blocks leave it so), and a set left with no card
-a blank card. When the store's check still refuses the document, the store
-repairs once (`Model::repair`: the same emptied note or set, and a fresh
-`<id>-2` for each top-level block repeating an earlier one's id, which no
-entry check sees cheaply), broadcasts it and checks again; the row it stores
-holds the repair. `tests/admission_parity.rs` holds that no admitted update
-leaves a document the store refuses once these repairs ran. If an over-limit
+else `invalid_document`, no eviction id), then closes that channel only: the
+socket stays, the client remounts on a fresh Y.Doc and a new channel on it
+(its old Y.Doc holds the refused structs, so no later edit of it could be
+placed) and keeps its unsaved edits as a refused draft, and co-editors and
+the room are untouched. Right after an admitted update goes in, the room
+repairs what a canonical form fixes cheaply, in one server transaction every
+editor gets in the same flush (`Model::repair_on_entry`,
+`notes::repair::on_entry`, `items::flashcards::repair`): an element's `text`
+and `suggestion` keys are removed, a note left with no block gets an empty
+paragraph with an id of its own (two writers each deleting one of the last
+two blocks leave it so), and a set left with no card, after an update that
+deletes, a blank card under a fresh id (a card id is a global key). A key
+held at null is absent to the store as to the catalog and admission (Rust
+`material.rs` and Go `document.go`), so a key set to null and a retype that
+later forbids it leave a document both take. When the store's check still
+refuses the document, the store repairs once (`Model::repair`: the same
+emptied note or set, and a fresh `<id>-2` for each top-level block repeating
+an earlier one's id, which no entry check sees cheaply), broadcasts it and
+checks again; the row it stores holds the repair. `tests/admission_parity.rs`
+(notes, from the seeded rooms and from a dirty seed holding every key the
+store tolerates) and `items/tests/flashcards_parity.rs` (sets, single writes
+and pairs) hold that no admitted update leaves a document the store refuses
+once these repairs ran. If an over-limit
 document reaches the store hook anyway, which with every update checked takes a
 sum no single check saw whole (two updates checked against the same room before
 either applied, the later one measured exactly without the earlier), the server
@@ -1498,7 +1504,11 @@ list does not carry, which the gate cannot weigh anyway. The workspace route
 loader prefetches an open file for the same reason it leaves an open material
 alone. When the API cannot decode stored content it
 answers 422 `material_content_unreadable`, which `NoteEditor` and `MaterialBody`
-report as "this note could not be loaded" rather than "not found".
+report as "this note could not be loaded" rather than "not found". A stored
+note a later rule refuses (a void element holding text, from before the void
+rule) reads the same way: it stays listed and searchable, while its content
+read, shared page and shared images answer that 422; broken materials are kept
+as they are (Epo 2026-10-19).
 
 ## PostgreSQL read projection
 

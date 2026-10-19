@@ -277,6 +277,8 @@ struct Msg {
 
 struct Client {
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    /// The channel it speaks on: a remount opens the next.
+    channel: u64,
     doc: Doc,
     inbox: Vec<Msg>,
     /// Every binary frame the room sent, as received.
@@ -296,6 +298,7 @@ impl Client {
             .expect("connect");
         Client {
             ws,
+            channel: 1,
             doc: Doc::with_options(ydoc::doc_options(0)),
             inbox: Vec::new(),
             received: Vec::new(),
@@ -304,7 +307,7 @@ impl Client {
 
     async fn send(&mut self, kind: u8, payload: &[u8]) {
         self.ws
-            .send(Ws::Binary(frame(1, kind, payload).into()))
+            .send(Ws::Binary(frame(self.channel, kind, payload).into()))
             .await
             .expect("send");
     }
@@ -402,6 +405,15 @@ impl Client {
                 .apply_update(Update::decode_v1(&body).expect("update"))
                 .expect("apply");
         }
+    }
+
+    /// What an editor does when the room refuses its document: a fresh
+    /// document joins on a new channel of the same socket, and syncs.
+    async fn remount(&mut self, room: &str, token: &str) {
+        self.channel += 1;
+        self.doc = Doc::with_options(ydoc::doc_options(0));
+        self.inbox.clear();
+        self.joined(room, token).await;
     }
 
     /// Joins and syncs; returns the JOINED access byte.
@@ -3089,8 +3101,9 @@ async fn two_writers_converge_in_a_flashcard_set_and_it_stores() {
 }
 
 /// A writer's update outside a set's shape is refused on entry (Epo
-/// 2026-10-18): the writer hears `document-rejected`, its editor reloads the
-/// room, and its channel stays open for its next edit.
+/// 2026-10-18): the writer hears `document-rejected` and its channel
+/// closes, the room keeps its state and lineage, and the writer's editor
+/// remounts on a fresh document on the same socket, whose edit goes in.
 #[tokio::test]
 async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
     use yrs::{Map, Text};
@@ -3099,10 +3112,14 @@ async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
     let owner = user(&env).await;
     let set = flashcard_set(&env, &owner, None, &[("c1", "Cell", "")]).await;
     let room = format!("material:{set}:schema:1");
-    // A note's content root in a set.
+    let write = token(&room, &owner, "write");
     let mut a = Client::open(server.port).await;
-    a.joined(&room, &token(&room, &owner, "write")).await;
+    let mut b = Client::open(server.port).await;
+    a.joined(&room, &write).await;
+    b.joined(&room, &write).await;
     assert!(a.settle(|c| c.cards().len() == 1).await);
+    assert!(b.settle(|c| c.cards().len() == 1).await);
+    // A note's content root in a set.
     a.write(|doc| {
         let content = doc.get_or_insert_text("content");
         content.insert(&mut doc.transact_mut(), 0, "note text");
@@ -3110,11 +3127,11 @@ async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
     .await;
     let (rejected, _) = a.stateless("document-rejected").await;
     assert_eq!(rejected["code"], "invalid_document");
-    assert!(!a.hears(4, 300).await, "the writer's channel closed");
+    assert!(
+        a.until(4).await.is_some(),
+        "the refused channel did not close"
+    );
     // A key no card has.
-    let mut b = Client::open(server.port).await;
-    b.joined(&room, &token(&room, &owner, "write")).await;
-    assert!(b.settle(|c| c.cards().len() == 1).await);
     b.write(|doc| {
         let root = doc.get_or_insert_map(items::flashcards::ROOT);
         let mut txn = doc.transact_mut();
@@ -3125,7 +3142,15 @@ async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
     .await;
     let (rejected, _) = b.stateless("document-rejected").await;
     assert_eq!(rejected["code"], "invalid_document");
-    // B's next edit goes in on the same channel and reaches A.
+    assert!(
+        b.until(4).await.is_some(),
+        "the refused channel did not close"
+    );
+    // Both remount; B's edit on its fresh document reaches A's.
+    a.remount(&room, &write).await;
+    b.remount(&room, &write).await;
+    assert!(a.settle(|c| c.cards().len() == 1).await);
+    assert!(b.settle(|c| c.cards().len() == 1).await);
     b.write(|doc| {
         if let Some(front) = card_face(doc, "c1", "front") {
             front.insert(&mut doc.transact_mut(), 4, "s");
@@ -3136,6 +3161,7 @@ async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
         a.settle(|c| c.cards() == [("c1".to_owned(), "Cells".to_owned())])
             .await
     );
+    assert_eq!(room_schema(&env, &set).await, 1);
 }
 
 /// Security regression (live-items, Epo 2026-10-10): a signed-in viewer of
@@ -4789,19 +4815,21 @@ async fn stored(client: &mut Client, id: &str) -> (serde_json::Value, Vec<serde_
 
 /// Security regression (Epo 2026-10-18): an update room admission refuses
 /// (here a mark no leaf carries) is answered with `document-rejected` to its
-/// writer alone, whose channel stays open for its next edit; the other
-/// writer hears nothing, and the room keeps its state and lineage. Fails if
-/// a refusal closes the writer or reaches the room.
+/// writer alone, and only that channel closes; the other writer hears
+/// nothing, the room keeps its state and lineage, and the writer's editor
+/// remounts on a fresh document on the same socket, whose edit reaches the
+/// other writer. Fails if a refusal reaches the room or resets it.
 #[tokio::test]
 async fn a_refused_edit_keeps_its_writer_and_the_room() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "hello").await;
     let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
     let mut a = Client::open(server.port).await;
     let mut b = Client::open(server.port).await;
-    a.joined(&room, &token(&room, &user, "write")).await;
-    b.joined(&room, &token(&room, &user, "write")).await;
+    a.joined(&room, &write).await;
+    b.joined(&room, &write).await;
     assert!(a.settle(|c| c.block_text() == "hello").await);
     assert!(b.settle(|c| c.block_text() == "hello").await);
     a.write(|doc| {
@@ -4820,7 +4848,12 @@ async fn a_refused_edit_keeps_its_writer_and_the_room() {
     let (rejected, _) = a.stateless("document-rejected").await;
     assert_eq!(rejected["code"], "invalid_document");
     assert!(rejected.get("evictionId").is_none(), "{rejected}");
-    assert!(!a.hears(4, 300).await, "the writer's channel closed");
+    assert!(
+        a.until(4).await.is_some(),
+        "the refused channel did not close"
+    );
+    a.remount(&room, &write).await;
+    assert!(a.settle(|c| c.block_text() == "hello").await);
     a.type_text(" world").await;
     assert!(b.settle(|c| c.block_text() == "hello world").await);
     let (_, before) = stored(&mut b, "r1").await;

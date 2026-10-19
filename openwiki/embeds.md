@@ -78,19 +78,23 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   structure is refused on entry too (`Structure` in `limits.rs`, Epo
   2026-10-18): content in a void element, an element in a Mermaid caption, a
   Mermaid block without exactly its caption, a mindmap or diagram left
-  without its `mermaid`, a mark no leaf carries (`children`, `type`,
-  `suggestion*`) and text straight in the content root. What a writer's
+  without its `mermaid` (checked on a copy only when the update deletes a
+  `mermaid`, or an element holding one, or retypes one away), a mark no leaf
+  carries (`children`, `type`, `suggestion*`) and text straight in the
+  content root. A key held at null counts as absent in every layer, the
+  store's own element checks included (a video's `assetId`, the opaque
+  `code`, `questions` and `cards`, a quiz's obsolete keys). What a writer's
   editor or two writers together can leave and a canonical form fixes is
   repaired instead of refused (Epo 2026-10-19, `notes::repair`): an element's
-  `text` key, the obsolete `suggestion` keys and a key its type forbids
-  written as null (admission takes null as absent; a video's own check
-  refuses `assetId: null` by presence) are removed right after the update
-  goes in, and a note left with no block gets an empty paragraph, on
+  `text` key and the obsolete `suggestion` keys are removed right after the
+  update goes in, and a note left with no block gets an empty paragraph, on
   entry; two top-level blocks given one `id` (checking it on entry would read
   every top-level id per update that makes a block, about 10,000 lookups per
   Enter in a near-limit note) get a fresh id for the later one at save. The
-  parity test (`tests/admission_parity.rs`) holds that no admitted update
-  leaves a document the store refuses once those repairs ran. At load the room runs the store's whole check once, on
+  parity test (`tests/admission_parity.rs`, from the seeded rooms and from a
+  dirty seed where every element holds each key the store tolerates) holds
+  that no admitted update leaves a document the store refuses once those
+  repairs ran. At load the room runs the store's whole check once, on
   the background step that measures it: a note, mindmap or diagram the store
   would refuse (a type the catalog does not list, or not for this kind, a
   closed element's extra key, a reference without its row, duplicate ids,

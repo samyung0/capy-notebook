@@ -33,11 +33,9 @@ pub fn stripped_key(key: &str) -> bool {
 }
 
 /// The entry repair, after an admitted update is applied: removes each
-/// element key the update wrote that [stripped_key] names, or that the
-/// element's type forbids and the update set to null (admission takes null as
-/// absent, while a video's own check refuses `assetId: null` by its
-/// presence), and gives an emptied note one empty paragraph. O(update) plus
-/// O(1) reads of the room. What it repaired.
+/// element key the update wrote that [stripped_key] names, and gives an
+/// emptied note one empty paragraph. O(update) plus O(1) reads of the room.
+/// What it repaired.
 pub fn on_entry(txn: &mut TransactionMut, update: &Update, kind: &str) -> Vec<&'static str> {
     let mut repaired = Vec::new();
     let mut stripped: Vec<(BranchPtr, Arc<str>)> = Vec::new();
@@ -55,9 +53,7 @@ pub fn on_entry(txn: &mut TransactionMut, update: &Update, kind: &str) -> Vec<&'
             if let (Some(key), Some(element)) = (held.parent_sub(), held.parent_branch())
                 && element.item().is_some()
                 && matches!(element.type_ref(), TypeRef::XmlText)
-                && (stripped_key(key)
-                    || (matches!(held.content(), ItemContent::Any(values) if matches!(values.last(), Some(Any::Null)))
-                        && forbids(element, key)))
+                && stripped_key(key)
             {
                 stripped.push((element, key.clone()));
             }
@@ -92,7 +88,7 @@ pub fn repair(txn: &mut TransactionMut, kind: &str) -> Vec<&'static str> {
 }
 
 /// A note (a kind that requires no element) whose root holds no block gets
-/// `{"type":"p","id":…,"children":[{"text":""}]}`. Two writers each deleting
+/// `{"type":"p","id":…,"children":[{"text":""}]}`, with an id of its own. Two writers each deleting
 /// one of the last two blocks leave it so, and no single update shows it.
 fn emptied(txn: &mut TransactionMut, kind: &str) -> bool {
     if !catalog::material_kind(kind).is_some_and(|kind| kind.requires.is_none()) {
@@ -106,7 +102,13 @@ fn emptied(txn: &mut TransactionMut, kind: &str) -> bool {
     if XmlTextRef::from(root).len(txn) != 0 {
         return false;
     }
-    let paragraph = json!({ "type": "p", "id": "repaired", "children": [{ "text": "" }] });
+    // An id no other block holds: the server's next Yjs id in this document.
+    let id = format!(
+        "repaired_{}_{}",
+        txn.doc().client_id(),
+        ReadTxn::store(txn).get_local_state()
+    );
+    let paragraph = json!({ "type": "p", "id": id, "children": [{ "text": "" }] });
     slate_yjs::insert_nodes(txn, root, 0, &[paragraph]);
     true
 }
@@ -147,22 +149,6 @@ fn repeated_ids(txn: &mut TransactionMut) -> bool {
         XmlTextRef::from(block).insert_attribute(txn, "id", fresh);
     }
     any
-}
-
-/// Whether the catalog forbids `key` on the element's live type.
-fn forbids(element: BranchPtr, key: &str) -> bool {
-    let kind = element
-        .entry_item("type")
-        .filter(|entry| !entry.is_deleted())
-        .and_then(|entry| match entry.content() {
-            ItemContent::Any(values) => match values.last() {
-                Some(Any::String(kind)) => Some(kind.clone()),
-                _ => None,
-            },
-            _ => None,
-        });
-    kind.and_then(|kind| catalog::element(&kind))
-        .is_some_and(|element| element.forbidden.contains(&key))
 }
 
 /// A block's live `id`, trimmed as the store compares it.
