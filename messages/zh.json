@@ -896,7 +896,7 @@
   "files_office_present_options": "更多放映方式",
   "files_office_print_failed": "无法打印此文件，请重试。",
   "files_office_equation_text": "公式只能在 PowerPoint 中修改。",
-  "files_office_clear_too_large": "所选区域内容过多，无法一次清除。请分几次清除。",
+  "files_office_edit_too_large": "此更改过大，无法一次完成。请每次修改较少的单元格。",
   "files_office_copy_too_large": "所选区域过大，无法复制。请选择较少的单元格。",
   "files_office_png_failed": "无法保存图片，请重试。",
   "files_office_print_truncated": "已打印前 {count} 页",

@@ -1293,14 +1293,28 @@ the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
 cell). Clear and cut act on the selection's part inside the used range
 (inputs committed but not drawn yet count) and resolve in the engine
 (`clearContents`) to edits for only the cells that hold a value or a formula,
-so their cost is bounded by the cells that hold content; a clear whose update
-could exceed the room's per-message limit (2 MiB, counted at 128 bytes per
-cleared cell) is refused with a notice and changes nothing, and a cut clears
-only after its copy reached the clipboard. Copy keeps the selection's own
-top-left corner, leading blanks included as in Excel, and trims only past the
-used range's last row and column; a copy over the engine's 100,000-cell read
-is refused with a notice, and a selection wholly past the used range sends
-nothing. A cell the keyboard reaches past the used range grows the scroll area
+so their cost is bounded by the cells that hold content. Any edit (a clear,
+cut or paste) whose update could pass the engine's 64 MiB cap
+(`MAX_COLLABORATION_BYTES`, one action's most: about 500,000 filled cells,
+counted at 160 bytes per value cell plus its input and 512 per formula plus 128
+per input byte) changes nothing and shows the `edit-too-large` notice. The
+check covers batches of cell inputs only; Undo, Redo, row and column deletes
+and resyncs are left to the server's limits, and the formula bound may
+overestimate (a paste of more than about 37,000-50,000 simple formulas is
+refused). While the tab holds back its collaboration messages (pacing, an
+update's pieces, a timeout), `XlsxEditorHost` passes `sending` to the editor:
+the grid and formula bar show a loading cursor (`aria-busy` on the grid) and
+every edit is refused as in read-only; an open cell edit stays open,
+read-only, while an armed paint brush, a chart drag or an arrow burst is
+dropped; selection, scrolling and copy still work.
+Copy keeps the selection's own top-left corner, leading blanks included as in
+Excel, and trims only past the used range's last row and column; it reads that
+area in pieces of at most 100,000 cells (the engine's read cap) without
+skipping empty cells, up to the fork's `XLSX_COPY_MAX_CELLS` ceiling (5,000,000 cells), past
+which it shows the `copy-too-large` notice; a selection wholly past the used
+range sends nothing. A cut shows the same loading cursor and refuses edits
+while it reads, then clears only what its copy put on the clipboard; past the
+ceiling it clears nothing. A cell the keyboard reaches past the used range grows the scroll area
 to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
 Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
 200% page zoom), so cells past it are selected but not scrolled to, as in

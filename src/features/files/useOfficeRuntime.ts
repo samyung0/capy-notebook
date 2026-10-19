@@ -958,14 +958,14 @@ const OFFICE_NOTICE_TOASTS: Record<
   OfficeNotice,
   { once: boolean; title: (imageMaxBytes: number) => string }
 > = {
-  // Each refused clear or copy is its own keystroke: every time.
-  'clear-too-large': {
-    once: false,
-    title: () => m.files_office_clear_too_large(),
-  },
   'copy-too-large': {
     once: false,
     title: () => m.files_office_copy_too_large(),
+  },
+  // Each refused clear or copy is its own keystroke: every time.
+  'edit-too-large': {
+    once: false,
+    title: () => m.files_office_edit_too_large(),
   },
   // A refused keystroke repeats on every key: once per frame.
   'equation-text': { once: true, title: () => m.files_office_equation_text() },

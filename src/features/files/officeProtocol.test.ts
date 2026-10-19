@@ -301,7 +301,7 @@ describe('office host protocol', () => {
       'equation-text',
       'image-too-large',
       'image-type',
-      'clear-too-large',
+      'edit-too-large',
       'copy-too-large',
     ])
       expect(isOfficeRuntimeMessage(notice(value))).toBe(true);
