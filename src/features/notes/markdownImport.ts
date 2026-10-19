@@ -6,6 +6,7 @@ import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
 import { type DeserializeMdOptions, MarkdownPlugin } from '@platejs/markdown';
 import { type Descendant, ElementApi, KEYS, type SlateEditor } from 'platejs';
 import {
+  clampIndents,
   createMaterialDocument,
   type MaterialDocument,
   type MaterialElement,
@@ -177,7 +178,10 @@ export function importMarkdownValue(
     source,
     plain ? PLAIN : undefined
   );
-  const value = transform ? transform(deserialized) : deserialized;
+  // A list nested past LIST_INDENT_MAX clamps on entry (Epo 2026-10-19).
+  const value = clampIndents(
+    transform ? transform(deserialized) : deserialized
+  );
   return sanitizeLinks(
     editor,
     createMaterialDocument(

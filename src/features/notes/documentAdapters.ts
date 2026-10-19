@@ -5,6 +5,7 @@ import { resolveEditorAsset } from '@/api/editorAssets';
 import { cardsQuery, quizEditQuery } from '@/api/hooks';
 import {
   assertMaterialDocument,
+  clampIndents,
   createMaterialDocument,
   flashcardsNode,
   isMaterialRefElement,
@@ -41,11 +42,26 @@ export function importMarkdownDocument(
   });
 }
 
+/** A block indented past LIST_INDENT_MAX clamps on entry (Epo 2026-10-19);
+ * anything else invalid refuses the file. */
 export function importJsonDocument(
   editor: PlateEditor,
   source: string
 ): MaterialDocument {
-  return sanitizeLinks(editor, assertMaterialDocument(source));
+  let input: unknown = source;
+  try {
+    input = JSON.parse(source);
+  } catch {
+    // Not JSON: assertMaterialDocument refuses it.
+  }
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    'value' in input &&
+    Array.isArray(input.value)
+  )
+    input = { ...input, value: clampIndents(input.value) };
+  return sanitizeLinks(editor, assertMaterialDocument(input));
 }
 
 /** Resolve a snapshot once for both formats. A failed read must not result in
@@ -130,7 +146,8 @@ export async function exportNoteDocument(
 
 /** A DOCX's pictures, which mammoth gives as `data:` URL images, upload like
  * pasted ones (Epo, 2026-10-10, main 1be046ea), or are left out without asset
- * uploads, so its text and pictures both land. */
+ * uploads, so its text and pictures both land; a list nested past
+ * LIST_INDENT_MAX clamps on entry (Epo 2026-10-19). */
 export async function importDocxDocument(
   editor: PlateEditor,
   buffer: ArrayBuffer,
@@ -140,7 +157,7 @@ export async function importDocxDocument(
   const result = await importDocx(editor, buffer);
   const value = replaceUrlImages(
     editor,
-    result.nodes as Descendant[],
+    clampIndents(result.nodes as Descendant[]),
     uploadOrLink(editor, allowExternalAssets)
   );
   return sanitizeLinks(editor, createMaterialDocument(value as MaterialValue));

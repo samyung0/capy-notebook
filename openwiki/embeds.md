@@ -144,7 +144,9 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   `BLOCK_CAPTION_MAX` (an interactive block's caption),
   `MEDIA_WIDTH_MIN`/`MAX`, `LIST_INDENT_MAX` (any block's indent, 8: the
   editor's Tab stops there; Go's validator, `createMaterialDocument`, the
-  store and room admission refuse more, Epo 2026-10-18),
+  store and room admission refuse more, Epo 2026-10-18; a Markdown, DOCX or
+  JSON import and an agent's markdown clamp a deeper one to it on entry,
+  `clampIndents`, Epo 2026-10-19),
   `CARD_FRONT_MAX`/`CARD_BACK_MAX` and the question
   bounds (`fieldlimits.QuestionBounds`). The notes and items crates read
   them there, with no copy of their own. The Rust file declares each as a

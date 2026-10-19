@@ -176,6 +176,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** `nodes` with each block indent past LIST_INDENT_MAX set to it: the cheap
+ * repair an import makes on entry (Epo 2026-10-19), so a Word or Markdown
+ * list nested deeper still imports. Every direct write is refused instead. */
+export function clampIndents<T>(nodes: T[]): T[] {
+  return nodes.map((node) => {
+    if (!isRecord(node)) return node;
+    const clamped: Record<string, unknown> = { ...node };
+    if (Array.isArray(node.children))
+      clamped.children = clampIndents(node.children);
+    if (typeof node.indent === 'number' && node.indent > LIST_INDENT_MAX)
+      clamped.indent = LIST_INDENT_MAX;
+    return clamped as T;
+  });
+}
+
 function isTextNode(value: unknown): value is MaterialText {
   return (
     isRecord(value) && typeof value.text === 'string' && !('children' in value)
