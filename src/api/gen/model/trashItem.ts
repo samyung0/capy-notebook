@@ -8,6 +8,8 @@ import type { TrashItemKind } from './trashItemKind.ts';
 import type { TrashItemPreview } from './trashItemPreview.ts';
 
 export interface TrashItem {
+  /** The caller may restore it: a standalone item, or edit access to its workspace */
+  canRestore: boolean;
   episodeId: string;
   fileKind?: string;
   id: string;

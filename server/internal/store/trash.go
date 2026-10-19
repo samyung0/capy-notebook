@@ -50,6 +50,7 @@ type TrashItem struct {
 	// Preview is a material's list-card preview, or {text} for a text file.
 	Preview    MaterialPreview `json:"preview,omitempty" doc:"A material's list-card preview, or {text} for a text source file; see openwiki/thumbnails.md"`
 	LostAccess bool            `json:"lostAccess,omitempty" doc:"The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only permanently delete it"`
+	CanRestore bool            `json:"canRestore" doc:"The caller may restore it: a standalone item, or edit access to its workspace"`
 }
 
 type TrashPage struct {
@@ -246,7 +247,7 @@ func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materia
 // can free what it still pays for (Sam 2026-10-18).
 func (s *Store) lockTrashActorTx(ctx context.Context, tx pgx.Tx, workspaceID, actorID, payerID string) error {
 	if actorID != "" && actorID == payerID {
-		_, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID)
+		_, err := s.lockWorkspacePayerTx(ctx, tx, workspaceID, actorID)
 		return err
 	}
 	_, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, workspaceID, actorID)
@@ -305,7 +306,8 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 		return TrashPage{}, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT kind, id, title, sub_kind, workspace_id, `+workspaceNameSQL("t.workspace_id", "t.workspace_name")+`, size_bytes,
-			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview, `+lostAccessSQL("t.workspace_id", "$1")+`
+			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview, `+lostAccessSQL("t.workspace_id", "$1")+`,
+			t.workspace_id = '' OR `+editableWorkspaceSQL("t.workspace_id", "$1")+`
 		FROM (
 			SELECT 'source_file' AS kind, f.id, f.name AS title, f.kind AS sub_kind, f.workspace_id,
 				w.name AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id,
@@ -332,7 +334,7 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 		var subKind string
 		if err := rows.Scan(&item.Kind, &item.ID, &item.Title, &subKind, &item.WorkspaceID, &item.WorkspaceName,
 			&item.SizeBytes, &item.TrashedAt, &item.PurgeAfter, &item.EpisodeID,
-			&item.ThumbnailKey, &item.Preview, &item.LostAccess); err != nil {
+			&item.ThumbnailKey, &item.Preview, &item.LostAccess, &item.CanRestore); err != nil {
 			return TrashPage{}, err
 		}
 		if item.LostAccess {
@@ -387,8 +389,15 @@ func (s *Store) lockTrashOwnerTx(ctx context.Context, tx pgx.Tx, actorID string,
 		return "", ErrNotFound
 	}
 	if wsID != nil {
-		// The lock re-reads ownership under the workspace row.
-		ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, *wsID, actorID)
+		// The lock re-reads ownership under the workspace row. The payer
+		// purging what it pays for needs no live owner (lockWorkspacePayerTx).
+		var ownerID string
+		var err error
+		if !restore && actorID == payerID {
+			ownerID, err = s.lockWorkspacePayerTx(ctx, tx, *wsID, actorID)
+		} else {
+			ownerID, err = s.lockWorkspaceMutationTx(ctx, tx, *wsID, actorID)
+		}
 		if err != nil {
 			return "", err
 		}

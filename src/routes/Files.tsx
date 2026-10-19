@@ -458,17 +458,17 @@ const TrashCard = memo(function TrashCard({
       actions={
         <Menu
           items={[
-            // A workspace the viewer left cannot take it back.
-            ...(item.lostAccess
-              ? []
-              : [
+            // Restoring needs edit access to its workspace.
+            ...(item.canRestore
+              ? [
                   {
                     disabled: busy,
                     icon: 'undo' as const,
                     label: m.trash_restore(),
                     onClick: () => onRestore(item),
                   },
-                ]),
+                ]
+              : []),
             {
               danger: true,
               disabled: busy,
@@ -599,8 +599,8 @@ function TrashTab({
               label={m.trash_restore()}
               onClick={() =>
                 void selection.run(
-                  // A workspace the viewer left cannot take items back.
-                  selection.selected.filter((item) => !item.lostAccess),
+                  // Restoring needs edit access to its workspace.
+                  selection.selected.filter((item) => item.canRestore),
                   restore
                 )
               }

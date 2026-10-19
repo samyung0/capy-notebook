@@ -156,12 +156,15 @@ func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID strin
 // lockWorkspaceMutationTx is the common final-admission boundary for an
 // authenticated workspace mutation. It makes ownership immutable, then locks
 // the actor and storage owner in stable ID order so suspension/deletion cannot
-// commit while the mutation is still in flight. A locked owner's workspace is
-// not found for any other actor (ownerHidden).
+// commit while the mutation is still in flight. also names further accounts
+// the write charges (an item's payer, uploader pays) for the same ordered
+// batch. A locked owner's workspace is not found for any other actor
+// (ownerHidden).
 func (s *Store) lockWorkspaceMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, actorID string,
+	also ...string,
 ) (string, error) {
 	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
 	if err != nil {
@@ -170,8 +173,24 @@ func (s *Store) lockWorkspaceMutationTx(
 	if actorID == "" {
 		actorID = ownerID
 	}
-	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
+	if err := s.lockAccountSessionsTx(ctx, tx, append([]string{ownerID, actorID}, also...)...); err != nil {
 		return "", ownerHidden(err, ownerID, actorID)
+	}
+	return ownerID, nil
+}
+
+// lockWorkspacePayerTx admits a payer trashing or purging an item it pays for
+// in wsID, which it need not be able to open (Sam 2026-10-18, also while the
+// workspace owner is suspended or being deleted, Sam 2026-10-19). Only the
+// payer's own account must be live; the workspace row serializes it with the
+// owner's purge, which deletes the workspace.
+func (s *Store) lockWorkspacePayerTx(ctx context.Context, tx pgx.Tx, workspaceID, payerID string) (string, error) {
+	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if err := s.lockAccountSessionsTx(ctx, tx, payerID); err != nil {
+		return "", err
 	}
 	return ownerID, nil
 }
@@ -184,8 +203,9 @@ func (s *Store) lockWorkspaceEditorMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, actorID string,
+	also ...string,
 ) (string, error) {
-	ownerID, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, workspaceID, actorID)
+	ownerID, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, workspaceID, actorID, also...)
 	if err != nil {
 		return "", err
 	}
@@ -203,11 +223,12 @@ func (s *Store) lockWorkspaceEditorRecoveryTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, actorID string,
+	also ...string,
 ) (string, error) {
 	if actorID == "" {
 		return "", ErrNotFound
 	}
-	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID)
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID, also...)
 	if err != nil {
 		return "", err
 	}

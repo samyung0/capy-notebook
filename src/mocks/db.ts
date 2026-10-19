@@ -2172,6 +2172,7 @@ files
     trash.push({
       file,
       item: {
+        canRestore: true,
         episodeId: `episode_${file.id}`,
         fileKind: file.kind,
         id: file.id,
@@ -2196,6 +2197,7 @@ trash.unshift(
     .filter(({ trashed }) => trashed)
     .map(({ material }) => ({
       item: {
+        canRestore: true,
         episodeId: `episode_${material.id}`,
         id: material.id,
         kind: 'material' as const,

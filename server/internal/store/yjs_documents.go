@@ -109,8 +109,9 @@ func (s *Store) ProjectMaterialContent(
 	// A projection is still a material write even though it is authenticated by
 	// the collaboration service rather than a user session. Serialize its final
 	// admission with suspension and account deletion so queued projections
-	// cannot cross either boundary.
-	if err := s.lockAccountSessionsTx(ctx, tx, ownerID); err != nil {
+	// cannot cross either boundary. The payer, charged by size_bytes, is
+	// locked with the owner (uploader pays), as the collaboration server does.
+	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, payerID); err != nil {
 		return ProjectedMaterial{}, err
 	}
 

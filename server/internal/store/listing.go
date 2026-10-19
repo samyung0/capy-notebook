@@ -39,6 +39,16 @@ func lostAccessSQL(wsCol, user string) string {
 		AND ` + liveWorkspaceSQL("la.id") + `), false)`
 }
 
+// editableWorkspaceSQL is true when user may edit wsCol's content, the rule
+// restore checks (lockTrashOwnerTx: owner, or an effective editor through
+// membership or a reached editor share), under a live owner.
+func editableWorkspaceSQL(wsCol, user string) string {
+	return `EXISTS (SELECT 1 FROM workspaces ew WHERE ew.id=` + wsCol + ` AND ` + liveWorkspaceSQL("ew.id") + `
+		AND (ew.user_id=` + user + `
+			OR EXISTS (SELECT 1 FROM workspace_members em WHERE em.workspace_id=ew.id AND em.user_id=` + user + ` AND em.role IN ('owner','editor'))
+			OR (ew.share_role='editor' AND ew.privacy IN ('link','public') AND ` + linkReachSQL("ew", user) + `)))`
+}
+
 // workspaceNameSQL hides a workspace's name once its owner's account is no
 // longer live, like every other read of that workspace.
 func workspaceNameSQL(wsCol, nameCol string) string {
@@ -288,7 +298,11 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		case "kind":
 			text = string(last.Kind)
 		case "workspace":
-			text = strings.ToLower(last.WorkspaceName)
+			// Read the stored name as the sort does: a closed owner's comes
+			// back blank in the row (workspaceNameSQL).
+			if err := s.pool.QueryRow(ctx, `SELECT lower(workspace_name) FROM materials WHERE id=$1`, last.ID).Scan(&text); err != nil {
+				return MaterialPage{}, err
+			}
 		}
 		page.NextCursor = encodeListCursor(cursorPrimary(sort, at, text, 0), last.ID)
 	}

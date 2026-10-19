@@ -3,8 +3,6 @@
 //! owner at its storage limit. `frozen_sql` and `full_sql` mirror Go's
 //! `over_quota_frozen` and `StorageUsage.Full` (`TestCollaborationFrozenSQLMatchesGo`).
 
-use std::collections::HashMap;
-
 use deadpool_postgres::GenericClient;
 
 use crate::auth::Access;
@@ -309,27 +307,9 @@ pub async fn assert_editor<C: GenericClient>(
     Ok(())
 }
 
-pub struct LockedAccount {
-    pub locked: bool,
-}
-
 pub struct Boundary {
-    /// The lifecycle owner: the workspace owner, or a standalone material's
-    /// owner. A workspace material's `owner_user_id` is only its payer.
-    pub owner_user_id: String,
     /// The account the material is charged to (`owner_user_id`).
     pub payer_user_id: String,
-    pub accounts: HashMap<String, LockedAccount>,
-}
-
-impl Boundary {
-    /// The owner's or the payer's account is deleted, being deleted or
-    /// suspended; either way nothing more is written or charged.
-    pub fn owner_or_payer_locked(&self) -> bool {
-        [&self.owner_user_id, &self.payer_user_id]
-            .into_iter()
-            .any(|id| self.accounts.get(id).is_none_or(|account| account.locked))
-    }
 }
 
 /// The advisory lock that serializes a material's Yjs writes.
@@ -398,17 +378,18 @@ pub async fn lock_boundary<C: GenericClient>(
             "collaboration account not found".into(),
         ));
     }
-    let accounts = rows
-        .iter()
-        .map(|row| {
-            (
-                row.get::<_, String>("id"),
-                LockedAccount {
-                    locked: row.get("locked"),
-                },
-            )
-        })
-        .collect();
+    // A deleted, deleting or suspended owner (the workspace's, or a standalone
+    // material's) or payer stops the write here, before the material lock:
+    // PurgeUser deletes a payer's materials before it updates the payer's
+    // row, so waiting on the material while holding that row would deadlock.
+    if rows.iter().any(|row| {
+        let id: String = row.get("id");
+        (id == owner || id == payer) && row.get::<_, bool>("locked")
+    }) {
+        return Err(AccessError::Forbidden(
+            "material owner account is locked".into(),
+        ));
+    }
     let locked = client
         .query(
             "SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE",
@@ -425,9 +406,7 @@ pub async fn lock_boundary<C: GenericClient>(
         return Err(AccessError::Forbidden("material placement changed".into()));
     }
     Ok(Boundary {
-        owner_user_id: owner,
         payer_user_id: payer,
-        accounts,
     })
 }
 

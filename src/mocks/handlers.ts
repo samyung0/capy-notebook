@@ -401,11 +401,12 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function trashItem(
-  base: Omit<TrashItem, 'episodeId' | 'trashedAt' | 'purgeAfter'>
+  base: Omit<TrashItem, 'canRestore' | 'episodeId' | 'trashedAt' | 'purgeAfter'>
 ): TrashItem {
   const now = Date.now();
   return {
     ...base,
+    canRestore: true,
     episodeId: uid('trash'),
     purgeAfter: new Date(now + TRASH_RETENTION_MS).toISOString(),
     trashedAt: new Date(now).toISOString(),

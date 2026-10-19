@@ -5995,6 +5995,9 @@ components:
     TrashItem:
       additionalProperties: false
       properties:
+        canRestore:
+          description: "The caller may restore it: a standalone item, or edit access to its workspace"
+          type: boolean
         episodeId:
           type: string
         fileKind:
@@ -6041,6 +6044,7 @@ components:
         - trashedAt
         - purgeAfter
         - episodeId
+        - canRestore
       type: object
     TrashPage:
       additionalProperties: false

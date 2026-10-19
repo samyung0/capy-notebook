@@ -28,7 +28,8 @@ type quotaFixture struct {
 	// owner acts as the throwaway over-quota user; pass "" as the actor.
 	owner http.Handler
 	// member acts as a seeded workspace editor whose own account is healthy;
-	// pass "u_editor" as the actor ("u_viewer" is a viewer member).
+	// pass "u_editor" as the actor ("u_viewer" is a viewer member, "u_other"
+	// a nonmember).
 	member      http.Handler
 	store       *store.Store
 	workspaceID string
@@ -77,7 +78,7 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 	memberHandler := httpapi.New(st, memory, nil, nil, "docling",
 		httpapi.Config{
 			AuthDisabled: true, E2EAuth: true, E2ESecret: "e2e-test-secret",
-			E2EUserIDs: []string{"u_editor", "u_viewer"}, CollaborationSecret: "collab-test-secret",
+			E2EUserIDs: []string{"u_editor", "u_viewer", "u_other"}, CollaborationSecret: "collab-test-secret",
 		})
 
 	ws, err := st.CreateWorkspace(ctx, userID, store.WorkspaceCreate{Name: "Quota gate", Tags: nil})
@@ -215,6 +216,20 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 		}
 		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &links) != nil || links.StorageFull != side.full {
 			t.Fatalf("%q file links = %d body=%s, want full by %q", side.actor, rec.Code, rec.Body.String(), side.full)
+		}
+	}
+	// A nonmember on a public share follows its share role the same way.
+	for _, share := range []struct{ role, full string }{{"viewer", ""}, {"editor", "payer"}} {
+		if _, err := f.store.Pool().Exec(context.Background(),
+			`UPDATE workspaces SET privacy='public', share_role=$2 WHERE id=$1`, f.workspaceID, share.role); err != nil {
+			t.Fatal(err)
+		}
+		rec := doReq(t, f.member, http.MethodGet, "/api/files/"+f.ballast.ID+"/links", "u_other", nil)
+		var links struct {
+			StorageFull string `json:"storageFull"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &links) != nil || links.StorageFull != share.full {
+			t.Fatalf("public %s visitor file links = %d body=%s, want full by %q", share.role, rec.Code, rec.Body.String(), share.full)
 		}
 	}
 	// Refused before the model is even resolved, so no credits move (these

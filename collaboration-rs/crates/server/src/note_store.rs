@@ -259,14 +259,11 @@ pub async fn append(
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
-    let boundary = access::lock_boundary(&tx, material_id, actors).await?;
+    access::lock_boundary(&tx, material_id, actors).await?;
     // Frozen is enforced at admission, so updates already admitted save even
     // if their writer froze since; a writer must still hold its role.
     for actor in actors {
         access::assert_editor(&tx, material_id, actor).await?;
-    }
-    if boundary.owner_or_payer_locked() {
-        return Err(AccessError::Forbidden("material owner account is locked".into()).into());
     }
     let current = tx
         .query(

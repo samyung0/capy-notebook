@@ -1708,7 +1708,9 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		return Material{}, err
 	}
 	if workspaceID != nil {
-		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, p.UpdatedBy); err != nil {
+		// The payer (ownerID) is charged by size_bytes, so its row joins the
+		// owner's and the actor's.
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, p.UpdatedBy, ownerID); err != nil {
 			return Material{}, err
 		}
 	} else {

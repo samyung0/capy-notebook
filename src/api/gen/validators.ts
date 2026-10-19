@@ -5448,6 +5448,7 @@ export const ListTrashQueryParams = zod.object({
 export const ListTrashResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
+  "canRestore": zod.boolean().describe('The caller may restore it: a standalone item, or edit access to its workspace'),
   "episodeId": zod.string(),
   "fileKind": zod.string().optional(),
   "id": zod.string(),

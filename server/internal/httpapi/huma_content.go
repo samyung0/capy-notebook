@@ -255,7 +255,13 @@ type fileLinksOutput struct {
 // link/public viewers, like every other file read. Bytes never proxy through
 // the gateway.
 func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutput, error) {
-	if _, err := a.fileRead(ctx, in.ID); err != nil {
+	// The read check (fileRead) and the role the strip needs, in one lookup.
+	wsID, err := a.s.FileWorkspaceID(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), wsID)
+	if err != nil {
 		return nil, hErr(err)
 	}
 	if a.blob == nil {
@@ -275,14 +281,6 @@ func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutp
 	out := apimodel.FileLinks{URL: signed.URL, ExpiresAt: signed.ExpiresAt}
 	// The payer's full storage explains view-only only to those who could
 	// edit; a viewer was never editing (like materials and source sessions).
-	wsID, err := a.s.FileWorkspaceID(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), wsID)
-	if err != nil {
-		return nil, hErr(err)
-	}
 	if store.RoleCanEdit(role) {
 		payer, err := a.s.FilePayerID(ctx, in.ID)
 		if err != nil {
