@@ -1347,7 +1347,11 @@ func (d MaterialDraft) material() (Material, error) {
 		}
 		mt.Content = d.Content
 	case "note":
-		if strings.TrimSpace(materialdoc.IncomingNoteText(d.Content)) == "" {
+		text, err := materialdoc.ExtractNoteText(d.Content)
+		if err != nil {
+			return Material{}, err
+		}
+		if strings.TrimSpace(text) == "" {
 			return Material{}, ErrEmptyMaterial
 		}
 		mt.Content = d.Content
@@ -1777,6 +1781,11 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	}
 	if p.Content != nil && contentKind == "flashcards" {
 		if err := syncFlashcardCardsTx(ctx, tx, id, contentCardIDs); err != nil {
+			return Material{}, err
+		}
+	}
+	if p.Content != nil && (contentKind == "quiz" || contentKind == "flashcards") {
+		if err := markParentNoteDirtyTx(ctx, tx, id); err != nil {
 			return Material{}, err
 		}
 	}

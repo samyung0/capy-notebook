@@ -11,7 +11,7 @@ import {
   withoutBlanks,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
-import { issueMessages, questionIssues } from './issues';
+import { blockIssues, issueMessages, questionIssues } from './issues';
 
 const empty = { text: '  ', type: 'text' } as const;
 const messages = (question: Question, bank = false) =>
@@ -282,3 +282,63 @@ it('words each issue, names parts and points at rows and titles', () => {
 function stemRow(index: number) {
   return { kind: 'block', location: { index } } as const;
 }
+
+it('names what a merge of two editors’ charts left in a note chart', () => {
+  const chart = {
+    kind: 'bar',
+    labels: ['A'],
+    series: [{ name: 'S', values: [1, 2] }],
+    title: 'T',
+    type: 'chart',
+  } as QuestionBlock;
+  expect(blockIssues(chart)).toEqual([m.question_validation_series_values()]);
+  const series = Array.from({ length: 7 }, (_, i) => ({
+    name: `S${i}`,
+    values: [i],
+  }));
+  expect(blockIssues({ ...chart, series } as QuestionBlock)).toEqual([
+    m.question_ui_chart_series_over({
+      max: limits.QUESTION_CHART_SERIES_MAX,
+    }),
+  ]);
+});
+
+it('names what a merge of two editors left in a note pie, chart or plot', () => {
+  const pie = {
+    kind: 'pie',
+    labels: ['a', 'b'],
+    series: [{ name: 'S', values: [1, 2] }],
+    title: 'T',
+    type: 'chart',
+  } as QuestionBlock;
+  const issues = (block: object) => blockIssues(block as QuestionBlock);
+  expect(
+    issues({
+      ...pie,
+      series: [
+        ...(pie as { series: object[] }).series,
+        { name: 'R', values: [1, 1] },
+      ],
+    })
+  ).toEqual([m.question_issue_pie_series()]);
+  expect(issues({ ...pie, series: [{ name: 'S', values: [3, -1] }] })).toEqual([
+    m.question_issue_pie_negative(),
+  ]);
+  expect(
+    issues({ ...pie, series: [{ name: 'S', values: [0, null] }] })
+  ).toEqual([m.question_issue_pie()]);
+  expect(issues({ ...pie, kind: 'bar', series: [] })).toEqual([
+    m.question_issue_add_series(),
+  ]);
+  const plot = {
+    series: [],
+    title: 'P',
+    type: 'plot',
+    xTitle: 'x',
+    yTitle: 'y',
+  };
+  expect(issues(plot)).toEqual([m.question_issue_add_series()]);
+  expect(
+    issues({ ...plot, series: [{ name: 'S', points: [[0, 1]] }] })
+  ).toEqual([m.question_issue_plot_points()]);
+});

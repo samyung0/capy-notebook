@@ -1,4 +1,4 @@
-"""Offline checks for the local pilot's new batch/provenance boundaries."""
+"""Offline checks for the local pilot's frozen-request and provenance boundaries."""
 
 import json
 import sys
@@ -8,16 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 import knowledge_base_pilot as pilot
-from knowledge_base_batch import (
-    BatchClient,
-    PilotError,
-    prepare,
-    read_json,
-    request,
-    save_json,
-    shard_unsubmitted,
-    validate_records,
-)
+from knowledge_base_common import PilotError, read_json, save_json
 from knowledge_base_pilot import (
     book_identity,
     build_excerpts,
@@ -27,6 +18,7 @@ from knowledge_base_pilot import (
     sha_file,
     validate_material,
 )
+from knowledge_base_realtime import prepare, request, validate_records
 
 
 def test_provider_dispatch_uses_the_endpoint_and_its_key(tmp_path, monkeypatch):
@@ -122,7 +114,7 @@ def test_normal_api_reuses_success_and_disables_thinking(tmp_path):
         validate_records(["a", "b"], [response("a"), response("b")]),
     )
     run(tmp_path, "test", workers=1, transport=httpx.MockTransport(handle), **ENDPOINT)
-    assert len(calls) == 1  # Later Batch collection cannot invalidate a normal run.
+    assert len(calls) == 1  # Later stage results cannot invalidate a normal run.
     # A changed frozen input must not inherit old results.
     with (tmp_path / "input.jsonl").open("ab") as stream:
         stream.write(b"\n")
@@ -257,7 +249,7 @@ def test_normal_api_preserves_non_json_http_receipt(tmp_path):
     assert record["response"]["request_id"] == "receipt-1"
 
 
-def test_batch_success_partial_failure_and_identity():
+def test_records_success_partial_failure_and_identity():
     rows = [response(), response("b", status=429), response("c", finish="length")]
     result = validate_records(["a", "b", "c", "d"], rows)
     assert list(result["success"]) == ["a"]
@@ -269,146 +261,16 @@ def test_batch_success_partial_failure_and_identity():
             validate_records(["a"], invalid)
 
 
-def test_batch_rejects_invalid_json():
+def test_records_reject_invalid_json():
     row = response()
     row["response"]["body"]["choices"][0]["message"]["content"] = "incomplete {"
     assert validate_records(["a"], [row])["failed"]["a"]["kind"] == "invalid_json"
 
 
-def test_submit_resume_and_collect(tmp_path, monkeypatch):
-    requests = [request("a", [{"role": "user", "content": "source excerpt"}], 100)]
-    prepare(tmp_path, requests)
-    calls = []
-
-    def handler(req):
-        calls.append((req.method, req.url.path))
-        path = req.url.path
-        if path.endswith("/files"):
-            return httpx.Response(200, json={"id": "file1"})
-        if path.endswith("/batches"):
-            return httpx.Response(200, json={"id": "batch1", "status": "validating"})
-        if path.endswith("/batches/batch1"):
-            return httpx.Response(
-                200,
-                json={"id": "batch1", "status": "completed", "output_file_id": "out1"},
-            )
-        if path.endswith("/files/out1/content"):
-            return httpx.Response(200, text=json.dumps(response()) + "\n")
-        raise AssertionError(path)
-
-    client = BatchClient("dummy", transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(
-        "knowledge_base_batch.requests.post",
-        lambda url, **kwargs: client.http.post(
-            "/files", data=kwargs["data"], files=kwargs["files"]
-        ),
-    )
-    try:
-        assert client.submit(tmp_path)["batch_id"] == "batch1"
-        assert client.submit(tmp_path)["batch_id"] == "batch1"
-        assert len(calls) == 2
-        assert client.collect(tmp_path)["complete"]
-        assert client.collect(tmp_path)["complete"]
-        assert sum(path.endswith("/content") for _, path in calls) == 1
-        assert not any(path.endswith("/chat/completions") for _, path in calls)
-    finally:
-        client.close()
-
-
-def test_uncertain_submission_recovers_without_resubmit(tmp_path):
-    state = prepare(tmp_path, [request("a", [], 50)])
-    state.update(status="submitting", input_file_id="file1")
-    save_json(tmp_path / "state.json", state)
-    calls = []
-
-    def handler(req):
-        calls.append(req.method)
-        return httpx.Response(
-            200,
-            json={
-                "data": [
-                    {
-                        "id": "existing",
-                        "status": "in_progress",
-                        "metadata": {"input_sha256": state["input_sha256"]},
-                    }
-                ],
-                "has_more": False,
-            },
-        )
-
-    client = BatchClient("dummy", transport=httpx.MockTransport(handler))
-    try:
-        assert client.submit(tmp_path)["batch_id"] == "existing"
-        assert calls == ["GET"]
-    finally:
-        client.close()
-
-
-def test_unknown_submission_is_not_retried(tmp_path):
-    state = prepare(tmp_path, [request("a", [], 50)])
-    state["status"] = "submitting"
-    save_json(tmp_path / "state.json", state)
-    client = BatchClient(
-        "dummy",
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(200, json={"data": None, "has_more": False})
-        ),
-    )
-    try:
-        with pytest.raises(PilotError, match="0 matching"):
-            client.submit(tmp_path)
-        assert read_json(tmp_path / "state.json")["status"] == "submitting"
-    finally:
-        client.close()
-
-
-def test_failed_and_partial_job_never_mark_complete(tmp_path):
-    state = prepare(tmp_path, [request("a", [], 50), request("b", [], 50)])
-    state.update(batch_id="batch1", status="in_progress")
-    save_json(tmp_path / "state.json", state)
-    for status in ("failed", "expired", "completed"):
-
-        def handler(req, status=status):
-            if req.url.path.endswith("/content"):
-                return httpx.Response(200, text=json.dumps(response()) + "\n")
-            return httpx.Response(
-                200, json={"status": status, "output_file_id": "out1"}
-            )
-
-        client = BatchClient("dummy", transport=httpx.MockTransport(handler))
-        try:
-            final = client.collect(tmp_path)
-            assert not final["complete"]
-            assert final["collection"] == {"success": 1, "failed": 0, "missing": 1}
-            assert client.submit(tmp_path)["batch_id"] == "batch1"
-        finally:
-            client.close()
-
-
-def test_changed_batch_input_refuses_existing_job(tmp_path):
+def test_changed_frozen_input_is_refused(tmp_path):
     prepare(tmp_path, [request("a", [], 50)])
     with pytest.raises(PilotError, match="input changed"):
         prepare(tmp_path, [request("b", [], 50)])
-
-
-def test_credentials_do_not_escape_error():
-    client = BatchClient(
-        "secret-value",
-        transport=httpx.MockTransport(
-            lambda _: httpx.Response(
-                401,
-                json={"error": {"code": "InvalidApiKey", "message": "secret-value"}},
-            )
-        ),
-    )
-    try:
-        with pytest.raises(PilotError) as error:
-            client.call("GET", "/batches")
-        assert "secret-value" not in str(error.value)
-        assert "401" in str(error.value)
-    finally:
-        client.close()
 
 
 def test_source_edition_geometry_captions_and_excerpts():
@@ -639,81 +501,6 @@ def test_material_questions_cannot_escape_declared_provenance():
     value["excerpt_ids"] = []
     with pytest.raises(PilotError, match="provenance"):
         validate_material(value, context)
-
-
-def test_upload_recovery_does_not_create_a_batch(tmp_path):
-    state = prepare(tmp_path, [request("a", [], 50)])
-    state["status"] = "uploading"
-    save_json(tmp_path / "state.json", state)
-    calls = []
-
-    def handler(req):
-        calls.append(req.method)
-        return httpx.Response(
-            200,
-            json={
-                "data": [
-                    {
-                        "id": "uploaded",
-                        "filename": f"capy-kb-{state['input_sha256']}.jsonl",
-                    }
-                ]
-            },
-        )
-
-    client = BatchClient("dummy", transport=httpx.MockTransport(handler))
-    try:
-        recovered = client.submit(tmp_path)
-        assert (
-            recovered["input_file_id"] == "uploaded"
-            and recovered["status"] == "prepared"
-        )
-        assert calls == ["GET"]
-    finally:
-        client.close()
-
-
-def test_shards_resume_and_collect_without_duplicate_calls(tmp_path, monkeypatch):
-    prepare(tmp_path, [request("a", [], 50), request("b", [], 50)])
-    shard_unsubmitted(tmp_path, 1)
-    uploads = []
-    creates = []
-
-    def handler(req):
-        path = req.url.path
-        if req.method == "POST" and path.endswith("/files"):
-            uploads.append(req.content)
-            return httpx.Response(200, json={"id": f"file{len(uploads)}"})
-        if req.method == "POST":
-            creates.append(req.content)
-            return httpx.Response(
-                200, json={"id": f"batch{len(creates)}", "status": "in_progress"}
-            )
-        if "/batches/" in path:
-            return httpx.Response(
-                200,
-                json={"status": "completed", "output_file_id": path.rsplit("/", 1)[-1]},
-            )
-        key = "a" if "batch1" in path else "b"
-        return httpx.Response(200, text=json.dumps(response(key)) + "\n")
-
-    client = BatchClient("dummy", transport=httpx.MockTransport(handler))
-    monkeypatch.setattr(
-        "knowledge_base_batch.requests.post",
-        lambda url, **kwargs: client.http.post(
-            "/files", data=kwargs["data"], files=kwargs["files"]
-        ),
-    )
-    try:
-        assert len(client.submit(tmp_path)["batch_ids"]) == 2
-        client.submit(tmp_path)
-        assert len(uploads) == len(creates) == 2
-        assert client.collect(tmp_path)["complete"]
-        assert set(read_json(tmp_path / "results.json")["success"]) == {"a", "b"}
-        with pytest.raises(PilotError, match="unsubmitted"):
-            shard_unsubmitted(tmp_path, 1)
-    finally:
-        client.close()
 
 
 def test_normal_driver_stops_before_downstream_on_model_failure(tmp_path, monkeypatch):

@@ -1,0 +1,1194 @@
+[
+  {
+    "name": "a valid chart stays as it is",
+    "block": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "S0",
+          "values": [0, 1]
+        },
+        {
+          "name": "S1",
+          "values": [1, 2]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "S0",
+          "values": [0, 1]
+        },
+        {
+          "name": "S1",
+          "values": [1, 2]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a series shorter than the labels is padded with empty cells",
+    "block": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb", "Mar"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb", "Mar"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, null, null]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a series longer than the labels is cut to them",
+    "block": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, -2.5, 3, null]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, -2.5]
+        }
+      ]
+    }
+  },
+  {
+    "name": "chart series past the cap keep the first six",
+    "block": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "S0",
+          "values": [0, 1]
+        },
+        {
+          "name": "S1",
+          "values": [1, 2]
+        },
+        {
+          "name": "S2",
+          "values": [2, 3]
+        },
+        {
+          "name": "S3",
+          "values": [3, 4]
+        },
+        {
+          "name": "S4",
+          "values": [4, 5]
+        },
+        {
+          "name": "S5",
+          "values": [5, 6]
+        },
+        {
+          "name": "S6",
+          "values": [6, 7]
+        },
+        {
+          "name": "S7",
+          "values": [7, 8]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "S0",
+          "values": [0, 1]
+        },
+        {
+          "name": "S1",
+          "values": [1, 2]
+        },
+        {
+          "name": "S2",
+          "values": [2, 3]
+        },
+        {
+          "name": "S3",
+          "values": [3, 4]
+        },
+        {
+          "name": "S4",
+          "values": [4, 5]
+        },
+        {
+          "name": "S5",
+          "values": [5, 6]
+        }
+      ]
+    }
+  },
+  {
+    "name": "plot series past the cap keep the first four",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "C0",
+          "points": [[0, 0], [1, 0]]
+        },
+        {
+          "name": "C1",
+          "points": [[0, 1], [1, 1]]
+        },
+        {
+          "name": "C2",
+          "points": [[0, 2], [1, 2]]
+        },
+        {
+          "name": "C3",
+          "points": [[0, 3], [1, 3]]
+        },
+        {
+          "name": "C4",
+          "points": [[0, 4], [1, 4]]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "C0",
+          "points": [[0, 0], [1, 0]]
+        },
+        {
+          "name": "C1",
+          "points": [[0, 1], [1, 1]]
+        },
+        {
+          "name": "C2",
+          "points": [[0, 2], [1, 2]]
+        },
+        {
+          "name": "C3",
+          "points": [[0, 3], [1, 3]]
+        }
+      ]
+    }
+  },
+  {
+    "name": "graph elements naming a point that is gone are skipped",
+    "block": {
+      "type": "graph",
+      "board": {
+        "bbox": [-5, 5, 5, -5],
+        "axis": true,
+        "grid": true
+      },
+      "elements": [
+        {
+          "type": "point",
+          "id": "p1",
+          "coords": [1, 0]
+        },
+        {
+          "type": "segment",
+          "id": "s1",
+          "points": ["p1", "p9"]
+        },
+        {
+          "type": "circle",
+          "id": "c1",
+          "center": "p8",
+          "radius": 1
+        },
+        {
+          "type": "line",
+          "id": "l1",
+          "points": ["p1", "p2"]
+        },
+        {
+          "type": "point",
+          "id": "p2",
+          "coords": [2, 0]
+        }
+      ],
+      "image": {
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"
+      },
+      "width": 400,
+      "height": 300
+    },
+    "repaired": {
+      "type": "graph",
+      "board": {
+        "bbox": [-5, 5, 5, -5],
+        "axis": true,
+        "grid": true
+      },
+      "elements": [
+        {
+          "type": "point",
+          "id": "p1",
+          "coords": [1, 0]
+        },
+        {
+          "type": "line",
+          "id": "l1",
+          "points": ["p1", "p2"]
+        },
+        {
+          "type": "point",
+          "id": "p2",
+          "coords": [2, 0]
+        }
+      ],
+      "image": {
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"
+      },
+      "width": 400,
+      "height": 300
+    }
+  },
+  {
+    "name": "graph elements past the cap keep the first sixty, then lose what names a dropped point",
+    "block": {
+      "type": "graph",
+      "board": {
+        "bbox": [-5, 5, 5, -5],
+        "axis": true,
+        "grid": true
+      },
+      "elements": [
+        {
+          "type": "segment",
+          "id": "s1",
+          "points": ["p1", "p61"]
+        },
+        {
+          "type": "point",
+          "id": "p1",
+          "coords": [1, 0]
+        },
+        {
+          "type": "point",
+          "id": "p2",
+          "coords": [2, 0]
+        },
+        {
+          "type": "point",
+          "id": "p3",
+          "coords": [3, 0]
+        },
+        {
+          "type": "point",
+          "id": "p4",
+          "coords": [4, 0]
+        },
+        {
+          "type": "point",
+          "id": "p5",
+          "coords": [5, 0]
+        },
+        {
+          "type": "point",
+          "id": "p6",
+          "coords": [6, 0]
+        },
+        {
+          "type": "point",
+          "id": "p7",
+          "coords": [7, 0]
+        },
+        {
+          "type": "point",
+          "id": "p8",
+          "coords": [8, 0]
+        },
+        {
+          "type": "point",
+          "id": "p9",
+          "coords": [9, 0]
+        },
+        {
+          "type": "point",
+          "id": "p10",
+          "coords": [10, 0]
+        },
+        {
+          "type": "point",
+          "id": "p11",
+          "coords": [11, 0]
+        },
+        {
+          "type": "point",
+          "id": "p12",
+          "coords": [12, 0]
+        },
+        {
+          "type": "point",
+          "id": "p13",
+          "coords": [13, 0]
+        },
+        {
+          "type": "point",
+          "id": "p14",
+          "coords": [14, 0]
+        },
+        {
+          "type": "point",
+          "id": "p15",
+          "coords": [15, 0]
+        },
+        {
+          "type": "point",
+          "id": "p16",
+          "coords": [16, 0]
+        },
+        {
+          "type": "point",
+          "id": "p17",
+          "coords": [17, 0]
+        },
+        {
+          "type": "point",
+          "id": "p18",
+          "coords": [18, 0]
+        },
+        {
+          "type": "point",
+          "id": "p19",
+          "coords": [19, 0]
+        },
+        {
+          "type": "point",
+          "id": "p20",
+          "coords": [20, 0]
+        },
+        {
+          "type": "point",
+          "id": "p21",
+          "coords": [21, 0]
+        },
+        {
+          "type": "point",
+          "id": "p22",
+          "coords": [22, 0]
+        },
+        {
+          "type": "point",
+          "id": "p23",
+          "coords": [23, 0]
+        },
+        {
+          "type": "point",
+          "id": "p24",
+          "coords": [24, 0]
+        },
+        {
+          "type": "point",
+          "id": "p25",
+          "coords": [25, 0]
+        },
+        {
+          "type": "point",
+          "id": "p26",
+          "coords": [26, 0]
+        },
+        {
+          "type": "point",
+          "id": "p27",
+          "coords": [27, 0]
+        },
+        {
+          "type": "point",
+          "id": "p28",
+          "coords": [28, 0]
+        },
+        {
+          "type": "point",
+          "id": "p29",
+          "coords": [29, 0]
+        },
+        {
+          "type": "point",
+          "id": "p30",
+          "coords": [30, 0]
+        },
+        {
+          "type": "point",
+          "id": "p31",
+          "coords": [31, 0]
+        },
+        {
+          "type": "point",
+          "id": "p32",
+          "coords": [32, 0]
+        },
+        {
+          "type": "point",
+          "id": "p33",
+          "coords": [33, 0]
+        },
+        {
+          "type": "point",
+          "id": "p34",
+          "coords": [34, 0]
+        },
+        {
+          "type": "point",
+          "id": "p35",
+          "coords": [35, 0]
+        },
+        {
+          "type": "point",
+          "id": "p36",
+          "coords": [36, 0]
+        },
+        {
+          "type": "point",
+          "id": "p37",
+          "coords": [37, 0]
+        },
+        {
+          "type": "point",
+          "id": "p38",
+          "coords": [38, 0]
+        },
+        {
+          "type": "point",
+          "id": "p39",
+          "coords": [39, 0]
+        },
+        {
+          "type": "point",
+          "id": "p40",
+          "coords": [40, 0]
+        },
+        {
+          "type": "point",
+          "id": "p41",
+          "coords": [41, 0]
+        },
+        {
+          "type": "point",
+          "id": "p42",
+          "coords": [42, 0]
+        },
+        {
+          "type": "point",
+          "id": "p43",
+          "coords": [43, 0]
+        },
+        {
+          "type": "point",
+          "id": "p44",
+          "coords": [44, 0]
+        },
+        {
+          "type": "point",
+          "id": "p45",
+          "coords": [45, 0]
+        },
+        {
+          "type": "point",
+          "id": "p46",
+          "coords": [46, 0]
+        },
+        {
+          "type": "point",
+          "id": "p47",
+          "coords": [47, 0]
+        },
+        {
+          "type": "point",
+          "id": "p48",
+          "coords": [48, 0]
+        },
+        {
+          "type": "point",
+          "id": "p49",
+          "coords": [49, 0]
+        },
+        {
+          "type": "point",
+          "id": "p50",
+          "coords": [50, 0]
+        },
+        {
+          "type": "point",
+          "id": "p51",
+          "coords": [51, 0]
+        },
+        {
+          "type": "point",
+          "id": "p52",
+          "coords": [52, 0]
+        },
+        {
+          "type": "point",
+          "id": "p53",
+          "coords": [53, 0]
+        },
+        {
+          "type": "point",
+          "id": "p54",
+          "coords": [54, 0]
+        },
+        {
+          "type": "point",
+          "id": "p55",
+          "coords": [55, 0]
+        },
+        {
+          "type": "point",
+          "id": "p56",
+          "coords": [56, 0]
+        },
+        {
+          "type": "point",
+          "id": "p57",
+          "coords": [57, 0]
+        },
+        {
+          "type": "point",
+          "id": "p58",
+          "coords": [58, 0]
+        },
+        {
+          "type": "point",
+          "id": "p59",
+          "coords": [59, 0]
+        },
+        {
+          "type": "point",
+          "id": "p60",
+          "coords": [60, 0]
+        },
+        {
+          "type": "point",
+          "id": "p61",
+          "coords": [61, 0]
+        }
+      ],
+      "image": {
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"
+      },
+      "width": 400,
+      "height": 300
+    },
+    "repaired": {
+      "type": "graph",
+      "board": {
+        "bbox": [-5, 5, 5, -5],
+        "axis": true,
+        "grid": true
+      },
+      "elements": [
+        {
+          "type": "point",
+          "id": "p1",
+          "coords": [1, 0]
+        },
+        {
+          "type": "point",
+          "id": "p2",
+          "coords": [2, 0]
+        },
+        {
+          "type": "point",
+          "id": "p3",
+          "coords": [3, 0]
+        },
+        {
+          "type": "point",
+          "id": "p4",
+          "coords": [4, 0]
+        },
+        {
+          "type": "point",
+          "id": "p5",
+          "coords": [5, 0]
+        },
+        {
+          "type": "point",
+          "id": "p6",
+          "coords": [6, 0]
+        },
+        {
+          "type": "point",
+          "id": "p7",
+          "coords": [7, 0]
+        },
+        {
+          "type": "point",
+          "id": "p8",
+          "coords": [8, 0]
+        },
+        {
+          "type": "point",
+          "id": "p9",
+          "coords": [9, 0]
+        },
+        {
+          "type": "point",
+          "id": "p10",
+          "coords": [10, 0]
+        },
+        {
+          "type": "point",
+          "id": "p11",
+          "coords": [11, 0]
+        },
+        {
+          "type": "point",
+          "id": "p12",
+          "coords": [12, 0]
+        },
+        {
+          "type": "point",
+          "id": "p13",
+          "coords": [13, 0]
+        },
+        {
+          "type": "point",
+          "id": "p14",
+          "coords": [14, 0]
+        },
+        {
+          "type": "point",
+          "id": "p15",
+          "coords": [15, 0]
+        },
+        {
+          "type": "point",
+          "id": "p16",
+          "coords": [16, 0]
+        },
+        {
+          "type": "point",
+          "id": "p17",
+          "coords": [17, 0]
+        },
+        {
+          "type": "point",
+          "id": "p18",
+          "coords": [18, 0]
+        },
+        {
+          "type": "point",
+          "id": "p19",
+          "coords": [19, 0]
+        },
+        {
+          "type": "point",
+          "id": "p20",
+          "coords": [20, 0]
+        },
+        {
+          "type": "point",
+          "id": "p21",
+          "coords": [21, 0]
+        },
+        {
+          "type": "point",
+          "id": "p22",
+          "coords": [22, 0]
+        },
+        {
+          "type": "point",
+          "id": "p23",
+          "coords": [23, 0]
+        },
+        {
+          "type": "point",
+          "id": "p24",
+          "coords": [24, 0]
+        },
+        {
+          "type": "point",
+          "id": "p25",
+          "coords": [25, 0]
+        },
+        {
+          "type": "point",
+          "id": "p26",
+          "coords": [26, 0]
+        },
+        {
+          "type": "point",
+          "id": "p27",
+          "coords": [27, 0]
+        },
+        {
+          "type": "point",
+          "id": "p28",
+          "coords": [28, 0]
+        },
+        {
+          "type": "point",
+          "id": "p29",
+          "coords": [29, 0]
+        },
+        {
+          "type": "point",
+          "id": "p30",
+          "coords": [30, 0]
+        },
+        {
+          "type": "point",
+          "id": "p31",
+          "coords": [31, 0]
+        },
+        {
+          "type": "point",
+          "id": "p32",
+          "coords": [32, 0]
+        },
+        {
+          "type": "point",
+          "id": "p33",
+          "coords": [33, 0]
+        },
+        {
+          "type": "point",
+          "id": "p34",
+          "coords": [34, 0]
+        },
+        {
+          "type": "point",
+          "id": "p35",
+          "coords": [35, 0]
+        },
+        {
+          "type": "point",
+          "id": "p36",
+          "coords": [36, 0]
+        },
+        {
+          "type": "point",
+          "id": "p37",
+          "coords": [37, 0]
+        },
+        {
+          "type": "point",
+          "id": "p38",
+          "coords": [38, 0]
+        },
+        {
+          "type": "point",
+          "id": "p39",
+          "coords": [39, 0]
+        },
+        {
+          "type": "point",
+          "id": "p40",
+          "coords": [40, 0]
+        },
+        {
+          "type": "point",
+          "id": "p41",
+          "coords": [41, 0]
+        },
+        {
+          "type": "point",
+          "id": "p42",
+          "coords": [42, 0]
+        },
+        {
+          "type": "point",
+          "id": "p43",
+          "coords": [43, 0]
+        },
+        {
+          "type": "point",
+          "id": "p44",
+          "coords": [44, 0]
+        },
+        {
+          "type": "point",
+          "id": "p45",
+          "coords": [45, 0]
+        },
+        {
+          "type": "point",
+          "id": "p46",
+          "coords": [46, 0]
+        },
+        {
+          "type": "point",
+          "id": "p47",
+          "coords": [47, 0]
+        },
+        {
+          "type": "point",
+          "id": "p48",
+          "coords": [48, 0]
+        },
+        {
+          "type": "point",
+          "id": "p49",
+          "coords": [49, 0]
+        },
+        {
+          "type": "point",
+          "id": "p50",
+          "coords": [50, 0]
+        },
+        {
+          "type": "point",
+          "id": "p51",
+          "coords": [51, 0]
+        },
+        {
+          "type": "point",
+          "id": "p52",
+          "coords": [52, 0]
+        },
+        {
+          "type": "point",
+          "id": "p53",
+          "coords": [53, 0]
+        },
+        {
+          "type": "point",
+          "id": "p54",
+          "coords": [54, 0]
+        },
+        {
+          "type": "point",
+          "id": "p55",
+          "coords": [55, 0]
+        },
+        {
+          "type": "point",
+          "id": "p56",
+          "coords": [56, 0]
+        },
+        {
+          "type": "point",
+          "id": "p57",
+          "coords": [57, 0]
+        },
+        {
+          "type": "point",
+          "id": "p58",
+          "coords": [58, 0]
+        },
+        {
+          "type": "point",
+          "id": "p59",
+          "coords": [59, 0]
+        }
+      ],
+      "image": {
+        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"/>"
+      },
+      "width": 400,
+      "height": 300
+    }
+  },
+  {
+    "name": "a pie chart holding extra series draws its first series",
+    "block": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, 2]
+        },
+        {
+          "name": "B",
+          "values": [3, 4]
+        },
+        {
+          "name": "C",
+          "values": [5, 6]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, 2]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a stacked chart holding extra series draws its first series, padded",
+    "block": {
+      "type": "chart",
+      "kind": "stacked",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1]
+        },
+        {
+          "name": "B",
+          "values": [3, 4]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "stacked",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, null]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a pie chart with no positive total stays",
+    "block": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [0, null]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [0, null]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a chart with no series stays",
+    "block": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": []
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": []
+    }
+  },
+  {
+    "name": "a line plot's series with fewer than two points is skipped, a scatter's kept",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a scatter plot keeps a one-point series",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "scatter"
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "scatter"
+    }
+  },
+  {
+    "name": "a line plot skips its short series before the cap",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "S0",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "S1",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S2",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S3",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S4",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S5",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "line"
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "S1",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S2",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S3",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S4",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "line"
+    }
+  },
+  {
+    "name": "a plot left with no series stays",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": []
+    }
+  }
+]

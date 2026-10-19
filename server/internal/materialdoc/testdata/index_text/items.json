@@ -1,0 +1,501 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "value": [
+      {
+        "type": "p",
+        "children": [
+          {
+            "text": "Before the quiz"
+          }
+        ],
+        "id": "before"
+      },
+      {
+        "type": "material_ref",
+        "id": "ref_quiz",
+        "materialId": "mat_quiz",
+        "refKind": "quiz",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "material_ref",
+        "id": "ref_cards",
+        "materialId": "mat_cards",
+        "refKind": "flashcards",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "material_ref",
+        "id": "ref_gone",
+        "materialId": "mat_gone",
+        "refKind": "quiz",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "material_ref",
+        "id": "ref_empty",
+        "materialId": "mat_empty",
+        "refKind": "flashcards",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "p",
+        "children": [
+          {
+            "text": "After the cards"
+          }
+        ],
+        "id": "after"
+      }
+    ]
+  },
+  "items": {
+    "mat_quiz": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "quiz",
+          "id": "quiz",
+          "children": [
+            {
+              "type": "quiz_question",
+              "id": "q_mcq",
+              "question": {
+                "id": "q_mcq",
+                "layout": "paper",
+                "labels": "letters",
+                "level": "recall",
+                "stem": [
+                  {
+                    "type": "text",
+                    "text": "Read the source.",
+                    "label": "Source A"
+                  },
+                  {
+                    "type": "image",
+                    "image": {
+                      "assetId": "asset_quiz_1"
+                    },
+                    "width": 400,
+                    "height": 300,
+                    "description": "A cell under a microscope"
+                  },
+                  {
+                    "type": "image",
+                    "image": {
+                      "assetId": "asset_quiz_2"
+                    },
+                    "width": 400,
+                    "height": 300
+                  },
+                  {
+                    "type": "table",
+                    "header": true,
+                    "rows": [["Cell", "Size (µm)"], ["Red", "7.5"], ["", "-"]]
+                  }
+                ],
+                "parts": [
+                  {
+                    "id": "q_mcq:a",
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "Which organelle makes ATP?"
+                      }
+                    ],
+                    "answer": {
+                      "type": "mcq",
+                      "options": ["Nucleus", "Mitochondrion", "Ribosome"],
+                      "correct": [1]
+                    },
+                    "marks": 1,
+                    "solution": [
+                      {
+                        "type": "text",
+                        "text": "The mitochondrion respires."
+                      }
+                    ]
+                  },
+                  {
+                    "id": "q_mcq:b",
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "Match each term."
+                      }
+                    ],
+                    "answer": {
+                      "type": "matching",
+                      "options": ["unused", "Water moves", "Solute moves"],
+                      "pairs": [
+                        {
+                          "left": "Osmosis",
+                          "right": 1
+                        },
+                        {
+                          "left": "Diffusion",
+                          "right": 2
+                        }
+                      ]
+                    },
+                    "marks": 1,
+                    "solution": []
+                  },
+                  {
+                    "id": "q_mcq:c",
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "Order the stages."
+                      }
+                    ],
+                    "answer": {
+                      "type": "ordering",
+                      "items": ["Prophase", "Metaphase", "Anaphase"]
+                    },
+                    "marks": 1,
+                    "solution": []
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "text": ""
+                }
+              ]
+            },
+            {
+              "type": "quiz_question",
+              "id": "q_data",
+              "question": {
+                "id": "q_data",
+                "layout": "split",
+                "labels": "numbers",
+                "stem": [
+                  {
+                    "type": "chart",
+                    "kind": "line",
+                    "title": "Growth",
+                    "labels": ["Day 1", "Day 2"],
+                    "series": [
+                      {
+                        "name": "Height",
+                        "values": [-0.5, null]
+                      }
+                    ],
+                    "yTitle": "cm"
+                  },
+                  {
+                    "type": "plot",
+                    "title": "Trace",
+                    "xTitle": "t",
+                    "yTitle": "V",
+                    "series": [
+                      {
+                        "name": "V",
+                        "points": [[0, -70], [1.5, 30]]
+                      }
+                    ]
+                  }
+                ],
+                "parts": [
+                  {
+                    "id": "q_data:1",
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "How tall on day 3?"
+                      }
+                    ],
+                    "answer": {
+                      "type": "short",
+                      "accepted": ["2.5"],
+                      "unit": "cm"
+                    },
+                    "marks": 1,
+                    "solution": []
+                  },
+                  {
+                    "id": "q_data:2",
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "Explain the peak."
+                      },
+                      {
+                        "type": "graph",
+                        "board": {
+                          "bbox": [-5, 5, 5, -5],
+                          "axis": true,
+                          "grid": false
+                        },
+                        "elements": [
+                          {
+                            "type": "point",
+                            "id": "a",
+                            "name": "A",
+                            "coords": [0, 0]
+                          },
+                          {
+                            "type": "point",
+                            "id": "b",
+                            "coords": [1, 1]
+                          },
+                          {
+                            "type": "segment",
+                            "id": "ab",
+                            "points": ["a", "b"]
+                          }
+                        ],
+                        "image": {
+                          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"></svg>"
+                        },
+                        "width": 320,
+                        "height": 190
+                      }
+                    ],
+                    "answer": {
+                      "type": "open",
+                      "accepted": ["Sodium enters"],
+                      "hints": ["channels"]
+                    },
+                    "marks": 2,
+                    "solution": [
+                      {
+                        "type": "text",
+                        "text": "Voltage-gated channels open."
+                      }
+                    ],
+                    "markscheme": [
+                      {
+                        "text": "Channels",
+                        "marks": 1
+                      },
+                      {
+                        "text": "Sodium",
+                        "marks": 1
+                      }
+                    ]
+                  },
+                  {
+                    "id": "q_data:3",
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "Fill: (1) ______ then (2) ______."
+                      }
+                    ],
+                    "answer": {
+                      "type": "gaps",
+                      "accepted": [["rise"], ["fall"]]
+                    },
+                    "marks": 2,
+                    "solution": []
+                  },
+                  {
+                    "id": "q_data:4",
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "True or false?"
+                      }
+                    ],
+                    "answer": {
+                      "type": "boolean",
+                      "correct": true
+                    },
+                    "marks": 1,
+                    "solution": []
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "text": ""
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "mat_cards": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "flashcards",
+          "id": "cards",
+          "children": [
+            {
+              "type": "flashcard",
+              "id": "c1",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": "Osmosis"
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": "Water across a membrane"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "flashcard",
+              "id": "c2",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": " Diffusion "
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": ""
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "flashcard",
+              "id": "c3",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": ""
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": "Back only"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "mat_empty": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "flashcards",
+          "id": "cards",
+          "children": [
+            {
+              "type": "flashcard",
+              "id": "e1",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": ""
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": ""
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "mat_other": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "flashcards",
+          "id": "cards",
+          "children": [
+            {
+              "type": "flashcard",
+              "id": "o1",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": "Not referenced"
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": "Never indexed"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "blocks": [
+    {
+      "id": "before",
+      "text": "Before the quiz"
+    },
+    {
+      "id": "ref_quiz",
+      "text": "Source A\nRead the source.\n\nA cell under a microscope\n\n| Cell | Size (µm) |\n| Red | 7.5 |\n|  | - |\n\nWhich organelle makes ATP?\n\n- Nucleus\n- Mitochondrion\n- Ribosome\n\nMatch each term.\n\n- Osmosis\n- Diffusion\n\n- unused\n- Water moves\n- Solute moves\n\nOrder the stages.\n\nGrowth\ny: cm\n|  | Height |\n| --- | --- |\n| Day 1 | -0.5 |\n| Day 2 |  |\n\nTrace\nx: t\ny: V\nV: (0, -70), (1.5, 30)\n\nHow tall on day 3?\n\nExplain the peak.\n\npoint A: (0, 0)\npoint: (1, 1)\nsegment: A, (1, 1)\n\nFill: (1) ______ then (2) ______.\n\nTrue or false?"
+    },
+    {
+      "id": "ref_cards",
+      "text": "Osmosis\nWater across a membrane\n\nDiffusion\n\nBack only"
+    },
+    {
+      "id": "after",
+      "text": "After the cards"
+    }
+  ]
+}

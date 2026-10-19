@@ -218,6 +218,11 @@ func (s *Store) ProjectMaterialContent(
 		projected.Revision, projected.UpdatedAt, preview).Scan(&projected.SizeBytes, &projected.UpdatedAt); err != nil {
 		return ProjectedMaterial{}, err
 	}
+	if kind == "quiz" || kind == "flashcards" {
+		if err := markParentNoteDirtyTx(ctx, tx, materialID); err != nil {
+			return ProjectedMaterial{}, err
+		}
+	}
 	if kind == "flashcards" {
 		cards, err := materialdoc.ExtractFlashcards(projection.Raw)
 		if err != nil {

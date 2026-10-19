@@ -142,9 +142,6 @@ def test_alibaba_live_call_is_strict_json_schema_with_thinking_off(monkeypatch):
     }
     assert body["messages"] == [{"role": "user", "content": "review"}]
     assert result.model == "qwen3.8-flash" and result.request_id == "req-1"
-    # the batch body is the same request with the thinking budget
-    batch = llm.alibaba_body(body["messages"], SCHEMA, thinking=True)
-    assert batch["enable_thinking"] is True and batch["thinking_budget"] == 4096
 
 
 def test_alibaba_needs_both_env_values(monkeypatch):

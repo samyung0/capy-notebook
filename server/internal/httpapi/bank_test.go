@@ -92,13 +92,21 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
  CREATE TABLE library_excerpts(id text,book_id text,content_id text);
  INSERT INTO library_books VALUES('book','Source book','["Author"]','Edition','CC BY-SA 4.0','https://creativecommons.org/licenses/by-sa/4.0/','https://source.example/book');
  INSERT INTO library_book_versions VALUES('book',1,'old'),('book',2,'new');
- INSERT INTO library_excerpts VALUES('excerpt','book','old');
- UPDATE questions SET sources='[{"kind":"library","excerptId":"excerpt","bookId":"book","version":1}]' WHERE id='q';
+ INSERT INTO library_excerpts VALUES('excerpt_v2','book','new');
+ UPDATE questions SET sources='[{"kind":"library","excerptId":"excerpt_v1","bookId":"book","version":1}]' WHERE id='q';
  UPDATE questions SET sources='[{"kind":"web","url":"https://open.example/essay","title":"An essay","authors":["Writer"],"license":"CC BY 4.0","retrievedAt":"2026-10-02"}]' WHERE id='q2'`); err != nil {
 		t.Fatal(err)
 	}
 	bankStore := bank.New(bankDSN, bankDSN, "https://bank.example/assets", bankDSN)
 	defer bankStore.Close()
+	// Version 1 is retired: its excerpt rows are gone, so publication refuses it,
+	// while attribution below still resolves from the version row.
+	if err := bankStore.CheckExcerpts(ctx, []bank.Source{{Kind: "library", ExcerptID: "excerpt_v1", BookID: "book", Version: 1}}); err == nil {
+		t.Fatal("publication accepted an excerpt its version no longer holds")
+	}
+	if err := bankStore.CheckExcerpts(ctx, []bank.Source{{Kind: "library", ExcerptID: "excerpt_v2", BookID: "book", Version: 2}}); err != nil {
+		t.Fatal(err)
+	}
 	sink := &bankAssetSink{}
 	sender := mail.NewRecordingSender(&mail.LogSender{})
 	config := httpapi.Config{AuthDisabled: true, DevUserID: user, Bank: bankStore, BankAssets: sink, BankAssetsURL: "https://bank.example/assets", BankCommentEmail: "review@example.test", MailSender: sender, AppURL: "https://app.example"}

@@ -993,14 +993,14 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 	// its attribution anonymized.
 	material, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: leaverID, WorkspaceID: hostWorkspace.ID,
-		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Leaver note",
+		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Leaver note", Content: materialTestContent(t, ""),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	hostMaterial, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: hostID, WorkspaceID: hostWorkspace.ID,
-		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Surviving note",
+		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Surviving note", Content: materialTestContent(t, ""),
 	})
 	if err != nil {
 		t.Fatal(err)

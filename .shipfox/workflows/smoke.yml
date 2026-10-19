@@ -1,0 +1,10 @@
+name: Shipfox smoke test
+runner: shipfox-1cpu
+triggers:
+  manual:
+    source: manual
+jobs:
+  smoke:
+    steps:
+      - key: runner-info
+        run: uname -a && nproc && free -h && df -h .

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	svix "github.com/svix/svix-webhooks/go"
 
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
@@ -130,6 +131,13 @@ func validateAuthConfiguration(
 	}
 	if !authDisabled && !e2eAuth && strings.TrimSpace(clerkWebhookSecret) == "" {
 		return errors.New("CLERK_WEBHOOK_SECRET is required unless AUTH_DISABLED or E2E_AUTH is enabled")
+	}
+	// A malformed secret would answer every delivery 500 after reading it,
+	// which the provider retries.
+	if strings.TrimSpace(clerkWebhookSecret) != "" {
+		if _, err := svix.NewWebhook(clerkWebhookSecret); err != nil {
+			return errors.New("CLERK_WEBHOOK_SECRET is not a Svix signing secret (whsec_ followed by base64)")
+		}
 	}
 	return nil
 }
@@ -428,6 +436,7 @@ func main() {
 		}
 	}
 	cfg := httpapi.Config{
+		BYOKEnabled:            env("BYOK_ENABLED", "false") == "true",
 		Bank:                   bankStore,
 		BankAssets:             bankAssets,
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),

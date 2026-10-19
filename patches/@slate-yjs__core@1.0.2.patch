@@ -1,20 +1,120 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 58cc95c..78bbd64 100644
+index 58cc95c5d4bce70787d260033194e60cdadf9009..8fef6e47b711dacab67ae179fe40a646c3b3ef33 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
-@@ -210,10 +210,43 @@ function getProperties(node) {
+@@ -210,10 +210,143 @@ function getProperties(node) {
  }
  
  // src/utils/convert.ts
-+// Capy patch (live-items, Epo 2026-10-10): a `mermaid` element's `source`
-+// is a nested Y.Text (per-character merge); Slate holds its string. Remote
-+// edits of it become `set_node`, a local `set_node` edits it minimally, and
-+// inserts and clones create one.
++// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17): an
++// element key the embed catalog shares is a nested Yjs type that Slate holds
++// as its plain value: a `mermaid` element's `source` is a Y.Text (typing
++// merges per character); a chart's, plot's or graph's `block` is a Y.Map whose
++// list keys (series, graph elements) are Y.Arrays of Y.Maps, each entry
++// replaced whole on its own, so edits to different fields, series or elements
++// merge. Remote edits inside one become one `set_node` of the key's whole
++// value, a local `set_node` edits it minimally, and inserts and clones create
++// one. src/features/collaboration/liveCatalog.test.ts holds these tables to
++// the embed catalog.
++var SHARED_TEXT = /* @__PURE__ */ new Map([["mermaid", ["source"]]]);
++var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]]]);
++var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]]]);
 +function isSharedTextKey(type, key) {
-+  return type === "mermaid" && key === "source";
++  return (SHARED_TEXT.get(type) || []).includes(key);
++}
++function isSharedMapKey(type, key) {
++  return (SHARED_MAP.get(type) || []).includes(key);
++}
++function sharedLists(type) {
++  return SHARED_LISTS.get(type) || [];
++}
++// isPlainObject is the package's own (is-plain-object): no array or Yjs type.
++function isMapList(value) {
++  return Array.isArray(value) && value.every(isPlainObject);
 +}
 +function toSlateValue(value) {
++  if (value instanceof Y.Map || value instanceof Y.Array) return value.toJSON();
 +  return value instanceof Y.AbstractType ? value.toString() : value;
++}
++function toSharedValue(type, key, value) {
++  if (isSharedTextKey(type, key) && typeof value === "string") return newSharedText(value);
++  if (isSharedMapKey(type, key) && isPlainObject(value)) return newSharedMap(value, sharedLists(type));
++  return value;
++}
++function newSharedMap(value, lists) {
++  const map = new Y.Map();
++  for (const [key, entry] of Object.entries(value)) {
++    if (entry === void 0) continue;
++    map.set(key, lists.includes(key) && isMapList(entry) ? newSharedList(entry) : entry);
++  }
++  return map;
++}
++function newSharedList(items) {
++  const list = new Y.Array();
++  list.push(items.map((item) => newSharedMap(item, [])));
++  return list;
++}
++function sameValue(a, b) {
++  if (a === b) return true;
++  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
++  if (a instanceof Y.AbstractType || b instanceof Y.AbstractType || Array.isArray(a) !== Array.isArray(b)) return false;
++  const keys = Object.keys(a).filter((key) => a[key] !== void 0);
++  return keys.length === Object.keys(b).filter((key) => b[key] !== void 0).length && keys.every((key) => sameValue(a[key], b[key]));
++}
++// Only changed entries are written and gone ones deleted, so a peer's change
++// to another entry stays; a list key's entries are edited the same way.
++function editSharedMap(map, next, lists) {
++  for (const key of Array.from(map.keys())) {
++    if (next[key] === void 0) map.delete(key);
++  }
++  for (const [key, value] of Object.entries(next)) {
++    if (value === void 0) continue;
++    const held = map.get(key);
++    if (lists.includes(key) && isMapList(value)) {
++      if (held instanceof Y.Array) editSharedList(held, value);
++      else map.set(key, newSharedList(value));
++    } else if (!sameValue(held, value)) {
++      map.set(key, value);
++    }
++  }
++}
++// Entries are matched by their `id` when every entry has one (graph
++// elements), else by index (series); one out of place is deleted and
++// inserted anew where it now sits.
++function editSharedList(list, items) {
++  const held = list.toArray().map((entry) => entry instanceof Y.Map ? entry.get("id") : void 0);
++  const isId = (id) => typeof id === "string";
++  if (items.every((item) => isId(item.id)) && held.every(isId)) {
++    const names = new Set(items.map((item) => item.id));
++    const seen = /* @__PURE__ */ new Set();
++    const keep = held.map((id) => {
++      const kept = names.has(id) && !seen.has(id);
++      seen.add(id);
++      return kept;
++    });
++    for (let at = keep.length - 1; at >= 0; at--) {
++      if (!keep[at]) list.delete(at, 1);
++    }
++    const current = held.filter((_, at) => keep[at]);
++    items.forEach((item, at) => {
++      const found = current.indexOf(item.id, at);
++      if (found === at) return editSharedMap(list.get(at), item, []);
++      if (found > at) {
++        list.delete(found, 1);
++        current.splice(found, 1);
++      }
++      list.insert(at, [newSharedMap(item, [])]);
++      current.splice(at, 0, item.id);
++    });
++    return;
++  }
++  items.forEach((item, at) => {
++    const entry = at < list.length ? list.get(at) : void 0;
++    if (entry instanceof Y.Map) return editSharedMap(entry, item, []);
++    if (entry !== void 0) list.delete(at, 1);
++    list.insert(at, [newSharedMap(item, [])]);
++  });
++  if (list.length > items.length) list.delete(items.length, list.length - items.length);
 +}
 +function slateAttributes(yText) {
 +  const out = {};
@@ -47,32 +147,16 @@ index 58cc95c..78bbd64 100644
  }
  function deltaInsertToSlateNode(insert) {
    if (typeof insert.insert === "string") {
-@@ -237,7 +270,7 @@ function slateElementToYText(_a) {
+@@ -237,7 +370,7 @@ function slateElementToYText(_a) {
    ]);
    const yElement = new Y.XmlText();
    Object.entries(attributes).forEach(([key, value]) => {
 -    yElement.setAttribute(key, value);
-+    yElement.setAttribute(key, isSharedTextKey(attributes.type, key) && typeof value === "string" ? newSharedText(value) : value);
++    yElement.setAttribute(key, toSharedValue(attributes.type, key, value));
    });
    yElement.applyDelta(slateNodesToInsertDelta(children), { sanitize: false });
    return yElement;
-@@ -492,7 +525,14 @@ function translateYTextEvent(sharedRoot, editor, event) {
-   const { target, changes } = event;
-   const delta = event.delta;
-   if (!(target instanceof Y3.XmlText)) {
--    throw new Error("Unexpected target node type");
-+    const owner = target._item && target._item.parent;
-+    const key = target._item && target._item.parentSub;
-+    if (!(owner instanceof Y3.XmlText) || !key) {
-+      throw new Error("Unexpected target node type");
-+    }
-+    const path = getSlatePath(sharedRoot, editor, owner);
-+    const element = import_slate5.Node.get(editor, path);
-+    return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: target.toString() } }];
-   }
-   const ops = [];
-   const slatePath = getSlatePath(sharedRoot, editor, target);
-@@ -504,7 +544,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
+@@ -504,7 +637,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
    if (slatePath.length > 0 && keyChanges.length > 0) {
      const newProperties = Object.fromEntries(keyChanges.map(([key, info]) => [
        key,
@@ -81,43 +165,182 @@ index 58cc95c..78bbd64 100644
      ]));
      const properties = Object.fromEntries(keyChanges.map(([key]) => [key, targetElement[key]]));
      ops.push({ type: "set_node", newProperties, properties, path: slatePath });
-@@ -559,7 +599,7 @@ function cloneDeep(yText) {
+@@ -516,7 +649,32 @@ function translateYTextEvent(sharedRoot, editor, event) {
+ }
+ 
+ // src/applyToSlate/index.ts
++// Capy patch: an event inside an element's shared value (a mermaid source,
++// a figure's block map, its lists and their entries) becomes one `set_node`
++// of that key's whole value on the owning element, once per transaction.
++var nestedOwners = /* @__PURE__ */ new WeakMap();
++function translateNestedEvent(sharedRoot, editor, event) {
++  let owner = event.target;
++  let key = null;
++  while (owner && !(owner instanceof Y.XmlText) && owner._item) {
++    key = owner._item.parentSub;
++    owner = owner._item.parent;
++  }
++  if (!(owner instanceof Y.XmlText) || !key) {
++    throw new Error("Unexpected target node type");
++  }
++  let seen = nestedOwners.get(event.transaction);
++  if (!seen) nestedOwners.set(event.transaction, seen = /* @__PURE__ */ new Set());
++  if (seen.has(owner)) return [];
++  seen.add(owner);
++  const path = getSlatePath(sharedRoot, editor, owner);
++  const element = import_slate5.Node.get(editor, path);
++  return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: toSlateValue(owner.getAttribute(key)) } }];
++}
+ function translateYjsEvent(sharedRoot, editor, event) {
++  if (!(event.target instanceof Y.XmlText)) {
++    return translateNestedEvent(sharedRoot, editor, event);
++  }
+   if (event instanceof Y4.YTextEvent) {
+     return translateYTextEvent(sharedRoot, editor, event);
+   }
+@@ -559,7 +717,7 @@ function cloneDeep(yText) {
    const clone = new Y5.XmlText();
    const attributes = yText.getAttributes();
    Object.entries(attributes).forEach(([key, value]) => {
 -    clone.setAttribute(key, value);
-+    clone.setAttribute(key, value instanceof Y5.AbstractType ? newSharedText(value.toString()) : value);
++    clone.setAttribute(key, value instanceof Y5.AbstractType ? toSharedValue(attributes.type, key, toSlateValue(value)) : value);
    });
    clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
      sanitize: false
-@@ -783,6 +823,10 @@ function setNode(sharedRoot, slateRoot, op) {
+@@ -783,7 +941,15 @@ function setNode(sharedRoot, slateRoot, op) {
        if (value === null) {
          return yTarget.removeAttribute(key);
        }
+-      yTarget.setAttribute(key, value);
 +      const held = yTarget.getAttribute(key);
 +      if (held instanceof Y.AbstractType && typeof value === "string") {
 +        return editSharedText(held, value);
 +      }
-       yTarget.setAttribute(key, value);
++      const type = op.newProperties.type != null ? op.newProperties.type : yTarget.getAttribute("type");
++      if (held instanceof Y.Map && isPlainObject(value)) {
++        return editSharedMap(held, value, sharedLists(type));
++      }
++      yTarget.setAttribute(key, isSharedMapKey(type, key) && isPlainObject(value) ? newSharedMap(value, sharedLists(type)) : value);
      });
      return Object.entries(op.properties).forEach(([key]) => {
+       if (!op.newProperties.hasOwnProperty(key)) {
 diff --git a/dist/index.js b/dist/index.js
-index c1ab935..d6349b6 100644
+index c1ab93571a0668b519b00e27dfd35a39e0cabd25..3eab868246db19bbe4eda74573172d50b95d293b 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -174,10 +174,43 @@ function getProperties(node) {
+@@ -174,10 +174,143 @@ function getProperties(node) {
  }
  
  // src/utils/convert.ts
-+// Capy patch (live-items, Epo 2026-10-10): a `mermaid` element's `source`
-+// is a nested Y.Text (per-character merge); Slate holds its string. Remote
-+// edits of it become `set_node`, a local `set_node` edits it minimally, and
-+// inserts and clones create one.
++// Capy patch (live-items, Epo 2026-10-10; embeds round, Epo 2026-10-17): an
++// element key the embed catalog shares is a nested Yjs type that Slate holds
++// as its plain value: a `mermaid` element's `source` is a Y.Text (typing
++// merges per character); a chart's, plot's or graph's `block` is a Y.Map whose
++// list keys (series, graph elements) are Y.Arrays of Y.Maps, each entry
++// replaced whole on its own, so edits to different fields, series or elements
++// merge. Remote edits inside one become one `set_node` of the key's whole
++// value, a local `set_node` edits it minimally, and inserts and clones create
++// one. src/features/collaboration/liveCatalog.test.ts holds these tables to
++// the embed catalog.
++var SHARED_TEXT = /* @__PURE__ */ new Map([["mermaid", ["source"]]]);
++var SHARED_MAP = /* @__PURE__ */ new Map([["chart", ["block"]], ["plot", ["block"]], ["graph", ["block"]]]);
++var SHARED_LISTS = /* @__PURE__ */ new Map([["chart", ["series"]], ["plot", ["series"]], ["graph", ["elements"]]]);
 +function isSharedTextKey(type, key) {
-+  return type === "mermaid" && key === "source";
++  return (SHARED_TEXT.get(type) || []).includes(key);
++}
++function isSharedMapKey(type, key) {
++  return (SHARED_MAP.get(type) || []).includes(key);
++}
++function sharedLists(type) {
++  return SHARED_LISTS.get(type) || [];
++}
++// isPlainObject is the package's own (is-plain-object): no array or Yjs type.
++function isMapList(value) {
++  return Array.isArray(value) && value.every(isPlainObject);
 +}
 +function toSlateValue(value) {
++  if (value instanceof Y.Map || value instanceof Y.Array) return value.toJSON();
 +  return value instanceof Y.AbstractType ? value.toString() : value;
++}
++function toSharedValue(type, key, value) {
++  if (isSharedTextKey(type, key) && typeof value === "string") return newSharedText(value);
++  if (isSharedMapKey(type, key) && isPlainObject(value)) return newSharedMap(value, sharedLists(type));
++  return value;
++}
++function newSharedMap(value, lists) {
++  const map = new Y.Map();
++  for (const [key, entry] of Object.entries(value)) {
++    if (entry === void 0) continue;
++    map.set(key, lists.includes(key) && isMapList(entry) ? newSharedList(entry) : entry);
++  }
++  return map;
++}
++function newSharedList(items) {
++  const list = new Y.Array();
++  list.push(items.map((item) => newSharedMap(item, [])));
++  return list;
++}
++function sameValue(a, b) {
++  if (a === b) return true;
++  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
++  if (a instanceof Y.AbstractType || b instanceof Y.AbstractType || Array.isArray(a) !== Array.isArray(b)) return false;
++  const keys = Object.keys(a).filter((key) => a[key] !== void 0);
++  return keys.length === Object.keys(b).filter((key) => b[key] !== void 0).length && keys.every((key) => sameValue(a[key], b[key]));
++}
++// Only changed entries are written and gone ones deleted, so a peer's change
++// to another entry stays; a list key's entries are edited the same way.
++function editSharedMap(map, next, lists) {
++  for (const key of Array.from(map.keys())) {
++    if (next[key] === void 0) map.delete(key);
++  }
++  for (const [key, value] of Object.entries(next)) {
++    if (value === void 0) continue;
++    const held = map.get(key);
++    if (lists.includes(key) && isMapList(value)) {
++      if (held instanceof Y.Array) editSharedList(held, value);
++      else map.set(key, newSharedList(value));
++    } else if (!sameValue(held, value)) {
++      map.set(key, value);
++    }
++  }
++}
++// Entries are matched by their `id` when every entry has one (graph
++// elements), else by index (series); one out of place is deleted and
++// inserted anew where it now sits.
++function editSharedList(list, items) {
++  const held = list.toArray().map((entry) => entry instanceof Y.Map ? entry.get("id") : void 0);
++  const isId = (id) => typeof id === "string";
++  if (items.every((item) => isId(item.id)) && held.every(isId)) {
++    const names = new Set(items.map((item) => item.id));
++    const seen = /* @__PURE__ */ new Set();
++    const keep = held.map((id) => {
++      const kept = names.has(id) && !seen.has(id);
++      seen.add(id);
++      return kept;
++    });
++    for (let at = keep.length - 1; at >= 0; at--) {
++      if (!keep[at]) list.delete(at, 1);
++    }
++    const current = held.filter((_, at) => keep[at]);
++    items.forEach((item, at) => {
++      const found = current.indexOf(item.id, at);
++      if (found === at) return editSharedMap(list.get(at), item, []);
++      if (found > at) {
++        list.delete(found, 1);
++        current.splice(found, 1);
++      }
++      list.insert(at, [newSharedMap(item, [])]);
++      current.splice(at, 0, item.id);
++    });
++    return;
++  }
++  items.forEach((item, at) => {
++    const entry = at < list.length ? list.get(at) : void 0;
++    if (entry instanceof Y.Map) return editSharedMap(entry, item, []);
++    if (entry !== void 0) list.delete(at, 1);
++    list.insert(at, [newSharedMap(item, [])]);
++  });
++  if (list.length > items.length) list.delete(items.length, list.length - items.length);
 +}
 +function slateAttributes(yText) {
 +  const out = {};
@@ -150,32 +373,16 @@ index c1ab935..d6349b6 100644
  }
  function deltaInsertToSlateNode(insert) {
    if (typeof insert.insert === "string") {
-@@ -201,7 +234,7 @@ function slateElementToYText(_a) {
+@@ -201,7 +334,7 @@ function slateElementToYText(_a) {
    ]);
    const yElement = new Y.XmlText();
    Object.entries(attributes).forEach(([key, value]) => {
 -    yElement.setAttribute(key, value);
-+    yElement.setAttribute(key, isSharedTextKey(attributes.type, key) && typeof value === "string" ? newSharedText(value) : value);
++    yElement.setAttribute(key, toSharedValue(attributes.type, key, value));
    });
    yElement.applyDelta(slateNodesToInsertDelta(children), { sanitize: false });
    return yElement;
-@@ -456,7 +489,14 @@ function translateYTextEvent(sharedRoot, editor, event) {
-   const { target, changes } = event;
-   const delta = event.delta;
-   if (!(target instanceof Y3.XmlText)) {
--    throw new Error("Unexpected target node type");
-+    const owner = target._item && target._item.parent;
-+    const key = target._item && target._item.parentSub;
-+    if (!(owner instanceof Y3.XmlText) || !key) {
-+      throw new Error("Unexpected target node type");
-+    }
-+    const path = getSlatePath(sharedRoot, editor, owner);
-+    const element = Node3.get(editor, path);
-+    return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: target.toString() } }];
-   }
-   const ops = [];
-   const slatePath = getSlatePath(sharedRoot, editor, target);
-@@ -468,7 +508,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
+@@ -468,7 +601,7 @@ function translateYTextEvent(sharedRoot, editor, event) {
    if (slatePath.length > 0 && keyChanges.length > 0) {
      const newProperties = Object.fromEntries(keyChanges.map(([key, info]) => [
        key,
@@ -184,23 +391,62 @@ index c1ab935..d6349b6 100644
      ]));
      const properties = Object.fromEntries(keyChanges.map(([key]) => [key, targetElement[key]]));
      ops.push({ type: "set_node", newProperties, properties, path: slatePath });
-@@ -523,7 +563,7 @@ function cloneDeep(yText) {
+@@ -480,7 +613,32 @@ function translateYTextEvent(sharedRoot, editor, event) {
+ }
+ 
+ // src/applyToSlate/index.ts
++// Capy patch: an event inside an element's shared value (a mermaid source,
++// a figure's block map, its lists and their entries) becomes one `set_node`
++// of that key's whole value on the owning element, once per transaction.
++var nestedOwners = /* @__PURE__ */ new WeakMap();
++function translateNestedEvent(sharedRoot, editor, event) {
++  let owner = event.target;
++  let key = null;
++  while (owner && !(owner instanceof Y.XmlText) && owner._item) {
++    key = owner._item.parentSub;
++    owner = owner._item.parent;
++  }
++  if (!(owner instanceof Y.XmlText) || !key) {
++    throw new Error("Unexpected target node type");
++  }
++  let seen = nestedOwners.get(event.transaction);
++  if (!seen) nestedOwners.set(event.transaction, seen = /* @__PURE__ */ new Set());
++  if (seen.has(owner)) return [];
++  seen.add(owner);
++  const path = getSlatePath(sharedRoot, editor, owner);
++  const element = Node3.get(editor, path);
++  return [{ type: "set_node", path, properties: { [key]: element[key] }, newProperties: { [key]: toSlateValue(owner.getAttribute(key)) } }];
++}
+ function translateYjsEvent(sharedRoot, editor, event) {
++  if (!(event.target instanceof Y.XmlText)) {
++    return translateNestedEvent(sharedRoot, editor, event);
++  }
+   if (event instanceof Y4.YTextEvent) {
+     return translateYTextEvent(sharedRoot, editor, event);
+   }
+@@ -523,7 +681,7 @@ function cloneDeep(yText) {
    const clone = new Y5.XmlText();
    const attributes = yText.getAttributes();
    Object.entries(attributes).forEach(([key, value]) => {
 -    clone.setAttribute(key, value);
-+    clone.setAttribute(key, value instanceof Y5.AbstractType ? newSharedText(value.toString()) : value);
++    clone.setAttribute(key, value instanceof Y5.AbstractType ? toSharedValue(attributes.type, key, toSlateValue(value)) : value);
    });
    clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
      sanitize: false
-@@ -747,6 +787,10 @@ function setNode(sharedRoot, slateRoot, op) {
+@@ -747,7 +905,15 @@ function setNode(sharedRoot, slateRoot, op) {
        if (value === null) {
          return yTarget.removeAttribute(key);
        }
+-      yTarget.setAttribute(key, value);
 +      const held = yTarget.getAttribute(key);
 +      if (held instanceof Y.AbstractType && typeof value === "string") {
 +        return editSharedText(held, value);
 +      }
-       yTarget.setAttribute(key, value);
++      const type = op.newProperties.type != null ? op.newProperties.type : yTarget.getAttribute("type");
++      if (held instanceof Y.Map && isPlainObject(value)) {
++        return editSharedMap(held, value, sharedLists(type));
++      }
++      yTarget.setAttribute(key, isSharedMapKey(type, key) && isPlainObject(value) ? newSharedMap(value, sharedLists(type)) : value);
      });
      return Object.entries(op.properties).forEach(([key]) => {
+       if (!op.newProperties.hasOwnProperty(key)) {

@@ -107,11 +107,15 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	reg(api, http.MethodDelete, "/api/files/{id}/annotations/{annotationId}", "deletePDFAnnotation", tag, "Delete an authored PDF annotation", http.StatusNoContent, a.deletePDFAnnotation)
 }
 func (a *api) checkSourceSecret(ctx context.Context, secret string) error {
-	if a.cfg.CollaborationSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(a.cfg.CollaborationSecret)) != 1 {
+	if !a.collaborationSecretOK(secret) {
 		return huma.Error401Unauthorized("invalid collaboration service secret")
 	}
 	obs.ContinueInternalRetry(ctx)
 	return nil
+}
+
+func (a *api) collaborationSecretOK(secret string) bool {
+	return a.cfg.CollaborationSecret != "" && subtle.ConstantTimeCompare([]byte(secret), []byte(a.cfg.CollaborationSecret)) == 1
 }
 func (a *api) sourceSessionResponse(ctx context.Context, session store.SourceSession) (*sourceSessionOutput, error) {
 	if a.blob == nil {

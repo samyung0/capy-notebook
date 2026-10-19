@@ -8,7 +8,7 @@ import knowledge_base_library as library
 import knowledge_base_pilot as pilot
 import pytest
 import transcribe
-from knowledge_base_batch import PilotError, digest, read_json, save_json
+from knowledge_base_common import PilotError, digest, read_json, save_json
 
 BOOK = {
     "id": "b",

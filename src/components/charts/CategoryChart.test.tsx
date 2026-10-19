@@ -74,3 +74,23 @@ it('breaks a long word between letters and widens the tick column', () => {
   const tick = html.match(MILLION_TICK);
   expect(Number(tick?.[1])).toBeGreaterThan(36);
 });
+
+it('draws a pie or stacked chart with no positive value, and a chart without series, as the empty frame', () => {
+  const chart = (kind: 'bar' | 'pie' | 'stacked', values: (number | null)[]) =>
+    renderToStaticMarkup(
+      <CategoryChart
+        data={{
+          kind,
+          labels: ['a', 'b'],
+          series: values.length ? [{ name: 'S', values }] : [],
+          title: 'Merged',
+        }}
+      />
+    );
+  for (const kind of ['pie', 'stacked'] as const) {
+    expect(chart(kind, [0, null])).not.toContain('<svg');
+    expect(chart(kind, [-1, 0])).not.toContain('<svg');
+    expect(chart(kind, [1, 0])).toContain('<svg');
+  }
+  expect(chart('bar', [])).not.toContain('<svg');
+});

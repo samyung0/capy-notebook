@@ -1,5 +1,6 @@
 """Resumable normal chat-completions calls over frozen pilot request files.
 
+`prepare` freezes a stage's request rows as `input.jsonl` plus `state.json`.
 `run` takes the endpoint (`base_url`, `model`, `key`); the frozen request rows
 carry the messages and the response schema, which is checked locally. A retry
 with `retry_failed` may use another endpoint: records are keyed by the frozen
@@ -15,19 +16,98 @@ from pathlib import Path
 
 import httpx
 from jsonschema import Draft202012Validator
-from knowledge_base_batch import (
-    PilotError,
-    digest,
-    lock,
-    read_json,
-    request,
-    save_json,
-    validate_records,
-)
+from knowledge_base_common import PilotError, digest, lock, read_json, save_json
 
-
+# The model named in frozen rows; `run` sends the endpoint's own model instead.
+MODEL = "qwen3.8-flash"
 # Waits between the four attempts a request gets when the endpoint answers 429.
 RATE_LIMIT_BACKOFF = (5, 20, 60)
+
+
+def request(custom_id: str, messages: list[dict], max_tokens: int) -> dict:
+    return {
+        "custom_id": custom_id,
+        "method": "POST",
+        "url": "/v1/chat/completions",
+        "body": {
+            "model": MODEL,
+            "messages": messages,
+            "enable_thinking": False,
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        },
+    }
+
+
+def prepare(directory: Path, rows: list[dict]) -> dict:
+    """Freeze the rows once; a changed input needs a new stage directory."""
+    ids = [row["custom_id"] for row in rows]
+    if not rows or len(ids) != len(set(ids)):
+        raise PilotError("A stage needs requests with unique custom IDs")
+    lines = [
+        json.dumps(row, ensure_ascii=False, allow_nan=False).encode() for row in rows
+    ]
+    payload = b"\n".join(lines) + b"\n"
+    fingerprint = hashlib.sha256(payload).hexdigest()
+    state_path = directory / "state.json"
+    if state_path.exists():
+        state = read_json(state_path)
+        if state["input_sha256"] != fingerprint:
+            raise PilotError(
+                "Stage input changed. Use a new stage directory; frozen inputs are immutable"
+            )
+        return state
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "input.jsonl").write_bytes(payload)
+    state = {
+        "input_sha256": fingerprint,
+        "request_ids": ids,
+        "status": "prepared",
+        "model": rows[0]["body"]["model"],
+    }
+    save_json(state_path, state)
+    return state
+
+
+def validate_records(expected: list[str], records: list[dict]) -> dict:
+    wanted, seen = set(expected), set()
+    result = {"success": {}, "failed": {}, "missing": []}
+    for row in records:
+        custom_id = row.get("custom_id")
+        if custom_id not in wanted or custom_id in seen:
+            raise PilotError("Model records hold an unknown or duplicate custom ID")
+        seen.add(custom_id)
+        response = row.get("response") or {}
+        body = response.get("body") or {}
+        choices = body.get("choices") or []
+        if row.get("error") or response.get("status_code") != 200 or not choices:
+            result["failed"][custom_id] = {
+                "status_code": response.get("status_code"),
+                "kind": "provider_error",
+            }
+            continue
+        choice = choices[0]
+        if choice.get("finish_reason") != "stop":
+            result["failed"][custom_id] = {
+                "kind": "incomplete_output",
+                "finish_reason": choice.get("finish_reason"),
+            }
+            continue
+        try:
+            value = json.loads(choice["message"]["content"])
+            if not isinstance(value, dict):
+                raise TypeError
+        except (ValueError, KeyError, TypeError):
+            result["failed"][custom_id] = {"kind": "invalid_json"}
+            continue
+        result["success"][custom_id] = {
+            "value": value,
+            "usage": body.get("usage", {}),
+            "request_id": response.get("request_id"),
+        }
+    result["missing"] = sorted(wanted - seen)
+    return result
 
 
 def object_schema(properties):

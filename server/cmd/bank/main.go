@@ -220,7 +220,10 @@ func publish(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 		if e != nil {
 			return e
 		}
-		if _, e = library.Provenance(ctx, sources); e != nil {
+		if _, e = library.Provenance(ctx, sources); e == nil {
+			e = library.CheckExcerpts(ctx, sources)
+		}
+		if e != nil {
 			return fmt.Errorf("question %s: source references could not be verified", question.Content["id"])
 		}
 	}

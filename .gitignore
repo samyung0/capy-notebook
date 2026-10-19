@@ -113,3 +113,6 @@ plate-playground-template
 
 # Windows reserved device name that stray redirects create
 /CON
+
+# Local security worklist: it names open findings, so it never goes in this public repo
+/todo-security.md

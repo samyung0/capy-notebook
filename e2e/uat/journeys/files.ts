@@ -350,11 +350,14 @@ export async function upload(
           await run.record('blob', key, { uploadId, workspaceId });
       return uploadId;
     });
+  // The browser PUTs the bytes to B2 before completing: from a GitHub runner a
+  // 26 MB ballast took 5 s on good runs and over 30 s on others (2026-10-17/18).
   const completion = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname.startsWith(`${path}/`) &&
       new URL(response.url()).pathname.endsWith('/complete') &&
-      response.request().method() === 'POST'
+      response.request().method() === 'POST',
+    { timeout: 30_000 + Math.ceil(bytes.length / 2 ** 20) * 4000 }
   );
   // Consume both response promises even when submission fails.
   const clicked = page

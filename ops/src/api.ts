@@ -1010,11 +1010,9 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
       return request(`/library/excerpts?${search}`, libraryExcerptPageSchema);
     },
     // The export is a file a reviewer keeps, so it stays raw bytes; the digest
-    // header travels with it. No version means the book's current one.
-    libraryExport: (bookId: string, version?: number) =>
-      download(
-        `/library/export/${encodeURIComponent(bookId)}${version ? `?version=${version}` : ''}`
-      ),
+    // header travels with it. It is always the book's current version.
+    libraryExport: (bookId: string) =>
+      download(`/library/export/${encodeURIComponent(bookId)}`),
     libraryModelRuns: () =>
       request('/library/model-runs', libraryModelRunsSchema),
     libraryOverview: () => request('/library', libraryOverviewSchema),

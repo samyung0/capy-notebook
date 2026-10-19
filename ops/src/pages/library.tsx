@@ -314,8 +314,7 @@ function BooksTab() {
     queryKey: ['library-books'],
   });
   const { isPending: exportPending, mutate: runExport } = useMutation({
-    mutationFn: ({ bookId, version }: { bookId: string; version: number }) =>
-      api.libraryExport(bookId, version),
+    mutationFn: (bookId: string) => api.libraryExport(bookId),
     onError: (failure: Error) => setNote(failure.message),
     onSuccess: (result) => {
       saveExport(result.blob, result.fileName);
@@ -336,9 +335,11 @@ function BooksTab() {
         <CardTitle>Books</CardTitle>
         <CardDescription>
           Source identity and licence for every book, then its publish history:
-          the current version learners read, the retained versions behind it and
-          the receipts of each. The export is the machine-readable record for an
-          independent reviewer; its sha256 is printed after the download.
+          the current version learners read and the retired versions behind it,
+          each with its receipts. A publish retires the previous version and
+          drops its content. The export is the current version's
+          machine-readable record for an independent reviewer; its sha256 is
+          printed after the download.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -438,20 +439,17 @@ function BooksTab() {
                             />
                             <Locator label="Note" value={item.note || '—'} />
                           </dl>
-                          <Button
-                            disabled={exportPending}
-                            onClick={() =>
-                              runExport({
-                                bookId: book.id,
-                                version: item.version,
-                              })
-                            }
-                            size="sm"
-                            variant="outline"
-                          >
-                            <Download aria-hidden="true" />
-                            JSON
-                          </Button>
+                          {item.status === 'current' ? (
+                            <Button
+                              disabled={exportPending}
+                              onClick={() => runExport(book.id)}
+                              size="sm"
+                              variant="outline"
+                            >
+                              <Download aria-hidden="true" />
+                              JSON
+                            </Button>
+                          ) : null}
                         </div>
                       ))}
                     </div>
@@ -922,7 +920,7 @@ export function LibraryPage() {
               <CardTitle>Live library</CardTitle>
               <CardDescription>
                 What curate mode reads right now: every book at its current
-                version. Retained versions stay exportable from the Books tab.
+                version, exportable from the Books tab.
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -87,22 +87,25 @@ export function PlotChart({
   const y = (value: number) =>
     BOTTOM - ((value - ys.min) / (ys.max - ys.min)) * (BOTTOM - TOP);
   const many = series.length > 1;
+  const frame = {
+    illustrative: data.illustrative,
+    legend: series.map((s) => s.name),
+    passages: data.passages,
+    title: data.title,
+    unit: data.unit,
+    values: {
+      columns: many
+        ? ['', data.xTitle, data.yTitle]
+        : [data.xTitle, data.yTitle],
+      rows: series.flatMap((s) =>
+        s.points.map(([px, py]) => (many ? [s.name, px, py] : [px, py]))
+      ),
+    },
+  };
+  // A plot two editors' changes left without series (Epo 2026-10-18).
+  if (!series.length) return <Frame {...frame} />;
   return (
-    <Frame
-      illustrative={data.illustrative}
-      legend={series.map((s) => s.name)}
-      passages={data.passages}
-      title={data.title}
-      unit={data.unit}
-      values={{
-        columns: many
-          ? ['', data.xTitle, data.yTitle]
-          : [data.xTitle, data.yTitle],
-        rows: series.flatMap((s) =>
-          s.points.map(([px, py]) => (many ? [s.name, px, py] : [px, py]))
-        ),
-      }}
-    >
+    <Frame {...frame}>
       <svg
         aria-label={data.description ?? data.title}
         className="w-full"

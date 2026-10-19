@@ -409,13 +409,36 @@ func publicError(ctx context.Context, err error) error {
 	return newUnexpectedError(status.GetStatus(), obs.TraceID(ctx))
 }
 
+// maxRequestErrors bounds the errors in one answer: Huma reports every
+// failing element, so a long array would answer one error per element.
+const maxRequestErrors = 10
+
+// trimRequestErrors keeps the first maxRequestErrors and drops the value Huma
+// echoes on the errors it builds about the request (each names a location:
+// body, path, query or header; a body it could not parse echoes all of it).
+// Our typed errors name no location and keep their value.
+func trimRequestErrors(model *huma.ErrorModel) {
+	details := model.Errors[:min(len(model.Errors), maxRequestErrors)]
+	model.Errors = make([]*huma.ErrorDetail, len(details))
+	for i, detail := range details {
+		if detail != nil && detail.Location != "" {
+			detail = &huma.ErrorDetail{Message: detail.Message, Location: detail.Location}
+		}
+		model.Errors[i] = detail
+	}
+}
+
 func init() {
 	// The errors huma builds itself (a request body it could not read,
 	// writeStatusErr) follow the same rule; their cause goes to the logs and
 	// Sentry instead of the body.
 	huma.NewErrorWithContext = func(ctx huma.Context, status int, msg string, errs ...error) huma.StatusError {
 		built := huma.NewError(status, msg, errs...)
-		if model, ok := built.(*huma.ErrorModel); status < http.StatusInternalServerError || ok && typedServerError(model.Errors) {
+		model, ok := built.(*huma.ErrorModel)
+		if ok {
+			trimRequestErrors(model)
+		}
+		if status < http.StatusInternalServerError || ok && typedServerError(model.Errors) {
 			return built
 		}
 		if cause := errors.Join(errs...); cause != nil {

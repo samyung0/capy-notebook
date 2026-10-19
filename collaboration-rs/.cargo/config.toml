@@ -1,0 +1,11 @@
+# MSVC's link.exe holds 1-3 GB per test binary; lld links the same binaries
+# in a fraction of that. Rust links the dynamic C runtime; some C dependencies
+# also name the static one, which link.exe tolerates and lld refuses, so the
+# static runtime libraries stay out of the link.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"
+rustflags = [
+  "-C", "link-arg=/NODEFAULTLIB:libucrt.lib",
+  "-C", "link-arg=/NODEFAULTLIB:libvcruntime.lib",
+  "-C", "link-arg=/NODEFAULTLIB:libcmt.lib",
+]

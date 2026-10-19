@@ -11,6 +11,8 @@ import (
 func (a *api) emailUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" && r.Method == http.MethodPost {
+		// An anonymous form that holds one token.
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
 		_ = r.ParseForm()
 		token = r.FormValue("token")
 	}

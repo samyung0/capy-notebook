@@ -168,7 +168,11 @@ Heading handles use the computed line height to center on the first line,
 sharing one positioning rule across H1–H6 and wrapped headings.
 List and paragraph handles measure the first rendered text line to account
 for internal numbered/todo wrappers and paragraph padding. Todo checkboxes use the CSS line height to center on
-the first line, including wrapped rows. Todo rows use only Plate's indent;
+the first line, including wrapped rows. A block's indent stops at the embed
+catalog's `LIST_INDENT_MAX` (8, the indent plugin's `indentMax`); every
+validator refuses a deeper one, and an import (Markdown, DOCX, JSON, an
+agent's markdown) clamps it on entry (`clampIndents`). Todo rows use only
+Plate's indent;
 the checkbox sits 24px before the text in both editable and static renderers,
 so empty slash-command hints share the text position without overlapping it.
 
@@ -617,6 +621,44 @@ on a `mermaid` block only, with strings and nothing else inside
 on another element, a block retyped while it holds one, and a format, embed,
 nested type or attribute inside a source are refused.
 
+A chart's, plot's or graph's `block` is a live map in rooms (Epo 2026-10-17;
+the catalog's `sharedMap` and `sharedLists`, openwiki
+[embeds](../embeds.md#live-figures)): a Y.Map whose entries are its fields,
+each replaced whole, with a chart's or plot's `series` and a graph's
+`elements` as Y.Arrays of Y.Maps, one per series or element. Two editors'
+changes to different fields, series or graph elements merge; the same field
+takes the last writer. Slate holds the plain block. The same slate-yjs patch
+reads the map as its value, turns a remote change anywhere inside it into one
+`set_node` of the whole `block` on the owning element (once per
+transaction), edits the map with the fewest writes on a local `set_node`
+(changed entries only, series by index, graph elements by their `id`), and
+makes the map on inserts and clones. Undo is the room's Yjs undo manager, as
+for any edit (`figureMap.test.ts`). The note's figure (`VisualBlockElement`)
+re-renders on a peer's change and draws the block repaired
+(`repairFigureBlock`); its Edit opens `VisualBlockDialog` from the block
+itself, so the dialog's draft follows the live block: a peer's change rebases
+the draft field by field (`rebaseBlock`: the user's changed fields, series
+and elements keep the user's value, the rest follow the peer; the graph
+editor's rows follow the rebased elements, keeping a row still being typed),
+and Save writes the user's changes onto the block as it is then, so a peer's
+change that landed meanwhile stays. No merge is refused (Epo 2026-10-18):
+readers draw it repaired, a chart or plot left without series as an empty
+frame and a pie without a positive value through the chart's empty state. The
+editors show a merge's raw block with its issues: a chart's rows past its
+labels and series past the cap, a pie's other series (Remove last series
+shows for it), its negative or missing positive value, no series (Add series
+shows even on a pie), and a graph's rows past the cap or naming a gone point,
+each marked, Save held until they are fixed. A graph's SVG is drawn on Save; an editor in Edit mode that
+sees a graph's recipe change (elements, board, size) redraws it in an idle
+callback (`graphRedraw.ts`) and writes `image`, outside Undo, only when the
+SVG differs, so its own write never redraws again; readers keep the stored
+SVG. The Rust server writes the same maps on bootstrap and an agent's insert
+and reads them in one place (`plate::map_value`, behind
+`plate::block_value`); room admission takes a block as its map only and
+refuses a crafted update that puts an unknown key, a wrong type, an oversize
+value or another shape into one (`figure_map.rs`; where the relaxed check for
+a merge's kept states runs: [embeds](../embeds.md#live-figures)).
+
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the
 material content, looking as the static renderer did. Edit
@@ -633,22 +675,26 @@ Preview/Code toggle in the bar. Clicking any diagram preview opens `MermaidPrevi
 same full-screen viewer images use, titled with the material; a diagram that
 has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 
-Chart, plot and graph nodes store their question block under `block`, an optional
-`width`, and a single empty text child; graphs export their SVG before saving.
+Chart, plot and graph nodes store their question block under `block` (a live
+map in rooms, above), an optional `width`, and a single empty text child;
+graphs export their SVG before saving.
 A figure's description shows under it as a muted caption (`MEDIA_CAPTION_CLASS`)
 and is the figure's accessible label: optional on every figure, images and
 graphs included (Epo 2026-10-14; a blank one is dropped on Save; the chart
-editor's Description field, no plot editor yet; the agent contract does not
-offer it for charts and plots), at most `QUESTION_DESCRIPTION_MAX` outside the
-bank.
+and plot editors' Description field; the agent contract does not offer it for
+charts and plots), at most `QUESTION_DESCRIPTION_MAX` outside the bank.
 Their Markdown fences (` ```chart `, ` ```plot `, ` ```graph `) hold that block's
 JSON (`customBlockNode` in `blocks/shared.ts`, checked by the shared question block
 schema, so a refused block fails the agent's write); the agent's note format
 (`noteMarkdownDescription`) documents the chart and plot fences. A plot (see
 [question-bank](../question-bank.md#editing-and-assets)), drawn as curves or, with
-`kind: "scatter"`, as dots, comes only from the agent and has no editor: its hover
-toolbar has Copy and Delete but no Edit, and exports draw it like a chart with its
-points as the table. Inline
+`kind: "scatter"`, as dots, comes from the agent, a pasted fence or the Plot
+command (slash menu and all-blocks menu, beside Chart and Graph), which opens
+the figure dialog on a line through (0, 0) and (1, 1) and inserts the block
+on Save, as Chart and Graph do (Epo 2026-10-17); its hover toolbar has Edit,
+Copy and Delete like a chart's, Edit opening the plot editor in the figure
+dialog (`VisualBlockDialog`), and exports draw it like a chart with its points
+as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
 ## Interactive HTML blocks
@@ -982,7 +1028,9 @@ design, option d), and the nudge's release file on 2026-10-17.
     service-worker update check replaces this read when it lands.
 - **Rollout.** Refusal starts when the new collaboration server starts. The
   first rollout set `CLIENT_PROTOCOL` and both minimums to 1, so tabs from
-  before the gate show Offline until reloaded, with their edits kept.
+  before the gate show Offline until reloaded, with their edits kept. The
+  embeds round's live figure maps (a slate-yjs patch change, Epo 2026-10-17)
+  raised `CLIENT_PROTOCOL` to 4 and `MIN_MATERIAL` to 4; `MIN_SOURCE` stays 3.
 
 #### When to bump
 

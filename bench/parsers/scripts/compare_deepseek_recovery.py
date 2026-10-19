@@ -25,7 +25,7 @@ URL = "https://api.deepseek.com/responses"
 PAGE_PROMPT = "Describe this page from a study document so a student's search can find the information it carries. Extract all visible raw facts such as text, tables, formulas, data, labels, etc. Caption any images in brief and simple sentence. Do not add any text that is not visible in the page or depicted in the images. Do not duplicate information. Do not add any unnecessary summary, title, line breaks, the response is processed automatically by a RAG pipeline. "
 REGION_PROMPT = "Describe this cropped region from a study document so a student's search can find the information it carries. Extract all visible raw facts such as text, tables, formulas, data, labels, etc. Preserve the exact wording, numbers, symbols, conditions and table row/column associations. Write formulas in LaTeX, with explicit grouping for fractions, square roots, exponents and subscripts. Do not correct printed errors or complete clipped text. Caption any images in a brief and simple sentence, separate from transcribed text. Do not add any text that is not visible in the region or depicted in the images. Do not duplicate information. Do not add any unnecessary summary or title. Keep line breaks needed for formulas and table structure; the response is processed automatically by a RAG pipeline."
 sys.path.insert(0, str(ROOT / "bench/rag/scripts"))
-from knowledge_base_batch import PilotError, digest, lock, read_json, save_json
+from knowledge_base_common import PilotError, digest, lock, read_json, save_json
 
 
 def read_rows(path):

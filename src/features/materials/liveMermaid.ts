@@ -1,5 +1,6 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { MaterialDocument, MermaidElement } from './document';
 import type { MermaidTheme } from './mermaidThemes';
 
@@ -8,11 +9,17 @@ import type { MermaidTheme } from './mermaidThemes';
  * block, its source a Y.Text attribute (shape A, Epo 2026-10-10) and its
  * caption the text of its `mermaid_caption` child. */
 
+const [shared] = EMBED_CATALOG.elements.flatMap((element) =>
+  'sharedText' in element
+    ? element.sharedText.map((key) => [element.type, key] as const)
+    : []
+);
+
 /** The element whose key is held as shared text, and that key: the embed
  * catalog's one `sharedText` entry, as the slate-yjs patch and the
  * collaboration server hold it (liveCatalog.test.ts). */
-export const SHARED_TEXT_ELEMENT = 'mermaid';
-export const SHARED_TEXT_KEY = 'source';
+export const SHARED_TEXT_ELEMENT = shared[0];
+export const SHARED_TEXT_KEY = shared[1];
 
 /** A source the room still holds as a string turns into a text under this
  * origin, outside every Undo. */

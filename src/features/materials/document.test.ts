@@ -12,6 +12,7 @@ import {
   htmlEmbedNode,
   isMaterialDocument,
   isMaterialRefElement,
+  LIST_INDENT_MAX,
   type MaterialValue,
   materialRefNode,
   normalizeMaterialValue,
@@ -43,6 +44,28 @@ describe('Universal Plate material documents', () => {
       })
     ).toBe(false);
   });
+  it('reads a live figure merge repaired, while a write refuses it', () => {
+    const merged = {
+      block: {
+        kind: 'bar',
+        labels: ['A', 'B'],
+        series: [{ name: 'Total', values: [3, 4, 5] }],
+        title: 'Counts',
+        type: 'chart',
+      },
+      children: [{ text: '' }],
+      id: 'c1',
+      type: 'chart',
+    };
+    const document = { schemaVersion: 1, value: [merged] };
+    expect(parseMaterialDocument(JSON.stringify(document))?.value).toEqual([
+      {
+        ...merged,
+        block: { ...merged.block, series: [{ name: 'Total', values: [3, 4] }] },
+      },
+    ]);
+    expect(() => createMaterialDocument([merged] as never)).toThrow();
+  });
   it('caps interactive blocks at 64 KB of html and 10 per document', () => {
     const embeds = (count: number, html = '<p>x</p>') =>
       Array.from({ length: count }, (_, i) => htmlEmbedNode(html, '', `e${i}`));
@@ -58,6 +81,21 @@ describe('Universal Plate material documents', () => {
       )
     ).toBe(false);
   });
+  // Epo 2026-10-18: as Go and the collaboration server refuse a deeper one.
+  it('caps a block indent at LIST_INDENT_MAX', () => {
+    const item = (indent: number): MaterialValue => [
+      {
+        children: [{ text: 'deep' }],
+        id: 'l1',
+        indent,
+        listStyleType: 'disc',
+        type: 'p',
+      },
+    ];
+    expect(() => createMaterialDocument(item(LIST_INDENT_MAX))).not.toThrow();
+    expect(() => createMaterialDocument(item(LIST_INDENT_MAX + 1))).toThrow();
+  });
+
   it('rejects shared part IDs across different quiz blocks', () => {
     const first = exampleQuestion('one');
     const second = exampleQuestion('two');

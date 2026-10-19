@@ -86,10 +86,11 @@ ALTER TABLE library_books ADD COLUMN IF NOT EXISTS withheld_pages int[] NOT NULL
 CREATE TABLE IF NOT EXISTS library_book_versions (
   book_id text NOT NULL REFERENCES library_books, version int NOT NULL,
   content_id text NOT NULL REFERENCES rag_contents, published_at timestamptz NOT NULL DEFAULT now(),
-  status text NOT NULL CHECK (status IN ('current', 'retained', 'retired')),
+  -- A publish retires the previous version: its content rows go, this row stays.
+  status text NOT NULL CHECK (status IN ('current', 'retired')),
   source_run text NOT NULL, corpus_identity text NOT NULL, parser_release text NOT NULL,
   parser_fingerprint text NOT NULL, chunker_version text NOT NULL,
-  -- Written from this version's content, so a rollback restores them with it.
+  -- Written from this version's content.
   descriptor text NOT NULL, summary text NOT NULL,
   -- books/<sha256>.pdf in the knowledge-base bucket; null until the object exists.
   object_key text, note text NOT NULL DEFAULT '',
