@@ -1315,18 +1315,23 @@ the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`).
 The pressed cell is the active cell, as in Excel and Sheets: a drag, Shift+click
 or Shift+arrows move only the selection's far end, the next bare move steps
 from the active cell, a press inside a merged block selects its top-left cell,
-and Select all keeps the active cell where it was (the fork's `Selection`
-anchor, or its `active` cell after select all). A typed formula that leaves
+Select all keeps the active cell where it was, or moves it to A1 when it lies
+outside the used range it selects, so the selection always holds it, and
+Shift+click extends from the active cell, after Select all too (the fork's
+`Selection` anchor, or its `active` cell after select all). A typed formula that leaves
 parentheses open is closed by the engine when that makes it parse
 (`=SUM(B2:B5` stores `=SUM(B2:B5)`, `=TODAY(` stores `=TODAY()`, `=SUM(B3,`
 stores `=SUM(B3,)`; `=SUM(` is not); in the cell editor and the formula bar a formula that still fails to
 parse, or text over 32,767 characters, is refused with a translated line under
-the formula bar while the draft stays open, and a formula's edit closes only
-once the browser's engine took it; paste and agent writes store such a formula
-as text. Point mode (v1): while a formula waits for an operand, a click or
+the formula bar while the draft stays open on its cell (its arrows then move the
+caret, as Excel's Edit mode). Such an edit closes only once the browser's engine
+took it: keys typed meanwhile are dropped, a press elsewhere (from the cell
+editor or the formula bar), a sheet switch or a row/column op waits for it and
+does nothing after a refusal, and the grid takes the focus back only if it
+stayed in the edit. Paste and agent writes store such a formula as text. Point mode (v1): while a formula waits for an operand, a click or
 drag writes the cell or range reference (pointing again replaces it, typing
 ends it), arrows point from the edited cell in an edit opened by typing (Shift
-extends, F2 switches to caret movement) and commit and move where no
+extends, F2 or a click in the edit switches to caret movement) and commit and move where no
 reference fits, merged cells are named by their top-left cell and a range
 cutting a merge grows over it, the pointed range has a dashed outline, and the
 formula bar points by mouse too. The cell editor and the text awaiting its
