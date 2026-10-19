@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { type RefObject, useRef } from 'react';
 import { useMaterial, useWorkspace } from '@/api/hooks';
@@ -9,14 +10,25 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { type CloneKind, cloneLabel, parseCloneTarget } from '@/lib/cloneLink';
 import { errorCopy } from '@/lib/errors';
+import { redeemShareToken } from '@/lib/shareRedeem';
+import { clearStashedToken } from '@/lib/urlTokenStash';
+import { useStashedToken } from '@/lib/useStashedToken';
 
-/** The dashboard's `?clone=<kind>:<id>`, which public pages' Clone opens:
+/** The dashboard's `?clone=<kind>:<token>`, which public pages' Clone opens:
  * loads the item into its clone form (a workspace's prefilled form, an item's
  * destination and name), shows a refusal (a link viewer cloning a workspace,
  * a full plan) in it, and opens the copy. */
 export function CloneLinkDialog() {
   const search = useSearch({ strict: false }) as { clone?: unknown };
-  const target = parseCloneTarget(search.clone);
+  // A new link remounts it, reading its token afresh.
+  return <CloneLink key={String(search.clone)} value={search.clone} />;
+}
+
+function CloneLink({ value }: { value: unknown }) {
+  // The boot module moved the token out of the address bar (urlTokenStash).
+  const target = parseCloneTarget(
+    useStashedToken('clone', typeof value === 'string' ? value : '')
+  );
   const navigate = useNavigate();
   // The dialog closes itself when the path changes; opening the copy must not
   // send the user back to the dashboard.
@@ -24,6 +36,20 @@ export function CloneLinkDialog() {
   // A frozen account copies nothing; its canClone reads false everywhere, so
   // say why before the item-specific checks blame the workspace.
   const frozen = useAccountFrozen();
+  // The link's token is presented once (Google's resource key, Sam
+  // 2026-10-18), so the item then reads by id like any other.
+  const { error: redeemError, isSuccess: redeemed } = useQuery({
+    enabled: !!target && !frozen,
+    meta: { errorBoundary: false },
+    // Used or refused: it has no further use in this tab.
+    queryFn: () =>
+      redeemShareToken(target?.token ?? '').finally(() =>
+        clearStashedToken('clone')
+      ),
+    queryKey: ['share-redeem', target?.token],
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   if (!target) return null;
 
   const close = () => {
@@ -38,6 +64,14 @@ export function CloneLinkDialog() {
       </SimpleDialog>
     );
   }
+  if (redeemError) {
+    return (
+      <SimpleDialog onClose={close} open title={cloneLabel(target.kind)}>
+        <WarningBanner message={errorCopy(redeemError, m.source_try_again())} />
+      </SimpleDialog>
+    );
+  }
+  if (!redeemed) return null;
   if (target.kind === 'workspace') {
     return (
       <WorkspaceCloneLink id={target.id} leaving={leaving} onClose={close} />

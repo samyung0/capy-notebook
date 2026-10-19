@@ -78,8 +78,10 @@ describe('frontend error normalization', () => {
   });
 
   it('classifies coded quota failures independently of status', () => {
+    // The charged account's own refusal carries its numbers.
     const error = new ApiError(403, 'Forbidden', undefined, {
       code: 'storage_quota_exceeded',
+      ownerUserId: 'u_me',
     });
 
     expect(errorKind(error)).toBe('quota');
@@ -294,7 +296,7 @@ describe('frozen and storage refusals inside a workspace', () => {
     expect(deferStorageRefusal(frozen)).toBe(false);
     expect(describeError(frozen).title).toBe(m.account_banner_frozen_title());
     const status = vi.fn();
-    const leave = handleWorkspaceRefusals(status, false);
+    const leave = handleWorkspaceRefusals(status);
     expect(deferStorageRefusal(new ApiError(500, 'Server Error'))).toBe(false);
     expect(deferStorageRefusal(frozen)).toBe(true);
     // The upload dialog seeing the refusal the mutation cache deferred: the
@@ -306,28 +308,23 @@ describe('frozen and storage refusals inside a workspace', () => {
     expect(deferStorageRefusal(frozen)).toBe(false);
   });
 
-  it("send a storage refusal to the status, unless it is a member's own quota", () => {
+  it("send the viewer's own quota refusal to the status, and keep another payer's", () => {
     const status = vi.fn();
-    // A member writing into a full owner's workspace gets the code alone.
-    const ownerQuota = new ApiError(403, 'Forbidden', undefined, {
+    // Another account pays for the item and is full: the code alone.
+    const payerQuota = new ApiError(403, 'Forbidden', undefined, {
       code: 'storage_quota_exceeded',
     });
-    // The charged account gets its numbers.
-    const ownQuota = () =>
-      new ApiError(403, 'Forbidden', undefined, {
-        code: 'storage_quota_exceeded',
-        ownerUserId: 'u_me',
-        storageLimitBytes: 100,
-      });
-    let leave = handleWorkspaceRefusals(status, false);
-    expect(deferStorageRefusal(ownerQuota)).toBe(true);
-    // A member's clone is charged to the member: the clone copy shows.
-    expect(deferStorageRefusal(ownQuota())).toBe(false);
+    // The charged account (the viewer) gets its numbers.
+    const ownQuota = new ApiError(403, 'Forbidden', undefined, {
+      code: 'storage_quota_exceeded',
+      ownerUserId: 'u_me',
+      storageLimitBytes: 100,
+    });
+    const leave = handleWorkspaceRefusals(status);
+    expect(deferStorageRefusal(payerQuota)).toBe(false);
+    expect(describeError(payerQuota).title).toBe(m.storage_payer_full_strip());
+    expect(deferStorageRefusal(ownQuota)).toBe(true);
     leave();
-    leave = handleWorkspaceRefusals(status, true);
-    const owner = ownQuota();
-    expect(deferStorageRefusal(owner)).toBe(true);
-    leave();
-    expect(status.mock.calls).toEqual([[ownerQuota], [owner]]);
+    expect(status.mock.calls).toEqual([[ownQuota]]);
   });
 });

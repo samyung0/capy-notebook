@@ -5,7 +5,7 @@ import { z } from 'zod';
 import * as limits from '@/api/limits.generated';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { SimpleDialog, useIsPhone } from '@/components/ui/Dialog';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import {
   Popover,
@@ -257,6 +257,7 @@ function QuestionDialogSession({
   const [editing, setEditing] = useState<Editing | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
   const [mobileTab, setMobileTab] = useState('outline');
+  const phone = useIsPhone();
   const tabsRef = useRef<HTMLDivElement>(null);
   // The body column (from md) and the dialog body (phones) clip the toolbar.
   const [bodyColumn, setBodyColumn] = useState<HTMLDivElement | null>(null);
@@ -936,13 +937,59 @@ function QuestionDialogSession({
       </>,
       answer
     );
+  // Phones: Remove part/block ends the scrolling body, and the header holds
+  // the save status, Undo and Save/Done.
+  const removeButton = editing && (
+    <Button
+      disabled={pending || (editing.kind === 'part' && draft.parts.length <= 1)}
+      onClick={() =>
+        editing.kind === 'block'
+          ? removeBlock(editing.location)
+          : removePart(editing.part.id)
+      }
+      rounded="large"
+      size="md"
+      type="button"
+      variant="danger-light"
+    >
+      {editing.kind === 'part'
+        ? m.question_ui_remove_part()
+        : m.question_ui_remove_block()}
+    </Button>
+  );
+  const phoneAction = live ? (
+    <>
+      <LiveStatus status={live.status} />
+      {live.undo && <UndoButtons manager={live.undo} />}
+      {editing?.kind === 'block' && stagedBlock(editing.block) && (
+        <Button
+          disabled={pending || blockInvalid}
+          onClick={() => void saveInner()}
+          type="button"
+          variant="accent"
+        >
+          {m.question_ui_done()}
+        </Button>
+      )}
+    </>
+  ) : (
+    <Button
+      disabled={pending || (editing?.kind === 'block' && blockInvalid)}
+      onClick={() => void (editing ? saveInner() : saveQuestion())}
+      type="button"
+      variant="accent"
+    >
+      {m.question_ui_save()}
+    </Button>
+  );
   return (
     <SimpleDialog
-      cardClassName="min-h-0 rounded-t-card-xl rounded-b-none sm:rounded-card-lg"
-      cardScrollContainerClassName="max-h-[92dvh] overflow-hidden sm:max-h-[88dvh] md:h-[88dvh] [&>[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
-      className="top-auto bottom-0 left-0 max-h-[92dvh] translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)_auto] px-0 sm:top-(--dialog-center,50%) sm:bottom-auto sm:left-(--dialog-center,50%) sm:max-h-[88dvh] sm:translate-x-(--dialog-offset,-50%) sm:translate-y-(--dialog-offset,-50%) sm:px-4 [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
+      action={phone && phoneAction}
+      cardClassName="min-h-0"
+      cardScrollContainerClassName="overflow-hidden max-sm:pb-0 md:h-[88dvh] [&_[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
+      className="grid-rows-[minmax(0,1fr)_auto] [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
       footer={
-        live ? (
+        phone ? null : live ? (
           <>
             <div className="mr-auto flex items-center gap-2">
               {live.undo && <UndoButtons footer manager={live.undo} />}
@@ -1057,7 +1104,8 @@ function QuestionDialogSession({
       width={1200}
     >
       <div
-        className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain"
+        // Phones: the page's bottom padding moves inside this scroller.
+        className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain max-sm:pb-[calc(--spacing(16)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]"
         ref={setDialogBody}
       >
         {error && (
@@ -1171,6 +1219,7 @@ function QuestionDialogSession({
               ref={tabsRef}
             >
               <Tabs
+                className="dialog-tabs-bleed w-auto bg-overlay"
                 onChange={setMobileTab}
                 tabs={[
                   { label: m.question_ui_outline(), value: 'outline' },
@@ -1380,6 +1429,10 @@ function QuestionDialogSession({
               />
             </div>
           </div>
+        )}
+        {phone && removeButton && (
+          // The borderless button sheds its padding to line up with the content.
+          <div className="mt-6 -ml-5">{removeButton}</div>
         )}
       </div>
     </SimpleDialog>

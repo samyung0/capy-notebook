@@ -221,9 +221,13 @@ type Material struct {
 	// embedded quizzes and flashcard sets that has credits, by id: the app
 	// computes the note's footer from it and the document's current embeds.
 	EmbedCredits map[string]*store.Provenance `json:"embedCredits,omitempty"`
-	// ImageMaxBytes caps one uploaded image by the plan of the account that
-	// pays for this material's assets; the browser shrinks larger images.
+	// ImageMaxBytes caps one uploaded image by the material payer's plan: it
+	// pays for the images added to it (Sam 2026-10-19). The browser shrinks
+	// larger images.
 	ImageMaxBytes int64 `json:"imageMaxBytes"`
+	// StorageFull: the material is view-only because its payer (its creator)
+	// is at its storage limit; "self" when that is the viewer. Editors only.
+	StorageFull store.StorageFullBy `json:"storageFull,omitempty"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
@@ -293,25 +297,13 @@ type Workspace struct {
 	// CanClone: members of any role and effective editors may copy the
 	// workspace; a link/public viewer may not.
 	CanClone bool `json:"canClone"`
-	// StorageOwnerState is the lifecycle state of the account charged for this
-	// workspace's bytes, which is the owner and not necessarily the requester.
-	// A member with a healthy account still cannot add content to an
-	// over-quota owner's workspace, so the client needs the owner's state to
-	// explain why writes are being refused.
-	//
-	// Omitted where the owner's limit cannot affect the requester — Explore
-	// listings, where the only action is a clone charged to the cloner. Absent
-	// therefore means "not applicable", not "healthy".
-	StorageOwnerState *store.AccountState `json:"storageOwnerState,omitempty"`
-	// StorageOwnerUsage is the owner's storage usage level, reported wherever
-	// StorageOwnerState is. Members see the level only, never the byte counts.
-	StorageOwnerUsage *store.StorageUsageLevel `json:"storageOwnerUsage,omitempty"`
 }
 
-// FromWorkspace renders a workspace the requester owns. owner must be the
-// resolved status of w.OwnerUserID with its storage usage (see
-// api.accountStatuses), or the zero value to leave it unreported.
-func FromWorkspace(w store.Workspace, owner store.AccountStatus) Workspace {
+// FromWorkspace renders a workspace the requester owns. It reports no owner
+// storage state: content is charged to whoever uploaded or created it (Sam
+// 2026-10-18), so a full or frozen account narrows only the items it pays for
+// (their own capabilities), never the workspace.
+func FromWorkspace(w store.Workspace) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
 		AutoProcess: w.AutoProcess,
@@ -322,41 +314,24 @@ func FromWorkspace(w store.Workspace, owner store.AccountStatus) Workspace {
 		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,
 	}
-	if owner.State != "" {
-		out.StorageOwnerState = &owner.State
-		out.StorageOwnerUsage = &owner.StorageUsage
-		// Nobody edits what a frozen (or locked) account pays for.
-		out.Capabilities.CanEdit = owner.CanEdit()
-	}
-	out.Capabilities.CanEditContent = contentEditable(out.Capabilities.CanEdit, owner)
 	return out
-}
-
-// contentEditable narrows canEdit for content (edit mode, comments,
-// annotations): an owner at or over its storage limit (full, grace included)
-// makes every editable file and material view-only, while organizing goes on.
-func contentEditable(canEdit bool, owner store.AccountStatus) bool {
-	return canEdit && owner.StorageUsage != store.StorageUsageFull
 }
 
 // FromWorkspaceAccess renders a workspace for a requester. Role is their
 // persisted membership (nil for a link/public visitor) and Capabilities follow
 // their effective role, so a share-role editor sees content controls while
 // settings stay keyed on Role. A frozen requester (actorReadOnly) edits
-// nowhere and cannot clone, and a frozen owner makes the workspace read-only
-// for everyone.
+// nowhere and cannot clone.
 func FromWorkspaceAccess(
 	w store.Workspace,
 	member, effective store.WorkspaceRole,
-	owner store.AccountStatus,
 	actorReadOnly bool,
 ) Workspace {
-	out := FromWorkspace(w, owner)
+	out := FromWorkspace(w)
 	out.IsOwner = member == store.RoleOwner
 	out.Capabilities = store.CapabilitiesForRole(effective, true)
-	out.Capabilities.CanEdit = out.Capabilities.CanEdit && !actorReadOnly &&
-		(owner.State == "" || owner.CanEdit())
-	out.Capabilities.CanEditContent = contentEditable(out.Capabilities.CanEdit, owner)
+	out.Capabilities.CanEdit = out.Capabilities.CanEdit && !actorReadOnly
+	out.Capabilities.CanEditContent = out.Capabilities.CanEdit
 	out.CanClone = store.CanCloneFrom(member, effective) && !actorReadOnly
 	if member == "" {
 		out.Role = nil
@@ -366,15 +341,11 @@ func FromWorkspaceAccess(
 	return out
 }
 
-// FromWorkspaces renders workspaces the requester owns. owners is keyed by
-// owner user id so a mixed-ownership list resolves each owner once.
-func FromWorkspaces(
-	ws []store.Workspace,
-	owners map[string]store.AccountStatus,
-) []Workspace {
+// FromWorkspaces renders workspaces the requester owns.
+func FromWorkspaces(ws []store.Workspace) []Workspace {
 	out := make([]Workspace, len(ws))
 	for i, w := range ws {
-		out[i] = FromWorkspace(w, owners[w.OwnerUserID])
+		out[i] = FromWorkspace(w)
 	}
 	return out
 }
@@ -386,16 +357,14 @@ type PublicWorkspace struct {
 	Clones int    `json:"clones"`
 }
 
-// FromPublicWorkspaces leaves StorageOwnerState unreported: an Explore visitor
-// can only clone, which is charged to them, so the author's billing state is
-// both irrelevant here and none of the visitor's business. Capabilities and
-// canClone follow the caller's real grant, membership or share role, and the
-// caller's own frozen account (actorReadOnly).
+// FromPublicWorkspaces: capabilities and canClone follow the caller's real
+// grant, membership or share role, and the caller's own frozen account
+// (actorReadOnly).
 func FromPublicWorkspaces(ws []store.PublicWorkspace, actorReadOnly bool) []PublicWorkspace {
 	out := make([]PublicWorkspace, len(ws))
 	for i, w := range ws {
 		effective := store.EffectiveRole(w.MemberRole, w.Privacy, w.ShareRole)
-		workspace := FromWorkspaceAccess(w.Workspace, w.MemberRole, effective, store.AccountStatus{}, actorReadOnly)
+		workspace := FromWorkspaceAccess(w.Workspace, w.MemberRole, effective, actorReadOnly)
 		out[i] = PublicWorkspace{Workspace: workspace, Author: w.Author, Clones: w.Clones}
 	}
 	return out
@@ -457,14 +426,18 @@ type AttemptDetail struct {
 	store.Attempt
 	Answers   map[string]any   `json:"answers" nullable:"false"`
 	Questions []map[string]any `json:"questions" nullable:"false"`
+	// Cards is a flashcard attempt's cards; empty for a quiz.
+	Cards []store.AttemptCard `json:"cards" nullable:"false"`
 }
 
 func FromAttemptDetail(d store.AttemptDetail) AttemptDetail {
-	return AttemptDetail{
-		Attempt:   d.Attempt,
-		Answers:   decodeAnswers(d.Answers),
-		Questions: decodeQuestions(d.Questions),
+	out := AttemptDetail{Attempt: d.Attempt, Answers: decodeAnswers(d.Answers), Questions: []map[string]any{}, Cards: []store.AttemptCard{}}
+	if d.Kind == "flashcards" {
+		out.Cards = decodeCards(d.Questions)
+		return out
 	}
+	out.Questions = decodeQuestions(d.Questions)
+	return out
 }
 
 // GradedQuiz is a graded signed-out attempt: every question with its key and,
@@ -565,6 +538,10 @@ type FileLinks struct {
 	// PreviewURL is the paginated PDF whose coordinates citation regions use.
 	PreviewURL *string   `json:"previewUrl,omitempty"`
 	ExpiresAt  time.Time `json:"expiresAt"`
+	// StorageFull: the file's payer (its uploader) is at its storage limit,
+	// so its content (annotations included) is view-only; "self" when that
+	// is the viewer.
+	StorageFull store.StorageFullBy `json:"storageFull,omitempty"`
 }
 
 // Invoice is one Stripe invoice on the Subscription tab. Total is in the

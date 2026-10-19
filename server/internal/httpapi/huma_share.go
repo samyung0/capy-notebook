@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -44,6 +45,7 @@ type publicFlashcardSetsOutput struct {
 
 func (a *api) registerShare(api huma.API) {
 	const tag = "Sharing"
+	reg(api, http.MethodPost, "/api/share/redeem", "redeemShareLink", tag, "Open a signed share link once", http.StatusOK, a.redeemShareLink)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/clone", "cloneWorkspace", tag, "Clone a shared workspace", http.StatusCreated, a.cloneWorkspace)
 	reg(api, http.MethodPost, "/api/files/{id}/clone", "cloneFile", tag, "Clone a file into a workspace", http.StatusCreated, a.cloneFile)
 	reg(api, http.MethodPost, "/api/materials/{id}/clone", "cloneMaterial", tag, "Clone a material into a workspace or standalone", http.StatusCreated, a.cloneMaterial)
@@ -89,6 +91,39 @@ func (a *api) assertFileEditor(ctx context.Context, fileID string) error {
 	return a.assertWorkspaceEditor(ctx, wsID)
 }
 
+// orPayer lets the item's payer through a refused access check (denied), so
+// a member who left a workspace can still delete what it pays for.
+func (a *api) orPayer(ctx context.Context, kind agenttools.ResourceKind, id string, denied error) error {
+	if denied == nil {
+		return nil
+	}
+	if pays, err := a.s.PaysFor(ctx, kind, id, userID(ctx)); err == nil && pays {
+		return nil
+	}
+	return denied
+}
+
+type redeemShareLinkInput struct {
+	Body struct {
+		Token string `json:"token" maxLength:"128" doc:"A share link's {id}.{signature}"`
+	}
+}
+
+type redeemShareLinkOutput struct {
+	Body store.ShareRedemption
+}
+
+// redeemShareLink remembers that the signed-in caller came in through a
+// signed link, so later calls by bare id pass (Sam 2026-10-18). A forged
+// token or a private resource answers 404.
+func (a *api) redeemShareLink(ctx context.Context, in *redeemShareLinkInput) (*redeemShareLinkOutput, error) {
+	out, err := a.s.RedeemShareToken(ctx, userID(ctx), in.Body.Token)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &redeemShareLinkOutput{Body: out}, nil
+}
+
 /* ------------------------------------------------------------------ cloning */
 
 func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*cloneWorkspaceOutput, error) {
@@ -102,12 +137,8 @@ func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*clo
 		return nil, hErr(err)
 	}
 	a.copyCloneThumbnails(ctx, copies)
-	statuses, err := a.accountStatuses(ctx, ws.OwnerUserID)
-	if err != nil {
-		return nil, err
-	}
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
-		Workspace: apimodel.FromWorkspace(ws, statuses[ws.OwnerUserID]),
+		Workspace: apimodel.FromWorkspace(ws),
 	}}, nil
 }
 

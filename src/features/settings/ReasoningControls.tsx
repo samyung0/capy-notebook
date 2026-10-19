@@ -43,7 +43,7 @@ export function ReasoningControls({
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent layout="row">
+      <SelectContent>
         {spec.levels.map((item) => (
           <SelectItem key={item} value={item}>
             {THINKING_LABEL[item]?.() ?? item}

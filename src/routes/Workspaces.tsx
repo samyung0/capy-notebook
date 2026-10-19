@@ -6,7 +6,11 @@ import {
   type SortOption,
   toggleValue,
 } from '@/components/app/ListToolbar';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  PageBody,
+  PageHeader,
+  PanelWithInvertedRadius,
+} from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -120,7 +124,7 @@ export default function Workspaces() {
         }}
       />
 
-      <div className="w-full shrink-0 grow px-4 pt-4 pb-6 sm:px-6 sm:pt-2">
+      <PageBody belowToolbar className="pt-4 sm:pt-2">
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -158,7 +162,7 @@ export default function Workspaces() {
             </Card>
           </div>
         )}
-      </div>
+      </PageBody>
       <WorkspaceFormCreateDialog
         onSubmit={async (v) => {
           await createWorkspace(v);

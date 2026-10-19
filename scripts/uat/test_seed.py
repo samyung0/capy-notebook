@@ -35,6 +35,9 @@ class SeedTest(unittest.TestCase):
         values = {
             "DEPLOYMENT_APP_URL": seed.APP_URL,
             "CLERK_SECRET_KEY": "sk_test_synthetic",
+            "STRIPE_SECRET_KEY": "sk_test_synthetic",
+            "UAT_STRIPE_ACCOUNT_ID": "acct_synthetic",
+            "STRIPE_PRICE_PRO": "price_synthetic",
         }
         seed.validate_config(values)
         self.assertEqual(seed.APP_URL, "https://app.uat.capynotebook.com")
@@ -43,6 +46,7 @@ class SeedTest(unittest.TestCase):
             {"DEPLOYMENT_APP_URL": "https://app.capynotebook.com"},
             {"DEPLOYMENT_APP_URL": "https://capynotebook.com"},
             {"DEPLOYMENT_API_URL": "https://api.capynotebook.com"},
+            {"STRIPE_SECRET_KEY": "sk_live_synthetic"},
         ):
             with self.assertRaises(seed.SeedError):
                 seed.validate_config({**values, **changed})
@@ -74,6 +78,7 @@ class SeedTest(unittest.TestCase):
         client.request.side_effect = [[self.user()], self.user()]
         actor = seed.ensure_actor(client, "owner")
         self.assertEqual(actor["id"], "user_fixture1")
+        self.assertFalse(actor["created"])
         self.assertTrue(
             all(call.args[0] == "GET" for call in client.request.call_args_list)
         )
@@ -108,6 +113,61 @@ class SeedTest(unittest.TestCase):
         user["email_addresses"][0]["verification"]["status"] = "unverified"
         with self.assertRaises(seed.SeedError):
             seed.verify_user(user, user["email_addresses"][0]["email_address"])
+
+    def pro(self):
+        return {
+            "role": "pro",
+            "id": "user_pro1",
+            "email": "capy-uat-pro+clerk_test@stablestudio.org",
+            "name": "Capy UAT Pro",
+        }
+
+    def test_pro_reuses_its_live_subscription(self):
+        client = Mock()
+        client.request.side_effect = [
+            {"id": "acct_uat"},
+            {"data": [{"id": "cus_1", "metadata": {"user_id": "user_pro1"}}]},
+            {
+                "data": [
+                    {
+                        "id": "sub_1",
+                        "status": "active",
+                        "items": {"data": [{"price": {"id": "price_pro"}}]},
+                    }
+                ]
+            },
+        ]
+        self.assertEqual(
+            seed.ensure_pro(client, self.pro(), "acct_uat", "price_pro"), "sub_1"
+        )
+        self.assertEqual(client.request.call_count, 3)
+
+    def test_pro_subscribes_a_new_customer_on_the_test_card(self):
+        client = Mock()
+        client.request.side_effect = [
+            {"id": "acct_uat"},
+            {"data": []},
+            {"id": "cus_1"},
+            {"data": []},
+            {"id": "pm_1"},
+            {"id": "cus_1"},
+            {"id": "sub_1", "status": "active", "livemode": False},
+        ]
+        self.assertEqual(
+            seed.ensure_pro(client, self.pro(), "acct_uat", "price_pro"), "sub_1"
+        )
+        calls = [call.args for call in client.request.call_args_list]
+        self.assertEqual(calls[2][2]["metadata[user_id]"], "user_pro1")
+        self.assertEqual(calls[4][1], "/v1/payment_methods/pm_card_visa/attach")
+        self.assertEqual(
+            calls[6][2],
+            {
+                "customer": "cus_1",
+                "items[0][price]": "price_pro",
+                "metadata[user_id]": "user_pro1",
+                "payment_behavior": "error_if_incomplete",
+            },
+        )
 
     def test_remote_json_is_one_quoted_argument(self):
         with tempfile.NamedTemporaryFile() as key:

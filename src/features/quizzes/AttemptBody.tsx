@@ -108,7 +108,8 @@ export function AttemptBody({
    * Embedded quizzes have none. */
   frame?: Frame;
   /** Grades every part on the server; signed in, this also records the attempt. */
-  grade: (answers: Answers) => Promise<Graded>;
+  /** `startedAt` is when this try began, for the minutes a result shows. */
+  grade: (answers: Answers, startedAt: string) => Promise<Graded>;
   name: string;
   onBack?: () => void;
   /** After grading, e.g. to keep a signed-out attempt in this browser. */
@@ -124,6 +125,7 @@ export function AttemptBody({
   const Shell = frame ?? NoFrame;
   const Body = embedded ? EmbeddedBody : TabContent;
   const [answers, setAnswers] = useState<Answers>({});
+  const [startedAt, setStartedAt] = useState(() => new Date().toISOString());
   const [graded, setGraded] = useState<Graded | null>(null);
   const [grading, setGrading] = useState(false);
   const setAnswer = useCallback(
@@ -191,7 +193,7 @@ export function AttemptBody({
   async function finish() {
     setGrading(true);
     try {
-      const result = await grade(answers);
+      const result = await grade(answers, startedAt);
       const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
       track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
       setGraded(result);
@@ -244,6 +246,7 @@ export function AttemptBody({
               onClick={() => {
                 setAnswers({});
                 setGraded(null);
+                setStartedAt(new Date().toISOString());
               }}
               rounded="large"
               size="sm"

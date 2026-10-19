@@ -167,7 +167,7 @@ test('a card blanked while retyped keeps its place in a study session', async ({
         .click();
     }
     await expect(
-      editorPage.getByRole('heading', { name: m.flashcards_session_done() })
+      editorPage.getByRole('button', { name: m.flashcards_study_again() })
     ).toBeVisible();
   } finally {
     await ownerApi.delete(`/api/materials/${setId}`);

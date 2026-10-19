@@ -151,9 +151,11 @@ test('question formula accepts physical digits and retains them after commit', a
 test('a wide display formula scrolls in its own box with an edge fade, a fitting one has no mask, and the page does not scroll', async ({
   page,
 }) => {
-  await page.setViewportSize({ height: 844, width: 390 });
+  // The smallest supported phone: on narrow widths the stem runs the full
+  // width under the number, and the reaction equation just fits at 390 px.
+  await page.setViewportSize({ height: 844, width: 360 });
   await page.goto('/materials/qz_1?mode=edit');
-  // The first question's reaction equation is wider than a 390 px column.
+  // The first question's reaction equation is wider than a 360 px column.
   const formula = page
     .locator('[data-question-id]')
     .first()

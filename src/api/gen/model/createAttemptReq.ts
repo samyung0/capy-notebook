@@ -11,4 +11,6 @@ export interface CreateAttemptReq {
   readonly $schema?: string;
   /** The learner's answers by part id */
   answers: CreateAttemptReqAnswers;
+  /** When the learner opened the quiz, for the minutes taken */
+  startedAt?: string;
 }

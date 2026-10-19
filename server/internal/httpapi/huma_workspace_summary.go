@@ -14,6 +14,12 @@ import (
 // changing already issued share links, including development seed IDs.
 var summaryWorkspaceID = regexp.MustCompile(`^ws_[A-Za-z0-9_-]{1,64}$`)
 
+// workspaceSummaryInput takes the share token, not the bare id (Sam
+// 2026-10-18): a guessed id reaches neither the summary nor Postgres.
+type workspaceSummaryInput struct {
+	Token string `path:"token" maxLength:"128" doc:"The summary link's {id}.{signature}"`
+}
+
 type workspaceSummaryOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         store.WorkspaceSummary
@@ -23,12 +29,13 @@ type workspaceSummaryHeadOutput struct {
 }
 
 func (a *api) registerWorkspaceSummary(api huma.API) {
-	reg(api, http.MethodGet, "/api/public/workspaces/{id}/summary", "getPublicWorkspaceSummary", "Sharing", "Get public workspace metadata", http.StatusOK, a.getPublicWorkspaceSummary)
-	reg(api, http.MethodHead, "/api/public/workspaces/{id}/summary", "headPublicWorkspaceSummary", "Sharing", "Check public workspace metadata", http.StatusOK, a.headPublicWorkspaceSummary)
+	reg(api, http.MethodGet, "/api/public/workspaces/{token}/summary", "getPublicWorkspaceSummary", "Sharing", "Get public workspace metadata", http.StatusOK, a.getPublicWorkspaceSummary)
+	reg(api, http.MethodHead, "/api/public/workspaces/{token}/summary", "headPublicWorkspaceSummary", "Sharing", "Check public workspace metadata", http.StatusOK, a.headPublicWorkspaceSummary)
 }
 
-func (a *api) readPublicWorkspaceSummary(ctx context.Context, id string) (store.WorkspaceSummary, error) {
-	if !summaryWorkspaceID.MatchString(id) {
+func (a *api) readPublicWorkspaceSummary(ctx context.Context, token string) (store.WorkspaceSummary, error) {
+	id, ok := a.s.VerifyShareToken(token)
+	if !ok || !summaryWorkspaceID.MatchString(id) {
 		return store.WorkspaceSummary{}, huma.Error404NotFound("not found")
 	}
 	summary, err := a.s.PublicWorkspaceSummary(ctx, id)
@@ -40,15 +47,15 @@ func (a *api) readPublicWorkspaceSummary(ctx context.Context, id string) (store.
 	}
 	return summary, nil
 }
-func (a *api) getPublicWorkspaceSummary(ctx context.Context, in *workspaceIDInput) (*workspaceSummaryOutput, error) {
-	summary, err := a.readPublicWorkspaceSummary(ctx, in.ID)
+func (a *api) getPublicWorkspaceSummary(ctx context.Context, in *workspaceSummaryInput) (*workspaceSummaryOutput, error) {
+	summary, err := a.readPublicWorkspaceSummary(ctx, in.Token)
 	if err != nil {
 		return nil, err
 	}
 	return &workspaceSummaryOutput{CacheControl: "no-store", Body: summary}, nil
 }
-func (a *api) headPublicWorkspaceSummary(ctx context.Context, in *workspaceIDInput) (*workspaceSummaryHeadOutput, error) {
-	if _, err := a.readPublicWorkspaceSummary(ctx, in.ID); err != nil {
+func (a *api) headPublicWorkspaceSummary(ctx context.Context, in *workspaceSummaryInput) (*workspaceSummaryHeadOutput, error) {
+	if _, err := a.readPublicWorkspaceSummary(ctx, in.Token); err != nil {
 		return nil, err
 	}
 	return &workspaceSummaryHeadOutput{CacheControl: "no-store"}, nil

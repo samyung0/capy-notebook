@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { VisuallyHidden } from 'radix-ui';
+import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useState } from 'react';
 import { searchQueryQMax } from '@/api/gen/validators';
 import { useSearch } from '@/api/hooks';
@@ -8,12 +8,7 @@ import { InlineErrorState } from '@/components/app/ErrorState';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/Dialog';
+import { Dialog, DialogClose, DialogContent } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -70,7 +65,7 @@ export function SearchDialog({
       open={open}
     >
       <DialogContent
-        cardScrollContainerClassName="p-0 sm:p-0"
+        cardScrollContainerClassName="p-0 max-sm:pb-0 sm:p-0"
         className="top-[12vh] translate-y-0"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
@@ -78,10 +73,23 @@ export function SearchDialog({
         }}
         showCloseButton={false}
       >
-        <VisuallyHidden.Root asChild>
-          <DialogTitle>{m.search_placeholder()}</DialogTitle>
-        </VisuallyHidden.Root>
-        <div className="flex max-h-[70vh] flex-col">
+        {/* Its own header, not DialogTitle's: phones show close and a title
+            above the field, wider screens only the field with close beside. */}
+        <div className="flex shrink-0 items-start gap-1 pt-3 pr-4 pb-1 pl-1.5 sm:contents">
+          <DialogClose asChild>
+            <IconButton
+              className="-translate-y-px sm:hidden"
+              icon="x"
+              label={m.action_close()}
+              size="sm"
+              variant="ghost-hover"
+            />
+          </DialogClose>
+          <DialogPrimitive.Title className="t-large-card-title py-2 text-lg leading-tight sm:sr-only">
+            {m.nav_search()}
+          </DialogPrimitive.Title>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col sm:max-h-[70vh] sm:flex-none">
           <div className="flex items-center gap-2.5 border-divider border-b px-4 py-3">
             <span className="pl-1.5">
               <Icon className="size-4.25" name="search" />
@@ -96,6 +104,7 @@ export function SearchDialog({
             />
             <DialogClose asChild>
               <IconButton
+                className="max-sm:hidden"
                 icon="x"
                 label={m.action_close()}
                 size="sm"
@@ -103,7 +112,7 @@ export function SearchDialog({
               />
             </DialogClose>
           </div>
-          <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2.5">
+          <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2.5 max-sm:pb-[calc(--spacing(2.5)+max(env(safe-area-inset-bottom),var(--keyboard-inset,0px)))]">
             {waitsForConnection(fetchStatus, data) ? (
               <QueryPausedState />
             ) : isFetching ? (

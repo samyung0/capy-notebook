@@ -112,34 +112,38 @@ export function OnboardingDialog() {
 
   return (
     <SimpleDialog
+      action={
+        <Button
+          disabled={busy || !isValid}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
+          {busy ? <Spinner /> : m.action_confirm()}
+        </Button>
+      }
       footer={
-        <>
-          <Button
-            disabled={busy}
-            onClick={() => void skip()}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.onboarding_skip()}
-          </Button>
-          <Button
-            disabled={busy || !isValid}
-            size="lg"
-            type="submit"
-            variant="accent"
-          >
-            {busy ? <Spinner /> : m.action_confirm()}
-          </Button>
-        </>
+        // Phones skip from the header's close.
+        <Button
+          className="max-sm:hidden"
+          disabled={busy}
+          onClick={() => void skip()}
+          size="lg"
+          type="button"
+          variant="ghost-hover"
+        >
+          {m.onboarding_skip()}
+        </Button>
       }
       onClose={() => {
         if (!busy) void skip();
       }}
+      onCloseClick={() => void skip()}
       onEscapeKeyDown={(event) => busy && event.preventDefault()}
       onInteractOutside={(event) => busy && event.preventDefault()}
       onSubmit={(event) => void confirm(event)}
       open={open}
+      pending={busy}
       showCloseButton={false}
       title={m.onboarding_title()}
     >

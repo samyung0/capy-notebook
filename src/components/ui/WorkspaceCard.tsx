@@ -1,5 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { qk } from '@/api/client';
 import { useDeleteWorkspace, useUpdateWorkspaceSharing } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { ConfirmDialog } from '@/components/ui/Dialog';
@@ -18,6 +20,7 @@ import { CoverArt } from './CoverArt';
 import { Skeleton } from './feedback';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
+  const qc = useQueryClient();
   const { mutate: deleteWorkspace } = useDeleteWorkspace();
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
     useUpdateWorkspaceSharing();
@@ -132,7 +135,13 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             body={m.workspace_delete_confirm_body()}
             confirmLabel={m.trash_delete_forever()}
             onClose={() => setConfirmDelete(false)}
-            onConfirm={() => deleteWorkspace(workspace.id)}
+            onConfirm={() =>
+              deleteWorkspace(workspace.id, {
+                // Back to its page then fetches it and shows its error.
+                onSuccess: () =>
+                  qc.removeQueries({ queryKey: qk.workspace(workspace.id) }),
+              })
+            }
             open={confirmDelete}
             title={m.workspace_delete_confirm_title({ name: workspace.name })}
           />

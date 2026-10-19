@@ -142,7 +142,7 @@ export function TrailMap({
       <div
         aria-hidden
         className={cn(
-          'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 [&::-webkit-scrollbar]:hidden',
+          'scroll-fade-x page-bleed overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
           board && '@container'
         )}
         data-finish-scroll

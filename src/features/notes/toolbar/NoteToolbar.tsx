@@ -7,14 +7,16 @@ import {
 } from '@platejs/list';
 import { KEYS } from 'platejs';
 import { useEditorRef, useEditorSelector } from 'platejs/react';
-import { useMemo, useRef, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
+  DialogCancel,
   DialogContent,
   DialogFooter,
   DialogTitle,
+  useIsPhone,
 } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
@@ -102,6 +104,8 @@ export function NoteToolbar({ className }: { className?: string }) {
   );
 
   const [linkOpen, setLinkOpen] = useState(false);
+  const linkFormId = useId();
+  const phone = useIsPhone();
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
   const [linkError, setLinkError] = useState('');
@@ -185,6 +189,18 @@ export function NoteToolbar({ className }: { className?: string }) {
     linkSelectionRef.current = null;
   }
 
+  // The phone header holds it outside the form's DOM.
+  const linkSubmit = (
+    <Button
+      disabled={!linkUrl.trim()}
+      form={linkFormId}
+      size="lg"
+      type="submit"
+      variant="accent"
+    >
+      {editingLink ? m.action_save() : m.action_apply()}
+    </Button>
+  );
   return (
     <>
       <Toolbar
@@ -472,11 +488,12 @@ export function NoteToolbar({ className }: { className?: string }) {
             editor.tf.focus();
           }}
         >
-          <DialogTitle>
+          <DialogTitle action={phone && linkSubmit}>
             {editingLink ? m.editor_link_edit() : m.editor_insert_link()}
           </DialogTitle>
           <form
             className="flex flex-col gap-4"
+            id={linkFormId}
             onSubmit={(event) => {
               event.preventDefault();
               applyLink();
@@ -506,24 +523,12 @@ export function NoteToolbar({ className }: { className?: string }) {
                 value={linkText}
               />
             </label>
-            <DialogFooter>
-              <Button
-                onClick={() => setLinkOpen(false)}
-                size="lg"
-                type="button"
-                variant="ghost-hover"
-              >
-                {m.action_cancel()}
-              </Button>
-              <Button
-                disabled={!linkUrl.trim()}
-                size="lg"
-                type="submit"
-                variant="accent"
-              >
-                {editingLink ? m.action_save() : m.action_apply()}
-              </Button>
-            </DialogFooter>
+            {!phone && (
+              <DialogFooter>
+                <DialogCancel />
+                {linkSubmit}
+              </DialogFooter>
+            )}
           </form>
         </DialogContent>
       </Dialog>

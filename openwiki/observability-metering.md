@@ -107,7 +107,33 @@ Field names are shared across all three: `service`, `env`, `trace_id`,
 The gateway emits one access line per request from `obs.AccessLog`, including
 `client_aborted` for disconnects. Streaming responses are logged when the stream
 **closes**, so `duration_ms` is the life of the stream — the useful number for
-finding streams that hang.
+finding streams that hang. Its `path` hashes bearer-token segments
+(`obs.LogPath`: `/api/public/{kind}/{token}/…`, the workspace summary's
+`/api/public/workspaces/{token}/summary` and `/api/workspace-invites/{token}/accept`
+log `h_` plus 12 hex of the token's SHA-256), as does the rate limiter's 429
+line. Go Sentry errors and performance transactions alike (`BeforeSend`,
+`BeforeSendTransaction`, both `scrubEvent`) drop the query string and the
+`Referer` and `Origin` headers (the calling page may be an invite or share
+link) and hash the same segments in their URL, transaction name, span names
+and descriptions, and error text (Sam 2026-10-19). The SPA does the same in
+Sentry `beforeSend`/`beforeBreadcrumb`, a global event processor (replay
+events' URL list, transactions), Replay's `beforeAddRecordingEvent` (which
+@sentry/replay 10.70 calls for Custom recording events only: breadcrumbs and
+navigation and fetch spans) and PostHog `sanitize_properties`
+(`src/lib/urlTokens.ts`): a share link keeps its id without its signature, an
+invite link becomes `/workspace-invites/:token`. A replay's Meta events (the
+page href at each full snapshot) and DOM frames never reach those hooks, so
+the tokens leave the address bar before Sentry starts instead (Sam
+2026-10-19, review C1): `src/lib/bootUrlTokens.ts`, imported right after Zod
+jitless in `main.tsx`, moves the token of `/open/{token}`,
+`/workspace-invites/{token}` and `?clone=<kind>:<token>` into this tab's
+sessionStorage and replaces the address (`history.replaceState`, no reload)
+with a `-` placeholder; the page reads the token from there, a refresh too,
+and drops it once redeemed, accepted or refused (`urlTokenStash.ts`). A share
+dialog's workspace preview link can still appear in a DOM frame (text is
+masked, link targets are not). Cloudflare Workers Logs keep
+the site Worker's request URLs (`/w/*`, `/share/*`, `/p/*`), accepted as a
+trusted platform log (Sam 2026-10-19).
 
 The collaboration server logs one `collab_health` line per minute
 (`collaboration-rs/crates/server/src/health.rs`, a background task; counting a message is an
@@ -479,7 +505,8 @@ and the **owner's** disk. The two errors are deliberately distinct: only one of
 them is actionable by the person reading it.
 
 Ingest follows the same split: the uploader (the actor on the job payload) pays
-for parse/caption/embed, and the workspace owner pays for the stored bytes.
+for parse/caption/embed and, since uploader pays (Sam 2026-10-18), for the
+stored bytes too.
 Every inference path is actor-billed.
 
 ### Model registry and pinning
@@ -787,7 +814,15 @@ needs a saved instant method (409 `no_payment_method` /
 `payment_method_not_instant`). `POST /api/billing/payment-method` opens hosted
 Checkout in setup mode (card and Link, billing address required) and returns to
 `?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
-reload invoice Stripe is still retrying. Turning auto-reload off voids it too.
+reload invoice Stripe is still retrying. Turning auto-reload off voids it too,
+and so does `POST /api/billing/auto-reload/cancel-retry` (Cancel retry on the
+notice and the invoice row), which leaves auto-reload on but disarmed. A
+retrying plan invoice's Cancel opens `POST
+/api/billing/portal/cancel-subscription`: the portal on the live subscription's
+cancel screen. Stripe stops collecting a customer's open invoices once a
+subscription is cancelled, so the retry ends only when the portal cancels
+immediately (its cancellation setting in the Stripe Dashboard), not at period
+end.
 
 Auto-reload fires once per arming (`reload_armed`). An account starts armed;
 a paid top-up, a new card, a paid reload that leaves credits above the
@@ -1083,8 +1118,8 @@ Plate command streams, and in the JSON body for `/generate` and `/plate-ai/copil
 
 Inference is billed to whoever initiated it. The ingest completion path reads
 `actorUserId` from the job payload (written at enqueue in `jobs.go`) and records
-the ledger against that user. The workspace owner still pays for the file's
-bytes via `gateStorageTx`.
+the ledger against that user, who also pays for the file's bytes (uploader
+pays) via `gateStorageTx`.
 
 Claim-time gating is two lookups, not one widened check:
 

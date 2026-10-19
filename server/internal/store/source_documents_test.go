@@ -166,7 +166,7 @@ func TestUploadedSourceSHANamesTheFirstSessionAndBindsTheFirstSave(t *testing.T)
 		t.Fatal(err)
 	}
 	recorded := strings.Repeat("b", 64)
-	file, err := s.FinalizeUploadSession(ctx, upload.ID, "etag", recorded, "")
+	file, err := s.FinalizeUploadSession(ctx, owner, upload.ID, "etag", recorded, "")
 	if err != nil {
 		t.Fatal(err)
 	}

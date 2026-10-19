@@ -6,8 +6,8 @@
  */
 import type { Attempt } from './attempt.ts';
 import type { ReviewItem } from './reviewItem.ts';
-import type { ReviewSuggestion } from './reviewSuggestion.ts';
 import type { StudyItem } from './studyItem.ts';
+import type { UnfinishedSession } from './unfinishedSession.ts';
 
 export interface StudySummary {
   /** A URL to the JSON Schema for this object. */
@@ -17,5 +17,5 @@ export interface StudySummary {
   quickReview: ReviewItem[];
   recentAttempts: Attempt[];
   reviewable: number;
-  suggestion?: ReviewSuggestion;
+  unfinished?: UnfinishedSession;
 }

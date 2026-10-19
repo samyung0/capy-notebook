@@ -26,9 +26,10 @@ Do not report the same failure through multiple surfaces.
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
 without one of the typed codes `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`, or an unknown status without a code)
-shows its request's trace id under the copy as a small "Error ID: …" line with
-a copy button (`ErrorId`), so a user can quote it and an operator can find the
-logs and Sentry event. Only the surfaces where the error stays on screen show
+shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
+the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
+one click selects the whole line (`select-all`) so a user can copy and quote it,
+and an operator can find the logs and Sentry event. Only the surfaces where the error stays on screen show
 it, through `ErrorState`'s `errorId`:
 
 - boundary screens (`AppErrorBoundary`, `RouteErrorComponent`);
@@ -41,9 +42,7 @@ it, through `ErrorState`'s `errorId`:
 
 Typed refusals, exceptions without a request, toasts and status banners show
 none. The id comes from `ApiError.traceId` (see the trace id in
-`observability-metering.md`). These surfaces are alerts, so the id text is
-hidden from screen readers (the copy button names it), and a copy is announced
-through the line's own polite status.
+`observability-metering.md`).
 
 ### Form dialogs keep their errors
 
@@ -116,9 +115,13 @@ The owning component must then destructure and render the relevant query error
 state. Destructuring is required so TanStack Query's tracked-property proxy
 subscribes to those fields. A list that fails without data must never fall
 through to its empty state ("No workspaces yet" reads as data loss after a
-redeploy): a large region renders `ErrorState` `variant="panel"` with Retry
-(the dashboard workspaces), a small one `InlineErrorState`, one muted line and
-Retry (the dashboard recents card, search results). The /notifications page
+redeploy): a region that fills a page or a page tab renders `ErrorState`
+`variant="panel"` with Retry (Trash); anything smaller, and anything inside
+a dialog, renders `InlineErrorState`, one bold line and Retry (the dashboard
+recent workspaces and recents card, search results, Billing's invoices under
+the plan and its Details table, a question bank page that failed between loaded
+questions, workspace settings' Statistics tab and member list). Billing's Details table drops its loaded rows when any page fails,
+next pages included, and shows only the inline error. The /notifications page
 leaves its list to the route boundary.
 Filter and picker options may stay silently empty.
 
@@ -212,6 +215,9 @@ not offline use: without a service worker the app itself does not load offline.
 - Restored queries are marked stale, so each refetches on first use regardless
   of `staleTime`. A stored query whose refetch answers 401 or 404 drops its data,
   so a workspace the account lost shows the private state, not last visit's copy.
+- Deleting a workspace drops its cached queries once its page is left (the
+  settings dialog leaves for `/workspaces` first, or the open page would refetch
+  them), so Back to it fetches and shows the private state.
 - MSW development stores nothing: the mock database resets on reload.
 
 ## Boundary tiers
@@ -307,13 +313,15 @@ full-screen `AccountBlockedScreen`.
 
 Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
 workspace storage status, and one while offline (also whenever the browser
-goes offline there). The status is ordered: the viewer's own frozen account,
-the owner's frozen account, the owner's storage full (grace counts as full),
-then the owner near the limit (`storageOwnerUsage`). The owner is never named:
-a member reads "Workspace owner is almost out of storage", "Workspace owner's
-storage is full" or "Workspace owner's account is frozen"; the owner reads
-"Your storage is almost full", "Your storage is full" or "Account frozen". Near
-uses the warning toast, full and frozen the error toast. The file header status
+goes offline there). The status is the viewer's own account from `/me`, since
+what the viewer adds is charged to the viewer (uploader pays, Sam 2026-10-18):
+frozen ("Account frozen"), full, grace counting as full ("Your storage is
+full"), then near the limit ("Your storage is almost full"). Near uses the
+warning toast, full and frozen the error toast. Another account's full storage
+shows on the items it pays for instead: they open view-only under a strip
+below the item's header ("Owner of the file has insufficient storage.", or
+"Your storage is full." when the viewer pays), from the material's, the source
+session's or the file links' `storageFull` (`StorageFullBanner`). The file header status
 slot shows the save state, or `wifiOff` while offline
 (`[data-connection-status="offline"]`) for every file type. The workspace
 status triangle (`[data-storage-status]`) sits to its right, amber near the
@@ -323,9 +331,9 @@ open, the header shows both icons after the workspace picker and no strip.
 Frozen read-only and view-only at the storage limit need no client logic
 inside workspaces: the server's capabilities drop `canEdit` for a frozen
 account, so edit mode, comments and create controls disappear, and
-drop only `canEditContent` while the owner is at or over its limit (full or
-grace), so edit mode, comments, PDF marks and quiz or card edits disappear
-while rename, move and delete stay. `?mode=edit` falls back to view in both.
+drop only a material's `canEditContent` while its payer is at or over its
+limit (full or grace), so edit mode, comments, PDF marks and quiz or card
+edits disappear while rename, move and delete stay. `?mode=edit` falls back to view in both.
 A write that still meets `account_over_quota` or `storage_quota_exceeded`
 inside a workspace (a stale capability, or creation at the limit) shows only
 the workspace status toast: `deferStorageRefusal` (in `src/lib/errors.ts`,
@@ -333,14 +341,13 @@ called first by the mutation cache and by surfaces with their own error toast
 or strip: the source transfer runner, sharing, clone, note media uploads, the PDF
 annotation strip and the generate panel) hands each refusal once to
 `WorkspaceHealth`. A quota refusal carries its numbers only for the charged
-account, so one with numbers seen by a member (a clone charged to the member)
-is about the member's own storage and keeps the surface's copy. The
+account, so one without numbers is another payer's item and keeps its own
+toast, worded like the strip. The
 `quota_blocked` analytics event is recorded before the deferral (by the
 mutation cache, or by the source transfer and clone surfaces for their own).
 `WorkspaceHealth`'s `refusalHandler` refetches the workspace and
 `/me` and shows the status as a new toast (fresh id including the status
-kind, full timer), in own-account wording for the owner and owner wording for
-members. Refusals arriving while that refetch runs share its toast. If the
+kind, full timer). Refusals arriving while that refetch runs share its toast. If the
 refetch fails, react-query keeps the stale data and the plain toast for the
 error code shows (the offline toast when offline); a refetch that shows no
 status refusing writes (none, or near the limit) also shows the plain toast.
@@ -501,7 +508,7 @@ Page not found navigates to an unmatched application URL. Auth uses the local
 MSW shim and does not send entered credentials or photos to Clerk.
 
 Storage status journeys set the account and workspace responses the server
-would send (`/me` and workspace `storageOwnerState` / `storageOwnerUsage`,
+would send (`/me`, material `storageFull`,
 workspace, material, quiz and flashcard `canEdit` / `canEditContent`,
 workspace `canClone`) and open the
 dashboard, the own workspace, a shared workspace as a member, `/workspaces`

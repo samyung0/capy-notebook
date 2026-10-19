@@ -148,9 +148,11 @@ func (a *api) registerBillingIntegrations(api huma.API) {
 	reg(api, http.MethodGet, "/api/billing/invoices", "listInvoices", tag, "Stripe invoices", http.StatusOK, a.listInvoices)
 	reg(api, http.MethodPost, "/api/billing/checkout", "billingCheckout", tag, "Start checkout", http.StatusOK, a.billingCheckout)
 	reg(api, http.MethodPost, "/api/billing/portal", "billingPortal", tag, "Open billing portal", http.StatusOK, a.billingPortal)
+	reg(api, http.MethodPost, "/api/billing/portal/cancel-subscription", "billingPortalCancel", tag, "Open the billing portal on its cancel screen", http.StatusOK, a.billingPortalCancel)
 	reg(api, http.MethodPost, "/api/billing/top-up", "billingTopUp", tag, "Start a credit top-up checkout", http.StatusOK, a.billingTopUp)
 	reg(api, http.MethodPost, "/api/billing/payment-method", "billingPaymentMethod", tag, "Start a checkout that saves the auto-reload card", http.StatusOK, a.billingPaymentMethod)
 	reg(api, http.MethodPut, "/api/billing/auto-reload", "setAutoReload", tag, "Save auto-reload", http.StatusOK, a.setAutoReload)
+	reg(api, http.MethodPost, "/api/billing/auto-reload/cancel-retry", "cancelReloadRetry", tag, "Stop Stripe retrying failed reloads", http.StatusNoContent, a.cancelReloadRetry)
 	reg(api, http.MethodPut, "/api/billing/spending-limit", "setSpendingLimit", tag, "Set the monthly spending limit", http.StatusNoContent, a.setSpendingLimit)
 	reg(api, http.MethodGet, "/api/integrations", "getIntegrations", tag, "Integration status", http.StatusOK, a.getIntegrations)
 	reg(api, http.MethodGet, "/api/integrations/microsoft/drive", "microsoftDrive", tag, "OneDrive host for File Picker", http.StatusOK, a.microsoftDrive)
@@ -598,19 +600,49 @@ func (a *api) setSpendingLimit(ctx context.Context, in *spendingLimitInput) (*Em
 }
 
 func (a *api) billingPortal(ctx context.Context, _ *struct{}) (*urlOutput, error) {
-	uid := userID(ctx)
-	customerID, err := a.s.GetStripeCustomerID(ctx, uid)
+	return a.portal(ctx, "")
+}
+
+// billingPortalCancel opens the portal on the live subscription's cancel
+// screen. Cancelling stops Stripe retrying its failed invoice.
+func (a *api) billingPortalCancel(ctx context.Context, _ *struct{}) (*urlOutput, error) {
+	subID, err := a.s.LiveSubscriptionID(ctx, userID(ctx))
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, huma.Error409Conflict("no subscription to cancel")
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return a.portal(ctx, subID)
+}
+
+func (a *api) portal(ctx context.Context, cancelSubscriptionID string) (*urlOutput, error) {
+	customerID, err := a.s.GetStripeCustomerID(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
 	if customerID == "" {
 		return nil, huma.Error400BadRequest("no billing account")
 	}
-	url, err := billing.CreatePortalSession(customerID, a.cfg.AppURL+"/billing?tab=subscription")
+	url, err := billing.CreatePortalSession(
+		customerID, a.cfg.AppURL+"/billing?tab=subscription", cancelSubscriptionID,
+	)
 	if err != nil {
 		return nil, hErr(err)
 	}
 	return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+}
+
+// cancelReloadRetry voids the reloads Stripe is retrying and leaves
+// auto-reload on; it stays disarmed until a top-up, a new card or a paid Pro
+// invoice arms it again.
+func (a *api) cancelReloadRetry(ctx context.Context, _ *struct{}) (*Empty, error) {
+	uid := userID(ctx)
+	retrying, err := a.wh.RetryingReloadInvoices(ctx, uid)
+	if err == nil {
+		err = a.voidReloadsAndPublish(ctx, uid, retrying)
+	}
+	return &Empty{}, hErr(err)
 }
 
 func (a *api) getIntegrations(ctx context.Context, _ *struct{}) (*integrationsOutput, error) {

@@ -211,19 +211,6 @@ func IsSeededHopException(providerSlug, modelSlug string) bool {
 	return providerSlug == ProviderDeepInfra && modelSlug == SeededHopEmbedSlug
 }
 
-func JoinModelLabel(providerName, modelName string) string {
-	providerName = strings.TrimSpace(providerName)
-	modelName = strings.TrimSpace(modelName)
-	switch {
-	case providerName == "":
-		return modelName
-	case modelName == "":
-		return providerName
-	default:
-		return providerName + " " + modelName
-	}
-}
-
 func ProviderModelID(providerSlug, modelSlug string) string {
 	return strings.TrimSpace(providerSlug) + "-" + strings.TrimSpace(modelSlug)
 }

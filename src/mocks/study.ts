@@ -1,5 +1,6 @@
 import { HttpResponse, http } from 'msw';
 import type {
+  ItemAttempts,
   PastReview,
   ProgressWorkspace,
   ReviewAnswer,
@@ -28,7 +29,7 @@ type Rated = { lapses: number; at: number };
 
 const progress = new Map<
   string,
-  Map<string, { kind: 'file' | 'material'; state: State }>
+  Map<string, { kind: 'file' | 'material'; state: State; at: number }>
 >();
 const enabled = new Map<string, boolean>();
 /** The last progress write per workspace, for Learning's Progress order. */
@@ -45,27 +46,125 @@ function items(wsId: string) {
 }
 
 // Biology 101 opens with some history, as in the mocks.
-items('ws_bio').set('f_1', { kind: 'file', state: 'done' });
-items('ws_bio').set('f_2', { kind: 'file', state: 'done' });
-items('ws_bio').set('qz_1', { kind: 'material', state: 'done' });
-items('ws_bio').set('dk_1', { kind: 'material', state: 'started' });
+items('ws_bio').set('f_1', {
+  at: Date.now() - 9 * 86_400_000,
+  kind: 'file',
+  state: 'done',
+});
+items('ws_bio').set('f_2', {
+  at: Date.now() - 9 * 86_400_000,
+  kind: 'file',
+  state: 'done',
+});
+items('ws_bio').set('qz_1', {
+  at: Date.now() - 5 * 86_400_000,
+  kind: 'material',
+  state: 'done',
+});
+items('ws_bio').set('dk_1', {
+  at: Date.now() - 1 * 86_400_000,
+  kind: 'material',
+  state: 'started',
+});
 for (const [card, lapses] of [
   ['c_4', 2],
   ['c_7', 1],
   ['c_1', 0],
 ] as const)
   rated.set(`dk_1/${card}`, { at: Date.now() - lapses * 3_600_000, lapses });
-// A missed quiz question, so a session has a question to check too.
+// Missed quiz questions, so a session and Quick review have questions to
+// check too: a short answer, gaps, and true/false under a chart.
 rated.set('qz_1/q4', { at: Date.now() - 7_200_000, lapses: 1 });
+rated.set('qz_1/q15', { at: Date.now() - 5_400_000, lapses: 1 });
+rated.set('qz_1/q12', { at: Date.now() - 3_600_000, lapses: 1 });
 // Calculus started yesterday; World History is finished on first read (below).
-items('ws_calc').set('f_6', { kind: 'file', state: 'done' });
+items('ws_calc').set('f_6', {
+  at: Date.now() - 1 * 86_400_000,
+  kind: 'file',
+  state: 'done',
+});
 // A twice-missed ordering question: Calculus has a review but no Quick review.
-items('ws_calc').set('qz_3', { kind: 'material', state: 'started' });
+items('ws_calc').set('qz_3', {
+  at: Date.now() - 1 * 86_400_000,
+  kind: 'material',
+  state: 'started',
+});
 rated.set('qz_3/q29', { at: Date.now() - 86_400_000, lapses: 2 });
 studiedAt.set('ws_bio', Date.now() - 3_600_000);
 studiedAt.set('ws_calc', Date.now() - 86_400_000);
 studiedAt.set('ws_hist', Date.now() - 3 * 86_400_000);
 let historyFinished = false;
+
+/** Adds a card's rating to its flashcard attempt, as the server does: cards
+ * in first-rated order with every rating, scored by first ratings of Good or
+ * Easy; only a workspace set records one. */
+function recordCard(
+  ref: { id: string; startedAt: string },
+  setId: string,
+  cardId: string,
+  rating: number,
+  at = new Date().toISOString()
+) {
+  const mt = db.materials.find((x) => x.id === setId);
+  if (!mt?.workspaceId || mt.parentMaterialId) return;
+  let attempt = db.attempts.find((a) => a.id === ref.id);
+  if (!attempt) {
+    attempt = {
+      cards: [],
+      chapters: [],
+      correct: 0,
+      id: ref.id,
+      kind: 'flashcards',
+      materialId: setId,
+      pct: 0,
+      quizName: mt.title,
+      startedAt: ref.startedAt,
+      takenAt: at,
+      total: 0,
+      workspaceId: mt.workspaceId,
+      workspaceName: mt.workspaceName ?? '',
+    };
+    db.attempts.unshift(attempt);
+  }
+  attempt.cards ??= [];
+  const card = attempt.cards.find((c) => c.id === cardId);
+  if (card) card.ratings.push(rating);
+  else {
+    const face = db.cardsFromMaterial(mt).find((c) => c.id === cardId);
+    attempt.cards.push({
+      back: face?.back ?? '',
+      front: face?.front ?? '',
+      id: cardId,
+      ratings: [rating],
+    });
+  }
+  attempt.total = attempt.cards.length;
+  attempt.correct = attempt.cards.filter((c) => c.ratings[0] >= 3).length;
+  attempt.pct = Math.round((attempt.correct / attempt.total) * 100);
+  attempt.takenAt = at;
+}
+
+// Cell organelles has three past attempts, the latest left before its end.
+{
+  const set = db.materials.find((x) => x.id === 'dk_1');
+  const ids = set ? db.cardsFromMaterial(set).map((c) => c.id) : [];
+  const runs: [number, number, number[]][] = [
+    [6, 11, [3, 2, 4, 3, 1, 3]],
+    [3, 9, [3, 3, 4, 2, 3, 4]],
+    [1, 6, [4, 3, 1, 3]],
+  ];
+  for (const [ago, minutes, ratings] of runs) {
+    const end = new Date(Date.now() - ago * 86_400_000).toISOString();
+    const ref = {
+      // Stable, so a result link survives a reload.
+      id: `fa_dk_1_${ago}`,
+      startedAt: new Date(Date.parse(end) - minutes * 60_000).toISOString(),
+    };
+    ratings.forEach((rating, i) => {
+      if (ids[i]) recordCard(ref, 'dk_1', ids[i], rating, end);
+    });
+  }
+}
 
 /** A workspace's tracked items for Learning's map: untrashed files and
  * non-embedded materials, minus the ones the user stopped tracking. */
@@ -219,7 +318,11 @@ function learningProgress(leadId: string | null) {
   if (!historyFinished) {
     historyFinished = true;
     for (const it of tracked('ws_hist'))
-      items('ws_hist').set(it.id, { kind: it.type, state: 'done' });
+      items('ws_hist').set(it.id, {
+        at: Date.now() - 3 * 86_400_000,
+        kind: it.type,
+        state: 'done',
+      });
   }
   const rows: ProgressWorkspace[] = [...progress.keys()]
     .filter(
@@ -323,13 +426,18 @@ function pool(wsId: string): ReviewItem[] {
     .map(({ rank: _, ...item }) => item);
 }
 
-/** The server ranks cards by suggestion score among fading ones; the mock has
- * no recall, so the most-missed cards lead, up to four. */
+const QUICK_ANSWERS = ['mcq', 'boolean', 'short', 'gaps'];
+
+/** The server ranks cards and single-part quick questions by suggestion
+ * score among fading ones; the mock has no recall, so the most-missed items
+ * lead, up to four. */
 function quickReview(all: ReviewItem[]): ReviewItem[] {
   return all
     .filter(
       (it) =>
-        it.kind === 'card' &&
+        (it.kind === 'card' ||
+          (it.question?.parts.length === 1 &&
+            QUICK_ANSWERS.includes(it.question.parts[0].answer.type))) &&
         (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
     )
     .slice(0, 4);
@@ -343,14 +451,17 @@ function summary(wsId: string): StudySummary {
     items: [...items(wsId)].map(([id, it]) => ({
       ...(it.kind === 'file' ? { fileId: id } : { materialId: id }),
       state: it.state,
+      updatedAt: new Date(it.at).toISOString(),
     })),
     quickReview: quickReview(all),
     recentAttempts: db.attempts
-      .filter((a) => a.workspaceName === ws?.name)
+      .filter((a) => a.kind === 'quiz' && a.workspaceName === ws?.name)
       .slice(0, 5)
       .map(db.attemptSummary),
     reviewable: all.length,
-    suggestion: suggestionsOf(wsId)[0],
+    unfinished: unfinished().find(
+      (u) => u.workspaceId === wsId && u.group === 'workspace'
+    ),
   };
 }
 
@@ -370,7 +481,11 @@ function rate(materialId: string, itemId: string, missed: boolean) {
     studiedAt.set(wsId, Date.now());
     const map = items(wsId);
     if (map.get(materialId)?.state !== 'done')
-      map.set(materialId, { kind: 'material', state: 'started' });
+      map.set(materialId, {
+        at: Date.now(),
+        kind: 'material',
+        state: 'started',
+      });
   }
 }
 
@@ -545,6 +660,27 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
   },
 ];
 
+/** Sessions left before their end, newest answer first. */
+function unfinished() {
+  return [...sessions]
+    .filter(([, s]) => !s.finishedAt && s.answers.size > 0)
+    .sort(([, a], [, b]) => b.lastAnswerAt - a.lastAnswerAt)
+    .map(([id, s]) => {
+      const ws = db.workspaces.find((w) => w.id === s.workspaceId);
+      return {
+        answered: s.answers.size,
+        chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
+        group: s.group,
+        iconId: ws?.iconId ?? '',
+        id,
+        lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
+        total: s.items.length,
+        workspaceId: s.workspaceId,
+        workspaceName: ws?.name ?? s.workspaceId,
+      };
+    });
+}
+
 function overview() {
   const real = [...progress.keys()].filter(
     (wsId) => (enabled.get(wsId) ?? true) && items(wsId).size > 0
@@ -562,23 +698,7 @@ function overview() {
       ...real.flatMap(suggestionsOf),
       ...SHOWCASE_SUGGESTIONS,
     ].slice(0, 5),
-    unfinished: [...sessions]
-      .filter(([, s]) => !s.finishedAt && s.answers.size > 0)
-      .sort(([, a], [, b]) => b.lastAnswerAt - a.lastAnswerAt)
-      .map(([id, s]) => {
-        const ws = db.workspaces.find((w) => w.id === s.workspaceId);
-        return {
-          answered: s.answers.size,
-          chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
-          group: s.group,
-          iconId: ws?.iconId ?? '',
-          id,
-          lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
-          total: s.items.length,
-          workspaceId: s.workspaceId,
-          workspaceName: ws?.name ?? s.workspaceId,
-        };
-      }),
+    unfinished: unfinished(),
     workspaces: [
       ...real.map((wsId) => {
         const ws = db.workspaces.find((w) => w.id === wsId);
@@ -766,6 +886,7 @@ export const studyHandlers = [
     studiedAt.set(String(params.id), Date.now());
     if (body.state)
       map.set(id, {
+        at: Date.now(),
         kind: body.fileId ? 'file' : 'material',
         state: body.state,
       });
@@ -858,12 +979,37 @@ export const studyHandlers = [
     session.finishedAt ??= Date.now();
     return new HttpResponse(null, { status: 204 });
   }),
+  http.get('/api/workspaces/:id/study/attempts', ({ params }) => {
+    const items: ItemAttempts[] = db.materials
+      .filter(
+        (mt) =>
+          mt.workspaceId === params.id &&
+          !mt.parentMaterialId &&
+          (mt.kind === 'quiz' || mt.kind === 'flashcards')
+      )
+      .map((mt) => {
+        const mine = db.attempts
+          .filter((at) => at.materialId === mt.id)
+          .sort((a, b) => b.takenAt.localeCompare(a.takenAt));
+        return {
+          count: mine.length,
+          materialId: mt.id,
+          recent: mine.slice(0, 3).map(db.attemptSummary),
+          size:
+            mt.kind === 'quiz'
+              ? db.quizFromMaterial(mt).questions.length
+              : db.cardsFromMaterial(mt).length,
+        };
+      });
+    return HttpResponse.json({ items });
+  }),
   http.post('/api/review/ratings', async ({ request }) => {
     const body = (await request.json()) as {
       materialId: string;
       itemId: string;
       rating: number;
       session?: ReviewSessionRef;
+      attempt?: { id: string; startedAt: string };
     };
     // Embedded sets record nothing; the study page never sends their ratings.
     if (db.materials.find((x) => x.id === body.materialId)?.parentMaterialId)
@@ -874,6 +1020,8 @@ export const studyHandlers = [
         kind: 'card',
         rating: body.rating,
       });
+    if (body.attempt)
+      recordCard(body.attempt, body.materialId, body.itemId, body.rating);
     return new HttpResponse(null, { status: 204 });
   }),
   // Grades one question, rates it from the score and returns its key.

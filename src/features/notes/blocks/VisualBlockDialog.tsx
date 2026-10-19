@@ -106,32 +106,22 @@ export default function VisualBlockDialog({
   });
   return (
     <SimpleDialog
-      footer={
-        <>
-          <Button
-            disabled={isSubmitting}
-            onClick={onClose}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={isSubmitting || invalid || issues.length > 0}
-            size="lg"
-            type="submit"
-            variant="accent"
-          >
-            {m.action_save()}
-          </Button>
-        </>
+      action={
+        <Button
+          disabled={isSubmitting || invalid || issues.length > 0}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
+          {m.action_save()}
+        </Button>
       }
       onClose={() => {
         if (!isSubmitting) onClose();
       }}
       onSubmit={save}
       open
+      pending={isSubmitting}
       title={titles[block.type]()}
       width={1040}
     >
