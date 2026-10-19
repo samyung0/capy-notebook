@@ -22,7 +22,8 @@ use serde_json::{Value, json};
 use yrs::branch::BranchPtr;
 use yrs::updates::decoder::Decode;
 use yrs::{
-    Any, Array, Doc, Map, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef,
+    Any, Array, Doc, Map, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim,
+    XmlTextRef,
 };
 
 /// xorshift64.
@@ -626,6 +627,12 @@ fn sweep(kind: &str, seed_value: &[Value]) -> (usize, usize) {
         .enumerate()
         .map(|(index, element)| (type_of(element), index == 0))
         .collect();
+    // Each figure the seed holds is a live block map, so its writes land.
+    for element in elements(&shape) {
+        if type_of(element).is_some_and(|kind| plate::holds_map(&kind, "block")) {
+            assert!(figure_map(&shape.transact(), &XmlTextRef::from(element)).is_some());
+        }
+    }
     let (mut admitted, mut refused) = (0, 0);
     for (index, (target, root)) in targets.iter().enumerate() {
         for (what, write) in writes(target.as_deref(), *root) {
@@ -670,8 +677,18 @@ fn every_single_catalog_write_leaves_a_document_the_store_takes() {
 /// Keys a write puts into a figure's live `block` map: its own fields, a
 /// list key written whole, the type, and one it never holds.
 const FIGURE_KEYS: [&str; 12] = [
-    "title", "kind", "labels", "description", "xLabel", "unit", "type", "series", "elements",
-    "board", "width", "extra",
+    "title",
+    "kind",
+    "labels",
+    "description",
+    "xLabel",
+    "unit",
+    "type",
+    "series",
+    "elements",
+    "board",
+    "width",
+    "extra",
 ];
 
 fn figure_values() -> [Any; 6] {
@@ -732,8 +749,12 @@ fn figure_write(index: usize, kind: &str) -> Option<(String, Write)> {
         return Some((
             format!("block {list} write {what}"),
             Box::new(move |txn, element| {
-                let Some(map) = figure_map(txn, element) else { return };
-                let Some(yrs::Out::YArray(entries)) = map.get(txn, list) else { return };
+                let Some(map) = figure_map(txn, element) else {
+                    return;
+                };
+                let Some(yrs::Out::YArray(entries)) = map.get(txn, list) else {
+                    return;
+                };
                 match what {
                     0 => {
                         let entry = entries.insert(txn, 0, yrs::MapPrelim::default());
