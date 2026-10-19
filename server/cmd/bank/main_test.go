@@ -113,6 +113,7 @@ func TestSourceReferenceContract(t *testing.T) {
 		`[{"kind":"library","excerptId":"e","bookId":"b","version":0}]`,
 		`[{"kind":"library","excerptId":"e","bookId":"b","version":1,"extra":true}]`,
 		`[{"kind":"library","excerptId":"e","bookId":"b","version":1,"url":"https://x.org"}]`,
+		`[{"kind":"library","excerptId":"e_v2","bookId":"b","version":1}]`,
 		`[{"kind":"web","url":"https://x.org/a","title":"A","license":"CC BY-ND 4.0","retrievedAt":"2026-10-02"}]`,
 		`[{"kind":"web","url":"https://x.org/a","title":"A","license":"CC BY-NC-SA 4.0","retrievedAt":"2026-10-02"}]`,
 		`[{"kind":"web","url":"https://x.org/a","title":"A","license":"CC BY 4.0","retrievedAt":"yesterday"}]`,
@@ -123,7 +124,7 @@ func TestSourceReferenceContract(t *testing.T) {
 	}
 	for _, raw := range []string{
 		`[]`,
-		`[{"kind":"library","excerptId":"e","bookId":"b","version":1}]`,
+		`[{"kind":"library","excerptId":"e_v1","bookId":"b","version":1}]`,
 		`[{"kind":"web","url":"https://x.org/a","title":"A","authors":["B"],"publisher":"P","license":"CC BY 4.0","licenseUrl":"https://creativecommons.org/licenses/by/4.0/","retrievedAt":"2026-10-02"}]`,
 	} {
 		if _, err := parseSources(json.RawMessage(raw)); err != nil {

@@ -20,7 +20,7 @@ import (
 // libraryTestPool creates a sibling database in the test container, applies
 // the schema fixture (kept identical to LIBRARY_SCHEMA by
 // pipeline/tests/test_library.py) and seeds one reviewable book at version 2
-// with version 1 retained.
+// beside rows of its retired version 1.
 func libraryTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
@@ -73,7 +73,7 @@ func seedLibrary(t *testing.T, pool *pgxpool.Pool) {
 			 parser_release, parser_fingerprint, chunker_version, descriptor, summary,
 			 object_key, note)
 			VALUES
-			('ahss', 1, 'ahss_v1', 'retained', 'run-1', 'corpus-1', 'odl-2026-09-16',
+			('ahss', 1, 'ahss_v1', 'retired', 'run-1', 'corpus-1', 'odl-2026-09-16',
 			 'odl-fp-1', 'v10', 'older stats', 'older summary', 'books/book-sha.pdf', 'pilot'),
 			('ahss', 2, 'ahss_v2', 'current', 'run-2', 'corpus-2', 'odl-2026-09-17',
 			 'odl-fp', 'v10', 'stats', 'summary', 'books/book-sha.pdf', 'reparse')`,
@@ -93,7 +93,7 @@ func seedLibrary(t *testing.T, pool *pgxpool.Pool) {
 			 '{}', 'Exercises nobody verified', 'tagged', '{exercise}',
 			 '{linear-regression}', 0.4, 'weak evidence', false, 'synopsis',
 			 'regression-exercises', '{low_confidence}')`,
-		// The retained version is invisible to every current-content read.
+		// An older version's rows are invisible to every current-content read.
 		`INSERT INTO library_excerpts VALUES
 			('ahss_v1', 'e_intro_v1', 'ahss', 'Ch 8 > Intro', '{c_intro_v1}', '{340}', '[]',
 			 '{}', 'Older parse of the same section', 'tagged', '{introduction}',
@@ -161,7 +161,7 @@ func TestLibraryReadsFollowTheCurrentBookVersion(t *testing.T) {
 	}
 	if len(books[0].Versions) != 2 || books[0].Versions[0].Version != 2 ||
 		books[0].Versions[0].Status != "current" ||
-		books[0].Versions[1].Status != "retained" ||
+		books[0].Versions[1].Status != "retired" ||
 		books[0].Versions[0].ObjectKey != "books/book-sha.pdf" ||
 		books[0].Versions[1].SourceRun != "run-1" ||
 		books[0].Versions[1].Descriptor != "older stats" {
@@ -186,7 +186,7 @@ func TestLibraryReadsFollowTheCurrentBookVersion(t *testing.T) {
 		t.Fatalf("library subjects: %v", err)
 	}
 	// Both tagged excerpts of the current version carry the statistics topic;
-	// the retained version's does not count, and algebra holds nothing.
+	// the older version's does not count, and algebra holds nothing.
 	if len(subjects) != 2 ||
 		subjects[0] != (LibrarySubject{ID: "algebra", Area: "mathematics", Label: "Algebra"}) ||
 		subjects[1] != (LibrarySubject{
@@ -200,7 +200,7 @@ func TestLibraryReadsFollowTheCurrentBookVersion(t *testing.T) {
 		t.Fatalf("library excerpts: %v", err)
 	}
 	if all.Total != 2 || len(all.Items) != 2 || all.PageSize != libraryExcerptPage {
-		t.Fatalf("excerpt page = %+v, want the retained version excluded", all)
+		t.Fatalf("excerpt page = %+v, want the older version excluded", all)
 	}
 	review, err := read.LibraryExcerpts(ctx, LibraryExcerptFilter{
 		Book: "ahss", Topic: "linear-regression", Role: "exercise", Review: true,
@@ -249,40 +249,23 @@ func TestLibraryReadsFollowTheCurrentBookVersion(t *testing.T) {
 		t.Fatalf("model runs = %+v, want only the current version's receipts", runs)
 	}
 
-	export, err := read.LibraryExport(ctx, "ahss", 0)
+	// The export is the current version only; the older version's rows never join it.
+	export, err := read.LibraryExport(ctx, "ahss")
 	if err != nil {
 		t.Fatalf("export: %v", err)
 	}
-	if export.Truncated || export.Version != 2 || len(export.Excerpts) != 2 ||
-		len(export.Figures) != 1 {
+	if export.Truncated || export.Version != 2 || export.ContentID != "ahss_v2" ||
+		len(export.Excerpts) != 2 || len(export.Figures) != 1 ||
+		export.Book.Descriptor != "stats" {
 		t.Fatalf("export = %+v", export)
 	}
 	if len(export.Excerpts[0].Chunks) != 1 || export.Excerpts[0].Chunks[0].Text == "" {
 		t.Fatalf("export chunks = %+v", export.Excerpts[0])
 	}
-	retained, err := read.LibraryExport(ctx, "ahss", 1)
-	if err != nil {
-		t.Fatalf("retained export: %v", err)
-	}
-	if retained.Version != 1 || len(retained.Excerpts) != 1 ||
-		retained.Excerpts[0].ID != "e_intro_v1" ||
-		retained.Book.Descriptor != "older stats" {
-		t.Fatalf("retained export = %+v, want the retained version readable", retained)
-	}
-	// The book block describes what the export contains, not what is live.
-	if retained.Book.Version != 1 || retained.Book.ContentID != "ahss_v1" {
-		t.Fatalf("retained export book = version %d content %q, want the exported version's",
-			retained.Book.Version, retained.Book.ContentID)
-	}
-	if _, err := read.LibraryExport(ctx, "missing", 0); !errors.Is(
+	if _, err := read.LibraryExport(ctx, "missing"); !errors.Is(
 		err, store.ErrNotFound,
 	) {
 		t.Fatalf("unknown book error = %v, want not found", err)
-	}
-	if _, err := read.LibraryExport(ctx, "ahss", 9); !errors.Is(
-		err, store.ErrNotFound,
-	) {
-		t.Fatalf("unknown version error = %v, want not found", err)
 	}
 }
 
@@ -300,12 +283,9 @@ func TestLibraryExcerptFilterRejectsUnknownRoleAndPage(t *testing.T) {
 		t.Fatalf("oversized page error = %v, want validation", err)
 	}
 	if _, err := read.LibraryExport(
-		ctx, strings.Repeat("b", libraryIDMaxLen+1), 0,
+		ctx, strings.Repeat("b", libraryIDMaxLen+1),
 	); !IsValidation(err) {
 		t.Fatalf("oversized book error = %v, want validation", err)
-	}
-	if _, err := read.LibraryExport(ctx, "ahss", libraryMaxBookVersion+1); !IsValidation(err) {
-		t.Fatalf("oversized version error = %v, want validation", err)
 	}
 }
 
@@ -392,7 +372,7 @@ func TestLibraryExportCarriesItsDigest(t *testing.T) {
 	}
 
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, operator("/api/ops/library/export/ahss?version=1"))
+	handler.ServeHTTP(response, operator("/api/ops/library/export/ahss"))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
 	}
@@ -404,17 +384,12 @@ func TestLibraryExportCarriesItsDigest(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &export); err != nil {
 		t.Fatal(err)
 	}
-	if export.Book.ID != "ahss" || export.Version != 1 || len(export.Excerpts) != 1 {
+	if export.Book.ID != "ahss" || export.Version != 2 || len(export.Excerpts) != 2 {
 		t.Fatalf("export body = %+v", export)
 	}
 	if got := response.Header().Get("Content-Disposition"); !strings.Contains(
-		got, "library-ahss-v1.json",
+		got, "library-ahss-v2.json",
 	) {
 		t.Fatalf("Content-Disposition = %q", got)
-	}
-	bad := httptest.NewRecorder()
-	handler.ServeHTTP(bad, operator("/api/ops/library/export/ahss?version=0"))
-	if bad.Code != http.StatusBadRequest {
-		t.Fatalf("version=0 status = %d body = %s", bad.Code, bad.Body.String())
 	}
 }
