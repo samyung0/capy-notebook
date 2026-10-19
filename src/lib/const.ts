@@ -10,9 +10,9 @@ export const MATERIAL_DOCUMENT_LIMITS = {
   maxNodes: 10_000,
 } as const;
 
-// A source room's state cap, which also bounds the edits a device holds while
-// offline. IMPORTANT: KEEP IN SYNC WITH MAX_SOURCE_STATE_BYTES IN
-// collaboration-rs/crates/sources/src/lib.rs
+// The ceiling on any source state, which also bounds the edits a device holds
+// while offline (a room's own cap is lower: state_cap). IMPORTANT: KEEP IN
+// SYNC WITH MAX_SOURCE_STATE_BYTES IN collaboration-rs/crates/sources/src/lib.rs
 export const SOURCE_STATE_MAX_BYTES = 100 * 1024 * 1024;
 
 /**

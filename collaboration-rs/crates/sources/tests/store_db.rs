@@ -659,6 +659,89 @@ async fn an_agent_edit_on_a_checkpoint_that_keeps_moving_stops_after_three_attem
     assert_eq!(h.fake.moved.lock().unwrap()[&room.file_id], 3);
 }
 
+/// Epo 2026-10-17: a room's state cap is its seed plus the export cap (the
+/// largest plan source file) less its base file and a margin. A base that
+/// leaves no room refuses a growing save and a growing agent edit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
+    let h = harness().await;
+    let export = h
+        .fake
+        .db
+        .get()
+        .await
+        .unwrap()
+        .query_one("SELECT max(source_file_max_bytes) FROM plan_limits", &[])
+        .await
+        .unwrap()
+        .get::<_, i64>(0) as u64;
+    let room = h.file("text", "notes.md", b"abc").await;
+    let doc = text_doc(100);
+    let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();
+    let seed = encode(&doc, &StateVector::default()).len() as u64;
+    assert_eq!(
+        loaded.state_cap,
+        seed + export - 3 - sources::STATE_GROWTH_MARGIN_BYTES
+    );
+
+    let base = format!(
+        "{}END",
+        "a".repeat((export - sources::STATE_GROWTH_MARGIN_BYTES / 2) as usize)
+    );
+    let room = h.file("text", "full.md", base.as_bytes()).await;
+    let doc = text_doc(100);
+    let loaded = h.sources.load(&room, &h.user, &doc).await.unwrap();
+    assert_eq!(
+        loaded.state_cap,
+        encode(&doc, &StateVector::default()).len() as u64
+    );
+    // The save's whole-state check is format-agnostic; only Office saves send
+    // the state in production, so a text room stands in for one here.
+    let durable = doc.transact().state_vector();
+    type_into(&doc, 7, 0, "X");
+    let row = encode(&doc, &durable);
+    let effects = h
+        .sources
+        .text_effects(&room, &doc.transact(), &row)
+        .unwrap();
+    let error = h
+        .sources
+        .store(
+            &room,
+            Save {
+                row,
+                state: Some(encode(&doc, &StateVector::default())),
+                text: Some(effects),
+                actors: vec![h.user.clone()],
+                retry_event: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.status(), Some(413), "{error:?}");
+
+    let input = EditInput {
+        actor_user_id: h.user.clone(),
+        commands: vec![json!({
+            "type": "replace_text",
+            "expectedText": "END",
+            "offset": base.len() - 3,
+            "text": "END and more",
+        })],
+        epoch: None,
+        file_id: room.file_id.clone(),
+        operation: json!({ "id": "op_full", "requestHash": "h1" }),
+        undo: None,
+    };
+    let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
+    let Err(error) = h.sources.apply_edit(input, live).await else {
+        panic!("the edit committed");
+    };
+    assert_eq!(error.status(), Some(413), "{error:?}");
+    assert_eq!(h.row(&room).await.get::<_, i64>(0), 0, "nothing was stored");
+}
+
 /// A trashed file waits for no rebuild, though its room unloading (its
 /// editors closed by the trash) still schedules one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

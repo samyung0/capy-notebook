@@ -2229,7 +2229,7 @@ export const GetSourceSessionParams = zod.object({
 })
 
 export const GetSourceSessionQueryParams = zod.object({
-  "view": zod.boolean().optional().describe('Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
+  "view": zod.boolean().optional().describe('Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint')
 })
 
 export const GetSourceSessionResponse = zod.object({
@@ -2241,10 +2241,10 @@ export const GetSourceSessionResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "growthBudgetBytes": zod.int().optional(),
   "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
-  "pendingEffects": zod.unknown(),
   "publishedSourceSHA256": zod.string().optional(),
   "publishedSourceURL": zod.string().optional(),
   "publishedState": zod.string().optional(),
@@ -7240,6 +7240,7 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "growthBudgetBytes": zod.int().optional(),
   "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
@@ -7418,6 +7419,7 @@ export const PublishSourceRefreshResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "growthBudgetBytes": zod.int().optional(),
   "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),

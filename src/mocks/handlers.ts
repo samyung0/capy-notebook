@@ -232,7 +232,6 @@ async function mockSourceSession(
     format: 'text',
     indexedCheckpoint: 0,
     netTokens: 0,
-    pendingEffects: null,
     room: sourceRoomName(fileId, SOURCE_EPOCH),
     sourceIdentity: `mock-${fileId}`,
     sourceURL: link.url,
@@ -689,7 +688,6 @@ export const handlers = [
         access: 'read',
         fileId: file.id,
         format: 'text',
-        pendingEffects: null,
         state: savedSourceState(file.id),
       });
     if (dialogFiles.some((file) => file.id === params.id)) {

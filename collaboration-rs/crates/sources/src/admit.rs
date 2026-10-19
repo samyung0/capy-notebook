@@ -14,7 +14,7 @@ use yrs::branch::{BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
 use yrs::{ClientID, Doc, ReadTxn, StateVector, Transact, Update};
 
-use crate::{MAX_SOURCE_STATE_BYTES, SourceFormat};
+use crate::SourceFormat;
 
 const PPTX_META: &str = "pptx:meta";
 /// The one pptx:meta key a remote update may write (comment flavour).
@@ -49,14 +49,17 @@ pub enum Admission {
     Refuse(Refusal),
 }
 
-/// Admits a writer's update to a source room. `estimate` is the room's
-/// running state size: the server adds each applied update's bytes (the
-/// load's included); crossing the cap measures exactly and resets it.
+/// Admits a writer's update to a source room under its `cap`
+/// ([`crate::state_cap`]) less the write reserve ([`crate::admission_cap`]).
+/// `estimate` is the room's running state size: the server adds each applied
+/// update's bytes (the load's included); crossing the limit measures exactly
+/// and resets it.
 pub fn admit_update(
     doc: &Doc,
     format: SourceFormat,
     update: &[u8],
     estimate: &mut u64,
+    cap: u64,
 ) -> Admission {
     let decoded = match Update::decode_v1(update) {
         Ok(decoded) => decoded,
@@ -64,7 +67,7 @@ pub fn admit_update(
             return Admission::Refuse(Refusal::Malformed(format!("malformed yjs update: {error}")));
         }
     };
-    match fits_room(doc, update, estimate, MAX_SOURCE_STATE_BYTES as u64) {
+    match fits_room(doc, update, estimate, crate::admission_cap(cap)) {
         Ok(true) => {}
         Ok(false) => return Admission::Refuse(Refusal::StateBytes),
         Err(error) => return Admission::Refuse(Refusal::Malformed(error)),
@@ -196,6 +199,7 @@ fn touches(branch: BranchPtr, deletes: &HashMap<ClientID, Vec<Range<u32>>>) -> b
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MAX_SOURCE_STATE_BYTES;
     use yrs::{Map, MapPrelim, Text};
 
     fn encode(doc: &Doc, since: &StateVector) -> Vec<u8> {
@@ -217,7 +221,13 @@ mod tests {
 
     fn verdict(room: &Doc, format: SourceFormat, update: &[u8]) -> Admission {
         let mut estimate = 0;
-        admit_update(room, format, update, &mut estimate)
+        admit_update(
+            room,
+            format,
+            update,
+            &mut estimate,
+            MAX_SOURCE_STATE_BYTES as u64,
+        )
     }
 
     // officeRoots.test.ts: an update the room cannot integrate in order is unheld.
@@ -365,6 +375,7 @@ mod tests {
 
     #[test]
     fn the_byte_cap_measures_exactly_only_past_the_estimate() {
+        let cap = MAX_SOURCE_STATE_BYTES as u64;
         let room = Doc::with_client_id(1);
         let text = room.get_or_insert_text("source");
         text.insert(&mut room.transact_mut(), 0, "hello");
@@ -377,14 +388,14 @@ mod tests {
         });
         let mut estimate = 10;
         assert_eq!(
-            admit_update(&room, SourceFormat::Text, &typed, &mut estimate),
+            admit_update(&room, SourceFormat::Text, &typed, &mut estimate, cap),
             Admission::Accept
         );
         assert_eq!(estimate, 10);
         // An estimate over the cap measures the room (and resets the estimate).
-        let mut estimate = MAX_SOURCE_STATE_BYTES as u64;
+        let mut estimate = cap;
         assert_eq!(
-            admit_update(&room, SourceFormat::Text, &typed, &mut estimate),
+            admit_update(&room, SourceFormat::Text, &typed, &mut estimate, cap),
             Admission::Accept
         );
         let exact = encode(&room, &StateVector::default()).len() as u64;
@@ -401,5 +412,53 @@ mod tests {
             Ok(false)
         );
         assert_eq!(estimate, exact);
+    }
+
+    /// The room's own cap refuses, not only the ceiling every room shares.
+    #[test]
+    fn an_update_past_the_rooms_cap_is_refused() {
+        let room = Doc::with_client_id(1);
+        let text = room.get_or_insert_text("source");
+        text.insert(&mut room.transact_mut(), 0, "hello");
+        let client = Doc::with_client_id(2);
+        apply(&client, &encode(&room, &StateVector::default()));
+        let typed = delta(&client, || {
+            client.get_or_insert_text("source").insert(
+                &mut client.transact_mut(),
+                0,
+                &"x".repeat(64),
+            )
+        });
+        let exact = encode(&room, &StateVector::default()).len() as u64;
+        let mut estimate = exact;
+        assert_eq!(
+            admit_update(&room, SourceFormat::Text, &typed, &mut estimate, exact + 8),
+            Admission::Refuse(Refusal::StateBytes)
+        );
+        let reserve = crate::STATE_WRITE_RESERVE_BYTES;
+        let mut estimate = exact;
+        assert_eq!(
+            admit_update(
+                &room,
+                SourceFormat::Text,
+                &typed,
+                &mut estimate,
+                exact + 1024 + reserve
+            ),
+            Admission::Accept
+        );
+        // Under the cap but into the reserve the room's own writes need
+        // (Epo 2026-10-17): refused, so the save's exact check holds.
+        let mut estimate = exact;
+        assert_eq!(
+            admit_update(
+                &room,
+                SourceFormat::Text,
+                &typed,
+                &mut estimate,
+                exact + 1024
+            ),
+            Admission::Refuse(Refusal::StateBytes)
+        );
     }
 }

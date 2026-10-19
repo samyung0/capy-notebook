@@ -17,6 +17,7 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceSessionFormat;
+  growthBudgetBytes?: number;
   imageMaxBytes?: number;
   indexedCheckpoint: number;
   netTokens: number;

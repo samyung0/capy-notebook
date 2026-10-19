@@ -7,7 +7,7 @@
 
 export type GetSourceSessionParams = {
 /**
- * Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint
+ * Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint
  */
 view?: boolean;
 };

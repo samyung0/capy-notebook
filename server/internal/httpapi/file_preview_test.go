@@ -172,17 +172,31 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	if edited.Code != http.StatusOK ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"state":"AQ=="`)) ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"stateSeedSHA256":"`+seed+`"`)) ||
-		!bytes.Contains(edited.Body.Bytes(), []byte(`"pendingEffects":null`)) {
+		bytes.Contains(edited.Body.Bytes(), []byte(`pendingEffects`)) ||
+		bytes.Contains(edited.Body.Bytes(), []byte(`growthBudgetBytes`)) {
 		t.Fatalf("edited view session = %d body=%s", edited.Code, edited.Body.String())
 	}
 	// An Office editor takes its document from the room's sync: the editor
-	// read carries no state, and leaves the effects server-side.
+	// read carries no state, and leaves the effects server-side. It carries
+	// what the room may still admit: the export cap (30 MiB in the test
+	// catalog) less the 100 byte base, the 1 MiB margin, admission's 64 KiB
+	// reserve and the 1 byte saved change.
 	full := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
 	if full.Code != http.StatusOK ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"state":null`)) ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"stateSeedSHA256":null`)) ||
-		!bytes.Contains(full.Body.Bytes(), []byte(`"pendingEffects":null`)) {
+		bytes.Contains(full.Body.Bytes(), []byte(`pendingEffects`)) ||
+		!bytes.Contains(full.Body.Bytes(), []byte(`"growthBudgetBytes":30343067`)) {
 		t.Fatalf("editor session = %d body=%s", full.Code, full.Body.String())
+	}
+	// Editing that stays on an older base measures it in the bucket (9 bytes).
+	if _, err := st.Pool().Exec(ctx, `UPDATE files SET revision=revision+1 WHERE id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	older := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
+	if older.Code != http.StatusOK ||
+		!bytes.Contains(older.Body.Bytes(), []byte(`"growthBudgetBytes":30343158`)) {
+		t.Fatalf("editor session over an older base = %d body=%s", older.Code, older.Body.String())
 	}
 }
 

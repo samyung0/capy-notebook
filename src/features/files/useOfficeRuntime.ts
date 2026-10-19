@@ -83,6 +83,24 @@ export function replicaCatchUp(doc: Y.Doc, replicaState: Uint8Array) {
   );
 }
 
+/**
+ * Whether an Office edit open stops at the file's size limit: no growth
+ * budget left (Epo 2026-10-17), and no drafts to show, whether recovery or
+ * restored ones still being sent, which open so they can be seen, copied out
+ * or discarded.
+ */
+export function opensAtSizeLimit(source: {
+  dirty: boolean;
+  session?: { growthBudgetBytes?: number } | null;
+  status: string;
+}) {
+  return (
+    source.session?.growthBudgetBytes === 0 &&
+    source.status !== 'recovery' &&
+    !source.dirty
+  );
+}
+
 export function isCurrentOfficeRuntimeMessage(
   messageRevision: number,
   currentRevision: number
@@ -153,6 +171,18 @@ export function useOfficeRuntime({
     setJoined(false);
     setMode('view');
   }, [mode, pausedAtOpen, setMode]);
+  // A file with no growth budget left is at its size limit: it opens to view
+  // only, with a notice, instead of refusing its first change (Epo
+  // 2026-10-17). No edit frame loads for it (the load waits below). Drafts
+  // it holds (recovery, or restored ones being sent) still open, so they can
+  // be seen, copied out or discarded.
+  const atSizeLimit = opensAtSizeLimit(source);
+  useEffect(() => {
+    if (mode !== 'edit' || !atSizeLimit) return;
+    setJoined(false);
+    setMode('view');
+    userToast({ title: m.files_office_size_limit() });
+  }, [mode, atSizeLimit, setMode]);
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const modeRef = useRef(mode);
@@ -375,6 +405,7 @@ export function useOfficeRuntime({
       mode === 'edit' &&
       (!source.doc ||
         !source.session ||
+        atSizeLimit ||
         !source.bytes ||
         (!source.synced && source.status !== 'recovery' && !source.outdated))
     )
@@ -395,10 +426,16 @@ export function useOfficeRuntime({
         : undefined;
     const imageMaxBytes =
       mode === 'edit' ? source.session!.imageMaxBytes : undefined;
+    const growthBudgetBytes =
+      mode === 'edit' ? source.session!.growthBudgetBytes : undefined;
     initializedFrame.current = frameGeneration;
-    // An Office edit session always names the payer's image cap; without one
-    // the editor cannot open, so it fails here instead of hanging.
-    if (mode === 'edit' && !(imageMaxBytes && imageMaxBytes > 0)) {
+    // An Office edit session always names the payer's image cap and the
+    // room's growth budget; without them the editor cannot open, so it fails
+    // here instead of hanging.
+    if (
+      mode === 'edit' &&
+      !(imageMaxBytes && imageMaxBytes > 0 && growthBudgetBytes !== undefined)
+    ) {
       setError(m.error_file_body());
       return;
     }
@@ -420,6 +457,7 @@ export function useOfficeRuntime({
         collaboration,
         fileName: file.name,
         format,
+        growthBudgetBytes,
         imageMaxBytes,
         mode,
         revision: revisionRef.current,
@@ -432,6 +470,7 @@ export function useOfficeRuntime({
       )
     );
   }, [
+    atSizeLimit,
     frameLoaded,
     frameGeneration,
     frameBoot,
@@ -969,6 +1008,8 @@ const OFFICE_NOTICE_TOASTS: Record<
   },
   // A refused keystroke repeats on every key: once per frame.
   'equation-text': { once: true, title: () => m.files_office_equation_text() },
+  // Each refused image is its own pick: every time.
+  'image-budget': { once: false, title: () => m.files_office_image_budget() },
   // Each refused image is its own pick: every time.
   'image-too-large': {
     once: false,

@@ -12,6 +12,7 @@ import (
 )
 
 type sourceSessionOutput struct{ Body store.SourceSession }
+type browserSourceSessionOutput struct{ Body store.BrowserSourceSession }
 type sourceCheckpointOutput struct{ Body store.SourceCheckpointSaved }
 type SourceCollaborationToken struct {
 	Token     string `json:"token"`
@@ -64,9 +65,9 @@ type annotationUpdateInput struct {
 type sourceSessionInput struct {
 	ID string `path:"id"`
 	// View is the lock-free viewer read: read authorization only, no row
-	// insert, no indexed state or pending effects, and state only when a saved
-	// checkpoint is ahead of the indexed one.
-	View bool `query:"view" doc:"Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"`
+	// insert, and state only when a saved checkpoint is ahead of the indexed
+	// one.
+	View bool `query:"view" doc:"Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"`
 }
 type annotationIDInput struct {
 	ID           string `path:"id"`
@@ -117,23 +118,31 @@ func (a *api) checkSourceSecret(ctx context.Context, secret string) error {
 func (a *api) collaborationSecretOK(secret string) bool {
 	return a.cfg.CollaborationSecret != "" && subtle.ConstantTimeCompare([]byte(secret), []byte(a.cfg.CollaborationSecret)) == 1
 }
-func (a *api) sourceSessionResponse(ctx context.Context, session store.SourceSession) (*sourceSessionOutput, error) {
+
+// presignSource signs the session's base (and published file) links.
+func (a *api) presignSource(ctx context.Context, session *store.BrowserSourceSession) error {
 	if a.blob == nil {
-		return nil, huma.Error503ServiceUnavailable("blob store not configured")
+		return huma.Error503ServiceUnavailable("blob store not configured")
 	}
 	url, err := a.blob.PresignGet(ctx, session.BaseBlobPath)
 	if err != nil {
-		return nil, hErr(err)
+		return hErr(err)
 	}
 	session.SourceURL = url
 	if session.RebuildPending {
 		if session.PublishedSourceURL, err = a.blob.PresignGet(ctx, session.PublishedBlobPath); err != nil {
-			return nil, hErr(err)
+			return hErr(err)
 		}
 	}
-	return &sourceSessionOutput{Body: session}, nil
+	return nil
 }
-func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*sourceSessionOutput, error) {
+func (a *api) browserSourceSession(ctx context.Context, session store.BrowserSourceSession) (*browserSourceSessionOutput, error) {
+	if err := a.presignSource(ctx, &session); err != nil {
+		return nil, err
+	}
+	return &browserSourceSessionOutput{Body: session}, nil
+}
+func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*browserSourceSessionOutput, error) {
 	if in.View {
 		if _, err := a.fileRead(ctx, in.ID); err != nil {
 			return nil, hErr(err)
@@ -142,7 +151,7 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 		if err != nil {
 			return nil, hErr(err)
 		}
-		return a.sourceSessionResponse(ctx, session)
+		return a.browserSourceSession(ctx, session)
 	}
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
 	if err != nil {
@@ -152,12 +161,16 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	// Effects stay server-side. The browser opens a text state; an Office
-	// editor takes its document from the room's sync.
-	session.PendingEffects = nil
 	// A pending rebuild is the collaboration service's.
 	session.RebuildPending, session.PublishedState, session.PublishedStateSeedSHA256, session.PublishedSourceSHA256 = false, nil, nil, ""
 	if session.Format != "text" {
+		budget, err := a.sourceGrowthBudget(ctx, session)
+		if err != nil {
+			return nil, err
+		}
+		session.GrowthBudgetBytes = &budget
+		// The browser opens a text state; an Office editor takes its
+		// document from the room's sync.
 		session.State, session.StateSeedSHA256, session.StateRows = nil, nil, nil
 		if session.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, session.OwnerID); err != nil {
 			return nil, hErr(err)
@@ -166,7 +179,29 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 			return nil, hErr(err)
 		}
 	}
-	return a.sourceSessionResponse(ctx, session)
+	// Effects stay server-side.
+	return a.browserSourceSession(ctx, session.BrowserSourceSession)
+}
+
+// sourceGrowthBudget is an Office edit read's SourceGrowthBudget. The base
+// is the file's current revision unless editing stays on an older one, whose
+// size the bucket answers.
+func (a *api) sourceGrowthBudget(ctx context.Context, session store.SourceSession) (int64, error) {
+	exportCap, err := a.s.MaxSourceFileBytes()
+	if err != nil {
+		return 0, hErr(err)
+	}
+	if session.BaseBytes != nil {
+		return store.SourceGrowthBudget(exportCap, *session.BaseBytes, session), nil
+	}
+	if a.blob == nil {
+		return 0, huma.Error503ServiceUnavailable("blob store not configured")
+	}
+	info, err := a.blob.Head(ctx, session.BaseBlobPath)
+	if err != nil {
+		return 0, hErr(err)
+	}
+	return store.SourceGrowthBudget(exportCap, info.Size, session), nil
 }
 func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapInput) (*sourceSessionOutput, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
@@ -179,7 +214,10 @@ func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapIn
 	// The collaboration service reads the state and its rows from the
 	// database in one snapshot when it loads a room.
 	session.StateRows = nil
-	return a.sourceSessionResponse(ctx, session)
+	if err := a.presignSource(ctx, &session.BrowserSourceSession); err != nil {
+		return nil, err
+	}
+	return &sourceSessionOutput{Body: session}, nil
 }
 func (a *api) checkSourceAccess(ctx context.Context, in *sourceAccessInput) (*struct{}, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
@@ -463,7 +501,10 @@ func (a *api) publishSourceRefresh(ctx context.Context, in *sourcePublishInput) 
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.sourceSessionResponse(ctx, out)
+	if err = a.presignSource(ctx, &out.BrowserSourceSession); err != nil {
+		return nil, err
+	}
+	return &sourceSessionOutput{Body: out}, nil
 }
 func (a *api) failSourceRefresh(ctx context.Context, in *sourceFailureInput) (*Empty, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {

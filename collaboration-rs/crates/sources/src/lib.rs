@@ -31,8 +31,40 @@ use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
 
-/// The Yjs state cap of a source room (`MAX_SOURCE_STATE_BYTES`).
+/// The ceiling on any source state: WebSocket frames, downloads and the
+/// offline drafts a device holds. A room's own cap is [`state_cap`].
 pub const MAX_SOURCE_STATE_BYTES: usize = 100 * 1024 * 1024;
+
+/// What a room's growth stays under its export cap by, so the export's own
+/// overhead never takes an accepted state past publication.
+/// IMPORTANT: KEEP IN SYNC WITH sourceGrowthMarginBytes IN
+/// server/internal/store/source_documents.go
+pub const STATE_GROWTH_MARGIN_BYTES: u64 = 1024 * 1024;
+
+/// A room's state cap: its seed plus the export cap (the largest plan source
+/// file, which publication enforces) less the base file and a margin, within
+/// [`MAX_SOURCE_STATE_BYTES`] (Epo 2026-10-17). Pictures that came with the
+/// file are references in the seed but bytes in the export; inserted images
+/// are bytes in both. So a room never accepts edits its publication must
+/// refuse.
+pub fn state_cap(seed_bytes: u64, base_bytes: u64, export_cap: u64) -> u64 {
+    let growth = export_cap.saturating_sub(base_bytes + STATE_GROWTH_MARGIN_BYTES);
+    (seed_bytes + growth).min(MAX_SOURCE_STATE_BYTES as u64)
+}
+
+/// What admission keeps free under a room's cap (Epo 2026-10-17): the
+/// contributor marker the room writes after an update always fits, so the
+/// save's check against the cap itself stays exact. A writer's update an
+/// agent edit did not see fits only while it is under the reserve too; a
+/// larger one racing an agent edit near the cap can still take the save past
+/// it. Go's growth budget subtracts it (KEEP IN SYNC WITH
+/// sourceWriteReserveBytes in server/internal/store/source_documents.go).
+pub const STATE_WRITE_RESERVE_BYTES: u64 = 64 * 1024;
+
+/// The most an update or an agent edit may take a room's state to.
+pub fn admission_cap(state_cap: u64) -> u64 {
+    state_cap.saturating_sub(STATE_WRITE_RESERVE_BYTES)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -140,5 +172,18 @@ mod tests {
         ] {
             assert_eq!(SourceRoom::parse(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn a_rooms_cap_is_its_seed_plus_the_export_cap_less_its_base() {
+        const MIB: u64 = 1024 * 1024;
+        assert_eq!(state_cap(2 * MIB, 4 * MIB, 30 * MIB), 27 * MIB);
+        // A base at the export cap leaves the seed alone.
+        assert_eq!(state_cap(2 * MIB, 30 * MIB, 30 * MIB), 2 * MIB);
+        // Never past the ceiling every room shares.
+        assert_eq!(
+            state_cap(90 * MIB, MIB, 30 * MIB),
+            MAX_SOURCE_STATE_BYTES as u64
+        );
     }
 }

@@ -297,7 +297,8 @@ Edits a publication captured are charged once, in the file:
   change in the file's size: the published text is in the file's bytes now,
   and Yjs stores text as its UTF-8 bytes. What stays charged is Yjs history
   (deleted structs and item metadata; source states are never compacted, and
-  the 100 MiB state cap bounds them) and edits after the capture. Migration
+  a room's state cap bounds them: its seed plus the 30 MiB export cap less
+  the base file and a 1 MiB margin) and edits after the capture. Migration
   0054 gave every existing text state the seed size of its file (seed(text) is
   the text plus 15–18 bytes). `seed_bytes` is recorded for text only (a CHECK
   keeps it 0 for Office rows).

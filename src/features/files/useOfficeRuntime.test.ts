@@ -4,6 +4,7 @@ import {
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
+  opensAtSizeLimit,
 } from './useOfficeRuntime';
 
 // Capy's vitest has no DOM, so these elements are outside any dialog or menu
@@ -123,5 +124,30 @@ describe('the notices a frame shows', () => {
       [m.files_office_clear_too_large()],
       [m.files_office_copy_too_large()],
     ]);
+  });
+});
+
+describe('an Office edit open at the size limit', () => {
+  const full = { growthBudgetBytes: 0 };
+  it('stops when nothing is left to admit and no drafts wait', () => {
+    expect(
+      opensAtSizeLimit({ dirty: false, session: full, status: 'saved' })
+    ).toBe(true);
+    expect(
+      opensAtSizeLimit({
+        dirty: false,
+        session: { growthBudgetBytes: 1 },
+        status: 'saved',
+      })
+    ).toBe(false);
+  });
+
+  it('still opens recovery and restored drafts, so they can be copied out or discarded', () => {
+    expect(
+      opensAtSizeLimit({ dirty: false, session: full, status: 'recovery' })
+    ).toBe(false);
+    expect(
+      opensAtSizeLimit({ dirty: true, session: full, status: 'saving' })
+    ).toBe(false);
   });
 });

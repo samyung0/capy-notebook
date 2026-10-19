@@ -656,11 +656,11 @@ export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {
 };
 
 export type {
+  BrowserSourceSession as SourceSession,
   MaterialAuthor,
   PDFRect,
   SourceCollaborationToken,
   SourceProcessResult,
-  SourceSession,
   WorkspaceSummary,
   WorkspaceSummaryChapter,
   WorkspaceSummaryFile,
