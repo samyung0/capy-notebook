@@ -1534,6 +1534,7 @@ describe('the draft sweep sending', () => {
     expect(requests).toHaveLength(2);
     const left = await readDrafts(big);
     expect(left.map((row) => row.held ?? false)).toEqual([false]);
+    expect(left[0].data.byteLength).toBeLessThan(4 * 1024 * 1024);
     expect(await heldText(big)).toBe(text);
     // The next trigger of the same page load sends the rest.
     await sweepDrafts('u_fast', tokens(ROOM), { cleanup: false });
