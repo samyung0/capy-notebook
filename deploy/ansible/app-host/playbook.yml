@@ -10,11 +10,6 @@
       - "6379"
     # The interface the internet reaches this host on.
     app_public_interface: "{{ ansible_default_ipv4.interface }}"
-    # Ports the Coolify proxy (Traefik: 80, 443 over TCP and UDP, 8080) and
-    # Coolify itself (8000 to its container's 8080, 6001, 6002) publish on all
-    # interfaces. The DOCKER-USER drop matches after Docker's DNAT, on the
-    # container port, so 8080 also covers Coolify's 8000.
-    app_public_docker_ports: [80, 443, 8000, 6001, 6002, 8080]
     # Container networks allowed to reach the host (see the ufw task below).
     app_docker_host_networks: ["10.0.0.0/16", "fdda:ad28:f840::/64"]
 
@@ -188,21 +183,23 @@
 
     # Docker-published ports bypass ufw, so the public interface's drop sits
     # in Docker's DOCKER-USER chain, for IPv4 (after.rules) and IPv6
-    # (after6.rules), TCP and UDP (Traefik also publishes 443/udp for
-    # HTTP/3). ufw loads these files at boot and on every reload, flushing and
+    # (after6.rules). It drops every new connection from the internet into
+    # any container, whatever its port or protocol, so a port a compose file
+    # publishes later stays closed too; replies to the containers' own
+    # outbound connections (cloudflared's tunnel among them) are not new.
+    # ufw loads these files at boot and on every reload, flushing and
     # refilling the chain, and Docker keeps the chain's rules when it
     # restarts. Only the public interface matches: the WireGuard address's
     # published services, traffic between containers and the tunnel's
     # loopback hop to the proxy are untouched.
-    - name: Drop public connections to Docker-published ports
+    - name: Drop new public connections into containers
       ansible.builtin.blockinfile:
         path: "/etc/ufw/{{ item }}"
         marker: "# {mark} CAPY DOCKER-USER"
         block: |
           *filter
           :DOCKER-USER - [0:0]
-          -A DOCKER-USER -i {{ app_public_interface }} -p tcp -m multiport --dports {{ app_public_docker_ports | join(',') }} -j DROP
-          -A DOCKER-USER -i {{ app_public_interface }} -p udp -m multiport --dports {{ app_public_docker_ports | join(',') }} -j DROP
+          -A DOCKER-USER -i {{ app_public_interface }} -m conntrack --ctstate NEW -j DROP
           COMMIT
       loop: [after.rules, after6.rules]
       notify: Reload ufw

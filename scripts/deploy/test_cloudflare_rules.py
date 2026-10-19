@@ -231,8 +231,11 @@ class RulesFileTest(unittest.TestCase):
             "http_request_firewall_custom",
             "capy_webhooks_skip_security",
         )
+        # Human decision (Epo 2026-10-20): only the API hosts' webhooks.
         self.assertEqual(
-            skip["expression"], 'starts_with(http.request.uri.path, "/webhooks/")'
+            skip["expression"],
+            'http.host in {"api.capynotebook.com" "uat-api.capynotebook.com"}'
+            ' and starts_with(http.request.uri.path, "/webhooks/")',
         )
         self.assertIn("http_ratelimit", skip["action_parameters"]["phases"])
 

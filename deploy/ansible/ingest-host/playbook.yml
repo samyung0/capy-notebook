@@ -79,7 +79,9 @@
           }
         - { path: /etc/docker, owner: root, group: root, mode: "0755" }
 
-    - name: Configure bounded Docker logs
+    # Image builds run on this host: the build cache is collected down to
+    # 20 GB, so parser and retrieval builds cannot fill the disk.
+    - name: Configure bounded Docker logs and build cache
       ansible.builtin.copy:
         dest: /etc/docker/daemon.json
         owner: root
@@ -91,6 +93,12 @@
             "log-opts": {
               "max-size": "20m",
               "max-file": "5"
+            },
+            "builder": {
+              "gc": {
+                "enabled": true,
+                "defaultKeepStorage": "20GB"
+              }
             }
           }
       notify: Restart Docker

@@ -24,10 +24,10 @@ ufw denies inbound traffic by default and keeps SSH on 22 open to all
 (restricting it is not decided, and Coolify manages its own host over SSH).
 Loopback and established traffic pass, so `cloudflared`, which only connects
 out, still reaches the Coolify proxy on `localhost:80`. Docker-published ports
-bypass ufw, so the playbook adds a `DOCKER-USER` drop for the public interface
-to ufw's `after.rules` (IPv4) and `after6.rules` (IPv6), over TCP and UDP, for
-the ports in `app_public_docker_ports`. ufw reloads it at boot and on every
-reload, and Docker keeps it across restarts. The WireGuard address's published
+bypass ufw, so the playbook adds a `DOCKER-USER` drop to ufw's `after.rules`
+(IPv4) and `after6.rules` (IPv6) for every new connection from the public
+interface into a container, whatever the port or protocol. ufw reloads it at
+boot and on every reload, and Docker keeps it across restarts. The WireGuard address's published
 services are not on the public interface and stay reachable from the ingest
 host.
 

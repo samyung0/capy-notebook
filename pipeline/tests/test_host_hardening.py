@@ -1,11 +1,12 @@
 """The host playbooks lock both hosts down: key-only SSH on both, ufw denying
-inbound by default on the app host with Docker's published ports dropped on
-its public interface (TCP and UDP, IPv4 and IPv6), and the ingest host's
+inbound by default on the app host with every new connection from its public
+interface into a container dropped (IPv4 and IPv6), and the ingest host's
 nftables input and forward chains denying by default. SSH and WireGuard stay
-open on both."""
+open on both. The ingest host's Docker build cache stays bounded."""
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -14,8 +15,6 @@ import yaml
 
 ANSIBLE = Path(__file__).resolve().parents[2] / "deploy" / "ansible"
 HOSTS = ("app-host", "ingest-host")
-# The UAT origin lockdown's public ports (human/deployment-runbook.md).
-PUBLIC_DOCKER_PORTS = [80, 443, 8000, 6001, 6002, 8080]
 
 
 def _play(host: str) -> dict:
@@ -112,9 +111,9 @@ def test_the_app_host_lets_docker_networks_reach_it_but_not_all_of_10_8() -> Non
     assert "10.0.0.0/8" not in networks
 
 
-def test_the_app_host_drops_public_docker_ports_over_tcp_and_udp_on_ipv4_and_ipv6() -> (
-    None
-):
+def test_the_app_host_drops_every_new_public_connection_into_containers() -> None:
+    # Human decision (Epo 2026-10-20, human/deployment-runbook.md): every port
+    # and protocol, not a list of published ports.
     play = _play("app-host")
     (task,) = [
         task
@@ -122,20 +121,16 @@ def test_the_app_host_drops_public_docker_ports_over_tcp_and_udp_on_ipv4_and_ipv
         if "DOCKER-USER" in task["ansible.builtin.blockinfile"]["block"]
     ]
     lines = task["ansible.builtin.blockinfile"]["block"].splitlines()
-    drops = {
-        proto: f"-A DOCKER-USER -i {{{{ app_public_interface }}}} -p {proto} -m multiport"
-        " --dports {{ app_public_docker_ports | join(',') }} -j DROP"
-        for proto in ("tcp", "udp")
-    }
 
     # after.rules is ufw's IPv4 file, after6.rules its IPv6 one; ufw loads both
     # at boot and on reload.
     assert task["loop"] == ["after.rules", "after6.rules"]
-    assert lines[:2] == ["*filter", ":DOCKER-USER - [0:0]"]
-    assert drops["tcp"] in lines
-    assert drops["udp"] in lines
-    assert lines[-1] == "COMMIT"
-    assert play["vars"]["app_public_docker_ports"] == PUBLIC_DOCKER_PORTS
+    assert lines == [
+        "*filter",
+        ":DOCKER-USER - [0:0]",
+        "-A DOCKER-USER -i {{ app_public_interface }} -m conntrack --ctstate NEW -j DROP",
+        "COMMIT",
+    ]
     assert (
         play["vars"]["app_public_interface"] == "{{ ansible_default_ipv4.interface }}"
     )
@@ -164,3 +159,14 @@ def test_the_ingest_host_denies_inbound_and_published_ports_by_default() -> None
         or re.match(r'iifname "(docker0|br-\*)" ', rule)
         for rule in forward[1:]
     )
+
+
+def test_the_ingest_host_bounds_the_docker_build_cache() -> None:
+    (task,) = [
+        task
+        for task in _tasks(_play("ingest-host"), "ansible.builtin.copy")
+        if task["ansible.builtin.copy"]["dest"] == "/etc/docker/daemon.json"
+    ]
+    daemon = json.loads(task["ansible.builtin.copy"]["content"])
+
+    assert daemon["builder"]["gc"] == {"enabled": True, "defaultKeepStorage": "20GB"}

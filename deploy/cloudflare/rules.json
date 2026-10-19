@@ -4,8 +4,8 @@
     "http_request_firewall_custom": [
       {
         "ref": "capy_webhooks_skip_security",
-        "description": "Webhooks skip every security rule: Stripe and Clerk retry in bursts and cannot solve a challenge",
-        "expression": "starts_with(http.request.uri.path, \"/webhooks/\")",
+        "description": "Webhooks on the API hosts skip every security rule: Stripe and Clerk retry in bursts and cannot solve a challenge",
+        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\"} and starts_with(http.request.uri.path, \"/webhooks/\")",
         "action": "skip",
         "action_parameters": {
           "ruleset": "current",

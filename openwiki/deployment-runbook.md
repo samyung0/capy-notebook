@@ -1005,7 +1005,7 @@ Clerk burst deliveries and retries from small sets of IPs, and rate limiting
 them can lose subscription or identity events.
 
 **WAF custom rule** (`capy_webhooks_skip_security`): requests under
-`/webhooks/` skip every security rule (the remaining custom rules, rate
+`/webhooks/` on the API hosts (`api`, `uat-api`) skip every security rule (the remaining custom rules, rate
 limiting, managed rules, Super Bot Fight Mode, and Zone Lockdown, User Agent
 Blocking, Browser Integrity Check, Hotlink Protection and Security Level).
 
@@ -1373,10 +1373,12 @@ denying inbound by default and allowing outbound. What stays reachable:
 
 That last point is why the public interface needs its own rule. The playbook
 appends a `DOCKER-USER` block to ufw's `after.rules` (IPv4) and `after6.rules`
-(IPv6) that drops TCP and UDP to 80, 443, 8000, 6001, 6002 and 8080 arriving on
-the public interface (the default route's, `eth0` on the UAT VM). It matches
-after Docker's DNAT, on the container port, so 8080 covers Coolify's 8000; UDP
-covers Traefik's HTTP/3 on 443. ufw creates and refills the chain at boot and on
+(IPv6) that drops every new connection arriving on the public interface (the
+default route's, `eth0` on the UAT VM) for any container, whatever the port or
+protocol: Traefik's 80 and 443 (TCP and UDP), Coolify's 8000, 6001 and 6002, and
+any port a compose file publishes later. Replies to the containers' own
+outbound connections, the cloudflared tunnel among them, are not new and pass.
+ufw creates and refills the chain at boot and on
 every reload, and Docker keeps the chain's rules when it restarts, so the rule
 survives both. The WireGuard address's services, traffic between containers
 and the tunnel's loopback hop are not on the public interface.
@@ -1417,8 +1419,8 @@ run also rewrites `/etc/docker/daemon.json` and restarts Docker when it differs.
      prints `without-password`, `no`, `no`.
    - App host: `ufw status verbose` shows `active`, `deny (incoming)`, 22/tcp
      open to all (v4 and v6) and 51820/udp from the ingest host;
-     `iptables -S DOCKER-USER` and `ip6tables -S DOCKER-USER` each list the TCP
-     and the UDP drop on the public interface; from outside, port 8000 and
+     `iptables -S DOCKER-USER` and `ip6tables -S DOCKER-USER` each list one
+     `--ctstate NEW` drop on the public interface; from outside, port 8000 and
      443/udp on the host's public address time out while the app hostnames
      still load through the tunnel; from the ingest host,
      `curl --fail http://<app WireGuard address>:8080/healthz` answers;
@@ -1815,10 +1817,11 @@ pair on the host; activation then removes this stack's other tags, keeping
 only `active` and `previous` (rollback). Removed tags stay in the BuildKit
 cache; activation then runs `docker builder prune -f --filter until=72h`, which
 drops build cache older than three days (the next release still builds warm).
-The ingest host's `/etc/docker/daemon.json` also sets `builder.gc` to 20 GB
-(restored 2026-10-19 after it was found missing; the previous file is kept as
-`daemon.json.before-builder-gc-20261019`), so BuildKit trims the cache past that
-size between releases.
+The ingest host's `/etc/docker/daemon.json` also sets `builder.gc` to 20 GB, so
+BuildKit trims the cache past that size between releases. The ingest-host
+playbook writes it (a hand fix on 2026-10-19 restored it after a playbook run
+had dropped it; the file from before is kept as
+`daemon.json.before-builder-gc-20261019`).
 Bootstrap only clones into an absent/empty checkout and records active after
 verification. A failed bootstrap stops candidate services and retains evidence.
 
