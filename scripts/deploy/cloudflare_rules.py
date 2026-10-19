@@ -131,12 +131,12 @@ def drift(want: list[dict], have: list[dict]) -> list[str]:
 
 
 def run(config: dict, api: Api, *, check: bool, prune: bool, out: TextIO) -> int:
-    zone = zone_id(api, config["zone"])
     phases = config["phases"]
     for phase, rules in phases.items():
         refs = [rule.get("ref") for rule in rules]
         if None in refs or len(set(refs)) != len(refs):
             raise ApiError(f"{phase}: every rule in the file needs its own ref")
+    zone = zone_id(api, config["zone"])
     changes = {}
     for phase, rules in phases.items():
         lines = drift(rules, live_rules(api, zone, phase))
