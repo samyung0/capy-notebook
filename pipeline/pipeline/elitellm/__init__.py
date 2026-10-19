@@ -16,8 +16,6 @@ from .client import (
     rerank,
     resolve_thinking,
     stream,
-    transport_model_slug,
-    transport_provider_slug,
     uses_responses,
 )
 
@@ -37,7 +35,5 @@ __all__ = [
     "rerank",
     "resolve_thinking",
     "stream",
-    "transport_model_slug",
-    "transport_provider_slug",
     "uses_responses",
 ]

@@ -42,7 +42,7 @@ type materialsListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Location    string `query:"location" doc:"Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"`
-	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"`
+	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones"`
 	Sort        string `query:"sort" enum:"updated,created,title,kind,workspace" default:"updated"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
@@ -78,7 +78,7 @@ type updateMaterialSharingInput struct {
 
 func (a *api) registerMaterials(api huma.API) {
 	const tag = "Materials"
-	reg(api, http.MethodGet, "/api/materials", "listOwnedMaterials", tag, "List notes, quizzes and flashcard sets across the caller's owned or member workspaces", http.StatusOK, a.listOwnedMaterials)
+	reg(api, http.MethodGet, "/api/materials", "listOwnedMaterials", tag, "List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)", http.StatusOK, a.listOwnedMaterials)
 	regWithMaxBody(api, http.MethodPost, "/api/materials", "createStandaloneMaterial", tag, "Create a standalone note", http.StatusCreated, materialRequestMaxBytes, a.createStandaloneMaterial)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/materials", "listMaterials", tag, "List study materials", http.StatusOK, a.listMaterials)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/materials", "createMaterial", tag, "Create a note material", http.StatusCreated, materialRequestMaxBytes, a.createMaterial)
@@ -136,8 +136,13 @@ func (a *api) materialResponse(
 			return nil, hErr(err)
 		}
 	}
+	// The payer's plan: an image added to the material is charged to its
+	// payer, whoever adds it (Sam 2026-10-19).
 	if body.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, material.OwnerUserID); err != nil {
 		return nil, hErr(err)
+	}
+	if store.RoleCanEdit(role) && !readOnly {
+		body.StorageFull = store.FullBy(full, material.OwnerUserID, userID(ctx))
 	}
 	return &materialOutput{Body: body}, nil
 }
@@ -407,7 +412,7 @@ func (a *api) deleteMaterial(ctx context.Context, in *trashMaterialInput) (*Empt
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
+	if err := a.orPayer(ctx, agenttools.KindMaterial, in.ID, a.assertMaterialOwner(ctx, in.ID)); err != nil {
 		return nil, collaborationError(err)
 	}
 	op, err := trashOperation(ctx, in.RequestID, agenttools.KindMaterial, in.ID)

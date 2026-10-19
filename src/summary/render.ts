@@ -55,7 +55,10 @@ export function renderSummary(
   appOrigin: string
 ): string {
   const canonical = `${appOrigin}${sharePath}`;
-  const openURL = `/workspaces/${id}`;
+  // The share token rides along once: the app presents it, then opens the
+  // workspace by id (Sam 2026-10-18).
+  const token = sharePath.slice('/w/'.length);
+  const openURL = `/open/${token}`;
   const fileCount =
     summary.files.length +
     summary.chapters.reduce(
@@ -96,7 +99,7 @@ export function renderSummary(
     )
   );
   const actionMenu = renderToString(
-    createElement(PublicActionMenu, { id, kind: 'workspace' })
+    createElement(PublicActionMenu, { kind: 'workspace', token })
   );
   const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav()}</header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><div class="summary-title"><h1>${escapeHTML(summary.name)}</h1><div id="summary-actions" data-workspace-id="${escapeHTML(id)}">${actionMenu}</div></div>${summary.author ? `<p class="summary-byline">${summary.authorAvatarUrl ? `<img class="summary-avatar" src="${escapeHTML(summary.authorAvatarUrl)}" alt="" width="24" height="24">` : ''}${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(counts)}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? `<div class="summary-chapter">${files(summary.files)}</div>` : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty())}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
   return template

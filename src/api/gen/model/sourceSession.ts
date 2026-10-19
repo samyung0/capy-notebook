@@ -6,6 +6,7 @@
  */
 import type { SourceSessionAccess } from './sourceSessionAccess.ts';
 import type { SourceSessionFormat } from './sourceSessionFormat.ts';
+import type { StorageFullBy } from './storageFullBy.ts';
 
 export interface SourceSession {
   /** A URL to the JSON Schema for this object. */
@@ -35,6 +36,7 @@ export interface SourceSession {
   stateRows?: string[] | null;
   /** @nullable */
   stateSeedSHA256: string | null;
+  storageFull?: StorageFullBy;
   thumbnailStale?: boolean;
   workspaceId: string;
 }

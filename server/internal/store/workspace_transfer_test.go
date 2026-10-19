@@ -2,12 +2,10 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"sort"
 	"testing"
 	"time"
-
-	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 func newTransferTestUser(t *testing.T, s *Store, label string) string {
@@ -24,11 +22,10 @@ func newTransferTestUser(t *testing.T, s *Store, label string) string {
 	return id
 }
 
-// TestTransferMovesOwnershipAndTheStorageBill pins the reason transfer has to be
-// one transaction: the storage owner is denormalized onto four tables and mirrored
-// in two counter rows, and a partial rewrite would leave a user paying for a
-// workspace they can no longer see.
-func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
+// A transfer hands the workspace and the owner role over but moves no
+// charges: each item stays on the account that uploaded or created it
+// (uploader pays, Sam 2026-10-18).
+func TestTransferMovesOwnershipButNoCharges(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	senderID := newTransferTestUser(t, s, "u_sender")
@@ -42,21 +39,6 @@ func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
 		nil, "", 4096, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
-	content, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{
-		ID: uid("c"), Front: "front", Back: "back",
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	material, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: senderID, WorkspaceID: ws.ID, Kind: "flashcards",
-		Title: "FlashcardSet", Content: content,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A live reservation has to move too, or the sender keeps paying for an
-	// upload that will land in somebody else's workspace.
 	if _, err := s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), WorkspaceID: ws.ID, CreatedBy: senderID,
 		ObjectPath: "incoming/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
@@ -66,80 +48,35 @@ func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	senderBefore, err := s.StorageUsage(ctx, senderID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if senderBefore.UsedBytes <= 0 || senderBefore.ReservedBytes != 512 {
-		t.Fatalf("sender before transfer: used=%d reserved=%d, want both charged",
-			senderBefore.UsedBytes, senderBefore.ReservedBytes)
-	}
-
-	// A non-member cannot receive it, however willing the owner is.
-	if _, err := s.TransferWorkspace(ctx, senderID, ws.ID, recipientID); err == nil {
-		t.Fatal("transfer to a non-member succeeded")
-	}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
 		VALUES ($1,$2,'editor')`, ws.ID, recipientID); err != nil {
 		t.Fatal(err)
 	}
-
-	moved, err := s.TransferWorkspace(ctx, senderID, ws.ID, recipientID)
+	senderBefore, err := s.StorageUsage(ctx, senderID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if moved.ID != ws.ID {
-		t.Fatalf("transferred workspace id = %q, want %q", moved.ID, ws.ID)
+
+	if _, err := s.TransferWorkspace(ctx, senderID, ws.ID, recipientID); err != nil {
+		t.Fatal(err)
 	}
 
 	senderAfter, err := s.StorageUsage(ctx, senderID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if senderAfter.UsedBytes != 0 || senderAfter.ReservedBytes != 0 {
-		t.Errorf("sender after transfer: used=%d reserved=%d, want 0 and 0",
-			senderAfter.UsedBytes, senderAfter.ReservedBytes)
+	if senderAfter.UsedBytes != senderBefore.UsedBytes || senderAfter.ReservedBytes != 512 {
+		t.Errorf("sender after transfer: used=%d reserved=%d, want %d and 512",
+			senderAfter.UsedBytes, senderAfter.ReservedBytes, senderBefore.UsedBytes)
 	}
 	recipientAfter, err := s.StorageUsage(ctx, recipientID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recipientAfter.UsedBytes != senderBefore.UsedBytes {
-		t.Errorf("recipient used = %d, want the sender's %d",
-			recipientAfter.UsedBytes, senderBefore.UsedBytes)
+	if recipientAfter.UsedBytes != 0 || recipientAfter.ReservedBytes != 0 {
+		t.Errorf("recipient after transfer: used=%d reserved=%d, want nothing",
+			recipientAfter.UsedBytes, recipientAfter.ReservedBytes)
 	}
-	if recipientAfter.ReservedBytes != 512 {
-		t.Errorf("recipient reserved = %d, want the moved reservation 512",
-			recipientAfter.ReservedBytes)
-	}
-
-	// Every owner column, not just the workspace row.
-	for _, tc := range []struct{ what, query string }{
-		{"workspace", `SELECT count(*) FROM workspaces WHERE id=$1 AND user_id=$2`},
-		{"files", `SELECT count(*) FROM files WHERE workspace_id=$1 AND user_id=$2`},
-		{"materials", `SELECT count(*) FROM materials WHERE workspace_id=$1 AND owner_user_id=$2`},
-		{"upload sessions", `SELECT count(*) FROM upload_sessions WHERE workspace_id=$1 AND user_id=$2`},
-	} {
-		var count int
-		if err := s.pool.QueryRow(ctx, tc.query, ws.ID, recipientID).Scan(&count); err != nil {
-			t.Fatalf("%s: %v", tc.what, err)
-		}
-		if count == 0 {
-			t.Errorf("%s still point at the old owner", tc.what)
-		}
-	}
-
-	// Authorship is untouched: the sender wrote the material and still did.
-	var author *string
-	if err := s.pool.QueryRow(ctx, `SELECT created_by FROM materials WHERE id=$1`,
-		material.ID).Scan(&author); err != nil {
-		t.Fatal(err)
-	}
-	if author == nil || *author != senderID {
-		t.Error("transfer rewrote authorship, which belongs to a different axis")
-	}
-
 	roles := map[string]string{}
 	rows, err := s.pool.Query(ctx, `SELECT user_id, role FROM workspace_members
 		WHERE workspace_id=$1`, ws.ID)
@@ -154,24 +91,19 @@ func TestTransferMovesOwnershipAndTheStorageBill(t *testing.T) {
 		}
 		roles[userID] = role
 	}
-	if roles[recipientID] != "owner" {
-		t.Errorf("recipient role = %q, want owner", roles[recipientID])
-	}
-	if roles[senderID] != "editor" {
-		t.Errorf("outgoing owner role = %q, want editor", roles[senderID])
+	if roles[recipientID] != "owner" || roles[senderID] != "editor" {
+		t.Errorf("roles after transfer = %v, want recipient owner and sender editor", roles)
 	}
 }
 
-// TestTransferRefusedWhenRecipientCannotAffordIt pins the quota gate. Without it
-// a free-tier user could be handed a workspace far over their limit and end up
-// permanently frozen through no action of their own.
-func TestTransferRefusedWhenRecipientCannotAffordIt(t *testing.T) {
+// A suspended recipient reads as a non-member to the sender: its state and
+// suspension reason stay its own (security review C2).
+func TestTransferToASuspendedMemberIsNotFound(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	senderID := newTransferTestUser(t, s, "u_bigsender")
-	recipientID := newTransferTestUser(t, s, "u_smallrecipient")
-
-	ws, err := s.CreateWorkspace(ctx, senderID, WorkspaceCreate{Name: "Too big", Tags: []TagRef{}})
+	senderID := newTransferTestUser(t, s, "u_sender")
+	recipientID := newTransferTestUser(t, s, "u_recipient")
+	ws, err := s.CreateWorkspace(ctx, senderID, WorkspaceCreate{Name: "Handover", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,112 +111,12 @@ func TestTransferRefusedWhenRecipientCannotAffordIt(t *testing.T) {
 		VALUES ($1,$2,'editor')`, ws.ID, recipientID); err != nil {
 		t.Fatal(err)
 	}
-	// Written directly: the sender's own gate would refuse a file this size.
-	if _, err := s.pool.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, name, kind, size_bytes)
-		VALUES ($1,$2,$3,'huge.pdf','pdf',$4)`,
-		uid("f"), ws.ID, senderID, mustPlanLimits(t, s, PlanFree).StorageBytes+1); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='private reason' WHERE id=$1`, recipientID); err != nil {
 		t.Fatal(err)
 	}
-
-	if _, err := s.TransferWorkspace(ctx, senderID, ws.ID, recipientID); err == nil {
-		t.Fatal("transfer succeeded despite exceeding the recipient's quota")
+	_, err = s.TransferWorkspace(ctx, senderID, ws.ID, recipientID)
+	var locked *AccountLockedError
+	if errors.As(err, &locked) || !errors.Is(err, ErrNotFound) {
+		t.Fatalf("transfer to a suspended member = %v, want a plain not found", err)
 	}
-	var owner string
-	if err := s.pool.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`,
-		ws.ID).Scan(&owner); err != nil {
-		t.Fatal(err)
-	}
-	if owner != senderID {
-		t.Error("a refused transfer still moved the workspace")
-	}
-}
-
-// TestOwnerColumnsAreCoveredByTransfer fails when a new denormalized storage
-// owner column appears without being added to the transfer path.
-//
-// This is the guard the denormalization needs. Those columns are only correct
-// because exactly one code path rewrites them; a fifth one added elsewhere would
-// leave the previous owner charged for bytes they cannot see, and nothing else
-// would notice — the counters stay internally consistent, just attributed to the
-// wrong user.
-func TestOwnerColumnsAreCoveredByTransfer(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-
-	// Tables that are workspace-scoped and also name a user are the risk: that
-	// user is either the storage owner (must move with the workspace) or
-	// something else entirely. Enumerating them from the catalog forces a new
-	// table to be classified here rather than silently doing neither.
-	//
-	// Authorship columns are excluded by name: created_by never changes hands,
-	// because who wrote something is not affected by who owns it.
-	rows, err := s.pool.Query(ctx, `SELECT c.table_name, c.column_name
-		FROM information_schema.columns c
-		JOIN information_schema.tables t
-			ON t.table_schema = c.table_schema AND t.table_name = c.table_name
-		WHERE c.table_schema = 'public'
-			AND t.table_type = 'BASE TABLE'
-			AND c.column_name IN ('user_id', 'owner_user_id')
-			AND EXISTS (
-				SELECT 1 FROM information_schema.columns w
-				WHERE w.table_schema = c.table_schema
-					AND w.table_name = c.table_name
-					AND w.column_name = 'workspace_id'
-			)
-		ORDER BY c.table_name, c.column_name`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var found []string
-	for rows.Next() {
-		var table, column string
-		if err := rows.Scan(&table, &column); err != nil {
-			t.Fatal(err)
-		}
-		found = append(found, table+"."+column)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-
-	// Workspace-scoped user columns that are deliberately not storage owners.
-	notOwnership := map[string]string{
-		"workspace_members.user_id": "membership, rewritten as a role swap instead",
-		"notifications.user_id":     "recipient of a message about the workspace",
-		"workspace_invites.user_id": "the invited party, resolved before acceptance",
-		"study_progress.user_id":    "per-user study progress, not billable bytes",
-		"workspace_study.user_id":   "per-user study setting, not billable bytes",
-		"review_sessions.user_id":   "per-user review history, not billable bytes",
-		"conversations.user_id":     "who held the chat; history stays with them",
-		"source_batches.user_id":    "who started the upload, the notification recipient",
-	}
-	covered := map[string]bool{}
-	for _, col := range ownerColumns {
-		covered[col.table+"."+col.column] = true
-	}
-	sort.Strings(found)
-	for _, name := range found {
-		if covered[name] || notOwnership[name] != "" {
-			continue
-		}
-		t.Errorf("%s is a workspace-scoped user column that transfer neither "+
-			"rewrites nor explicitly excludes; classify it as ownership "+
-			"(add to ownerColumns) or not (add to notOwnership with a reason)", name)
-	}
-	for name := range covered {
-		if !contains(found, name) {
-			t.Errorf("transfer rewrites %s, which no longer exists in the schema", name)
-		}
-	}
-}
-
-func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }

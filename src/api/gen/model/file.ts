@@ -21,6 +21,8 @@ export interface File {
   indexLimit?: FileIndexLimit;
   indexed: boolean;
   kind: FileKind;
+  /** The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it */
+  lostAccess?: boolean;
   name: string;
   position: number;
   preview?: FilePreview;
@@ -32,4 +34,5 @@ export interface File {
   /** Hour-stable presigned GET of the page-1 thumbnail; list rows only */
   thumbnailUrl?: string;
   workspaceId: string;
+  workspaceName?: string;
 }

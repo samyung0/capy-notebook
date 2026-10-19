@@ -5,10 +5,12 @@ import { iconStyles } from '@/lib/icon-catalog';
 import { Button } from './Button';
 import {
   Dialog,
+  DialogCancel,
   DialogContent,
   DialogFooter,
   DialogTitle,
   DialogTrigger,
+  useIsPhone,
 } from './Dialog';
 import { Icon } from './Icon';
 import { SectionGallery } from './SectionGallery';
@@ -25,6 +27,23 @@ export function IconPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
+  const phone = useIsPhone();
+  const useButton = (
+    <Button
+      disabled={!draft}
+      onClick={() => {
+        if (draft) {
+          onChange(draft);
+          setOpen(false);
+        }
+      }}
+      size="lg"
+      type="button"
+      variant="accent"
+    >
+      {m.icon_use()}
+    </Button>
+  );
   return (
     <Dialog
       onOpenChange={(next) => {
@@ -40,7 +59,9 @@ export function IconPicker({
       </DialogTrigger>
       <DialogContent
         aria-describedby={undefined}
-        cardScrollContainerClassName="min-h-0 overflow-hidden"
+        // Phones: the gallery scrolls itself, so only the safe area (or the
+        // keyboard) stays below it.
+        cardScrollContainerClassName="min-h-0 overflow-hidden max-sm:pb-[max(env(safe-area-inset-bottom),var(--keyboard-inset,0px))]"
         className="max-w-[912px]"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -51,9 +72,12 @@ export function IconPicker({
           )?.focus();
         }}
       >
-        <DialogTitle className="shrink-0 pr-8">{m.icon_choose()}</DialogTitle>
+        <DialogTitle action={phone && useButton} className="shrink-0 pr-8">
+          {m.icon_choose()}
+        </DialogTitle>
         <SectionGallery
-          className="h-[350px] sm:h-[440px]"
+          // Phones: the gallery fills the page below the header.
+          className="min-h-0 flex-1 sm:h-[440px] sm:flex-none"
           initialSectionId={
             iconStyles.find((item) =>
               item.avatars.some((icon) => icon.id === value)
@@ -108,30 +132,12 @@ export function IconPicker({
             ),
           }))}
         />
-        <DialogFooter className="shrink-0 flex-row">
-          <Button
-            onClick={() => setOpen(false)}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={!draft}
-            onClick={() => {
-              if (draft) {
-                onChange(draft);
-                setOpen(false);
-              }
-            }}
-            size="lg"
-            type="button"
-            variant="accent"
-          >
-            {m.icon_use()}
-          </Button>
-        </DialogFooter>
+        {!phone && (
+          <DialogFooter className="shrink-0 flex-row">
+            <DialogCancel />
+            {useButton}
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

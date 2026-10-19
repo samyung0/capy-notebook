@@ -389,9 +389,11 @@ export async function handleSiteRequest(
     // Unsigned or forged links stop here, before any API or database work.
     const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);
     if (!id) return failure(404);
+    // The API takes the token, not the bare id (it verifies it again).
+    const token = url.pathname.slice('/w/'.length);
     const apiStart = Date.now();
     const upstream = await fetcher(
-      new Request(`${apiOrigin}/api/public/workspaces/${id}/summary`, {
+      new Request(`${apiOrigin}/api/public/workspaces/${token}/summary`, {
         headers: { Accept: 'application/json' },
         redirect: 'manual',
         signal: AbortSignal.timeout(10_000),

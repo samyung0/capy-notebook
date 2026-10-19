@@ -8,7 +8,7 @@ import {
   type SourceFile,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { DialogFooter } from '@/components/ui/Dialog';
+import { DialogFooter, DialogPrimary } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
@@ -174,7 +174,6 @@ function AmountRow({
 /** The generate options for one kind, with Cancel and Generate; the Add
  * file dialog shows it under its kind tiles. */
 export function GenerateForm({
-  onCancel,
   mode,
   chapters,
   files,
@@ -183,7 +182,6 @@ export function GenerateForm({
   pending,
   onGenerate,
 }: {
-  onCancel: () => void;
   mode: GenerateMode;
   chapters: Chapter[];
   files: SourceFile[];
@@ -354,25 +352,19 @@ export function GenerateForm({
       </div>
 
       <DialogFooter>
-        <Button
-          disabled={pending}
-          onClick={onCancel}
-          size="lg"
-          variant="ghost-hover"
-        >
-          {m.action_cancel()}
-        </Button>
-        <Button
-          disabled={
-            pending || !!titleError || (mode === 'quiz' && !types.length)
-          }
-          iconLeft={pending ? undefined : 'sparkles'}
-          onClick={run}
-          size="lg"
-          variant="accent"
-        >
-          {pending ? <Spinner /> : m.action_generate()}
-        </Button>
+        <DialogPrimary pending={pending}>
+          <Button
+            disabled={
+              pending || !!titleError || (mode === 'quiz' && !types.length)
+            }
+            iconLeft={pending ? undefined : 'sparkles'}
+            onClick={run}
+            size="lg"
+            variant="accent"
+          >
+            {pending ? <Spinner /> : m.action_generate()}
+          </Button>
+        </DialogPrimary>
       </DialogFooter>
     </>
   );

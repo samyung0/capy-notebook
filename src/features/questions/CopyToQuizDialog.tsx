@@ -23,6 +23,7 @@ import { userToast } from '@/components/ui/userToast';
 import {
   ChapterSelect,
   chapterByName,
+  FIELD_WIDTH,
   NewChapterInput,
 } from '@/features/workspace/ChapterSelect';
 import { m } from '@/i18n';
@@ -142,20 +143,15 @@ export function CopyToQuizDialog({
 
   return (
     <SimpleDialog
-      footer={
-        <>
-          <Button onClick={onClose} size="lg" variant="ghost-hover">
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={isPending || !workspaceId || !target}
-            size="lg"
-            type="submit"
-            variant="accent"
-          >
-            {m.action_copy()}
-          </Button>
-        </>
+      action={
+        <Button
+          disabled={isPending || !workspaceId || !target}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
+          {m.action_copy()}
+        </Button>
       }
       onClose={onClose}
       // Focus the dialog, not a field: a focused quiz picker opens its list.
@@ -191,13 +187,14 @@ export function CopyToQuizDialog({
             >
               <SelectTrigger
                 aria-label={m.question_ui_workspace()}
+                className={FIELD_WIDTH}
                 disabled={workspacesPending}
                 layout="row"
                 loading={workspacesPending}
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent layout="row">
+              <SelectContent>
                 {editable.map((ws) => (
                   <SelectItem key={ws.id} value={ws.id}>
                     <span className="flex min-w-0 items-center gap-2">

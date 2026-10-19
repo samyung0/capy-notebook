@@ -37,16 +37,13 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 		(kind == store.MaterialQuiz || kind == store.MaterialFlashcards) {
 		return nil, huma.Error400BadRequest("count is required for a quiz or a flashcard set")
 	}
-	// Refuse a frozen actor or owner, and an owner at its storage limit, before
-	// credits are reserved or spent; the material insert would refuse it anyway.
-	ownerID, err := a.s.WorkspaceOwnerID(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
+	// Refuse a frozen actor, or one at its storage limit (it pays for the
+	// material), before credits are reserved or spent; the material insert
+	// would refuse it anyway.
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
 	}
-	if err := a.editErr(ctx, ownerID); err != nil {
-		return nil, hErr(err)
-	}
-	if err := a.s.StorageFullErr(ctx, ownerID); err != nil {
+	if err := a.s.StorageFullErr(ctx, userID(ctx)); err != nil {
 		return nil, hErr(err)
 	}
 	actor := userID(ctx)
@@ -298,7 +295,11 @@ func (a *api) generateViaPipe(
 		if err != nil {
 			return nil, usage, err
 		}
-		quiz.IsOwner = mt.OwnerUserID == userID
+		role, err := a.s.MaterialEffectiveRole(ctx, userID, mt.ID)
+		if err != nil {
+			return nil, usage, err
+		}
+		quiz.IsOwner = role == store.RoleOwner
 		quiz.CanEdit, quiz.CanEditContent = true, true
 		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, nil
 	case "flashcards":
@@ -361,7 +362,11 @@ func (a *api) persistFlashcardSet(
 	if err != nil {
 		return nil, err
 	}
-	flashcardSet.IsOwner = mt.OwnerUserID == userID
+	role, err := a.s.MaterialEffectiveRole(ctx, userID, mt.ID)
+	if err != nil {
+		return nil, err
+	}
+	flashcardSet.IsOwner = role == store.RoleOwner
 	flashcardSet.CanEdit, flashcardSet.CanEditContent = true, true
 	return map[string]any{"kind": "flashcards", "material": flashcardSet, "cards": out}, nil
 }

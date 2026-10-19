@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useCreateMaterial, useMaterials, useWorkspace } from '@/api/hooks';
 import type { Material, MaterialKind } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { DialogClose, DialogFooter } from '@/components/ui/Dialog';
+import { DialogFooter, DialogPrimary } from '@/components/ui/Dialog';
 import type { FileIconName } from '@/components/ui/FileIcon';
 import { SectionGallery } from '@/components/ui/SectionGallery';
 import {
@@ -165,19 +165,16 @@ export function CreateFilePanel({
         }))}
       />
       <DialogFooter className="shrink-0">
-        <DialogClose asChild>
-          <Button size="lg" variant="ghost-hover">
-            {m.action_cancel()}
+        <DialogPrimary>
+          <Button
+            disabled={!canCreate}
+            onClick={create}
+            size="lg"
+            variant="accent"
+          >
+            {m.action_create()}
           </Button>
-        </DialogClose>
-        <Button
-          disabled={!canCreate}
-          onClick={create}
-          size="lg"
-          variant="accent"
-        >
-          {m.action_create()}
-        </Button>
+        </DialogPrimary>
       </DialogFooter>
     </>
   );

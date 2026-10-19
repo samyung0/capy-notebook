@@ -215,7 +215,7 @@ function ChoiceRow({
         <SelectTrigger aria-label={row.title()} layout="row">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent layout="row">
+        <SelectContent>
           {row.choices.map((choice) => (
             <SelectItem key={choice.value} value={choice.value}>
               {choice.label()}

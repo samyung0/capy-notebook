@@ -18,7 +18,7 @@ kind?: string;
  */
 workspaceId?: string;
 /**
- * owned: the caller's workspaces; member: also every workspace they are a member of
+ * owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of
  */
 scope?: ListOwnedFilesScope;
 sort?: ListOwnedFilesSort;

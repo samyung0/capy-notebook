@@ -11,7 +11,6 @@ import {
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 import { CreditNotices } from './CreditNotices';
 // Credit periods start at UTC midnight, so dates are read and shown in UTC;
@@ -185,30 +184,19 @@ export function UsageTab() {
               </Button>
             </div>
           </div>
-          <div className="relative">
-            <UsageBar
-              limit={view?.barTotal ?? 0}
-              segments={creditsPending ? [] : [...areas, reserved]}
-            />
-            {view && view.purchasedPool > 0 && (
-              <div
-                className="absolute -top-1 h-4.5 w-0.5 -translate-x-1/2 rounded-full bg-fg"
-                style={{ left: `${markerAt(view)}%` }}
-              />
-            )}
-          </div>
+          <UsageBar
+            limit={view?.barTotal ?? 0}
+            segments={creditsPending ? [] : [...areas, reserved]}
+            stripedFrom={
+              view && view.purchasedPool > 0 ? markerAt(view) : undefined
+            }
+          />
           {view && view.purchasedPool > 0 && (
-            <div className="relative h-5.5">
-              <span
-                className={cn(
-                  't-meta absolute top-1.5 whitespace-nowrap text-fg-secondary',
-                  // Centred under the line, but kept inside the bar's width.
-                  markerAt(view) > 75
-                    ? '-translate-x-full'
-                    : markerAt(view) >= 25 && '-translate-x-1/2'
-                )}
-                style={{ left: `${markerAt(view)}%` }}
-              >
+            // The spacer shrinks when the label would overflow the bar, so the
+            // label starts where purchased credits start until it hits the end.
+            <div className="mt-1.5 flex">
+              <div style={{ flex: `0 1 ${markerAt(view)}%` }} />
+              <span className="t-meta shrink-0 whitespace-nowrap text-fg-secondary">
                 {m.billing_purchased_marker()}
               </span>
             </div>

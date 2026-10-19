@@ -935,6 +935,7 @@ export function useOfficeRuntime({
     setFrameLoaded,
     setRuntimeMode,
     status: source.status,
+    storageFull: source.session?.storageFull,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };
 }

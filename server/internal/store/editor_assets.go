@@ -39,11 +39,14 @@ type EditorAsset struct {
 // two upload flows share the table (and therefore one reservation trigger and
 // one sweeper) while their destinations stay separate.
 type EditorAssetUpload struct {
-	ID           string
-	AssetID      string
-	WorkspaceID  string
-	MaterialID   string
+	ID          string
+	AssetID     string
+	WorkspaceID string
+	MaterialID  string
+	// UserID is the material's payer, charged for the reservation; CreatedBy
+	// reserved it and is the only account that completes it.
 	UserID       string
+	CreatedBy    string
 	ObjectPath   string
 	FinalPath    string
 	ContentType  string
@@ -52,10 +55,9 @@ type EditorAssetUpload struct {
 	ExpiresAt    time.Time
 }
 
-// NewEditorAssetReservation names the material that uploads it. A workspace
-// material's asset also names the workspace, which pays; a standalone
-// material's asset is charged to the material owner. The material's saves and
-// purge delete it.
+// NewEditorAssetReservation names the material that uploads it, and its
+// workspace when it has one. The material's payer pays (Sam 2026-10-19). The
+// material's saves and purge delete it.
 type NewEditorAssetReservation struct {
 	AssetID      string
 	UploadID     string
@@ -145,12 +147,12 @@ func (s *Store) EditorAssetObjectPath(ctx context.Context, assetID string) (stri
 }
 
 const editorAssetUploadCols = `id, asset_id, COALESCE(workspace_id,''), COALESCE(material_id,''), user_id,
-	object_path, final_path, content_type, declared_size, status, expires_at`
+	COALESCE(created_by,''), object_path, final_path, content_type, declared_size, status, expires_at`
 
 func scanEditorAssetUpload(row interface{ Scan(...any) error }) (EditorAssetUpload, error) {
 	var upload EditorAssetUpload
 	err := row.Scan(&upload.ID, &upload.AssetID, &upload.WorkspaceID, &upload.MaterialID, &upload.UserID,
-		&upload.ObjectPath, &upload.FinalPath, &upload.ContentType, &upload.DeclaredSize,
+		&upload.CreatedBy, &upload.ObjectPath, &upload.FinalPath, &upload.ContentType, &upload.DeclaredSize,
 		&upload.Status, &upload.ExpiresAt)
 	return upload, err
 }
@@ -196,7 +198,7 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 	if err != nil {
 		return EditorAsset{}, err
 	}
-	// A workspace transferred since the reservation charges a different owner.
+	// The reservation is charged to the material's payer.
 	if storedOwnerID != ownerID {
 		return EditorAsset{}, ErrEditorAssetUploadState
 	}
@@ -282,18 +284,19 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 }
 
 // EditorAssetMaterial returns the live material's workspace (empty when
-// standalone) and the plan limits of the account that pays for its assets.
+// standalone) and the plan limits of its payer, who pays for the images and
+// audio added to it whoever adds them (Sam 2026-10-19, Google Docs model).
 func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, limits planlimits.Limits, err error) {
-	var ownerID string
+	var payerID string
 	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), owner_user_id
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &ownerID)
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &payerID)
 	if isNoRows(err) {
 		return "", planlimits.Limits{}, ErrNotFound
 	}
 	if err != nil {
 		return "", planlimits.Limits{}, err
 	}
-	limits, err = s.PayerPlanLimits(ctx, ownerID)
+	limits, err = s.PayerPlanLimits(ctx, payerID)
 	return workspaceID, limits, err
 }
 
@@ -488,14 +491,34 @@ func editorAssetReadableTx(ctx context.Context, tx pgx.Tx, actorID string, asset
 }
 
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
-// the storage owner. A workspace asset needs workspace edit access; a
+// the payer: the material's own payer, who pays for every image, audio clip
+// and embedded item in it (Sam 2026-10-19); the actor for a workspace asset
+// naming no material. A workspace asset needs workspace edit access; a
 // standalone material is edited only by its owner. Accounts lock before the
-// material row, matching standalone material saves.
+// material row, matching material saves.
 func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, actorID string) (string, error) {
 	if workspaceID != "" {
-		ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
-		if err != nil || materialID == "" {
-			return ownerID, err
+		payerID := actorID
+		if materialID != "" {
+			// Set once at insert, so the unlocked read is stable.
+			err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
+				WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`, materialID, workspaceID).Scan(&payerID)
+			if isNoRows(err) {
+				return "", ErrNotFound
+			}
+			if err != nil {
+				return "", err
+			}
+		}
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID, payerID); err != nil {
+			return "", err
+		}
+		// Nothing more is charged to a frozen payer.
+		if err := s.assertEditableTx(ctx, tx, payerID); err != nil {
+			return "", HideOtherAccountLock(err, actorID)
+		}
+		if materialID == "" {
+			return payerID, nil
 		}
 		// The asset also names the material, which must be live there.
 		var live bool
@@ -506,7 +529,7 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		if !live {
 			return "", ErrNotFound
 		}
-		return ownerID, nil
+		return payerID, nil
 	}
 	var ownerID string
 	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials

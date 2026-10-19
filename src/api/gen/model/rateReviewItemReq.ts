@@ -4,11 +4,14 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { FlashcardAttemptRef } from './flashcardAttemptRef.ts';
 import type { ReviewSessionRef } from './reviewSessionRef.ts';
 
 export interface RateReviewItemReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** The flashcard attempt the rating belongs to; the first rating records it (workspace sets only) */
+  attempt?: FlashcardAttemptRef;
   /** @minLength 1 */
   itemId: string;
   /** @minLength 1 */

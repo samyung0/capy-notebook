@@ -97,8 +97,15 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
+	// Files in what the caller can open: its workspaces and those it belongs
+	// to under a live owner, as the workspaces above (Sam 2026-10-19). Never
+	// rows it only pays for.
 	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name, f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
-		JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
+		JOIN workspaces w ON w.id=f.workspace_id
+		JOIN users owner ON owner.id=w.user_id
+		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
+			AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -128,8 +135,9 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name, m.preview
 		FROM materials m
-		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
+		LEFT JOIN workspaces w ON w.id=m.workspace_id
+		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
+		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
 		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1`, like, userID)
@@ -296,8 +304,8 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 		(SELECT count(*) FROM chapters WHERE workspace_id=$1),
 		(SELECT count(*) FROM files WHERE workspace_id=$1 AND trashed_at IS NULL),
 		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz' AND parent_material_id IS NULL AND trashed_at IS NULL),
-		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),
-		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL),0)`,
+		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),
+		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND a.kind='quiz'),0)`,
 		id).Scan(&st.Chapters, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
 	if err == nil {
 		err = s.workspaceIndexCounts(ctx, id, &st)
@@ -1036,9 +1044,9 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 		return File{}, err
 	}
 	defer tx.Rollback(ctx)
-	var wsID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
-		Scan(&wsID); err != nil {
+	var wsID, payerID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
+		Scan(&wsID, &payerID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
@@ -1046,6 +1054,10 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 	}
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID); err != nil {
 		return File{}, err
+	}
+	// Nobody edits what a frozen account pays for.
+	if err := s.assertEditableTx(ctx, tx, payerID); err != nil {
+		return File{}, HideOtherAccountLock(err, actorID)
 	}
 	if p.Name != nil {
 		if _, err := tx.Exec(ctx, `UPDATE files SET name=$2
@@ -1179,32 +1191,31 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 			cardIDs[i] = card.ID
 		}
 	}
+	// The creator pays, in a workspace too (Sam 2026-10-18); an embedded
+	// row is charged to its note's payer, as the note's images are (Sam
+	// 2026-10-19). The payer is set once at insert, so the unlocked read is
+	// stable.
 	creatorID := mt.CreatedBy
-	var ownerID string
-	if mt.WorkspaceID != "" {
-		ownerID, err = s.storageOwnerTx(ctx, tx, mt.WorkspaceID)
-		if err != nil {
-			return "", err
-		}
-		if creatorID == "" {
-			creatorID = ownerID
-		}
-		ownerID, err = s.lockWorkspaceEditorMutationTx(
-			ctx, tx, mt.WorkspaceID, creatorID,
-		)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		ownerID = creatorID
-	}
-	if creatorID == "" || ownerID == "" {
+	ownerID := creatorID
+	if creatorID == "" {
 		return "", ErrNotFound
 	}
-	if mt.WorkspaceID == "" {
-		if err := s.lockAccountSessionsTx(ctx, tx, creatorID, ownerID); err != nil {
+	if mt.ParentMaterialID != "" {
+		err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1 AND trashed_at IS NULL`,
+			mt.ParentMaterialID).Scan(&ownerID)
+		if isNoRows(err) {
+			return "", ErrNotFound
+		}
+		if err != nil {
 			return "", err
 		}
+	}
+	if mt.WorkspaceID != "" {
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, mt.WorkspaceID, creatorID, ownerID); err != nil {
+			return "", err
+		}
+	} else if err := s.lockAccountSessionsTx(ctx, tx, creatorID, ownerID); err != nil {
+		return "", err
 	}
 	storedSize, err := storageJSONSizeTx(ctx, tx, mt.Content)
 	if err != nil {
@@ -1425,12 +1436,9 @@ func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft
 		return AgentOperation{}, false, err
 	}
 	if len(draft.Assets) > 0 {
-		// createMaterialTx locked the note's scope; its payer pays for the images.
-		var ownerID string
-		if err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, id).Scan(&ownerID); err != nil {
-			return AgentOperation{}, false, err
-		}
-		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, ownerID, draft.ActorUserID, draft.Assets); err != nil {
+		// createMaterialTx locked the note's scope; the actor pays for the
+		// images, as for the note.
+		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, draft.ActorUserID, draft.ActorUserID, draft.Assets); err != nil {
 			return AgentOperation{}, false, err
 		}
 	}
@@ -1724,11 +1732,11 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		return Material{}, err
 	}
 	if workspaceID != nil {
-		lockedOwnerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, p.UpdatedBy)
-		if err != nil {
+		// The payer (ownerID) is charged by size_bytes, so its row joins the
+		// owner's and the actor's.
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, p.UpdatedBy, ownerID); err != nil {
 			return Material{}, err
 		}
-		ownerID = lockedOwnerID
 	} else {
 		if err := s.lockAccountSessionsTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
 			return Material{}, err
@@ -1746,14 +1754,14 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if lockedOwnerID != ownerID {
 		return Material{}, ErrConflict
 	}
-	// The workspace lock already refused a frozen actor or owner. Standalone, a
-	// frozen owner keeps narrowing the material's privacy.
+	// Nobody edits what a frozen account pays for (ownerID is the material's
+	// payer). Standalone, a frozen owner keeps narrowing its privacy.
 	narrowsOnly := p.Privacy != nil && len(sets) == 1 &&
 		!(*p.Privacy == PrivacyPublic && privacy != PrivacyPublic) &&
 		!(*p.Privacy == PrivacyLink && privacy == PrivacyPrivate)
-	if workspaceID == nil && !narrowsOnly {
+	if !narrowsOnly {
 		if err := s.assertEditableTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
-			return Material{}, err
+			return Material{}, HideOtherAccountLock(err, p.UpdatedBy)
 		}
 	}
 	ct, err := tx.Exec(ctx, `UPDATE materials SET `+strings.Join(sets, ", ")+where, args...)
@@ -1814,25 +1822,6 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 		return "", ErrNotFound
 	}
 	return wsID, err
-}
-
-// MaterialIDsOwnedByUser is used to invalidate live collaboration rooms when
-// an account crosses into a non-authenticating lifecycle state.
-func (s *Store) MaterialIDsOwnedByUser(ctx context.Context, userID string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id FROM materials WHERE owner_user_id=$1`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	ids := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, rows.Err()
 }
 
 // ListMaterialRefs returns the unified, workspace-scoped list of versioned
@@ -1928,7 +1917,11 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	if err != nil {
 		return Quiz{}, err
 	}
-	created.IsOwner = mt.OwnerUserID == q.UserID
+	role, err := s.MaterialEffectiveRole(ctx, q.UserID, mt.ID)
+	if err != nil {
+		return Quiz{}, err
+	}
+	created.IsOwner = role == RoleOwner
 	created.CanEdit, created.CanEditContent = true, true
 	return created, nil
 }
@@ -1958,12 +1951,14 @@ type AttemptParams struct {
 	Sort       string // date, score, quiz, workspace
 	Ascending  bool
 	Workspaces []string
+	Kinds      []string // quiz, flashcards; empty is both
 	Offset     int
 	Limit      int
 }
 
-// ListAttempts pages the user's attempts, sorted and filtered by the quiz's
-// current workspace. The second value is whether more follow.
+// ListAttempts pages the user's quiz and flashcard attempts, sorted and
+// filtered by kind and by the item's current workspace. The second value is
+// whether more follow.
 func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams) ([]Attempt, bool, error) {
 	order := map[string]string{
 		"score":     "a.correct / NULLIF(a.total, 0)",
@@ -1977,15 +1972,18 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	if p.Ascending {
 		dir = "ASC"
 	}
-	var workspaces []string
+	var workspaces, kinds []string
 	if len(p.Workspaces) > 0 {
 		workspaces = p.Workspaces
 	}
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT a.id, a.material_id, m.workspace_id, w.icon_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
+	if len(p.Kinds) > 0 {
+		kinds = p.Kinds
+	}
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT `+attemptCols+`
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
-		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2))
+		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2)) AND ($5::text[] IS NULL OR a.kind = ANY($5))
 		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
-		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset)
+		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset, kinds)
 	if err != nil {
 		return nil, false, err
 	}
@@ -1993,7 +1991,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	out := []Attempt{}
 	for rows.Next() {
 		var a Attempt
-		if err := rows.Scan(&a.ID, &a.MaterialID, &a.WorkspaceID, &a.IconID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
+		if err := rows.Scan(attemptDest(&a)...); err != nil {
 			return nil, false, err
 		}
 		out = append(out, a)
@@ -2008,11 +2006,28 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	return out, more, nil
 }
 
+// attemptCols and attemptDest read one attempt row (a, m and w aliased).
+const attemptCols = `a.id, a.material_id, m.workspace_id, w.icon_id, a.kind, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.started_at, a.taken_at`
+
+func attemptDest(a *Attempt) []any {
+	return []any{&a.ID, &a.MaterialID, &a.WorkspaceID, &a.IconID, &a.Kind, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.StartedAt, &a.TakenAt}
+}
+
+// startedBefore keeps a browser-sent start time only when it is not after
+// now, the attempt's end.
+func startedBefore(started *time.Time, now time.Time) *time.Time {
+	if started == nil || started.After(now) {
+		return nil
+	}
+	t := started.UTC()
+	return &t
+}
+
 // CreateAttempt stores the attempt and, for a workspace quiz, rates each
 // question and marks the quiz done in the user's study progress. A quiz
 // embedded in a note is a quick check: its graded attempt is returned without
 // an id and nothing is stored.
-func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage) (Attempt, error) {
+func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage, startedAt *time.Time) (Attempt, error) {
 	q, err := s.GetQuiz(ctx, materialID)
 	if err != nil {
 		return Attempt{}, err
@@ -2027,9 +2042,10 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	if total > 0 {
 		pct = int(float64(correct) / float64(total) * 100.0)
 	}
+	now := time.Now().UTC()
 	a := Attempt{
-		ID: uid("at"), MaterialID: linkedMaterial, WorkspaceID: &mt.WorkspaceID, QuizName: quizName, WorkspaceName: workspaceName,
-		Chapters: chapters, Correct: correct, Total: total, Pct: pct, TakenAt: time.Now().UTC(),
+		ID: uid("at"), MaterialID: linkedMaterial, WorkspaceID: &mt.WorkspaceID, Kind: "quiz", QuizName: quizName, WorkspaceName: workspaceName,
+		Chapters: chapters, Correct: correct, Total: total, Pct: pct, StartedAt: startedBefore(startedAt, now), TakenAt: now,
 	}
 	if a.Chapters == nil {
 		a.Chapters = []string{}
@@ -2052,8 +2068,8 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return Attempt{}, err
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at, answers, questions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, a.ID, a.MaterialID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.TakenAt, []byte(answers), []byte(questions))
+	_, err = tx.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, started_at, taken_at, answers, questions)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, a.ID, a.MaterialID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.StartedAt, a.TakenAt, []byte(answers), []byte(questions))
 	if err != nil {
 		return Attempt{}, err
 	}
@@ -2070,10 +2086,10 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 // the owner via the attempts.user_id column recorded at submit time.
 func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetail, error) {
 	var d AttemptDetail
-	err := s.pool.QueryRow(ctx, `SELECT a.id, a.material_id, m.workspace_id, w.icon_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at, a.answers, a.questions
+	err := s.pool.QueryRow(ctx, `SELECT `+attemptCols+`, a.answers, a.questions
 		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
 		WHERE a.id=$1 AND a.user_id=$2`, id, userID).
-		Scan(&d.ID, &d.MaterialID, &d.WorkspaceID, &d.IconID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
+		Scan(append(attemptDest(&d.Attempt), &d.Answers, &d.Questions)...)
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}
@@ -2184,7 +2200,11 @@ func (s *Store) CreateFlashcardSetWithCards(
 	if err != nil {
 		return FlashcardSet{}, err
 	}
-	created.IsOwner = mt.OwnerUserID == userID
+	role, err := s.MaterialEffectiveRole(ctx, userID, mt.ID)
+	if err != nil {
+		return FlashcardSet{}, err
+	}
+	created.IsOwner = role == RoleOwner
 	created.CanEdit, created.CanEditContent = true, true
 	return created, nil
 }

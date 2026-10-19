@@ -16,6 +16,8 @@ export interface MaterialListItem {
   createdAt: string;
   id: string;
   kind: MaterialKind;
+  /** The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it */
+  lostAccess?: boolean;
   /** List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md */
   preview?: MaterialListItemPreview;
   privacy: Privacy;

@@ -32,23 +32,10 @@ export function parseModelRef(value: string): ModelRef {
   return { modelSlug: parsed[1], providerSlug: parsed[0] };
 }
 
-export function joinModelLabel(
-  providerName: string,
-  modelName: string
-): string {
-  const provider = providerName.trim();
-  const model = modelName.trim();
-  if (!provider) return model;
-  if (!model) return provider;
-  return `${provider} ${model}`;
-}
-
 export function sortModelOptions(models: ModelOption[]): ModelOption[] {
   return [...models].sort((a, b) => {
     if (a.available !== b.available) return a.available ? -1 : 1;
-    return joinModelLabel(a.providerName, a.modelName).localeCompare(
-      joinModelLabel(b.providerName, b.modelName)
-    );
+    return a.modelName.localeCompare(b.modelName);
   });
 }
 

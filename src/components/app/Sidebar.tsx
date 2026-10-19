@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -222,7 +222,11 @@ export function Sidebar({
             {m.app_name()}
           </p>
           {onNavigate && (
+            // The drawer's swipe handle adds 12px past the card's right
+            // edge; pull the X out so its glyph sits as far from the
+            // drawer's edge as the title does from the left.
             <IconButton
+              className="-mr-5.5"
               icon="x"
               label={m.action_close()}
               onClick={onNavigate}
@@ -351,6 +355,7 @@ export function MobileNavDrawer({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const pressed = useRef(false);
   // The trigger hides from sm (rail) or lg (sidebar); close with it.
   const triggerGone = useMediaQuery(
     account ? '(min-width: 640px)' : '(min-width: 1024px)'
@@ -369,12 +374,39 @@ export function MobileNavDrawer({
 
   return (
     <Drawer
-      onOpenChange={setOpen}
+      onOpenChange={(next, details) => {
+        // The click that ends the opening press lands outside the trigger.
+        if (!next && pressed.current && details.reason === 'outside-press') {
+          details.cancel();
+          return;
+        }
+        setOpen(next);
+      }}
       open={open}
       showSwipeHandle
       swipeDirection="left"
     >
+      {/* Opens on pointerdown like the menus; the click after the press
+          must not toggle it again. Keyboard clicks still open it. */}
       <DrawerTrigger
+        onClick={(event) => {
+          if (pressed.current && event.detail > 0) event.preventBaseUIHandler();
+        }}
+        onPointerDown={(event) => {
+          if (event.button !== 0 || event.ctrlKey) return;
+          pressed.current = true;
+          setOpen(true);
+          // The press ends after the click its release fires.
+          const release = () => {
+            window.removeEventListener('pointerup', release);
+            window.removeEventListener('pointercancel', release);
+            setTimeout(() => {
+              pressed.current = false;
+            });
+          };
+          window.addEventListener('pointerup', release);
+          window.addEventListener('pointercancel', release);
+        }}
         render={
           <IconButton
             aria-label={m.a11y_open_navigation()}

@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import type { Provenance } from '@/api/types';
+import type { AttemptCard, Provenance } from '@/api/types';
+import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
@@ -14,8 +15,21 @@ import { StepNav } from '@/features/study/StepNav';
 import { currentStep, useSteps } from '@/features/study/steps';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import type { SrsRating } from '@/lib/srs';
+import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
 import { CardStack, useCardStack } from './CardStack';
+import { FlashcardResult } from './FlashcardResult';
+
+/** One study run, which the server records as a flashcard attempt from its
+ * first rating (workspace sets only). */
+export interface StudyAttempt {
+  id: string;
+  startedAt: string;
+}
+
+const newAttempt = (): StudyAttempt => ({
+  id: crypto.randomUUID(),
+  startedAt: new Date().toISOString(),
+});
 
 /* Studying a flashcard set, shared by the app page and the public /share page.
    It knows no router or session: callers pass the frame and where ratings go. */
@@ -59,7 +73,11 @@ export function StudyBody({
   name: string;
   onBack?: () => void;
   onFinished?: (total: number) => void;
-  onRate: (card: FlashcardContent, rating: SrsRating) => void;
+  onRate: (
+    card: FlashcardContent,
+    rating: SrsRating,
+    attempt: StudyAttempt
+  ) => void;
   provenance?: Provenance;
   /** The app's top bar; public pages have their own header and pass none. */
   topBar?: ReactNode;
@@ -67,6 +85,9 @@ export function StudyBody({
 }) {
   const Shell = frame ?? NoFrame;
   const [ids, setIds] = useState(() => studyIds(cards));
+  const [attempt, setAttempt] = useState(newAttempt);
+  // The run's cards in the order first rated, for its result.
+  const [rated, setRated] = useState<AttemptCard[]>([]);
   const steps = useSteps<SrsRating>(ids);
   const stack = useCardStack();
   const shown = steps.current;
@@ -82,7 +103,24 @@ export function StudyBody({
 
   function rate(rating: SrsRating) {
     if (!card) return;
-    onRate(card, rating);
+    onRate(card, rating, attempt);
+    const n = SRS_RATINGS.indexOf(rating) + 1;
+    setRated((list) =>
+      list.some((c) => c.id === card.id)
+        ? list.map((c) =>
+            c.id === card.id ? { ...c, ratings: [...c.ratings, n] } : c
+          )
+        : [
+            ...list,
+            {
+              back: card.back,
+              front: card.front,
+              id: card.id,
+              image: card.image,
+              ratings: [n],
+            },
+          ]
+    );
     const next = steps.answer(rating, { requeue: rating === 'again' });
     stack.move(card);
     if (!currentStep(next)) onFinished?.(ids.length);
@@ -104,6 +142,8 @@ export function StudyBody({
     setIds(fresh);
     steps.reset(fresh);
     stack.reset();
+    setAttempt(newAttempt());
+    setRated([]);
   }
 
   // The card's own place in the set, which stays put as it is skipped or
@@ -115,24 +155,52 @@ export function StudyBody({
       total: ids.length,
     });
   const total = ids.length;
+  const header = !embedded && (
+    <QuizPageHeader
+      actions={actions}
+      byline={byline}
+      // Public pages have no label row, so the title sits higher.
+      className={byline ? 'pt-4 sm:pt-2' : undefined}
+      onBack={onBack}
+      title={name}
+      topBar={topBar}
+      trail={trail}
+    />
+  );
+
+  // The run's result, laid out as a quiz's (human/study-progress.md,
+  // 2026-10-19); a fresh panel so it opens at the top.
+  if (!card && total > 0) {
+    const Body = embedded ? 'div' : TabContent;
+    return (
+      <Shell header={header} key="result">
+        <Body>
+          <FlashcardResult cards={rated} />
+          {/* Where a quiz result has Redo quiz, sized like it. */}
+          <div className="mt-12 flex justify-end">
+            <Button
+              className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+              iconLeft="refresh"
+              onClick={studyAgain}
+              rounded="large"
+              size="sm"
+              variant="outline"
+            >
+              {m.flashcards_study_again()}
+            </Button>
+          </div>
+          {footer}
+          <SourcesLine
+            className={embedded ? 'mt-3' : 'mt-16 pb-4'}
+            provenance={provenance}
+          />
+        </Body>
+      </Shell>
+    );
+  }
 
   return (
-    <Shell
-      header={
-        !embedded && (
-          <QuizPageHeader
-            actions={actions}
-            byline={byline}
-            // Public pages have no label row, so the title sits higher.
-            className={byline ? 'pt-4 sm:pt-2' : undefined}
-            onBack={onBack}
-            title={name}
-            topBar={topBar}
-            trail={trail}
-          />
-        )
-      }
-    >
+    <Shell header={header}>
       <div
         className={cn(!embedded && 'px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16')}
       >
@@ -165,20 +233,8 @@ export function StudyBody({
                 <Icon className="non-scaling-svg" name="check" size={30} />
               </span>
               <h2 className="t-large-card-title">
-                {total === 0
-                  ? m.flashcards_empty_flashcards()
-                  : m.flashcards_session_done()}
+                {m.flashcards_empty_flashcards()}
               </h2>
-              {total > 0 && (
-                <Button
-                  iconLeft="flashcards"
-                  onClick={studyAgain}
-                  rounded="large"
-                  variant="accent"
-                >
-                  {m.flashcards_study_again()}
-                </Button>
-              )}
             </div>
           )}
           {footer}

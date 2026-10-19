@@ -129,7 +129,7 @@ function mockCatalogModels() {
     {
       available: true,
       isDefault: true,
-      modelName: 'Flash 4.1',
+      modelName: 'DeepSeek Flash',
       modelSlug: 'deepseek-flash',
       providerName: 'DeepSeek',
       providerSlug: 'deepseek',
@@ -139,7 +139,7 @@ function mockCatalogModels() {
     {
       available: true,
       isDefault: false,
-      modelName: 'GLM-5.3-Flash',
+      modelName: 'GLM 5.3 Flash',
       modelSlug: 'glm-5.3-flash',
       providerName: 'Z.ai',
       providerSlug: 'zai',
@@ -401,11 +401,12 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function trashItem(
-  base: Omit<TrashItem, 'episodeId' | 'trashedAt' | 'purgeAfter'>
+  base: Omit<TrashItem, 'canRestore' | 'episodeId' | 'trashedAt' | 'purgeAfter'>
 ): TrashItem {
   const now = Date.now();
   return {
     ...base,
+    canRestore: true,
     episodeId: uid('trash'),
     purgeAfter: new Date(now + TRASH_RETENTION_MS).toISOString(),
     trashedAt: new Date(now).toISOString(),
@@ -1250,8 +1251,6 @@ export const handlers = [
       role: 'owner',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, id),
       shareRole: 'viewer',
-      storageOwnerState: db.accountStatus.state,
-      storageOwnerUsage: db.accountStatus.storageUsage,
       tags: resolveTags('workspace', body.tags),
     };
     db.workspaces.unshift(ws);
@@ -1524,6 +1523,26 @@ export const handlers = [
     const i = db.workspaces.findIndex((w) => w.id === params.id);
     if (i >= 0) db.workspaces.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
+  }),
+  // A share link presented once (the server remembers the grant).
+  http.post('/api/share/redeem', async ({ request }) => {
+    const { token } = (await request.json()) as { token: string };
+    const id = token.split('.')[0];
+    if (
+      db.workspaces.some((row) => row.id === id) ||
+      db.publicWorkspaces.some((row) => row.id === id)
+    )
+      return HttpResponse.json({ id, kind: 'workspace' });
+    const material = db.materials.find(
+      (row) => row.id === id && !row.workspaceId
+    );
+    return material
+      ? HttpResponse.json({
+          id,
+          kind: 'material',
+          materialKind: material.kind,
+        })
+      : new HttpResponse(null, { status: 404 });
   }),
   http.post('/api/workspaces/:id/clone', async ({ params, request }) => {
     const body = (await request.json()) as CreateWorkspaceReq;
@@ -2842,12 +2861,14 @@ export const handlers = [
   http.get('/api/attempts', ({ request }) => {
     const params = new URL(request.url).searchParams;
     const workspaces = params.get('workspaceId')?.split(',') ?? [];
+    const kinds = params.get('kind')?.split(',') ?? [];
     const sort = params.get('sort');
     const list = db.attempts
       .filter(
         (a) =>
-          !workspaces.length ||
-          (a.workspaceId !== null && workspaces.includes(a.workspaceId))
+          (!workspaces.length ||
+            (a.workspaceId !== null && workspaces.includes(a.workspaceId))) &&
+          (!kinds.length || kinds.includes(a.kind))
       )
       .sort(
         sortBy(
@@ -2877,12 +2898,16 @@ export const handlers = [
     return HttpResponse.json({
       ...at,
       answers: at.answers ?? {},
+      cards: at.cards ?? [],
       questions: at.questions ?? [],
     });
   }),
   // Grades every part, records the attempt and returns it with the keys.
   http.post('/api/quizzes/:id/attempts', async ({ params, request }) => {
-    const { answers } = (await request.json()) as { answers: Answers };
+    const { answers, startedAt } = (await request.json()) as {
+      answers: Answers;
+      startedAt?: string;
+    };
     const quizMt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'quiz'
     );
@@ -2895,10 +2920,12 @@ export const handlers = [
       chapters: quiz.chapters,
       correct: graded.awarded,
       id: uid('at'),
+      kind: 'quiz' as const,
       materialId: quiz.id,
       pct: Math.round((graded.awarded / graded.max) * 100),
       questions: graded.questions,
       quizName: quiz.name,
+      startedAt: startedAt ?? null,
       takenAt: new Date().toISOString(),
       total: graded.max,
       workspaceId: quizMt.workspaceId,
@@ -3153,8 +3180,15 @@ export const handlers = [
                 currency: 'usd',
                 id: 'in_mock_reload',
                 kind: 'reload',
-                nextAttemptAt: new Date(Date.now() + 86_400_000).toISOString(),
-                status: 'open',
+                // Cancelling the retry voids it.
+                ...(mockCreditSettings.reload.status === 'void'
+                  ? { status: 'void' }
+                  : {
+                      nextAttemptAt: new Date(
+                        Date.now() + 86_400_000
+                      ).toISOString(),
+                      status: 'open',
+                    }),
                 total: 1000,
                 url: 'https://invoice.stripe.com/i/mock',
               },
@@ -3175,7 +3209,15 @@ export const handlers = [
                   currency: 'usd',
                   id: `in_mock_${months}`,
                   kind: 'plan',
-                  status: 'paid',
+                  // This month's renewal failed and Stripe retries it.
+                  ...(months === 0
+                    ? {
+                        nextAttemptAt: new Date(
+                          Date.now() + 3 * 86_400_000
+                        ).toISOString(),
+                        status: 'open',
+                      }
+                    : { status: 'paid' }),
                   total: 800,
                   url: 'https://invoice.stripe.com/i/mock',
                 };
@@ -3236,6 +3278,18 @@ export const handlers = [
   http.post('/api/billing/portal', async () =>
     HttpResponse.json({ url: '/billing?tab=subscription&mock_portal=1' })
   ),
+  http.post('/api/billing/portal/cancel-subscription', async () =>
+    HttpResponse.json({ url: '/billing?tab=subscription&mock_portal=cancel' })
+  ),
+  http.post('/api/billing/auto-reload/cancel-retry', async () => {
+    if (mockCreditSettings.reload.status === 'retrying')
+      mockCreditSettings.reload = {
+        ...mockCreditSettings.reload,
+        nextAttemptAt: undefined,
+        status: 'void',
+      };
+    return new HttpResponse(null, { status: 204 });
+  }),
 
   /* ---------------- integrations ---------------- */
   http.get('/api/integrations', async () =>

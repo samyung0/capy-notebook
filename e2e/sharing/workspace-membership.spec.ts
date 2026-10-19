@@ -131,8 +131,14 @@ test.describe('workspace invitations', () => {
       expect(member).not.toHaveProperty('email');
     }
 
+    // The settings dialog and its tab live in the URL (Epo 2026-10-19), so
+    // the reload reopens Sharing.
     await ownerPage.reload();
-    await openWorkspaceSharing(ownerPage);
+    await expect(
+      ownerPage
+        .getByRole('dialog')
+        .getByRole('tab', { exact: true, name: m.workspace_sharing() })
+    ).toHaveAttribute('aria-selected', 'true');
     await expect(ownerPage.getByText('E2E Viewer')).toBeVisible();
     await expect(ownerPage.getByText('viewer@capynotebook.test')).toHaveCount(
       0

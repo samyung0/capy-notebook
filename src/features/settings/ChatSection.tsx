@@ -42,7 +42,7 @@ export function ChatSection() {
           <SelectTrigger aria-label={m.settings_chat_steps()} layout="row">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent layout="row">
+          <SelectContent>
             {STEPS.map((choice) => (
               <SelectItem key={choice.value} value={choice.value}>
                 {choice.label()}
@@ -65,7 +65,7 @@ export function ChatSection() {
           <SelectTrigger aria-label={m.settings_chat_send_key()} layout="row">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent layout="row">
+          <SelectContent>
             {SEND_KEYS.map((choice) => (
               <SelectItem key={choice.value} value={choice.value}>
                 {choice.label()}

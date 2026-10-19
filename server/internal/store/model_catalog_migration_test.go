@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -117,7 +118,7 @@ func TestDeepSeekFlashMigrationRefusesConflictingCatalog(t *testing.T) {
 	}
 }
 
-func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) {
+func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
 	tx, err := s.pool.Begin(ctx)
@@ -147,7 +148,7 @@ func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) 
 		total, reserve  int
 	}{
 		{"deepseek", "deepseek-flash", 91, 13},
-		{"relace", "glm-5.3-flash", 100, 80},
+		{"zai", "glm-5.3-flash", 48, 40},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
 		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
 	} {
@@ -157,6 +158,52 @@ func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) 
 		if err != nil || total != want.total || reserve != want.reserve {
 			t.Fatalf("%s/%s: %d/%d err=%v", want.provider, want.model, total, reserve, err)
 		}
+	}
+}
+
+func TestZaiCapacityMigrationCopiesTheRelaceRowUnderZAIsCap(t *testing.T) {
+	s := openMigrateTestStore(t)
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `DELETE FROM model_capacities;
+	  INSERT INTO model_capacities VALUES
+	    ('relace', 'glm-5.3-flash', 100, 80), ('tencent', 'glm-5.3-flash', 30, 24)`); err != nil {
+		t.Fatal(err)
+	}
+	body, err := migrations.FS.ReadFile("0097_zai_glm_capacity.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := tx.Exec(ctx, string(body)); err != nil {
+			t.Fatalf("migration application %d: %v", i+1, err)
+		}
+	}
+	rows, err := tx.Query(ctx, `SELECT provider, concurrency_total, interactive_reserve
+	  FROM model_capacities WHERE model = 'glm-5.3-flash' ORDER BY provider`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var provider string
+		var total, reserve int
+		if err := rows.Scan(&provider, &total, &reserve); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, fmt.Sprintf("%s %d/%d", provider, total, reserve))
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	// The relace row stays for the previous release's containers mid-deploy.
+	if joined := strings.Join(got, ", "); joined != "relace 100/80, tencent 30/24, zai 48/40" {
+		t.Fatalf("GLM capacities: %s", joined)
 	}
 }
 

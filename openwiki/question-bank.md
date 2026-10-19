@@ -444,7 +444,13 @@ ignoring case and spacing; unlike short answers there is no typo tolerance. `Que
 the sentence, green or red on review with the accepted answers after a wrong one. It is authored only, so in-app generation does not offer it. A question with one part shows its
 marks once, in the header. Multiple-choice options sit two by two (A B / C D)
 when a paper-layout answer area is at least 36rem wide (a container query);
-split-layout questions keep one column beside their passage.
+split-layout questions keep one column beside their passage. Layouts follow
+the question's own width (`@container/question` in `QuestionView`), not the
+viewport: from 36rem a split question sets its stem beside its parts and a
+paper question its first stem text beside the number; below 36rem (phones,
+the Study panel) both read alike, number and marks on the top row and the
+stem full width under them, and a single part's empty label column closes so
+its text and answer line up with the stem (labelled parts keep theirs).
 
 Workspace quiz previews center the question column in the viewer; other quiz
 entry points retain left alignment.
@@ -665,8 +671,8 @@ document authority, which writes the merged credits with the content. A quiz a
 note embeds is such a quiz: the credits join that quiz's own record and its
 embed shows them, never the note's record or another embed's. The
 caller needs the bank's read access and edit access to the workspace (viewers
-get 404); frozen accounts and storage owners at their limit are refused like
-other content writes.
+get 404); frozen accounts and a quiz whose payer (its creator) is at its
+limit are refused like other content writes.
 
 Published questions are retracted, never deleted, so progress ids stay valid.
 Bank migration `0003_retracted.sql` adds `questions.retracted_at`, which only

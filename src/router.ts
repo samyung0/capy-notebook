@@ -294,6 +294,11 @@ const appRoutes = [
     staticData: { hideSidebar: true },
     validateSearch: parseWorkspaceOpenSearch,
   }),
+  createRoute({
+    component: lazyPage(() => import('@/routes/OpenShareLink')),
+    getParentRoute: () => authShellRoute,
+    path: '/open/$token',
+  }),
   blocksRedirect('/create'),
   blocksRedirect('/quizzes'),
   blocksRedirect('/flashcards'),
@@ -387,6 +392,12 @@ const appRoutes = [
   ),
   page(
     '/quizzes/attempts/$attemptId',
+    () => import('@/routes/AttemptResult'),
+    ({ context: { queryClient: qc }, params }) =>
+      qc.prefetchQuery(attemptQuery(params.attemptId))
+  ),
+  page(
+    '/flashcards/attempts/$attemptId',
     () => import('@/routes/AttemptResult'),
     ({ context: { queryClient: qc }, params }) =>
       qc.prefetchQuery(attemptQuery(params.attemptId))

@@ -304,9 +304,9 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 			embedded[i].Provenance = req.Provenance
 		}
 		// Its figures are stored first and inserted with it, charged to the
-		// workspace owner like the note.
+		// actor like the note.
 		if len(figures.used) > 0 {
-			imageMaxBytes, err := a.s.ImageMaxBytes(ctx, ws.OwnerUserID)
+			imageMaxBytes, err := a.s.ImageMaxBytes(ctx, req.UserID)
 			if err != nil {
 				a.fail(w, err)
 				return

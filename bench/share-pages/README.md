@@ -1,7 +1,7 @@
 # Shared pages
 
 Measures the signed-out pages the site Worker renders, on the deployed UAT
-site: `/w/{id}` workspace summaries and `/share/{quizzes,flashcards,notes}/{token}`.
+site: `/w/{id}.{signature}` workspace summaries and `/share/{quizzes,flashcards,notes}/{token}`.
 Numbers from a laptop against a local Worker differ too much from the real
 edge to be useful, so this family only measures UAT.
 
@@ -32,8 +32,10 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    the 2 MB content limit), long enough that the Worker streams it (its
    blocks after the first screen arrive in slices, each with the rules it
    adds). Nothing is parsed, embedded or sent to a model.
-3. Waits until each item's public API answers 200. It never requests the
-   page itself, so the first page request is a real miss.
+3. Waits until each item's public API answers 200, each by its signed
+   token (the workspace summary API takes `{id}.{signature}`, never the bare
+   id). It never requests the page itself, so the first page request is a
+   real miss.
 4. Inlined CSS check (fails the run): the Worker inlines only the rules a
    page's HTML uses (`workers/site/usedCss.ts`). Each page is loaded with only
    those rules and with the full stylesheets instead, page scripts blocked,

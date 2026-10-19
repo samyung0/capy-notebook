@@ -34,6 +34,11 @@ export function RowPickerTrigger({ children }: { children: ReactNode }) {
   );
 }
 
+/** A form row's dropdown in the clone and copy dialogs: wider than a settings
+ * row's (`layout="row"`), since the label beside it is short. Their workspace
+ * dropdown matches it. */
+export const FIELD_WIDTH = 'w-52 sm:w-72';
+
 /** A row's chapter: an existing one, none, or (with onCreateRequest) New
  * chapter, which the caller swaps for NewChapterInput. chapterName shows a
  * typed chapter the server creates later. `field` draws a form dropdown
@@ -58,7 +63,7 @@ export function ChapterSelect({
   const label = (
     // Plain text for "No chapter": SelectValue would copy the option's muted
     // colour and cancel the trigger's hover colour.
-    <span className="line-clamp-1 max-w-36">
+    <span className={cn('line-clamp-1', !field && 'max-w-36')}>
       {chapterName ?? (value ? <SelectValue /> : m.source_no_chapter())}
     </span>
   );
@@ -78,7 +83,9 @@ export function ChapterSelect({
       value={chapterName ? TYPED_CHAPTER : (value ?? NO_CHAPTER)}
     >
       {field ? (
-        <SelectTrigger layout="row">{label}</SelectTrigger>
+        <SelectTrigger className={FIELD_WIDTH} layout="row">
+          {label}
+        </SelectTrigger>
       ) : (
         <RowPickerTrigger>{label}</RowPickerTrigger>
       )}
@@ -135,7 +142,7 @@ export function NewChapterInput({
   onCancel: () => void;
 }) {
   return (
-    <div className={cn('flex items-center', field && 'w-52 gap-1 sm:w-56')}>
+    <div className={cn('flex items-center', field && [FIELD_WIDTH, 'gap-1'])}>
       <Input
         autoFocus
         maxLength={addChapterBodyNameMax}

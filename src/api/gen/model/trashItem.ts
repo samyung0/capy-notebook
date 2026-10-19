@@ -8,10 +8,14 @@ import type { TrashItemKind } from './trashItemKind.ts';
 import type { TrashItemPreview } from './trashItemPreview.ts';
 
 export interface TrashItem {
+  /** The caller may restore it: a standalone item, or edit access to its workspace */
+  canRestore: boolean;
   episodeId: string;
   fileKind?: string;
   id: string;
   kind: TrashItemKind;
+  /** The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only permanently delete it */
+  lostAccess?: boolean;
   materialKind?: string;
   /** A material's list-card preview, or {text} for a text source file; see openwiki/thumbnails.md */
   preview?: TrashItemPreview;

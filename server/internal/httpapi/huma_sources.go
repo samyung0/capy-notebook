@@ -11,7 +11,6 @@ import (
 	"log"
 	"mime"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -55,7 +54,7 @@ func (a *api) getSourceUploadPolicy(
 			return nil, hErr(err)
 		}
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, in.WorkspaceID)
+	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -224,7 +223,7 @@ func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInp
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, wsID)
+	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -256,13 +255,7 @@ func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInp
 	}
 
 	uploadID := randID("up")
-	blobID := randID("blob")
-	ext := strings.ToLower(filepath.Ext(name))
-	if len(ext) > 12 {
-		ext = ""
-	}
-	incoming := incomingObjectKey(uploadID, blobID+ext)
-	finalPath := sourceObjectKey(blobID + ext)
+	incoming, finalPath := sourceObjectKeys(uploadID, name)
 	signed, err := a.blob.PresignPut(ctx, incoming, body.ContentType, body.SizeBytes)
 	if err != nil {
 		return nil, hErr(err)
@@ -294,14 +287,15 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 	if err != nil {
 		return nil, hErr(err)
 	}
-	if session.WorkspaceID != in.ID {
+	// Only the uploader completes its reservation (Sam 2026-10-18).
+	if session.WorkspaceID != in.ID || session.CreatedBy == nil || *session.CreatedBy != userID(ctx) {
 		return nil, hErr(store.ErrNotFound)
 	}
 	if err := a.assertWorkspaceEditor(ctx, session.WorkspaceID); err != nil {
 		return nil, hErr(err)
 	}
 	if session.Status == "completed" {
-		res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, "", "", a.parser)
+		res, err := a.s.FinalizeUploadSession(ctx, userID(ctx), in.UploadID, "", "", a.parser)
 		if err != nil {
 			return nil, hErr(err)
 		}
@@ -326,7 +320,9 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 		_ = a.blob.Delete(ctx, session.ObjectPath)
 		return nil, huma.Error400BadRequest("uploaded size does not match the reserved size")
 	}
-	if info.ContentType != "" && info.ContentType != session.ContentType {
+	// The PUT signs its Content-Type, so B2 always reports one; an empty one
+	// is a mismatch, not a pass.
+	if info.ContentType != session.ContentType {
 		return nil, huma.Error400BadRequest("uploaded content type does not match the reservation")
 	}
 	if finalErr != nil {
@@ -342,7 +338,7 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 	if err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, info.ETag, sha, a.parser)
+	res, err := a.s.FinalizeUploadSession(ctx, userID(ctx), in.UploadID, info.ETag, sha, a.parser)
 	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrUploadState) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -516,7 +512,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if err != nil {
 		return nil, hErr(err)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, wsID)
+	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -629,18 +625,14 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 
 		uploadID := randID("up")
 		jobID := randID("imp")
-		blobID := randID("blob")
-		ext := strings.ToLower(filepath.Ext(meta.Name))
-		if len(ext) > 12 {
-			ext = ""
-		}
+		incoming, finalPath := sourceObjectKeys(uploadID, meta.Name)
 		pending = append(pending, store.NewSourceImport{
 			JobID: jobID,
 			Upload: store.NewUploadSession{
 				ID: uploadID, WorkspaceID: wsID, CreatedBy: actor,
 				ChapterID: in.Body.ChapterID, ChapterName: chapterName,
-				ObjectPath: incomingObjectKey(uploadID, blobID+ext),
-				FinalPath:  sourceObjectKey(blobID + ext),
+				ObjectPath: incoming,
+				FinalPath:  finalPath,
 				Name:       meta.Name, Kind: kind, ContentType: contentType,
 				DeclaredSize: reservedSize, ParseMode: mode,
 				// Four import attempts of CAPY_IMPORT_JOB_TIMEOUT fit inside an
@@ -720,23 +712,10 @@ func (a *api) checkParsePages(parseMode string, pages int) error {
 	return nil
 }
 
-func (a *api) sourceMaxBytes(ctx context.Context, wsID string) (int64, error) {
-	if wsID != "" {
-		tier, err := a.s.WorkspaceOwnerPlan(ctx, wsID)
-		if err != nil {
-			return 0, err
-		}
-		limits, err := a.s.PlanLimits(tier)
-		if err != nil {
-			return 0, err
-		}
-		return limits.SourceFileBytes, nil
-	}
-	me, err := a.s.Me(ctx, userID(ctx))
-	if err != nil {
-		return 0, err
-	}
-	limits, err := a.s.PlanLimits(me.PlanTier)
+// sourceMaxBytes is the per-file cap of the uploader's plan: the uploader
+// pays (Sam 2026-10-18).
+func (a *api) sourceMaxBytes(ctx context.Context, uploaderID string) (int64, error) {
+	limits, err := a.s.PayerPlanLimits(ctx, uploaderID)
 	if err != nil {
 		return 0, err
 	}

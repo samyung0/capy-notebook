@@ -12,7 +12,7 @@ uv run --with pymupdf==1.28.2 python lab/playground/scripts/playground.py --targ
 ```
 
 Set `ALIBABA_API_KEY` in the shell first if a config uses `capture.mode = "ocr"`.
-`RELACE_API_KEY` (Relace, which serves the GLM-5.3-Flash pin) is loaded from
+`ZAI_API_KEY` (Z.AI, which serves the GLM-5.3-Flash pin) is loaded from
 the UAT worker or repository-root `.env.local` with the other provider keys,
 so it needs no export.
 The Claude desktop app's `.claude/launch.json`

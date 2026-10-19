@@ -1028,8 +1028,8 @@ async def caption_image(data_url: str, prompt: str) -> str:
     """
     spec = registry.captioning_spec()
     caption_thinking = elitellm.resolve_thinking(spec, reasoning=False)
-    # The prompt rides as the system message: Relace refuses an image with no
-    # conversation context (no system prompt, tools or earlier turns).
+    # The prompt rides as the system message (decision 2026-10-15, made when
+    # Relace refused an image with no system prompt, tools or earlier turns).
     messages = [
         {"role": "system", "content": prompt},
         {
