@@ -94,12 +94,14 @@ payer can no longer open is marked `lostAccess` (`lostAccessSQL`: not the
 owner and no reach as member, public share or redeemed link, or the owner's
 account is no longer live): no thumbnail or preview, the workspace name red
 behind an error icon, and the payer may delete it (trash, then purge) but not
-open or restore it (`PaysFor`, `lockTrashActorTx`, `lockTrashOwnerTx`). A
+open or restore it (`PaysFor`, `lockTrashActorTx`, `lockTrashOwnerTx`). Trash
+offers Restore only where the caller may edit the workspace (`canRestore`). A
 deleted, deleting or suspended owner's workspace also loses its name there
 (`workspaceNameSQL`; the card reads "Unavailable workspace"), as every other
-read of it answers 404. Deleting an
-account deletes everything it pays for, in other people's workspaces too
-(`PurgeUser`). For a workspace material, `owner_user_id` is only the payer:
+read of it answers 404, yet its payer still trashes and purges what it pays
+for there (`lockWorkspacePayerTx`, which needs only the payer live; Sam
+2026-10-19). Deleting an account deletes everything it pays for, in other
+people's workspaces too (`PurgeUser`). For a workspace material, `owner_user_id` is only the payer:
 access, the owner role and the owner's lifecycle (deleted, suspended) follow
 the workspace (`materialEffectiveAccess`, `live_access`).
 
@@ -257,8 +259,8 @@ view-only for everyone, the rest of the workspace staying editable:
   trashing; workspace capabilities no longer narrow for storage;
 - the material response, the Office/text source session and a file's links
   carry `storageFull` (`self` when the viewer pays, `payer` otherwise) to
-  those who could edit the item (a viewer was never editing, so gets none), and the
-  item opens view-only under a strip below its header: "Your storage is full."
+  those who could edit the item (a viewer was never editing, so gets none),
+  and the item opens view-only under a strip below its header: "Your storage is full."
   or "Owner of the file has insufficient storage." (`StorageFullBanner`); a
   refusal without numbers (another payer's item) toasts the same words;
 - workspace chat drops the agent's create and edit tools when the actor (who
@@ -274,11 +276,15 @@ about 5 s of edits admitted before that may save. The open editor drops to view
 mode under the read-only strip and discards its unsaved edits. When the payer
 or the actor is `over_quota_frozen` (or the payer is suspended or being
 deleted), the same admission points refuse with `account_over_quota` (see the
-authorization doc). A save or an agent edit locks the payer's account row with
-the owner's and the actors' (`lock_boundary`) and stops while either is
-deleted, deleting or suspended (`owner_or_payer_locked`); ingest and source
-refresh fence the file's payer beside the workspace owner and the actor
-(`_pipeline_source_cancellation`, `_lock_source_candidate`). Creation and upload
+authorization doc). Every write that changes a material's bytes locks the
+payer's account row with the owner's and the actors' in one ordered batch:
+the collaboration server's saves and agent edits (`lock_boundary`, which
+refuses a deleted, deleting or suspended owner or payer before it locks the
+material, so it never waits on a row `PurgeUser` holds), and Go's projection
+(`ProjectMaterialContent`) and `UpdateMaterial` (`lockWorkspaceMutationTx`'s
+extra accounts). Ingest and source refresh fence the file's payer beside the
+workspace owner and the actor (`_pipeline_source_cancellation`,
+`_lock_source_candidate`). Creation and upload
 reservations (`gateStorageTx`, `reserveStorageTx`) and the Office publication
 net-growth check stay.
 
