@@ -332,15 +332,17 @@ bypasses that asset/script routing altogether. Removing it from that list alone
 would serve the SPA fallback, not the API.
 
 Two zone rules preserve the API behavior previously supplied by the Worker.
-During the hostname transition both match:
+Both are in `deploy/cloudflare/rules.json` (§2), and during the hostname
+transition both match the old and new UAT hosts as well as the production
+app host:
 
 ```text
-(http.host in {"app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/"))
+http.host in {"app.capynotebook.com" "app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
 ```
 
-- **Cache Rule:** bypass cache (`cache: false`).
-- **Response Header Transform Rule:** set `Cache-Control: no-store` and
-  `X-Content-Type-Options: nosniff`.
+- **Cache Rule** `capy_app_api_bypass_cache`: bypass cache (`cache: false`).
+- **Response Header Transform Rule** `capy_app_api_no_store_nosniff`: set
+  `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
 
 Save the current DNS, Worker routes, tunnel configuration and these rules
 before editing. Add the new host's ingress and extend the zone rules, then add
@@ -949,32 +951,56 @@ webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 
 ## 2. Cloudflare — rules
 
-**Rate limiting rules** (free tier allows one; Pro allows several). The edge
-layer only handles volumetric floods — semantic limits are in the gateway.
+The zone's WAF custom rules, rate limiting rules, cache rules and response
+header transform rules are code. One zone holds production and UAT, and
+[`deploy/cloudflare/rules.json`](../deploy/cloudflare/rules.json) lists every
+rule of those four phases for both environments.
+`scripts/deploy/cloudflare_rules.py` applies the file or checks the zone
+against it:
 
-```
-Rule:  (
-         (http.host eq "api.capynotebook.com")
-         or (http.host eq "app.capynotebook.com" and starts_with(http.request.uri.path, "/api"))
-       )
-       and not starts_with(http.request.uri.path, "/webhooks/")
-Rate:  100 requests per 10 seconds per IP
-Action: Block, 60s timeout
+```bash
+# A token for the capynotebook.com zone with Zone: Read, Zone WAF: Edit,
+# Transform Rules: Edit and Cache Rules: Edit. The script never prints it.
+export CLOUDFLARE_API_TOKEN=...
+python3 scripts/deploy/cloudflare_rules.py --check   # exit 1 on any drift; writes nothing
+python3 scripts/deploy/cloudflare_rules.py           # replace each drifted phase's rules with the file's
 ```
 
-The window on the free tier is fixed at 10 seconds, which is why anything
+The file owns each phase it lists: the phase's entry point ruleset must hold
+exactly the file's rules, in the file's order, matched by `ref`, and nothing
+else. `--check` prints every difference: `+` a rule the zone lacks, `~` a rule
+whose fields differ (both versions printed), `-` a live rule the file does not
+list, or a changed order. An apply rewrites only the phases that drifted, then
+reads them back. It refuses to delete a live-only rule unless given `--prune`:
+fold a rule made in the dashboard into the file first (keep its live `ref`, so
+it keeps its id), or prune it on purpose. If the readback still differs, the
+API stores a field the file leaves out (a default it adds); copy that field
+from the printed live version into the file. Change these rules only in the
+file, through a commit, then apply; run `--check` after any dashboard visit.
+Phases the file does not list stay manual: redirect rules (the old UAT host's
+redirect in §1.0.2), configuration rules and Managed Transforms.
+
+The first apply: run `--check`, add any live-only rule worth keeping (the UAT
+hosts' search-indexing exclusion from §1.0.2 is likely one) to the file, then
+apply.
+
+**Rate limiting rule** (`capy_api_rate_limit`). The edge layer only handles
+volumetric floods; semantic limits are in the gateway. 100 requests per 10
+seconds per IP on the API hosts and the app hosts' `/api`, production and UAT,
+blocked for 60 s, `/webhooks/` excluded. The rule names hosts and blocks for
+60 s, which needs the Pro plan: on Free a rate limiting rule may only match
+the path and blocks for 10 s. Free allows one rule and Pro two, which is why
+both environments share one. The window is 10 seconds, which is why anything
 expressed in requests-per-hour lives in the application instead.
 
 **Excluding `/webhooks/` is not optional.** Stripe and Clerk burst deliveries
 and retries from small sets of IPs. Rate limiting them can lose subscription or
 identity events.
 
-**WAF custom rules:**
-
-```
-Skip all security rules for:
-  starts_with(http.request.uri.path, "/webhooks/")
-```
+**WAF custom rule** (`capy_webhooks_skip_security`): requests under
+`/webhooks/` skip every security rule (the remaining custom rules, rate
+limiting, managed rules, Super Bot Fight Mode, and Zone Lockdown, User Agent
+Blocking, Browser Integrity Check, Hotlink Protection and Security Level).
 
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
@@ -984,10 +1010,12 @@ beacon (`static.cloudflareinsights.com`), Zaraz and Rocket Loader each add a
 script to every page, which the public pages' script policy (§2.4) blocks
 with a console error.
 
-**Cache rules:** bypass cache for `api.capynotebook.com`, `collab.capynotebook.com`, and
-`ops.capynotebook.com` entirely. A cached SSE or WebSocket response breaks
-streaming. Cached operator responses can disclose one operator's data to
-another.
+**Cache rules:** `capy_backend_hosts_bypass_cache` bypasses the cache for the
+API, collaboration and ops hosts of both environments (`api`, `collab`, `ops`,
+`uat-api`, `uat-collab`, `uat-ops`) entirely. A cached SSE or WebSocket
+response breaks streaming. Cached operator responses can disclose one
+operator's data to another. `capy_app_api_bypass_cache` does the same for the
+app hosts' same-origin `/api/` (§1.0.1).
 
 **Worker caching checks** (read-only; nothing here is set by Wrangler):
 
@@ -1004,11 +1032,12 @@ another.
   and is the setting to keep on. Workers Cache and Workers static assets
   tier on their own, and Regional Tiered Cache is an Enterprise add-on.
 
-For `ops.capynotebook.com`, add a response-header rule with
+**Response header rules:** `capy_ops_no_store_noindex` sets
 `Cache-Control: private, no-store` and
-`X-Robots-Tag: noindex, nofollow, noarchive`. Keep the dashboard's HTML
-`robots` meta tag too. These headers prevent accidental cache and search
-indexing; they are not access controls.
+`X-Robots-Tag: noindex, nofollow, noarchive` on both ops hosts. Keep the
+dashboard's HTML `robots` meta tag too. These headers prevent accidental cache
+and search indexing; they are not access controls.
+`capy_app_api_no_store_nosniff` sets the app hosts' `/api/` headers (§1.0.1).
 
 ### 2.1 Cloudflare Access for ops
 
@@ -1301,6 +1330,104 @@ Pick one:
   and enable **Authenticated Origin Pulls**. Requires re-checking the ranges
   periodically.
 
+### 3.1 Host lockdown: SSH and firewalls
+
+Both hosts' SSH and firewall settings are code: `deploy/ansible/app-host`
+(the UAT Coolify host, and the production one) and `deploy/ansible/ingest-host`.
+A rebuilt host gets them back from one playbook run, and a host changed by
+hand drifts back on the next one.
+
+**SSH, both hosts: key-only.** Both playbooks install
+`deploy/ansible/shared/sshd-key-only.conf` as
+`/etc/ssh/sshd_config.d/10-capy-key-only.conf`: `PasswordAuthentication no`,
+`KbdInteractiveAuthentication no`, `PermitRootLogin prohibit-password` and
+`X11Forwarding no`. sshd keeps the first value it reads and Debian's
+`sshd_config` includes its drop-ins before its own settings, so this file wins
+over the stock `PermitRootLogin yes` and over a cloud image's
+`50-cloud-init.conf`. The copy is checked with `sshd -t -f`, and the handler
+runs `sshd -t` on the whole configuration before it reloads sshd; a reload
+keeps open sessions. The play refuses while root has no authorized key. On the
+ingest host it also removes the old `90-capy-ingest.conf`, which kept password
+logins on. Port 22 stays open to all: restricting it to an admin or WireGuard
+range is not decided. Ansible itself connects as root with a key.
+
+**App host firewall: ufw.** The playbook installs ufw and enables it at boot,
+denying inbound by default and allowing outbound. What stays reachable:
+
+- SSH on 22, from anywhere, IPv4 and IPv6. Coolify manages its own host over
+  SSH from its container, so a later restriction must keep the Docker bridges.
+- WireGuard on UDP 51820, from the ingest host's public address only.
+- Loopback and established traffic (ufw's built-in rules). `cloudflared` only
+  connects out, and the Coolify proxy serves the tunnel on `localhost:80`.
+- The database, Redis and gateway published on the WireGuard address, which
+  the ingest host reaches over the link (and GitHub runners through it, by SSH
+  to the ingest host). Docker forwards published ports before ufw sees them,
+  so ufw neither blocks nor protects them.
+
+That last point is why the public interface needs its own rule. The playbook
+appends a `DOCKER-USER` block to ufw's `after.rules` (IPv4) and `after6.rules`
+(IPv6) that drops TCP and UDP to 80, 443, 8000, 6001, 6002 and 8080 arriving on
+the public interface (the default route's, `eth0` on the UAT VM). It matches
+after Docker's DNAT, on the container port, so 8080 covers Coolify's 8000; UDP
+covers Traefik's HTTP/3 on 443. ufw creates and refills the chain at boot and on
+every reload, and Docker keeps the chain's rules when it restarts, so the rule
+survives both. The WireGuard address's services, traffic between containers
+and the tunnel's loopback hop are not on the public interface.
+
+**Ingest host firewall: nftables.** `templates/nftables.conf.j2` stays the only
+firewall there (no ufw beside it). Its input chain drops by default and accepts
+loopback, established traffic, ICMP, SSH on 22 (open to all), the WireGuard UDP
+port and everything arriving on `wg0`. Its forward chain's drop policy keeps
+any port a container publishes closed, TCP and UDP, IPv4 and IPv6: the job
+DOCKER-USER does on the app host. `nftables.service` loads it at boot and Docker
+never edits the table. The output chain's parser rule is §7.4.
+
+`pipeline/tests/test_host_hardening.py` keeps all of this in the playbooks.
+
+**Applying, lockout-safe.** Run from the playbook's directory with its ignored
+`inventory.yml` (the README lists the values). The `ssh` and `firewall` tags
+apply only these tasks. Use them on hosts that already run: a full ingest-host
+run also rewrites `/etc/docker/daemon.json` and restarts Docker when it differs.
+
+1. Prove the key works before anything else:
+   `ssh -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no root@<host> true`.
+2. Open a root session on the host and keep it open until step 5. An
+   established session survives the sshd reload and ufw's enable. The
+   provider's console is the fallback.
+3. Review, then apply:
+   ```bash
+   ansible-playbook playbook.yml --tags ssh,firewall --check --diff
+   ansible-playbook playbook.yml --tags ssh,firewall
+   ```
+4. In a second terminal, log in again with the key, and confirm a password
+   login is refused before it asks: `ssh -o PubkeyAuthentication=no root@<host>`
+   answers `Permission denied (publickey)`.
+5. Verify, then close the first session:
+   - `sshd -T | grep -E '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication) '`
+     prints `without-password`, `no`, `no`.
+   - App host: `ufw status verbose` shows `active`, `deny (incoming)`, 22/tcp
+     open to all (v4 and v6) and 51820/udp from the ingest host;
+     `iptables -S DOCKER-USER` and `ip6tables -S DOCKER-USER` each list the TCP
+     and the UDP drop on the public interface; from outside, port 8000 and
+     443/udp on the host's public address time out while the app hostnames
+     still load through the tunnel; from the ingest host,
+     `curl --fail http://<app WireGuard address>:8080/healthz` answers;
+     `pnpm review:uat:smoke` passes; Coolify's dashboard loads, its server
+     validates and a deploy runs; `journalctl -k --since -15min | grep 'UFW BLOCK'`
+     shows nothing arriving from `docker0` or a `br-` bridge.
+   - Ingest host: `nft list table inet capy_ingest_filter` is unchanged, and
+     the next Deploy ingest (SSH as the service account) succeeds.
+
+**Rolling back.** SSH: delete `/etc/ssh/sshd_config.d/10-capy-key-only.conf`
+and `systemctl reload ssh` from the open session or the console. ufw:
+`ufw disable` stops filtering inbound; it also sets the `FORWARD` policy to
+`ACCEPT`, so put Docker's back with `iptables -P FORWARD DROP` and
+`ip6tables -P FORWARD DROP`. The `DOCKER-USER` drops stay until
+`iptables -F DOCKER-USER` and `ip6tables -F DOCKER-USER`; remove the
+`CAPY DOCKER-USER` block from `/etc/ufw/after.rules` and `after6.rules` to keep
+them off after a reboot. The ingest host's nftables rules are unchanged by this
+playbook revision.
+
 ---
 
 ## 4. Backblaze B2
@@ -1539,7 +1666,8 @@ The compose init service gives the unprivileged pipeline user access before
 those services start.
 
 1. Apply `deploy/ansible/app-host/playbook.yml` to build the app side of the
-   point-to-point WireGuard service network, then put its displayed public key
+   point-to-point WireGuard service network (it also sets the app host's
+   firewall and key-only SSH, §3.1), then put its displayed public key
    in the ingest-host inventory. The app host uses `10.77.0.1/32` and the ingest host
    uses `10.77.0.2/32`. Netcup's
    [community WireGuard guide](https://community.netcup.com/en/tutorials/how-to-setup-wireguard-ubuntu)
@@ -2083,9 +2211,11 @@ Apply the host rules with the provisioning playbook (see the
 
 ```bash
 cd deploy/ansible/ingest-host
-ansible-playbook --ask-pass playbook.yml --check --diff   # review the output-chain change
-ansible-playbook --ask-pass playbook.yml
+ansible-playbook playbook.yml --tags firewall --check --diff   # review the output-chain change
+ansible-playbook playbook.yml --tags firewall
 ```
+
+SSH is key-only (§3.1), so Ansible connects with a key.
 
 The template task checks the file with `nft -c` before installing it, and the
 handler reloads nftables. The reload replaces the `capy_ingest_filter` table in
