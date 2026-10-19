@@ -12,7 +12,7 @@ from pipeline.elitellm.client import (
     ANTHROPIC_URL,
     DEEPINFRA_EMBED_URL,
     OPENROUTER_CHAT_URL,
-    OPENROUTER_DEEPSEEK_MODEL,
+    OPENROUTER_ROUTING,
     RELACE_CHAT_URL,
     RELACE_GLM_FLASH_MODEL,
     RELACE_PROVIDER,
@@ -30,6 +30,7 @@ from pipeline.elitellm.client import (
     openai_chat_request,
     openai_reasoning_effort,
     openai_responses_request,
+    openrouter_request,
     transport_model_slug,
     transport_provider_slug,
     uses_responses,
@@ -40,7 +41,7 @@ from pipeline.elitellm.client import (
     complete as elitellm_complete,
 )
 from pipeline.elitellm.client import stream as elitellm_stream
-from pipeline.elitellm.providers import platform_env_name
+from pipeline.elitellm.providers import platform_env_name, provider_spec
 from pipeline.registry import (
     ModelConfig,
     RegistryError,
@@ -247,15 +248,22 @@ async def test_zai_complete_uses_relace(
 
 
 @pytest.mark.asyncio
-async def test_openrouter_deepseek_is_held_on_relace(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("model_slug", "provider"),
+    [
+        ("deepseek/deepseek-v4-flash-0731", "Relace"),
+        ("deepseek/deepseek-v4.1-flash-1017", "DeepInfra"),
+    ],
+)
+async def test_openrouter_pins_send_their_slug_held_on_one_provider(
+    monkeypatch: pytest.MonkeyPatch, model_slug: str, provider: str
 ):
     spec = _spec(
         provider_slug="openrouter",
-        model_slug=OPENROUTER_DEEPSEEK_MODEL,
+        model_slug=model_slug,
         byok_enabled=False,
         thinking_levels=("instant",),
-        slots=("ingest",),
+        slots=("ingest", "captioning"),
     )
     seen: dict[str, object] = {}
 
@@ -276,11 +284,30 @@ async def test_openrouter_deepseek_is_held_on_relace(
 
     assert seen["url"] == OPENROUTER_CHAT_URL
     assert seen["headers"]["authorization"] == "Bearer sk-or"
-    assert seen["body"]["model"] == OPENROUTER_DEEPSEEK_MODEL
-    assert seen["body"]["provider"] == {"order": ["Relace"], "allow_fallbacks": False}
+    assert seen["body"]["model"] == model_slug
+    assert seen["body"]["provider"] == {"order": [provider], "allow_fallbacks": False}
     assert seen["body"]["reasoning"] == {"enabled": False}
     assert seen["body"]["max_tokens"] == 400
     assert transport_provider_slug(spec) == "openrouter"
+    # Every slug an operator may register has a provider pin.
+    assert set(provider_spec("openrouter")["allowedModelSlugs"]) == set(
+        OPENROUTER_ROUTING
+    )
+
+
+def test_an_openrouter_slug_without_a_provider_pin_is_refused():
+    spec = _spec(provider_slug="openrouter", model_slug="deepseek/deepseek-v4.1-flash")
+    with pytest.raises(RegistryError, match="deepseek/deepseek-v4.1-flash"):
+        openrouter_request(
+            spec,
+            [{"role": "user", "content": "hi"}],
+            temperature=None,
+            tools=None,
+            response_format=None,
+            max_tokens=None,
+            stream=False,
+            tool_choice=None,
+        )
 
 
 @pytest.mark.asyncio

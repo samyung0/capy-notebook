@@ -27,12 +27,19 @@ DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
 RELACE_CHAT_URL = "https://models.relace.ai/v1/chat/completions"
 RELACE_PROVIDER = "relace"
 RELACE_GLM_FLASH_MODEL = "z-ai/glm-5.3-flash"
-# The ingest descriptor model: DeepSeek V4 Flash 0731 through OpenRouter, held
-# on Relace with fallbacks and reasoning off (decision 2026-10-15). OpenRouter
-# bills its listed Relace price, below Relace's own account rate.
+# OpenRouter pins, each held on one provider with fallbacks off, reasoning off.
+# Default routing moves between providers that differ on image input, so a slug
+# with no entry is refused, never routed. 0731 is the ingest descriptor model
+# (decision 2026-10-15); 1017 reads pages and images for captioning (decision
+# 2026-10-19). OpenRouter bills each provider's listed price.
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_DEEPSEEK_MODEL = "deepseek/deepseek-v4-flash-0731"
-OPENROUTER_ROUTING = {"order": ["Relace"], "allow_fallbacks": False}
+OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
+    "deepseek/deepseek-v4-flash-0731": {"order": ["Relace"], "allow_fallbacks": False},
+    "deepseek/deepseek-v4.1-flash-1017": {
+        "order": ["DeepInfra"],
+        "allow_fallbacks": False,
+    },
+}
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
@@ -64,13 +71,6 @@ _ANTHROPIC_BUDGET = {
 
 def _is_routed_zai_glm(spec: ModelConfig) -> bool:
     return spec.provider_slug == "zai" and spec.model_slug == ZAI_GLM_FLASH_MODEL
-
-
-def _is_routed_openrouter_deepseek(spec: ModelConfig) -> bool:
-    return (
-        spec.provider_slug == "openrouter"
-        and spec.model_slug == OPENROUTER_DEEPSEEK_MODEL
-    )
 
 
 BUSY_STATUSES = frozenset({429, 503, 529})
@@ -483,6 +483,7 @@ def zai_request(
 
 
 def openrouter_request(
+    spec: ModelConfig,
     messages: list[dict[str, Any]],
     *,
     temperature: float | None,
@@ -492,10 +493,15 @@ def openrouter_request(
     stream: bool,
     tool_choice: Any | None,
 ) -> dict[str, Any]:
+    routing = OPENROUTER_ROUTING.get(spec.model_slug)
+    if routing is None:
+        raise RegistryError(
+            f"elitellm has no OpenRouter provider pin for {spec.model_slug!r}"
+        )
     body: dict[str, Any] = {
-        "model": OPENROUTER_DEEPSEEK_MODEL,
+        "model": spec.model_slug,
         "messages": messages,
-        "provider": OPENROUTER_ROUTING,
+        "provider": routing,
         "reasoning": {"enabled": False},
     }
     if temperature is not None:
@@ -826,8 +832,9 @@ async def complete(
             tool_choice=tool_choice,
         )
         return _as_obj(await _post_json(RELACE_CHAT_URL, _bearer(key), body))
-    if _is_routed_openrouter_deepseek(spec):
+    if spec.provider_slug == "openrouter":
         body = openrouter_request(
+            spec,
             messages,
             temperature=temperature,
             tools=tools,
@@ -933,8 +940,9 @@ async def stream(
         async for event in _stream_sse(RELACE_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
-    if _is_routed_openrouter_deepseek(spec):
+    if spec.provider_slug == "openrouter":
         body = openrouter_request(
+            spec,
             messages,
             temperature=temperature,
             tools=tools,

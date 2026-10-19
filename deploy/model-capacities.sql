@@ -22,6 +22,10 @@
 -- descriptor, so it has no interactive reserve. Measured 2026-10-15: no 429 at
 -- up to 96 calls in flight; 32 in flight held ~600 requests/min (p95 5.5 s),
 -- while 96 queued (p95 25 s), so the gate stops at 32.
+-- OpenRouter DeepSeek V4.1 Flash 1017 (held on DeepInfra) reads pages and
+-- images for captioning, so it has no interactive reserve either. It copies the
+-- 0731 gate unmeasured. Page reads lease the fixed vlm_page gate of 20 instead
+-- of this row, so it gates standalone image captions only.
 -- Interactive reserves: 80% Relace GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
@@ -32,6 +36,7 @@ WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
     ('deepseek', 'deepseek-flash', 2500, 2200),
     ('relace', 'glm-5.3-flash', 100, 80),
     ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32, 0),
+    ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 32, 0),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
     ('deepinfra', 'Qwen/Qwen3-Reranker-4B', 200, 80)
 )

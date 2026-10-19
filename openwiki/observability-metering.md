@@ -488,7 +488,7 @@ Every inference path is actor-billed.
 `provider_slug` + `model_slug` from the closed EliteLLM list
 (`elitellm_providers.json`). Ops rejects leading or trailing whitespace on
 either slug before it constructs or persists that identity. Most rows call the
-named provider directly. Two exact routing exceptions are allowed:
+named provider directly. These exact routing exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
   OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
@@ -503,18 +503,26 @@ named provider directly. Two exact routing exceptions are allowed:
   no fallback route: Relace replaced Tencent TokenHub on 2026-09-26, which had
   replaced DeepInfra (`human/agentic-retrieval.md`). Thinking cannot be
   disabled on this route; `low` is the floor and the catalog default.
-- `openrouter/deepseek/deepseek-v4-flash-0731` is the ingest descriptor pin.
-  EliteLLM posts it to OpenRouter (`https://openrouter.ai/api/v1/chat/completions`,
-  platform-only `OPENROUTER_API_KEY`) with `provider: {order: ["Relace"],
-  allow_fallbacks: false}` and `reasoning: {enabled: false}`, so a busy Relace
-  answers 429 rather than moving to another host. OpenRouter bills its listed
-  Relace price, below Relace's own account rate: response `usage.cost`,
+- `openrouter` rows post their own slug to OpenRouter
+  (`https://openrouter.ai/api/v1/chat/completions`, platform-only
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` and the slug's
+  provider pin from `OPENROUTER_ROUTING` in `pipeline/elitellm/client.py`, always
+  `allow_fallbacks: false`, so a busy provider answers 429 rather than the call
+  moving to another host. `deepseek/deepseek-v4-flash-0731`, the ingest
+  descriptor pin, is held on Relace; `deepseek/deepseek-v4.1-flash-1017`, the
+  captioning pin for page reads and image captions (decision 2026-10-19), on
+  DeepInfra. Default routing is never used: providers behind one slug differ
+  on images (one drops them silently, others take none), so a slug with no pin
+  fails when its request is built, naming the slug. The allowlist in
+  `elitellm_providers.json` lists the same slugs. OpenRouter bills the
+  provider's listed price; for 0731 that is
+  Relace's, below Relace's own account rate: response `usage.cost`,
   the Logs page and the key's usage agreed on 2026-10-15. Accounting still
   prices tokens from the catalog row. Its nested `cached_tokens` is inclusive
   of `prompt_tokens` (1,024 of 1,208 observed).
 
-Neither exception opens a general router path. Other DeepInfra slugs
-and other ZAI slugs fail registry validation. A ZAI user key cannot
+No exception opens a general router path. Other DeepInfra, ZAI and
+OpenRouter slugs fail registry validation. A ZAI user key cannot
 authenticate the routed GLM call.
 A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
@@ -1447,7 +1455,8 @@ Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
 and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
 DeepSeek Flash 2500/1500, Relace GLM 100/80, OpenRouter DeepSeek V4 Flash
-0731 32/0 (ingest-only, so no interactive reserve), Qwen embedding 200/80
+0731 32/0 and V4.1 Flash 1017 32/0 (ingest-only, so no interactive reserve;
+page reads lease the `vlm_page` gate instead), Qwen embedding 200/80
 (total/interactive reserve). Existing settings, including GLM 200/120, remain.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
 limits; the reserves are application policy. GLM's 100 concurrent calls with

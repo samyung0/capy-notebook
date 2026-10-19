@@ -30,7 +30,10 @@
       "name": "OpenRouter",
       "byok": false,
       "platformEnv": "OPENROUTER_API_KEY",
-      "allowedModelSlugs": ["deepseek/deepseek-v4-flash-0731"],
+      "allowedModelSlugs": [
+        "deepseek/deepseek-v4-flash-0731",
+        "deepseek/deepseek-v4.1-flash-1017"
+      ],
       "thinking": ["instant"]
     },
     "deepinfra": {

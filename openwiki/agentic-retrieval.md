@@ -56,9 +56,9 @@ flowchart LR
   Artifact --> IngestJob[(ingest continuation)]
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
-  Worker -->|image| ImageCaption[ZAI GLM via Relace]
+  Worker -->|image| ImageCaption[Captioning-slot VLM]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
-  Worker -->|parsed document| VlmPages[Text-less pages read by ZAI GLM via Relace]
+  Worker -->|parsed document| VlmPages[Text-less pages read by the captioning-slot VLM]
   VlmPages --> Chunk[Heading-aware chunker + heading retention + confidence]
   ImageCaption --> Chunk
   DirectText --> Chunk
@@ -275,7 +275,7 @@ silently taking a nearby route.
 | PDF / DOCX / XLSX / PPTX with `fast` | OpenDataLoader parser service on the ingest host; text-less pages rendered there and read by the ingest worker's VLM | `content_list.json` (+ `vlm/<page>.jpg` renders) | Yes — `page_idx` + `bbox` |
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
-| supported image | Pinned ZAI GLM-5.3-Flash call through Relace | faithful searchable caption | No |
+| supported image | Captioning-slot pin call (DeepSeek V4.1 Flash 1017 through OpenRouter) | faithful searchable caption | No |
 | supported audio | Store-only (playable in the viewer) | none | No |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
@@ -354,7 +354,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v18` plus the release SHA (the donor key uses the first
+`odl-2.5.7-refined-vlm-v19` plus the release SHA (the donor key uses the first
 part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
@@ -1404,22 +1404,28 @@ parts design Q7): an empty or cut-off answer settles and takes the next of the
 three attempts, a transient error retries, and a definitive client error (400,
 401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
-Caption calls never inherit a user's chat reasoning level. The pinned catalog
-identity is `zai/glm-5.3-flash`, served from Relace as wire model
-`z-ai/glm-5.3-flash` (on the ingest host the key is the ingest account's,
-below). The caption prompt rides as the system message and the image as the
-user turn, since Relace refuses image input with no conversation context.
-Captioning always sends `reasoning_effort: low`. The catalog default is `low`
-for chat, and users may raise it to `high` or `max`.
+Caption calls never inherit a user's chat reasoning level. The captioning
+default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on DeepInfra
+with fallbacks and reasoning off (decision 2026-10-19, after GLM-5.3-Flash on
+Relace stopped reading its input; the provider pin is described in
+[Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
+Its catalog and capacity rows
+are UAT data. The caption prompt rides as the system message and the image as
+the user turn, since Relace refuses image input with no conversation context.
+On the routed `zai/glm-5.3-flash` row (wire model `z-ai/glm-5.3-flash`),
+which cannot turn thinking off, captioning sends `reasoning_effort: low`.
 
 ### VLM page read
 
 Text-less pages (a scan, a blank page, a slide that is one picture) reach the
 ingest worker as `vlm/<page>.jpg` renders in the parse bundle. After extracting
 the bundle, `_read_vlm_pages` (stage `vlm_pages`) reads each with the captioning
-slot's pinned model, GLM-5.3-Flash on Relace, through `models.read_page`:
-`VLM_PAGE_PROMPT` (`pipeline/prompts/captioning.py`, the developer's wording)
-as the system message and the image as the user turn, reasoning `low`, at most
+slot's pinned model through `models.read_page`:
+`VLM_PAGE_PROMPT` (`pipeline/prompts/captioning.py`, the developer's wording
+plus a last sentence asking for the page's content alone, since DeepSeek
+sometimes opens with "Here is the text extracted…", which would be indexed)
+as the system message and the image as the user turn, reasoning off (`low` on
+the routed GLM row), at most
 2,000 output tokens (`VLM_PAGE_MAX_TOKENS`; a page is about 460). A page gets
 one read (decided 2026-10-15, replacing the second read of the same day's OCR
 decision): the ingest retry policy's three calls. An empty answer, one that
@@ -1434,10 +1440,11 @@ so the file ends partial rather than failing `provider_busy` (parts design
 §6). One job reads at most 10 pages
 at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
 its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
-flight (`VLM_PAGE_CAPACITY`), taken in place of the GLM `model_capacities` row,
+flight (`VLM_PAGE_CAPACITY`), taken in place of the captioning model's `model_capacities` row,
 so page reads neither need that row nor count against its ingest share.
 
-Ingest calls Relace on a second account: GitHub holds its key as
+On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`.
+While the slot points at GLM, ingest calls Relace on a second account: GitHub holds its key as
 `RELACE_INGEST_API_KEY`, and the env renderer (`scripts/env/config.py`) writes
 it into the ingest queue env as `RELACE_API_KEY`, the one name the pipeline
 reads. Chat on the app host keeps its own `RELACE_API_KEY`. Both accounts share
@@ -4093,7 +4100,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the routed ZAI GLM-5.3-Flash row (served from Relace) captions at `reasoning_effort: low`. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |

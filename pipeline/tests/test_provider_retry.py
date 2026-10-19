@@ -369,6 +369,49 @@ async def test_vlm_page_read_makes_at_most_three_calls(
     assert calls == 3
 
 
+@pytest.mark.parametrize("call", ["vlm", "caption"])
+async def test_captioning_on_openrouter_keeps_reasoning_off(
+    monkeypatch, ingest_mode, call
+):
+    """The captioning pin (decision 2026-10-19): no reasoning on page reads or
+    image captions, and page reads keep their 2,000-token cap."""
+    spec = _spec(
+        provider_slug="openrouter",
+        model_slug="deepseek/deepseek-v4.1-flash-1017",
+        byok_enabled=False,
+        thinking_levels=("instant",),
+    )
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: spec)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
+    bodies: list[dict] = []
+
+    async def post_json(_url, _headers, body):
+        bodies.append(body)
+        return {
+            "choices": [
+                {
+                    "message": {"role": "assistant", "content": "text"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+
+    monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
+    if call == "vlm":
+        read = await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1)
+        assert read == "text"
+    else:
+        caption = await models.caption_image("data:image/png;base64,AA==", "describe")
+        assert caption == "text"
+    [body] = bodies
+    assert body["model"] == "deepseek/deepseek-v4.1-flash-1017"
+    assert body["provider"] == {"order": ["DeepInfra"], "allow_fallbacks": False}
+    assert body["reasoning"] == {"enabled": False}
+    if call == "vlm":
+        assert body["max_tokens"] == models.VLM_PAGE_MAX_TOKENS == 2_000
+
+
 def _answer(text="text", finish="stop"):
     return elitellm.chat_response(
         {"role": "assistant", "content": text},
