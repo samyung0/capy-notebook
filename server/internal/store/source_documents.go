@@ -176,7 +176,18 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	if err = sourceActorsAllowed(ctx, tx, ws, actors, edit); err != nil {
 		return "", "", err
 	}
-	if err = s.lockAccountSessionsTx(ctx, tx, append([]string{owner}, actors...)...); err != nil {
+	accounts := append([]string{owner}, actors...)
+	if edit {
+		// An edit charges the file's payer (inverses, update log), so its row
+		// joins the batch, as material writes lock theirs. The payer is set
+		// once at insert, so the unlocked read is stable.
+		payer, err := filePayer(ctx, tx, fileID)
+		if err != nil {
+			return "", "", err
+		}
+		accounts = append(accounts, payer)
+	}
+	if err = s.lockAccountSessionsTx(ctx, tx, accounts...); err != nil {
 		return "", "", err
 	}
 	return ws, owner, sourceActorsAllowed(ctx, tx, ws, actors, edit)
@@ -224,7 +235,12 @@ func (s *Store) sourceEditLockTx(ctx context.Context, tx pgx.Tx, fileID string, 
 	if err != nil {
 		return "", "", err
 	}
-	if err := s.assertEditableTx(ctx, tx, owner, actor); err != nil {
+	// Nobody edits what a frozen account pays for (per item, Sam 2026-10-18).
+	payer, err := filePayer(ctx, tx, fileID)
+	if err != nil {
+		return "", "", err
+	}
+	if err := s.assertEditableTx(ctx, tx, payer, actor); err != nil {
 		return "", "", err
 	}
 	return ws, owner, nil

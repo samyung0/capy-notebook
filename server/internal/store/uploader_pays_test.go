@@ -536,13 +536,17 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 }
 
 // An image added to someone else's note is charged to the note's payer, as an
-// embedded quiz created in it is (Sam 2026-10-19, Google Docs model); the
-// uploader still completes its own reservation.
+// embedded set created in it is (Sam 2026-10-19, Google Docs model), under
+// the payer's plan; a full or frozen payer refuses the reservation, whoever
+// uploads. The uploader still completes its own reservation.
 func TestNoteContentIsChargedToTheNotesPayer(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_doc_owner")
 	editor := newBlobTestUser(t, s, "u_doc_editor")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, owner); err != nil {
+		t.Fatal(err)
+	}
 	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Docs", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
@@ -553,20 +557,27 @@ func TestNoteContentIsChargedToTheNotesPayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, limits, err := s.EditorAssetMaterial(ctx, note.ID)
-	if err != nil || limits.ImageBytes != mustPlanLimits(t, s, PlanFree).ImageBytes {
-		t.Fatalf("note limits = %+v, %v; want its payer's plan", limits, err)
+	// The Pro payer's image cap, not the Free editor's.
+	pro, free := mustPlanLimits(t, s, PlanPro).ImageBytes, mustPlanLimits(t, s, PlanFree).ImageBytes
+	if _, limits, err := s.EditorAssetMaterial(ctx, note.ID); err != nil || limits.ImageBytes != pro || pro == free {
+		t.Fatalf("note image cap = %d, %v; want the payer's Pro %d (Free %d)", limits.ImageBytes, err, pro, free)
 	}
-	asset, upload, err := s.CreateEditorAssetReservation(ctx, NewEditorAssetReservation{
-		AssetID: uid("asset"), UploadID: uid("eau"), WorkspaceID: ws.ID, MaterialID: note.ID, CreatedBy: editor,
-		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/incoming/" + uid("blob"),
-		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
-	})
+	reserve := func() (EditorAsset, EditorAssetUpload, error) {
+		return s.CreateEditorAssetReservation(ctx, NewEditorAssetReservation{
+			AssetID: uid("asset"), UploadID: uid("eau"), WorkspaceID: ws.ID, MaterialID: note.ID, CreatedBy: editor,
+			Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/incoming/" + uid("blob"),
+			ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+		})
+	}
+	asset, upload, err := reserve()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if asset.UserID != owner || upload.UserID != owner {
 		t.Fatalf("asset payer %s, reservation payer %s; want the note's payer %s", asset.UserID, upload.UserID, owner)
+	}
+	if _, err := s.FinalizeEditorAssetUpload(ctx, upload.ID, "etag"); err != nil {
+		t.Fatalf("the uploader completing its reservation = %v", err)
 	}
 	set, err := s.CreateEmbeddedMaterial(ctx, editor, note.ID, EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"front", "back"}}})
 	if err != nil {
@@ -578,5 +589,75 @@ func TestNoteContentIsChargedToTheNotesPayer(t *testing.T) {
 	usage, err := s.StorageUsage(ctx, editor)
 	if err != nil || usage.UsedBytes != 0 || usage.ReservedBytes != 0 {
 		t.Fatalf("editor usage = %+v, %v; want nothing charged", usage, err)
+	}
+
+	// The payer full: the editor's next image is refused on the payer's quota.
+	if _, err := s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`,
+		owner, mustPlanLimits(t, s, PlanPro).StorageBytes); err != nil {
+		t.Fatal(err)
+	}
+	var quota *QuotaExceededError
+	if _, _, err := reserve(); !errors.As(err, &quota) || quota.UserID != owner {
+		t.Fatalf("reserving into a full payer's note = %v, want the payer's storage_quota_exceeded", err)
+	}
+}
+
+// A frozen payer refuses an image added to its note by anyone.
+func TestFrozenNotePayerRefusesAddedImages(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_frozen_doc_owner")
+	editor := newBlobTestUser(t, s, "u_frozen_doc_editor")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Frozen docs", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
+	addWorkspaceEditor(t, s, ws.ID, editor)
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Frozen note"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushFrozen(t, s, owner, ws.ID)
+	_, _, err = s.CreateEditorAssetReservation(ctx, NewEditorAssetReservation{
+		AssetID: uid("asset"), UploadID: uid("eau"), WorkspaceID: ws.ID, MaterialID: note.ID, CreatedBy: editor,
+		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/incoming/" + uid("blob"),
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	wantOverQuotaLock(t, "reserving into a frozen payer's note", err)
+}
+
+// Under a suspended owner the payer still trashes and purges what it pays for
+// (Sam 2026-10-19), and still cannot read the workspace or restore.
+func TestPayerPurgesUnderASuspendedOwner(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_susp_owner")
+	payer := newBlobTestUser(t, s, "u_susp_payer")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Suspended", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addWorkspaceEditor(t, s, ws.ID, payer)
+	file, err := s.createReadyFile(ctx, ws.ID, payer, "kept.pdf", "pdf", nil, "", 10, "sources/"+uid("blob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WorkspaceAccess(ctx, payer, ws.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("payer reading a suspended owner's workspace = %v, want not found", err)
+	}
+	trashed, err := s.TrashFile(ctx, payer, file.ID, AgentOperation{})
+	if err != nil {
+		t.Fatalf("payer trashing under a suspended owner = %v", err)
+	}
+	episode := trashed.Effect.TrashEpisodeID
+	if _, err := s.RestoreTrashed(ctx, payer, agenttools.KindSourceFile, file.ID, episode, AgentOperation{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("payer restoring under a suspended owner = %v, want not found", err)
+	}
+	if _, err := s.PurgeTrashed(ctx, payer, agenttools.KindSourceFile, file.ID, episode, AgentOperation{}); err != nil {
+		t.Fatalf("payer purging under a suspended owner = %v", err)
 	}
 }

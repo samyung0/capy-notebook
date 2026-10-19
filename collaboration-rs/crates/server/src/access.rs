@@ -378,17 +378,22 @@ pub async fn lock_boundary<C: GenericClient>(
             "collaboration account not found".into(),
         ));
     }
-    // A deleted, deleting or suspended owner (the workspace's, or a standalone
-    // material's) or payer stops the write here, before the material lock:
-    // PurgeUser deletes a payer's materials before it updates the payer's
-    // row, so waiting on the material while holding that row would deadlock.
-    if rows.iter().any(|row| {
+    // A deleted, deleting or suspended account among those rows stops the
+    // write here, before the material lock: PurgeUser rewrites or deletes that
+    // account's materials before it updates its row, so waiting on the
+    // material while holding the row would deadlock. The owner (the
+    // workspace's, or a standalone material's) and the payer refuse as the
+    // material's; an actor's access is gone anyway (live_access).
+    for row in &rows {
+        if !row.get::<_, bool>("locked") {
+            continue;
+        }
         let id: String = row.get("id");
-        (id == owner || id == payer) && row.get::<_, bool>("locked")
-    }) {
-        return Err(AccessError::Forbidden(
-            "material owner account is locked".into(),
-        ));
+        return Err(AccessError::Forbidden(if id == owner || id == payer {
+            "material owner account is locked".into()
+        } else {
+            "collaboration account is locked".into()
+        }));
     }
     let locked = client
         .query(

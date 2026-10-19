@@ -829,6 +829,81 @@ async fn redeem(env: &Env, material: &str, viewer: &str) {
         .expect("link grant");
 }
 
+/// Security regression (uploader-pays review N4, B5): a locked owner, payer or
+/// actor refuses an agent edit before it waits on the material row, which a
+/// purge of that account holds while it waits on the account's row. With the
+/// material row held elsewhere, the refusal still answers at once. Fails if the
+/// check moves after the material lock (the edit would wait for the holder).
+#[tokio::test]
+async fn a_locked_account_refuses_before_the_material_lock() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let client = db(&env).await;
+    for locked in ["payer", "actor"] {
+        let (owner, payer, editor) = (user(&env).await, user(&env).await, user(&env).await);
+        let workspace = format!("ws_it_{}", uuid_like());
+        client
+            .execute(
+                "INSERT INTO workspaces (id,user_id,name) VALUES ($1,$2,'IT')",
+                &[&workspace, &owner],
+            )
+            .await
+            .expect("workspace");
+        client
+            .execute(
+                "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor'),($1,$3,'editor')",
+                &[&workspace, &payer, &editor],
+            )
+            .await
+            .expect("members");
+        let material = format!("m_it_{}", uuid_like());
+        let content = serde_json::json!({
+            "schemaVersion": 1,
+            "value": [{ "type": "p", "id": "b1", "children": [{ "text": "hello world" }] }],
+        });
+        client
+            .execute(
+                "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'IT', $4)",
+                &[&material, &payer, &workspace, &content],
+            )
+            .await
+            .expect("material");
+        let account = if locked == "payer" { &payer } else { &editor };
+        client
+            .execute(
+                "UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1",
+                &[account],
+            )
+            .await
+            .expect("deletion");
+        let holder = db(&env).await;
+        holder.batch_execute("BEGIN").await.expect("begin");
+        holder
+            .execute(
+                "SELECT 1 FROM materials WHERE id=$1 FOR UPDATE",
+                &[&material],
+            )
+            .await
+            .expect("hold the material");
+        let edit = serde_json::json!({
+            "actorUserId": editor,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": format!("op_{material}"), "requestHash": "h", "toolVersion": 1 },
+            "room": format!("material:{material}:schema:1"),
+            "target": { "id": material, "kind": "material" },
+        });
+        let answered = tokio::time::timeout(
+            Duration::from_secs(5),
+            internal(server.port, "/internal/documents/edit", &edit),
+        )
+        .await;
+        holder.batch_execute("ROLLBACK").await.expect("release");
+        let (status, refusal) =
+            answered.unwrap_or_else(|_| panic!("{locked}: the edit waited on the material"));
+        assert_ne!(status, 200, "{locked}: {refusal}");
+    }
+}
+
 /// Agent edit inverses on `material` charged to `payer`.
 async fn charged_inverses(client: &tokio_postgres::Client, material: &str, payer: &str) -> i64 {
     client
