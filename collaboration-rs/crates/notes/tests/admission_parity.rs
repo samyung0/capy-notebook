@@ -21,7 +21,9 @@ use notes::{catalog, material, plate, repair, slate_yjs};
 use serde_json::{Value, json};
 use yrs::branch::BranchPtr;
 use yrs::updates::decoder::Decode;
-use yrs::{Any, Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef};
+use yrs::{
+    Any, Array, Doc, Map, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef,
+};
 
 /// xorshift64.
 struct Rng(u64);
@@ -271,6 +273,17 @@ fn mutate(rng: &mut Rng, peer: &Doc, keys: &[&'static str], log: &mut Vec<String
     let text = XmlTextRef::from(target);
     let mut txn = peer.transact_mut();
     let len = text.len(&txn);
+    if let Some(kind) = type_of(target).filter(|kind| plate::holds_map(kind, "block"))
+        && rng.chance(40)
+    {
+        let count = (0..).map_while(|index| figure_write(index, &kind)).count();
+        let index = rng.below(count);
+        if let Some((what, write)) = figure_write(index, &kind) {
+            write(&mut txn, &text);
+            log.push(what);
+        }
+        return;
+    }
     match rng.below(9) {
         0 | 1 => {
             let index = rng.below(len as usize + 1) as u32;
@@ -583,6 +596,10 @@ fn writes(kind: Option<&str>, root: bool) -> Vec<(String, Write)> {
             }
         }),
     ));
+    // A figure's live block map (Epo 2026-10-17).
+    if let Some(kind) = kind.filter(|kind| plate::holds_map(kind, "block")) {
+        out.extend((0..).map_while(|index| figure_write(index, kind)));
+    }
     for mark in MARKS {
         out.push((
             format!("mark {mark}"),
@@ -648,4 +665,104 @@ fn every_single_catalog_write_leaves_a_document_the_store_takes() {
             "{kind}: {admitted} admitted, {refused} refused"
         );
     }
+}
+
+/// Keys a write puts into a figure's live `block` map: its own fields, a
+/// list key written whole, the type, and one it never holds.
+const FIGURE_KEYS: [&str; 12] = [
+    "title", "kind", "labels", "description", "xLabel", "unit", "type", "series", "elements",
+    "board", "width", "extra",
+];
+
+fn figure_values() -> [Any; 6] {
+    [
+        Any::from("Sales"),
+        Any::Null,
+        Any::Number(4.0),
+        Any::Bool(true),
+        Any::from(vec![Any::from("a"), Any::from("b")]),
+        Any::from(vec![Any::Number(1.0)]),
+    ]
+}
+
+/// The live `block` map of a figure element, if it holds one.
+fn figure_map<T: ReadTxn>(txn: &T, element: &XmlTextRef) -> Option<yrs::MapRef> {
+    match element.get_attribute(txn, "block") {
+        Some(yrs::Out::YMap(map)) => Some(map),
+        _ => None,
+    }
+}
+
+/// The figure writes on one element: each key of [FIGURE_KEYS] set to each
+/// value and removed; per list key a new entry, a plain value in the list,
+/// the first entry deleted, a field of the first entry set and set to null;
+/// and the block replaced by one plain value. `None` past the last.
+fn figure_write(index: usize, kind: &str) -> Option<(String, Write)> {
+    let values = figure_values();
+    let mut at = index;
+    if at < FIGURE_KEYS.len() * values.len() {
+        let key = FIGURE_KEYS[at / values.len()];
+        let value = values[at % values.len()].clone();
+        return Some((
+            format!("block {key}={value:?}"),
+            Box::new(move |txn, element| {
+                if let Some(map) = figure_map(txn, element) {
+                    map.insert(txn, key, value.clone());
+                }
+            }),
+        ));
+    }
+    at -= FIGURE_KEYS.len() * values.len();
+    if at < FIGURE_KEYS.len() {
+        let key = FIGURE_KEYS[at];
+        return Some((
+            format!("block unset {key}"),
+            Box::new(move |txn, element| {
+                if let Some(map) = figure_map(txn, element) {
+                    map.remove(txn, key);
+                }
+            }),
+        ));
+    }
+    at -= FIGURE_KEYS.len();
+    let lists = plate::lists_of(kind);
+    if at < lists.len() * 5 {
+        let list = lists[at / 5];
+        let what = at % 5;
+        return Some((
+            format!("block {list} write {what}"),
+            Box::new(move |txn, element| {
+                let Some(map) = figure_map(txn, element) else { return };
+                let Some(yrs::Out::YArray(entries)) = map.get(txn, list) else { return };
+                match what {
+                    0 => {
+                        let entry = entries.insert(txn, 0, yrs::MapPrelim::default());
+                        entry.insert(txn, "name", "New");
+                        entry.insert(txn, "type", "point");
+                        entry.insert(txn, "id", "p9");
+                        entry.insert(txn, "values", vec![Any::Number(1.0), Any::Number(2.0)]);
+                        entry.insert(txn, "coords", vec![Any::Number(0.0), Any::Number(0.0)]);
+                    }
+                    1 => {
+                        entries.insert(txn, 0, Any::from("plain"));
+                    }
+                    2 if entries.len(txn) > 0 => entries.remove(txn, 0),
+                    3 | 4 => {
+                        if let Some(yrs::Out::YMap(first)) = entries.get(txn, 0) {
+                            let value = if what == 3 { Any::from("x") } else { Any::Null };
+                            first.insert(txn, "name", value);
+                        }
+                    }
+                    _ => {}
+                }
+            }),
+        ));
+    }
+    at -= lists.len() * 5;
+    (at == 0).then(|| {
+        let write: Write = Box::new(|txn, element| {
+            element.insert_attribute(txn, "block", Any::from(vec![Any::from("x")]));
+        });
+        ("block as one plain value".to_owned(), write)
+    })
 }
