@@ -252,6 +252,23 @@ export function prepareScenarioOffice(
 const thumbnailStaleKey = (fileId: string) =>
   `capy.mock.thumbnailStale.${fileId}`;
 
+/** An e2e test's growth budget for one file's edit sessions. */
+const growthBudgetKey = (fileId: string) =>
+  `capy.mock.growthBudgetBytes.${fileId}`;
+
+function mockGrowthBudget(fileId: string) {
+  return Number(
+    (typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(growthBudgetKey(fileId))) ||
+      29 * 1024 ** 2
+  );
+}
+
+/** A view read's `atSizeLimit`: the test set the file's budget to 0. */
+export function mockAtSizeLimit(fileId: string) {
+  return mockGrowthBudget(fileId) === 0 || undefined;
+}
+
 export function clearMockThumbnailStale(fileId: string) {
   if (typeof sessionStorage !== 'undefined')
     sessionStorage.removeItem(thumbnailStaleKey(fileId));
@@ -286,18 +303,21 @@ export async function scenarioSourceSession(
   const room = sourceRoom(fileId, seed.epoch, text, seed.state, seed.format);
   return {
     access: 'write',
+    atSizeLimit: mockAtSizeLimit(fileId),
     baseRevision: file.revision,
     baseSourceSHA256: `scenario-${fileId}-${seed.epoch}`,
     checkpoint: room.version,
     epoch: seed.epoch,
     fileId,
     format: seed.format,
+    // A small file's room under the 30 MiB export cap, less the margin,
+    // unless a test set one.
+    growthBudgetBytes: mockGrowthBudget(fileId),
     // The Free cap, as the mock materials carry.
     imageMaxBytes:
       seed.format === 'text' ? undefined : PLAN_LIMITS.free.imageMaxBytes,
     indexedCheckpoint: 0,
     netTokens: 0,
-    pendingEffects: null,
     room: sourceRoomName(fileId, seed.epoch),
     sourceIdentity: fileId,
     sourceURL: seed.sourceURL,

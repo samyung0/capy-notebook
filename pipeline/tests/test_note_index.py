@@ -141,10 +141,7 @@ def provider(workspace, monkeypatch):
     model's capacity row is environment config (deploy/model-capacities.sql)."""
     state: dict = {"text": _text(), "inputs": [], "during": None}
     spec = registry.current_job_pins().embedding
-    capacity = (
-        elitellm.transport_provider_slug(spec),
-        elitellm.transport_model_slug(spec),
-    )
+    capacity = (spec.provider_slug, spec.model_slug)
     with workspace._connect() as conn:
         added = conn.execute(
             "INSERT INTO model_capacities VALUES (%s, %s, 4, 1) ON CONFLICT DO NOTHING",

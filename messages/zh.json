@@ -888,6 +888,8 @@
   "files_office_equation_text": "公式只能在 PowerPoint 中修改。",
   "files_office_clear_too_large": "所选区域内容过多，无法一次清除。请分几次清除。",
   "files_office_copy_too_large": "所选区域过大，无法复制。请选择较少的单元格。",
+  "files_office_image_budget": "此文件已没有空间容纳这么大的图片。请换一张较小的图片。",
+  "files_size_limit": "此文件已达到大小上限，只能查看。",
   "files_office_png_failed": "无法保存图片，请重试。",
   "files_office_print_truncated": "已打印前 {count} 页",
   "files_office_spreadsheet_formula_bar": "编辑栏",

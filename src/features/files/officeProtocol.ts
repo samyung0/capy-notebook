@@ -6,7 +6,7 @@ import {
   type OfficeMenu,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 10 as const;
+export const OFFICE_PROTOCOL_VERSION = 11 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -73,6 +73,11 @@ export type OfficeHostMessage =
        * file; an inserted image over it is shrunk first.
        */
       imageMaxBytes?: number;
+      /**
+       * Edit mode only: what the room's state could still grow by when the
+       * session was read; an inserted image past what is left is refused.
+       */
+      growthBudgetBytes?: number;
       /** View mode only: saved Yrs state to export over `bytes` before opening. */
       checkpoint?: ArrayBuffer;
       /**
@@ -171,6 +176,7 @@ export interface OfficeReadyTimings {
  */
 export const OFFICE_NOTICES = [
   'equation-text',
+  'image-budget',
   'image-too-large',
   'image-type',
   'clear-too-large',
@@ -388,7 +394,8 @@ export function isOfficeHostMessage(
       (candidate.mode === 'view' ||
         (isCollaboration(candidate.collaboration) &&
           isCount(candidate.imageMaxBytes) &&
-          candidate.imageMaxBytes > 0))) ||
+          candidate.imageMaxBytes > 0 &&
+          isCount(candidate.growthBudgetBytes)))) ||
       (candidate.type === 'set-capabilities' &&
         typeof (candidate as { canEdit?: unknown }).canEdit === 'boolean'))
   );

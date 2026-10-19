@@ -1054,7 +1054,7 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 	ctx := context.Background()
 	fileID, checkpoint, export := sourceTestDeferredPublication(t, s, newBlobTestUser(t, s, "deferred_clean_owner"))
 	view, err := s.ViewSourceSession(ctx, fileID)
-	if err != nil || sourceTestDocument(view) != "captured-state" || view.Checkpoint != view.IndexedCheckpoint {
+	if err != nil || sourceTestDocument(SourceSession{BrowserSourceSession: view}) != "captured-state" || view.Checkpoint != view.IndexedCheckpoint {
 		t.Fatalf("view while the rebuild is pending: %+v %v", view, err)
 	}
 	if err = s.RebuildSource(ctx, fileID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: checkpoint, PublishedSourceSHA256: export, State: []byte("x"), StateSeedSHA256: sourceTestStateSeed, PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
@@ -1064,7 +1064,7 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	view, err = s.ViewSourceSession(ctx, fileID)
-	if err != nil || sourceTestDocument(view) != "" || view.Epoch != 2 || view.BaseSourceSHA256 != export {
+	if err != nil || sourceTestDocument(SourceSession{BrowserSourceSession: view}) != "" || view.Epoch != 2 || view.BaseSourceSHA256 != export {
 		t.Fatalf("view after the rebuild: %+v %v", view, err)
 	}
 }
@@ -2115,5 +2115,67 @@ func TestTextSavesWriteTheFilePreview(t *testing.T) {
 	in.Preview = text("text")
 	if _, err := s.SaveSourceCheckpoint(ctx, office.ID, in); !errors.Is(err, ErrInvalidCheckpoint) {
 		t.Fatalf("an Office save took a preview: %v", err)
+	}
+}
+
+// An Office room's growth budget never goes negative: a base at the export
+// cap, or a saved change past it, leaves 0, which the editor reads as a full
+// file (a negative one would fail every edit read's validation).
+func TestSourceGrowthBudgetStopsAtZero(t *testing.T) {
+	const exportCap = 30 << 20
+	for _, tc := range []struct {
+		name  string
+		base  int64
+		grown int64
+		want  int64
+	}{
+		{"small base, saved change", 1000, 150, exportCap - 1000 - sourceGrowthMarginBytes - sourceWriteReserveBytes - 150},
+		{"base at the export cap", exportCap, 0, 0},
+		{"change past the budget", exportCap - sourceGrowthMarginBytes - 100, 150, 0},
+		// A base published over the export cap (Epo 2026-10-19) freezes at
+		// its size limit.
+		{"base over the export cap", exportCap + 5<<20, 0, 0},
+		// Less than admission's reserve left admits nothing: view only.
+		{"budget inside the reserve", exportCap - sourceGrowthMarginBytes - sourceWriteReserveBytes + 100, 150, 0},
+	} {
+		if got := SourceGrowthBudget(exportCap, tc.base, tc.grown); got != tc.want {
+			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Epo 2026-10-19: an export over the plan file limit still publishes, and
+// the file then freezes at its size limit; only the source ceiling refuses
+// it.
+func TestSourceRefreshPublishesAnExportOverThePlanLimit(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "source_over_limit_owner")
+	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "over-limit-state")
+	job, err := s.requestSourceRefresh(ctx, owner, file.ID, false, models.PaidBySystem, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planMax, err := s.MaxSourceFileBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: sourceCeilingBytes + 1, SourceETag: "etag-b", State: []byte("over-limit-state"), StateSeedSHA256: &sourceTestStateSeed}
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); !errors.Is(err, ErrConflict) {
+		t.Fatalf("an export past the source ceiling: %v", err)
+	}
+	finalize.SizeBytes = planMax + 1
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
+		t.Fatalf("an export over the plan limit: %v", err)
 	}
 }

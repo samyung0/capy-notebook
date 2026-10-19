@@ -1,16 +1,16 @@
 """Normalize provider usage into inclusive cache-read counters.
 
 Discount only proven inclusive shapes: DeepSeek prompt_cache_hit_tokens,
-and OpenAI and Relace cached_tokens nested under input/prompt token details.
+and OpenAI, Z.AI and OpenRouter cached_tokens nested under input/prompt token
+details.
 Missing or invalid detail is recorded and charged as ordinary input. It does
 not fail the request.
 
-GLM is proven under its `zai` catalog slug because the hop is a billing
-route, not a fan-out: Relace serves the model and charges us directly, so the
-split it reports (observed inclusive in the 2026-09-26 bench run) is the one
-the row's cached rate is priced against. The `openrouter` descriptor pin
-reports the same nested cached_tokens, observed inclusive on 2026-10-15
-(1,024 cached of 1,208 prompt tokens).
+Z.AI serves GLM-5.3-Flash itself; its split was observed inclusive on
+2026-10-20 (a repeated 2,744-token prompt reported 2,688 cached, with
+prompt_tokens unchanged and total = prompt + completion). The `openrouter` pins
+report the same nested cached_tokens, observed inclusive on 2026-10-15 (1,024
+cached of 1,208 prompt tokens).
 """
 
 from __future__ import annotations
@@ -101,14 +101,13 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
     writes = _int(_attr(details, "cache_write_tokens", "cacheWriteTokens")) or _int(
         _attr(block, "cache_creation_input_tokens", "cacheCreationInputTokens")
     )
-    # Relace reports reasoning_tokens at the top level.
     reasoning = _int(
         _attr(
             _attr(block, "completion_tokens_details", "output_tokens_details"),
             "reasoning_tokens",
             "reasoningTokens",
         )
-    ) or _int(_attr(block, "reasoning_tokens"))
+    )
     out.cache_write_tokens = writes
     out.reasoning_tokens = reasoning
 

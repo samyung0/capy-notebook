@@ -5,6 +5,7 @@ import {
   officeNotices,
   openRequestedPresenter,
 } from './useOfficeRuntime';
+import { opensAtSizeLimit } from './useSourceSession';
 
 // Capy's vitest has no DOM, so these elements are outside any dialog or menu
 // (`closest` finds nothing); the e2e checks an open menu.
@@ -123,5 +124,21 @@ describe('the notices a frame shows', () => {
       [m.files_office_clear_too_large()],
       [m.files_office_copy_too_large()],
     ]);
+  });
+});
+
+describe('an edit open at the size limit', () => {
+  const full = { access: 'write', growthBudgetBytes: 0 };
+  it('stops when nothing is left to admit and no drafts wait', () => {
+    expect(opensAtSizeLimit(full, 0)).toBe(true);
+    expect(opensAtSizeLimit({ ...full, growthBudgetBytes: 1 }, 0)).toBe(false);
+  });
+
+  it('still opens restored drafts, so they can be sent, copied out or discarded', () => {
+    expect(opensAtSizeLimit(full, 2)).toBe(false);
+  });
+
+  it('leaves a read session (storage full) to its own banner', () => {
+    expect(opensAtSizeLimit({ ...full, access: 'read' }, 0)).toBe(false);
   });
 });

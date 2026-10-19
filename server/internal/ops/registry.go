@@ -125,7 +125,7 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 		return out, err
 	}
 	for i := range out.Configs {
-		if capacity, exists := capacities[models.TransportRef(out.Configs[i].Ref())]; exists {
+		if capacity, exists := capacities[out.Configs[i].Ref()]; exists {
 			out.Configs[i].ConcurrencyTotal = &capacity.Total
 			out.Configs[i].InteractiveReserve = &capacity.Reserve
 		}
@@ -276,12 +276,7 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 			*draft.InteractiveReserve >= *draft.ConcurrencyTotal {
 			return grid, validation("model %s needs concurrency total > 0 and 0 <= interactive reserve < total", ref)
 		}
-		transport := models.TransportRef(ref)
-		capacity := modelCapacity{Total: *draft.ConcurrencyTotal, Reserve: *draft.InteractiveReserve}
-		if previous, exists := grid.Capacities[transport]; exists && previous != capacity {
-			return grid, validation("models sharing transport %s must use the same capacity", transport)
-		}
-		grid.Capacities[transport] = capacity
+		grid.Capacities[ref] = modelCapacity{Total: *draft.ConcurrencyTotal, Reserve: *draft.InteractiveReserve}
 		if len(draft.Slots) == 0 {
 			return grid, validation("active config %s needs at least one slot", ref)
 		}

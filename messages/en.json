@@ -888,6 +888,8 @@
   "files_office_equation_text": "Equations can only be changed in PowerPoint.",
   "files_office_clear_too_large": "This selection holds too much to clear at once. Clear it in smaller parts.",
   "files_office_copy_too_large": "This selection is too large to copy. Select fewer cells.",
+  "files_office_image_budget": "This file has no room left for an image this large. Try a smaller image.",
+  "files_size_limit": "This file is at its size limit, so it opens to view only.",
   "files_office_png_failed": "Couldn't save the image. Try again.",
   "files_office_print_truncated": "Printed the first {count} pages",
   "files_office_spreadsheet_formula_bar": "Formula bar",

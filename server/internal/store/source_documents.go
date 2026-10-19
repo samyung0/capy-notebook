@@ -16,32 +16,37 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
-// SourceSession: browser reads send null pendingEffects (server-side only),
-// and the viewer read sends null state unless a checkpoint is ahead of the
-// indexed one. A null state is seed(base). An Office state is its change over
-// seed(base), whose SHA-256 stateSeedSHA256 is; a text state is complete.
-// Every save since appends a row (delta saves): the saved document is the
-// state, then stateRows in order, which browser reads carry with the state.
-// The indexed baseline is derived from the base.
-type SourceSession struct {
-	FileID            string          `json:"fileId"`
-	WorkspaceID       string          `json:"workspaceId"`
-	Format            string          `json:"format" enum:"docx,xlsx,pptx,text"`
-	Room              string          `json:"room"`
-	Epoch             int64           `json:"epoch"`
-	Checkpoint        int64           `json:"checkpoint"`
-	IndexedCheckpoint int64           `json:"indexedCheckpoint"`
-	BaseRevision      int64           `json:"baseRevision"`
-	SourceIdentity    string          `json:"sourceIdentity"`
-	BaseSourceSHA256  string          `json:"baseSourceSHA256"`
-	SourceURL         string          `json:"sourceURL"`
-	State             []byte          `json:"state" nullable:"true"`
-	StateSeedSHA256   *string         `json:"stateSeedSHA256" nullable:"true"`
-	StateRows         [][]byte        `json:"stateRows,omitempty"`
-	PendingEffects    json.RawMessage `json:"pendingEffects"`
-	NetTokens         int64           `json:"netTokens"`
-	BaseBlobPath      string          `json:"-"`
-	Access            string          `json:"access" enum:"write,read"`
+// BrowserSourceSession is the browser's read of a source; the viewer read
+// sends null state unless a checkpoint is ahead of the indexed one. A null
+// state is seed(base). An Office state is its change over seed(base), whose
+// SHA-256 stateSeedSHA256 is; a text state is complete. Every save since
+// appends a row (delta saves): the saved document is the state, then
+// stateRows in order, which browser reads carry with the state. The indexed
+// baseline is derived from the base.
+type BrowserSourceSession struct {
+	FileID            string   `json:"fileId"`
+	WorkspaceID       string   `json:"workspaceId"`
+	Format            string   `json:"format" enum:"docx,xlsx,pptx,text"`
+	Room              string   `json:"room"`
+	Epoch             int64    `json:"epoch"`
+	Checkpoint        int64    `json:"checkpoint"`
+	IndexedCheckpoint int64    `json:"indexedCheckpoint"`
+	BaseRevision      int64    `json:"baseRevision"`
+	SourceIdentity    string   `json:"sourceIdentity"`
+	BaseSourceSHA256  string   `json:"baseSourceSHA256"`
+	SourceURL         string   `json:"sourceURL"`
+	State             []byte   `json:"state" nullable:"true"`
+	StateSeedSHA256   *string  `json:"stateSeedSHA256" nullable:"true"`
+	StateRows         [][]byte `json:"stateRows,omitempty"`
+	NetTokens         int64    `json:"netTokens"`
+	BaseBlobPath      string   `json:"-"`
+	// BaseBytes is the base file's size when it is the file's current
+	// revision (files.size_bytes); nil while editing stays on an older one.
+	BaseBytes *int64 `json:"-"`
+	// GrownBytes is the durable state's growth over seed(base)
+	// (sourceGrowthSQL), which the growth budget subtracts.
+	GrownBytes int64  `json:"-"`
+	Access     string `json:"access" enum:"write,read"`
 	// StorageFull: an editor's read access because the file's payer is at its
 	// storage limit; "self" when the editor pays for it.
 	StorageFull StorageFullBy `json:"storageFull,omitempty"`
@@ -49,6 +54,16 @@ type SourceSession struct {
 	// of the file's payer (its uploader): inserted images over it are shrunk
 	// in the browser first.
 	ImageMaxBytes int64 `json:"imageMaxBytes,omitempty"`
+	// GrowthBudgetBytes: the browser's edit read only. What the room's state
+	// may still grow by as of the durable state (SourceGrowthBudget): 0 opens
+	// the file to view only, and the Office editor refuses an inserted image
+	// past it.
+	GrowthBudgetBytes *int64 `json:"growthBudgetBytes,omitempty"`
+	// AtSizeLimit: the browser's view read only. The file has no growth
+	// budget left, so the view shows it cannot be edited before any attempt
+	// (Epo 2026-10-20). Known on the current base only; editing that stays
+	// on an older one learns it from the edit read.
+	AtSizeLimit bool `json:"atSizeLimit,omitempty"`
 	// ThumbnailStale: the browser's Office edit read only. The file's card is
 	// older than its saved document (ThumbnailStale), so the editor uploads
 	// the page 1 it draws, once per open.
@@ -68,6 +83,43 @@ type SourceSession struct {
 	PublishedSourceURL       string  `json:"publishedSourceURL,omitempty"`
 	PublishedBlobPath        string  `json:"-"`
 }
+
+// SourceSession is the collaboration service's read: the browser's plus the
+// pending effects, which stay server-side.
+type SourceSession struct {
+	BrowserSourceSession
+	PendingEffects json.RawMessage `json:"pendingEffects"`
+}
+
+// sourceGrowthMarginBytes: what a room's growth stays under the export cap
+// by. IMPORTANT: KEEP IN SYNC WITH STATE_GROWTH_MARGIN_BYTES IN
+// collaboration-rs/crates/sources/src/lib.rs
+const sourceGrowthMarginBytes = 1 << 20
+
+// sourceCeilingBytes: the most any source state or published source file
+// may be. IMPORTANT: KEEP IN SYNC WITH MAX_SOURCE_STATE_BYTES IN
+// collaboration-rs/crates/sources/src/lib.rs
+const sourceCeilingBytes = 100 << 20
+
+// sourceWriteReserveBytes: what room admission keeps free under the cap for
+// the room's own writes. IMPORTANT: KEEP IN SYNC WITH
+// STATE_WRITE_RESERVE_BYTES IN collaboration-rs/crates/sources/src/lib.rs
+const sourceWriteReserveBytes = 64 << 10
+
+// SourceGrowthBudget is what a source room may still admit: the export cap
+// (the largest plan source file) less the base file, the margin, admission's
+// write reserve and the durable growth over seed(base) (Epo 2026-10-17; the
+// collaboration server's admission_cap of state_cap). Never negative; 0
+// means nothing would be admitted, so the file opens to view only.
+func SourceGrowthBudget(exportCap, baseBytes, grownBytes int64) int64 {
+	return max(0, exportCap-baseBytes-sourceGrowthMarginBytes-sourceWriteReserveBytes-grownBytes)
+}
+
+// sourceGrowthSQL is a source row's durable growth over seed(base), as the
+// collaboration server's room estimate counts it: an Office state and its
+// rows are the change itself; a text state is the whole text with its
+// history, so its seed (seed_bytes) comes off. 0 for a file with no row.
+const sourceGrowthSQL = `GREATEST(0,COALESCE(octet_length(d.state),0)+COALESCE((SELECT sum(octet_length(u.update)) FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch)::bigint,0)-CASE WHEN d.format='text' THEN d.seed_bytes ELSE 0 END)`
 
 type SourceCheckpoint struct {
 	ActorIDs           []string `json:"actorIds" minItems:"1"`
@@ -258,8 +310,8 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 		return SourceSession{}, err
 	}
 	var name, kind, path, sha string
-	var revision int64
-	err = tx.QueryRow(ctx, `SELECT name,kind,COALESCE(blob_path,''),COALESCE(source_sha256,''),revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&name, &kind, &path, &sha, &revision)
+	var revision, size int64
+	err = tx.QueryRow(ctx, `SELECT name,kind,COALESCE(blob_path,''),COALESCE(source_sha256,''),revision,size_bytes FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&name, &kind, &path, &sha, &revision, &size)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -273,6 +325,9 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	out, err := readSourceSession(ctx, tx, fileID, ws)
 	if err != nil {
 		return out, err
+	}
+	if out.BaseRevision == revision {
+		out.BaseBytes = &size
 	}
 	payer, err := filePayer(ctx, tx, fileID)
 	if err != nil {
@@ -306,10 +361,11 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 // indexed one, or while a rebuild is pending (the base is the old file, the
 // published edits live in the state); a file nobody has edited answers with
 // its blob alone.
-func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSession, error) {
-	out := SourceSession{FileID: fileID, Access: "read"}
+func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (BrowserSourceSession, error) {
+	out := BrowserSourceSession{FileID: fileID, Access: "read"}
 	var name, kind string
-	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN `+sourceStateRowsSQL+` END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows)
+	var revision, size int64
+	err := s.pool.QueryRow(ctx, `SELECT f.revision,f.size_bytes,`+sourceGrowthSQL+`,f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN `+sourceStateRowsSQL+` END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&revision, &size, &out.GrownBytes, &out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows)
 	if isNoRows(err) {
 		return out, ErrNotFound
 	}
@@ -319,6 +375,9 @@ func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSes
 	out.Format = editableSourceFormat(name, kind)
 	if out.Format == "" || out.BaseBlobPath == "" {
 		return out, ErrForbidden
+	}
+	if out.BaseRevision == revision {
+		out.BaseBytes = &size
 	}
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
@@ -377,8 +436,8 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 const sourceStateRowsSQL = `ARRAY(SELECT u.update FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch ORDER BY u.checkpoint)`
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
-	out := SourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}
-	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,`+sourceStateRowsSQL+`,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256)
+	out := SourceSession{BrowserSourceSession: BrowserSourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}}
+	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,`+sourceStateRowsSQL+`,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END,`+sourceGrowthSQL+` FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256, &out.GrownBytes)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err

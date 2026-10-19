@@ -179,7 +179,7 @@ export function readSync(payload: Uint8Array) {
  * in protocol.rs is the same number (a test keeps them equal). When to bump:
  * openwiki/frontend/plate-editor.md "Client protocol".
  */
-export const CLIENT_PROTOCOL = 4;
+export const CLIENT_PROTOCOL = 5;
 
 export const joinPayload = (room: string, token: string) =>
   new Writer().varString(room).varString(token).varUint(CLIENT_PROTOCOL).done();

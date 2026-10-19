@@ -28,13 +28,6 @@ export async function slotDefault(
   return rows[0];
 }
 
-/** The provider EliteLLM sends a catalog row to: routed GLM goes to Relace
- * (elitellm.transport_provider_slug). */
-const transport = (row: CatalogRow) =>
-  row.provider_slug === 'zai' && row.model_slug === 'glm-5.3-flash'
-    ? 'relace'
-    : row.provider_slug;
-
 export type ProviderCall = {
   id: string;
   kind: string;
@@ -76,7 +69,7 @@ export function onRow(
 ) {
   for (const call of calls) {
     assert.equal(call.status, 'applied', `${call.kind} call ${call.id}`);
-    assert.equal(call.provider, transport(row));
+    assert.equal(call.provider, row.provider_slug);
     assert.equal(call.model, row.model_slug);
     assert.deepEqual(
       [
@@ -110,7 +103,7 @@ export function rerankOnRow(calls: ProviderCall[], row: CatalogRow) {
         (call.status === 'abandoned' && call.error_code === 'receipt_timeout'),
       `rerank call ${call.id} is ${call.status} (${call.error_code})`
     );
-    assert.equal(call.provider, transport(row));
+    assert.equal(call.provider, row.provider_slug);
     assert.equal(call.model, row.model_slug);
     assert.deepEqual(
       [call.catalog_provider_slug, call.credit_micros],

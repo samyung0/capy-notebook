@@ -172,7 +172,7 @@ func (s *Store) SourceCandidateBlob(ctx context.Context, fileID, jobID, lease st
 }
 
 func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in SourceRefreshFinalize) error {
-	if in.SizeBytes < 0 || len(in.SourceSHA256) != 64 || in.SourceETag == "" || len(in.State) > 100<<20 || (in.StateSeedSHA256 != nil && (len(in.State) == 0 || !sha256Hex(*in.StateSeedSHA256))) {
+	if in.SizeBytes < 0 || len(in.SourceSHA256) != 64 || in.SourceETag == "" || len(in.State) > sourceCeilingBytes || (in.StateSeedSHA256 != nil && (len(in.State) == 0 || !sha256Hex(*in.StateSeedSHA256))) {
 		return ErrConflict
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -195,11 +195,11 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 		}
 		return err
 	}
-	maxBytes, err := s.MaxSourceFileBytes()
-	if err != nil {
-		return err
-	}
-	if in.SizeBytes > maxBytes {
+	// An export over the plan file limit still publishes (Epo 2026-10-19):
+	// its base and saved edits are stored already, and every viewer would
+	// otherwise rebuild them. The file then freezes at its size limit, its
+	// new base leaving no growth budget. The source ceiling is the hard stop.
+	if in.SizeBytes > sourceCeilingBytes {
 		return ErrConflict
 	}
 	// An Office capture is a change over seed(base) and names its seed; text

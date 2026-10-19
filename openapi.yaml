@@ -868,6 +868,107 @@ components:
         - creditsCarriedMicros
         - creditSettings
       type: object
+    BrowserSourceSession:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BrowserSourceSession.json
+          format: uri
+          readOnly: true
+          type: string
+        access:
+          enum:
+            - write
+            - read
+          type: string
+        atSizeLimit:
+          type: boolean
+        baseRevision:
+          format: int64
+          type: integer
+        baseSourceSHA256:
+          type: string
+        checkpoint:
+          format: int64
+          type: integer
+        epoch:
+          format: int64
+          type: integer
+        fileId:
+          type: string
+        format:
+          enum:
+            - docx
+            - xlsx
+            - pptx
+            - text
+          type: string
+        growthBudgetBytes:
+          format: int64
+          type: integer
+        imageMaxBytes:
+          format: int64
+          type: integer
+        indexedCheckpoint:
+          format: int64
+          type: integer
+        netTokens:
+          format: int64
+          type: integer
+        publishedSourceSHA256:
+          type: string
+        publishedSourceURL:
+          type: string
+        publishedState:
+          format: base64
+          type: string
+        publishedStateSeedSHA256:
+          type: string
+        rebuildPending:
+          type: boolean
+        room:
+          type: string
+        sourceIdentity:
+          type: string
+        sourceURL:
+          type: string
+        state:
+          format: base64
+          nullable: true
+          type: string
+        stateRows:
+          items:
+            format: base64
+            type: string
+          nullable: true
+          type: array
+        stateSeedSHA256:
+          nullable: true
+          type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
+        thumbnailStale:
+          type: boolean
+        workspaceId:
+          type: string
+      required:
+        - fileId
+        - workspaceId
+        - format
+        - room
+        - epoch
+        - checkpoint
+        - indexedCheckpoint
+        - baseRevision
+        - sourceIdentity
+        - baseSourceSHA256
+        - sourceURL
+        - state
+        - stateSeedSHA256
+        - netTokens
+        - access
+      type: object
     Canvas:
       additionalProperties: false
       properties:
@@ -5468,6 +5569,8 @@ components:
             - write
             - read
           type: string
+        atSizeLimit:
+          type: boolean
         baseRevision:
           format: int64
           type: integer
@@ -5488,6 +5591,9 @@ components:
             - pptx
             - text
           type: string
+        growthBudgetBytes:
+          format: int64
+          type: integer
         imageMaxBytes:
           format: int64
           type: integer
@@ -5535,6 +5641,7 @@ components:
         workspaceId:
           type: string
       required:
+        - pendingEffects
         - fileId
         - workspaceId
         - format
@@ -5548,7 +5655,6 @@ components:
         - sourceURL
         - state
         - stateSeedSHA256
-        - pendingEffects
         - netTokens
         - access
       type: object
@@ -8639,19 +8745,19 @@ paths:
           required: true
           schema:
             type: string
-        - description: "Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"
+        - description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"
           explode: false
           in: query
           name: view
           schema:
-            description: "Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"
+            description: "Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint"
             type: boolean
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SourceSession"
+                $ref: "#/components/schemas/BrowserSourceSession"
           description: OK
         default:
           content:

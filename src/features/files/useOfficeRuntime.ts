@@ -51,6 +51,7 @@ import {
 import {
   SOURCE_IFRAME_ORIGIN,
   sessionReported,
+  useSizeLimitView,
   useSourceSession,
 } from './useSourceSession';
 
@@ -153,6 +154,14 @@ export function useOfficeRuntime({
     setJoined(false);
     setMode('view');
   }, [mode, pausedAtOpen, setMode]);
+  // The view read says the file is at its size limit before any Edit
+  // attempt; an edit open stopped there drops to view.
+  const [viewAtSizeLimit, setViewAtSizeLimit] = useState(false);
+  const sizeLimited =
+    useSizeLimitView(source.atSizeLimit, mode === 'edit', () => {
+      setJoined(false);
+      setMode('view');
+    }) || viewAtSizeLimit;
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const modeRef = useRef(mode);
@@ -348,6 +357,8 @@ export function useOfficeRuntime({
     const controller = new AbortController();
     void takeSourceOpen(file.id, 'view', controller.signal)
       .then(async ({ base, session }) => {
+        if (!controller.signal.aborted)
+          setViewAtSizeLimit(!!session.atSizeLimit);
         const bytes = (await base).buffer;
         const saved =
           session.checkpoint === session.indexedCheckpoint
@@ -395,10 +406,16 @@ export function useOfficeRuntime({
         : undefined;
     const imageMaxBytes =
       mode === 'edit' ? source.session!.imageMaxBytes : undefined;
+    const growthBudgetBytes =
+      mode === 'edit' ? source.session!.growthBudgetBytes : undefined;
     initializedFrame.current = frameGeneration;
-    // An Office edit session always names the payer's image cap; without one
-    // the editor cannot open, so it fails here instead of hanging.
-    if (mode === 'edit' && !(imageMaxBytes && imageMaxBytes > 0)) {
+    // An Office edit session always names the payer's image cap and the
+    // room's growth budget; without them the editor cannot open, so it fails
+    // here instead of hanging.
+    if (
+      mode === 'edit' &&
+      !(imageMaxBytes && imageMaxBytes > 0 && growthBudgetBytes !== undefined)
+    ) {
       setError(m.error_file_body());
       return;
     }
@@ -420,6 +437,7 @@ export function useOfficeRuntime({
         collaboration,
         fileName: file.name,
         format,
+        growthBudgetBytes,
         imageMaxBytes,
         mode,
         revision: revisionRef.current,
@@ -934,6 +952,7 @@ export function useOfficeRuntime({
     sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
+    sizeLimited,
     status: source.status,
     storageFull: source.session?.storageFull,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
@@ -970,6 +989,8 @@ const OFFICE_NOTICE_TOASTS: Record<
   },
   // A refused keystroke repeats on every key: once per frame.
   'equation-text': { once: true, title: () => m.files_office_equation_text() },
+  // Each refused image is its own pick: every time.
+  'image-budget': { once: false, title: () => m.files_office_image_budget() },
   // Each refused image is its own pick: every time.
   'image-too-large': {
     once: false,
