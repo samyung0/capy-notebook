@@ -178,11 +178,15 @@ func inline(typ string, isVoid bool) Element {
 	return e
 }
 
-// media is an uploaded file: it names its editor asset, never a URL.
+// media is an uploaded file: it names its editor asset, never a URL. One
+// that does not resize stores no width (audio, Epo 2026-10-18).
 func media(typ string, resizable bool) Element {
 	e := void(typ)
 	e.Required = []string{"assetId"}
 	e.Forbidden = []string{"url", "src"}
+	if !resizable {
+		e.Forbidden = append(e.Forbidden, "width")
+	}
 	e.Assets = []string{"assetId"}
 	e.Resizable = resizable
 	return e

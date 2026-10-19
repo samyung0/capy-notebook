@@ -475,7 +475,7 @@ pub const ELEMENTS: &[Element] = &[
         top_level: false,
         required: &["assetId"],
         fields: None,
-        forbidden: &["url", "src"],
+        forbidden: &["url", "src", "width"],
         shared_text: &[],
         assets: &["assetId"],
         resizable: false,

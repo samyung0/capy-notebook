@@ -181,6 +181,18 @@ fn the_store_follows_the_catalog() {
             let extra = stored(&|nodes| node_at(nodes, &sample.path)["extra"] = json!("x"));
             assert!(extra.is_err(), "a {name} with an unknown field is stored");
         }
+        // Security regression (Epo 2026-10-18): a void element holds one
+        // empty text leaf, whatever else it holds instead.
+        if element.void {
+            for children in [
+                json!([{ "text": "hidden" }]),
+                json!([{ "type": "p", "children": [{ "text": "hidden" }] }]),
+                json!([{ "text": "" }, { "text": "" }]),
+            ] {
+                let held = stored(&|nodes| node_at(nodes, &sample.path)["children"] = children.clone());
+                assert!(held.is_err(), "a {name} holding {children} is stored");
+            }
+        }
         if element.top_level {
             let nested = stored(&|nodes| {
                 let top = nodes[sample.path[0]].take();

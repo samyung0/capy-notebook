@@ -639,7 +639,9 @@ func validateNode(node map[string]any, depth int) error {
 
 // validateCatalogKeys applies the key rules the embed catalog gives every
 // element, after its own checks: top-level placement, required keys, keys it
-// never carries (null counts as absent) and its closed field set.
+// never carries (null counts as absent), its closed field set, and a void
+// element's one empty text leaf (marks allowed: a mention is a markable void;
+// Epo 2026-10-18).
 func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error {
 	if e.TopLevel && depth != 0 {
 		return fmt.Errorf("%s must be a top-level block", e.Type)
@@ -659,6 +661,13 @@ func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error
 			if !slices.Contains(e.Fields, key) {
 				return fmt.Errorf("unexpected %s field %s", e.Type, key)
 			}
+		}
+	}
+	if e.Void {
+		children, _ := node["children"].([]any)
+		leaf, _ := children[0].(map[string]any)
+		if text, isText := leaf["text"].(string); len(children) != 1 || !isText || text != "" {
+			return fmt.Errorf("%s holds one empty text leaf", e.Type)
 		}
 	}
 	return nil

@@ -294,7 +294,8 @@ export const EMBED_CATALOG = {
       ],
       "forbidden": [
         "url",
-        "src"
+        "src",
+        "width"
       ],
       "assets": [
         "assetId"

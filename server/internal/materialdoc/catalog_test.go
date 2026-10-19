@@ -179,6 +179,19 @@ func TestValidatorFollowsTheCatalog(t *testing.T) {
 				t.Errorf("a %s with an unknown field is accepted", e.Type)
 			}
 		}
+		// Security regression (Epo 2026-10-18): a void element holds one empty
+		// text leaf, whatever else it holds instead.
+		if e.Void {
+			for name, held := range map[string][]any{
+				"text":       {textLeaf("hidden")},
+				"an element": {textElement("p", "hidden")},
+				"two leaves": {textLeaf(""), textLeaf("")},
+			} {
+				if err := with(func(n []map[string]any) { nodeAt(n, s.path)["children"] = held }); err == nil {
+					t.Errorf("a %s holding %s is accepted", e.Type, name)
+				}
+			}
+		}
 		if e.TopLevel {
 			nested := func(n []map[string]any) {
 				n[s.path[0]] = map[string]any{"type": "callout", "id": "wrap", "children": []any{n[s.path[0]]}}
@@ -200,6 +213,15 @@ func TestValidatorFollowsTheCatalog(t *testing.T) {
 
 	// A type the catalog does not list is refused on every write, and a
 	// stored document holding one stays readable (Epo 2026-10-13).
+	// A mention is a markable void: its one empty leaf may carry a mark.
+	marked := []map[string]any{{"type": "p", "id": "m", "children": []any{
+		textLeaf("say "),
+		map[string]any{"type": "mention", "value": "Ada", "children": []any{map[string]any{"text": "", "bold": true}}},
+		textLeaf(""),
+	}}}
+	if err := validateAs(embeds.Note, marked); err != nil {
+		t.Errorf("a mention holding a marked empty leaf is refused: %v", err)
+	}
 	unknown := []map[string]any{{"type": "toggle", "id": "t", "children": []any{textLeaf("")}}}
 	if err := validateAs(embeds.Note, unknown); err == nil {
 		t.Error("an element type the catalog does not list is accepted")

@@ -293,7 +293,8 @@
       ],
       "forbidden": [
         "url",
-        "src"
+        "src",
+        "width"
       ],
       "assets": [
         "assetId"
