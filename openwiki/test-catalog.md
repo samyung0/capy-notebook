@@ -134,7 +134,6 @@ The opt-in [`alibaba_decision.py`](../bench/grading/scripts/alibaba_decision.py)
 
 | File                                                                                                | About                                                                                                                                                     |
 | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`emails/editor/app/lib/email-templates.test.ts`](../emails/editor/app/lib/email-templates.test.ts) | Every English and Chinese Maily source matches the schema and uses exactly its declared template variables; edit-time previews fill sample header values. |
 
 ### Materials
 

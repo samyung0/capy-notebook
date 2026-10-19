@@ -123,10 +123,8 @@ docker compose -f deploy/docker-compose.yml --profile ops up --build ops
 # Ops UI only, proxies /api → :8082
 pnpm --filter @capy-notebook/ops dev
 
-# Standalone Maily editor on http://127.0.0.1:3000
-pnpm email:dev
-
-# Regenerate server/internal/mail/templates/*.gohtml and *.txt
+# Regenerate server/internal/mail/templates/*.gohtml and *.txt from the
+# hand-edited Maily JSON in emails/templates/
 pnpm email:build
 ```
 
