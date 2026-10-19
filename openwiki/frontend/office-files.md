@@ -2191,7 +2191,11 @@ account change, close that user's connections through the collaboration
 eviction outbox; anything else (such as the owner's account state for a
 collaborator) takes effect within those 5 s, and every checkpoint rechecks each
 writer. Only when the estimate passes the 100 MB cap is the
-exact size computed; an update over the cap gets an unrecoverable
+exact size computed, at most once per 1,000 updates (`MEASURE_EVERY` in
+`collaboration-rs/crates/sources/src/admit.rs`, about 13 ms per MB of state;
+an update past the estimate meanwhile is refused by it alone), with the
+update's apply to the measured copy limited to `ydoc::MAX_WORK` steps (Epo
+2026-10-19); an update over the cap gets an unrecoverable
 `source-checkpoint-failed` message, so the client resets to the last saved
 version instead of reconnecting and resending. The exact limit at save still
 applies and is final too (a 413 `SourceRequestError`, never retried).

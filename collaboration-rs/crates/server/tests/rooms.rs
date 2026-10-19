@@ -1283,7 +1283,13 @@ async fn a_draft_send_takes_from_the_users_allowance() {
 async fn an_update_over_8_mib_times_its_user_out() {
     let Some(env) = env() else { return };
     let gateway = gateway(&env).await;
-    let server = start_with(&env, Some(&gateway.url)).await;
+    // A byte burst past the cap, so the cap alone refuses the update.
+    let server = start_configured(
+        &env,
+        Some(&gateway.url),
+        &[("COLLABORATION_UPDATE_BURST_BYTES", "67108864")],
+    )
+    .await;
     let (_, _, mut sender) = writer(&env, server.port, "cap").await;
     sender
         .send(5, &sync(2, &vec![0u8; 8 * 1024 * 1024 + 1]))

@@ -20,8 +20,10 @@ use crate::{MAX_SOURCE_STATE_BYTES, SourceFormat};
 
 const PPTX_META: &str = "pptx:meta";
 /// Updates between two exact measures of a room near its cap: one past the
-/// estimate meanwhile is refused by the estimate alone.
-pub const MEASURE_EVERY: u32 = 100;
+/// estimate meanwhile is refused by the estimate alone. A measure costs about
+/// 13 ms per MB of state in release (0.9 s at 64 MiB), so a writer at the
+/// allowance's 200 updates a second costs a room at most one every 5 s.
+pub const MEASURE_EVERY: u32 = 1000;
 
 /// A source room's running state size: the bytes of the state and of each
 /// update applied since it was last measured, and the updates left before
