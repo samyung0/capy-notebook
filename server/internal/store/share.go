@@ -723,7 +723,8 @@ type workspaceCloneSnapshot struct {
 	materials   []workspaceCloneMaterial
 	materialIDs map[string]string
 	bytes       int64
-	// Files left out because their stored content the current rules refuse.
+	// Files left out: materials whose stored content the current rules
+	// refuse, and files past the cloner's per-file cap.
 	skipped int
 }
 
@@ -1040,8 +1041,8 @@ type ThumbnailCopy struct {
 }
 
 // CloneWorkspaceThumbnails is CloneWorkspace, also returning the thumbnails
-// the caller copies after the commit and how many files it left out (their
-// stored content the current rules refuse).
+// the caller copies after the commit and how many files it left out (stored
+// content the current rules refuse, a file past the cloner's per-file cap).
 func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID string, input WorkspaceCreate) (Workspace, []ThumbnailCopy, int, error) {
 	if input.IconID != nil && !ValidIconID(*input.IconID) {
 		return Workspace{}, nil, 0, ErrNotFound
@@ -1233,6 +1234,19 @@ func (s *Store) cloneWorkspaceOnce(
 	if err != nil {
 		return "", nil, 0, err
 	}
+	// The cloner's plan caps each file as it caps an upload (Epo 2026-10-12):
+	// a file past it is left out and counted with the skipped materials (Epo
+	// 2026-10-20), while a single file clone refuses it with file_too_large.
+	files := snapshot.files[:0]
+	for _, file := range snapshot.files {
+		if file.sizeBytes > limits.SourceFileBytes {
+			snapshot.bytes -= file.sizeBytes + file.sourceBytes
+			snapshot.skipped++
+			continue
+		}
+		files = append(files, file)
+	}
+	snapshot.files = files
 	// Physical paths are shared, so keep the refcount rows locked until the clone
 	// references commit. A concurrent last-reference delete then happens either
 	// before this repeatable-read snapshot or after the clone is durable.
@@ -1246,12 +1260,6 @@ func (s *Store) cloneWorkspaceOnce(
 			Requested:   len(snapshot.files),
 			Limit:       limits.FilesPerWorkspace,
 			Kind:        "workspace",
-		}
-	}
-	// The cloner's plan caps each file as it caps an upload (Epo 2026-10-12).
-	for _, file := range snapshot.files {
-		if file.sizeBytes > limits.SourceFileBytes {
-			return "", nil, 0, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
 		}
 	}
 	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {

@@ -661,7 +661,9 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   broken embedded row, with its note, since neither copy may hold a reference
   to no row) and their assets, copies everything else, and answers
   `skippedMaterials` (files left out), for which the dialog's toast says some
-  files were not copied. The source stays as it is.
+  files were not copied. The source stays as it is. A file past the cloner's
+  per-file cap is left out and counted the same way, while a single file
+  clone refuses it with `file_too_large` (Epo 2026-10-20).
 - Clone source content is one repeatable-read SQL snapshot. Clones never lock a
   source workspace/material as a source (a copy into the source's own workspace
   takes its row as the destination, like any write) or wait for Yjs

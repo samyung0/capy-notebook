@@ -10,8 +10,9 @@ import { WorkspaceFormDialog } from './WorkspaceFormDialog';
 
 /** Clone asks for the copy's name, description, icon, tags and cover,
  * prefilled from the source, and opens the copy once it exists; a refusal
- * shows in the form. Files whose stored content could not be read are left
- * out of the copy, and the toast says so (Epo 2026-10-20). */
+ * shows in the form. Files the copy leaves out (stored content the current
+ * rules refuse, a file past the cloner's per-file cap) make the toast say
+ * some files were not copied (Epo 2026-10-20). */
 export function CloneWorkspaceDialog({
   open,
   setOpen,
