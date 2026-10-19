@@ -110,7 +110,7 @@ def dependencies() -> dict[str, bool]:
         "parser": CONTAINERS["parser"] in running,
         "ollama": ollama_up(),
         "tunnel": port_open(LIBRARY_PORT),
-        "bucket": all(os.environ.get(k) for k in KNOWLEDGE_B2_KEYS),
+        "bucket": all(os.environ.get(k) for k in (*KNOWLEDGE_B2_KEYS, *WRITER_KEYS)),
         "alibaba": bool(
             os.environ.get("ALIBABA_API_KEY") and os.environ.get("ALIBABA_BASE_URL")
         ),
@@ -134,7 +134,7 @@ def check_dependencies(stage: str) -> str | None:
         "parser": CONTAINERS["parser"],
         "ollama": "Ollama on 127.0.0.1:11434",
         "tunnel": f"the library tunnel on {LIBRARY_PORT}",
-        "bucket": "KNOWLEDGE_BASE_B2_* in .env.local",
+        "bucket": "KNOWLEDGE_BASE_B2_* (with the writer key) in .env.local",
         "alibaba": "ALIBABA_API_KEY and ALIBABA_BASE_URL in .env.local",
     }
     return f"{stage} refused: {', '.join(names[d] for d in down)} down"
