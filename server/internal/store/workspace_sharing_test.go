@@ -967,3 +967,32 @@ func TestFrozenOwnerMayNarrowButNotWidenSharing(t *testing.T) {
 		t.Fatalf("link to link while frozen failed: %v", err)
 	}
 }
+
+// A standalone link material filed into a workspace turns private from a
+// BEFORE trigger; its remembered link grants go with that (security review
+// L4, 2026-10-19).
+func TestFilingALinkMaterialClearsItsGrants(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx, ws := createSharingTestWorkspace(t, s, ShareViewer)
+	content, err := materialdoc.Marshal(materialdoc.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: "u_owner", Kind: "note", Title: "Loose note", Content: content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.UpdateStandaloneMaterialPrivacy(ctx, "u_owner", note.ID, "", PrivacyLink); err != nil {
+		t.Fatal(err)
+	}
+	redeemLink(t, s, "u_other", note.ID)
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET workspace_id=$2, workspace_name=$3 WHERE id=$1`,
+		note.ID, ws.ID, ws.Name); err != nil {
+		t.Fatal(err)
+	}
+	var grants int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM material_link_grants WHERE material_id=$1`, note.ID).
+		Scan(&grants); err != nil || grants != 0 {
+		t.Fatalf("grants after filing = %d, %v; want none", grants, err)
+	}
+}

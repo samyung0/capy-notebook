@@ -28,8 +28,12 @@ BEGIN
   RETURN NULL;
 END;
 $$;
+-- Plain AFTER UPDATE, not UPDATE OF privacy: OF fires only for columns the
+-- statement sets, and a material filed into a workspace turns private from
+-- prepare_material_storage_fields, a BEFORE trigger. The WHEN clause reads the
+-- final row either way.
 CREATE TRIGGER workspaces_private_clears_link_grants
-AFTER UPDATE OF privacy ON workspaces
+AFTER UPDATE ON workspaces
 FOR EACH ROW WHEN (NEW.privacy = 'private' AND OLD.privacy <> 'private')
 EXECUTE FUNCTION clear_workspace_link_grants();
 
@@ -43,7 +47,7 @@ BEGIN
 END;
 $$;
 CREATE TRIGGER materials_private_clears_link_grants
-AFTER UPDATE OF privacy ON materials
+AFTER UPDATE ON materials
 FOR EACH ROW WHEN (NEW.privacy = 'private' AND OLD.privacy <> 'private')
 EXECUTE FUNCTION clear_material_link_grants();
 
