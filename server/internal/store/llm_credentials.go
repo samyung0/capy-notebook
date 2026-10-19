@@ -288,24 +288,23 @@ func (s *Store) ListLLMCredentialProviders(ctx context.Context, userID string) (
 		last4[item.ProviderSlug] = item.Last4
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT provider_slug, provider_name, model_name
+		SELECT provider_slug, model_name
 		  FROM model_configs
 		 WHERE enabled AND byok_enabled
-		 ORDER BY provider_slug, provider_name, model_name`)
+		 ORDER BY provider_slug, model_name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	bySlug := map[string]*LLMCredentialProvider{}
 	for rows.Next() {
-		var slug, providerName, modelName string
-		if err := rows.Scan(&slug, &providerName, &modelName); err != nil {
+		var slug, name string
+		if err := rows.Scan(&slug, &name); err != nil {
 			return nil, err
 		}
 		if !models.IsFirstPartyProvider(slug) {
 			continue
 		}
-		name := models.JoinModelLabel(providerName, modelName)
 		item, ok := bySlug[slug]
 		if !ok {
 			item = &LLMCredentialProvider{ProviderSlug: slug, Eligible: true, Unlocks: []string{}}

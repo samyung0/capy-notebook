@@ -59,7 +59,7 @@ test('a material cloned into a workspace opens there, not on the standalone page
 test("a public page's Clone link tells a non-member why they cannot copy", async ({
   page,
 }) => {
-  await page.goto('/?clone=workspace:pub_ws_2');
+  await page.goto('/?clone=workspace:pub_ws_2.AAAAAAAAAAAAAAAA');
   await expect(
     page
       .getByRole('dialog', { name: m.action_clone_workspace() })
@@ -567,7 +567,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       await launch(page, id);
       await expect(page.getByText(title, { exact: true })).toBeVisible();
     }
-    // The workspace header triangle: own workspace, then the member wording.
+    // The workspace header triangle shows the viewer's own account.
     for (const [id, status, name] of [
       ['account-storage-near', 'near', m.workspace_storage_near_self_title()],
       ['account-storage-full', 'full', m.workspace_storage_owner_self_title()],
@@ -582,21 +582,13 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
         m.account_banner_frozen_title(),
       ],
       ['account-frozen-member', 'frozen-self', m.account_banner_frozen_title()],
-      ['workspace-owner-near', 'near', m.workspace_storage_owner_near_title()],
-      ['workspace-owner-full', 'full', m.workspace_storage_owner_full_title()],
-      ['workspace-owner-grace', 'full', m.workspace_storage_owner_full_title()],
-      [
-        'workspace-owner-frozen',
-        'frozen-owner',
-        m.workspace_storage_owner_frozen_title(),
-      ],
     ]) {
       await launch(page, id);
       await expect(
         page.getByRole('button', { exact: true, name })
       ).toHaveAttribute('data-storage-status', status);
     }
-    // The frozen owner's workspace is read-only for its members too.
+    // A frozen viewer edits nowhere, a healthy owner's workspace included.
     await page.goto(
       '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
     );
@@ -604,6 +596,29 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+
+    // The owner's full storage makes its note view-only for a member, under
+    // the storage strip (uploader pays).
+    await launch(page, 'workspace-owner-full');
+    await page.goto(
+      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    );
+    await expect(page.getByText(m.storage_payer_full_strip())).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+
+    // A frozen owner's note is view-only for a member too, with no storage
+    // strip (frozen is not full).
+    await launch(page, 'workspace-owner-frozen');
+    await page.goto(
+      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    );
+    await expect(
+      page.getByText('A note for trying application errors.')
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+    await expect(page.getByText(m.storage_payer_full_strip())).toHaveCount(0);
 
     await launch(page, 'account-frozen-create');
     await expect(
@@ -623,7 +638,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     ).toBeVisible();
 
     // A public page's Clone link names the frozen account, not the workspace.
-    await page.goto('/?clone=workspace:ws_bio');
+    await page.goto('/?clone=workspace:ws_bio.AAAAAAAAAAAAAAAA');
     await expect(
       page
         .getByRole('dialog', { name: m.action_clone_workspace() })
@@ -644,12 +659,13 @@ test('a frozen account or full storage mid-edit drops open editors to view and d
   page,
 }) => {
   const strip = page.getByText(m.editor_read_only_strip());
-  for (const id of [
-    'note-frozen-while-editing',
-    'note-storage-full-while-editing',
+  for (const [id, reason] of [
+    ['note-frozen-while-editing', m.editor_read_only_strip()],
+    // Full storage names itself to its payer (Sam 2026-10-18).
+    ['note-storage-full-while-editing', m.storage_self_full_strip()],
   ]) {
     await launch(page, id);
-    await expect(strip).toBeVisible();
+    await expect(page.getByText(reason)).toBeVisible();
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
     // The refreshed note offers no Edit, and the refused edit is gone.
     await expect(

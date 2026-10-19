@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useCancelReloadRetry } from '@/api/hooks';
 import type { BillingInfo } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -30,7 +31,8 @@ function Notice({
   return (
     <div
       className={cn(
-        'flex flex-wrap items-start justify-between gap-3 rounded-lg border p-3.5',
+        // Phones put the actions on their own row, right-aligned.
+        'flex flex-col gap-3 rounded-lg border p-3.5 sm:flex-row sm:items-start sm:justify-between',
         tone === 'plain' && 'border-line bg-surface-hover-bg text-fg',
         tone === 'warning' &&
           'border-solid-warning/45 bg-tint-warning text-tint-warning-fg',
@@ -46,7 +48,7 @@ function Notice({
           <p className="mt-0.5 text-[13px]">{body}</p>
         </div>
       </div>
-      {action}
+      {action && <div className="self-end sm:self-auto">{action}</div>}
     </div>
   );
 }
@@ -78,6 +80,7 @@ export function CreditNotices({
       {m.billing_top_up()}
     </Button>
   );
+  const { isPending: cancelling, mutate: cancelRetry } = useCancelReloadRetry();
   const notices: ReactNode[] = [];
 
   if (reload.status === 'charging') {
@@ -98,7 +101,19 @@ export function CreditNotices({
     const date = shortDate(new Date(reload.nextAttemptAt));
     notices.push(
       <Notice
-        action={topUp}
+        action={
+          <div className="flex items-center gap-2">
+            <Button
+              disabled={cancelling}
+              onClick={() => cancelRetry()}
+              size="sm"
+              variant="ghost-hover"
+            >
+              {m.billing_reload_cancel_retry()}
+            </Button>
+            {topUp}
+          </div>
+        }
         body={
           view.owed > 0
             ? m.billing_reload_retrying_body_owed({ amount, date, owed })

@@ -77,7 +77,7 @@ func (a *api) inspectSourceImports(
 	if err != nil {
 		return nil, hErr(err)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, in.ID)
+	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}

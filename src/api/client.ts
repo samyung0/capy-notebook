@@ -428,6 +428,8 @@ export const qk = {
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
   study: (wsId: string) => ['workspace', wsId, 'study'] as const,
+  studyAttempts: (wsId: string) =>
+    ['workspace', wsId, 'study', 'attempts'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,

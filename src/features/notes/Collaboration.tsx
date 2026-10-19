@@ -446,31 +446,19 @@ export function CollaborationProvider({
         {children}
       </BlockDiscussionsContext.Provider>
       <SimpleDialog
-        footer={
-          <>
-            <Button
-              onClick={() => {
-                commentTarget.current = null;
-                setDialogOpen(false);
-              }}
-              size="lg"
-              variant="ghost-hover"
-            >
-              {m.action_cancel()}
-            </Button>
-            <Button
-              disabled={
-                !comment.trim() ||
-                commentTooLong(comment) ||
-                createDiscussionIsPending
-              }
-              onClick={() => void submitNewComment()}
-              size="lg"
-              variant="accent"
-            >
-              {m.editor_add_comment()}
-            </Button>
-          </>
+        action={
+          <Button
+            disabled={
+              !comment.trim() ||
+              commentTooLong(comment) ||
+              createDiscussionIsPending
+            }
+            onClick={() => void submitNewComment()}
+            size="lg"
+            variant="accent"
+          >
+            {m.editor_add_comment()}
+          </Button>
         }
         onClose={() => {
           commentTarget.current = null;

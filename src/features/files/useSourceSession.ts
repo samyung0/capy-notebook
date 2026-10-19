@@ -154,13 +154,18 @@ export function sourceHeaderStatus(
  * Whether an edit open stops at the file's size limit, before it joins the
  * room (review r3 S1): no growth budget left (Epo 2026-10-17; text too,
  * 2026-10-20) and no restored drafts still to send. Recovery drafts open
- * before this check, so they can be seen, copied out or discarded.
+ * before this check, so they can be seen, copied out or discarded; a read
+ * session (its payer's storage is full) opens with its own banner.
  */
 export function opensAtSizeLimit(
-  session: { growthBudgetBytes?: number },
+  session: { access: string; growthBudgetBytes?: number },
   restoredDrafts: number
 ) {
-  return session.growthBudgetBytes === 0 && restoredDrafts === 0;
+  return (
+    session.access === 'write' &&
+    session.growthBudgetBytes === 0 &&
+    restoredDrafts === 0
+  );
 }
 
 /**

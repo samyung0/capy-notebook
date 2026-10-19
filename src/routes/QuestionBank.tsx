@@ -33,17 +33,22 @@ import {
   commentBankQuestionBodyTextMax,
 } from '@/api/gen/validators';
 import type { BankTopicProgress } from '@/api/types';
-import { ErrorState } from '@/components/app/ErrorState';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import {
   FilterPopover,
   type FilterSection,
   toggleValue,
 } from '@/components/app/ListToolbar';
-import { PageHeader, Panel, PanelHeader } from '@/components/app/layout';
+import {
+  PageBody,
+  PageHeader,
+  Panel,
+  PanelHeader,
+} from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { PhoneTopRow } from '@/components/app/Sidebar';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
@@ -653,8 +658,9 @@ export default function QuestionBank() {
                     )
                   )
                 }
-                // Dashboard's padding, as on the bank's main page.
-                className="lg:px-6 xl:px-6"
+                // The bank's normal gutter, as on its main page; the
+                // questions below sit inset at the wide one.
+                gutter="normal"
                 meta={
                   place &&
                   [
@@ -690,10 +696,12 @@ export default function QuestionBank() {
                 }
                 trail={trail}
               />
-              {/* Learning's page padding (40/64px), as the bank's topic lists. */}
-              <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 xl:px-16 xl:pb-10">
-                <div className="max-w-3xl">{body}</div>
-              </div>
+              {/* Inset to the wide gutter, as the main page's topic lists. */}
+              <PageBody className="pt-8 pb-28 sm:pt-8 xl:pb-10">
+                <div className="wide-inset">
+                  <div className="max-w-3xl">{body}</div>
+                </div>
+              </PageBody>
             </>
           ) : (
             <>
@@ -717,9 +725,7 @@ export default function QuestionBank() {
                 subtitle={m.question_ui_bank_hint()}
                 title={m.question_ui_question_bank()}
               />
-              <div className="px-4 pt-5 pb-28 sm:px-6 sm:pt-8 xl:pb-10">
-                {body}
-              </div>
+              <PageBody className="pb-28 sm:pt-8 xl:pb-10">{body}</PageBody>
             </>
           )}
         </Panel>
@@ -1876,7 +1882,7 @@ function BankLanding({
         {listed.length > 0 && (
           // Inset and columned like the Other topics list, heading included, so
           // the date and Summary line up with its count and Continue.
-          <section className="lg:px-4 xl:px-10">
+          <section className="wide-inset">
             <h2 className="t-card-title mb-3">{m.question_ui_finished()}</h2>
             <div>
               {listed.map((topic) => (
@@ -2014,12 +2020,15 @@ function ContinueSection({
   const next = latest.nextQuestionId;
   return (
     <section>
-      <h2 className="t-large-card-title">
-        {next ? m.question_ui_continue() : m.question_ui_topic_finished()}
-      </h2>
-      <p className="t-meta mb-1 text-fg-muted">
-        {latestPath.slice(0, -1).join(' · ')}
-      </p>
+      {/* Text sits at the wide gutter; the trail map stays edge to edge. */}
+      <div className="wide-inset">
+        <h2 className="t-large-card-title">
+          {next ? m.question_ui_continue() : m.question_ui_topic_finished()}
+        </h2>
+        <p className="t-meta mb-1 text-fg-muted">
+          {latestPath.slice(0, -1).join(' · ')}
+        </p>
+      </div>
       <TrailMap
         answeredPositions={latest.answeredPositions}
         finishKey={finishKey('topic', latest.topicId, latest.total)}
@@ -2030,7 +2039,7 @@ function ContinueSection({
         questionIds={latest.questionIds}
         topicId={latest.topicId}
       />
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="wide-inset mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
           <h3 className="t-large-card-title">{latestPath.at(-1)}</h3>
           <p className="mt-1 text-fg-muted text-sm">
@@ -2053,9 +2062,8 @@ function ContinueSection({
         // Rows lay out by the list's width: the side panel narrows it on wide
         // screens. The trail shares the row's spare width with the name (3:2)
         // so it shrinks to its 150px floor before the row wraps.
-        // From lg the list sits at Learning's page padding (40/64px), inset
-        // from the section's 24px.
-        <div className="@container mt-8 lg:px-4 xl:px-10">
+        // The list sits inset at the wide gutter.
+        <div className="@container wide-inset mt-8">
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
             {m.question_ui_other_topics()}
           </h3>
@@ -2110,17 +2118,14 @@ function TopicName({
   );
 }
 
+/** A failed page load between loaded questions. */
 function BankError({ error, onRetry }: { error: Error; onRetry: () => void }) {
-  const { description, icon, title } = describeError(error);
   return (
-    <ErrorState
-      action={<ErrorAction onClick={onRetry}>{m.action_retry()}</ErrorAction>}
-      className="py-10"
-      description={description}
+    <InlineErrorState
+      className="py-6"
       errorId={unexpectedErrorId(error)}
-      icon={icon}
-      title={title}
-      variant="panel"
+      message={describeError(error).title}
+      onRetry={onRetry}
     />
   );
 }
@@ -2143,7 +2148,7 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
   });
   return (
     <SimpleDialog
-      footer={
+      action={
         <Button
           disabled={isPending}
           rounded="large"

@@ -1,5 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import {
+  linkOptions,
+  useNavigate,
+  useParams,
+  useSearch,
+} from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import {
   invalidateStudy,
@@ -17,14 +22,16 @@ import type {
   ReviewStart,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Button, ErrorAction } from '@/components/ui/Button';
+import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { TopInsetBar } from '@/components/app/TopInsetBar';
+import { ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
+import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { CheckedQuestion, QuestionItem } from '@/features/study/ReviewQuestion';
 import {
   type ReviewRecord,
@@ -253,27 +260,37 @@ function Session({
   return (
     <PanelWithInvertedRadius
       header={
-        <PageHeader
-          subtitle={item?.materialTitle}
+        <QuizPageHeader
+          meta={item?.materialTitle}
+          onBack={back}
           title={m.review_title({ workspace: ws?.name ?? '' })}
+          topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
+          trail={[
+            search.from === 'review'
+              ? {
+                  label: m.nav_learning(),
+                  link: linkOptions({
+                    search: { tab: 'review' },
+                    to: '/learning',
+                  }),
+                }
+              : {
+                  label: ws?.name ?? '',
+                  link: linkOptions({
+                    params: { workspaceId },
+                    to: '/workspaces/$workspaceId',
+                  }),
+                },
+          ]}
         />
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-5 sm:px-6">
-        <div className="flex items-center justify-between">
-          <Button
-            iconLeft="navigationBack"
-            onClick={back}
-            variant="ghost-hover"
-          >
-            {m.review_back()}
-          </Button>
-          {shown && !shown.past && (
-            <span className="t-meta text-fg-muted">
-              {m.review_left({ count: steps.steps.queue.length })}
-            </span>
-          )}
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-5 sm:px-6 lg:px-10 xl:px-16">
+        {shown && !shown.past && (
+          <span className="t-meta self-end text-fg-muted">
+            {m.review_left({ count: steps.steps.queue.length })}
+          </span>
+        )}
         {session === null || loadingMore ? (
           isError ? (
             <ErrorState

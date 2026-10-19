@@ -38,7 +38,8 @@ export function CheckedQuestion({
 }
 
 /** Check sends the answers; the server grades them, records the rating (in
- * the session) and returns the question's key. */
+ * the session, when there is one; Quick review has none) and returns the
+ * question's key. */
 export function QuestionItem({
   item,
   onChecked,
@@ -46,7 +47,7 @@ export function QuestionItem({
 }: {
   item: ReviewItem;
   onChecked: (graded: GradedQuestion, answers: Answers) => void;
-  session: ReviewSessionRef;
+  session?: ReviewSessionRef;
 }) {
   const [answers, setAnswers] = useState<Answers>({});
   const { isPending: grading, mutate: check } = useMutation({

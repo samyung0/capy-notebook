@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
+  DialogCancel,
   DialogContent,
   DialogFooter,
   DialogTitle,
+  useIsPhone,
 } from '@/components/ui/Dialog';
 import {
   Select,
@@ -42,6 +44,8 @@ export function EditorSettingsDialog() {
   const { style } = useTheme();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('general');
+  const formId = useId();
+  const phone = useIsPhone();
   const { control, handleSubmit, reset, setValue } = useForm({
     defaultValues: {
       displayWidth,
@@ -69,6 +73,13 @@ export function EditorSettingsDialog() {
     setValue('enabled', next);
   };
 
+  // The phone header holds it outside the form's DOM.
+  const applyButton = (
+    <Button form={formId} size="lg" type="submit" variant="accent">
+      {m.action_apply()}
+    </Button>
+  );
+
   return (
     <Dialog onOpenChange={changeOpen} open={open}>
       <ToolbarButton
@@ -78,8 +89,11 @@ export function EditorSettingsDialog() {
         <EditorIcon name="preferences" />
       </ToolbarButton>
       <DialogContent className="max-w-2xl">
-        <DialogTitle className="pb-2">{m.editor_prefs_title()}</DialogTitle>
+        <DialogTitle action={phone && applyButton} className="pb-2">
+          {m.editor_prefs_title()}
+        </DialogTitle>
         <form
+          id={formId}
           onSubmit={handleSubmit((draft) => {
             setEnabled(draft.enabled);
             setDisplayWidth(draft.displayWidth);
@@ -91,7 +105,7 @@ export function EditorSettingsDialog() {
           })}
         >
           <Tabs
-            className="-mx-3 mt-2.5 w-auto whitespace-nowrap sm:mx-0"
+            className="dialog-tabs-bleed w-auto whitespace-nowrap sm:mt-2.5"
             onChange={setTab}
             tabs={[
               { label: m.settings_tab_general(), value: 'general' },
@@ -270,19 +284,12 @@ export function EditorSettingsDialog() {
               </>
             )}
           </div>
-          <DialogFooter>
-            <Button
-              onClick={() => setOpen(false)}
-              size="lg"
-              type="button"
-              variant="ghost-hover"
-            >
-              {m.action_cancel()}
-            </Button>
-            <Button size="lg" type="submit" variant="accent">
-              {m.action_apply()}
-            </Button>
-          </DialogFooter>
+          {!phone && (
+            <DialogFooter>
+              <DialogCancel />
+              {applyButton}
+            </DialogFooter>
+          )}
         </form>
       </DialogContent>
     </Dialog>

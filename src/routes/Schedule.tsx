@@ -388,6 +388,7 @@ export default function Schedule() {
       />
       <ConfirmDialog
         body={m.confirm_delete_body()}
+        confirmLabel={m.action_delete()}
         onClose={() => setLabelToDelete(null)}
         onConfirm={() => {
           if (labelToDelete) deleteLabel(labelToDelete.id);

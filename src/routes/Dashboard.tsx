@@ -3,7 +3,11 @@ import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
 import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
 import { InlineErrorState } from '@/components/app/ErrorState';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  PageBody,
+  PageHeader,
+  PanelWithInvertedRadius,
+} from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import DashboardBanner from '@/components/banners/DashboardBanner';
 import { Button } from '@/components/ui/Button';
@@ -139,7 +143,7 @@ export default function Dashboard() {
           />
         }
       >
-        <div className="flex flex-1 flex-col gap-6 px-4 pt-5 pb-6 sm:gap-8 sm:px-6 sm:pt-6">
+        <PageBody className="flex flex-col gap-6 sm:gap-8">
           {/* <CloudConnectBanner /> */}
           <DashboardBanner />
           {workspacesEmpty && recentEmpty ? (
@@ -150,7 +154,7 @@ export default function Dashboard() {
               {!recentEmpty && <RecentItemsCard recent={recent} />}
             </>
           )}
-        </div>
+        </PageBody>
       </PanelWithInvertedRadius>
       {CLERK_ACTIVE && <OnboardingDialog />}
       <CloneLinkDialog />

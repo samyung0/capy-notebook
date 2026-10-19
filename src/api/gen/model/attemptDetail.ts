@@ -4,22 +4,28 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AttemptCard } from './attemptCard.ts';
 import type { AttemptDetailAnswers } from './attemptDetailAnswers.ts';
+import type { AttemptDetailKind } from './attemptDetailKind.ts';
 import type { AttemptDetailQuestionsItem } from './attemptDetailQuestionsItem.ts';
 
 export interface AttemptDetail {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   answers: AttemptDetailAnswers;
+  cards: AttemptCard[];
   chapters: string[];
   correct: number;
   iconId?: string;
   id: string;
+  kind: AttemptDetailKind;
   /** @nullable */
   materialId: string | null;
   pct: number;
   questions: AttemptDetailQuestionsItem[];
   quizName: string;
+  /** @nullable */
+  startedAt: string | null;
   takenAt: string;
   total: number;
   /** @nullable */

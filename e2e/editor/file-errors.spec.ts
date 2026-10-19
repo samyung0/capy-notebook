@@ -169,7 +169,7 @@ test('Office retry recovers from both session and parser failures', async ({
   ).toBe(2);
 });
 
-test('workspace statistics and indexing share a recoverable panel error', async ({
+test('workspace statistics and indexing share a recoverable inline error', async ({
   page,
 }) => {
   await openWorkspace(page);
@@ -191,7 +191,8 @@ test('workspace statistics and indexing share a recoverable panel error', async 
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();
-  const error = await expectErrorSurface(page, 'panel', undefined, 30_000);
+  // A dialog shows the inline error, never the page one (Epo 2026-10-19).
+  const error = await expectErrorSurface(page, 'inline', undefined, 30_000);
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();

@@ -129,6 +129,7 @@ import type {
   Quiz,
   RateReviewItemReq,
   ReadSourceRefreshParams,
+  RedeemShareLinkInputBody,
   ReorderChaptersReq,
   ReorderContentReq,
   ReportEditIncidentReq,
@@ -143,6 +144,7 @@ import type {
   SetModelPrefsReq,
   SetStudyEnabledReq,
   SetStudyItemReq,
+  ShareRedemption,
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
@@ -194,6 +196,7 @@ import type {
   UsageReport,
   User,
   Workspace,
+  WorkspaceAttemptsOutputBody,
   WorkspaceCollaborator,
   WorkspaceMember,
   WorkspaceRecent,
@@ -1266,6 +1269,56 @@ export const setAutoReload = async (autoReloadReq: NonReadonly<AutoReloadReq>, o
 
 
 
+export type cancelReloadRetryResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelReloadRetryResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type cancelReloadRetryResponseSuccess = (cancelReloadRetryResponse204) & {
+  headers: Headers;
+};
+export type cancelReloadRetryResponseError = (cancelReloadRetryResponseDefault) & {
+  headers: Headers;
+};
+
+export type cancelReloadRetryResponse = (cancelReloadRetryResponseSuccess | cancelReloadRetryResponseError)
+
+export const getCancelReloadRetryUrl = () => {
+
+
+
+
+  return `/api/billing/auto-reload/cancel-retry`
+}
+
+/**
+ * @summary Stop Stripe retrying failed reloads
+ */
+export const cancelReloadRetry = async ( options?: RequestInit): Promise<cancelReloadRetryResponse> => {
+
+  const res = await fetch(getCancelReloadRetryUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelReloadRetryResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as cancelReloadRetryResponse
+}
+
+
+
 export type billingCheckoutResponse200 = {
   data: URLResp
   status: 200
@@ -1462,6 +1515,56 @@ export const billingPortal = async ( options?: RequestInit): Promise<billingPort
 
   const data: billingPortalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as billingPortalResponse
+}
+
+
+
+export type billingPortalCancelResponse200 = {
+  data: URLResp
+  status: 200
+}
+
+export type billingPortalCancelResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type billingPortalCancelResponseSuccess = (billingPortalCancelResponse200) & {
+  headers: Headers;
+};
+export type billingPortalCancelResponseError = (billingPortalCancelResponseDefault) & {
+  headers: Headers;
+};
+
+export type billingPortalCancelResponse = (billingPortalCancelResponseSuccess | billingPortalCancelResponseError)
+
+export const getBillingPortalCancelUrl = () => {
+
+
+
+
+  return `/api/billing/portal/cancel-subscription`
+}
+
+/**
+ * @summary Open the billing portal on its cancel screen
+ */
+export const billingPortalCancel = async ( options?: RequestInit): Promise<billingPortalCancelResponse> => {
+
+  const res = await fetch(getBillingPortalCancelUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: billingPortalCancelResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as billingPortalCancelResponse
 }
 
 
@@ -2456,7 +2559,7 @@ export const getListOwnedFilesUrl = (params?: ListOwnedFilesParams,) => {
 }
 
 /**
- * @summary List files across the caller's owned or member workspaces
+ * @summary List the files the caller pays for, or can open (scope=member)
  */
 export const listOwnedFiles = async (params?: ListOwnedFilesParams, options?: RequestInit): Promise<listOwnedFilesResponse> => {
 
@@ -3951,7 +4054,7 @@ export const getListOwnedMaterialsUrl = (params?: ListOwnedMaterialsParams,) => 
 }
 
 /**
- * @summary List notes, quizzes and flashcard sets across the caller's owned or member workspaces
+ * @summary List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)
  */
 export const listOwnedMaterials = async (params?: ListOwnedMaterialsParams, options?: RequestInit): Promise<listOwnedMaterialsResponse> => {
 
@@ -5881,20 +5984,20 @@ export type getPublicWorkspaceSummaryResponseError = (getPublicWorkspaceSummaryR
 
 export type getPublicWorkspaceSummaryResponse = (getPublicWorkspaceSummaryResponseSuccess | getPublicWorkspaceSummaryResponseError)
 
-export const getGetPublicWorkspaceSummaryUrl = (id: string,) => {
+export const getGetPublicWorkspaceSummaryUrl = (token: string,) => {
 
 
 
 
-  return `/api/public/workspaces/${id}/summary`
+  return `/api/public/workspaces/${token}/summary`
 }
 
 /**
  * @summary Get public workspace metadata
  */
-export const getPublicWorkspaceSummary = async (id: string, options?: RequestInit): Promise<getPublicWorkspaceSummaryResponse> => {
+export const getPublicWorkspaceSummary = async (token: string, options?: RequestInit): Promise<getPublicWorkspaceSummaryResponse> => {
 
-  const res = await fetch(getGetPublicWorkspaceSummaryUrl(id),
+  const res = await fetch(getGetPublicWorkspaceSummaryUrl(token),
   {
     ...options,
     method: 'GET'
@@ -5931,20 +6034,20 @@ export type headPublicWorkspaceSummaryResponseError = (headPublicWorkspaceSummar
 
 export type headPublicWorkspaceSummaryResponse = (headPublicWorkspaceSummaryResponseSuccess | headPublicWorkspaceSummaryResponseError)
 
-export const getHeadPublicWorkspaceSummaryUrl = (id: string,) => {
+export const getHeadPublicWorkspaceSummaryUrl = (token: string,) => {
 
 
 
 
-  return `/api/public/workspaces/${id}/summary`
+  return `/api/public/workspaces/${token}/summary`
 }
 
 /**
  * @summary Check public workspace metadata
  */
-export const headPublicWorkspaceSummary = async (id: string, options?: RequestInit): Promise<headPublicWorkspaceSummaryResponse> => {
+export const headPublicWorkspaceSummary = async (token: string, options?: RequestInit): Promise<headPublicWorkspaceSummaryResponse> => {
 
-  const res = await fetch(getHeadPublicWorkspaceSummaryUrl(id),
+  const res = await fetch(getHeadPublicWorkspaceSummaryUrl(token),
   {
     ...options,
     method: 'HEAD'
@@ -6738,6 +6841,56 @@ export const search = async (params?: SearchParams, options?: RequestInit): Prom
 
 
 
+export type redeemShareLinkResponse200 = {
+  data: ShareRedemption
+  status: 200
+}
+
+export type redeemShareLinkResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type redeemShareLinkResponseSuccess = (redeemShareLinkResponse200) & {
+  headers: Headers;
+};
+export type redeemShareLinkResponseError = (redeemShareLinkResponseDefault) & {
+  headers: Headers;
+};
+
+export type redeemShareLinkResponse = (redeemShareLinkResponseSuccess | redeemShareLinkResponseError)
+
+export const getRedeemShareLinkUrl = () => {
+
+
+
+
+  return `/api/share/redeem`
+}
+
+/**
+ * @summary Open a signed share link once
+ */
+export const redeemShareLink = async (redeemShareLinkInputBody: NonReadonly<RedeemShareLinkInputBody>, options?: RequestInit): Promise<redeemShareLinkResponse> => {
+
+  const res = await fetch(getRedeemShareLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(redeemShareLinkInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: redeemShareLinkResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as redeemShareLinkResponse
+}
+
+
+
 export type getSourceUploadPolicyResponse200 = {
   data: SourceUploadPolicy
   status: 200
@@ -7239,7 +7392,7 @@ export const getListTrashUrl = (params?: ListTrashParams,) => {
 }
 
 /**
- * @summary List trashed files and materials the caller owns
+ * @summary List trashed files and materials the caller pays for, or a workspace's it owns
  */
 export const listTrash = async (params?: ListTrashParams, options?: RequestInit): Promise<listTrashResponse> => {
 
@@ -9116,6 +9269,56 @@ export const getWorkspaceStudy = async (id: string, options?: RequestInit): Prom
 
   const data: getWorkspaceStudyResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getWorkspaceStudyResponse
+}
+
+
+
+export type getWorkspaceAttemptsResponse200 = {
+  data: WorkspaceAttemptsOutputBody
+  status: 200
+}
+
+export type getWorkspaceAttemptsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceAttemptsResponseSuccess = (getWorkspaceAttemptsResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceAttemptsResponseError = (getWorkspaceAttemptsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceAttemptsResponse = (getWorkspaceAttemptsResponseSuccess | getWorkspaceAttemptsResponseError)
+
+export const getGetWorkspaceAttemptsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/attempts`
+}
+
+/**
+ * @summary Each quiz's and set's attempt count and latest attempts
+ */
+export const getWorkspaceAttempts = async (id: string, options?: RequestInit): Promise<getWorkspaceAttemptsResponse> => {
+
+  const res = await fetch(getGetWorkspaceAttemptsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceAttemptsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceAttemptsResponse
 }
 
 

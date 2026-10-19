@@ -74,6 +74,15 @@ func (f studyFixture) session(cards ...Flashcard) *SessionAnswer {
 	return a
 }
 
+func (f studyFixture) quiz(t *testing.T) Quiz {
+	t.Helper()
+	quiz, err := f.s.CreateQuiz(context.Background(), Quiz{UserID: f.user, Name: "Quiz", WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Questions: json.RawMessage(studyQuestions), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return quiz
+}
+
 func (f studyFixture) progress(t *testing.T, materialID string) string {
 	t.Helper()
 	var state string
@@ -104,7 +113,7 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot)); err != nil {
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.progress(t, quiz.ID); got != "done" {
@@ -125,7 +134,7 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attempt, err := f.s.CreateAttempt(ctx, f.user, embedded.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot)); err != nil || attempt.ID != "" || attempt.Correct != 1 {
+	if attempt, err := f.s.CreateAttempt(ctx, f.user, embedded.ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil); err != nil || attempt.ID != "" || attempt.Correct != 1 {
 		t.Fatalf("embedded attempt %+v %v", attempt, err)
 	}
 	if n := f.count(t, `SELECT count(*) FROM attempts WHERE material_id=$1`, embedded.ID); n != 0 {
@@ -295,7 +304,7 @@ func TestQuizAttemptRatesHalfMarks(t *testing.T) {
 	}
 	snapshot, _ := json.Marshal([]any{question("a", 0.5), question("b", 1), question("c", 1.5)})
 	answers := json.RawMessage(`{"a:part:1":"x","b:part:1":"x","c:part:1":"x"}`)
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 3, 6, answers, snapshot); err != nil {
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 3, 6, answers, snapshot, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.progress(t, quiz.ID); got != "done" {
@@ -317,7 +326,7 @@ func TestQuizAttemptSkipsBlankQuestions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(`{"q1:part:1":true}`), json.RawMessage(studySnapshot)); err != nil {
+	if _, err := f.s.CreateAttempt(ctx, f.user, quiz.ID, 1, 2, json.RawMessage(`{"q1:part:1":true}`), json.RawMessage(studySnapshot), nil); err != nil {
 		t.Fatal(err)
 	}
 	if n := f.count(t, `SELECT count(*) FROM review_log WHERE user_id=$1 AND material_id=$2 AND item_id='q1'`, f.user, quiz.ID); n != 1 {
@@ -430,5 +439,99 @@ func TestReviewCardItemsCarryTheCardImage(t *testing.T) {
 	}
 	if len(items) != 2 || items[0].Image == nil || items[0].Image.AssetID != "asset-cell" || items[1].Image != nil {
 		t.Fatalf("items = %+v", items)
+	}
+}
+
+func TestQuickQuestion(t *testing.T) {
+	part := func(kind string) map[string]any {
+		return map[string]any{"id": "p", "answer": map[string]any{"type": kind}}
+	}
+	q := func(parts ...map[string]any) map[string]any {
+		list := []any{}
+		for _, p := range parts {
+			list = append(list, p)
+		}
+		return map[string]any{"id": "q", "parts": list}
+	}
+	for _, kind := range []string{"mcq", "boolean", "short", "gaps"} {
+		if !quickQuestion(q(part(kind))) {
+			t.Errorf("single %s part left out", kind)
+		}
+	}
+	for name, question := range map[string]map[string]any{
+		"open":       q(part("open")),
+		"matching":   q(part("matching")),
+		"ordering":   q(part("ordering")),
+		"multi-part": q(part("mcq"), part("short")),
+		"card":       nil,
+	} {
+		if quickQuestion(question) {
+			t.Errorf("%s entered quick review", name)
+		}
+	}
+}
+
+// A flashcard attempt keeps cards in first-rated order with every rating,
+// scores first ratings of Good or Easy, and lists with quiz attempts.
+func TestFlashcardAttemptRecordsRatings(t *testing.T) {
+	f := newStudyFixture(t, "u_study_card_attempt")
+	ctx := context.Background()
+	cards := f.set(t, [2]string{"Mitochondria", "ATP"}, [2]string{"Ribosome", "Proteins"})
+	ref := &FlashcardAttemptRef{ID: uuid.NewString(), StartedAt: time.Now().Add(-9 * time.Minute)}
+	for _, r := range []struct {
+		card   Flashcard
+		rating int
+	}{{cards[1], 1}, {cards[0], 4}, {cards[1], 3}} {
+		rating := r.rating
+		if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: r.card.MaterialID, ItemID: r.card.ID, Rating: &rating, Attempt: ref}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d, err := f.s.GetAttempt(ctx, ref.ID, f.user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []AttemptCard
+	if err := json.Unmarshal(d.Questions, &got); err != nil {
+		t.Fatal(err)
+	}
+	if d.Kind != "flashcards" || d.Correct != 1 || d.Total != 2 || d.StartedAt == nil ||
+		len(got) != 2 || got[0].Front != "Ribosome" || len(got[0].Ratings) != 2 || got[1].Ratings[0] != 4 {
+		t.Fatalf("attempt = %+v, cards %+v", d.Attempt, got)
+	}
+	if _, err := f.s.CreateAttempt(ctx, f.user, f.quiz(t).ID, 1, 2, json.RawMessage(studyAnswers), json.RawMessage(studySnapshot), nil); err != nil {
+		t.Fatal(err)
+	}
+	only, _, err := f.s.ListAttempts(ctx, f.user, AttemptParams{Kinds: []string{"flashcards"}, Limit: 30})
+	if err != nil || len(only) != 1 || only[0].ID != ref.ID {
+		t.Fatalf("flashcard attempts = %+v, %v", only, err)
+	}
+	items, err := f.s.WorkspaceAttempts(ctx, f.user, f.ws.ID)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("workspace attempts = %+v, %v", items, err)
+	}
+	for _, it := range items {
+		if it.Count != 1 || len(it.Recent) != 1 || it.Size != 2 {
+			t.Fatalf("item = %+v", it)
+		}
+	}
+}
+
+// A suspended account records no flashcard attempt, as it records no quiz
+// attempt.
+func TestSuspendedUserRecordsNoFlashcardAttempt(t *testing.T) {
+	f := newStudyFixture(t, "u_study_card_suspended")
+	ctx := context.Background()
+	cards := f.set(t, [2]string{"Front", "Back"})
+	if _, err := f.s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, f.user); err != nil {
+		t.Fatal(err)
+	}
+	rating := 3
+	ref := &FlashcardAttemptRef{ID: uuid.NewString(), StartedAt: time.Now()}
+	if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: cards[0].MaterialID, ItemID: cards[0].ID, Rating: &rating, Attempt: ref}, time.Now()); err == nil {
+		t.Fatal("suspended user rated a card into an attempt")
+	}
+	if n := f.count(t, `SELECT count(*) FROM attempts WHERE user_id=$1`, f.user); n != 0 {
+		t.Fatalf("attempts = %d", n)
 	}
 }

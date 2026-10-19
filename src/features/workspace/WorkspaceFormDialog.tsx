@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
   CreateWorkspaceBody,
@@ -11,7 +11,12 @@ import {
 } from '@/api/gen/validators';
 import type { CoverConfig, CreateWorkspaceReq, Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { DialogFooter, SimpleDialog } from '@/components/ui/Dialog';
+import {
+  DialogFooter,
+  DialogHeaderAction,
+  SimpleDialog,
+  useIsPhone,
+} from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { flattenTagErrors } from '@/components/ui/flattenTagErrors';
@@ -61,6 +66,8 @@ export function WorkspaceFormDialog({
    * toast reports it. */
   errorMessage?: (error: unknown) => string;
 }) {
+  const formId = useId();
+  const phone = useIsPhone();
   const {
     formState: { isDirty, isValid, isSubmitting },
     handleSubmit,
@@ -260,51 +267,47 @@ export function WorkspaceFormDialog({
       />
     </div>
   );
-  const footer = (
-    <>
-      {!embedded && (
-        <Button
-          onClick={() => setOpen(false)}
-          size="lg"
-          type="button"
-          variant="ghost-hover"
-        >
-          {m.action_cancel()}
-        </Button>
+  const submitButton = (
+    <Button
+      disabled={(mode === 'edit' && !isDirty) || !isValid || isSubmitting}
+      // The phone header holds it outside the form's DOM.
+      form={formId}
+      size="lg"
+      type="submit"
+      variant="accent"
+    >
+      {isSubmitting ? (
+        <Spinner />
+      ) : (
+        {
+          clone: m.action_clone(),
+          create: m.action_create(),
+          edit: m.action_save(),
+        }[mode]
       )}
-      <Button
-        disabled={(mode === 'edit' && !isDirty) || !isValid || isSubmitting}
-        size="lg"
-        type="submit"
-        variant="accent"
-      >
-        {isSubmitting ? (
-          <Spinner />
-        ) : (
-          {
-            clone: m.action_clone(),
-            create: m.action_create(),
-            edit: m.action_save(),
-          }[mode]
-        )}
-      </Button>
-    </>
+    </Button>
   );
   if (embedded) {
     return (
       <form
         className="workspace-form flex h-full flex-col gap-4"
+        id={formId}
         onSubmit={submit}
       >
         {fields}
-        <DialogFooter className="mt-auto">{footer}</DialogFooter>
+        {phone ? (
+          <DialogHeaderAction>{submitButton}</DialogHeaderAction>
+        ) : (
+          <DialogFooter className="mt-auto">{submitButton}</DialogFooter>
+        )}
       </form>
     );
   }
   return (
     <SimpleDialog
-      footer={footer}
+      action={submitButton}
       formClassName="workspace-form"
+      formId={formId}
       // While pending the dialog stays, so a refusal still shows in its form.
       onClose={() => {
         if (!isSubmitting) setOpen(false);
@@ -315,7 +318,7 @@ export function WorkspaceFormDialog({
       }}
       onSubmit={submit}
       open={open}
-      showCloseButton={!isSubmitting}
+      pending={isSubmitting}
       title={
         {
           clone: m.action_clone_workspace(),

@@ -100,9 +100,9 @@ func (c Config) Ref() Ref { return Ref{ProviderSlug: c.ProviderSlug, ModelSlug: 
 
 func (c Config) Pin() Pin { return Pin{Ref: c.Ref(), Version: c.Version} }
 
-func (c Config) DisplayName() string {
-	return JoinModelLabel(c.ProviderName, c.ModelName)
-}
+// DisplayName is the model name alone; catalog model names carry their brand
+// (DeepSeek Flash, GLM 5.3 Flash) so the provider is never prefixed.
+func (c Config) DisplayName() string { return c.ModelName }
 
 func (c Config) Allows(slot string) bool {
 	for _, s := range c.Slots {

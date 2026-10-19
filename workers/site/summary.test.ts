@@ -73,11 +73,13 @@ describe('public workspace SSR', () => {
     expect(html).toContain('data-file-icon="pdf"');
     expect(html).toContain('data-file-icon="_folder_open"');
     expect(html).toContain(`https://app.example.test${SHARED}`);
-    expect(html).toContain('href="/workspaces/ws_0123456789"');
+    // Open carries the token once; the app presents it, then opens by id.
+    expect(html).toContain(`href="/open/${SHARED.slice('/w/'.length)}"`);
     expect(html).not.toMatch(PRIVATE_CONTENT);
     const sent = fetcher.mock.calls[0][0] as Request;
+    // The API takes the token, never the bare id.
     expect(sent.url).toBe(
-      'https://api.example.test/api/public/workspaces/ws_0123456789/summary'
+      `https://api.example.test/api/public/workspaces/${SHARED.slice('/w/'.length)}/summary`
     );
     expect(sent.redirect).toBe('manual');
     expect(sent.headers.has('Authorization')).toBe(false);

@@ -12,7 +12,10 @@
 // - a second subscription on the same clock is live again (active), and the
 //   clock moved to 3 days back makes its cancellation a lapse inside grace.
 // The latest closure wins (applyQuotaState takes the max over closed Pro rows),
-// so one account goes frozen, active, grace, active.
+// so one account goes frozen, active, grace, active. Uploader pays (Sam
+// 2026-10-18): the creator pays for a note wherever it sits, freezing and a
+// full account narrow only what that account pays for, and a workspace carries
+// no storage state.
 // Ballast files are store-only (unknown format, no ingest job), and both
 // workspaces have Auto process edits off: no parser, embedding or model call.
 import assert from 'node:assert/strict';
@@ -110,7 +113,14 @@ const roomAccess = async (actor: Actor, materialId: string) =>
 async function workspaceAccess(actor: Actor, workspaceId: string) {
   const body = object(await api(actor, `/api/workspaces/${workspaceId}`));
   const { canEdit, canEditContent } = object(body.capabilities);
-  return { canEdit, canEditContent, ownerState: body.storageOwnerState };
+  return { canEdit, canEditContent };
+}
+
+/** A material's capabilities and whose full storage makes it view-only. */
+async function materialAccess(actor: Actor, materialId: string) {
+  const body = object(await api(actor, `/api/materials/${materialId}`));
+  const { canEdit, canEditContent } = object(body.capabilities);
+  return { canEdit, canEditContent, storageFull: body.storageFull };
 }
 
 const fileCap = async (actor: Actor, workspaceId: string) =>
@@ -424,21 +434,38 @@ test('storage lifecycle: a lapsed Pro owner over the Free limit is frozen, resub
   await api(owner, `/api/materials/${noteId}`);
   await api(owner, `/api/files/${ballast[0].id}`);
   expect(await downloadHead(owner, ballast[0].id, 64)).toEqual(ballast[0].head);
+  // Freezing is per item: the frozen owner edits nowhere, the member keeps
+  // editing its workspace role.
+  expect(await workspaceAccess(owner, ownerWs)).toEqual({
+    canEdit: false,
+    canEditContent: false,
+  });
+  expect(await workspaceAccess(member, ownerWs)).toEqual({
+    canEdit: true,
+    canEditContent: true,
+  });
+  await refused(
+    owner,
+    `/api/workspaces/${ownerWs}/materials`,
+    'POST',
+    { kind: 'note', title: 'Frozen growth' },
+    'account_over_quota'
+  );
+  // The member's note there is the member's to pay for and edit.
+  const frozenNote = await createNote(
+    member,
+    ownerWs,
+    'Frozen growth',
+    `Added while frozen ${marker}`
+  );
+  expect(await materialRow(run, frozenNote)).toMatchObject({
+    created_by: member.id,
+    owner_user_id: member.id,
+  });
+  expect(await roomAccess(member, frozenNote)).toBe('write');
   // Nobody edits what the frozen owner pays for.
   for (const actor of [owner, member]) {
-    expect(await workspaceAccess(actor, ownerWs)).toEqual({
-      canEdit: false,
-      canEditContent: false,
-      ownerState: 'over_quota_frozen',
-    });
     expect(await roomAccess(actor, noteId)).toBe('read');
-    await refused(
-      actor,
-      `/api/workspaces/${ownerWs}/materials`,
-      'POST',
-      { kind: 'note', title: 'Frozen growth' },
-      'account_over_quota'
-    );
     await refused(
       actor,
       `/api/materials/${noteId}/discussions`,
@@ -456,10 +483,9 @@ test('storage lifecycle: a lapsed Pro owner over the Free limit is frozen, resub
     );
   }
   // The frozen owner edits nowhere: not even where the member pays.
-  expect(await workspaceAccess(owner, memberWs)).toMatchObject({
+  expect(await workspaceAccess(owner, memberWs)).toEqual({
     canEdit: false,
     canEditContent: false,
-    ownerState: 'active',
   });
   expect(await roomAccess(owner, memberNote)).toBe('read');
   await refused(
@@ -557,7 +583,6 @@ test('storage lifecycle: a lapsed Pro owner over the Free limit is frozen, resub
     expect(await workspaceAccess(actor, ownerWs)).toEqual({
       canEdit: true,
       canEditContent: true,
-      ownerState: 'active',
     });
     expect(await roomAccess(actor, noteId)).toBe('write');
   }
@@ -611,21 +636,22 @@ test('storage lifecycle: a lapsed Pro owner over the Free limit is frozen, resub
     ownerUserId: owner.id,
     storageLimitBytes: FREE_STORAGE,
   });
-  // The owner's content is view-only for everyone; organizing goes on.
-  for (const actor of [owner, member]) {
+  // The owner's content is view-only for everyone (storageFull names whose
+  // storage is full); organizing goes on and the workspace stays editable.
+  for (const [actor, storageFull] of [
+    [owner, 'self'],
+    [member, 'payer'],
+  ] as const) {
     expect(await workspaceAccess(actor, ownerWs)).toEqual({
       canEdit: true,
+      canEditContent: true,
+    });
+    expect(await materialAccess(actor, noteId)).toEqual({
+      canEdit: true,
       canEditContent: false,
-      ownerState: 'over_quota_grace',
+      storageFull,
     });
     expect(await roomAccess(actor, noteId)).toBe('read');
-    await refused(
-      actor,
-      `/api/workspaces/${ownerWs}/materials`,
-      'POST',
-      { kind: 'note', title: 'Grace growth' },
-      'storage_quota_exceeded'
-    );
     await refused(
       actor,
       `/api/materials/${noteId}/discussions`,
@@ -634,23 +660,41 @@ test('storage lifecycle: a lapsed Pro owner over the Free limit is frozen, resub
       'storage_quota_exceeded'
     );
   }
-  // Where the member pays, the owner in grace still edits and adds.
-  expect(await workspaceAccess(owner, memberWs)).toMatchObject({
-    canEdit: true,
-    canEditContent: true,
-    ownerState: 'active',
-  });
-  expect(await roomAccess(owner, memberNote)).toBe('write');
-  const graceNote = await createNote(
+  // A note is charged to its creator: the owner's is refused, the member's
+  // is created on its own quota.
+  await refused(
     owner,
-    memberWs,
-    'Grace note',
+    `/api/workspaces/${ownerWs}/materials`,
+    'POST',
+    { kind: 'note', title: 'Grace growth' },
+    'storage_quota_exceeded'
+  );
+  const graceGrowth = await createNote(
+    member,
+    ownerWs,
+    'Grace growth',
     `Added in grace ${marker}`
   );
-  expect(await materialRow(run, graceNote)).toMatchObject({
-    created_by: owner.id,
+  expect(await materialRow(run, graceGrowth)).toMatchObject({
+    created_by: member.id,
     owner_user_id: member.id,
   });
+  // Where the member pays, the owner in grace still edits; a note it adds
+  // there is its own, so it fails the owner's quota.
+  expect(await workspaceAccess(owner, memberWs)).toEqual({
+    canEdit: true,
+    canEditContent: true,
+  });
+  expect(await roomAccess(owner, memberNote)).toBe('write');
+  expect(
+    await refused(
+      owner,
+      `/api/workspaces/${memberWs}/materials`,
+      'POST',
+      { kind: 'note', title: 'Grace note' },
+      'storage_quota_exceeded'
+    )
+  ).toMatchObject({ ownerUserId: owner.id, storageLimitBytes: FREE_STORAGE });
   const graceLine = `Owner in grace ${marker}`;
   await typeLine(run, owner, memberWs, memberNote, memberLine, graceLine);
   await run.poll(

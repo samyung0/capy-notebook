@@ -27,7 +27,7 @@ func assetObjects(t *testing.T, mem *blob.Memory, assetID string) int {
 }
 
 // A library figure an agent places in a note becomes the note's own editor
-// asset, charged to the workspace owner like an upload: stored once per tool
+// asset, charged to the chat's actor like an upload: stored once per tool
 // call (a replay stores nothing again), and only for the figures the
 // markdown uses.
 func TestAgentNoteStoresItsFiguresAsAssets(t *testing.T) {
@@ -47,15 +47,15 @@ func TestAgentNoteStoresItsFiguresAsAssets(t *testing.T) {
 	cleanupMaterial(t, st, noteID)
 
 	assetID := store.ChatAssetID(msgID, "call_fig_note/figure/fig_a")
-	var materialID, status, payer, owner string
+	var materialID, status, payer string
 	var size int64
-	if err := st.Pool().QueryRow(ctx, `SELECT a.material_id, a.status, a.size_bytes, a.user_id, w.user_id
-		FROM editor_assets a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1`, assetID).
-		Scan(&materialID, &status, &size, &payer, &owner); err != nil {
+	if err := st.Pool().QueryRow(ctx, `SELECT material_id, status, size_bytes, user_id
+		FROM editor_assets WHERE id=$1`, assetID).
+		Scan(&materialID, &status, &size, &payer); err != nil {
 		t.Fatal(err)
 	}
-	if materialID != noteID || status != "ready" || size != int64(len(image)) || payer != owner {
-		t.Fatalf("asset = %s %s %d paid by %s, want the note's ready image paid by %s", materialID, status, size, payer, owner)
+	if materialID != noteID || status != "ready" || size != int64(len(image)) || payer != "u_editor" {
+		t.Fatalf("asset = %s %s %d paid by %s, want the note's ready image paid by the actor", materialID, status, size, payer)
 	}
 	var assets int
 	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE material_id=$1`, noteID).Scan(&assets); err != nil {

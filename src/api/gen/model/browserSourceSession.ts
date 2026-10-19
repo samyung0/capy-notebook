@@ -6,6 +6,7 @@
  */
 import type { BrowserSourceSessionAccess } from './browserSourceSessionAccess.ts';
 import type { BrowserSourceSessionFormat } from './browserSourceSessionFormat.ts';
+import type { StorageFullBy } from './storageFullBy.ts';
 
 export interface BrowserSourceSession {
   /** A URL to the JSON Schema for this object. */
@@ -36,6 +37,7 @@ export interface BrowserSourceSession {
   stateRows?: string[] | null;
   /** @nullable */
   stateSeedSHA256: string | null;
+  storageFull?: StorageFullBy;
   thumbnailStale?: boolean;
   workspaceId: string;
 }

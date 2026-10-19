@@ -392,7 +392,8 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusConflict, map[string]string{"code": "object_size_mismatch"})
 		return
 	}
-	if info.ContentType != "" && info.ContentType != job.ContentType {
+	// The worker writes the reserved type; an empty one is a mismatch.
+	if info.ContentType != job.ContentType {
 		writeJSON(w, http.StatusConflict, map[string]string{"code": "object_type_mismatch"})
 		return
 	}

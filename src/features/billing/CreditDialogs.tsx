@@ -54,25 +54,6 @@ export function creditsLabel(value: string): string {
   });
 }
 
-/** Cancel then the accented primary, both on the right; DialogFooter moves
- * Cancel to the left edge on phones. */
-function DialogActions({
-  onCancel,
-  primary,
-}: {
-  onCancel: () => void;
-  primary: ReactNode;
-}) {
-  return (
-    <>
-      <Button onClick={onCancel} size="lg" type="button" variant="ghost-hover">
-        {m.action_cancel()}
-      </Button>
-      {primary}
-    </>
-  );
-}
-
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     // biome-ignore lint/a11y/noLabelWithoutControl: the Input inside is the control
@@ -148,20 +129,15 @@ export function AutoReloadDialog({
 
   return (
     <SimpleDialog
-      footer={
-        <DialogActions
-          onCancel={onClose}
-          primary={
-            <Button
-              disabled={!settings.paymentMethodInstant || isSubmitting}
-              size="lg"
-              type="submit"
-              variant="accent"
-            >
-              {m.action_save()}
-            </Button>
-          }
-        />
+      action={
+        <Button
+          disabled={!settings.paymentMethodInstant || isSubmitting}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
+          {m.action_save()}
+        </Button>
       }
       onClose={onClose}
       onSubmit={submit}
@@ -268,20 +244,15 @@ export function MonthlyLimitDialog({
 
   return (
     <SimpleDialog
-      footer={
-        <DialogActions
-          onCancel={onClose}
-          primary={
-            <Button
-              disabled={isSubmitting}
-              size="lg"
-              type="submit"
-              variant="accent"
-            >
-              {m.action_save()}
-            </Button>
-          }
-        />
+      action={
+        <Button
+          disabled={isSubmitting}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
+          {m.action_save()}
+        </Button>
       }
       onClose={onClose}
       onSubmit={submit}
@@ -336,23 +307,18 @@ export function ReloadPendingDialog({
 }) {
   return (
     <SimpleDialog
-      footer={
-        <DialogActions
-          onCancel={onClose}
-          primary={
-            <Button
-              onClick={() => {
-                onClose();
-                onConfirm();
-              }}
-              size="lg"
-              type="button"
-              variant="accent"
-            >
-              {m.billing_top_up_anyway()}
-            </Button>
-          }
-        />
+      action={
+        <Button
+          onClick={() => {
+            onClose();
+            onConfirm();
+          }}
+          size="lg"
+          type="button"
+          variant="accent"
+        >
+          {m.billing_top_up_anyway()}
+        </Button>
       }
       onClose={onClose}
       open={open}

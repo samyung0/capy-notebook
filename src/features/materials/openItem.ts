@@ -1,5 +1,9 @@
 import type { Region } from '@/api/types';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
+import {
+  isSettingsTab,
+  type SettingsTab,
+} from '@/features/workspace/settingsTabs';
 import type { MaterialMode } from './modePolicy';
 
 /** What the center content pane is currently showing. A source file or a
@@ -29,6 +33,10 @@ export type WorkspaceOpenSearch = {
   item?: string;
   page?: number;
   mode?: MaterialMode;
+  /** The workspace's Study progress page, shown while nothing is open. */
+  progress?: true;
+  /** Workspace settings open at this tab, over whatever the page shows. */
+  settings?: SettingsTab;
 };
 
 function documentModeKey(item: OpenItem): string {
@@ -67,6 +75,16 @@ export function parseDocumentModeSearch(search: Record<string, unknown>): {
 export function parseWorkspaceOpenSearch(
   search: Record<string, unknown>
 ): WorkspaceOpenSearch {
+  // Invalid values are cleared explicitly: the router keeps raw keys the
+  // parser leaves out.
+  return {
+    progress: undefined,
+    ...parseOpenPage(search),
+    settings: isSettingsTab(search.settings) ? search.settings : undefined,
+  };
+}
+
+function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
   const file = typeof search.file === 'string' ? search.file : undefined;
   const material =
     typeof search.material === 'string' ? search.material : undefined;
@@ -85,7 +103,9 @@ export function parseWorkspaceOpenSearch(
       typeof search.item === 'string' && search.item ? search.item : undefined;
     return { material, ...(mode ? { mode } : {}), ...(item ? { item } : {}) };
   }
-  return {};
+  return search.progress === true || search.progress === 'true'
+    ? { progress: true }
+    : {};
 }
 
 export function openItemFromSearch(

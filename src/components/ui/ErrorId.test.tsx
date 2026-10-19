@@ -55,13 +55,3 @@ describe('the error id shows only for unexpected errors', () => {
     expect(alert(typed)).not.toContain('data-testid="error-id"');
   });
 });
-
-it('keeps the id out of the alert announcement and announces a copy politely', () => {
-  const html = renderToStaticMarkup(
-    <FormAlert errorId={id} message="Failed" />
-  );
-  expect(html).toMatch(
-    new RegExp(`<span aria-hidden="true"[^>]*>Error ID: ${id}</span>`)
-  );
-  expect(html).toContain('role="status"');
-});

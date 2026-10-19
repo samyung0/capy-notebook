@@ -4,7 +4,7 @@ import {
   useNavigate,
   useParams,
 } from '@tanstack/react-router';
-import { useAttempt, useQuiz } from '@/api/hooks';
+import { useAttempt, useFlashcardSet, useQuiz } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -13,14 +13,17 @@ import { TabContent } from '@/components/app/tabPanel';
 import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
+import { FlashcardResult } from '@/features/flashcards/FlashcardResult';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type { Answer } from '@/features/quizzes/grade';
 import { QuizQuestionList, QuizScore } from '@/features/quizzes/QuizPage';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
-import { getLocale, m } from '@/i18n';
+import { attemptMeta } from '@/features/study/attempts';
+import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { waitsForConnection } from '@/lib/online';
 
+/** A quiz or flashcard attempt's result, under Learning / All results. */
 export default function AttemptResult() {
   const params = useParams({ strict: false });
   const attemptId = (params as { attemptId: string }).attemptId;
@@ -38,9 +41,14 @@ export default function AttemptResult() {
   // does, and the credit has to survive onto the result page. The query is
   // disabled until the attempt names its material, and a deleted quiz simply
   // renders no footer.
-  const { data: quiz } = useQuiz(attempt?.materialId ?? '', {
+  const cards = attempt?.kind === 'flashcards';
+  const { data: quiz } = useQuiz(cards ? '' : (attempt?.materialId ?? ''), {
     errorBoundary: false,
   });
+  const { data: set } = useFlashcardSet(
+    cards ? (attempt?.materialId ?? '') : '',
+    { errorBoundary: false }
+  );
 
   if (waitsForConnection(fetchStatus, attempt)) {
     return (
@@ -86,16 +94,7 @@ export default function AttemptResult() {
     <PanelWithInvertedRadius
       header={
         <QuizPageHeader
-          meta={[
-            new Date(attempt.takenAt).toLocaleDateString(getLocale(), {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric',
-            }),
-            attempt.workspaceName,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
+          meta={attemptMeta(attempt)}
           onBack={() =>
             void navigate({ search: { tab: 'results' }, to: '/learning' })
           }
@@ -119,17 +118,29 @@ export default function AttemptResult() {
         {attempt.materialId && (
           <div className="-mt-2 mb-3 flex justify-end sm:-mt-5">
             <UnderlineLink accent asChild>
-              <Link
-                params={{ quizId: attempt.materialId }}
-                preload="intent"
-                to="/quizzes/$quizId/attempt"
-              >
-                {m.quiz_redo()}
-              </Link>
+              {cards ? (
+                <Link
+                  params={{ flashcardSetId: attempt.materialId }}
+                  preload="intent"
+                  to="/flashcards/$flashcardSetId"
+                >
+                  {m.flashcards_study_again()}
+                </Link>
+              ) : (
+                <Link
+                  params={{ quizId: attempt.materialId }}
+                  preload="intent"
+                  to="/quizzes/$quizId/attempt"
+                >
+                  {m.quiz_redo()}
+                </Link>
+              )}
             </UnderlineLink>
           </div>
         )}
-        {hasBreakdown ? (
+        {cards ? (
+          <FlashcardResult cards={attempt.cards} />
+        ) : hasBreakdown ? (
           <>
             <QuizScore
               awarded={attempt.correct}
@@ -148,7 +159,10 @@ export default function AttemptResult() {
         ) : (
           <p className="text-fg-muted">{m.quiz_no_breakdown()}</p>
         )}
-        <SourcesLine className="mt-16 pb-4" provenance={quiz?.provenance} />
+        <SourcesLine
+          className="mt-16 pb-4"
+          provenance={(cards ? set : quiz)?.provenance}
+        />
       </TabContent>
     </PanelWithInvertedRadius>
   );

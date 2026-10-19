@@ -208,10 +208,21 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		return err
 	}
 
-	// Standalone materials (no workspace) are owned by the user directly.
-	if _, err := tx.Exec(ctx, `DELETE FROM materials
-		WHERE owner_user_id=$1 AND workspace_id IS NULL`, userID); err != nil {
-		return err
+	// Everything else the account pays for goes with it, in other people's
+	// workspaces too (uploader pays, Sam 2026-10-18): its standalone
+	// materials, the files, materials and editor assets it uploaded or
+	// created, its open reservations and its chat Undo records. The row
+	// triggers release blobs, jobs and rooms as for any delete.
+	for _, statement := range []string{
+		`DELETE FROM materials WHERE owner_user_id=$1`,
+		`DELETE FROM files WHERE user_id=$1`,
+		`DELETE FROM editor_assets WHERE user_id=$1`,
+		`DELETE FROM upload_sessions WHERE user_id=$1`,
+		`DELETE FROM agent_edit_inverses WHERE owner_user_id=$1`,
+	} {
+		if _, err := tx.Exec(ctx, statement, userID); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM events WHERE user_id=$1`, userID); err != nil {
 		return err
@@ -239,7 +250,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE author_id=$1`, userID); err != nil {
 		return err
 	}
-	for _, table := range []string{"review_sessions", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents"} {
+	for _, table := range []string{"review_sessions", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err
 		}
