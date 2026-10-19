@@ -4020,7 +4020,9 @@ supersede old indexed facts; the message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
 match against passages, and that a move carries no text. An image added or
 changed before publication is a typed placeholder the model opens with
-`resolve_source_change`: the gateway verifies source access and checkpoint, the
+`resolve_source_change`: the gateway checks that the actor can read the
+workspace and the file is in it before it forwards, the collaboration
+authority verifies source access and checkpoint again, the
 headless runtime extracts the exact image, the pipeline checks its hash and the
 captured published identities, and the image (oriented, flattened and shrunk
 like an uploaded image's `capture_page`) rides in the next model request the

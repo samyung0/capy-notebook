@@ -147,14 +147,33 @@ func (a *api) failWebhookClaim(w http.ResponseWriter, err error) {
 	a.fail(w, err)
 }
 
+// webhookBodyMaxBytes bounds what an unauthenticated delivery may send before
+// its signature is checked; Clerk and Stripe events are far smaller.
+const webhookBodyMaxBytes = 1 << 20
+
+// readWebhookBody reads a delivery under webhookBodyMaxBytes, or answers 413
+// (400 for a body that could not be read) and reports false.
+func readWebhookBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webhookBodyMaxBytes))
+	var tooLarge *http.MaxBytesError
+	switch {
+	case errors.As(err, &tooLarge):
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"message": "body too large"})
+	case err != nil:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "read body"})
+	default:
+		return body, true
+	}
+	return nil, false
+}
+
 func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 	if a.cfg.ClerkWebhookSecret == "" {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "webhook not configured"})
 		return
 	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeJSON(w, 400, map[string]string{"message": "read body"})
+	body, ok := readWebhookBody(w, r)
+	if !ok {
 		return
 	}
 	wh, err := svix.NewWebhook(a.cfg.ClerkWebhookSecret)
@@ -304,9 +323,8 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "webhook not configured"})
 		return
 	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		a.fail(w, err)
+	body, ok := readWebhookBody(w, r)
+	if !ok {
 		return
 	}
 	event, err := webhook.ConstructEvent(body, r.Header.Get("Stripe-Signature"), a.cfg.StripeWebhookSecret)

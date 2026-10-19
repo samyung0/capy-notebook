@@ -1383,6 +1383,28 @@ IP and must not consume one anonymous caller's 60/minute allowance. Their
 service-secret checks, per-file authorization and ingest admission gates still
 apply. Public file session/token/process routes retain their normal user limits.
 
+**Unlimited routes refuse before reading** (Epo 2026-10-19). Nothing limits
+these routes, so a caller without credentials must not cost a body read or a
+large answer:
+
+- `internalSecretFirst` (`server.go`) checks `X-Collaboration-Secret` for
+  `/internal/collaboration/*` and `X-Pipeline-Secret` for `/api/internal/*`
+  before anything reads the body (Huma decodes and validates a body before the
+  handler runs), and answers 401 otherwise. Callers with the secret get one
+  150 MiB body cap, the largest any internal route takes; a route with a
+  tighter bound keeps it (study progress 4 KiB; an agent's file, the largest
+  plan file in base64).
+- The errors Huma builds about a request (each names a `location`) carry no
+  `value` and number at most 10 (`trimRequestErrors`); typed errors keep
+  their value.
+- `/webhooks/clerk` and `/webhooks/stripe` read at most 1 MiB before the
+  signature check (413 past it); the unsubscribe form reads at most 4 KiB.
+- Boot refuses a `CLERK_WEBHOOK_SECRET` that is not a Svix signing secret, so a
+  typo does not fail every delivery after reading it.
+- `POST /api/internal/source-changes/resolve` checks in Go that the actor can
+  read the named workspace and the file is in it before it forwards to the
+  collaboration authority.
+
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone
 still allows arbitrary parallel spend. `BeginProviderSession` counts open
