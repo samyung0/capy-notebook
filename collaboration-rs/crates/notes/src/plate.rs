@@ -460,7 +460,9 @@ pub fn holds_pending_reference<T: ReadTxn>(txn: &T) -> bool {
 /// Whether the document holds an element of type `kind` (a material kind's
 /// required element).
 pub fn holds_element<T: ReadTxn>(txn: &T, kind: &str) -> bool {
-    any_element(txn, |element| string_attribute(element, "type").as_deref() == Some(kind))
+    any_element(txn, |element| {
+        string_attribute(element, "type").as_deref() == Some(kind)
+    })
 }
 
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.

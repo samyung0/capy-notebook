@@ -261,6 +261,9 @@ struct Shape {
     set: HashMap<BranchID, HashMap<Arc<str>, Vec<Written>>>,
     cleared: HashMap<BranchID, HashSet<Arc<str>>>,
     created: HashMap<BranchID, Option<BranchID>>,
+    /// Elements whose children the room copy decides, after the key rules
+    /// ([Structure::finish], [holds_children]).
+    structure: HashSet<BranchID>,
 }
 
 /// An entry the update writes under a key: its id and last unit, the entry it
@@ -694,7 +697,7 @@ fn plain_content<T: ReadTxn>(
             })
     });
     media.extend(closed);
-    media.extend(structure.finish(txn, incoming, &shape.created, material)?);
+    shape.structure = structure.finish(txn, incoming, &shape.created, material)?;
     Ok(media)
 }
 
@@ -736,7 +739,9 @@ pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize, material: &str)
     }
     let mut shape = Shape::default();
     plain_content(txn, &incoming, &mut shape, material).is_ok_and(|media| {
-        !media.is_empty() || matches!(required_keys(txn, &incoming, &shape, None), Ok(true))
+        !media.is_empty()
+            || !shape.structure.is_empty()
+            || matches!(required_keys(txn, &incoming, &shape, None), Ok(true))
     })
 }
 
@@ -1293,7 +1298,10 @@ impl Structure {
             }
             // A retyped child of a Mermaid block (its caption).
             if let Some(parent) = item.parent_branch()
-                && matches!(holds(held_type(txn, &parent.id()).as_deref()), Holds::Fixed(_))
+                && matches!(
+                    holds(held_type(txn, &parent.id()).as_deref()),
+                    Holds::Fixed(_)
+                )
             {
                 checked.insert(parent.id());
             }
@@ -1332,7 +1340,10 @@ impl Structure {
                         && let Some(parent_item) = parent.item()
                         && !parent_item.is_deleted()
                         && !deleted_by(incoming, parent_item.id())
-                        && matches!(holds(held_type(txn, &parent.id()).as_deref()), Holds::Fixed(_))
+                        && matches!(
+                            holds(held_type(txn, &parent.id()).as_deref()),
+                            Holds::Fixed(_)
+                        )
                     {
                         checked.insert(parent.id());
                     }
@@ -1349,8 +1360,7 @@ impl Structure {
 /// The elements [Structure::finish] named, read in `candidate`, the room with
 /// the update applied: each holds the children its type takes; the content
 /// root stands for the document, which still holds its kind's required
-/// element. The other elements of `touched` ([on_candidate]'s) pass as the
-/// room holds them.
+/// element.
 fn holds_children(
     candidate: &yrs::Doc,
     touched: &HashSet<BranchID>,
@@ -1384,12 +1394,15 @@ fn holds_children(
             Holds::Text => delta.iter().all(|op| matches!(op.insert, Insert::Text(_))),
             Holds::Fixed(children) => {
                 delta.len() == children.len()
-                    && delta.iter().zip(children).all(|(op, child)| match &op.insert {
-                        Insert::Element(element) => {
-                            held_type(&txn, &element.id()).as_deref() == Some(*child)
-                        }
-                        Insert::Text(_) => false,
-                    })
+                    && delta
+                        .iter()
+                        .zip(children)
+                        .all(|(op, child)| match &op.insert {
+                            Insert::Element(element) => {
+                                held_type(&txn, &element.id()).as_deref() == Some(*child)
+                            }
+                            Insert::Text(_) => false,
+                        })
             }
         };
         if !fits {
@@ -1469,7 +1482,6 @@ impl Validator {
                     }
                 };
                 on_candidate(&candidate, &media)?;
-                holds_children(&candidate, &media, &self.material)?;
                 trial = Some(candidate);
             }
         }
@@ -1493,6 +1505,17 @@ impl Validator {
                 if required_keys(&txn, &incoming, &shape, trial.as_ref())? {
                     self.key_copies += 1;
                     required_keys(&txn, &incoming, &shape, Some(&candidate_of(&txn, update)?))?;
+                }
+                // After the key rules, which refuse without a copy.
+                if !shape.structure.is_empty() {
+                    let candidate = match trial {
+                        Some(trial) => trial,
+                        None => {
+                            self.media_copies += 1;
+                            candidate_of(&txn, update)?
+                        }
+                    };
+                    holds_children(&candidate, &shape.structure, &self.material)?;
                 }
                 self.bound = Some(next);
                 return Ok(Admission::Accepted);
@@ -1522,6 +1545,7 @@ impl Validator {
         }
         drop(candidate_txn);
         required_keys(&txn, &incoming, &shape, Some(&candidate))?;
+        holds_children(&candidate, &shape.structure, &self.material)?;
         self.bound = Some(metrics);
         self.metrics = Some(metrics);
         Ok(Admission::Accepted)

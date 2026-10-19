@@ -2635,9 +2635,12 @@ impl Room {
             return first;
         };
         let (model, kind) = (note.model, note.kind.clone());
-        let mut txn = self.doc.transact_mut();
-        let repaired = model.repair(&mut txn, &kind);
-        let fix = ydoc::committed_update(txn);
+        // Its own scope: a transaction is not held across an await.
+        let (repaired, fix) = {
+            let mut txn = self.doc.transact_mut();
+            let repaired = model.repair(&mut txn, &kind);
+            (repaired, ydoc::committed_update(txn))
+        };
         if fix.is_empty() {
             return first;
         }

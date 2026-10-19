@@ -189,7 +189,8 @@ fn the_store_follows_the_catalog() {
                 json!([{ "type": "p", "children": [{ "text": "hidden" }] }]),
                 json!([{ "text": "" }, { "text": "" }]),
             ] {
-                let held = stored(&|nodes| node_at(nodes, &sample.path)["children"] = children.clone());
+                let held =
+                    stored(&|nodes| node_at(nodes, &sample.path)["children"] = children.clone());
                 assert!(held.is_err(), "a {name} holding {children} is stored");
             }
         }

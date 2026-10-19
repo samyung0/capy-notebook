@@ -3132,7 +3132,10 @@ async fn a_flashcard_set_refuses_another_shape_and_keeps_the_writer() {
         }
     })
     .await;
-    assert!(a.settle(|c| c.cards() == [("c1".to_owned(), "Cells".to_owned())]).await);
+    assert!(
+        a.settle(|c| c.cards() == [("c1".to_owned(), "Cells".to_owned())])
+            .await
+    );
 }
 
 /// Security regression (live-items, Epo 2026-10-10): a signed-in viewer of
@@ -4881,7 +4884,13 @@ async fn two_writers_emptying_a_set_get_a_blank_card_and_no_reset() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let owner = user(&env).await;
-    let set = flashcard_set(&env, &owner, None, &[("c1", "One", "1"), ("c2", "Two", "2")]).await;
+    let set = flashcard_set(
+        &env,
+        &owner,
+        None,
+        &[("c1", "One", "1"), ("c2", "Two", "2")],
+    )
+    .await;
     let room = format!("material:{set}:schema:1");
     let mut a = Client::open(server.port).await;
     let mut b = Client::open(server.port).await;

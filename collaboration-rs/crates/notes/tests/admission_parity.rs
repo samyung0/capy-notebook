@@ -21,9 +21,7 @@ use notes::{catalog, material, plate, repair, slate_yjs};
 use serde_json::{Value, json};
 use yrs::branch::BranchPtr;
 use yrs::updates::decoder::Decode;
-use yrs::{
-    Any, Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef,
-};
+use yrs::{Any, Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef};
 
 /// xorshift64.
 struct Rng(u64);
@@ -111,7 +109,9 @@ fn elements(peer: &Doc) -> Vec<BranchPtr> {
 
 /// An element's live `type`.
 fn type_of(element: BranchPtr) -> Option<String> {
-    let entry = element.entry_item("type").filter(|entry| !entry.is_deleted())?;
+    let entry = element
+        .entry_item("type")
+        .filter(|entry| !entry.is_deleted())?;
     match entry.content() {
         yrs::block::ItemContent::Any(values) => match values.last() {
             Some(Any::String(kind)) => Some(kind.to_string()),
@@ -157,7 +157,9 @@ fn value_for(rng: &mut Rng, key: &str, ids: &[String]) -> Any {
         "source" if good => Any::from("flowchart LR\n  A --> B"),
         "caption" if good => Any::from("A caption"),
         _ if good => Any::from(*rng.pick(&["x", "center", "1"])),
-        _ => rng.pick(&[Any::Null, Any::Bool(true), Any::Number(3.0)]).clone(),
+        _ => rng
+            .pick(&[Any::Null, Any::Bool(true), Any::Number(3.0)])
+            .clone(),
     }
 }
 
@@ -165,8 +167,17 @@ fn value_for(rng: &mut Rng, key: &str, ids: &[String]) -> Any {
 /// ones, and the keys and marks no node carries.
 fn key_pool() -> Vec<&'static str> {
     let mut keys: Vec<&'static str> = vec![
-        "type", "id", "width", "text", "children", "suggestion", "suggestion_9", "align",
-        "indent", "pending", "block",
+        "type",
+        "id",
+        "width",
+        "text",
+        "children",
+        "suggestion",
+        "suggestion_9",
+        "align",
+        "indent",
+        "pending",
+        "block",
     ];
     for element in catalog::ELEMENTS {
         keys.extend(element.required);
@@ -179,7 +190,13 @@ fn key_pool() -> Vec<&'static str> {
 }
 
 const MARKS: [&str; 7] = [
-    "bold", "italic", "code", "comment_1", "suggestion_7", "children", "type",
+    "bold",
+    "italic",
+    "code",
+    "comment_1",
+    "suggestion_7",
+    "children",
+    "type",
 ];
 
 /// A new element: a catalog type (a paragraph often), some keys, and either
@@ -244,7 +261,11 @@ fn mutate(rng: &mut Rng, peer: &Doc, keys: &[&'static str], log: &mut Vec<String
         kinds.sort();
         kinds.dedup();
         let kind = rng.pick(&kinds).clone();
-        let of_kind: Vec<BranchPtr> = all.iter().copied().filter(|e| type_of(*e) == kind).collect();
+        let of_kind: Vec<BranchPtr> = all
+            .iter()
+            .copied()
+            .filter(|e| type_of(*e) == kind)
+            .collect();
         *rng.pick(&of_kind)
     };
     let text = XmlTextRef::from(target);
@@ -272,7 +293,14 @@ fn mutate(rng: &mut Rng, peer: &Doc, keys: &[&'static str], log: &mut Vec<String
             let count = 1 + rng.below((len - from) as usize) as u32;
             let mark = *rng.pick(&MARKS);
             let mut attrs = yrs::types::Attrs::new();
-            attrs.insert(mark.into(), if rng.chance(80) { Any::Bool(true) } else { Any::Null });
+            attrs.insert(
+                mark.into(),
+                if rng.chance(80) {
+                    Any::Bool(true)
+                } else {
+                    Any::Null
+                },
+            );
             text.format(&mut txn, from, count, attrs);
             log.push(format!("mark {mark} {from}+{count}"));
         }
@@ -308,7 +336,11 @@ fn mutate(rng: &mut Rng, peer: &Doc, keys: &[&'static str], log: &mut Vec<String
             let root = XmlTextRef::from(all[0]);
             let total = root.len(&txn);
             if total > 0 {
-                let half = if rng.chance(50) { total } else { 1 + rng.below(total as usize) as u32 };
+                let half = if rng.chance(50) {
+                    total
+                } else {
+                    1 + rng.below(total as usize) as u32
+                };
                 root.remove_range(&mut txn, total - half, half);
                 log.push(format!("remove top {}+{half}", total - half));
             }
@@ -318,9 +350,14 @@ fn mutate(rng: &mut Rng, peer: &Doc, keys: &[&'static str], log: &mut Vec<String
             let root = all[0];
             let at = rng.below(XmlTextRef::from(root).len(&txn) as usize + 1) as u32;
             let id = format!("paste{}", rng.next() % 1000);
-            slate_yjs::insert_nodes(&mut txn, root, at, &[json!({
-                "type": "p", "id": id, "children": [{ "text": "pasted" }, { "text": "bold", "bold": true }],
-            })]);
+            slate_yjs::insert_nodes(
+                &mut txn,
+                root,
+                at,
+                &[json!({
+                    "type": "p", "id": id, "children": [{ "text": "pasted" }, { "text": "bold", "bold": true }],
+                })],
+            );
             log.push(format!("paste at {at}"));
         }
     }
@@ -347,13 +384,16 @@ fn arrive(room: &Doc, validator: &mut Validator, bytes: &[u8], kind: &str) -> Re
     let check = |room: &Doc| {
         plate::value(&room.transact())
             .map_err(|error| error.to_string())
-            .and_then(|value| material::assert_canonical(&value, kind).map_err(|error| error.to_string()))
+            .and_then(|value| {
+                material::assert_canonical(&value, kind).map_err(|error| error.to_string())
+            })
     };
     if let Err(first) = check(room) {
         repair::repair(&mut room.transact_mut(), kind);
         validator.invalidate();
         if let Err(error) = check(room) {
-            let value = plate::value(&room.transact()).map(|value| serde_json::to_string(&value).unwrap());
+            let value =
+                plate::value(&room.transact()).map(|value| serde_json::to_string(&value).unwrap());
             return Err(format!("{error} (first {first})\nvalue: {value:?}"));
         }
     }
@@ -410,9 +450,13 @@ fn admitted_updates_leave_a_document_the_store_takes() {
     let note = every_block_note();
     let diagram = diagram();
     let mut totals = (0, 0);
-    for (index, (kind, value)) in [("note", &note), ("mindmap", &diagram), ("diagram", &diagram)]
-        .into_iter()
-        .enumerate()
+    for (index, (kind, value)) in [
+        ("note", &note),
+        ("mindmap", &diagram),
+        ("diagram", &diagram),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let (admitted, refused) = run(kind, value, seed + index as u64, steps);
         totals.0 += admitted;
@@ -440,16 +484,32 @@ fn good_value(key: &str) -> Any {
     }
 }
 
+/// One write on an element of a peer's note.
+type Write = Box<dyn Fn(&mut yrs::TransactionMut, &XmlTextRef)>;
+
 /// The single writes the sweep makes on one element: each key its type
 /// names in the catalog and the keys no node carries, set to a good value,
 /// strings, null, a boolean and a number, and unset; each catalog type;
 /// text, a paragraph and deletions inside it; each mark over its text.
-fn writes(kind: Option<&str>, root: bool) -> Vec<(String, Box<dyn Fn(&mut yrs::TransactionMut, &XmlTextRef)>)> {
-    let mut out: Vec<(String, Box<dyn Fn(&mut yrs::TransactionMut, &XmlTextRef)>)> = Vec::new();
+fn writes(kind: Option<&str>, root: bool) -> Vec<(String, Write)> {
+    let mut out: Vec<(String, Write)> = Vec::new();
     if !root {
         let mut keys: Vec<&'static str> = vec![
-            "width", "text", "children", "suggestion", "suggestion_1", "id", "pending", "indent",
-            "align", "url", "src", "assetId", "block", "caption", "source",
+            "width",
+            "text",
+            "children",
+            "suggestion",
+            "suggestion_1",
+            "id",
+            "pending",
+            "indent",
+            "align",
+            "url",
+            "src",
+            "assetId",
+            "block",
+            "caption",
+            "source",
         ];
         if let Some(element) = kind.and_then(catalog::element) {
             keys.extend(element.required);
@@ -480,7 +540,11 @@ fn writes(kind: Option<&str>, root: bool) -> Vec<(String, Box<dyn Fn(&mut yrs::T
                 Box::new(move |txn, element| element.remove_attribute(txn, &key.to_owned())),
             ));
         }
-        for name in catalog::ELEMENTS.iter().map(|element| element.name).chain(["toggle"]) {
+        for name in catalog::ELEMENTS
+            .iter()
+            .map(|element| element.name)
+            .chain(["toggle"])
+        {
             out.push((
                 format!("type {name}"),
                 Box::new(move |txn, element| {
@@ -573,8 +637,15 @@ fn sweep(kind: &str, seed_value: &[Value]) -> (usize, usize) {
 fn every_single_catalog_write_leaves_a_document_the_store_takes() {
     let note = every_block_note();
     let diagram = diagram();
-    for (kind, value) in [("note", &note), ("mindmap", &diagram), ("diagram", &diagram)] {
+    for (kind, value) in [
+        ("note", &note),
+        ("mindmap", &diagram),
+        ("diagram", &diagram),
+    ] {
         let (admitted, refused) = sweep(kind, value);
-        assert!(admitted > 0 && refused > 0, "{kind}: {admitted} admitted, {refused} refused");
+        assert!(
+            admitted > 0 && refused > 0,
+            "{kind}: {admitted} admitted, {refused} refused"
+        );
     }
 }

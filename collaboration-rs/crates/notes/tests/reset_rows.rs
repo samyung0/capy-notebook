@@ -12,9 +12,7 @@ use notes::limits::{self, Admission, Refusal, Validator};
 use notes::{material, plate, repair, slate_yjs};
 use serde_json::{Value, json};
 use yrs::updates::decoder::Decode;
-use yrs::{
-    Any, Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef,
-};
+use yrs::{Any, Doc, ReadTxn, StateVector, Text, Transact, Update, Xml, XmlTextPrelim, XmlTextRef};
 
 fn note() -> Vec<Value> {
     vec![
@@ -116,21 +114,37 @@ fn rows_refused_on_entry() {
             attrs.insert(key.into(), Any::Bool(true));
             block(peer, 0).format(&mut peer.transact_mut(), 0, 3, attrs);
         });
-        refused(Validator::new("note").admit(&base, &decode(&marked)), limits::LEAF_MARK);
+        refused(
+            Validator::new("note").admit(&base, &decode(&marked)),
+            limits::LEAF_MARK,
+        );
     }
     // A bare string at the root.
-    let bare = edit(&base, 3, |peer| root(peer).insert(&mut peer.transact_mut(), 0, "bare"));
-    refused(Validator::new("note").admit(&base, &decode(&bare)), limits::ROOT_TEXT);
+    let bare = edit(&base, 3, |peer| {
+        root(peer).insert(&mut peer.transact_mut(), 0, "bare")
+    });
+    refused(
+        Validator::new("note").admit(&base, &decode(&bare)),
+        limits::ROOT_TEXT,
+    );
     // An html_embed whose child is a paragraph.
     let embed_child = edit(&base, 4, |peer| {
         let mut txn = peer.transact_mut();
         let root = plate::content_root(&txn).unwrap();
-        slate_yjs::insert_nodes(&mut txn, root, 0, &[json!({
-            "type": "html_embed", "id": "h", "html": "<b>x</b>",
-            "children": [{ "type": "p", "children": [{ "text": "inside" }] }],
-        })]);
+        slate_yjs::insert_nodes(
+            &mut txn,
+            root,
+            0,
+            &[json!({
+                "type": "html_embed", "id": "h", "html": "<b>x</b>",
+                "children": [{ "type": "p", "children": [{ "text": "inside" }] }],
+            })],
+        );
     });
-    refused(Validator::new("note").admit(&base, &decode(&embed_child)), limits::CHILDREN);
+    refused(
+        Validator::new("note").admit(&base, &decode(&embed_child)),
+        limits::CHILDREN,
+    );
     // A paragraph inside a Mermaid caption.
     let caption_element = edit(&base, 5, |peer| {
         let caption = match &plate::insert_delta(block(peer, 3).as_ref()).unwrap()[0].insert {
@@ -142,36 +156,63 @@ fn rows_refused_on_entry() {
         p.insert_attribute(&mut txn, "type", "p");
         p.insert(&mut txn, 0, "x");
     });
-    refused(Validator::new("note").admit(&base, &decode(&caption_element)), limits::CHILDREN);
+    refused(
+        Validator::new("note").admit(&base, &decode(&caption_element)),
+        limits::CHILDREN,
+    );
     // A Mermaid block holding a string instead of its caption.
     let no_caption = edit(&base, 6, |peer| {
         let mut txn = peer.transact_mut();
         let root = plate::content_root(&txn).unwrap();
-        slate_yjs::insert_nodes(&mut txn, root, 0, &[json!({
-            "type": "mermaid", "id": "m2", "source": "flowchart LR\n  A --> B",
-            "children": [{ "text": "no caption" }],
-        })]);
+        slate_yjs::insert_nodes(
+            &mut txn,
+            root,
+            0,
+            &[json!({
+                "type": "mermaid", "id": "m2", "source": "flowchart LR\n  A --> B",
+                "children": [{ "text": "no caption" }],
+            })],
+        );
     });
-    refused(Validator::new("note").admit(&base, &decode(&no_caption)), limits::CHILDREN);
+    refused(
+        Validator::new("note").admit(&base, &decode(&no_caption)),
+        limits::CHILDREN,
+    );
     // A Mermaid block whose caption is deleted.
     let caption_gone = edit(&base, 7, |peer| {
         block(peer, 3).remove_range(&mut peer.transact_mut(), 0, 1);
     });
-    refused(Validator::new("note").admit(&base, &decode(&caption_gone)), limits::CHILDREN);
+    refused(
+        Validator::new("note").admit(&base, &decode(&caption_gone)),
+        limits::CHILDREN,
+    );
 
     // A mindmap without its mermaid, emptied or holding a paragraph instead.
     let map = room(&mindmap());
-    let emptied = edit(&map, 8, |peer| root(peer).remove_range(&mut peer.transact_mut(), 0, 1));
-    refused(Validator::new("mindmap").admit(&map, &decode(&emptied)), limits::MISSING_REQUIRED);
+    let emptied = edit(&map, 8, |peer| {
+        root(peer).remove_range(&mut peer.transact_mut(), 0, 1)
+    });
+    refused(
+        Validator::new("mindmap").admit(&map, &decode(&emptied)),
+        limits::MISSING_REQUIRED,
+    );
     let replaced = edit(&map, 9, |peer| {
         let mut txn = peer.transact_mut();
         let root = plate::content_root(&txn).unwrap();
         XmlTextRef::from(root).remove_range(&mut txn, 0, 1);
-        slate_yjs::insert_nodes(&mut txn, root, 0, &[json!({
-            "type": "p", "id": "p", "children": [{ "text": "x" }],
-        })]);
+        slate_yjs::insert_nodes(
+            &mut txn,
+            root,
+            0,
+            &[json!({
+                "type": "p", "id": "p", "children": [{ "text": "x" }],
+            })],
+        );
     });
-    refused(Validator::new("mindmap").admit(&map, &decode(&replaced)), limits::MISSING_REQUIRED);
+    refused(
+        Validator::new("mindmap").admit(&map, &decode(&replaced)),
+        limits::MISSING_REQUIRED,
+    );
     // Editing the map's caption still goes in.
     let typed = edit(&map, 10, |peer| {
         let caption = match &plate::insert_delta(block(peer, 0).as_ref()).unwrap()[0].insert {
@@ -180,7 +221,11 @@ fn rows_refused_on_entry() {
         };
         caption.insert(&mut peer.transact_mut(), 0, "Big ");
     });
-    assert!(Validator::new("mindmap").admit(&map, &decode(&typed)).is_ok());
+    assert!(
+        Validator::new("mindmap")
+            .admit(&map, &decode(&typed))
+            .is_ok()
+    );
 }
 
 /// Every catalog void element holds one empty text leaf (Epo 2026-10-18):
@@ -192,15 +237,23 @@ fn void_children_are_refused_on_entry() {
     let base = room(&note());
     // hr, img, material_ref at the top level; mention inside paragraph b.
     for index in [1, 2, 4] {
-        let text = edit(&base, 11, |peer| block(peer, index).insert(&mut peer.transact_mut(), 0, "hidden"));
-        refused(Validator::new("note").admit(&base, &decode(&text)), limits::CHILDREN);
+        let text = edit(&base, 11, |peer| {
+            block(peer, index).insert(&mut peer.transact_mut(), 0, "hidden")
+        });
+        refused(
+            Validator::new("note").admit(&base, &decode(&text)),
+            limits::CHILDREN,
+        );
         let element = edit(&base, 12, |peer| {
             let held = block(peer, index);
             let mut txn = peer.transact_mut();
             let p: XmlTextRef = held.insert_embed(&mut txn, 0, XmlTextPrelim::new(""));
             p.insert_attribute(&mut txn, "type", "p");
         });
-        refused(Validator::new("note").admit(&base, &decode(&element)), limits::CHILDREN);
+        refused(
+            Validator::new("note").admit(&base, &decode(&element)),
+            limits::CHILDREN,
+        );
     }
     let mention_text = edit(&base, 13, |peer| {
         let mention = match &plate::insert_delta(block(peer, 5).as_ref()).unwrap()[1].insert {
@@ -209,25 +262,40 @@ fn void_children_are_refused_on_entry() {
         };
         mention.insert(&mut peer.transact_mut(), 0, "hidden");
     });
-    refused(Validator::new("note").admit(&base, &decode(&mention_text)), limits::CHILDREN);
+    refused(
+        Validator::new("note").admit(&base, &decode(&mention_text)),
+        limits::CHILDREN,
+    );
     let made = |children: Value| {
         edit(&base, 14, |peer| {
             let mut txn = peer.transact_mut();
             let root = plate::content_root(&txn).unwrap();
-            slate_yjs::insert_nodes(&mut txn, root, 0, &[json!({
-                "type": "hr", "id": "rule2", "children": children,
-            })]);
+            slate_yjs::insert_nodes(
+                &mut txn,
+                root,
+                0,
+                &[json!({
+                    "type": "hr", "id": "rule2", "children": children,
+                })],
+            );
         })
     };
     refused(
         Validator::new("note").admit(&base, &decode(&made(json!([{ "text": "hr with text" }])))),
         limits::CHILDREN,
     );
-    assert!(Validator::new("note").admit(&base, &decode(&made(json!([{ "text": "" }])))).is_ok());
+    assert!(
+        Validator::new("note")
+            .admit(&base, &decode(&made(json!([{ "text": "" }]))))
+            .is_ok()
+    );
     let retyped = edit(&base, 15, |peer| {
         block(peer, 0).insert_attribute(&mut peer.transact_mut(), "type", "hr");
     });
-    refused(Validator::new("note").admit(&base, &decode(&retyped)), limits::CHILDREN);
+    refused(
+        Validator::new("note").admit(&base, &decode(&retyped)),
+        limits::CHILDREN,
+    );
 }
 
 fn decode(update: &[u8]) -> Update {
@@ -284,11 +352,21 @@ fn two_writers_deleting_the_last_two_blocks_leave_a_paragraph() {
         json!({ "type": "p", "id": "b", "children": [{ "text": "two" }] }),
     ];
     let doc = room(&two);
-    let first = edit(&doc, 2, |peer| root(peer).remove_range(&mut peer.transact_mut(), 0, 1));
-    let second = edit(&doc, 3, |peer| root(peer).remove_range(&mut peer.transact_mut(), 1, 1));
-    assert!(matches!(arrive(&doc, "note", &first), Ok(Admission::Accepted)));
+    let first = edit(&doc, 2, |peer| {
+        root(peer).remove_range(&mut peer.transact_mut(), 0, 1)
+    });
+    let second = edit(&doc, 3, |peer| {
+        root(peer).remove_range(&mut peer.transact_mut(), 1, 1)
+    });
+    assert!(matches!(
+        arrive(&doc, "note", &first),
+        Ok(Admission::Accepted)
+    ));
     canonical(&doc, "note").unwrap();
-    assert!(matches!(arrive(&doc, "note", &second), Ok(Admission::Accepted)));
+    assert!(matches!(
+        arrive(&doc, "note", &second),
+        Ok(Admission::Accepted)
+    ));
     canonical(&doc, "note").unwrap();
     assert_eq!(plate::value(&doc.transact()).unwrap()[0]["id"], "repaired");
 }
@@ -302,9 +380,14 @@ fn a_repeated_block_id_is_repaired_at_save() {
     let repeated = edit(&doc, 2, |peer| {
         let mut txn = peer.transact_mut();
         let root = plate::content_root(&txn).unwrap();
-        slate_yjs::insert_nodes(&mut txn, root, 1, &[json!({
-            "type": "p", "id": " a", "children": [{ "text": "copy" }],
-        })]);
+        slate_yjs::insert_nodes(
+            &mut txn,
+            root,
+            1,
+            &[json!({
+                "type": "p", "id": " a", "children": [{ "text": "copy" }],
+            })],
+        );
     });
     assert!(arrive(&doc, "note", &repeated).is_ok());
     assert!(canonical(&doc, "note").is_err());
@@ -312,7 +395,10 @@ fn a_repeated_block_id_is_repaired_at_save() {
     assert_eq!(repaired, [repair::REPEATED_IDS]);
     canonical(&doc, "note").unwrap();
     let value = plate::value(&doc.transact()).unwrap();
-    assert_eq!((value[0]["id"].as_str(), value[1]["id"].as_str()), (Some("a"), Some("a-2")));
+    assert_eq!(
+        (value[0]["id"].as_str(), value[1]["id"].as_str()),
+        (Some("a"), Some("a-2"))
+    );
 }
 
 /// A key a video forbids, written as null: admission takes null as absent,
@@ -329,6 +415,9 @@ fn a_forbidden_key_written_as_null_is_removed_on_entry() {
     let null = edit(&doc, 2, |peer| {
         block(peer, 1).insert_attribute(&mut peer.transact_mut(), "assetId", Any::Null);
     });
-    assert!(matches!(arrive(&doc, "note", &null), Ok(Admission::Accepted)));
+    assert!(matches!(
+        arrive(&doc, "note", &null),
+        Ok(Admission::Accepted)
+    ));
     canonical(&doc, "note").unwrap();
 }
