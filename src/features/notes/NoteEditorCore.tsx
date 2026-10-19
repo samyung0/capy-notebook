@@ -1089,6 +1089,10 @@ export function NoteEditorCore({
           console.warn('Yjs collaboration initialization failed:', error);
           if (active) setStatus('error');
         });
+      // `init` made the providers before its first wait: the note's room is
+      // the seat its embeds join inside (Epo 2026-10-20).
+      const provider = roomProvider(editor)?.provider;
+      seat.attach(provider instanceof RoomProvider ? provider : null);
     }, 0);
     // Edit to View in this tab shows the live document at once: the toggle
     // asks for it before View renders, and the material query takes the
@@ -1104,6 +1108,7 @@ export function NoteEditorCore({
       clearTimeout(initializeTimer);
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
       unregisterHandOver();
+      seat.attach(null);
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
       onEditorStatusChange?.(null);
       // The next mount (a moved room, recovery, Reload) starts clean.
@@ -1116,6 +1121,7 @@ export function NoteEditorCore({
     material.id,
     onEditorStatusChange,
     qc,
+    seat,
     setStatus,
   ]);
 
@@ -1239,12 +1245,6 @@ export function NoteEditorCore({
     resendPendingCheckpoints,
     saveImmediately,
   ]);
-
-  useEffect(() => {
-    const provider = roomProvider(editor)?.provider;
-    seat.attach(provider instanceof RoomProvider ? provider : null);
-    return () => seat.attach(null);
-  }, [editor, seat]);
 
   return (
     <EditorHoldScope>
