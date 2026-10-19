@@ -235,6 +235,14 @@ function ParseModeSelect({
   onChange: (mode: ParseMode) => void;
 }) {
   if (!hasParseModes(pending, policy)) return;
+  // Images are always captioned (and billed), so "No parsing" would mislead;
+  // they upload with parse mode none, the only one the server takes for them.
+  if (pending.kind === 'image')
+    return (
+      <span className="inline-flex h-6.5 translate-y-px items-center px-1.5 font-semibold text-fg-muted text-xs">
+        {m.source_fast_parsing()}
+      </span>
+    );
   const issues = parseModeIssues(
     { name: pending.name, size: pending.sizeBytes },
     pending.kind,
