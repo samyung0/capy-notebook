@@ -303,6 +303,8 @@ describe('office host protocol', () => {
       'image-type',
       'edit-too-large',
       'copy-too-large',
+      'copy-failed',
+      'cut-peer-change',
     ])
       expect(isOfficeRuntimeMessage(notice(value))).toBe(true);
     expect(isOfficeRuntimeMessage(notice('anything'))).toBe(false);

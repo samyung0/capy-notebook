@@ -110,18 +110,25 @@ describe('the notices a frame shows', () => {
     ]);
   });
 
-  it('toasts every refused spreadsheet clear and copy', () => {
+  it('toasts every refused spreadsheet clear, copy and cut', () => {
     const toast = vi.fn();
     const notices = officeNotices(toast);
-    for (let key = 0; key < 2; key += 1) {
-      notices.show('edit-too-large', 2_097_152);
-      notices.show('copy-too-large', 2_097_152);
-    }
-    expect(toast.mock.calls).toEqual([
-      [m.files_office_edit_too_large()],
-      [m.files_office_copy_too_large()],
-      [m.files_office_edit_too_large()],
-      [m.files_office_copy_too_large()],
-    ]);
+    const kinds = [
+      'edit-too-large',
+      'copy-too-large',
+      'copy-failed',
+      'cut-peer-change',
+    ] as const;
+    for (let key = 0; key < 2; key += 1)
+      for (const kind of kinds) notices.show(kind, 2_097_152);
+    const titles = [
+      m.files_office_edit_too_large(),
+      m.files_office_copy_too_large(),
+      m.files_office_copy_failed(),
+      m.files_office_cut_peer_change(),
+    ];
+    expect(toast.mock.calls).toEqual(
+      [...titles, ...titles].map((title) => [title])
+    );
   });
 });

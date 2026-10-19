@@ -1316,12 +1316,25 @@ Copy keeps the selection's own top-left corner, leading blanks included as in
 Excel, and trims only past the used range's last row and column; it reads that
 area in pieces of at most 100,000 cells (the engine's read cap) without
 skipping empty cells, up to the fork's `XLSX_COPY_MAX_CELLS` ceiling (5,000,000 cells), past
-which it shows the `copy-too-large` notice; a selection wholly past the used
-range sends nothing. A cut shows the same loading cursor and refuses edits
-while it reads, then clears the range it copied; past the ceiling it clears
-nothing. The latest copy or cut owns the clipboard: one still reading when a
-newer copy or cut starts stops reading and writes nothing, and such a cut
-clears nothing. A cell the keyboard reaches past the used range grows the scroll area
+which it shows the `copy-too-large` notice, and stops with the same notice
+once its text passes 64 MB (`XLSX_COPY_MAX_BYTES`, UTF-8 counted as the
+pieces arrive); a selection wholly past the used range sends nothing. The
+clipboard write starts in the key press, as a `ClipboardItem` whose text is
+a promise filled once the pieces are read (`writeText` after the read where
+the browser has no `ClipboardItem`), so a long read keeps the browser's
+permission; a write the browser still refuses shows the `copy-failed`
+notice. Only headless Chromium is measured; Firefox and Safari wait for a
+measurement. A cut shows the same loading cursor and refuses edits
+while it reads, then clears the range it copied; past either ceiling, or when
+the write fails, it clears nothing. Before reading, a cut asks the engine
+(`checkClearContents`, from the count of the clear's filled cells) whether
+its clear fits the 64 MiB update cap: over it nothing is read, copied or
+cleared and the `edit-too-large` notice shows. A cut that saw a peer's change
+arrive while it read clears nothing and shows the `cut-peer-change` notice,
+the clipboard keeping what was read; a copy accepts the rare row a
+concurrent row insert or delete duplicates or skips. The latest copy or cut
+owns the clipboard: one still reading when a newer copy or cut starts stops
+reading and writes nothing, and such a cut clears nothing. A cell the keyboard reaches past the used range grows the scroll area
 to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
 Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
 200% page zoom), so cells past it are selected but not scrolled to, as in
