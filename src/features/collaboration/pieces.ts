@@ -9,6 +9,9 @@ import * as Y from 'yjs';
  * photo's binary, a format mark, a type) goes whole.
  */
 export const PIECE_BYTES = 2 * 1024 * 1024;
+/** The largest new type kept whole with its subtree: the server's 8 MiB
+ * update cap less its framing. */
+const SUBTREE_BYTES = 8 * 1024 * 1024 - 64 * 1024;
 
 type Struct = Y.Item | Y.GC | Y.Skip;
 interface Encoded {
@@ -33,9 +36,11 @@ const SECTION_HEADER = 10;
  * - a struct over the limit whose content can be cut (text, JSON values,
  *   deleted runs) becomes runs of the same item, each after the one before
  *   (`sliceItem`, as Yjs splits items itself);
- * - a new type (a note's block, a map) and the attribute entries written
- *   right after it go in one piece, so no room sees a block without its
- *   properties (`attributesOf`);
+ * - a new type (a note's block, an embed's figure map, an Office map) goes in
+ *   one piece with its whole nested subtree (its attribute entries and every
+ *   map, text and array inside it), so no room sees a block without its
+ *   `id`, `type` or figure (`subtreeOf`); one larger than the server's cap
+ *   goes in the order above instead;
  * - the delete set comes last, after every struct it may name.
  * An update within the limit is returned as it is.
  */
@@ -94,7 +99,7 @@ export function splitUpdate(
       const queue = queues.get(client)!;
       let index = next.get(client)!;
       while (index < queue.length && ready(queue[index].struct)) {
-        const end = index + 1 + attributesOf(queue, index);
+        const end = index + 1 + subtreeOf(queue, index);
         add(
           queue
             .slice(index, end)
@@ -135,25 +140,37 @@ export function splitUpdate(
   return pieces;
 }
 
-/** How many structs after `queue[index]`, a new type, are its attribute
- * entries (map entries whose parent it is), as Yjs writes them right after
- * it in the same transaction. */
-function attributesOf(queue: Encoded[], index: number): number {
-  const type = queue[index].struct;
-  if (!(type instanceof Y.Item && type.content instanceof Y.ContentType))
+/** How many structs after `queue[index]`, a new type, are its subtree: the
+ * same client's next structs nested in it (its attribute entries, the maps,
+ * texts and arrays inside them, its children), as Yjs writes a new type in
+ * one transaction. None when the subtree is over `SUBTREE_BYTES`. */
+function subtreeOf(queue: Encoded[], index: number): number {
+  const root = queue[index].struct;
+  if (!(root instanceof Y.Item && root.content instanceof Y.ContentType))
     return 0;
+  const { client, clock } = root.id;
+  let end = clock + root.length;
+  let bytes = queue[index].bytes.byteLength;
+  // Held by the subtree, the root aside: a struct after the root is its
+  // sibling.
+  const nested = (id: Y.ID | null) =>
+    id !== null && id.client === client && id.clock > clock && id.clock < end;
   let count = 0;
-  for (const { struct } of queue.slice(index + 1)) {
-    if (
-      !(struct instanceof Y.Item) ||
-      struct.parentSub === null ||
-      !(struct.parent instanceof Y.ID) ||
-      !Y.compareIDs(struct.parent, type.id)
-    )
-      break;
+  for (let at = index + 1; at < queue.length; at += 1) {
+    const { struct } = queue[at];
+    if (!(struct instanceof Y.Item) || struct.id.clock !== end) break;
+    // A struct names its parent only when it has no origins; otherwise it
+    // shares its origin's.
+    const inside =
+      struct.parent instanceof Y.ID
+        ? Y.compareIDs(struct.parent, root.id) || nested(struct.parent)
+        : nested(struct.origin) || nested(struct.rightOrigin);
+    if (!inside) break;
+    end += struct.length;
+    bytes += queue[at].bytes.byteLength;
     count += 1;
   }
-  return count;
+  return bytes > SUBTREE_BYTES ? 0 : count;
 }
 
 /** One piece being filled: a run of structs per client, then deletes. */

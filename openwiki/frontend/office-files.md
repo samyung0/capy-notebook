@@ -1407,12 +1407,12 @@ selectable) whichever message comes first. While the tab holds back its
 collaboration messages (frames waiting for the update allowance, an
 update's pieces over 2 MiB waiting for the room's acknowledgement, or the
 user in a timeout; see
-[plate-editor](plate-editor.md#connection-lifetime-and-refusals)) the host
-takes no input: the iframe sits in `CollaborationHold`, inert and busy under
-a loading cursor (Epo 2026-10-18). In edit mode the host also sends the
-same state as `sending` (`pending`), whenever it changes and after every
-boot, for a runtime that shows its own loading state; the runtime ignores it
-for now. It needs no `OFFICE_PROTOCOL_VERSION` bump: a runtime without it
+[plate-editor](plate-editor.md#connection-lifetime-and-refusals)) a DOCX or
+PPTX editor is paused the same way (`canEdit: false`, Epo 2026-10-18). In
+edit mode the host also sends that state as `sending` (`pending`), whenever
+it changes and after every boot: the XLSX editor turns read-only with a busy
+cursor on it (the viewer's `sending`, from the XLSX pieces round) instead of
+pausing. It needs no `OFFICE_PROTOCOL_VERSION` bump: a runtime without it
 drops a message it does not know, and the host and runtime ship together. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in

@@ -189,44 +189,107 @@ it('sends a delete set larger than a piece in pieces after the structs', () => {
   expect(receiver.getText('t').length).toBe(1500);
 });
 
-it('keeps each new block and the properties written with it in one piece', () => {
+/** A note of paragraphs written as slate-yjs writes elements (the type, its
+ * properties, its text), with `insert` added between them in a transaction
+ * of its own: the whole state and the clocks [from, to) that insert took. */
+function noteAround(insert: () => Y.XmlText) {
   const editor = new Y.Doc();
-  let update: Uint8Array = new Uint8Array();
-  editor.on('update', (next: Uint8Array) => {
-    update = next;
-  });
-  editor.transact(() => {
-    const content = editor.get('content', Y.XmlText);
-    for (let index = 0; index < 300; index += 1) {
-      // As slate-yjs writes an element: the type, its properties, its text.
-      const block = new Y.XmlText();
-      block.setAttribute('type', 'p');
-      block.setAttribute('id', `b${index}`);
-      block.insert(0, `line ${index} `.repeat(1 + (index % 37)));
-      content.insertEmbed(content.length, block);
+  const content = editor.get('content', Y.XmlText);
+  const paragraphs = (from: number) =>
+    editor.transact(() => {
+      for (let index = from; index < from + 20; index += 1) {
+        const block = new Y.XmlText();
+        block.setAttribute('type', 'p');
+        block.setAttribute('id', `b${index}`);
+        block.insert(0, `line ${index} `.repeat(1 + (index % 7)));
+        content.insertEmbed(content.length, block);
+      }
+    });
+  paragraphs(0);
+  const from = Y.getState(editor.store, editor.clientID);
+  editor.transact(() => content.insertEmbed(content.length, insert()));
+  const to = Y.getState(editor.store, editor.clientID);
+  paragraphs(20);
+  return {
+    client: editor.clientID,
+    from,
+    to,
+    update: Y.encodeStateAsUpdate(editor),
+  };
+}
+
+/** The update cut at every limit from 16 bytes up: the limits where a piece
+ * held only part of the client's clocks [from, to), and how many cuts left
+ * something pending or ended in another document. */
+function cutEverywhere({
+  client,
+  from,
+  to,
+  update,
+}: ReturnType<typeof noteAround>) {
+  const split: number[] = [];
+  let wrong = 0;
+  for (let limit = 16; limit < update.byteLength; limit += 8) {
+    const pieces = splitUpdate(update, limit);
+    for (const piece of pieces) {
+      let held = 0;
+      for (const struct of Y.decodeUpdate(piece).structs) {
+        if (struct.id.client !== client) continue;
+        const start = Math.max(struct.id.clock, from);
+        const end = Math.min(struct.id.clock + struct.length, to);
+        held += Math.max(0, end - start);
+      }
+      if (held !== 0 && held !== to - from) split.push(limit);
     }
-  });
-  const pieces = splitUpdate(update, 4096);
-  expect(pieces.length).toBeGreaterThan(10);
-  for (const piece of pieces) {
-    const items = Y.decodeUpdate(piece).structs.filter(
-      (struct): struct is Y.Item => struct instanceof Y.Item
-    );
-    for (const block of items.filter(
-      (item) => item.content instanceof Y.ContentType
-    )) {
-      const properties = items.filter(
-        (item) =>
-          item.parentSub !== null &&
-          item.parent instanceof Y.ID &&
-          Y.compareIDs(item.parent, block.id)
-      );
-      expect(properties.map((item) => item.parentSub).sort()).toEqual([
-        'id',
-        'type',
-      ]);
-    }
+    const { result, whole } = applyInOrder(new Y.Doc(), update, pieces);
+    if (result.pending || !equalBytes(result.state, whole.state)) wrong += 1;
   }
-  const { result, whole } = applyInOrder(new Y.Doc(), update, pieces);
-  expect(result).toEqual(whole);
+  return { split, wrong };
+}
+
+function equalBytes(a: Uint8Array, b: Uint8Array) {
+  return a.byteLength === b.byteLength && a.every((byte, at) => byte === b[at]);
+}
+
+it('keeps a new chart with its whole figure map and properties in one piece, wherever it is cut', () => {
+  // An embed's figure as the editor writes it: the element, its `block` map
+  // and everything nested in it, then `id` and `type`.
+  const chart = noteAround(() => {
+    const element = new Y.XmlText();
+    const block = new Y.Map();
+    const series = new Y.Array();
+    for (let index = 0; index < 30; index += 1) {
+      const point = new Y.Map();
+      point.set('x', index);
+      point.set('label', `quarter ${index} `.repeat(1 + (index % 4)));
+      series.push([point]);
+    }
+    block.set('kind', 'bar');
+    block.set('series', series);
+    block.set('title', new Y.Text('Revenue by quarter'));
+    element.setAttribute('block', block as never);
+    element.setAttribute('id', 'chart-1');
+    element.setAttribute('type', 'chart');
+    return element;
+  });
+  expect(chart.to - chart.from).toBeGreaterThan(100);
+  expect(cutEverywhere(chart)).toEqual({ split: [], wrong: 0 });
+});
+
+it('keeps a new Mermaid block with its source text and properties in one piece, wherever it is cut', () => {
+  const mermaid = noteAround(() => {
+    const element = new Y.XmlText();
+    element.setAttribute(
+      'source',
+      new Y.Text('graph TD\n' + 'A --> B\n'.repeat(60)) as never
+    );
+    element.setAttribute('id', 'mermaid-1');
+    element.setAttribute('type', 'mermaid');
+    const caption = new Y.XmlText();
+    caption.setAttribute('type', 'mermaid_caption');
+    caption.insert(0, 'The flow');
+    element.insertEmbed(0, caption);
+    return element;
+  });
+  expect(cutEverywhere(mermaid)).toEqual({ split: [], wrong: 0 });
 });

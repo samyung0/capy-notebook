@@ -464,21 +464,34 @@ export function useOfficeRuntime({
   // A capture uploads only what the room has (saved) while the user may edit.
   const captureAllowed = useRef<() => boolean>(() => false);
   captureAllowed.current = () => editable && source.status === 'saved';
+  // The tab holds back its collaboration messages (pacing, pieces, a
+  // timeout; Epo 2026-10-18): a DOCX or PPTX editor pauses meanwhile, as for
+  // any pause; the XLSX editor turns read-only with a busy cursor on
+  // `sending` instead.
+  const sending = useCollaborationHeld();
+  const pausedForSending = sending && format !== 'xlsx';
   // After the load above, and again whenever the runtime document boots. A
   // paused editor shows its content read-only, for selecting and copying.
   useEffect(() => {
     if (frameLoaded)
       post({
         canEdit:
-          editable && (mode !== 'edit' || frameDoc.current === source.doc),
+          editable &&
+          !pausedForSending &&
+          (mode !== 'edit' || frameDoc.current === source.doc),
         type: 'set-capabilities',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [editable, frameBoot, frameLoaded, mode, post, source.doc]);
+  }, [
+    editable,
+    frameBoot,
+    frameLoaded,
+    mode,
+    pausedForSending,
+    post,
+    source.doc,
+  ]);
 
-  // The tab holds back its collaboration messages (pacing, pieces, a
-  // timeout): the host takes no edits meanwhile (`CollaborationHold`).
-  const sending = useCollaborationHeld();
   useEffect(() => {
     if (frameLoaded && mode === 'edit')
       post({

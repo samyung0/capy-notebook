@@ -894,9 +894,12 @@ order, each piece a clock range per client, a struct only after the structs
 of the update its origin, right origin and parent name, so pieces applied in
 order never leave anything pending; a text or value run over the limit
 becomes runs of the same item, as Yjs splits items (never inside a surrogate
-pair); a new type (a note's block, an Office map) and the attribute entries
-written right after it go in one piece, so a room's admission never sees a
-block without its `type`, `id` or asset; the delete set goes last. A struct
+pair); a new type (a note's block, an embed's figure map, an Office map) goes
+in one piece with its whole nested subtree (its attribute entries and every
+map, text and array inside them, as Yjs writes them in one transaction), so
+a room's admission never sees a block without its `type`, `id`, figure or
+asset, whatever the order its editor wrote them in; a subtree larger than
+the server's 8 MiB cap is cut as the rest; the delete set goes last. A struct
 that cannot be cut (a photo's binary, a format mark, a type) goes whole. The
 room provider sends each piece as its own SYNC message, acknowledged on its
 own. The tab's socket paces SYNC and awareness frames under the same
@@ -913,12 +916,14 @@ can still go over, and then the user is in a timeout.
 items, DOCX, PPTX, XLSX and text) takes no input: frames wait in the socket
 for the allowance, a split update's pieces wait for the server's
 acknowledgement of the last, a draft send waits for the allowance, or the
-user is in a timeout (`held.ts`). `CollaborationHold` wraps each editor's
-surface: its content is `inert` and `aria-busy`, with a loading cursor over
-it, so no keystroke or click reaches the editor (the Office iframe
-included), and an editor's own state is untouched. The Office host also
-sends the runtime `sending` with the same state
-([office-files](office-files.md)).
+user is in a timeout (`held.ts`). `CollaborationHold` wraps the note
+editor, the quiz form, the flashcards editor, a live Mermaid diagram and the
+text editor: its content is `inert` and `aria-busy`, with a loading cursor
+over it, so no keystroke or click reaches the editor, and an editor's own
+state is untouched. A DOCX or PPTX editor pauses as for any other pause
+(`set-capabilities` with `canEdit: false`: read-only, selectable), and the
+XLSX editor turns read-only with a busy cursor on the runtime's `sending`
+message ([office-files](office-files.md)).
 
 **Timeouts** (Epo 2026-10-18). A user over the allowance, or sending an
 update over 8 MiB, is put in a timeout instead of disconnected (closing would
