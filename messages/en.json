@@ -503,6 +503,8 @@
   "source_parse_over_pages": "over {max} pages",
   "source_parse_password_protected": "password-protected",
   "source_analysis_summary": "Estimated: {text} text pages · {ocr} scanned pages · about {cost} credits",
+  "source_analysis_summary_images": "Estimated: {text} text pages · {ocr} scanned pages · {images} images · about {cost} credits",
+  "source_analysis_summary_images_only": "Estimated: {images} images · about {cost} credits",
   "source_upload_too_many": "This workspace can take {count} more files.",
   "source_queue_progress": "Sending files. {remaining} still waiting.",
   "source_ingest_waiting": "Waiting for ingest slots to free up.",

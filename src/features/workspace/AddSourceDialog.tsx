@@ -364,9 +364,12 @@ function setConnectResume(
 /** Expected cost of one source at the policy rates: fast-parsed documents
  * by text-layer and vision-read page count, everything else free. */
 function sourceCreditEstimate(
-  source: Pick<PendingSource, 'analysisResult' | 'parseMode'>,
+  source: Pick<PendingSource, 'analysisResult' | 'kind' | 'parseMode'>,
   uploadPolicy: SourceUploadPolicy
 ): number {
+  // An image caption bills its tokens; one text-less page read by the VLM is
+  // the closest rate to show for it.
+  if (source.kind === 'image') return uploadPolicy.vlmIngestPageCreditMicros;
   if (source.parseMode !== 'fast' || !source.analysisResult) return 0;
   return calculateParseCreditMicros(source.analysisResult, {
     digitalPageRateMicros: uploadPolicy.digitalParsePageCreditMicros,
@@ -724,12 +727,21 @@ function SourceFooter({
       .filter((source) => source.parseMode === 'fast')
       .map((source) => source.analysisResult)
   );
+  const images = sources.filter((source) => source.kind === 'image').length;
   const estimatedCreditMicros = uploadPolicy
     ? sources.reduce(
         (total, source) => total + sourceCreditEstimate(source, uploadPolicy),
         0
       )
     : 0;
+  const cost = (estimatedCreditMicros / 1_000_000).toLocaleString();
+  const { ocrPages: ocr, pages, textPages: text } = analysisTotals;
+  const summary =
+    pages > 0
+      ? images
+        ? m.source_analysis_summary_images({ cost, images, ocr, text })
+        : m.source_analysis_summary({ cost, ocr, text })
+      : images > 0 && m.source_analysis_summary_images_only({ cost, images });
   const blocked =
     !uploadPolicy ||
     sources.some(
@@ -741,12 +753,7 @@ function SourceFooter({
   return (
     <DialogFooter className="shrink-0 flex-wrap items-center">
       <div className="t-meta text-fg-muted empty:hidden max-sm:basis-full sm:flex-1">
-        {analysisTotals.pages > 0 &&
-          m.source_analysis_summary({
-            cost: (estimatedCreditMicros / 1_000_000).toLocaleString(),
-            ocr: analysisTotals.ocrPages,
-            text: analysisTotals.textPages,
-          })}
+        {summary}
       </div>
       <DialogPrimary>
         <Button
