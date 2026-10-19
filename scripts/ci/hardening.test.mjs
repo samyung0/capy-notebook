@@ -105,3 +105,16 @@ test('CI fails on known vulnerabilities in the Rust, Go and pnpm dependencies', 
     );
   }
 });
+
+test('no Worker publishes a workers.dev or preview URL, with or without --env', () => {
+  for (const file of list('.').filter((name) =>
+    /^wrangler.*\.jsonc$/.test(name)
+  )) {
+    const config = JSON.parse(read(file).replace(LINE_COMMENT, ''));
+    const targets = [['top level', config], ...Object.entries(config.env ?? {})];
+    for (const [name, target] of targets) {
+      assert.equal(target.workers_dev, false, `${file} ${name}`);
+      assert.equal(target.preview_urls, false, `${file} ${name}`);
+    }
+  }
+});
