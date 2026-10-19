@@ -8,6 +8,7 @@
 import * as Sentry from '@sentry/react';
 import { isApiError } from '@/api/client';
 import { identifyAnalytics, identityKey } from '@/lib/analytics';
+import { stripUrlTokensDeep } from '@/lib/urlTokens';
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 const APP_ENV =
@@ -17,8 +18,11 @@ const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
 export function initErrorReporting(): void {
   if (!SENTRY_DSN) return;
   Sentry.init({
+    // Share and invite tokens in page, request and breadcrumb URLs open
+    // what they name; only their shape leaves (stripUrlTokens).
+    beforeBreadcrumb: (breadcrumb) => stripUrlTokensDeep(breadcrumb),
     beforeSend: (event, hint) =>
-      isApiError(hint.originalException) ? null : event,
+      isApiError(hint.originalException) ? null : stripUrlTokensDeep(event),
     dsn: SENTRY_DSN,
     environment: APP_ENV,
     // Network failures during a stream are expected when a user navigates away

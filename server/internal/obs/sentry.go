@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -60,17 +61,7 @@ func InitSentry(cfg SentryConfig) func() {
 				event.Tags = map[string]string{}
 			}
 			event.Tags["service"] = cfg.Service
-			if event.Request != nil {
-				event.Request.Data = ""
-				event.Request.Cookies = ""
-				for name := range event.Request.Headers {
-					switch strings.ToLower(name) {
-					case "authorization", "cookie", "x-pipeline-secret", "x-collaboration-secret":
-						delete(event.Request.Headers, name)
-					}
-				}
-			}
-			return event
+			return scrubEvent(event)
 		},
 	})
 	if err != nil {
@@ -80,6 +71,48 @@ func InitSentry(cfg SentryConfig) func() {
 	slog.Info("sentry enabled", "environment", cfg.Environment, "traces_sample_rate", rate)
 	return func() { sentry.Flush(2 * time.Second) }
 }
+
+// scrubEvent drops what a captured request carries beyond its shape: the
+// body, cookies and secret headers, the query string (an unsubscribe token
+// rides there) and the token segments of its path (LogPath), in the URL and
+// the transaction name alike.
+func scrubEvent(event *sentry.Event) *sentry.Event {
+	if event.Request != nil {
+		event.Request.Data = ""
+		event.Request.Cookies = ""
+		event.Request.QueryString = ""
+		for name := range event.Request.Headers {
+			switch strings.ToLower(name) {
+			case "authorization", "cookie", "x-pipeline-secret", "x-collaboration-secret":
+				delete(event.Request.Headers, name)
+			}
+		}
+		if u, err := url.Parse(event.Request.URL); err == nil {
+			u.Path, u.RawPath, u.RawQuery = LogPath(u.Path), "", ""
+			event.Request.URL = u.String()
+		} else {
+			event.Request.URL = ""
+		}
+	}
+	if method, path, ok := strings.Cut(event.Transaction, " "); ok {
+		event.Transaction = method + " " + LogPath(path)
+	} else {
+		event.Transaction = LogPath(event.Transaction)
+	}
+	for i := range event.Exception {
+		event.Exception[i].Value = scrubPaths(event.Exception[i].Value)
+	}
+	event.Message = scrubPaths(event.Message)
+	return event
+}
+
+// scrubPaths hashes the token segment of any request path inside text, such
+// as the "GET /api/public/notes/{token}: HTTP 500" a failed response reports.
+func scrubPaths(text string) string {
+	return tokenPathPattern.ReplaceAllStringFunc(text, LogPath)
+}
+
+var tokenPathPattern = regexp.MustCompile(`/api/(public|workspace-invites)/[^\s?"']+`)
 
 // ErrorEventHeader identifies a captured failure in internal service responses.
 const ErrorEventHeader = "X-Sentry-Event-Id"
@@ -190,7 +223,7 @@ func (w *errorResponseWriter) WriteHeader(status int) {
 			err = context.Canceled
 		}
 		if err == nil {
-			err = fmt.Errorf("%s %s: HTTP %d", w.request.Method, w.request.URL.Path, status)
+			err = fmt.Errorf("%s %s: HTTP %d", w.request.Method, LogPath(w.request.URL.Path), status)
 		}
 		ctx := w.state.ctx
 		if ctx == nil {

@@ -15,7 +15,7 @@ import {
   quotaBlockedProps,
   scoreBucket,
   sizeBucket,
-  stripShareSignatures,
+  stripTokenProperties,
 } from './analytics';
 
 const ANALYTICS_EVENT_NAMES = {
@@ -177,16 +177,18 @@ describe('analytics helpers', () => {
   });
 });
 
-describe('share link signatures', () => {
-  it('leave page URLs, keeping the id', () => {
+describe('URL tokens', () => {
+  it('leave page URLs: share links keep their id, invite links lose their token', () => {
     expect(
-      stripShareSignatures({
+      stripTokenProperties({
         $current_url: 'https://app.test/w/ws_1a2b.AAAAAAAAAAAAAAAA?x=1#top',
+        $pathname: '/workspace-invites/Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFi',
         $referrer: 'https://app.test/?clone=quiz%3Amat_9.BBBBBBBBBBBBBBBB',
         count: 3,
       })
     ).toEqual({
       $current_url: 'https://app.test/w/ws_1a2b?x=1#top',
+      $pathname: '/workspace-invites/:token',
       $referrer: 'https://app.test/?clone=quiz%3Amat_9',
       count: 3,
     });
