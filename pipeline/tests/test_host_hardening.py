@@ -96,6 +96,22 @@ def test_the_app_host_opens_ssh_and_wireguard_before_enabling_ufw() -> None:
     assert max(ssh, wireguard) < enable
 
 
+def test_the_app_host_lets_docker_networks_reach_it_but_not_all_of_10_8() -> None:
+    play = _play("app-host")
+    networks = play["vars"]["app_docker_host_networks"]
+    rules = _ufw(play)
+
+    assert {
+        "rule": "allow",
+        "direction": "in",
+        "from_ip": "{{ item }}",
+        "comment": "Docker networks to the host",
+    } in rules
+    assert "10.0.0.0/16" in networks
+    # The WireGuard link also lives in 10/8: never open the whole pool.
+    assert "10.0.0.0/8" not in networks
+
+
 def test_the_app_host_drops_public_docker_ports_over_tcp_and_udp_on_ipv4_and_ipv6() -> (
     None
 ):
