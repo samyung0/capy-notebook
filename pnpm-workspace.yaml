@@ -49,3 +49,16 @@ patchedDependencies:
 overrides:
   "geopattern>extend": 3.0.2
   "xmlbuilder2>js-yaml": 3.15.2
+
+# `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
+# here. Each entry says why it waits.
+auditConfig:
+  ignoreGhsas:
+    # KaTeX: the trust bypass needs prototype pollution first, and `trust`
+    # stays off. 0.18.2 waits for the version wave (todo-security P4, KaTeX).
+    - GHSA-238p-pmpm-9mq7
+    # Found when the job was added (2026-10-19), waiting for the developer's
+    # call: @tiptap/core 2.x under emails/editor's @maily-to/core, and
+    # sprintf-js 1.0.3 under @platejs/docx-io > mammoth > argparse.
+    - GHSA-cp6q-959q-f8rh
+    - GHSA-hp3w-g68c-fv3c

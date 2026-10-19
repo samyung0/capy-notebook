@@ -87,3 +87,21 @@ test('the SPA build job renders only the build values; the deploy job renders th
   assert.deepEqual(renders(jobs.build), ['render-build']);
   assert.deepEqual(renders(jobs.deploy), ['render']);
 });
+
+test('CI fails on known vulnerabilities in the Rust, Go and pnpm dependencies', () => {
+  const steps = Object.values(parse(read('.github/workflows/ci.yml')).jobs)
+    .filter((job) => !job['continue-on-error'])
+    .flatMap((job) => job.steps)
+    .filter((step) => !step['continue-on-error'])
+    .map((step) => step.run ?? '');
+  for (const command of [
+    /^cargo deny check advisories$/,
+    /govulncheck@v[\d.]+ -format json/,
+    /^pnpm audit --prod$/,
+  ]) {
+    assert(
+      steps.some((run) => command.test(run)),
+      String(command)
+    );
+  }
+});

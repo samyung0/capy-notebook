@@ -357,3 +357,50 @@ jobs:
       - run: uv run --extra test pytest
       # The knowledge-base builder's tests, its security regressions included.
       - run: uv run --extra test pytest lab/knowledge/tests -q
+
+  # Known vulnerabilities fail CI, one job per ecosystem. An advisory that has
+  # to wait goes on that ecosystem's commented ignore list, with the reason:
+  # collaboration-rs/deny.toml, server/govulncheck-ignore.txt and
+  # pnpm-workspace.yaml's auditConfig.
+  audit_rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-deny@0.20.2
+      - run: cargo deny check advisories
+        working-directory: collaboration-rs
+
+  audit_go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          # The Go line server/Dockerfile and ops/Dockerfile build with.
+          go-version: "1.25"
+          check-latest: true
+      # Fails on a called vulnerability (one whose trace reaches a function)
+      # that the ignore list does not name.
+      - working-directory: server
+        run: |
+          set -euo pipefail
+          go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 -format json ./... > "$RUNNER_TEMP/govulncheck.json"
+          jq -r 'select(.finding.trace[0].function) | .finding.osv' "$RUNNER_TEMP/govulncheck.json" | sort -u > "$RUNNER_TEMP/found"
+          sed -n 's/^\(GO-[0-9]*-[0-9]*\).*/\1/p' govulncheck-ignore.txt | sort -u > "$RUNNER_TEMP/ignored"
+          new=$(comm -23 "$RUNNER_TEMP/found" "$RUNNER_TEMP/ignored")
+          for id in $new; do echo "::error::$id https://pkg.go.dev/vuln/$id"; done
+          [ -z "$new" ]
+
+  audit_pnpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: pnpm audit --prod
