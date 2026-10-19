@@ -57,7 +57,7 @@ func TestPendingReferencesNeverReachReaders(t *testing.T) {
 		}
 	}
 
-	shared, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Shared fence", Content: "body"})
+	shared, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Shared fence", Content: noteTestContent(t, "body")})
 	if err != nil {
 		t.Fatal(err)
 	}

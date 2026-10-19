@@ -34,7 +34,7 @@ func TestWorkspaceMutationRechecksCurrentEditorRole(t *testing.T) {
 	}
 	if _, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: editorID, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name,
-		Kind: "note", Title: "Forbidden", Content: `{"type":"p","children":[{"text":"x"}]}`,
+		Kind: "note", Title: "Forbidden", Content: materialTestContent(t, "x"),
 	}); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("viewer material mutation error = %v, want forbidden", err)
 	}

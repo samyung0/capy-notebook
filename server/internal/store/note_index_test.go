@@ -35,7 +35,7 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 	}
 	note, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Indexed note",
-		Content: "# Heading\n\nbody",
+		Content: materialTestContent(t, "# Heading\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 		t.Fatal("a new workspace note is dirty until it is indexed")
 	}
 	standalone, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: ownerID, Kind: "note", Title: "Standalone", Content: "# Standalone\n\nbody",
+		CreatedBy: ownerID, Kind: "note", Title: "Standalone", Content: materialTestContent(t, "# Standalone\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 			}
 			note, err := s.CreateMaterial(ctx, Material{
 				CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Released note",
-				Content: "# Heading\n\nbody",
+				Content: materialTestContent(t, "# Heading\n\nbody"),
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -219,7 +219,7 @@ func TestEmbeddedItemsIndexInTheirNote(t *testing.T) {
 	}
 	note, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "With items",
-		Content: "body",
+		Content: materialTestContent(t, "body"),
 	})
 	if err != nil {
 		t.Fatal(err)

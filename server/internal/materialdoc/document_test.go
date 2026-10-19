@@ -571,29 +571,34 @@ func TestDiagramContract(t *testing.T) {
 	}
 }
 
-func TestGeneratorReplayIgnoresMintedIDs(t *testing.T) {
-	first, err := FromLegacyMarkdown("note", "alpha")
+// A create stores a valid document or, for a mindmap or diagram, converts the
+// generator's mermaid markdown. An invalid JSON note (indent past
+// ListIndentMax) or plain text in a note is refused, never stored as text.
+func TestCreateContentRefusesInvalidDocuments(t *testing.T) {
+	deep, err := json.Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
+		{"type": "p", "id": "l1", "indent": embeds.ListIndentMax + 1, "listStyleType": "disc", "children": []any{textLeaf("deep")}},
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := FromLegacyMarkdown("note", "alpha")
+	for name, content := range map[string]string{"indent 9": string(deep), "plain text": "alpha"} {
+		if _, err := FromLegacyMarkdown("note", content); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+		}
+	}
+	if _, err := FromLegacyMarkdown("diagram", string(deep)); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an invalid JSON diagram became mermaid source: %v", err)
+	}
+	valid, err := Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{ParagraphNode("kept")}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first == second {
-		t.Fatal("wrapping the same markdown twice should mint different block ids")
+	if got, err := FromLegacyMarkdown("note", valid); err != nil || got != valid {
+		t.Fatalf("valid note = %q, %v", got, err)
 	}
-	got, err := ExtractNoteText(first)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != IncomingNoteText("alpha") || got != IncomingNoteText(second) {
-		t.Fatalf("note replay text = %q", got)
-	}
-	if IncomingNoteText("beta") == got {
-		t.Fatal("note mismatch should not compare equal")
-	}
+}
 
+func TestGeneratorReplayIgnoresMintedIDs(t *testing.T) {
 	diagram, err := FromLegacyMarkdown("diagram", "```mermaid\nflowchart LR\nA-->B\n```")
 	if err != nil {
 		t.Fatal(err)

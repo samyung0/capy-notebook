@@ -989,7 +989,7 @@ func TestPurgeRemovesMembershipsInvitesAndAuxiliaryPII(t *testing.T) {
 	}
 	material, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: leaverID, WorkspaceID: hostWorkspace.ID,
-		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Surviving note",
+		WorkspaceName: hostWorkspace.Name, Kind: "note", Title: "Surviving note", Content: materialTestContent(t, ""),
 	})
 	if err != nil {
 		t.Fatal(err)

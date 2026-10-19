@@ -28,7 +28,7 @@ func trashFixture(t *testing.T, s *Store) (ownerID, editorID string, ws Workspac
 	}
 	mt, err = s.CreateMaterial(ctx, Material{
 		CreatedBy: editorID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Trash note",
-		Content: "# Trash note\n\nbody", Privacy: "private",
+		Content: materialTestContent(t, "# Trash note\n\nbody"), Privacy: "private",
 	})
 	if err != nil {
 		t.Fatal(err)
