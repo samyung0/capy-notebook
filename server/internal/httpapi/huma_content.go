@@ -46,7 +46,7 @@ type workspaceRecentOutput struct {
 type filesListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
-	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the caller's workspaces; member: also every workspace they are a member of"`
+	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"`
 	Sort        string `query:"sort" enum:"added,name,size,kind,workspace" default:"added"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
@@ -79,7 +79,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodPatch, "/api/chapters/{id}", "updateChapter", tag, "Update a chapter", http.StatusOK, a.updateChapter)
 	reg(api, http.MethodDelete, "/api/chapters/{id}", "deleteChapter", tag, "Delete a chapter", http.StatusNoContent, a.deleteChapter)
 
-	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List files across the caller's owned or member workspaces", http.StatusOK, a.listOwnedFiles)
+	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List the files the caller pays for, or can open (scope=member)", http.StatusOK, a.listOwnedFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/recent", "listWorkspaceRecent", tag, "List a workspace's newest files and materials", http.StatusOK, a.listWorkspaceRecent)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
@@ -255,7 +255,13 @@ type fileLinksOutput struct {
 // link/public viewers, like every other file read. Bytes never proxy through
 // the gateway.
 func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutput, error) {
-	if _, err := a.fileRead(ctx, in.ID); err != nil {
+	// The read check (fileRead) and the role the strip needs, in one lookup.
+	wsID, err := a.s.FileWorkspaceID(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), wsID)
+	if err != nil {
 		return nil, hErr(err)
 	}
 	if a.blob == nil {
@@ -273,6 +279,19 @@ func (a *api) getFileLinks(ctx context.Context, in *fileIDInput) (*fileLinksOutp
 		return nil, hErr(err)
 	}
 	out := apimodel.FileLinks{URL: signed.URL, ExpiresAt: signed.ExpiresAt}
+	// The payer's full storage explains view-only only to those who could
+	// edit; a viewer was never editing (like materials and source sessions).
+	if store.RoleCanEdit(role) {
+		payer, err := a.s.FilePayerID(ctx, in.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		full, err := a.ownerFull(ctx, payer)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		out.StorageFull = store.FullBy(full, payer, userID(ctx))
+	}
 	if preview != "" {
 		signedPreview, err := a.blob.PresignGetWithExpiry(ctx, preview)
 		if err != nil {
@@ -310,7 +329,7 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 // until the owner purges it or the 30-day sweep does; the trash transition
 // trigger cancels pipeline work and evicts the source room.
 func (a *api) deleteFile(ctx context.Context, in *trashFileInput) (*Empty, error) {
-	if err := a.assertFileEditor(ctx, in.ID); err != nil {
+	if err := a.orPayer(ctx, agenttools.KindSourceFile, in.ID, a.assertFileEditor(ctx, in.ID)); err != nil {
 		return nil, hErr(err)
 	}
 	op, err := trashOperation(ctx, in.RequestID, agenttools.KindSourceFile, in.ID)

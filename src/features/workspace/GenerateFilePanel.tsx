@@ -95,7 +95,6 @@ export function GenerateFilePanel({
         files={files ?? []}
         key={mode}
         mode={mode}
-        onCancel={onClose}
         onGenerate={run}
         pending={isPending}
         workspaceName={workspace?.name ?? ''}

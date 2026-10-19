@@ -194,3 +194,12 @@ func TestSearchFlashcardsUsesMaterials(t *testing.T) {
 	}
 	t.Fatalf("flashcard material missing from search results: %#v", results)
 }
+
+// redeemLink presents a resource's signed link for userID once, as the
+// browser does before a link visitor reads it by id (RedeemShareToken).
+func redeemLink(t *testing.T, s *Store, userID, id string) {
+	t.Helper()
+	if _, err := s.RedeemShareToken(context.Background(), userID, ShareToken(s.shareLinkSecret, id)); err != nil {
+		t.Fatalf("redeem %s for %s: %v", id, userID, err)
+	}
+}

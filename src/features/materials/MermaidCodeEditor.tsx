@@ -83,8 +83,10 @@ const theme = EditorView.theme({
     textDecoration: 'underline wavy var(--solid-error) 1px',
     textUnderlineOffset: '4px',
   },
+  // Opaque, so text scrolled sideways passes under the line numbers; the host
+  // sets `--code-editor-bg` when it sits on something other than the surface.
   '.cm-gutters': {
-    backgroundColor: 'transparent',
+    backgroundColor: 'var(--code-editor-bg, var(--color-surface))',
     border: 'none',
     color: 'var(--text-muted)',
   },

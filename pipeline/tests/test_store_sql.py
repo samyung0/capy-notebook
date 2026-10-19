@@ -2883,14 +2883,18 @@ def test_heartbeat_cancels_deleted_file_job_skipped_while_locked(workspace):
         conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
 
 
+# The file's payer (uploader pays) is fenced like the owner: a third account
+# that uploaded the file and then requested deletion cancels the job too.
+@pytest.mark.parametrize("deleted", ["owner", "payer"])
 @pytest.mark.parametrize("source_etag", ["etag-a", ""])
 def test_heartbeat_cancels_collaborator_job_after_owner_deletion_skip(
-    workspace, source_etag: str
+    workspace, source_etag: str, deleted: str
 ):
     import psycopg
 
     owner_id = f"u_{secrets.token_hex(6)}"
     actor_id = f"u_{secrets.token_hex(6)}"
+    payer_id = owner_id if deleted == "owner" else f"u_{secrets.token_hex(6)}"
     workspace_id = f"ws_{secrets.token_hex(6)}"
     file_id = f"f_{secrets.token_hex(6)}"
     with psycopg.connect(workspace.dsn) as conn:
@@ -2902,6 +2906,11 @@ def test_heartbeat_cancels_collaborator_job_after_owner_deletion_skip(
             "INSERT INTO users (id, name, email) VALUES (%s,%s,%s)",
             (actor_id, "Lifecycle actor", f"{actor_id}@example.com"),
         )
+        if payer_id != owner_id:
+            conn.execute(
+                "INSERT INTO users (id, name, email) VALUES (%s,%s,%s)",
+                (payer_id, "Lifecycle payer", f"{payer_id}@example.com"),
+            )
         conn.execute(
             "INSERT INTO workspaces (id,user_id,name) VALUES (%s,%s,'Lifecycle')",
             (workspace_id, owner_id),
@@ -2920,7 +2929,7 @@ def test_heartbeat_cancels_collaborator_job_after_owner_deletion_skip(
             (
                 file_id,
                 workspace_id,
-                owner_id,
+                payer_id,
                 actor_id,
                 f"sources/{file_id}",
                 source_etag,
@@ -2937,9 +2946,9 @@ def test_heartbeat_cancels_collaborator_job_after_owner_deletion_skip(
     def request_owner_deletion(conn) -> None:
         conn.execute(
             "UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=%s",
-            (owner_id,),
+            (payer_id,),
         )
-        conn.execute("SELECT cancel_user_async_work(%s)", (owner_id,))
+        conn.execute("SELECT cancel_user_async_work(%s)", (payer_id,))
 
     _commit_lifecycle_while_job_is_locked(workspace.dsn, job_id, request_owner_deletion)
 
@@ -2964,7 +2973,10 @@ def test_heartbeat_cancels_collaborator_job_after_owner_deletion_skip(
         conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
         conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
         conn.execute("DELETE FROM workspaces WHERE id=%s", (workspace_id,))
-        conn.execute("DELETE FROM users WHERE id=ANY(%s)", ([owner_id, actor_id],))
+        conn.execute("DELETE FROM files WHERE id=%s", (file_id,))
+        conn.execute(
+            "DELETE FROM users WHERE id=ANY(%s)", ([owner_id, actor_id, payer_id],)
+        )
 
 
 @pytest.mark.parametrize("revocation", ["demote", "remove"])

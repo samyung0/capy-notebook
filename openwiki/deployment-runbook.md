@@ -3330,6 +3330,23 @@ ownership or permission drift stops the transaction; it never resets accounts,
 restores deleted data or overwrites existing note content. Storage is accounted
 through the normal database triggers.
 
+Every run, including `--accounts-only`, also keeps two plan test accounts for
+manual testing outside the fixture: `capy-uat-free+clerk_test@stablestudio.org`
+and `capy-uat-pro+clerk_test@stablestudio.org`. Clerk's `user.created` webhook
+gives each its application user and default workspace. The pro account is kept
+on one live Stripe sandbox Pro subscription (customer with `metadata.user_id`,
+Stripe's 4242 test card, `STRIPE_PRICE_PRO`) that renews monthly on that card;
+the app's subscription webhook makes the account Pro. A rerun reuses a live
+subscription and subscribes again only after it lapsed. The run that first
+creates the pro account does not subscribe it, since the app drops a
+subscription webhook for a user it has not admitted yet: rerun a minute later.
+The environment file needs a `sk_test_` `STRIPE_SECRET_KEY` for
+`UAT_STRIPE_ACCOUNT_ID`. The free account never subscribes.
+
+Sign in to any seeded account at `https://app.uat.capynotebook.com` with its
+email and Clerk's fixed test code `424242` (no mail is sent). Automated journeys
+do not use these long-lived accounts; they create their own per run.
+
 To prepare or verify only the Clerk accounts while the backend is unavailable:
 
 ```sh

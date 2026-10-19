@@ -71,6 +71,7 @@ import type {
   InspectSourceImportsResponse,
   IntegrationsStatus,
   InvoiceList,
+  ItemAttempts,
   Label,
   LearningProgress,
   Material,
@@ -816,6 +817,29 @@ export function useBillingPortal() {
       const { url } = await api.post<URLResp>('/billing/portal');
       window.location.href = url;
     },
+  });
+}
+
+/** Opens the portal on the live subscription's cancel screen; cancelling
+ * stops Stripe retrying a failed plan invoice. */
+export function useBillingPortalCancel() {
+  return useMutation({
+    mutationFn: async () => {
+      const { url } = await api.post<URLResp>(
+        '/billing/portal/cancel-subscription'
+      );
+      window.location.href = url;
+    },
+  });
+}
+
+/** Voids the reloads Stripe is retrying; auto-reload stays on. */
+export function useCancelReloadRetry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<void>('/billing/auto-reload/cancel-retry'),
+    mutationKey: qk.billing,
+    onSettled: () => refetchBillingIfLast(qc),
   });
 }
 
@@ -2202,7 +2226,7 @@ export const quizEditQuery = (id: string) =>
   });
 
 const ATTEMPTS_PAGE = 30;
-/** Learning → All results: quiz attempts, newest first by default. */
+/** Learning → All results: quiz and flashcard attempts, newest first by default. */
 export const attemptsQuery = (params: AttemptParams = {}) => ({
   getNextPageParam: (
     last: { items: Attempt[]; more: boolean },
@@ -2214,6 +2238,7 @@ export const attemptsQuery = (params: AttemptParams = {}) => ({
       `/attempts${listSearch(
         {
           dir: params.dir,
+          kind: params.kinds,
           limit: String(ATTEMPTS_PAGE),
           offset: pageParam ? String(pageParam) : undefined,
           sort: params.sort,
@@ -2367,6 +2392,25 @@ export const useWorkspaceStudy = (
 ) =>
   useQuery({ ...workspaceStudyQuery(workspaceId), meta: queryMeta(options) });
 
+/** Each quiz's and set's attempt count and latest attempts in a workspace,
+ * for the Study progress page; refreshed with the Study tab. */
+export const workspaceAttemptsQuery = (workspaceId: string) =>
+  queryOptions({
+    queryFn: () =>
+      api.get<{ items: ItemAttempts[] }>(
+        `/workspaces/${workspaceId}/study/attempts`
+      ),
+    queryKey: qk.studyAttempts(workspaceId),
+  });
+export const useWorkspaceAttempts = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...workspaceAttemptsQuery(workspaceId),
+    meta: queryMeta(options),
+  });
+
 /** Refreshes the Study tab, marks, review and Learning after practice in
  * `workspaceId`, or in every workspace when the caller does not know which. */
 export function invalidateStudy(
@@ -2405,7 +2449,13 @@ export function useSetStudyItem(workspaceId: string) {
         const items = summary.items.filter((it) =>
           fileId ? it.fileId !== fileId : it.materialId !== materialId
         );
-        if (state) items.push({ fileId, materialId, state });
+        if (state)
+          items.push({
+            fileId,
+            materialId,
+            state,
+            updatedAt: new Date().toISOString(),
+          });
         return { ...summary, items };
       });
       return { prev };
@@ -2577,7 +2627,8 @@ export function useRateReviewItem(workspaceId?: string | null) {
     meta: { errorToast: false },
     mutationFn: (body: RateReviewItemReq) =>
       api.post<void>('/review/ratings', body),
-    onSuccess: () => {
+    onSuccess: (_d, body) => {
+      if (body.attempt) qc.invalidateQueries({ queryKey: qk.attemptsRoot });
       if (workspaceId !== null) void invalidateStudy(qc, workspaceId);
     },
   });

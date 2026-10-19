@@ -389,7 +389,7 @@ test.describe('study progress', () => {
     await showAnswer.click();
     await rate(ownerPage, m.srs_good());
     await expect(
-      ownerPage.getByRole('heading', { name: m.flashcards_session_done() })
+      ownerPage.getByRole('button', { name: m.flashcards_study_again() })
     ).toBeVisible();
     // Another left after its first card.
     await ownerPage.goto(`/flashcards/${startedSet.id}`);
@@ -671,7 +671,7 @@ test.describe('study progress', () => {
 
     // Back returns to where the session started.
     await ownerPage
-      .getByRole('button', { exact: true, name: m.review_back() })
+      .getByRole('button', { exact: true, name: m.action_back() })
       .click();
     await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${ws.id}$`));
 
@@ -687,5 +687,55 @@ test.describe('study progress', () => {
       total: 2,
       workspaceId: ws.id,
     });
+  });
+
+  test('progress off: the page links to Track progress in settings, kept in the URL', async ({
+    ownerApi,
+    ownerPage,
+    workspaceFactory,
+  }) => {
+    const workspace = await workspaceFactory.create({
+      name: `Progress off ${randomUUID().slice(0, 8)}`,
+    });
+    const off = await ownerApi.put(
+      `/api/workspaces/${workspace.id}/study/enabled`,
+      { data: { enabled: false } }
+    );
+    expect(off.status()).toBe(204);
+    const errors: string[] = [];
+    ownerPage.on('pageerror', (error) => errors.push(error.message));
+
+    await ownerPage.goto(`/workspaces/${workspace.id}?progress=true`);
+    await expect(
+      ownerPage.getByText(m.progress_off_title(), { exact: true })
+    ).toBeVisible();
+    await ownerPage
+      .getByRole('button', { name: m.progress_off_turn_on() })
+      .click();
+    const toggle = ownerPage.getByRole('switch', {
+      name: m.study_track_progress(),
+    });
+    await expect(toggle).toBeVisible();
+    await expect(ownerPage).toHaveURL(/settings=others/);
+
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await ownerPage.keyboard.press('Escape');
+    await expect(ownerPage).not.toHaveURL(/settings=/);
+    // The page now lists the workspace, and the dialog left no history.
+    await expect(ownerPage.getByText(m.progress_off_title())).toHaveCount(0);
+    await ownerPage.goBack();
+    await expect(ownerPage).not.toHaveURL(/progress=true/);
+
+    // Back with settings open leaves in-app (a goto would leave the
+    // document, so the router never runs) and closes the dialog once.
+    await ownerPage.goto('/workspaces');
+    await ownerPage.getByRole('link', { name: workspace.name }).first().click();
+    await ownerPage.getByLabel(m.workspace_settings(), { exact: true }).click();
+    await expect(ownerPage).toHaveURL(/settings=/);
+    await ownerPage.goBack();
+    await expect(ownerPage).toHaveURL(/\/workspaces$/);
+    await expect(ownerPage.getByRole('dialog')).toHaveCount(0);
+    expect(errors).toEqual([]);
   });
 });

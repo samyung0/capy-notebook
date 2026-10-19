@@ -31,7 +31,11 @@ import {
   toggleValue,
   useListView,
 } from '@/components/app/ListToolbar';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  PageBody,
+  PageHeader,
+  PanelWithInvertedRadius,
+} from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import type { ColumnSort } from '@/components/app/SortHeader';
 import { Button, ErrorAction } from '@/components/ui/Button';
@@ -39,6 +43,7 @@ import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
+import { fileKindLabel } from '@/features/files/fileKindLabel';
 import { formatFileSize } from '@/features/files/fileUtils';
 import {
   clearOnBlank,
@@ -100,7 +105,7 @@ export default function Files() {
     >
       <fieldset className="min-w-0" disabled={busy}>
         <Tabs
-          className="px-1 sm:px-3"
+          className="page-tabs-px"
           onChange={(value) => {
             void navigate({
               replace: true,
@@ -138,31 +143,6 @@ export default function Files() {
       )}
     </PanelWithInvertedRadius>
   );
-}
-
-function fileKindLabel(kind: FileKind): string {
-  switch (kind) {
-    case 'pdf':
-      return m.file_kind_pdf();
-    case 'doc':
-      return m.file_kind_doc();
-    case 'md':
-      return m.file_kind_md();
-    case 'image':
-      return m.file_kind_image();
-    case 'txt':
-      return m.file_kind_txt();
-    case 'sheet':
-      return m.file_kind_sheet();
-    case 'slides':
-      return m.file_kind_slides();
-    case 'audio':
-      return m.file_kind_audio();
-    case 'json':
-      return m.file_kind_json();
-    default:
-      return m.file_kind_unknown();
-  }
 }
 
 function ActiveFiles({
@@ -293,10 +273,7 @@ function ActiveFiles({
         view={view}
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <div
-        className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6"
-        onClick={clearOnBlank(selection.clear)}
-      >
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -328,6 +305,7 @@ function ActiveFiles({
                   <FileItem
                     file={file}
                     key={file.id}
+                    onDelete={setDeleteTargets}
                     selected={selection.isSelected(file)}
                     view={view}
                     workspace={workspaces.find(
@@ -345,7 +323,7 @@ function ActiveFiles({
             />
           </div>
         )}
-      </div>
+      </PageBody>
       <ConfirmDialog
         body={m.files_delete_selected_body({
           count: deleteTargets?.length ?? 0,
@@ -366,34 +344,57 @@ function ActiveFiles({
  * whose selection changed. */
 const FileItem = memo(function FileItem({
   file,
+  onDelete,
   selected,
   view,
   workspace,
 }: {
   file: SourceFile;
+  /** A file in a workspace the viewer lost access to can only be deleted. */
+  onDelete: (files: SourceFile[]) => void;
   selected: boolean;
   view: ListView;
   workspace?: Workspace;
 }) {
+  const busy = !!useContext(ItemPick)?.busy;
   return (
     <ItemCard
       actions={
-        <ContentActions
-          canClone={file.status === 'ready' && !!workspace?.canClone}
-          chapters={[]}
-          content={toFileActionTarget(file)}
-          display="menu"
-          menuAlign="end"
-          menuTriggerIcon="moreHorizontal"
-          renameFieldLabel={m.files_file_name()}
-          renameTitle={m.files_rename()}
-          showMove={false}
-          workspaceId={file.workspaceId}
-        />
+        file.lostAccess ? (
+          <Menu
+            items={[
+              {
+                danger: true,
+                disabled: busy,
+                icon: 'trash',
+                label: m.action_delete(),
+                onClick: () => onDelete([file]),
+              },
+            ]}
+            triggerIcon="moreHorizontal"
+          />
+        ) : (
+          <ContentActions
+            canClone={file.status === 'ready' && !!workspace?.canClone}
+            chapters={[]}
+            content={toFileActionTarget(file)}
+            display="menu"
+            menuAlign="end"
+            menuTriggerIcon="moreHorizontal"
+            renameFieldLabel={m.files_file_name()}
+            renameTitle={m.files_rename()}
+            showMove={false}
+            workspaceId={file.workspaceId}
+          />
+        )
       }
       details={formatFileSize(file.sizeBytes)}
       icon={fileIconName(file)}
-      link={{ params: { fileId: file.id }, to: '/files/$fileId' }}
+      link={
+        file.lostAccess
+          ? undefined
+          : { params: { fileId: file.id }, to: '/files/$fileId' }
+      }
       meta={relativeTime(file.addedAt)}
       pickKey={file.id}
       selected={selected}
@@ -404,8 +405,9 @@ const FileItem = memo(function FileItem({
       }}
       title={file.name}
       view={view}
-      workspace={workspace?.name ?? ''}
+      workspace={workspace?.name ?? file.workspaceName ?? ''}
       workspaceIconId={workspace?.iconId}
+      workspaceLost={file.lostAccess}
     />
   );
 });
@@ -432,12 +434,17 @@ const TrashCard = memo(function TrashCard({
       actions={
         <Menu
           items={[
-            {
-              disabled: busy,
-              icon: 'undo',
-              label: m.trash_restore(),
-              onClick: () => onRestore(item),
-            },
+            // Restoring needs edit access to its workspace.
+            ...(item.canRestore
+              ? [
+                  {
+                    disabled: busy,
+                    icon: 'undo' as const,
+                    label: m.trash_restore(),
+                    onClick: () => onRestore(item),
+                  },
+                ]
+              : []),
             {
               danger: true,
               disabled: busy,
@@ -464,6 +471,7 @@ const TrashCard = memo(function TrashCard({
       view={view}
       workspace={item.workspaceName}
       workspaceIconId={workspaceIconId}
+      workspaceLost={item.lostAccess}
     />
   );
 });
@@ -550,7 +558,7 @@ function TrashTab({
   }
   return (
     <>
-      <div className="-mb-3 flex items-center px-4 sm:px-6">
+      <div className="page-px -mb-3 flex items-center">
         {selection.selecting ? (
           <SelectionBar
             allSelected={
@@ -566,7 +574,11 @@ function TrashTab({
               icon="undo"
               label={m.trash_restore()}
               onClick={() =>
-                void selection.run([...selection.selected], restore)
+                void selection.run(
+                  // Restoring needs edit access to its workspace.
+                  selection.selected.filter((item) => item.canRestore),
+                  restore
+                )
               }
             />
             <SelectionAction
@@ -601,10 +613,7 @@ function TrashTab({
         )}
       </div>
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <div
-        className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6"
-        onClick={clearOnBlank(selection.clear)}
-      >
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}
@@ -680,7 +689,7 @@ function TrashTab({
             }
           />
         </div>
-      </div>
+      </PageBody>
     </>
   );
 }

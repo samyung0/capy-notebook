@@ -78,9 +78,39 @@ Storage is charged once per logical row owned by a user:
 | Trashed rows  | same as above              | until the 30-day purge        |
 | Chat Undo     | `agent_edit_inverses.inverse_bytes` | while Undo is available; released on Undo, trash or invalidation |
 
-Workspace-owned rows resolve the payer from `workspaces.user_id` into
-`files.user_id` / `editor_assets.user_id` / `materials.owner_user_id`. A
-standalone material sets `owner_user_id` from its creator.
+**Uploader pays** (Sam 2026-10-18, Google Drive's My Drive model). The payer
+of a row is the account that uploaded, imported, cloned or created it, in any
+workspace: `files.user_id`, `upload_sessions.user_id`, `editor_assets.user_id`
+and `materials.owner_user_id` are set once at insert from the actor (a BEFORE
+INSERT trigger fills an omitted one from `created_by`, migration 0095) and
+never re-derived. A collaborator's upload, note, quiz, flashcard set, clone or
+deck is charged to the collaborator. What goes inside a note, quiz or set
+(images, audio, an embedded quiz or set, pasted or chat-placed) is charged to
+that material's payer instead, as Google Docs does (Sam 2026-10-19):
+`lockEditorAssetScopeTx` returns the material's `owner_user_id`, and
+`createMaterialTx` gives an embedded row its parent's. A workspace
+ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
+still checks the recipient's owned-workspace and file caps). A member who
+leaves or is removed keeps paying for what it added; the items stay in the
+workspace, and the Files page (files, blocks, trash), which lists only what the
+caller pays for and so adds up to its storage meter (Sam 2026-10-19), still
+lists them. One the payer can no longer open is marked `lostAccess`
+(`lostAccessSQL`: not the owner and no reach as member, public share or
+redeemed link, or the owner's account is no longer live) and shows only its
+name, size, workspace and creation time (`lostFile`, `lostMaterialItem`; the
+updated and workspace sorts page on those shown values, so no cursor carries
+what it hides), the workspace name red behind an error icon, and the payer
+may delete it (trash, then purge) but not
+open or restore it (`PaysFor`, `lockTrashActorTx`, `lockTrashOwnerTx`). Trash
+offers Restore only where the caller may edit the workspace (`canRestore`). A
+deleted, deleting or suspended owner's workspace also loses its name there
+(`workspaceNameSQL`; the card reads "Unavailable workspace"), as every other
+read of it answers 404, yet its payer still trashes and purges what it pays
+for there (`lockWorkspacePayerTx`, which needs only the payer live; Sam
+2026-10-19). Deleting an account deletes everything it pays for, in other
+people's workspaces too (`PurgeUser`). For a workspace material, `owner_user_id` is only the payer:
+access, the owner role and the owner's lifecycle (deleted, suspended) follow
+the workspace (`materialEffectiveAccess`, `live_access`).
 
 A curated material's `provenance` record is **never charged** — `size_bytes` is
 the content JSON alone — and its marshalled bytes are counted by `gateStorageTx`
@@ -97,11 +127,11 @@ Per-file **source upload** caps are separate from that quota. Editor assets
 take the payer's plan by purpose (`planlimits.Limits.EditorAssetBytes`): images
 the plan image cap, audio this per-file cap (Epo 2026-10-15), on upload and on
 a pasted copy (`AdoptEditorAssets`); a note holds no other asset. An image
-uploaded as a source takes the source cap, not the image cap. They follow the **workspace
-owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
-**30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
-elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
-dialog should enforce.
+uploaded as a source takes the source cap, not the image cap. They follow the
+**uploader's** plan, create-only (no retroactive invalidation): **10 MiB**
+free, **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
+elsewhere. `GET /api/source-upload-policy` returns the caller's own cap, which
+the dialog enforces.
 
 Office parsing keeps its structured handoff temporarily on the ingest host, with
 no durable B2 parse cache or preview PDF. Temporary parse output is a platform
@@ -138,8 +168,7 @@ check the recipient plan's workspace-file cap. The workspace payload reports `fi
 - Effective used bytes for decisions and reporting are
   `used_bytes + sum(pending deltas)`.
 
-`gateStorageTx` (creations, upload reservations, clones, transfers onto a
-recipient) locks the counter, unfolds pending deltas, checks the owner's
+`gateStorageTx` (creations, upload reservations, clones) locks the counter, unfolds pending deltas, checks the owner's
 lifecycle `CanEdit` (active or grace), then enforces
 `used + reserved + requested <= plan limit`. The limit is the effective plan's,
 which is Free once a paid period has lapsed, so a grace account (over the Free
@@ -175,14 +204,15 @@ place the level is decided, from stored plus reserved bytes against the
 current plan limit (the numbers the quota check uses): `full` at 100% or more,
 `near_limit` from 95%, `ok` otherwise. `WithStorageUsage` fills it for the
 reporting paths only; write gates skip those reads, except the content
-admission (`StorageUsage.Full`), which makes an owner's content view-only at
-`full` (see view-only at the limit).
+admission (`StorageUsage.Full`), which makes what an account pays for
+view-only at `full` (see view-only at the limit).
 
 - `GET /api/me` → `account.storageUsage`, with `storageUsedBytes` (used plus
   reserved) and `storageLimitBytes` filled for every account.
-- Workspace responses → `storageOwnerUsage`, the owner's level only (never byte
-  counts), on every endpoint that reports `storageOwnerState`, resolved once
-  per distinct owner.
+- Workspace responses carry no storage level: the workspace status (header
+  triangle and entry toast) reads the viewer's own `/me`, since what the viewer
+  adds is charged to the viewer. Another payer's full storage shows on its
+  items instead (`storageFull`, below).
 
 ## Material bytes vs plan quota
 
@@ -222,39 +252,64 @@ document is worth a warning. It is deliberately not derived from these bounds.
 
 **View-only at the limit.** No save-time storage gate exists for materials
 or source checkpoints: growing an existing material or a source's editing
-state only updates the ledger. Instead, while the **storage owner** is at or
-over its limit (usage level `full`, grace included), everything it pays for is
-view-only for owner and members alike:
+state only updates the ledger. Instead, while an account is at or over its
+limit (usage level `full`, grace included), every item it pays for is
+view-only for everyone, the rest of the workspace staying editable:
 
 - `assertContentEditableTx` (`server/internal/store/account_state.go`) refuses
   REST content writes (quiz and flashcard content, cards), comments and PDF
   marks with `storage_quota_exceeded`;
 - `SourceSession` and material collaboration tokens come back `read`, and
   `CheckSourceAccess` refuses a source edit with the same code;
-- capabilities carry `canEditContent` (edit mode, comments, annotations)
-  beside `canEdit`, which keeps renaming, moving, reordering and trashing;
-- workspace chat drops the agent's create and edit tools, and generation is refused with `storage_quota_exceeded`
-  (`StorageFullErr`) before any credits are reserved or spent.
+- material capabilities carry `canEditContent` (edit mode, comments,
+  annotations) beside `canEdit`, which keeps renaming, moving, reordering and
+  trashing; workspace capabilities no longer narrow for storage;
+- the material response, the Office/text source session and a file's links
+  carry `storageFull` (`self` when the viewer pays, `payer` otherwise) to
+  those who could edit the item (a viewer was never editing, so gets none),
+  and the item opens view-only under a strip below its header: "Your storage is full."
+  or "Owner of the file has insufficient storage." (`StorageFullBanner`); a
+  refusal without numbers (another payer's item) toasts the same words;
+- workspace chat drops the agent's create and edit tools when the actor (who
+  pays for what the agent creates) is full, and generation is refused with
+  `storage_quota_exceeded` (`StorageFullErr`) before any credits are reserved
+  or spent.
 
 Enforcement is at admission only, like frozen: the collaboration service's
 5 s writer recheck (`full_sql` in `collaboration-rs/crates/server/src/access.rs`, mirrored
-by `StorageUsage.Full`) closes every writer in the owner's rooms with
-`room-read-only` once the owner crosses the limit, and up to about 5 s of
-edits admitted before that may save. The open editor drops to view mode under
-the read-only strip and discards its unsaved edits. When the storage owner or
-the actor is `over_quota_frozen`, the same admission points refuse with
-`account_over_quota` (see the authorization doc). Creation and upload
+by `StorageUsage.Full`, both on the material's payer) closes every writer in
+the payer's rooms with `room-read-only` once it crosses the limit, and up to
+about 5 s of edits admitted before that may save. The open editor drops to view
+mode under the read-only strip and discards its unsaved edits. When the payer
+or the actor is `over_quota_frozen` (or the payer is suspended or being
+deleted), the same admission points refuse with `account_over_quota` (see the
+authorization doc). Every write that changes a material's bytes locks the
+payer's account row with the owner's and the actors' in one ordered batch:
+the collaboration server's saves and agent edits (`lock_boundary`, which
+refuses any deleted, deleting or suspended account in that batch, actors
+included, before it locks the material, so it never waits on a row `PurgeUser`
+holds), and Go's projection
+(`ProjectMaterialContent`) and `UpdateMaterial` (`lockWorkspaceMutationTx`'s
+extra accounts), and a source edit or checkpoint save locks and checks the
+file's payer the same way (`sourceLockTx`, `sourceEditLockTx`). Ingest and source refresh fence the file's payer beside the
+workspace owner and the actor (`_pipeline_source_cancellation`,
+`_lock_source_candidate`). Creation and upload
 reservations (`gateStorageTx`, `reserveStorageTx`) and the Office publication
 net-growth check stay.
 
 ## Reservations and clones
 
-Direct B2 uploads and editor-asset reservations call `reserveStorageTx`
-before the client receives a signed PUT URL. Reserved bytes count toward the
-gate immediately so concurrent uploads cannot double-spend remaining quota.
-Finalize converts reservation → used (via status transitions / triggers).
+Direct B2 uploads call `reserveStorageTx` on the uploader's counter, and
+editor-asset reservations on the material's payer's counter, before the client
+receives a signed PUT URL. Reserved bytes
+count toward the gate immediately so concurrent uploads cannot double-spend
+remaining quota. Finalize converts reservation → used (via status transitions
+/ triggers). Only the account that reserved an upload completes it (Sam
+2026-10-18): another editor's completion answers 404 (`completeSourceUpload`,
+`completeEditorAssetUpload`, `FinalizeUploadSession`).
 Completion (`completeSourceUpload`, and a drive import's internal completion)
-checks the object's size and type by HEAD, promotes it to its `sources/` key,
+checks the object's size and type by HEAD (a missing type is a mismatch: the
+PUT signs it and the import worker writes it), promotes it to its `sources/` key,
 and, for a file with source sessions (DOCX, XLSX, PPTX and text), reads it
 back once and records its SHA-256 as `files.source_sha256` in the finalize
 transaction (Epo 2026-10-17), so the first source session names its base and
@@ -310,8 +365,8 @@ while transient: admission does not gate on them, and publication gates the net
 change of the file's bytes and its source row. Before a parse is paid for,
 finalize refuses (except for system jobs) what publication would certainly
 refuse: the new bytes minus the old, plus a source row with no state or
-effects, minus the current row. Reconciliation sums the same columns. Owner
-changes transfer the charge with the file. A checkpoint is not gated on quota
+effects, minus the current row, all on the file's payer. Reconciliation sums
+the same columns. A checkpoint is not gated on quota
 (edits are admitted by the room, see view-only at the limit); finalize and
 publication run under source/workspace/account locks and gate the net growth.
 Negative changes remain negative ledger deltas.
@@ -339,17 +394,17 @@ the currently published source/index.
 Editor assets upload through the material that uses them
 (`/api/materials/{id}/editor-assets/uploads`, any editor of the material).
 Every asset names that material (`editor_assets.material_id`). A workspace
-material's asset also names the workspace and is charged to its owner; a
-standalone note, quiz or flashcard set's asset is charged to the material
-owner, the only account that can edit it. Every editor image (note, quiz,
-flashcard set, and a pasted copy through the children pass) is capped by the
-plan image cap of the account that pays, checked before any bytes are
-reserved; the material response carries it as `imageMaxBytes`. The browser
+material's asset also names the workspace. Every asset is charged to the
+material's payer, whoever uploads it (Sam 2026-10-19); the uploader still
+completes its own reservation. Every editor image (note, quiz, flashcard set,
+and a pasted copy through the children pass) is capped by the payer's plan
+image cap, checked before any bytes are reserved; the material response
+carries it as `imageMaxBytes`. The browser
 uploads an image under the cap unchanged and shrinks a larger one first
 (`src/lib/fitImage.ts`, called from `uploadEditorAsset`: long side to 2000 px,
 WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
 animated GIFs refused). An image inserted into a DOCX or PPTX file takes the
-same cap from the plan of the workspace owner, who pays for the file: the
+same cap from the plan of the file's payer (its uploader): the
 Office edit session (`GET /api/files/{id}/source-session`, Office formats)
 carries it as `imageMaxBytes`, the edit `load` hands it to the Office runtime,
 and the editors' `prepareImage` hook fits the picked file before its bytes
@@ -452,10 +507,9 @@ the clone commits. A path deleted after the repeatable-read snapshot causes a
 transaction retry instead of a clone that points at missing bytes.
 
 A single file or material clone lands in a workspace the cloner edits (a
-material also standalone, private). The **payer** is the destination
-workspace's owner (the triggers derive `files.user_id`,
-`source_documents.user_id`, `materials.owner_user_id` and `editor_assets.user_id`
-from it), or the cloner for a standalone copy; the quota gate runs on the payer
+material also standalone, private). The **payer** is the cloner, wherever the
+copy lands (`files.user_id`, `source_documents.user_id`,
+`materials.owner_user_id` and `editor_assets.user_id`); the quota gate runs on the payer
 with the copy's bytes (a file's size plus its saved edit state; a material's
 content, its embedded rows and its copied assets), and a file copy also passes
 the destination's file-count gate and the payer's per-file plan cap, as an
@@ -470,7 +524,7 @@ paths remain shared through blob refcounting. Source workspace asset IDs never
 survive in the copy. A cloned file's saved edits travel as a new
 `source_documents` row (epoch 1, same base, state and pending effects) whose
 generated `storage_bytes` charges the payer like the source's charged its
-owner.
+own.
 Contended clones poll the per-source advisory hierarchy without retaining a
 pool connection while they wait, then take the repeatable-read snapshot once
 the locks are held; a clone burst therefore cannot starve unrelated database

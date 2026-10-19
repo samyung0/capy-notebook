@@ -9,6 +9,8 @@ import { Button, ErrorAction } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { describeError, isNonDisclosing } from '@/lib/errors';
+import { clearStashedToken } from '@/lib/urlTokenStash';
+import { useStashedToken } from '@/lib/useStashedToken';
 
 export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
   // The reader's own frozen account is theirs to hear about.
@@ -34,7 +36,9 @@ export default function WorkspaceInviteAccept() {
 }
 
 function InviteContent() {
-  const { token } = useParams({ strict: false }) as { token: string };
+  const { token: param } = useParams({ strict: false }) as { token: string };
+  // The boot module moved the token out of the address bar (urlTokenStash).
+  const token = useStashedToken('invite', param);
   const navigate = useNavigate();
   const {
     data: acceptData,
@@ -42,10 +46,16 @@ function InviteContent() {
     isError: acceptIsError,
     isPending: acceptIsPending,
     isSuccess: acceptIsSuccess,
-    mutate: accept,
+    mutate: acceptMutation,
   } = useAcceptWorkspaceInvite();
+  // Used or refused: a retry keeps it in state, a refresh does not.
+  const accept = (value: string) =>
+    acceptMutation(value, { onSettled: () => clearStashedToken('invite') });
 
-  if (acceptIsError && isUnavailableWorkspaceInviteError(acceptError)) {
+  if (
+    !token ||
+    (acceptIsError && isUnavailableWorkspaceInviteError(acceptError))
+  ) {
     return (
       <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
     );

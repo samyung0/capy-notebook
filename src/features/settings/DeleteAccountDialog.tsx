@@ -14,7 +14,7 @@ import {
 } from '@/api/hooks';
 import type { RequestAccountDeletionReq } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
@@ -122,15 +122,7 @@ function DeleteAccountDialogInner({
     <SimpleDialog
       footer={
         <>
-          <Button
-            disabled={isSubmitting}
-            onClick={onClose}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
+          <DialogCancel disabled={isSubmitting} />
           <Button
             disabled={!canDelete}
             size="lg"
@@ -146,6 +138,7 @@ function DeleteAccountDialogInner({
       }}
       onSubmit={(event) => void submit(event)}
       open={open}
+      pending={isSubmitting}
       title={m.settings_danger_zone_title()}
     >
       <p className="text-fg-secondary">

@@ -106,8 +106,7 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 		if items[i].opt.UsesUserKey != items[j].opt.UsesUserKey {
 			return !items[i].opt.UsesUserKey
 		}
-		return models.JoinModelLabel(items[i].opt.ProviderName, items[i].opt.ModelName) <
-			models.JoinModelLabel(items[j].opt.ProviderName, items[j].opt.ModelName)
+		return items[i].opt.ModelName < items[j].opt.ModelName
 	})
 	for _, item := range items {
 		out.Models = append(out.Models, item.opt)

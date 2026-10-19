@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,11 +28,14 @@ type quotaFixture struct {
 	// owner acts as the throwaway over-quota user; pass "" as the actor.
 	owner http.Handler
 	// member acts as a seeded workspace editor whose own account is healthy;
-	// pass "u_editor" as the actor.
+	// pass "u_editor" as the actor ("u_viewer" is a viewer member, "u_other"
+	// a nonmember).
 	member      http.Handler
 	store       *store.Store
 	workspaceID string
 	material    store.Material
+	// ballast is the owner's file that put it over the limit.
+	ballast store.File
 }
 
 // overQuotaFixture builds an API surface for one throwaway user who has lapsed
@@ -64,12 +68,17 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 
-	ownerHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
+	// One bucket for both sides, holding the ballast file's bytes.
+	memory := blob.NewMemory()
+	if _, _, err := memory.Put("sources/"+userID, bytes.NewReader([]byte("%PDF"))); err != nil {
+		t.Fatal(err)
+	}
+	ownerHandler := httpapi.New(st, memory, nil, nil, "docling",
 		httpapi.Config{AuthDisabled: true, DevUserID: userID, CollaborationSecret: "collab-test-secret"})
-	memberHandler := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
+	memberHandler := httpapi.New(st, memory, nil, nil, "docling",
 		httpapi.Config{
 			AuthDisabled: true, E2EAuth: true, E2ESecret: "e2e-test-secret",
-			E2EUserIDs: []string{"u_editor"}, CollaborationSecret: "collab-test-secret",
+			E2EUserIDs: []string{"u_editor", "u_viewer", "u_other"}, CollaborationSecret: "collab-test-secret",
 		})
 
 	ws, err := st.CreateWorkspace(ctx, userID, store.WorkspaceCreate{Name: "Quota gate", Tags: nil})
@@ -77,7 +86,7 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
-		VALUES ($1,'u_editor','editor')`, ws.ID); err != nil {
+		VALUES ($1,'u_editor','editor'), ($1,'u_viewer','viewer')`, ws.ID); err != nil {
 		t.Fatal(err)
 	}
 	// Content that predates the lapse; what happens to it is the question.
@@ -103,8 +112,9 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 	if err := st.UpsertSubscription(ctx, sub); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := uploadSource(ctx, st, ws.ID, userID, "ballast.pdf",
-		mustPlanLimits(t, st, store.PlanFree).StorageBytes+1, "sources/"+userID); err != nil {
+	ballast, err := uploadSource(ctx, st, ws.ID, userID, "ballast.pdf",
+		mustPlanLimits(t, st, store.PlanFree).StorageBytes+1, "sources/"+userID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	lapsed := time.Now().AddDate(0, 0, -lapsedDays).UTC()
@@ -125,40 +135,35 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 	}
 	return quotaFixture{
 		owner: ownerHandler, member: memberHandler, store: st, workspaceID: ws.ID, material: material,
+		ballast: ballast,
 	}
 }
 
-// Grace behaves like an active account at its hard quota: growth fails the
-// quota check against the Free limit and the content is view-only for owner
-// and member (capabilities, read room tokens, refused comments and generation),
-// while renaming, ordinary chat and publishing stay open.
+// Grace behaves like an active account at its hard quota: the grace owner's
+// own growth fails the quota check against the Free limit and what it pays for
+// is view-only for owner and member (room tokens, refused comments, the
+// storageFull strip), while a healthy member keeps adding what it pays for
+// itself (uploader pays) and renaming, ordinary chat and publishing stay open.
 func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 	f := overQuotaFixture(t, 2)
 	h := f.owner
 
-	quotaDetail := func(rec *httptest.ResponseRecorder) map[string]any {
-		t.Helper()
-		var body struct {
-			Errors []struct {
-				Value map[string]any `json:"value"`
-			} `json:"errors"`
-		}
-		if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" ||
-			json.Unmarshal(rec.Body.Bytes(), &body) != nil || len(body.Errors) != 1 {
-			t.Fatalf("grace growth = %d body=%s, want the storage quota", rec.Code, rec.Body.String())
-		}
-		return body.Errors[0].Value
-	}
-	// The charged account sees its numbers; a member gets the code alone.
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/materials", "",
 		map[string]any{"kind": "note", "title": "Growth"})
-	if detail := quotaDetail(rec); detail["storageLimitBytes"] == nil || detail["ownerUserId"] == nil {
-		t.Fatalf("owner refusal lacks its numbers: %s", rec.Body.String())
+	var body struct {
+		Errors []struct {
+			Value map[string]any `json:"value"`
+		} `json:"errors"`
+	}
+	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" ||
+		json.Unmarshal(rec.Body.Bytes(), &body) != nil || len(body.Errors) != 1 ||
+		body.Errors[0].Value["storageLimitBytes"] == nil {
+		t.Fatalf("grace growth = %d body=%s, want the storage quota with its numbers", rec.Code, rec.Body.String())
 	}
 	rec = doReq(t, f.member, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/materials", "u_editor",
 		map[string]any{"kind": "note", "title": "Member growth"})
-	if detail := quotaDetail(rec); detail != nil {
-		t.Fatalf("member refusal carries the owner's numbers: %s", rec.Body.String())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("member growth = %d body=%s, want created on the member's own quota", rec.Code, rec.Body.String())
 	}
 	comment := map[string]any{"anchorVersion": 1, "contentRich": []any{map[string]any{
 		"type": "p", "children": []any{map[string]any{"text": "x"}},
@@ -166,17 +171,20 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 	for _, side := range []struct {
 		h     http.Handler
 		actor string
-	}{{f.owner, ""}, {f.member, "u_editor"}} {
-		rec := doReq(t, side.h, http.MethodGet, "/api/workspaces/"+f.workspaceID, side.actor, nil)
-		var ws struct {
+		full  string
+	}{{f.owner, "", "self"}, {f.member, "u_editor", "payer"}} {
+		rec := doReq(t, side.h, http.MethodGet, "/api/materials/"+f.material.ID, side.actor, nil)
+		var material struct {
 			Capabilities struct {
 				CanEdit        bool `json:"canEdit"`
 				CanEditContent bool `json:"canEditContent"`
 			} `json:"capabilities"`
+			StorageFull string `json:"storageFull"`
 		}
-		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &ws) != nil ||
-			!ws.Capabilities.CanEdit || ws.Capabilities.CanEditContent {
-			t.Fatalf("%q workspace read = %d body=%s, want organizing without content", side.actor, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &material) != nil ||
+			!material.Capabilities.CanEdit || material.Capabilities.CanEditContent || material.StorageFull != side.full {
+			t.Fatalf("%q material read = %d body=%s, want organizing without content, full by %q",
+				side.actor, rec.Code, rec.Body.String(), side.full)
 		}
 		rec = doReq(t, side.h, http.MethodPost, "/api/materials/"+f.material.ID+"/collaboration-token", side.actor, nil)
 		var token struct {
@@ -189,18 +197,47 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 		if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" {
 			t.Fatalf("%q comment = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}
-		// Refused before the model is even resolved, so no credits move (these
-		// handlers carry no model registry at all).
-		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/generate", side.actor,
-			generateBody("quiz", "Grace quiz"))
-		if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" {
-			t.Fatalf("%q generate = %d body=%s", side.actor, rec.Code, rec.Body.String())
-		}
 		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/conversations", side.actor,
 			map[string]any{"title": "Ask"})
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%q chat thread = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}
+	}
+	// A file's links carry the payer's full storage for those who could edit
+	// it; a viewer was never editing, so it gets no strip.
+	for _, side := range []struct {
+		h     http.Handler
+		actor string
+		full  string
+	}{{f.owner, "", "self"}, {f.member, "u_editor", "payer"}, {f.member, "u_viewer", ""}} {
+		rec := doReq(t, side.h, http.MethodGet, "/api/files/"+f.ballast.ID+"/links", side.actor, nil)
+		var links struct {
+			StorageFull string `json:"storageFull"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &links) != nil || links.StorageFull != side.full {
+			t.Fatalf("%q file links = %d body=%s, want full by %q", side.actor, rec.Code, rec.Body.String(), side.full)
+		}
+	}
+	// A nonmember on a public share follows its share role the same way.
+	for _, share := range []struct{ role, full string }{{"viewer", ""}, {"editor", "payer"}} {
+		if _, err := f.store.Pool().Exec(context.Background(),
+			`UPDATE workspaces SET privacy='public', share_role=$2 WHERE id=$1`, f.workspaceID, share.role); err != nil {
+			t.Fatal(err)
+		}
+		rec := doReq(t, f.member, http.MethodGet, "/api/files/"+f.ballast.ID+"/links", "u_other", nil)
+		var links struct {
+			StorageFull string `json:"storageFull"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &links) != nil || links.StorageFull != share.full {
+			t.Fatalf("public %s visitor file links = %d body=%s, want full by %q", share.role, rec.Code, rec.Body.String(), share.full)
+		}
+	}
+	// Refused before the model is even resolved, so no credits move (these
+	// handlers carry no model registry at all).
+	rec = doReq(t, h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/generate", "",
+		generateBody("quiz", "Grace quiz"))
+	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "storage_quota_exceeded" {
+		t.Fatalf("grace generate = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = doReq(t, h, http.MethodPatch, "/api/materials/"+f.material.ID+"/metadata", "",
 		map[string]any{"title": "After"})
@@ -214,26 +251,29 @@ func TestGraceOwnerIsHeldOnlyByTheQuota(t *testing.T) {
 	}
 }
 
-// Frozen is read-only for everyone in the frozen owner's workspace: capability
-// flags, room tokens and writes agree, while deleting and narrowing stay open.
-func TestFrozenOwnersWorkspaceIsReadOnly(t *testing.T) {
+// Frozen is read-only for what the frozen account pays for, for owner and
+// member alike (room tokens, renames, comments), and the frozen owner edits
+// nowhere; a healthy member keeps editing its own workspace role, and
+// deleting, narrowing and chat stay open.
+func TestFrozenOwnersItemsAreReadOnly(t *testing.T) {
 	f := overQuotaFixture(t, 20)
 	comment := map[string]any{"anchorVersion": 1, "contentRich": []any{map[string]any{
 		"type": "p", "children": []any{map[string]any{"text": "x"}},
 	}}}
 
 	for _, side := range []struct {
-		h     http.Handler
-		actor string
-	}{{f.owner, ""}, {f.member, "u_editor"}} {
+		h       http.Handler
+		actor   string
+		canEdit bool
+	}{{f.owner, "", false}, {f.member, "u_editor", true}} {
 		rec := doReq(t, side.h, http.MethodGet, "/api/workspaces/"+f.workspaceID, side.actor, nil)
 		var ws struct {
 			Capabilities struct {
 				CanEdit bool `json:"canEdit"`
 			} `json:"capabilities"`
 		}
-		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &ws) != nil || ws.Capabilities.CanEdit {
-			t.Fatalf("%q workspace read = %d body=%s, want canEdit false", side.actor, rec.Code, rec.Body.String())
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &ws) != nil || ws.Capabilities.CanEdit != side.canEdit {
+			t.Fatalf("%q workspace read = %d body=%s, want canEdit %v", side.actor, rec.Code, rec.Body.String(), side.canEdit)
 		}
 		rec = doReq(t, side.h, http.MethodPost, "/api/materials/"+f.material.ID+"/collaboration-token", side.actor, nil)
 		var token struct {
@@ -251,7 +291,6 @@ func TestFrozenOwnersWorkspaceIsReadOnly(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("%q comment = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}
-		// Chat stays open.
 		rec = doReq(t, side.h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/conversations", side.actor,
 			map[string]any{"title": "Ask"})
 		if rec.Code != http.StatusCreated {
@@ -316,57 +355,6 @@ func TestFrozenAccountsRecordStudyProgress(t *testing.T) {
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("%q reset = %d body=%s", side.actor, rec.Code, rec.Body.String())
 		}
-	}
-}
-
-// A member's client has to be able to explain why writes into somebody else's
-// workspace are refused. The bytes land on the owner, so the workspace reports
-// the owner's lifecycle state and usage level rather than the reader's, and
-// /me reports the reader's own usage.
-func TestWorkspaceReportsTheStorageOwnersStateNotTheReaders(t *testing.T) {
-	f := overQuotaFixture(t, 2)
-
-	read := func(h http.Handler, actor string) (string, string) {
-		t.Helper()
-		rec := doReq(t, h, http.MethodGet, "/api/workspaces/"+f.workspaceID, actor, nil)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("get workspace as %q = %d body=%s", actor, rec.Code, rec.Body.String())
-		}
-		var body struct {
-			IsOwner           bool   `json:"isOwner"`
-			StorageOwnerState string `json:"storageOwnerState"`
-			StorageOwnerUsage string `json:"storageOwnerUsage"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-			t.Fatal(err)
-		}
-		if actor != "" && body.IsOwner {
-			t.Fatalf("%q must not read as the owner", actor)
-		}
-		return body.StorageOwnerState, body.StorageOwnerUsage
-	}
-
-	ownerState, ownerUsage := read(f.owner, "")
-	if ownerState != string(store.AccountOverQuotaGrace) || ownerUsage != string(store.StorageUsageFull) {
-		t.Fatalf("owner's own read = %q %q, want grace and full", ownerState, ownerUsage)
-	}
-	memberState, memberUsage := read(f.member, "u_editor")
-	if memberState != ownerState || memberUsage != ownerUsage {
-		t.Errorf("editor sees %q %q, want the owner's %q %q — keying this on the reader "+
-			"hides the only account whose limit blocks the workspace",
-			memberState, memberUsage, ownerState, ownerUsage)
-	}
-
-	rec := doReq(t, f.member, http.MethodGet, "/api/me", "u_editor", nil)
-	var me struct {
-		Account struct {
-			StorageUsage      string `json:"storageUsage"`
-			StorageLimitBytes int64  `json:"storageLimitBytes"`
-		} `json:"account"`
-	}
-	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &me) != nil ||
-		me.Account.StorageUsage == "" || me.Account.StorageLimitBytes <= 0 {
-		t.Fatalf("/me for a healthy account = %d body=%s, want usage filled", rec.Code, rec.Body.String())
 	}
 }
 
@@ -512,9 +500,9 @@ func generatedMaterialID(t *testing.T, body []byte) string {
 	return ""
 }
 
-// Chat stays open in a frozen owner's workspace and in one whose owner is at
-// its storage limit (grace), but the agent loses its create and edit tools:
-// an editor keeps only reading and deleting.
+// Chat stays open to a frozen or grace (at its storage limit) actor, but its
+// agent loses the create and edit tools: what it would create is charged to
+// it (uploader pays). A healthy member in that owner's workspace keeps them.
 func TestReadOnlyWorkspaceChatKeepsReadAndDeleteTools(t *testing.T) {
 	for name, lapsedDays := range map[string]int{"frozen": 20, "grace": 2} {
 		t.Run(name, func(t *testing.T) { chatKeepsReadAndDeleteTools(t, lapsedDays) })
@@ -524,6 +512,7 @@ func TestReadOnlyWorkspaceChatKeepsReadAndDeleteTools(t *testing.T) {
 func chatKeepsReadAndDeleteTools(t *testing.T, lapsedDays int) {
 	f := overQuotaFixture(t, lapsedDays)
 	ctx := context.Background()
+	owner := f.material.CreatedBy
 	var operations []string
 	retrieval := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -545,15 +534,32 @@ func chatKeepsReadAndDeleteTools(t *testing.T, lapsedDays int) {
 	h := httpapi.New(f.store, blob.NewMemory(), pipeline.New(retrieval.URL, ""), nil, "docling",
 		httpapi.Config{
 			AuthDisabled: true, E2EAuth: true, E2ESecret: "e2e-test-secret",
-			E2EUserIDs: []string{"u_editor"}, ModelRegistry: reg,
+			E2EUserIDs: []string{"u_editor", owner}, ModelRegistry: reg,
 		})
-	rec := doAsUser(t, h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/chat/stream", "u_editor",
-		map[string]any{"text": "what is here?"})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("chat = %d body=%s", rec.Code, rec.Body.String())
+	chat := func(actor string) []string {
+		t.Helper()
+		rec := doAsUser(t, h, http.MethodPost, "/api/workspaces/"+f.workspaceID+"/chat/stream", actor,
+			map[string]any{"text": "what is here?"})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("chat as %s = %d body=%s", actor, rec.Code, rec.Body.String())
+		}
+		return operations
 	}
-	want := []string{string(agenttools.OpSourceRead), string(agenttools.OpMaterialRead), string(agenttools.OpResourceTrash)}
-	if !slices.Equal(operations, want) {
-		t.Fatalf("chat operations = %v, want %v", operations, want)
+	// The over-quota actor (it pays for what the agent would create) keeps
+	// reading and deleting; frozen also loses restoring.
+	want := []string{}
+	for _, op := range agenttools.OperationsForRole(string(store.RoleOwner)) {
+		if op == agenttools.OpMaterialCreate || op == agenttools.OpDocumentEdit ||
+			(lapsedDays > 14 && op == agenttools.OpTrashRestore) {
+			continue
+		}
+		want = append(want, string(op))
+	}
+	if got := chat(owner); !slices.Equal(got, want) {
+		t.Fatalf("over-quota owner's chat operations = %v, want %v", got, want)
+	}
+	// A healthy member creates and edits on its own quota.
+	if got := chat("u_editor"); !slices.Contains(got, string(agenttools.OpMaterialCreate)) {
+		t.Fatalf("healthy member's chat operations = %v, want material creation", got)
 	}
 }

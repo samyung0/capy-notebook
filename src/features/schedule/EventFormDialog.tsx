@@ -135,32 +135,22 @@ export function EventFormDialog({
 
   return (
     <SimpleDialog
-      footer={
-        <>
-          <Button
-            onClick={onClose}
-            size="lg"
-            type="button"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={submitDisabled}
-            size="lg"
-            type="submit"
-            variant="accent"
-          >
-            {!isSubmitting && (
-              <span>{isEdit ? m.action_save() : m.action_create()}</span>
-            )}
-            {isSubmitting && (
-              <span>
-                <Spinner />
-              </span>
-            )}
-          </Button>
-        </>
+      action={
+        <Button
+          disabled={submitDisabled}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
+          {!isSubmitting && (
+            <span>{isEdit ? m.action_save() : m.action_create()}</span>
+          )}
+          {isSubmitting && (
+            <span>
+              <Spinner />
+            </span>
+          )}
+        </Button>
       }
       onClose={onClose}
       onSubmit={formSubmit(handleSubmit)}

@@ -13,6 +13,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useLocalPref } from '@/lib/localPrefs';
+import { usePointerDownPress } from '@/lib/usePointerDownPress';
 
 /** The sort menu, filter popover and view toggle shared by the list pages
  * (Workspaces, Create, Files). State lives in the page; this only renders. */
@@ -79,13 +80,13 @@ export function ListToolbar<V extends string>({
   // last deselect does not rebuild its menus.
   return (
     <>
-      {selection && <div className="-mb-3 flex px-4 sm:px-6">{selection}</div>}
+      {selection && <div className="page-px -mb-3 flex">{selection}</div>}
       {/* Phones: icon-only sort and filter with the action on one row, the
           view toggle on its own row at the right (or on the first, without
           an action). From sm, one labelled row. */}
       <div
         className={cn(
-          '-mb-3 flex flex-wrap items-center gap-x-3 px-4 sm:px-6',
+          'page-px -mb-3 flex flex-wrap items-center gap-x-3',
           selection && 'hidden'
         )}
       >
@@ -299,6 +300,7 @@ function ViewButton({
   onClick: () => void;
   className?: string;
 }) {
+  const { onClick: onPress, onPointerDown } = usePointerDownPress()(onClick);
   return (
     <Button
       aria-label={label}
@@ -310,7 +312,8 @@ function ViewButton({
         active && 'bg-surface-hover-bg hover:bg-surface-hover-bg'
       )}
       iconLeft={icon}
-      onClick={onClick}
+      onClick={onPress}
+      onPointerDown={onPointerDown}
       size="sm"
       variant="ghost-hover"
     />

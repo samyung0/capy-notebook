@@ -101,4 +101,16 @@ describe('document mode cache', () => {
     expect(readDocumentMode(item)).toBe('view');
     expect(() => saveDocumentMode(item, 'edit')).not.toThrow();
   });
+
+  it('opens settings at a tab and the progress page from the URL, ignoring other values', () => {
+    expect(
+      parseWorkspaceOpenSearch({ progress: true, settings: 'others' })
+    ).toMatchObject({ progress: true, settings: 'others' });
+    expect(
+      parseWorkspaceOpenSearch({ file: 'f1', settings: 'danger' })
+    ).toMatchObject({ file: 'f1', settings: 'danger' });
+    expect(
+      parseWorkspaceOpenSearch({ progress: 'yes', settings: 'bogus' })
+    ).toEqual({ progress: undefined, settings: undefined });
+  });
 });

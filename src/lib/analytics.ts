@@ -1,6 +1,7 @@
 import { isApiError } from '@/api/client';
 import { errorKind } from '@/lib/errors';
 import { posthogApiHost } from '@/lib/posthogHost';
+import { stripUrlTokens } from '@/lib/urlTokens';
 
 /* Product analytics (PostHog), loaded lazily and allowed to fail silently: a
    meaningful share of users block it, which is why it is never the source of
@@ -145,6 +146,18 @@ export const ingestTracker = createIngestTracker();
 
 type PostHog = typeof import('posthog-js').default;
 
+// A share token is `{id}.{signature}`; the signature is the link's secret
+// (Google's resource key, Sam 2026-10-18), so it never leaves in a page URL.
+/** Drops URL tokens from every string property (page URLs, the referrer,
+ * `?clone=`): share links keep their id, invite links lose their token. */
+export function stripTokenProperties(
+  properties: Record<string, unknown>
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(properties))
+    if (typeof value === 'string') properties[key] = stripUrlTokens(value);
+  return properties;
+}
+
 let posthogPromise: Promise<PostHog | null> | null = null;
 
 /**
@@ -167,6 +180,7 @@ function posthog(): Promise<PostHog | null> {
         // payload.
         mask_all_text: true,
         persistence: 'localStorage',
+        sanitize_properties: stripTokenProperties,
       });
       return client;
     })

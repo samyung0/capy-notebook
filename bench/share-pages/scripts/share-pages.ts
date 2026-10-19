@@ -345,7 +345,8 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
     {
       kind: 'workspace',
       path: String(sharedWorkspace.sharePath),
-      publicApi: `/api/public/workspaces/${workspace.id}/summary`,
+      // The summary API takes the signed token, never the bare id.
+      publicApi: `/api/public/workspaces/${token(sharedWorkspace.sharePath)}/summary`,
     },
     {
       kind: 'quizzes',

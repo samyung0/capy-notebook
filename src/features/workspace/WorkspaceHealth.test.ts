@@ -3,90 +3,42 @@ import { AccountState, StorageUsageLevel } from '@/api/types';
 import { m } from '@/i18n';
 import { refusalHandler, storageStatus } from './WorkspaceHealth';
 
-const owner = (
-  storageOwnerState: AccountState,
-  storageOwnerUsage: StorageUsageLevel,
-  isOwner = false
-) => ({ isOwner, storageOwnerState, storageOwnerUsage });
+const account = (state: AccountState, storageUsage: StorageUsageLevel) => ({
+  state,
+  storageUsage,
+});
 
 describe('workspace storage status', () => {
-  it('ranks own frozen, owner frozen, full or grace, then near', () => {
-    const near = owner(AccountState.active, StorageUsageLevel.near_limit);
-    const frozenOwner = owner(
-      AccountState.over_quota_frozen,
-      StorageUsageLevel.full
-    );
-    expect(storageStatus(near, AccountState.over_quota_frozen)?.kind).toBe(
-      'frozen-self'
-    );
-    expect(storageStatus(frozenOwner, AccountState.active)?.kind).toBe(
-      'frozen-owner'
-    );
+  it("ranks the viewer's own frozen, full or grace, then near", () => {
     expect(
       storageStatus(
-        owner(AccountState.over_quota_grace, StorageUsageLevel.full),
-        AccountState.active
-      )?.kind
-    ).toBe('full');
-    expect(storageStatus(near, AccountState.active)?.kind).toBe('near');
-    expect(
-      storageStatus(
-        owner(AccountState.active, StorageUsageLevel.ok),
-        AccountState.active
-      )
-    ).toBeNull();
-  });
-
-  it('counts grace as full and speaks to members without naming the owner', () => {
-    const grace = storageStatus(
-      owner(AccountState.over_quota_grace, StorageUsageLevel.ok),
-      AccountState.active
-    );
-    expect(grace).toMatchObject({
-      kind: 'full',
-      payer: false,
-      title: m.workspace_storage_owner_full_title(),
-    });
-    expect(
-      storageStatus(
-        owner(AccountState.active, StorageUsageLevel.near_limit),
-        AccountState.active
-      )?.title
-    ).toBe(m.workspace_storage_owner_near_title());
-    expect(
-      storageStatus(
-        owner(AccountState.over_quota_frozen, StorageUsageLevel.full),
-        AccountState.active
-      )?.title
-    ).toBe(m.workspace_storage_owner_frozen_title());
-  });
-
-  it('speaks to the owner about their own storage', () => {
-    expect(
-      storageStatus(
-        owner(AccountState.active, StorageUsageLevel.full, true),
-        AccountState.active
-      )
-    ).toMatchObject({
-      payer: true,
-      title: m.workspace_storage_owner_self_title(),
-    });
-    expect(
-      storageStatus(
-        owner(AccountState.over_quota_frozen, StorageUsageLevel.full, true),
-        undefined
+        account(AccountState.over_quota_frozen, StorageUsageLevel.ok)
       )
     ).toMatchObject({
       kind: 'frozen-self',
       title: m.account_banner_frozen_title(),
     });
+    expect(
+      storageStatus(
+        account(AccountState.over_quota_grace, StorageUsageLevel.ok)
+      )
+    ).toMatchObject({
+      kind: 'full',
+      title: m.workspace_storage_owner_self_title(),
+    });
+    expect(
+      storageStatus(account(AccountState.active, StorageUsageLevel.near_limit))
+        ?.kind
+    ).toBe('near');
+    expect(
+      storageStatus(account(AccountState.active, StorageUsageLevel.ok))
+    ).toBeNull();
   });
 });
 
 describe('workspace refusals', () => {
   const frozen = storageStatus(
-    owner(AccountState.over_quota_frozen, StorageUsageLevel.full),
-    AccountState.active
+    account(AccountState.over_quota_frozen, StorageUsageLevel.full)
   );
   const settle = () => new Promise((resolve) => setTimeout(resolve));
 
@@ -122,8 +74,7 @@ describe('workspace refusals', () => {
       showError
     )('offline refusal');
     const near = storageStatus(
-      owner(AccountState.active, StorageUsageLevel.near_limit),
-      AccountState.active
+      account(AccountState.active, StorageUsageLevel.near_limit)
     );
     for (const status of [null, near])
       refusalHandler(

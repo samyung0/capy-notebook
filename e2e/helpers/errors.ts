@@ -2,7 +2,7 @@ import { expect, type Page } from '@playwright/test';
 
 export async function expectErrorSurface(
   page: Page,
-  variant: 'page' | 'panel',
+  variant: 'page' | 'panel' | 'inline',
   kind?: string,
   timeout?: number
 ) {

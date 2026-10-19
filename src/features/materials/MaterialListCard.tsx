@@ -82,7 +82,7 @@ export const MaterialCard = memo(function MaterialCard({
       actions={<Menu items={menuFor(item)} triggerIcon="moreHorizontal" />}
       details={materialListDetails(item)}
       icon={materialIconName(item.kind)}
-      link={linkFor(item)}
+      link={item.lostAccess ? undefined : linkFor(item)}
       meta={relativeTime(item.updatedAt)}
       pickKey={item.id}
       selected={selected}
@@ -94,6 +94,7 @@ export const MaterialCard = memo(function MaterialCard({
       view={view}
       workspace={item.workspaceName}
       workspaceIconId={workspaceIconId}
+      workspaceLost={item.lostAccess}
     />
   );
 });

@@ -257,6 +257,46 @@
   }
 }
 
+/* Page gutters. Normal: list and overview pages (Dashboard, Workspaces,
+ * Files, the Learning tables, Question bank). Wide: the body under a page's
+ * tabs (Settings, Billing, Learning's Progress and Review) and Notifications.
+ * wide-inset takes a section inside a normal page out to the wide gutter
+ * (Question bank's topic lists). The bleeds pull edge-to-edge content (the
+ * trail maps) back out to the panel's edges. */
+@utility page-px {
+  @apply px-4 sm:px-6;
+}
+
+@utility page-px-wide {
+  @apply px-4 sm:px-6 lg:px-10 xl:px-16;
+}
+
+@utility wide-inset {
+  @apply lg:px-4 xl:px-10;
+}
+
+@utility page-bleed {
+  @apply -mx-4 sm:-mx-6;
+}
+
+@utility page-bleed-wide {
+  @apply -mx-4 sm:-mx-6 lg:-mx-10 xl:-mx-16;
+}
+
+/* A page's tab strip: each tab's own 12px padding makes up the rest, so the
+ * labels line up with page-px. */
+@utility page-tabs-px {
+  @apply px-1 sm:px-3;
+}
+
+/* A dialog's tab strip: bleeds to the card edges like a page's, with the
+ * labels lined up with the dialog's padding. Pair with w-auto. Phones pull
+ * it up to the header, so the labels sit as far below the title as the title
+ * sits below the screen's top. */
+@utility dialog-tabs-bleed {
+  @apply -mx-4 px-1 max-sm:-mt-2 sm:-mx-5.5 sm:px-2.5;
+}
+
 @utility top-inset-bar-shape {
   width: var(--top-inset-bar-width);
   height: var(--top-inset-bar-height);

@@ -54,7 +54,10 @@ export function summaryVitePlugin(
               const { mockWorkspaceSummary } = await server.ssrLoadModule(
                 '/src/mocks/workspaceSummary.ts'
               );
-              const summary = mockWorkspaceSummary(url.pathname.split('/')[4]);
+              // The API takes the share token, {id}.{signature}.
+              const summary = mockWorkspaceSummary(
+                url.pathname.split('/')[4]?.split('.')[0]
+              );
               return summary
                 ? Response.json(summary)
                 : new Response(null, { status: 404 });

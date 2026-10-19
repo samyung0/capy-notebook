@@ -260,6 +260,16 @@ func uid(prefix string) string {
 	return prefix + "_" + hex.EncodeToString(b)
 }
 
+// ObjectKeyID names a bucket object: 128 random bits, since nothing in the
+// bucket stops a later key from overwriting another account's object (the
+// final_path guard ends with the 30-day upload-session prune, and a deck Put
+// has none). Entity and share ids keep uid's length.
+func ObjectKeyID(prefix string) string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return prefix + "_" + hex.EncodeToString(b)
+}
+
 // isNoRows reports whether err is pgx's no-rows sentinel.
 func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 
