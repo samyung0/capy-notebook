@@ -60,8 +60,11 @@ func (a *api) sourceChangeReader(w http.ResponseWriter, r *http.Request, body []
 		return false
 	}
 	ws, err := a.s.ResourceWorkspaceID(r.Context(), agenttools.KindSourceFile, req.FileID, true)
-	if err != nil || ws != req.WorkspaceID {
-		a.fail(w, store.ErrNotFound)
+	if err == nil && ws != req.WorkspaceID {
+		err = store.ErrNotFound
+	}
+	if err != nil {
+		a.fail(w, err)
 		return false
 	}
 	return true

@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -28,9 +29,14 @@ func TestSourceChangeResolveChecksAccessBeforeTheProxy(t *testing.T) {
 			"epoch": 1, "checkpoint": 1, "changeId": "c_1",
 		})
 	}
+	// The owner of both workspaces passes the actor check on the one that does
+	// not hold the file, so that case reaches the file check.
+	if _, err := st.WorkspaceEffectiveRole(context.Background(), "u_owner", "ws_e2e_link"); err != nil {
+		t.Fatalf("fixture: u_owner cannot read ws_e2e_link: %v", err)
+	}
 	for _, tc := range []struct{ name, userID, workspaceID string }{
 		{"actor without access", "u_other", "ws_e2e_private"},
-		{"file outside the workspace", "u_other", "ws_e2e_link"},
+		{"file outside the workspace", "u_owner", "ws_e2e_link"},
 	} {
 		if rec := resolve(tc.userID, tc.workspaceID); rec.Code != http.StatusNotFound || forwarded.Load() != 0 {
 			t.Fatalf("%s: status %d, forwarded %d, body %s", tc.name, rec.Code, forwarded.Load(), rec.Body.String())

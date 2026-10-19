@@ -2601,7 +2601,8 @@ In the Clerk dashboard:
 The gateway refuses startup when normal Clerk authentication has either a
 blank `CLERK_SECRET_KEY` or a blank `CLERK_WEBHOOK_SECRET`. Development with
 `AUTH_DISABLED=true` and the disposable E2E identity mode are the only
-exemptions.
+exemptions. In every mode it also refuses a `CLERK_WEBHOOK_SECRET` that is set
+but is not a Svix signing secret (`whsec_` followed by base64).
 
 #### Running the SPA locally against UAT
 

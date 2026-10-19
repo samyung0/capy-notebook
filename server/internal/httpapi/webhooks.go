@@ -14,6 +14,7 @@ import (
 	svix "github.com/svix/svix-webhooks/go"
 
 	"github.com/samyung0/capy-notebook/server/internal/billing"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -152,7 +153,7 @@ func (a *api) failWebhookClaim(w http.ResponseWriter, err error) {
 const webhookBodyMaxBytes = 1 << 20
 
 // readWebhookBody reads a delivery under webhookBodyMaxBytes, or answers 413
-// (400 for a body that could not be read) and reports false.
+// (400, logged, for a body that could not be read) and reports false.
 func readWebhookBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, webhookBodyMaxBytes))
 	var tooLarge *http.MaxBytesError
@@ -160,6 +161,9 @@ func readWebhookBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	case errors.As(err, &tooLarge):
 		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"message": "body too large"})
 	case err != nil:
+		// A dropped or stalled upload is the client's failure, not a 500; the
+		// log keeps it visible and the provider retries the delivery.
+		obs.Log(r.Context()).Warn("webhook body unreadable", "path", r.URL.Path, "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "read body"})
 	default:
 		return body, true
