@@ -167,8 +167,10 @@ type Projection struct {
 // NewProjection canonicalizes structurally valid content without applying
 // product caps: the collaboration service already enforces those caps and
 // permits valid shrink-only recovery for documents that start over a limit.
+// Its figures are checked as a room holds them (a room's projection; a write
+// from outside a room runs ValidateKind too).
 func NewProjection(doc Envelope) (Projection, error) {
-	if err := Validate(doc); err != nil {
+	if err := validate(doc, true); err != nil {
 		return Projection{}, err
 	}
 	doc.Value = stripRuntimeCommentMarks(doc.Value)
@@ -264,18 +266,32 @@ func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
 	return result
 }
 
-// Parse decodes and validates a stored document with Validate, its field caps
-// included (interactive html size and count, card text, quiz bounds, widths),
+// Parse decodes and validates a stored document as Validate does, its field
+// caps included (interactive html size and count, card text, quiz bounds, widths),
 // so a stored document breaking one does not decode. The document size limits
 // (bytes, nodes, depth: DocumentMetrics.LimitError) gate writes only: a read
 // that refused them would turn an over-limit material into a blank page.
 // Inbound request bodies are bounded by the HTTP layer, not here.
+//
+// A stored note's figures are read as a room holds them (questions.Policy
+// Live, Epo 2026-10-18): the projection keeps what a merge leaves that the
+// repair keeps. ParseWrite checks an agent's blocks strictly.
 func Parse(raw string) (Envelope, error) {
+	return parse(raw, true)
+}
+
+// ParseWrite is Parse for a document a writer sends from outside a room (an
+// agent's blocks): its figures strictly, as Validate checks them.
+func ParseWrite(raw string) (Envelope, error) {
+	return parse(raw, false)
+}
+
+func parse(raw string, live bool) (Envelope, error) {
 	doc, err := decode(raw)
 	if err != nil {
 		return Envelope{}, err
 	}
-	if err := Validate(doc); err != nil {
+	if err := validate(doc, live); err != nil {
 		return Envelope{}, err
 	}
 	return doc, nil
@@ -299,7 +315,14 @@ func decode(raw string) (Envelope, error) {
 	return doc, nil
 }
 
+// Validate checks a document a writer sends, its figures strictly.
 func Validate(doc Envelope) error {
+	return validate(doc, false)
+}
+
+// validate checks a document; live takes its note figures as a room holds
+// them (questions.Policy Live).
+func validate(doc Envelope, live bool) error {
 	if doc.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("%w: unsupported schemaVersion %d", ErrInvalid, doc.SchemaVersion)
 	}
@@ -308,7 +331,7 @@ func Validate(doc Envelope) error {
 	}
 	embeds := 0
 	for i, node := range doc.Value {
-		if err := validateNode(node, 0); err != nil {
+		if err := validateNode(node, 0, live); err != nil {
 			return fmt.Errorf("%w: value[%d]: %v", ErrInvalid, i, err)
 		}
 		if node["type"] == HTMLEmbedType {
@@ -353,9 +376,12 @@ func Validate(doc Envelope) error {
 	return nil
 }
 
-// ValidateKind ensures artifact rows contain their canonical custom element.
+// ValidateKind ensures artifact rows contain their canonical custom element:
+// a whole document a writer sends through the content API (create, update).
+// A note takes its figures as a room holds them (Epo 2026-10-18); agent
+// block writes check theirs with ParseWrite.
 func ValidateKind(raw, kind string) error {
-	doc, err := Parse(raw)
+	doc, err := parse(raw, kind == "note")
 	if err != nil {
 		return err
 	}
@@ -587,7 +613,7 @@ func ResolvePendingRefs(raw string, ids []string) (string, error) {
 	return Marshal(doc)
 }
 
-func validateNode(node map[string]any, depth int) error {
+func validateNode(node map[string]any, depth int, live bool) error {
 	if depth > depthCeiling {
 		return errors.New("document nesting is too deep to decode")
 	}
@@ -618,12 +644,17 @@ func validateNode(node map[string]any, depth int) error {
 		if !ok {
 			return fmt.Errorf("children[%d] must be an object", i)
 		}
-		if err := validateNode(m, depth+1); err != nil {
+		if err := validateNode(m, depth+1, live); err != nil {
 			return fmt.Errorf("children[%d]: %w", i, err)
 		}
 	}
 	if !hasTextDescendant(node) {
 		return errors.New("element must contain a text descendant")
+	}
+	// Any block's indent (lists, indented paragraphs) stops at the
+	// catalog's ListIndentMax (Epo 2026-10-18).
+	if indent, ok := number(node["indent"]); ok && indent > embeds.ListIndentMax {
+		return fmt.Errorf("indent is over %d levels", embeds.ListIndentMax)
 	}
 	element, known := elements[typ]
 	if !known {
@@ -631,7 +662,7 @@ func validateNode(node map[string]any, depth int) error {
 		// readable; every write refuses it (validateKind, Epo 2026-10-13).
 		return nil
 	}
-	if err := validateElement(node, typ, depth, children); err != nil {
+	if err := validateElement(node, typ, depth, children, live); err != nil {
 		return err
 	}
 	return validateCatalogKeys(node, element, depth)
@@ -674,7 +705,7 @@ func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error
 }
 
 // validateElement checks one element's own values.
-func validateElement(node map[string]any, typ string, depth int, children []any) error {
+func validateElement(node map[string]any, typ string, depth int, children []any, live bool) error {
 	switch typ {
 	case "quiz":
 		return validateQuiz(node)
@@ -703,7 +734,7 @@ func validateElement(node map[string]any, typ string, depth int, children []any)
 		if err := validateMediaWidth(node); err != nil {
 			return err
 		}
-		if err := questions.ValidateBlock(block, questions.Policy{}); err != nil {
+		if err := questions.ValidateBlock(block, questions.Policy{Live: live}); err != nil {
 			return err
 		}
 		// A note draws a graph from its own SVG; a URL image is for questions.
@@ -1164,103 +1195,6 @@ func ExtractNoteText(raw string) (string, error) {
 		text.WriteString(nodeText(node))
 	}
 	return text.String(), nil
-}
-
-// ExtractIndexText renders a note as markdown-like plain text for retrieval
-// chunking: headings keep their level, list items their bullets, table rows
-// their cells and code its fence. References, diagrams, interactive blocks and
-// media carry no text and are skipped.
-func ExtractIndexText(raw string) (string, error) {
-	doc, err := Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	var blocks []string
-	for _, node := range doc.Value {
-		writeIndexBlock(node, &blocks)
-	}
-	return strings.Join(blocks, "\n\n"), nil
-}
-
-var (
-	indexContainers = set("callout", "column_group", "column")
-	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "audio", "video",
-		"mermaid", HTMLEmbedType, RefType, "quiz", "flashcards")
-)
-
-func writeIndexBlock(node map[string]any, out *[]string) {
-	typ, _ := node["type"].(string)
-	switch {
-	case typ == "chart" || typ == "plot" || typ == "graph":
-		key := "title"
-		if typ == "graph" {
-			key = "description"
-		}
-		block, _ := node["block"].(map[string]any)
-		if text, ok := block[key].(string); ok && strings.TrimSpace(text) != "" {
-			*out = append(*out, text)
-		}
-		return
-	case indexSkipped[typ]:
-		return
-	case indexContainers[typ]:
-		for _, child := range children(node) {
-			writeIndexBlock(child, out)
-		}
-		return
-	case typ == "table":
-		var rows []string
-		for _, tr := range children(node) {
-			var cells []string
-			for _, td := range children(tr) {
-				cells = append(cells, strings.TrimSpace(nodeText(td)))
-			}
-			if len(cells) > 0 {
-				rows = append(rows, "| "+strings.Join(cells, " | ")+" |")
-			}
-		}
-		if len(rows) > 0 {
-			*out = append(*out, strings.Join(rows, "\n"))
-		}
-		return
-	case typ == "code_block":
-		var lines []string
-		for _, line := range children(node) {
-			lines = append(lines, nodeText(line))
-		}
-		lang, _ := node["lang"].(string)
-		*out = append(*out, "```"+lang+"\n"+strings.Join(lines, "\n")+"\n```")
-		return
-	}
-	text := strings.TrimSpace(nodeText(node))
-	if text == "" {
-		return
-	}
-	switch {
-	case len(typ) == 2 && typ[0] == 'h' && typ[1] >= '1' && typ[1] <= '6':
-		text = strings.Repeat("#", int(typ[1]-'0')) + " " + text
-	case typ == "blockquote":
-		text = "> " + text
-	case typ == "p":
-		if style, _ := node["listStyleType"].(string); style != "" {
-			indent := 0
-			if n, ok := number(node["indent"]); ok && n > 1 {
-				indent = int(n) - 1
-			}
-			prefix := "- "
-			switch style {
-			case "decimal":
-				prefix = "1. "
-			case "todo":
-				prefix = "- [ ] "
-				if checked, _ := node["checked"].(bool); checked {
-					prefix = "- [x] "
-				}
-			}
-			text = strings.Repeat("  ", indent) + prefix + text
-		}
-	}
-	*out = append(*out, text)
 }
 
 func IncomingNoteText(content string) string {

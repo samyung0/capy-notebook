@@ -4,6 +4,7 @@ export const EMBED_CATALOG = {
   "elements": [
     {
       "type": "p",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -14,6 +15,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h1",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -24,6 +26,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h2",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -34,6 +37,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h3",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -44,6 +48,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h4",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -54,6 +59,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h5",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -64,6 +70,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h6",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -74,6 +81,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "blockquote",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -84,6 +92,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "hr",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -95,6 +104,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "code_block",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -105,6 +115,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "code_line",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -115,6 +126,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "table",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -125,6 +137,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "tr",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -135,6 +148,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "td",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -145,6 +159,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "th",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -155,6 +170,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "toc",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -166,6 +182,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "callout",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -176,6 +193,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "column_group",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -186,6 +204,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "column",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -196,6 +215,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "equation",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -207,6 +227,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "inline_equation",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -219,6 +240,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "a",
+      "index": "text",
       "inline": true,
       "materials": [
         "note",
@@ -230,6 +252,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mention",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -242,6 +265,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mention_input",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -254,6 +278,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "slash_input",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -266,6 +291,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "img",
+      "index": "none",
       "void": true,
       "required": [
         "assetId"
@@ -288,6 +314,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "audio",
+      "index": "none",
       "void": true,
       "required": [
         "assetId"
@@ -310,6 +337,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "video",
+      "index": "none",
       "void": true,
       "required": [
         "provider",
@@ -331,6 +359,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "placeholder",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -342,6 +371,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "chart",
+      "index": "figure",
       "void": true,
       "topLevel": true,
       "required": [
@@ -354,6 +384,12 @@ export const EMBED_CATALOG = {
         "block",
         "children",
         "width"
+      ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "series"
       ],
       "resizable": true,
       "materials": [
@@ -366,6 +402,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "plot",
+      "index": "figure",
       "void": true,
       "topLevel": true,
       "required": [
@@ -378,6 +415,12 @@ export const EMBED_CATALOG = {
         "block",
         "children",
         "width"
+      ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "series"
       ],
       "resizable": true,
       "materials": [
@@ -390,6 +433,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "graph",
+      "index": "figure",
       "void": true,
       "topLevel": true,
       "required": [
@@ -403,6 +447,12 @@ export const EMBED_CATALOG = {
         "children",
         "width"
       ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "elements"
+      ],
       "resizable": true,
       "materials": [
         "note",
@@ -414,6 +464,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "html_embed",
+      "index": "none",
       "void": true,
       "topLevel": true,
       "required": [
@@ -437,6 +488,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mermaid",
+      "index": "mermaid",
       "required": [
         "id",
         "source"
@@ -463,6 +515,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mermaid_caption",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -473,6 +526,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "material_ref",
+      "index": "item",
       "void": true,
       "topLevel": true,
       "required": [
@@ -489,6 +543,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "quiz",
+      "index": "text",
       "required": [
         "id"
       ],
@@ -507,6 +562,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "quiz_question",
+      "index": "question",
       "void": true,
       "required": [
         "id",
@@ -537,6 +593,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "flashcards",
+      "index": "text",
       "required": [
         "id"
       ],
@@ -554,6 +611,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "flashcard",
+      "index": "text",
       "required": [
         "id"
       ],
@@ -575,12 +633,14 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "flashcard_front",
+      "index": "text",
       "materials": [
         "flashcards"
       ]
     },
     {
       "type": "flashcard_back",
+      "index": "text",
       "materials": [
         "flashcards"
       ]
@@ -589,7 +649,7 @@ export const EMBED_CATALOG = {
   "embeds": [
     {
       "kind": "chart",
-      "class": "value",
+      "class": "live_map",
       "element": "chart",
       "fence": {
         "lang": "chart",
@@ -702,7 +762,7 @@ export const EMBED_CATALOG = {
     },
     {
       "kind": "plot",
-      "class": "value",
+      "class": "live_map",
       "element": "plot",
       "fence": {
         "lang": "plot",
@@ -719,7 +779,9 @@ export const EMBED_CATALOG = {
         "export"
       ],
       "edit": {
-        "user": [],
+        "user": [
+          "note"
+        ],
         "agent": [
           "create_material",
           "edit_document",
@@ -746,7 +808,7 @@ export const EMBED_CATALOG = {
                   ]
                 },
                 "label": {
-                  "maxLength": 1000,
+                  "maxLength": 60,
                   "type": "string"
                 },
                 "value": {
@@ -768,7 +830,7 @@ export const EMBED_CATALOG = {
               "additionalProperties": false,
               "properties": {
                 "label": {
-                  "maxLength": 1000,
+                  "maxLength": 60,
                   "type": "string"
                 },
                 "x": {
@@ -794,7 +856,7 @@ export const EMBED_CATALOG = {
               "additionalProperties": false,
               "properties": {
                 "name": {
-                  "maxLength": 1000,
+                  "maxLength": 60,
                   "type": "string"
                 },
                 "points": {
@@ -822,22 +884,22 @@ export const EMBED_CATALOG = {
             "type": "array"
           },
           "title": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "type": {
             "const": "plot"
           },
           "unit": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "xTitle": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "yTitle": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           }
         },
@@ -853,7 +915,7 @@ export const EMBED_CATALOG = {
     },
     {
       "kind": "graph",
-      "class": "value",
+      "class": "live_map",
       "element": "graph",
       "fence": {
         "lang": "graph",
@@ -1019,6 +1081,7 @@ export const EMBED_CATALOG = {
     "CARD_FRONT_MAX": 4000,
     "HTML_EMBED_MAX_BYTES": 65536,
     "HTML_EMBED_MAX_COUNT": 10,
+    "LIST_INDENT_MAX": 8,
     "MEDIA_WIDTH_MAX": 100,
     "MEDIA_WIDTH_MIN": 20,
     "QUESTION_ANSWERS_MAX": 100,
@@ -1046,9 +1109,11 @@ export const EMBED_CATALOG = {
     "QUESTION_MARK_ITEM_MAX": 1000,
     "QUESTION_METADATA_MAX": 1000,
     "QUESTION_PARTS_MAX": 26,
+    "QUESTION_PLOT_LABEL_MAX": 60,
     "QUESTION_PLOT_MARKS_MAX": 8,
     "QUESTION_PLOT_POINTS_MAX": 60,
     "QUESTION_PLOT_SERIES_MAX": 4,
+    "QUESTION_PLOT_TITLE_MAX": 100,
     "QUESTION_SVG_BYTES_MAX": 262144,
     "QUESTION_TABLE_COLUMNS_MAX": 10,
     "QUESTION_TABLE_ROWS_MAX": 30,

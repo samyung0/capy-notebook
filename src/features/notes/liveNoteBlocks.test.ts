@@ -171,3 +171,32 @@ it('reads blocks exactly as the patched slate-yjs does, without slate', () => {
   for (const { insert } of root.toDelta() as { insert: Y.XmlText }[])
     expect(yTextElement(insert)).toEqual(yTextToSlateElement(insert));
 });
+
+it('reads a live figure block as its value, repaired, and again when a peer changes it', () => {
+  const chart = {
+    block: {
+      kind: 'bar',
+      labels: ['Jan', 'Feb'],
+      series: [{ name: 'Rain', values: [1, 2] }],
+      title: 'Sales',
+      type: 'chart',
+    },
+    children: [{ text: '' }],
+    id: 'c',
+    type: 'chart',
+  };
+  const { block, blocks, send } = setup([p('a', 'one'), chart]);
+  const painted = normalizeMaterialValue([p('a', 'one'), chart] as never);
+  const value = blocks.handOver(painted);
+  expect(value[1]).toBe(painted[1]);
+  // A merge left a series longer than its labels: read cut to them.
+  const series = (
+    block(1).getAttribute('block') as unknown as Y.Map<unknown>
+  ).get('series') as Y.Array<Y.Map<unknown>>;
+  series.get(0).set('values', [5, 6, 7]);
+  send();
+  expect(blocks.value[0]).toBe(value[0]);
+  expect(blocks.value[1]).toMatchObject({
+    block: { ...chart.block, series: [{ name: 'Rain', values: [5, 6] }] },
+  });
+});

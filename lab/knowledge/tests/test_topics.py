@@ -315,7 +315,7 @@ def test_a_shared_topic_is_reused_as_its_subject_defines_it():
 
 def test_the_loader_never_moves_a_topic_and_never_upserts_a_shared_one(tmp_path):
     import knowledge_base_library as library
-    from knowledge_base_batch import save_json
+    from knowledge_base_common import save_json
 
     own = proposal("venture-financing", "Venture financing")
     shared = {**OTHERS["business-models"], "shared": True}

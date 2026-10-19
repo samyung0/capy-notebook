@@ -70,9 +70,13 @@ const (
 	QuestionGraphDimensionMax = 1_200
 	// A plot block: curves of [x, y] points, and reference lines and
 	// labelled points, each list at most QuestionPlotMarks long.
-	QuestionPlotSeries     = 4
-	QuestionPlotPoints     = 60
-	QuestionPlotMarks      = 8
+	QuestionPlotSeries = 4
+	QuestionPlotPoints = 60
+	QuestionPlotMarks  = 8
+	// A plot's title, axis titles and unit, and each series name and line or
+	// mark label, bounded as a chart's (Epo 2026-10-17).
+	QuestionPlotTitle      = QuestionChartTitle
+	QuestionPlotLabel      = QuestionChartSeriesName
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
@@ -125,6 +129,8 @@ var QuestionBounds = map[string]int{
 	"QUESTION_PLOT_SERIES_MAX":       QuestionPlotSeries,
 	"QUESTION_PLOT_POINTS_MAX":       QuestionPlotPoints,
 	"QUESTION_PLOT_MARKS_MAX":        QuestionPlotMarks,
+	"QUESTION_PLOT_TITLE_MAX":        QuestionPlotTitle,
+	"QUESTION_PLOT_LABEL_MAX":        QuestionPlotLabel,
 	"QUESTION_SVG_BYTES_MAX":         QuestionSVGBytes,
 	"QUESTION_IMAGE_DIMENSION_MAX":   QuestionImageDimension,
 	"QUESTION_ASSET_URL_MAX":         QuestionAssetURL,

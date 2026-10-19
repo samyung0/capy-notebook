@@ -1,0 +1,841 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "value": [
+      {
+        "id": "fx_h1",
+        "type": "h1",
+        "children": [
+          {
+            "text": "Every block heading one"
+          }
+        ]
+      },
+      {
+        "id": "fx_toc",
+        "type": "toc",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_h2",
+        "type": "h2",
+        "children": [
+          {
+            "text": "Every block heading two"
+          }
+        ]
+      },
+      {
+        "id": "fx_h3",
+        "type": "h3",
+        "children": [
+          {
+            "text": "Every block heading three"
+          }
+        ]
+      },
+      {
+        "id": "fx_h4",
+        "type": "h4",
+        "children": [
+          {
+            "text": "Every block heading four"
+          }
+        ]
+      },
+      {
+        "id": "fx_h5",
+        "type": "h5",
+        "children": [
+          {
+            "text": "Every block heading five"
+          }
+        ]
+      },
+      {
+        "id": "fx_h6",
+        "type": "h6",
+        "children": [
+          {
+            "text": "Every block heading six"
+          }
+        ]
+      },
+      {
+        "id": "fx_marks",
+        "type": "p",
+        "align": "center",
+        "children": [
+          {
+            "text": "Marks: "
+          },
+          {
+            "text": "bold",
+            "bold": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "italic",
+            "italic": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "underline",
+            "underline": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "strike",
+            "strikethrough": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "code",
+            "code": true
+          },
+          {
+            "text": " x"
+          },
+          {
+            "text": "2",
+            "superscript": true
+          },
+          {
+            "text": " H"
+          },
+          {
+            "text": "2",
+            "subscript": true
+          },
+          {
+            "text": "O "
+          },
+          {
+            "text": "highlight",
+            "highlight": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "Ctrl",
+            "kbd": true
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "red",
+            "color": "#c0392b"
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "shaded",
+            "backgroundColor": "#fdebd0"
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "large",
+            "fontSize": "20px"
+          },
+          {
+            "text": " "
+          },
+          {
+            "text": "serif",
+            "fontFamily": "serif"
+          }
+        ]
+      },
+      {
+        "id": "fx_inlines",
+        "type": "p",
+        "children": [
+          {
+            "text": "Inlines: "
+          },
+          {
+            "type": "a",
+            "url": "https://example.com/every-block",
+            "children": [
+              {
+                "text": "a link"
+              }
+            ]
+          },
+          {
+            "text": ", "
+          },
+          {
+            "type": "mention",
+            "key": "user_every_block",
+            "value": "Every Block Reader",
+            "children": [
+              {
+                "text": ""
+              }
+            ]
+          },
+          {
+            "text": " and "
+          },
+          {
+            "type": "inline_equation",
+            "texExpression": "e^{i\\pi}+1=0",
+            "children": [
+              {
+                "text": ""
+              }
+            ]
+          },
+          {
+            "text": "."
+          }
+        ]
+      },
+      {
+        "id": "fx_bullet",
+        "type": "p",
+        "indent": 1,
+        "listStyleType": "disc",
+        "children": [
+          {
+            "text": "Bulleted item"
+          }
+        ]
+      },
+      {
+        "id": "fx_number",
+        "type": "p",
+        "indent": 1,
+        "listStyleType": "decimal",
+        "listStart": 1,
+        "children": [
+          {
+            "text": "Numbered item"
+          }
+        ]
+      },
+      {
+        "id": "fx_todo",
+        "type": "p",
+        "indent": 1,
+        "listStyleType": "todo",
+        "checked": true,
+        "children": [
+          {
+            "text": "Done task"
+          }
+        ]
+      },
+      {
+        "id": "fx_quote",
+        "type": "blockquote",
+        "children": [
+          {
+            "type": "p",
+            "children": [
+              {
+                "text": "A quoted line"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fx_hr",
+        "type": "hr",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_code",
+        "type": "code_block",
+        "lang": "javascript",
+        "children": [
+          {
+            "type": "code_line",
+            "children": [
+              {
+                "text": "const tide = 'high';"
+              }
+            ]
+          },
+          {
+            "type": "code_line",
+            "children": [
+              {
+                "text": "console.log(tide);"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fx_table",
+        "type": "table",
+        "children": [
+          {
+            "type": "tr",
+            "children": [
+              {
+                "type": "th",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Site"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "th",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Salinity"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "tr",
+            "children": [
+              {
+                "type": "td",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Marsh"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "td",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "12"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fx_callout",
+        "type": "callout",
+        "variant": "tip",
+        "children": [
+          {
+            "type": "p",
+            "children": [
+              {
+                "text": "A callout tip"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fx_columns",
+        "type": "column_group",
+        "children": [
+          {
+            "type": "column",
+            "width": "50%",
+            "children": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Left column"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "column",
+            "width": "50%",
+            "children": [
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Right column"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fx_equation",
+        "type": "equation",
+        "texExpression": "\\int_0^1 x\\,dx = \\tfrac{1}{2}",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_image",
+        "type": "img",
+        "assetId": "asset_every_block_image",
+        "name": "marsh.png",
+        "contentType": "image/png",
+        "sizeBytes": 1024,
+        "width": "60%",
+        "caption": [
+          {
+            "text": "A marsh"
+          }
+        ],
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_audio",
+        "type": "audio",
+        "assetId": "asset_every_block_audio",
+        "name": "tide.wav",
+        "contentType": "audio/wav",
+        "sizeBytes": 2048,
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_video",
+        "type": "video",
+        "provider": "youtube",
+        "videoId": "dQw4w9WgXcQ",
+        "width": "80%",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_mermaid",
+        "type": "mermaid",
+        "source": "flowchart LR\n  Tide --> Marsh",
+        "theme": "linearLight",
+        "width": "70%",
+        "children": [
+          {
+            "type": "mermaid_caption",
+            "children": [
+              {
+                "text": "Tide flow"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fx_chart",
+        "type": "chart",
+        "width": "60%",
+        "block": {
+          "type": "chart",
+          "kind": "line",
+          "title": "Salinity",
+          "labels": ["a", "b"],
+          "series": [
+            {
+              "name": "S",
+              "values": [1, 2]
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_graph",
+        "type": "graph",
+        "block": {
+          "type": "graph",
+          "board": {
+            "bbox": [-5, 5, 5, -5],
+            "axis": true,
+            "grid": false
+          },
+          "elements": [
+            {
+              "type": "point",
+              "id": "a",
+              "coords": [0, 0]
+            },
+            {
+              "type": "point",
+              "id": "b",
+              "coords": [1, 1]
+            },
+            {
+              "type": "line",
+              "id": "line",
+              "points": ["a", "b"]
+            }
+          ],
+          "image": {
+            "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 320 190\"><rect width=\"320\" height=\"190\" fill=\"#eeeeee\"/></svg>"
+          },
+          "width": 320,
+          "height": 190,
+          "description": "A line through two points"
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_html",
+        "type": "html_embed",
+        "caption": "Every block snippet",
+        "html": "<style>html,body{margin:0}</style><div id=\"every\" style=\"height:120px\">Every block snippet</div>",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_quiz",
+        "type": "material_ref",
+        "refKind": "quiz",
+        "materialId": "mat_quiz",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_cards",
+        "type": "material_ref",
+        "refKind": "flashcards",
+        "materialId": "mat_cards",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "id": "fx_end",
+        "type": "p",
+        "children": [
+          {
+            "text": "Every block end"
+          }
+        ]
+      },
+      {
+        "type": "plot",
+        "id": "cat_plot",
+        "block": {
+          "type": "plot",
+          "title": "Action potential",
+          "xTitle": "Time (ms)",
+          "yTitle": "Membrane potential (mV)",
+          "series": [
+            {
+              "name": "Vm",
+              "points": [[0, -70], [1, 30], [2, -80]]
+            }
+          ],
+          "lines": [
+            {
+              "axis": "y",
+              "value": -55,
+              "label": "Threshold"
+            }
+          ],
+          "marks": [
+            {
+              "x": 1,
+              "y": 30,
+              "label": "Peak"
+            }
+          ]
+        },
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "placeholder",
+        "id": "cat_upload",
+        "mediaType": "img",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "p",
+        "id": "cat_inputs",
+        "children": [
+          {
+            "text": "Ask "
+          },
+          {
+            "type": "mention_input",
+            "trigger": "@",
+            "children": [
+              {
+                "text": ""
+              }
+            ]
+          },
+          {
+            "text": " or "
+          },
+          {
+            "type": "slash_input",
+            "trigger": "/",
+            "children": [
+              {
+                "text": ""
+              }
+            ]
+          },
+          {
+            "text": ""
+          }
+        ]
+      }
+    ]
+  },
+  "items": {
+    "mat_quiz": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "quiz",
+          "id": "quiz",
+          "children": [
+            {
+              "type": "quiz_question",
+              "id": "q_every",
+              "question": {
+                "id": "q_every",
+                "labels": "letters",
+                "layout": "paper",
+                "stem": [],
+                "parts": [
+                  {
+                    "id": "q_every:part:1",
+                    "marks": 1,
+                    "solution": [],
+                    "blocks": [
+                      {
+                        "type": "text",
+                        "text": "A salt marsh floods with the tide."
+                      }
+                    ],
+                    "answer": {
+                      "type": "boolean",
+                      "correct": true
+                    }
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "text": ""
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "mat_cards": {
+      "schemaVersion": 1,
+      "value": [
+        {
+          "type": "flashcards",
+          "id": "cards",
+          "children": [
+            {
+              "type": "flashcard",
+              "id": "c0",
+              "children": [
+                {
+                  "type": "flashcard_front",
+                  "children": [
+                    {
+                      "text": "Salt marsh"
+                    }
+                  ]
+                },
+                {
+                  "type": "flashcard_back",
+                  "children": [
+                    {
+                      "text": "Coastal grassland flooded by tides"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "blocks": [
+    {
+      "id": "fx_h1",
+      "text": "# Every block heading one"
+    },
+    {
+      "id": "fx_h2",
+      "text": "## Every block heading two"
+    },
+    {
+      "id": "fx_h3",
+      "text": "### Every block heading three"
+    },
+    {
+      "id": "fx_h4",
+      "text": "#### Every block heading four"
+    },
+    {
+      "id": "fx_h5",
+      "text": "##### Every block heading five"
+    },
+    {
+      "id": "fx_h6",
+      "text": "###### Every block heading six"
+    },
+    {
+      "id": "fx_marks",
+      "text": "Marks: bold italic underline strike code x2 H2O highlight Ctrl red shaded large serif"
+    },
+    {
+      "id": "fx_inlines",
+      "text": "Inlines: a link,  and ."
+    },
+    {
+      "id": "fx_bullet",
+      "text": "- Bulleted item"
+    },
+    {
+      "id": "fx_number",
+      "text": "1. Numbered item"
+    },
+    {
+      "id": "fx_todo",
+      "text": "- [x] Done task"
+    },
+    {
+      "id": "fx_quote",
+      "text": "\u003e A quoted line"
+    },
+    {
+      "id": "fx_code",
+      "text": "```javascript\nconst tide = 'high';\nconsole.log(tide);\n```"
+    },
+    {
+      "id": "fx_table",
+      "text": "| Site | Salinity |\n| Marsh | 12 |"
+    },
+    {
+      "id": "fx_callout",
+      "text": "A callout tip"
+    },
+    {
+      "id": "fx_columns",
+      "text": "Left column\n\nRight column"
+    },
+    {
+      "id": "fx_mermaid",
+      "text": "Tide flow\n```mermaid\nflowchart LR\n  Tide --\u003e Marsh\n```"
+    },
+    {
+      "id": "fx_chart",
+      "text": "Salinity\n|  | S |\n| --- | --- |\n| a | 1 |\n| b | 2 |"
+    },
+    {
+      "id": "fx_graph",
+      "text": "A line through two points\npoint: (0, 0)\npoint: (1, 1)\nline: (0, 0), (1, 1)"
+    },
+    {
+      "id": "fx_quiz",
+      "text": "A salt marsh floods with the tide."
+    },
+    {
+      "id": "fx_cards",
+      "text": "Salt marsh\nCoastal grassland flooded by tides"
+    },
+    {
+      "id": "fx_end",
+      "text": "Every block end"
+    },
+    {
+      "id": "cat_plot",
+      "text": "Action potential\nx: Time (ms)\ny: Membrane potential (mV)\nVm: (0, -70), (1, 30), (2, -80)\ny = -55: Threshold\n(1, 30): Peak"
+    },
+    {
+      "id": "cat_inputs",
+      "text": "Ask  or"
+    }
+  ]
+}

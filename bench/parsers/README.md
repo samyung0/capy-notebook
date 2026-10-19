@@ -129,7 +129,7 @@ uses `compare_selective_recovery.py` with 16 manually selected visual crops.
 The report records MinerU and Qwen commands, source licences, timing boundaries
 and language settings. Qwen now uses normal API calls with thinking disabled
 and strict JSON Schema; `normal --workers 4 --output PATH` runs prepared crops.
-Historical Batch collection remains available, with new submissions retired.
+The Batch collection mode is deleted; earlier Batch receipts stay as local files.
 The [normal API review](reports/2026-09-16-qwen-normal-recovery.md) separates
 schema validity, exact source mathematics and complete table associations.
 Downloaded PDFs and provider receipts stay under ignored local directories;

@@ -1,6 +1,7 @@
 import { serializeMd } from '@platejs/markdown';
 import { createSlateEditor } from 'platejs';
 import { describe, expect, it } from 'vitest';
+import { LIST_INDENT_MAX } from '@/features/materials/document';
 import { StaticMaterialKit } from '@/features/materials/staticPlugins';
 import { noteMarkdownPlugin } from './markdown';
 import { convertAgentMarkdown, markdownToDocument } from './markdownConvert';
@@ -39,6 +40,19 @@ describe('markdownToDocument', () => {
       refKind: 'quiz',
     });
     expect(value[6]).toMatchObject({ refKind: 'flashcards' });
+  });
+
+  // Epo 2026-10-19: an import repairs an indent past the limit on entry, and
+  // the editor's import and the collaboration server's bundle share this code.
+  it('clamps a list nested past LIST_INDENT_MAX', () => {
+    const depth = LIST_INDENT_MAX + 2;
+    const source = Array.from(
+      { length: depth },
+      (_, level) => `${'  '.repeat(level)}- level ${level + 1}`
+    ).join('\n');
+    const indents = markdownToDocument(source).value.map((node) => node.indent);
+    expect(indents).toHaveLength(depth);
+    expect(Math.max(...(indents as number[]))).toBe(LIST_INDENT_MAX);
   });
 
   it('builds interactive blocks from html-embed fences and writes the same fence back', () => {

@@ -4,6 +4,7 @@
  * JessieCode with explicit `*`, which `validGraphTerm` checks. */
 import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
+import { sameJson } from '@/lib/sameJson';
 import type { GraphElement } from './types';
 
 type Node =
@@ -760,6 +761,31 @@ function parsedOf(
         points: element.points.map(nameOf),
       };
   }
+}
+
+/** The rows for elements a peer's change rebased into the dialog's draft
+ * (Epo 2026-10-17): a row whose element is unchanged stays as typed, a row
+ * giving no element yet (unfinished, or not drawable) stays where it was, and
+ * the rest come from the elements. The same rows when nothing changed. */
+export function syncRows(
+  rows: GraphRow[],
+  elements: GraphElement[]
+): GraphRow[] {
+  const built = new Map(
+    buildElements(rows).elements.map((element) => [element.id, element])
+  );
+  const ids = new Set(elements.map((element) => element.id));
+  const next = rowsFromElements(elements).map((row, i) => {
+    const held = rows.find((item) => item.key === row.key);
+    return held && sameJson(built.get(row.key), elements[i]) ? held : row;
+  });
+  rows.forEach((row, at) => {
+    if (!(built.has(row.key) || ids.has(row.key)))
+      next.splice(Math.min(at, next.length), 0, row);
+  });
+  return next.length === rows.length && next.every((row, i) => row === rows[i])
+    ? rows
+    : next;
 }
 
 /** The recipe the rows describe, and the rows that cannot be drawn. */

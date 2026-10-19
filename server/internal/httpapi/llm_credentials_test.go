@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -119,5 +120,18 @@ func TestKeyErrorFromEvent(t *testing.T) {
 		&eventErr,
 	) || eventErr.Code != "invalid_scope" {
 		t.Fatalf("scope event did not retain its code: %#v", eventErr)
+	}
+}
+
+func TestBYOKWritesAreOffByDefault(t *testing.T) {
+	a := &api{} // no store: a refused write must not reach it
+	_, err := a.upsertLLMCredential(context.Background(), &upsertLLMCredentialInput{})
+	var model *huma.ErrorModel
+	if !errors.As(err, &model) || model.Status != http.StatusNotFound {
+		t.Fatalf("save with BYOK off: %v", err)
+	}
+	_, err = a.deleteLLMCredential(context.Background(), &deleteLLMCredentialInput{Provider: "openai"})
+	if !errors.As(err, &model) || model.Status != http.StatusNotFound {
+		t.Fatalf("remove with BYOK off: %v", err)
 	}
 }

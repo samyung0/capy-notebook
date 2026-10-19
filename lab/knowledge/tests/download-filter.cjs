@@ -29,9 +29,10 @@ const { chromium } = require('@playwright/test');
     await filter.selectOption('error:HTTP 403');
     assert.equal(await page.locator('#downloads .dl').count(), 2);
     assert.equal(await page.getByRole('button', { name: 'Reject: non-commercial', exact: true }).count(), 2);
-    let submitted;
+    let submitted, guard;
     await page.route('**/api/downloads/reject-noncommercial', async (route) => {
       submitted = route.request().postDataJSON();
+      guard = route.request().headers()['x-capy-builder'];
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
     await page.evaluate(() => { refresh = async () => {
@@ -42,6 +43,7 @@ const { chromium } = require('@playwright/test');
     await page.getByRole('button', { name: 'Reject: non-commercial', exact: true }).first().click();
     await page.waitForFunction(() => document.querySelectorAll('#downloads .dl').length === 1);
     assert.deepEqual(submitted, { pdf_url: 'https://example.test/book.pdf' });
+    assert.equal(guard, '1'); // server.py refuses a mutating request without it
     await page.evaluate(() => { state.scrape.downloads[0].last_error = "HTTPStatusError: Client error '403 Forbidden'"; });
     await page.evaluate(() => renderDownloads(state.scrape.downloads));
     assert.equal(await filter.inputValue(), 'error:HTTP 403');

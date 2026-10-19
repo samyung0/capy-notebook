@@ -23,7 +23,7 @@ SOURCE = BASE / "normal-structured-explicit/batch/input.jsonl"
 MODEL = "claude-sonnet-4-6"
 EFFORT = "medium"
 sys.path.insert(0, str(ROOT / "bench/rag/scripts"))
-from knowledge_base_batch import PilotError, digest, lock, read_json, save_json
+from knowledge_base_common import PilotError, digest, lock, read_json, save_json
 
 
 def read_rows(path):

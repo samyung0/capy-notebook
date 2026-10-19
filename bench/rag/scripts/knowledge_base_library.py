@@ -52,7 +52,7 @@ from psycopg.types.json import Jsonb
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(ROOT / "pipeline"))
-from knowledge_base_batch import PilotError, digest, read_json, save_json
+from knowledge_base_common import PilotError, digest, read_json, save_json
 
 LOCAL_ENV = dotenv_values(ROOT / ".env.local")
 # The knowledge-base bucket credentials have to be in the environment before

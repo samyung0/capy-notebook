@@ -1379,15 +1379,27 @@ or host env files if it was ever set.
 ### 4.1 Knowledge-base bucket
 
 The shared knowledge library's book PDFs live in their own bucket, not a prefix
-of the app bucket, because the library is shared by UAT and production and its
-key is handed to the retrieval service and to the loader on the developer PC.
+of the app bucket, because the library is shared by UAT and production. The
+deployed retrieval service holds a read-only key; only the loader on the
+developer PC holds a key that can write.
 
 1. Create the bucket `capy-notebook-knowledge-base`, **private**. It holds one
    object per book at `books/<sha256>.pdf`; nothing else writes into it.
-2. One application key **scoped to that bucket only**, with `listBuckets`,
-   `listFiles`, `readFiles` and `writeFiles`. The retrieval service only
-   reads; the loader lists to confirm a book is present before publishing it,
-   and the books are uploaded by hand. The secret is shown once.
+2. Two application keys, each **scoped to that bucket only**; each secret is
+   shown once:
+   - **Reader**, `listFiles` and `readFiles`: the retrieval service's
+     `KNOWLEDGE_BASE_B2_KEY_ID`/`KNOWLEDGE_BASE_B2_APP_KEY`, in UAT and
+     production alike. Because the bucket is shared, a writable key here would
+     let either environment change the books every tenant renders.
+   - **Writer**, `readFiles` and `writeFiles`: only in the developer PC's
+     ignored `.env.local` as `KNOWLEDGE_BASE_B2_WRITER_KEY_ID` and
+     `KNOWLEDGE_BASE_B2_WRITER_APP_KEY`, for the builder's source upload. It
+     never goes to GitHub, Coolify or a host; a CI test fails if any deploy
+     file names these variables.
+
+   To rotate (and when moving from the former single writable key): create the
+   new key, push it, redeploy retrieval in UAT and production, confirm a
+   library page capture works, then delete the old key in B2.
 3. Endpoint `https://s3.eu-central-003.backblazeb2.com`, region
    `eu-central-003` — the same B2 region as the app bucket.
 4. No CORS rules and no lifecycle rule. The browser never touches this bucket:
@@ -1407,8 +1419,8 @@ key is handed to the retrieval service and to the loader on the developer PC.
    | `KNOWLEDGE_BASE_B2_ENDPOINT` | `https://s3.eu-central-003.backblazeb2.com`  |
    | `KNOWLEDGE_BASE_B2_REGION`   | `eu-central-003`                             |
    | `KNOWLEDGE_BASE_B2_BUCKET`   | `capy-notebook-knowledge-base`               |
-   | `KNOWLEDGE_BASE_B2_KEY_ID`   | the scoped key's id                          |
-   | `KNOWLEDGE_BASE_B2_APP_KEY`  | the scoped key's secret                      |
+   | `KNOWLEDGE_BASE_B2_KEY_ID`   | the reader key's id                          |
+   | `KNOWLEDGE_BASE_B2_APP_KEY`  | the reader key's secret                      |
 
    All five carry the manifest targets `coolify` and `local` and are
    `required_for` `coolify`, so a UAT or production render fails when any is
@@ -1417,8 +1429,9 @@ key is handed to the retrieval service and to the loader on the developer PC.
    variables. Push them with `scripts/env/config.py push` from a file that
    holds only the keys being set (a blank value deletes the GitHub entry);
    `deploy/.env` carries them for the local stack. The library builder and
-   loader on the developer PC read the same five names from the ignored
-   project-root `.env.local`. Nothing else in the stack needs them.
+   loader on the developer PC read the same five names, plus the two writer
+   variables, from the ignored project-root `.env.local`. Nothing else in the
+   stack needs them.
 
 ### Ingest worker replicas
 
@@ -1664,8 +1677,10 @@ pair on the host; activation then removes this stack's other tags, keeping
 only `active` and `previous` (rollback). Removed tags stay in the BuildKit
 cache; activation then runs `docker builder prune -f --filter until=72h`, which
 drops build cache older than three days (the next release still builds warm).
-The ingest host's `daemon.json` has no `builder.gc` limit (checked 2026-10-19:
-only the log options), so this prune is what bounds the cache.
+The ingest host's `/etc/docker/daemon.json` also sets `builder.gc` to 20 GB
+(restored 2026-10-19 after it was found missing; the previous file is kept as
+`daemon.json.before-builder-gc-20261019`), so BuildKit trims the cache past that
+size between releases.
 Bootstrap only clones into an absent/empty checkout and records active after
 verification. A failed bootstrap stops candidate services and retains evidence.
 
@@ -2586,7 +2601,8 @@ In the Clerk dashboard:
 The gateway refuses startup when normal Clerk authentication has either a
 blank `CLERK_SECRET_KEY` or a blank `CLERK_WEBHOOK_SECRET`. Development with
 `AUTH_DISABLED=true` and the disposable E2E identity mode are the only
-exemptions.
+exemptions. In every mode it also refuses a `CLERK_WEBHOOK_SECRET` that is set
+but is not a Svix signing secret (`whsec_` followed by base64).
 
 #### Running the SPA locally against UAT
 

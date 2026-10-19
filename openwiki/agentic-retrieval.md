@@ -2236,18 +2236,22 @@ title and a known subject. Missing authors are allowed at download; authorless
 books require source/PDF attribution review and a supplied attribution statement
 at admission, enforced again before publication. Titles and filenames containing
 `Free Courseware` are rejected. Page fetches request HTML explicitly and
-same-catalog `rel=next` pagination preserves crawl depth; its ingestion
+same-catalog `rel=next` pagination preserves crawl depth; the scraper follows
+redirects itself (at most five) and refuses any hop whose host resolves to a
+non-public address (the check and the connection resolve separately, so an
+answer that changes between them is not covered). The dashboard answers only its own Host
+(`127.0.0.1:<port>` or `localhost:<port>`) and refuses a mutating request
+without its `X-Capy-Builder` header. Its ingestion
 worker runs one-book manifests through parse, figures, topics (TOC-derived,
 two to three per chapter, merged with the subject's library topics, at most 96,
 never an id that equals a subject id), transcribe, tag, index and publish
-(source PDF uploaded to the knowledge-base bucket first). The transcribe stage
+(source PDF uploaded to the knowledge-base bucket first, with the builder's
+own writer key; retrieval's key only reads). The transcribe stage
 sends one request per page image (the developer's page-description prompt,
-thinking off, temperature 0, a strict schema returning `text` and `figures`) to
-Qwen3.8-Flash on Alibaba Model Studio, Batch by default (one task per book and
-stage, 24-hour window polled every ten minutes, page images presigned in the
-knowledge-base bucket for 7 days, custom ids `<book>:p<page>`, answers saved as
-`<run>/pages/<page>.json`) with the live endpoint for the pages a batch missed
-and for small books. Recovery is alignment: a chunk's original words are
+thinking off, temperature 0, the page inline, a strict schema returning `text`
+and `figures`) to Qwen3.8-Flash on Alibaba Model Studio's live endpoint (four
+in flight, one retry pass, custom ids `<book>:p<page>`, answers saved as
+`<run>/pages/<page>.json`). Recovery is alignment: a chunk's original words are
 matched against the transcription of its pages (concatenated for a
 page-spanning chunk) in blocks of three or more words, extended over shorter
 blocks within a tight gap, and the span replaces the chunk text under a
@@ -2258,21 +2262,21 @@ transcription for the dashboard (page image, original, aligned span, full
 transcription, accept or reject), publish refuses while one is undecided, and
 fragments under 12 words with nothing matched are skipped as
 `unaligned_short`. Every run re-aligns from the saved transcriptions, so
-decided items stay decided and a rule change needs no new batch. Each returned
+decided items stay decided and a rule change needs no new calls. Each returned
 figure is matched to the corpus figures on its page by printed label, else by
 order; the description lands on `library_figures.description` at publish and,
 as `[Figure <label>] <description>`, on the `indexed_text` of the first chunk
 of the excerpt that lists the figure (unless it is decorative), never on
 `text`. The tag stage then sends
 the corrected excerpts text-only, eight per request with the candidate topics
-as id, label and aliases in the system prefix, thinking capped at 4,096 tokens
-in Batch; excerpts missing from a reply are re-sent singly live; evidence must
+as id, label and aliases in the system prefix, on the live endpoint with
+thinking off; excerpts missing from a reply are re-sent singly; evidence must
 be a contiguous 5-30 word span copied from the excerpt text, and the pilot's
 `evidence_verified` (case, whitespace and ellipsis tolerant, every piece
 verbatim, on the corrected text) decides the flag; more than 2% untagged
 excerpts fails the book. GLM on Ollama serves topics and scraping only;
 TokenHub is gone from the builder. Receipts live in the builder's SQLite
-(`llm_calls`, `stage_runs`, `review_tasks` keyed by book and stage) and the
+(`llm_calls`, `stage_runs`) and the
 run directory (`topics.json`, one `transcribe-<timestamp>.json` and
 `tag-<timestamp>.json` per run, `transcribe.json` for the held ledger); model
 directories of replaced stages move to `<run>/archive/` so a version records
@@ -2308,12 +2312,8 @@ Full notes and retrieval metadata
 are retained in `reviewed-notes.json` and final tags; indexing refuses their loss.
 The heartbeat dispatches the fixed `lab/knowledge/sol-assignment.txt` template
 with a separate assignment record. Sol finishes with reusable saved text packets
-embedding the assigned source/context, full notes, tags and catalog. The developer
-may submit them to Qwen whenever needed and assign another reviewer to assess
-the response. Submission and polling are outside the Sol workflow. Qwen checks roles, notes, scope,
-topics and context links against supplied text; numerical and page inspection
-remain initial Sol work. Qwen has no material review stage, no dedicated image
-cache and no Sol correction loop. The realtime user agent is unchanged.
+embedding the assigned source/context, full notes, tags and catalog; numerical
+and page inspection remain Sol work. The realtime user agent is unchanged.
 The fixed Sol prompt references concrete examples in `lab/knowledge/sol-examples.md`
 and `lab/knowledge/examples/book-review-packet.json`; assignments freeze those
 files with the review contract. `lab/knowledge/packet.py` emits the fixed text
@@ -2336,19 +2336,10 @@ chunk text. Saved unresolved issues from earlier Sol assignments remain in a
 local repair inventory; metadata completion alone does not close them. Printed
 errors, author placeholders and unavailable content retain explicit limits.
 `packet.py --source-review` embeds the assembled repaired source across scoped
-packets and their direct context links. Qwen's optional text-only role is unchanged.
-Observed failures are included in Sol's example file. Qwen's separate
-`bench/rag/fixtures/knowledge-review-v2/system-prompt.txt` embeds its examples
-directly, including no-op fixes and immutable old notes. The optional test helper
-accepts a saved `--packet` as well as fixture cases; it never applies findings.
-The separate `lab/knowledge/qwen_batch.py` commands freeze selected text packets,
-submit one durable Alibaba job and poll every 600 seconds with `poll --watch`.
-The operator explicitly selects thinking or non-thinking mode; both retain
-strict JSON Schema and no caller token caps. Inputs, endpoint and batch ID are
-saved for resuming; results match by custom ID and retain raw responses,
-partial failures and contract warnings for later assessment. Collection never
-applies suggestions or controls Sol publication. See
-[`qwen-batch.md`](../lab/knowledge/qwen-batch.md) for commands and recovery.
+packets and their direct context links.
+Observed failures are included in Sol's example file. The optional Qwen packet
+review over Alibaba Batch was retired with Sol (2026-10-19), with the builder's
+Batch transport.
 Deferred agent-loop and duplicate-result work is tracked in
 [`todo-learning.md`](../todo-learning.md) under Later.
 Summaries are not compacted. Completed books progress through
@@ -3779,13 +3770,16 @@ Workspace notes (`materials.kind='note'` with a workspace) are indexed into
 the same canonical content files use. `rag_material_contents` aliases a note
 to a ready `rag_contents` row exactly as `rag_file_contents` does for files,
 so chunks, vectors, summaries, orphan cleanup and clone copying are shared.
-Standalone notes have no workspace and are never indexed; embedded quiz and
-flashcard rows are separate materials and stay out of note text.
+Standalone notes have no workspace and are never indexed. Embedded quizzes
+and flashcard sets are not indexed on their own: their text is indexed inside
+the parent note, at their reference (Epo 2026-10-17).
 
 The trigger is the projection. `ProjectMaterialContent` (and the SQL content
 path of `UpdateMaterial`) sets `materials.index_dirty_at` when a workspace
 note's content changes, clears `index_error`, and skips unchanged writes; a
-new workspace note is dirty from creation. The collaboration server's 5 s
+new workspace note is dirty from creation. A content write to an embedded
+quiz or flashcard set (its room's projection or a save) marks its parent note
+the same way (`markParentNoteDirtyTx`), so an item edit reindexes the note. The collaboration server's 5 s
 timer (`schedule_note_indexes`) asks Go to admit dirty notes that have been idle
 15 s, have no running job and no parked error, in workspaces with
 `auto_process` on. `POST /internal/collaboration/materials/{id}/index`
@@ -3818,10 +3812,19 @@ restored or unsuspended, until an edit.
 
 The ingest worker branches on `materialId`: it fetches the note's
 markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`
-(workspace-scoped, pipeline secret)
-(`materialdoc.ExtractIndexText`: headings keep their level, list items their
-bullets, table rows their cells, code its fence; references, diagrams and
-media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
+(workspace-scoped, pipeline secret; `text`, and `blocks`, the same text per
+top-level block as `{id, text}`, which `text` joins with blank lines).
+`MaterialIndexText` reads the note and, in one query, its active embedded
+items, and `materialdoc.ExtractIndexBlocks` renders each element by its embed
+catalog index rule ([embeds](embeds.md#index-text)): headings keep their
+level, list items their bullets, table rows their cells, code its fence; a
+chart gives its titles and a markdown table of its values, a plot its points
+per series, a graph its elements as stored terms, a Mermaid diagram its
+caption and whole source in a ```` ```mermaid ```` fence, an embedded quiz its
+stems, options and solutions and a flashcard set its fronts and backs, at the
+reference; media, equations and interactive HTML give nothing. The
+collaboration server's `notes::index_text` gives the same blocks from a live
+room or stored content, for note effects. The worker chunks `text` with `chunk_markdown`, hashes the chunks under a `note:` prefix
 so a note never shares a content row with a file of identical text, and
 claims a new content row without moving the alias. It reuses vectors for
 unchanged chunk text from the note's previous content row, which stays
@@ -3845,8 +3848,8 @@ and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows; a cloned note without an
 index, whose index is not current (dirty, a job rebuilding it, or a failed
-one), or whose index text the clone changed (a mention turned plain text),
-starts dirty.
+one), or whose index text the clone changed (a mention turned plain text, or
+an embedded item whose copy reads differently), starts dirty.
 
 ## Clone and teardown
 
@@ -3871,8 +3874,8 @@ limit, the dialog showing either message; a processed store-only Office file
 `reprocessTx`, and a file with nothing to process is copied unindexed. The
 pipeline's donor path reuses what it can. A note shares its index only while
 it is current (no `index_dirty_at`, `index_job_id` or `index_error`);
-otherwise, or when its copy reads differently (mentions turned plain), it is
-marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
+otherwise, or when its copy reads differently (mentions turned plain, or its
+embedded items' copies do), it is marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
 of bytes an export-only publication left unindexed is reprocessed like its
 source. A pipeline ingest that adds the same content to the destination after
 the snapshot conflicts on `rag_contents` and the clone retries as a
@@ -4029,7 +4032,9 @@ supersede old indexed facts; the message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
 match against passages, and that a move carries no text. An image added or
 changed before publication is a typed placeholder the model opens with
-`resolve_source_change`: the gateway verifies source access and checkpoint, the
+`resolve_source_change`: the gateway checks that the actor can read the
+workspace and the file is in it before it forwards, the collaboration
+authority verifies source access and checkpoint again, the
 headless runtime extracts the exact image, the pipeline checks its hash and the
 captured published identities, and the image (oriented, flattened and shrunk
 like an uploaded image's `capture_page`) rides in the next model request the

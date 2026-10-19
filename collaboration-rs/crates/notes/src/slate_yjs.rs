@@ -7,7 +7,7 @@
 //! Stored positions (`__slateYjsStoredPosition_*` root attributes) are not
 //! carried: a note's content root holds no attributes (`validate::assert_roots`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -15,7 +15,8 @@ use yrs::block::{EmbedPrelim, ItemContent, ItemPtr, Prelim};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::types::{Attrs, TypeRef};
 use yrs::{
-    Any, GetString, Out, ReadTxn, Text, TextPrelim, TextRef, TransactionMut, Xml, XmlTextRef,
+    Any, Array, ArrayPrelim, ArrayRef, GetString, Map, MapPrelim, MapRef, Out, ReadTxn, Text,
+    TextPrelim, TextRef, TransactionMut, Xml, XmlTextRef,
 };
 
 use crate::json::value_to_any;
@@ -240,17 +241,26 @@ impl Prelim for ElementPrelim {
 
     fn integrate(self, txn: &mut TransactionMut, inner_ref: BranchPtr) {
         let text = XmlTextRef::from(inner_ref);
-        let mermaid = self.properties.iter().any(|(key, value)| {
-            key == "type"
-                && matches!(value, Any::String(kind) if &**kind == plate::SHARED_TEXT_ELEMENT)
-        });
+        let kind = self
+            .properties
+            .iter()
+            .find_map(|(key, value)| match value {
+                Any::String(kind) if key == "type" => Some(kind.to_string()),
+                _ => None,
+            })
+            .unwrap_or_default();
         let set = |txn: &mut TransactionMut, properties: Vec<(String, Any)>| {
             for (key, value) in properties {
                 match value {
                     // A Mermaid block's source is a text (shape A), as the
                     // patched slate-yjs inserts and clones it.
-                    Any::String(source) if mermaid && key == plate::SHARED_TEXT_KEY => {
+                    Any::String(source) if plate::holds_text(&kind, &key) => {
                         text.insert_attribute(txn, key, TextPrelim::new(source.as_ref()));
+                    }
+                    // A figure's block is a map (Epo 2026-10-17), likewise.
+                    Any::Map(block) if plate::holds_map(&kind, &key) => {
+                        let map = text.insert_attribute(txn, key, MapPrelim::default());
+                        edit_map(txn, &map, &block, plate::lists_of(&kind));
                     }
                     value => {
                         text.insert_attribute(txn, key, value);
@@ -429,6 +439,148 @@ pub fn edit_text(txn: &mut TransactionMut, text: &TextRef, next: &str) {
     }
 }
 
+/// Changes a figure's block map to `next` with the fewest writes, as the
+/// slate-yjs patch's `editSharedMap` does (Epo 2026-10-17): a changed entry
+/// is set whole and a gone one removed, so another writer's change to a
+/// different entry stays; a list key's (`lists`: series, graph elements)
+/// entries of maps are edited the same way, in key order.
+pub fn edit_map(
+    txn: &mut TransactionMut,
+    map: &MapRef,
+    next: &HashMap<String, Any>,
+    lists: &[&str],
+) {
+    let gone: Vec<String> = map
+        .keys(txn)
+        .filter(|key| !next.contains_key(*key))
+        .map(str::to_owned)
+        .collect();
+    for key in gone {
+        map.remove(txn, &key);
+    }
+    let mut keys: Vec<&String> = next.keys().collect();
+    keys.sort();
+    for key in keys {
+        let value = &next[key];
+        let list = match value {
+            Any::Array(items)
+                if lists.contains(&key.as_str())
+                    && items.iter().all(|item| matches!(item, Any::Map(_))) =>
+            {
+                Some(items)
+            }
+            _ => None,
+        };
+        match (map.get(txn, key), list) {
+            (Some(Out::YArray(held)), Some(items)) => edit_list(txn, &held, items),
+            (_, Some(items)) => {
+                let held = map.insert(txn, key.as_str(), ArrayPrelim::default());
+                edit_list(txn, &held, items);
+            }
+            (Some(Out::Any(held)), None) if held == *value => {}
+            (_, None) => {
+                map.insert(txn, key.as_str(), value.clone());
+            }
+        }
+    }
+}
+
+/// A list of maps edited towards `items` (each an `Any::Map`): matched by
+/// their `id` when every entry has one (a graph's elements), else by index
+/// (series). A matched entry is edited ([edit_map]); one out of place is
+/// removed and inserted anew where it now sits.
+fn edit_list(txn: &mut TransactionMut, list: &ArrayRef, items: &[Any]) {
+    fn id_of(entry: &Any) -> Option<String> {
+        match entry {
+            Any::Map(map) => match map.get("id") {
+                Some(Any::String(id)) => Some(id.to_string()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn entries(item: &Any) -> HashMap<String, Any> {
+        match item {
+            Any::Map(map) => (**map).clone(),
+            _ => HashMap::new(),
+        }
+    }
+    let insert = |txn: &mut TransactionMut, at: u32, item: &Any| {
+        let map = list.insert(txn, at, MapPrelim::default());
+        edit_map(txn, &map, &entries(item), &[]);
+    };
+    let held: Vec<Option<String>> = list
+        .iter(txn)
+        .map(|entry| match entry {
+            Out::YMap(map) => match map.get(txn, "id") {
+                Some(Out::Any(Any::String(id))) => Some(id.to_string()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    let wanted: Vec<Option<String>> = items.iter().map(id_of).collect();
+    if wanted.iter().all(Option::is_some) && held.iter().all(Option::is_some) {
+        // Entries no longer wanted (or repeated) go first, from the end.
+        let names: HashSet<&str> = wanted.iter().flatten().map(String::as_str).collect();
+        let mut seen = HashSet::new();
+        let keep: Vec<bool> = held
+            .iter()
+            .flatten()
+            .map(|id| names.contains(id.as_str()) && seen.insert(id.as_str()))
+            .collect();
+        for at in (0..keep.len()).rev() {
+            if !keep[at] {
+                list.remove(txn, at as u32);
+            }
+        }
+        let mut current: Vec<String> = held
+            .into_iter()
+            .flatten()
+            .zip(keep)
+            .filter_map(|(id, kept)| kept.then_some(id))
+            .collect();
+        for (at, (item, id)) in items.iter().zip(wanted.into_iter().flatten()).enumerate() {
+            let found = current
+                .get(at..)
+                .and_then(|rest| rest.iter().position(|held| *held == id))
+                .map(|offset| offset + at);
+            match found {
+                Some(found) if found == at => {
+                    if let Some(Out::YMap(map)) = list.get(txn, at as u32) {
+                        edit_map(txn, &map, &entries(item), &[]);
+                    }
+                }
+                Some(found) => {
+                    list.remove(txn, found as u32);
+                    current.remove(found);
+                    insert(txn, at as u32, item);
+                    current.insert(at, id);
+                }
+                None => {
+                    insert(txn, at as u32, item);
+                    current.insert(at, id);
+                }
+            }
+        }
+        return;
+    }
+    for (at, item) in items.iter().enumerate() {
+        match list.get(txn, at as u32) {
+            Some(Out::YMap(map)) => edit_map(txn, &map, &entries(item), &[]),
+            Some(_) => {
+                list.remove(txn, at as u32);
+                insert(txn, at as u32, item);
+            }
+            None => insert(txn, at as u32, item),
+        }
+    }
+    let len = list.len(txn);
+    if len as usize > items.len() {
+        list.remove_range(txn, items.len() as u32, len - items.len() as u32);
+    }
+}
+
 /// `YText.delete`: Yjs deletes what is there and stops at the end (a Slate
 /// tree can run ahead of its document after Yjs dropped a newline).
 fn remove(txn: &mut TransactionMut, parent: BranchPtr, index: u32, len: u32) {
@@ -521,17 +673,37 @@ pub fn apply_op(
             let target = y_target(y_root, slate, path)?;
             if let Some(element) = target.target {
                 let element = XmlTextRef::from(element);
+                let kind = match new_properties.get("type") {
+                    Some(Value::String(kind)) => kind.clone(),
+                    _ => match element.get_attribute(txn, "type") {
+                        Some(Out::Any(Any::String(kind))) => kind.to_string(),
+                        _ => String::new(),
+                    },
+                };
                 for (key, value) in new_properties {
-                    if value.is_null() {
-                        element.remove_attribute(txn, key);
-                    } else if let (Some(Out::YText(held)), Some(next)) =
-                        (element.get_attribute(txn, key), value.as_str())
-                    {
+                    let held = element.get_attribute(txn, key);
+                    match (held, value_to_any(value)) {
+                        _ if value.is_null() => {
+                            element.remove_attribute(txn, key);
+                        }
                         // A source text takes the change as a text diff, so
                         // typing that reaches the room meanwhile stays.
-                        edit_text(txn, &held, next);
-                    } else {
-                        element.insert_attribute(txn, key.as_str(), value_to_any(value));
+                        (Some(Out::YText(held)), Any::String(next)) => {
+                            edit_text(txn, &held, &next);
+                        }
+                        // A figure's block map takes it entry by entry, so a
+                        // peer's change to another entry stays (Epo 2026-10-17).
+                        (Some(Out::YMap(held)), Any::Map(next)) => {
+                            edit_map(txn, &held, &next, plate::lists_of(&kind));
+                        }
+                        (_, Any::Map(next)) if plate::holds_map(&kind, key) => {
+                            let map =
+                                element.insert_attribute(txn, key.as_str(), MapPrelim::default());
+                            edit_map(txn, &map, &next, plate::lists_of(&kind));
+                        }
+                        (_, value) => {
+                            element.insert_attribute(txn, key.as_str(), value);
+                        }
                     }
                 }
                 for key in old.keys() {

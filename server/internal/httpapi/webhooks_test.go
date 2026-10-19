@@ -1249,3 +1249,20 @@ func TestStripeWebhook_Idempotent(t *testing.T) {
 		t.Errorf("already-processed stripe event must not re-run side effects")
 	}
 }
+
+// Security regression: an unauthenticated webhook delivery is read at most
+// 1 MiB before its signature is checked; a larger one answers 413.
+func TestWebhooksCapTheBodyBeforeTheSignature(t *testing.T) {
+	a := &api{cfg: Config{ClerkWebhookSecret: testClerkSecret, StripeWebhookSecret: testStripeSecret}}
+	for path, handler := range map[string]http.HandlerFunc{
+		"/webhooks/clerk":  a.clerkWebhook,
+		"/webhooks/stripe": a.stripeWebhook,
+	} {
+		body := &countingBody{size: 4 << 20}
+		rec := httptest.NewRecorder()
+		handler(rec, httptest.NewRequest(http.MethodPost, path, body))
+		if rec.Code != http.StatusRequestEntityTooLarge || body.read > webhookBodyMaxBytes+1 {
+			t.Errorf("%s: status %d, read %d bytes", path, rec.Code, body.read)
+		}
+	}
+}

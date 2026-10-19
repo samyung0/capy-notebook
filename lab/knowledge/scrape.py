@@ -7,15 +7,21 @@ licence gate. `download_worker` fetches queued PDFs under the same robots.txt ch
 per-host delay, with retries and a 200 MB cap, hashes them, drops duplicates
 and files them under data/knowledge-base/sources/<sha256>.pdf.
 The developer adds a downloaded book to the ingestion queue from the dashboard.
+Every request (robots.txt, pages, PDFs) goes through `get`: redirects are
+followed by hand, at most five, and each hop's host must resolve to public
+addresses only, so a page cannot steer the builder into the local network.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import sys
 import time
 import urllib.robotparser
@@ -32,6 +38,7 @@ import store
 USER_AGENT = (
     "capy-kb-builder (+https://github.com/capy-notebook; open textbook scraper)"
 )
+MAX_REDIRECTS = 5
 MAX_DEPTH = 4
 HTML_CAP = 20 * 1024 * 1024
 PDF_CAP = 200 * 1024 * 1024
@@ -283,6 +290,68 @@ def next_catalog_pages(html: str, base: str) -> set[str]:
     return result
 
 
+# --- requests -----------------------------------------------------------------
+
+
+class Refused(ValueError):
+    """A request the scraper will not send: a non-public address or too many
+    redirects. A ValueError, so a page or download fails without a retry."""
+
+
+def resolve(host: str, port: int) -> list[str]:
+    return [info[4][0] for info in socket.getaddrinfo(host, port)]
+
+
+def public(address: str) -> bool:
+    ip = ipaddress.ip_address(address)
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    # is_global already excludes private, loopback, link-local, unspecified and
+    # most reserved ranges; multicast and IPv6 site-local count as global, so
+    # they are checked here.
+    if ip.version == 6 and ip.is_site_local:
+        return False
+    return ip.is_global and not ip.is_multicast and not ip.is_reserved
+
+
+def check_host(url: httpx.URL) -> None:
+    """Refuse a URL whose host resolves to any non-public address."""
+    if url.scheme not in ("http", "https") or not url.host:
+        raise Refused(f"refused {url}: not an http(s) URL")
+    # The ASCII host httpx connects to, not the decoded form: the two can
+    # resolve differently for internationalized names.
+    host = url.raw_host.decode("ascii")
+    try:
+        addresses = resolve(host, url.port or (443 if url.scheme == "https" else 80))
+    except OSError as exc:
+        # As httpx reports a failed lookup: retried for downloads like any
+        # other connection error.
+        raise httpx.ConnectError(f"cannot resolve {url.host}: {exc}") from exc
+    blocked = sorted({a for a in addresses if not public(a)})
+    if blocked:
+        raise Refused(f"refused {url.host}: resolves to {', '.join(blocked)}")
+
+
+@contextlib.contextmanager
+def get(client: httpx.Client, url: str, headers: dict | None = None):
+    """A streamed GET that follows up to MAX_REDIRECTS redirects itself,
+    checking every hop's host before it is sent."""
+    request = client.build_request("GET", url, headers=headers)
+    for _ in range(MAX_REDIRECTS + 1):
+        check_host(request.url)
+        response = client.send(request, stream=True)
+        if response.next_request is None:
+            break
+        request = response.next_request
+        response.close()
+    else:
+        raise Refused(f"refused {url}: more than {MAX_REDIRECTS} redirects")
+    try:
+        yield response
+    finally:
+        response.close()
+
+
 # --- robots -------------------------------------------------------------------
 
 _robots: dict[str, urllib.robotparser.RobotFileParser] = {}
@@ -294,13 +363,15 @@ def robots_allowed(client: httpx.Client, url: str) -> bool:
     if host not in _robots:
         parser = urllib.robotparser.RobotFileParser()
         try:
-            response = client.get(
-                urlunsplit((parts.scheme, parts.netloc, "/robots.txt", "", ""))
-            )
+            with get(
+                client, urlunsplit((parts.scheme, parts.netloc, "/robots.txt", "", ""))
+            ) as response:
+                response.read()
             parser.parse(
                 response.text.splitlines() if response.status_code == 200 else []
             )
-        except httpx.HTTPError:
+        except (httpx.HTTPError, Refused):
+            # Nothing to honour; the page fetch itself still checks the host.
             parser.parse([])
         _robots[host] = parser
     return _robots[host].can_fetch(USER_AGENT, url)
@@ -316,7 +387,7 @@ def paused(name: str) -> bool:
 def fetch_html(client: httpx.Client, url: str) -> tuple[str, str, bytes]:
     """(final url, content type, body) with the HTML cap enforced while streaming."""
     # OTL serves incomplete menus or Atom to */*, even at catalog URLs.
-    with client.stream("GET", url, headers={"Accept": "text/html"}) as response:
+    with get(client, url, headers={"Accept": "text/html"}) as response:
         response.raise_for_status()
         content_type = response.headers.get("content-type", "")
         if is_pdf(str(response.url), content_type):
@@ -436,9 +507,7 @@ def scrape_one(client: httpx.Client, row) -> None:
 
 
 def scrape_worker(stop=None) -> None:
-    with httpx.Client(
-        timeout=30, follow_redirects=True, headers={"User-Agent": USER_AGENT}
-    ) as client:
+    with httpx.Client(timeout=30, headers={"User-Agent": USER_AGENT}) as client:
         while not (stop and stop.is_set()):
             if paused("scrape"):
                 time.sleep(1)
@@ -485,7 +554,7 @@ def download_one(client: httpx.Client, item: dict) -> None:
     for attempt in range(1, len(BACKOFF) + 1):
         digest, size = hashlib.sha256(), 0
         try:
-            with client.stream("GET", pdf_url) as response, part.open("wb") as out:
+            with get(client, pdf_url) as response, part.open("wb") as out:
                 response.raise_for_status()
                 first = True
                 for chunk in response.iter_bytes():
@@ -540,9 +609,7 @@ def download_one(client: httpx.Client, item: dict) -> None:
 
 
 def download_worker(stop=None) -> None:
-    with httpx.Client(
-        timeout=30, follow_redirects=True, headers={"User-Agent": USER_AGENT}
-    ) as client:
+    with httpx.Client(timeout=30, headers={"User-Agent": USER_AGENT}) as client:
         while not (stop and stop.is_set()):
             if paused("scrape"):
                 time.sleep(1)

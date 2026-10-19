@@ -8,6 +8,7 @@ import {
 import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
 import {
   CharCount,
   type CountLimit,
@@ -120,17 +121,22 @@ export function StringList({
   values,
   onChange,
   onRemove,
+  onMove,
   maxLength = limits.QUESTION_TEXT_MAX,
 }: {
   label: string;
   values: string[];
   onChange: (values: string[]) => void;
   onRemove?: (index: number) => void;
+  /** Swaps an option with its neighbour (the matching option pool, Epo
+   * 2026-10-18): each row gets up and down buttons, and Alt+ArrowUp or
+   * Alt+ArrowDown moves the focused option, focus following it. */
+  onMove?: (from: number, to: number) => void;
   /** Characters an item holds at most (its input stops there). */
   maxLength?: number;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-string-list>
       <p className="t-label">{label}</p>
       {values.map((value, index) => (
         <div className="flex items-center gap-2" key={index}>
@@ -145,8 +151,50 @@ export function StringList({
                 values.map((item, i) => (i === index ? e.target.value : item))
               )
             }
+            onKeyDown={(event) => {
+              const to =
+                event.key === 'ArrowUp'
+                  ? index - 1
+                  : event.key === 'ArrowDown'
+                    ? index + 1
+                    : -1;
+              if (!(onMove && event.altKey) || to < 0 || to >= values.length)
+                return;
+              event.preventDefault();
+              onMove(index, to);
+              // Rows are keyed by place, so the input at `to` holds it next.
+              event.currentTarget
+                .closest('[data-string-list]')
+                ?.querySelectorAll('input')
+                [to]?.focus();
+            }}
             value={value}
           />
+          {onMove && (
+            // A tight pair, as the ordering answer's move buttons.
+            <span className="flex shrink-0 items-center">
+              <IconButton
+                disabled={index === 0}
+                icon="chevronUp"
+                label={m.question_ui_move_option_up({ number: index + 1 })}
+                onClick={() => onMove(index, index - 1)}
+                shortcut="Alt+↑"
+                size="sm"
+                tooltip
+                variant="ghost-hover"
+              />
+              <IconButton
+                disabled={index === values.length - 1}
+                icon="chevronDown"
+                label={m.question_ui_move_option_down({ number: index + 1 })}
+                onClick={() => onMove(index, index + 1)}
+                shortcut="Alt+↓"
+                size="sm"
+                tooltip
+                variant="ghost-hover"
+              />
+            </span>
+          )}
           <ToolbarButton
             label={m.question_ui_remove_item({ label, number: index + 1 })}
             onClick={() =>
@@ -484,6 +532,28 @@ export function AnswerEditor({
           <StringList
             label={m.question_ui_choice_pool()}
             onChange={(options) => onChange({ ...answer, options })}
+            onMove={(from, to) =>
+              onChange({
+                ...answer,
+                options: answer.options.map((option, i) =>
+                  i === from
+                    ? answer.options[to]
+                    : i === to
+                      ? answer.options[from]
+                      : option
+                ),
+                // Each prompt keeps its answer as the options swap.
+                pairs: answer.pairs.map((pair) => ({
+                  ...pair,
+                  right:
+                    pair.right === from
+                      ? to
+                      : pair.right === to
+                        ? from
+                        : pair.right,
+                })),
+              })
+            }
             onRemove={(index) =>
               onChange({
                 ...answer,

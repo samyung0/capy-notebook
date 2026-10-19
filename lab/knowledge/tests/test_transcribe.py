@@ -1,14 +1,12 @@
 import base64
-import json
 
-import batches
-import httpx
 import knowledge_base_pilot as pilot
 import llm
 import pytest
+import stages
 import store
 import transcribe
-from knowledge_base_batch import BatchClient, read_json, save_json
+from knowledge_base_common import read_json, save_json
 
 SHA = "ab" * 32
 PAGE_2 = (
@@ -75,7 +73,7 @@ def figure(i, page, block, caption=()):
 @pytest.fixture
 def run_dir(tmp_path, monkeypatch):
     """A one-book run: six chunks on pages 1-4 (c4 spans 3-4), two figures on
-    page 2, no batch state."""
+    page 2, no stage state."""
     book = {
         "id": "b",
         "title": "B",
@@ -158,11 +156,11 @@ def fake_live(monkeypatch, pages=PAGES, fail=()):
     """The live endpoint answering each page from `pages`; `fail` pages raise."""
     calls = []
 
-    def alibaba(messages, schema, *, stage, sha256, thinking):
+    def alibaba(messages, schema, *, stage, sha256):
         # the data URL carries the fake JPEG b"jpg" + page byte
         url = messages[0]["content"][1]["image_url"]["url"]
         page = base64.b64decode(url.split(",", 1)[1])[-1]
-        calls.append((thinking, page))
+        calls.append(page)
         if page in fail:
             raise llm.LLMError("boom")
         return llm.Result(
@@ -173,7 +171,7 @@ def fake_live(monkeypatch, pages=PAGES, fail=()):
             {"prompt_tokens": 100, "completion_tokens": 10, "reasoning_tokens": 0},
         )
 
-    monkeypatch.setattr(batches.llm, "alibaba", alibaba)
+    monkeypatch.setattr(stages.llm, "alibaba", alibaba)
     return calls
 
 
@@ -290,8 +288,8 @@ def test_descriptions_land_on_the_first_chunk_of_the_excerpt_indexed_text(run_di
 
 def test_live_path_aligns_holds_skips_and_describes(run_dir, monkeypatch):
     calls = fake_live(monkeypatch)
-    assert transcribe.run(run_dir, "b", live=True) == 0
-    assert calls == [(False, 1), (False, 2), (False, 3), (False, 4)]
+    assert transcribe.run(run_dir, "b") == 0
+    assert calls == [1, 2, 3, 4]
     corpus = read_json(run_dir / "books/b/corpus.json")
     c = {x["id"]: x for x in corpus["chunks"]}
     assert (
@@ -330,7 +328,7 @@ def test_live_path_aligns_holds_skips_and_describes(run_dir, monkeypatch):
         held[0]["transcription"] == PAGES[3]["text"] and held[0]["aligned_text"] == ""
     )
     assert transcribe.undecided(run_dir) == held
-    receipt = batches.latest_receipt(run_dir, "transcribe")
+    receipt = stages.latest_receipt(run_dir, "transcribe")
     assert receipt["pages"] == 4 and receipt["pages_transcribed"] == 4
     assert receipt["aligned"] == 3 and receipt["changed"] == 2 and receipt["held"] == 1
     assert receipt["unaligned_short"] == 2 and receipt["unaligned_short_ids"] == [
@@ -352,14 +350,14 @@ def test_live_path_aligns_holds_skips_and_describes(run_dir, monkeypatch):
 
     # a re-run re-aligns from the saved transcriptions without a call
     calls.clear()
-    assert transcribe.run(run_dir, "b", live=True) == 0 and calls == []
+    assert transcribe.run(run_dir, "b") == 0 and calls == []
     assert len(transcribe.ledger(run_dir)["held"]) == 1
 
     # accept applies nothing for an empty span; reject records, then stays
     with pytest.raises(ValueError, match="aligned to nothing"):
         transcribe.decide(run_dir, "b", "c3", accept=True)
     transcribe.decide(run_dir, "b", "c3", accept=False)
-    assert transcribe.run(run_dir, "b", live=True) == 0
+    assert transcribe.run(run_dir, "b") == 0
     assert transcribe.ledger(run_dir)["held"][0]["decision"] == "rejected"
     assert transcribe.undecided(run_dir) == []
     with pytest.raises(ValueError, match="already rejected"):
@@ -376,7 +374,7 @@ def test_accepting_a_held_span_applies_it_and_survives_a_rerun(run_dir, monkeypa
     }
     fake_live(monkeypatch, pages)
     monkeypatch.setattr(transcribe, "COVERAGE", 0.99)  # holds c3 at 0.5 coverage
-    assert transcribe.run(run_dir, "b", live=True) == 0
+    assert transcribe.run(run_dir, "b") == 0
     held = transcribe.ledger(run_dir)["held"]
     assert [h["chunk_id"] for h in held] == ["c3"]
     assert held[0]["aligned_text"] == "A glossary entry with many words in it."
@@ -386,17 +384,17 @@ def test_accepting_a_held_span_applies_it_and_survives_a_rerun(run_dir, monkeypa
     assert corpus["chunks"][3]["text"] == "A glossary entry with many words in it."
     assert corpus["chunks"][3]["recovery"]["request_id"] == "req-3"
     assert corpus["excerpts"][2]["text"] == "A glossary entry with many words in it."
-    assert transcribe.run(run_dir, "b", live=True) == 0
+    assert transcribe.run(run_dir, "b") == 0
     corpus = read_json(run_dir / "books/b/corpus.json")
     assert corpus["chunks"][3]["text"] == "A glossary entry with many words in it."
-    assert batches.latest_receipt(run_dir, "transcribe")["accepted"] == 1
+    assert stages.latest_receipt(run_dir, "transcribe")["accepted"] == 1
 
 
 def test_a_page_failing_both_live_passes_fails_the_stage(run_dir, monkeypatch):
     calls = fake_live(monkeypatch, fail={3})
-    assert transcribe.run(run_dir, "b", live=True) == 1
-    assert [p for t, p in calls] == [1, 2, 3, 4, 3]
-    receipt = batches.latest_receipt(run_dir, "transcribe")
+    assert transcribe.run(run_dir, "b") == 1
+    assert calls == [1, 2, 3, 4, 3]
+    receipt = stages.latest_receipt(run_dir, "transcribe")
     assert receipt["pages_failed"] == [3] and receipt["untranscribed_ids"] == [
         "c3",
         "c4",
@@ -405,201 +403,13 @@ def test_a_page_failing_both_live_passes_fails_the_stage(run_dir, monkeypatch):
     assert corpus["chunks"][1]["text"].startswith("The speed is 10")  # the rest applied
 
 
-# --- batch path ---------------------------------------------------------------
-
-
-def batch_fake(monkeypatch, job, output_lines):
-    """A BatchClient over a mock transport: upload, create, status, content."""
-    calls = []
-
-    def handler(request):
-        path = request.url.path
-        calls.append((request.method, path))
-        if path.endswith("/files") and request.method == "POST":
-            return httpx.Response(200, json={"id": "file-in"})
-        if path.endswith("/batches") and request.method == "POST":
-            return httpx.Response(200, json={"id": "batch-1", "status": "validating"})
-        if path.endswith("/batches/batch-1"):
-            return httpx.Response(200, json=job)
-        if path.endswith("/files/file-out/content"):
-            return httpx.Response(
-                200, text="".join(json.dumps(r) + "\n" for r in output_lines)
-            )
-        raise AssertionError(path)
-
-    transport = httpx.MockTransport(handler)
-    monkeypatch.setattr(
-        batches,
-        "client",
-        lambda: BatchClient(
-            "key", base_url="https://alibaba.test/v1", transport=transport
-        ),
-    )
-    uploads = httpx.Client(base_url="https://alibaba.test/v1", transport=transport)
-    monkeypatch.setattr(
-        "knowledge_base_batch.requests.post",
-        lambda url, **kwargs: uploads.post(
-            "/files", data=kwargs["data"], files=kwargs["files"]
-        ),
-    )
-    monkeypatch.setattr(
-        transcribe,
-        "upload_pages",
-        lambda pages_dir, sha, pages: {p: f"https://b2.test/{p}.jpg" for p in pages},
-    )
-    return calls
-
-
-def output_line(cid, value, usage=None, request_id="r"):
-    return {
-        "custom_id": cid,
-        "response": {
-            "status_code": 200,
-            "request_id": request_id,
-            "body": {
-                "choices": [
-                    {"finish_reason": "stop", "message": {"content": json.dumps(value)}}
-                ],
-                "usage": usage or {"prompt_tokens": 1000, "completion_tokens": 300},
-            },
-        },
-    }
-
-
-def test_batch_path_submits_waits_collects_retries_live_and_records_the_task(
-    run_dir, monkeypatch
-):
-    job = {
-        "id": "batch-1",
-        "status": "in_progress",
-        "request_counts": {"total": 4, "completed": 1, "failed": 0},
-    }
-    output = []
-    calls = batch_fake(monkeypatch, job, output)
-    live = fake_live(monkeypatch)
-
-    assert transcribe.run(run_dir, "b") == batches.WAITING
-    task = store.review_task(SHA, "transcribe")
-    assert task["batch_id"] == "batch-1" and task["requests"] == 4
-    assert task["status"] == "validating" and task["input_file_id"] == "file-in"
-    rows = [
-        json.loads(line)
-        for line in (run_dir / "models/transcribe/input.jsonl").read_text().splitlines()
-    ]
-    assert [r["custom_id"] for r in rows] == ["b:p1", "b:p2", "b:p3", "b:p4"]
-    body = rows[1]["body"]
-    assert body["enable_thinking"] is False and "thinking_budget" not in body
-    assert body["temperature"] == 0 and body["model"] == "qwen3.8-flash"
-    assert body["response_format"]["json_schema"] == {
-        "name": "review",
-        "strict": True,
-        "schema": transcribe.SCHEMA,
-    }
-    content = body["messages"][0]["content"]
-    assert content[0]["text"].startswith("Describe this page from a study document")
-    assert content[1]["image_url"]["url"] == "https://b2.test/2.jpg"
-
-    # still in flight: the stage keeps waiting, the task row records the check
-    assert transcribe.run(run_dir, "b") == batches.WAITING
-    assert store.review_task(SHA, "transcribe")["done"] == 1 and live == []
-    # the worker's poll sees the terminal state
-    job.update(
-        status="completed",
-        output_file_id="file-out",
-        created_at=100,
-        completed_at=160,
-        request_counts={"total": 4, "completed": 3, "failed": 1},
-    )
-    assert batches.poll(SHA, "transcribe") == "completed"
-    assert store.review_task(SHA, "transcribe")["failed"] == 1
-
-    # collection: pages 1, 2 and 4 answered, page 3 a provider error
-    output.extend(
-        [
-            output_line("b:p1", PAGES[1], request_id="r1"),
-            output_line(
-                "b:p2",
-                {
-                    **PAGES[2],
-                    "text": PAGES[2]["text"].replace("\n\nfine", "\\n\\nfine"),
-                },
-                {
-                    "prompt_tokens": 1000,
-                    "completion_tokens": 300,
-                    "completion_tokens_details": {"reasoning_tokens": 200},
-                },
-                request_id="r2",
-            ),
-            {
-                "custom_id": "b:p3",
-                "response": {"status_code": 500, "body": {}},
-                "error": {"code": "x"},
-            },
-            output_line("b:p4", PAGES[4], request_id="r4"),
-        ]
-    )
+def test_redo_reverts_and_sends_every_page_again(run_dir, monkeypatch):
+    calls = fake_live(monkeypatch)
     assert transcribe.run(run_dir, "b") == 0
-    assert live == [(False, 3)]  # one live retry, thinking off
-    saved = read_json(run_dir / "pages/2.json")
-    assert saved["request_id"] == "r2" and saved["source"] == "batch"
-    assert saved["escaped_newlines"] == 2 and saved["text"] == PAGE_2
-    assert saved["endpoint"] == "https://alibaba.test/v1/batches/batch-1"
-    assert read_json(run_dir / "pages/3.json")["source"] == "live"
-    corpus = read_json(run_dir / "books/b/corpus.json")
-    assert corpus["chunks"][1]["recovery"]["request_id"] == "r2"
-    assert corpus["chunks"][2]["text"] == "fine passage"
-    receipt = batches.latest_receipt(run_dir, "transcribe")
-    assert receipt["usage"] == {
-        "prompt_tokens": 3100,
-        "completion_tokens": 910,
-        "reasoning_tokens": 200,
-    }
-    assert receipt["pages_sent_live"] == 1 and receipt["escaped_newlines"] == 1
-    state = read_json(run_dir / "models/transcribe/state.json")
-    assert state["transport"] == "batch" and state["recorded"] and state["complete"]
-    assert state["collection"] == {"success": 4, "failed": 0, "missing": 0}
-    assert store.llm_usage(0)["https://alibaba.test/v1/batches"] == {
-        "endpoint": "https://alibaba.test/v1/batches",
-        "calls": 1,
-        "ok": 1,
-        "input_tokens": 3000,
-        "output_tokens": 900,
-    }
-    assert sum(1 for m, p in calls if p.endswith("/content")) == 1
-
-    # idempotent: a re-run collects nothing new and sends nothing
-    live.clear()
-    assert transcribe.run(run_dir, "b") == 0 and live == []
-    assert store.llm_usage(0)["https://alibaba.test/v1/batches"]["calls"] == 1
-    # --live is refused while the batch state is open
-    with pytest.raises(Exception, match="batch task is open"):
-        transcribe.run(run_dir, "b", live=True)
-
-    # --redo reverts, archives the state, drops the transcriptions and submits anew
-    assert transcribe.run(run_dir, "b", redo=True) == batches.WAITING
-    corpus = read_json(run_dir / "books/b/corpus.json")
-    assert "recovery" not in corpus["chunks"][1]
-    assert corpus["chunks"][1]["text"].startswith("The speed is m/s")
-    assert "description" not in corpus["figures"][1]
-    assert not (run_dir / "pages/2.json").exists()
+    calls.clear()
+    assert transcribe.run(run_dir, "b", redo=True) == 0
+    assert calls == [1, 2, 3, 4]
     assert sorted(p.name.split("-")[0] for p in (run_dir / "archive").iterdir()) == [
         "review",
         "transcribe",
     ]
-    assert transcribe.ledger(run_dir)["held"] == []
-
-
-def test_poll_records_a_missing_key_instead_of_raising(monkeypatch):
-    store.add_book(SHA, "b", {"id": "b"}, "runs/b")
-    store.set_review_task(
-        SHA,
-        "tag",
-        batch_id="batch-9",
-        status="in_progress",
-        submitted_at=1.0,
-        requests=2,
-    )
-    monkeypatch.delenv("ALIBABA_API_KEY", raising=False)
-    monkeypatch.delenv("ALIBABA_BASE_URL", raising=False)
-    assert batches.poll(SHA, "tag") == "in_progress"
-    assert "ALIBABA_BASE_URL" in store.review_task(SHA, "tag")["error"]

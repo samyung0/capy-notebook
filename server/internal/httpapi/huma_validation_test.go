@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
@@ -204,5 +206,44 @@ func TestRequestBodyValidation(t *testing.T) {
 				t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
 			}
 		})
+	}
+}
+
+// Security regression: the errors Huma builds about a request (schema
+// validation, a body that does not parse) echo none of the submitted value
+// and number at most maxRequestErrors, so an answer stays small whatever the
+// body holds; a typed error keeps its value.
+func TestRequestErrorsDropTheValueAndAreCapped(t *testing.T) {
+	router := validationRouter()
+	items := make([]string, 200)
+	for i := range items {
+		items[i] = `{"materialId":{"m":"` + bodyMarker + `"},"itemId":"i"}`
+	}
+	for _, body := range []string{
+		`{"materialId":"m","itemId":"i","answers":{},"session":{"id":"6f1c2b3a-0d4e-4f5a-8b6c-7d8e9f0a1b2c","workspaceId":"w","items":[` + strings.Join(items, ",") + `]}}`,
+		`{"materialId":"` + bodyMarker,
+	} {
+		rec := jsonRequest(router, http.MethodPost, "/api/review/check", body)
+		var answer struct {
+			Errors []map[string]any `json:"errors"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code >= http.StatusInternalServerError || len(answer.Errors) == 0 || len(answer.Errors) > maxRequestErrors ||
+			strings.Contains(rec.Body.String(), bodyMarker) {
+			t.Fatalf("status %d, %d errors, body %.300s", rec.Code, len(answer.Errors), rec.Body.String())
+		}
+		for _, detail := range answer.Errors {
+			if _, echoed := detail["value"]; echoed || detail["location"] == nil {
+				t.Fatalf("error %v", detail)
+			}
+		}
+	}
+
+	typed := &huma.ErrorModel{Errors: []*huma.ErrorDetail{{Message: "spending_limit", Value: map[string]any{"limitCents": 1}}}}
+	trimRequestErrors(typed)
+	if typed.Errors[0].Value == nil {
+		t.Fatal("a typed error lost its value")
 	}
 }

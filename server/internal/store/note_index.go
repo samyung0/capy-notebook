@@ -4,12 +4,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 // Workspace notes are indexed for retrieval like files. Projection marks a
-// note dirty when its content changes (see ProjectMaterialContent and
-// UpdateMaterial); the collaboration scheduler calls RequestMaterialIndex for
+// note dirty when its content changes, or an embedded item's does (see
+// ProjectMaterialContent and UpdateMaterial); the collaboration scheduler calls RequestMaterialIndex for
 // dirty notes that have been idle; the ingest worker fetches the note's text
 // through MaterialIndexText and writes rag_material_contents. When the job
 // ends, the trigger on jobs (migrations 0082, 0083) clears index_job_id: a job
@@ -23,16 +25,19 @@ import (
 const noteIndexDirtySQL = `index_dirty_at=CASE WHEN kind='note' AND workspace_id IS NOT NULL
 	THEN COALESCE(index_dirty_at, now()) END, index_error=NULL`
 
-// MaterialIndexText is what the ingest worker chunks for a note.
+// MaterialIndexText is what the ingest worker chunks for a note: its text
+// and the same text per top-level block (Text joins Blocks).
 type MaterialIndexText struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Revision int64  `json:"revision"`
-	Text     string `json:"text"`
+	ID       string                   `json:"id"`
+	Title    string                   `json:"title"`
+	Revision int64                    `json:"revision"`
+	Text     string                   `json:"text"`
+	Blocks   []materialdoc.IndexBlock `json:"blocks"`
 }
 
 // MaterialIndexText renders an active note of the given workspace for
-// indexing; the workspace binds the internal caller to its own scope.
+// indexing, with its embedded quizzes and flashcard sets at their
+// references; the workspace binds the internal caller to its own scope.
 func (s *Store) MaterialIndexText(ctx context.Context, materialID, workspaceID string) (MaterialIndexText, error) {
 	var out MaterialIndexText
 	var content string
@@ -45,8 +50,46 @@ func (s *Store) MaterialIndexText(ctx context.Context, materialID, workspaceID s
 	if err != nil {
 		return out, err
 	}
-	out.Text, err = materialdoc.ExtractIndexText(content)
-	return out, err
+	items, err := s.noteItemContents(ctx, materialID, workspaceID)
+	if err != nil {
+		return out, err
+	}
+	if out.Blocks, err = materialdoc.ExtractIndexBlocks(content, items); err != nil {
+		return out, err
+	}
+	out.Text = materialdoc.JoinIndexBlocks(out.Blocks)
+	return out, nil
+}
+
+// noteItemContents are the stored contents of a note's active embedded
+// items by id; the extraction reads those the note references.
+func (s *Store) noteItemContents(ctx context.Context, noteID, workspaceID string) (map[string]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, content FROM materials
+		WHERE parent_material_id=$1 AND workspace_id=$2 AND trashed_at IS NULL`, noteID, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := map[string]string{}
+	for rows.Next() {
+		var id, content string
+		if err := rows.Scan(&id, &content); err != nil {
+			return nil, err
+		}
+		items[id] = content
+	}
+	return items, rows.Err()
+}
+
+// markParentNoteDirtyTx marks the note an item is embedded in dirty, with
+// the rule its own content writes use: the item's text is part of the
+// note's index text. A note's projection takes the workspace (or account)
+// lock before its children's rows, as an item's write does, so the two
+// never wait on each other's rows.
+func markParentNoteDirtyTx(ctx context.Context, tx pgx.Tx, itemID string) error {
+	_, err := tx.Exec(ctx, `UPDATE materials SET `+noteIndexDirtySQL+`
+		WHERE id=(SELECT parent_material_id FROM materials WHERE id=$1) AND trashed_at IS NULL`, itemID)
+	return err
 }
 
 // RequestMaterialIndex turns a dirty, idle, not yet queued workspace note into

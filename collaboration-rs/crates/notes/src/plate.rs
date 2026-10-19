@@ -16,6 +16,7 @@ use yrs::branch::{Branch, BranchID, BranchPtr};
 use yrs::types::TypeRef;
 use yrs::{Any, ID, ReadTxn};
 
+use crate::catalog;
 use crate::json::{self, Unencodable};
 use crate::limits::DEPTH_CEILING;
 
@@ -253,25 +254,7 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
             first = left;
         }
         firsts.push((first.id().client.get(), first.id().clock));
-        let value = match item.content() {
-            ItemContent::Any(values) => values.last().cloned().unwrap_or(Any::Undefined),
-            ItemContent::Embed(value) => value.clone(),
-            ItemContent::Binary(bytes) => Any::Buffer(bytes.clone().into()),
-            ItemContent::JSON(values) => values
-                .last()
-                .and_then(|text| serde_json::from_str::<Value>(text).ok())
-                .map_or(Any::Undefined, |value| json::value_to_any(&value)),
-            ItemContent::String(text) => Any::String(text.as_str().into()),
-            // A Mermaid block's source held as a text (shape A, Epo
-            // 2026-10-10) reads as its string, as the patched slate-yjs reads it.
-            ItemContent::Type(text)
-                if &**key == SHARED_TEXT_KEY && matches!(text.type_ref(), TypeRef::Text) =>
-            {
-                Any::String(shared_text(text)?.into())
-            }
-            _ => return Err(ProjectionError::Property(key.to_string())),
-        };
-        out.push((key.clone(), value));
+        out.push((key.clone(), entry_value(key, item)?));
     }
     let mut order: Vec<usize> = (0..out.len()).collect();
     order.sort_by_key(|&i| firsts[i]);
@@ -279,12 +262,151 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
     Ok(order.into_iter().filter_map(|i| slots[i].take()).collect())
 }
 
-/// The attribute that may hold a text instead of a string: a `mermaid`
-/// block's source (shape A; the admit allows it on `mermaid` alone). The
-/// embed catalog's only shared-text key (`sharedText`).
-pub const SHARED_TEXT_KEY: &str = "source";
-/// The one element type holding [SHARED_TEXT_KEY] as a text.
-pub const SHARED_TEXT_ELEMENT: &str = "mermaid";
+/// The value of an element's live property `key` (its map entry `item`).
+fn entry_value(key: &str, item: ItemPtr) -> Result<Any, ProjectionError> {
+    Ok(match item.content() {
+        ItemContent::Any(values) => values.last().cloned().unwrap_or(Any::Undefined),
+        ItemContent::Embed(value) => value.clone(),
+        ItemContent::Binary(bytes) => Any::Buffer(bytes.clone().into()),
+        ItemContent::JSON(values) => values
+            .last()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+            .map_or(Any::Undefined, |value| json::value_to_any(&value)),
+        ItemContent::String(text) => Any::String(text.as_str().into()),
+        // A Mermaid block's source held as a text (shape A, Epo
+        // 2026-10-10) reads as its string, as the patched slate-yjs reads it.
+        ItemContent::Type(text) if text_key(key) && matches!(text.type_ref(), TypeRef::Text) => {
+            Any::String(shared_text(text)?.into())
+        }
+        // A figure's live block (Epo 2026-10-17) reads as its repaired value.
+        ItemContent::Type(map) if map_key(key) && matches!(map.type_ref(), TypeRef::Map) => {
+            json::value_to_any(&map_value(map)?)
+        }
+        _ => return Err(ProjectionError::Property(key.to_string())),
+    })
+}
+
+/// A figure's live `block` map as the room holds it, before the repair
+/// (`None` without one, or when it is no map): room admission checks each of
+/// its list entries ([crate::questions::figure_entries]).
+pub fn held_block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionError> {
+    let Some(entry) = element
+        .entry_item("block")
+        .filter(|entry| !entry.is_deleted())
+    else {
+        return Ok(None);
+    };
+    match entry.content() {
+        ItemContent::Type(map) if matches!(map.type_ref(), TypeRef::Map) => {
+            Ok(Some(map_entries(map, true)?))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// A chart's, plot's or graph's `block` as JSON (`None` without one), as
+/// the projection reads it: a live map repaired (`map_value`), a plain value
+/// as it is.
+pub fn block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionError> {
+    let Some(entry) = element
+        .entry_item("block")
+        .filter(|entry| !entry.is_deleted())
+    else {
+        return Ok(None);
+    };
+    match entry_value("block", entry)? {
+        Any::Undefined => Ok(None),
+        value => Ok(Some(json::any_to_value(&value)?)),
+    }
+}
+
+/// Whether an element of type `kind` holds `key` as a text (a `mermaid`
+/// block's source, shape A): the embed catalog's `sharedText`.
+pub fn holds_text(kind: &str, key: &str) -> bool {
+    catalog::element(kind).is_some_and(|element| element.shared_text.contains(&key))
+}
+
+/// Whether some element holds `key` as a text.
+pub fn text_key(key: &str) -> bool {
+    catalog::ELEMENTS
+        .iter()
+        .any(|element| element.shared_text.contains(&key))
+}
+
+/// Whether an element of type `kind` holds `key` as a map (a chart's, plot's
+/// or graph's `block`, Epo 2026-10-17): the embed catalog's `sharedMap`.
+pub fn holds_map(kind: &str, key: &str) -> bool {
+    catalog::element(kind).is_some_and(|element| element.shared_map.contains(&key))
+}
+
+/// Whether some element holds `key` as a map.
+pub fn map_key(key: &str) -> bool {
+    catalog::ELEMENTS
+        .iter()
+        .any(|element| element.shared_map.contains(&key))
+}
+
+/// Whether some element's map holds `key` as a list of maps.
+pub fn list_key(key: &str) -> bool {
+    catalog::ELEMENTS
+        .iter()
+        .any(|element| element.shared_lists.contains(&key))
+}
+
+/// The keys of an element's map held as lists of maps (`sharedLists`: a
+/// chart's or plot's series, a graph's elements).
+pub fn lists_of(kind: &str) -> &'static [&'static str] {
+    catalog::element(kind).map_or(&[], |element| element.shared_lists)
+}
+
+/// A figure's live `block` map as its value, repaired on read
+/// (`questions::repair_figure`): the one place the map is read, for the
+/// projection, the metrics, admission's check and the index text (through
+/// [properties], [element] and [block_value]). Its entries are plain values
+/// or lists of maps of plain values, in key order (as a plain object
+/// attribute reads, `json::any_to_value`); anything else is an error.
+fn map_value(branch: &Branch) -> Result<Value, ProjectionError> {
+    let mut block = map_entries(branch, true)?;
+    crate::questions::repair_figure(&mut block);
+    Ok(block)
+}
+
+/// A block map's entries, read strictly: plain values, and with `lists`,
+/// lists of maps of plain values; anything else is an error.
+fn map_entries(branch: &Branch, lists: bool) -> Result<Value, ProjectionError> {
+    let mut out = std::collections::BTreeMap::new();
+    for (key, item) in branch.map_items() {
+        if item.is_deleted() {
+            continue;
+        }
+        let value = match item.content() {
+            ItemContent::Any(values) => match values.last() {
+                None | Some(Any::Undefined) => continue,
+                Some(value) => json::any_to_value(value)?,
+            },
+            ItemContent::Type(list) if lists && matches!(list.type_ref(), TypeRef::Array) => {
+                let mut items = Vec::new();
+                let mut next = list.start();
+                while let Some(item) = next {
+                    next = item.right();
+                    if item.is_deleted() {
+                        continue;
+                    }
+                    match item.content() {
+                        ItemContent::Type(entry) if matches!(entry.type_ref(), TypeRef::Map) => {
+                            items.push(map_entries(entry, false)?);
+                        }
+                        _ => return Err(ProjectionError::Property(key.to_string())),
+                    }
+                }
+                Value::Array(items)
+            }
+            _ => return Err(ProjectionError::Property(key.to_string())),
+        };
+        out.insert(key.to_string(), value);
+    }
+    Ok(Value::Object(out.into_iter().collect()))
+}
 
 /// The string of a source text: strings only, no formats or embeds.
 pub fn shared_text(branch: &Branch) -> Result<String, ProjectionError> {
@@ -432,7 +554,7 @@ fn any_element<T: ReadTxn>(txn: &T, mut visit: impl FnMut(BranchPtr) -> bool) ->
 }
 
 /// An element's live string attribute `key`.
-fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
+pub fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
     let entry = element
         .entry_item(key)
         .filter(|entry| !entry.is_deleted())?;

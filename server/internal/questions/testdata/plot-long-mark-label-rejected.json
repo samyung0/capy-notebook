@@ -1,0 +1,59 @@
+{
+  "name": "plot-long-mark-label-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "The trace shows one action potential."
+      },
+      {
+        "type": "plot",
+        "title": "Action potential",
+        "xTitle": "Time (ms)",
+        "yTitle": "Membrane potential (mV)",
+        "series": [
+          {
+            "name": "Vm",
+            "points": [[0, -70], [1, 30], [2, -80]]
+          }
+        ],
+        "lines": [
+          {
+            "axis": "y",
+            "value": -55,
+            "label": "Threshold"
+          }
+        ],
+        "marks": [
+          {
+            "x": 1,
+            "y": 30,
+            "label": "lllllllllllllllllllllllllllllllllllllllllllllllllllllllllllll"
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Resting potential in mV?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["-70"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

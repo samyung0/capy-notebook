@@ -615,7 +615,8 @@ func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsE
 	if content, err = figures.resolve(content); err != nil {
 		return nil, nil, documentRefusal(err)
 	}
-	doc, err := materialdoc.Parse(content)
+	// An agent's blocks: figures strictly, as from outside a room.
+	doc, err := materialdoc.ParseWrite(content)
 	if err != nil {
 		return nil, nil, documentRefusal(err)
 	}

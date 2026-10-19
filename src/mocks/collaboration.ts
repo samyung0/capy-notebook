@@ -506,6 +506,8 @@ export function mockNotePeer(materialId: string) {
         ...slateNodesToInsertDelta(blocks),
       ]),
     awareness,
+    /** The peer's own document, for edits inside a block (a figure's map). */
+    document,
     leave,
     /** Puts `block` where the top-level block `id` is. */
     replace: (id: string, block: MaterialValue[number]) => {

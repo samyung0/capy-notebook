@@ -395,6 +395,10 @@ func (a *api) convertAgentNote(w http.ResponseWriter, r *http.Request, req inter
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": string(refusal.Code), "message": refusal.Message})
 		return "", nil, false
 	}
+	// An agent's note is a block write: its figures strictly (Epo 2026-10-18).
+	if err == nil {
+		_, err = materialdoc.ParseWrite(content)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})
 		return "", nil, false

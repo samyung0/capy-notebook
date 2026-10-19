@@ -84,7 +84,7 @@ Everything local, on the Clerk development instance (UAT).
  - `VITE_API_URL=http://localhost:8080`
  - `VITE_CLERK_PUBLISHABLE_KEY=pk_test_ZGlyZWN0LWdlbGRpbmctMTM1NS5jbGVyay5hY2NvdW50cy5kZXYk`
  - `CLERK_SECRET_KEY` set to the `sk_test` (UAT development instance)
- - `CLERK_WEBHOOK_SECRET` set to your endpoint's `whsec_`, or random value if you dont care about webhook events.
+ - `CLERK_WEBHOOK_SECRET` set to your endpoint's `whsec_` signing secret. The gateway refuses to start with it blank or not shaped as `whsec_` followed by base64; if you don't need webhook events, any value of that shape works.
  - `docker compose -f deploy/docker-compose.yml up --build`
  - `pnpm dev`
  - Open `https://localhost:5173`

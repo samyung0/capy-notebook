@@ -20,6 +20,14 @@ type Policy struct {
 	Bank          bool
 	BankAssetsURL string
 	Snapshot      bool
+	// Live takes a note figure in the states a merge of two editors leaves
+	// that readers draw around (Epo 2026-10-18): a chart or plot without
+	// series, a pie or stacked chart with extra series (its first is drawn)
+	// or any values, a line plot's series of one point (skipped). Stored note
+	// documents, room projections and whole-document note writes through the
+	// content API set it (materialdoc); agent block writes, bank and quiz
+	// questions and question media do not.
+	Live bool
 }
 
 // QuizBankAssetsURL is the bank's public asset base, set once at startup. A
@@ -353,6 +361,15 @@ func blocks(value any, policy Policy) error {
 	return nil
 }
 
+// minSeries is the fewest series a chart or plot holds: none for a live note
+// figure (Policy.Live), one otherwise.
+func minSeries(policy Policy) int {
+	if policy.Live {
+		return 0
+	}
+	return 1
+}
+
 // validatePlot checks a plot: one to four series of [x, y] points drawn as a
 // line or a scatter (kind), optional reference lines {axis x|y, value,
 // label?} and labelled points {x, y, label}.
@@ -367,20 +384,21 @@ func validatePlot(b map[string]any, policy Policy) error {
 		return fail("invalid plot kind")
 	}
 	for _, key := range []string{"title", "xTitle", "yTitle"} {
-		if !str(b[key], fieldlimits.QuestionMetadata, false) {
+		if !str(b[key], fieldlimits.QuestionPlotTitle, false) {
 			return fail("invalid plot label")
 		}
 	}
-	if !optionalString(b, "unit", fieldlimits.QuestionMetadata) {
+	if !optionalString(b, "unit", fieldlimits.QuestionPlotTitle) {
 		return fail("invalid plot unit")
 	}
-	series, ok := array(b["series"], 1, fieldlimits.QuestionPlotSeries)
+	series, ok := array(b["series"], minSeries(policy), fieldlimits.QuestionPlotSeries)
 	if !ok {
 		return fail("invalid plot series")
 	}
 	// A scatter series needs one point, a line two (Epo 2026-10-14).
+	// A live line's one-point series is skipped where it is drawn.
 	minPoints := 2
-	if b["kind"] == "scatter" {
+	if b["kind"] == "scatter" || policy.Live {
 		minPoints = 1
 	}
 	for _, raw := range series {
@@ -392,7 +410,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 			return err
 		}
 		points, ok := array(s["points"], minPoints, fieldlimits.QuestionPlotPoints)
-		if !str(s["name"], fieldlimits.QuestionMetadata, false) || !ok {
+		if !str(s["name"], fieldlimits.QuestionPlotLabel, false) || !ok {
 			return fail("invalid plot curve")
 		}
 		for _, point := range points {
@@ -414,7 +432,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 			if err := keys(line, "axis value", "label"); err != nil {
 				return err
 			}
-			if _, ok := num(line["value"]); !ok || !enum(line["axis"], "x y") || !optionalString(line, "label", fieldlimits.QuestionMetadata) {
+			if _, ok := num(line["value"]); !ok || !enum(line["axis"], "x y") || !optionalString(line, "label", fieldlimits.QuestionPlotLabel) {
 				return fail("invalid plot line")
 			}
 		}
@@ -434,7 +452,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 			}
 			_, xOK := num(mark["x"])
 			_, yOK := num(mark["y"])
-			if !xOK || !yOK || !str(mark["label"], fieldlimits.QuestionMetadata, false) {
+			if !xOK || !yOK || !str(mark["label"], fieldlimits.QuestionPlotLabel, false) {
 				return fail("invalid plot mark")
 			}
 		}
@@ -503,11 +521,12 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if g, ok := b["gridlines"]; ok && !enum(g, "normal fine") {
 			return fail("invalid gridlines")
 		}
-		series, ok := array(b["series"], 1, fieldlimits.QuestionChartSeries)
+		series, ok := array(b["series"], minSeries(policy), fieldlimits.QuestionChartSeries)
 		if !ok {
 			return fail("invalid chart series")
 		}
-		if (b["kind"] == "pie" || b["kind"] == "stacked") && len(series) != 1 {
+		single := b["kind"] == "pie" || b["kind"] == "stacked"
+		if single && len(series) > 1 && !policy.Live {
 			return fail("pie and stacked require one series")
 		}
 		for _, raw := range series {
@@ -531,12 +550,12 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 					continue
 				}
 				n, ok := num(v)
-				if !ok || math.Abs(n) > fieldlimits.QuestionChartValue || ((b["kind"] == "pie" || b["kind"] == "stacked") && n < 0) {
+				if !ok || math.Abs(n) > fieldlimits.QuestionChartValue || (single && !policy.Live && n < 0) {
 					return fail("invalid chart value")
 				}
 			}
 		}
-		if b["kind"] == "pie" || b["kind"] == "stacked" {
+		if single && !policy.Live {
 			positive := false
 			for _, raw := range series[0].(map[string]any)["values"].([]any) {
 				n, _ := num(raw)
@@ -1352,4 +1371,110 @@ func blocksText(blocks []any) string {
 		}
 	}
 	return strings.Join(out, "\n\n")
+}
+
+// RepairFigure is a live chart, plot or graph as readers draw it (Epo
+// 2026-10-17, 2026-10-18): series and graph elements past their cap keep the
+// first ones, a pie or stacked chart its first series; a chart series' values
+// are padded with null or cut to its labels; a line plot's series of fewer
+// than two points is skipped (before the cap); a graph element naming a point
+// that is gone is skipped. A block needing none of it comes back as it is;
+// the input is never changed. The collaboration server's repair_figure and
+// the browser's repairFigureBlock are the same; all three run
+// testdata/repairs/figures.json. Go draws nothing, so only its index text
+// uses it, for stored content a whole-document write left as sent.
+func RepairFigure(block map[string]any) map[string]any {
+	kind, _ := block["kind"].(string)
+	var list string
+	var max int
+	switch block["type"] {
+	case "chart":
+		list, max = "series", fieldlimits.QuestionChartSeries
+		if kind == "pie" || kind == "stacked" {
+			max = 1
+		}
+	case "plot":
+		list, max = "series", fieldlimits.QuestionPlotSeries
+	case "graph":
+		list, max = "elements", fieldlimits.QuestionGraphElements
+	default:
+		return block
+	}
+	entries, ok := block[list].([]any)
+	if !ok {
+		return block
+	}
+	changed := false
+	kept := entries
+	if block["type"] == "plot" && kind != "scatter" {
+		kept = []any{}
+		for _, raw := range entries {
+			s, _ := raw.(map[string]any)
+			if points, ok := s["points"].([]any); !ok || len(points) >= 2 {
+				kept = append(kept, raw)
+			}
+		}
+		changed = len(kept) != len(entries)
+	}
+	if len(kept) > max {
+		kept, changed = kept[:max], true
+	}
+	if labels, ok := block["labels"].([]any); ok && block["type"] == "chart" {
+		resized := make([]any, len(kept))
+		for i, raw := range kept {
+			resized[i] = raw
+			s, ok := raw.(map[string]any)
+			values, isList := s["values"].([]any)
+			if !ok || !isList || len(values) == len(labels) {
+				continue
+			}
+			padded := make([]any, len(labels))
+			copy(padded, values)
+			copied := make(map[string]any, len(s))
+			for key, value := range s {
+				copied[key] = value
+			}
+			copied["values"] = padded
+			resized[i], changed = copied, true
+		}
+		kept = resized
+	}
+	if block["type"] == "graph" {
+		points := map[string]bool{}
+		for _, raw := range kept {
+			if e, _ := raw.(map[string]any); e["type"] == "point" {
+				if id, ok := e["id"].(string); ok {
+					points[id] = true
+				}
+			}
+		}
+		named := []any{}
+		for _, raw := range kept {
+			e, _ := raw.(map[string]any)
+			refs, _ := e["points"].([]any)
+			if center, ok := e["center"]; ok {
+				refs = append(append([]any{}, refs...), center)
+			}
+			whole := true
+			for _, ref := range refs {
+				if id, ok := ref.(string); ok && !points[id] {
+					whole = false
+				}
+			}
+			if whole {
+				named = append(named, raw)
+			}
+		}
+		changed = changed || len(named) != len(kept)
+		kept = named
+	}
+	if !changed {
+		return block
+	}
+	out := make(map[string]any, len(block))
+	for key, value := range block {
+		out[key] = value
+	}
+	out[list] = kept
+	return out
 }

@@ -1,7 +1,7 @@
 /* The browser against the embed catalog (openwiki/embeds.md): the read-only
    plugin kit and the live editor know every element type with the catalog's
-   void and inline flags, chat has each embed's component, and every embed's fence converts
-   to its element and back. */
+   void and inline flags, chat has each embed's component, every embed's fence converts
+   to its element and back, and every element names its index rule. */
 import { readFileSync } from 'node:fs';
 import { serializeMd } from '@platejs/markdown';
 import { createSlateEditor, type SlateEditor } from 'platejs';
@@ -81,6 +81,14 @@ describe('the embed catalog', () => {
       expect(elementFlags(live)).toEqual({ ...catalogFlags, mermaid: 'void' });
     }
   );
+
+  // Go's ExtractIndexText and the collaboration server's index_text read
+  // each element's rule (openwiki/embeds.md "Index text").
+  it('gives every element an index rule', () => {
+    const rules = ['none', 'text', 'figure', 'mermaid', 'question', 'item'];
+    for (const element of EMBED_CATALOG.elements)
+      expect(rules, element.type).toContain(element.index);
+  });
 
   it('names chat components the chat library has', () => {
     const file = new URL(
