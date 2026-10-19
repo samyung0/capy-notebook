@@ -1304,9 +1304,14 @@ overestimate (a paste of more than about 37,000-50,000 simple formulas is
 refused). While the tab holds back its collaboration messages (pacing, an
 update's pieces, a timeout), `XlsxEditorHost` passes `sending` to the editor:
 the grid and formula bar show a loading cursor (`aria-busy` on the grid) and
-every edit is refused as in read-only; an open cell edit stays open,
-read-only, while an armed paint brush, a chart drag or an arrow burst is
-dropped; selection, scrolling and copy still work.
+every edit is refused as in read-only; an open cell edit or formula-bar draft
+stays open, read-only, on its cell (a press elsewhere, a sheet switch, the name
+box and the host's `selectCells` and `clearSelection` are refused while it is
+open), while an armed paint brush, a chart drag or an arrow burst is dropped;
+selection, scrolling and copy still work. A gesture that resumes after a wait
+(a cut's read, a row/column op or host clear waiting on a commit, an unmerge's
+merged-range read) does not edit if the pause began meanwhile: the cut ends as
+a copy.
 Copy keeps the selection's own top-left corner, leading blanks included as in
 Excel, and trims only past the used range's last row and column; it reads that
 area in pieces of at most 100,000 cells (the engine's read cap) without
@@ -1340,8 +1345,8 @@ parse, or text over 32,767 characters, is refused with a translated line under
 the formula bar while the draft stays open on its cell (its arrows then move the
 caret, as Excel's Edit mode). Such an edit closes only once the browser's engine
 took it: keys typed meanwhile are dropped, a press elsewhere (from the cell
-editor or the formula bar), a sheet switch or a row/column op waits for it and
-does nothing after a refusal, and the grid takes the focus back only if it
+editor or the formula bar), a sheet switch, a name box Enter or a row/column op
+waits for it and does nothing after a refusal, and the grid takes the focus back only if it
 stayed in the edit. Paste and agent writes store such a formula as text. Point mode (v1): while a formula waits for an operand, a click or
 drag writes the cell or range reference (pointing again replaces it, typing
 ends it), arrows point from the edited cell in an edit opened by typing (Shift
