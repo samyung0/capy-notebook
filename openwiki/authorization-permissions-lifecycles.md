@@ -258,7 +258,10 @@ page's Clone, which carries the token as `?clone=<kind>:<token>`). `POST
 now, and records the grant (`workspace_link_grants`, `material_link_grants`,
 migration 0095); later calls use the bare id. Members and owners never need it.
 Making the workspace or material private deletes every grant, so sharing it
-again needs the link again. The checks are `workspaceRoles`,
+again needs the link again; so does filing a standalone material into a
+workspace, which turns it private from a BEFORE trigger (the clearing triggers
+are plain `AFTER UPDATE` with a `WHEN` on the final row, since `UPDATE OF
+privacy` would miss that). The checks are `workspaceRoles`,
 `materialEffectiveAccess`, `linkReachSQL` (source access, chat), the comment
 lock, the collaboration server's `live_access` and the pipeline's source
 refresh fences. Analytics strip share signatures from page URLs
