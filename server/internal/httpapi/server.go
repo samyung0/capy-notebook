@@ -53,6 +53,8 @@ type Config struct {
 	ClerkWebhookSecret string
 	AuthDisabled       bool
 	DevUserID          string
+	// BYOKEnabled turns on saving and removing provider keys (off by default).
+	BYOKEnabled bool
 	// E2EAuth enables X-E2E-User-Id identity headers (disposable E2E only).
 	E2EAuth                bool
 	E2ESecret              string
@@ -173,8 +175,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		// the anonymous daily caps.
 		"/api/public/quizzes/",
 		"/api/public/notes/",
-		// Service-to-service, authenticated by X-Pipeline-Secret inside the
-		// handler; there is no Clerk session to verify.
+		// Service-to-service, authenticated by X-Pipeline-Secret in
+		// internalSecretFirst; there is no Clerk session to verify.
 		"/api/internal/",
 	}
 	if served != nil {
@@ -209,6 +211,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 			next.ServeHTTP(w, r)
 		})
 	})
+	r.Use(a.internalSecretFirst)
 	r.Use(auth.Middleware(auth.Config{
 		SecretKey:    cfg.ClerkSecretKey,
 		Disabled:     cfg.AuthDisabled,
@@ -276,6 +279,35 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 }
 
 /* ------------------------------------------------------------------ helpers */
+
+// internalBodyMaxBytes caps every service-to-service body at the largest an
+// internal route takes (a source state); routes with a tighter bound keep it.
+const internalBodyMaxBytes = 150 << 20
+
+// internalSecretFirst refuses a call to /internal/collaboration/* or
+// /api/internal/* without that prefix's service secret before anything reads
+// its body (Huma decodes and validates a body before the handler runs), and
+// caps the body of the callers that hold it. Neither prefix is rate limited.
+func (a *api) internalSecretFirst(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ok bool
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/internal/collaboration/"):
+			ok = a.collaborationSecretOK(r.Header.Get("X-Collaboration-Secret"))
+		case strings.HasPrefix(r.URL.Path, "/api/internal/"):
+			ok = a.pipelineSecretOK(r)
+		default:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, internalBodyMaxBytes)
+		next.ServeHTTP(w, r)
+	})
+}
 
 func healthHandler(releaseSHA string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {

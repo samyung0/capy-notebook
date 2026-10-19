@@ -53,7 +53,19 @@ func (a *api) listLLMCredentials(ctx context.Context, _ *struct{}) (*llmCredenti
 	return &llmCredentialsOutput{Body: out}, nil
 }
 
+// byokWrites refuses saving or removing a provider key unless BYOK_ENABLED is
+// set. The UI dropped BYOK; the code stays for future custom providers.
+func (a *api) byokWrites() error {
+	if !a.cfg.BYOKEnabled {
+		return huma.Error404NotFound("not found")
+	}
+	return nil
+}
+
 func (a *api) upsertLLMCredential(ctx context.Context, in *upsertLLMCredentialInput) (*Empty, error) {
+	if err := a.byokWrites(); err != nil {
+		return nil, err
+	}
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
@@ -72,6 +84,9 @@ func (a *api) upsertLLMCredential(ctx context.Context, in *upsertLLMCredentialIn
 }
 
 func (a *api) deleteLLMCredential(ctx context.Context, in *deleteLLMCredentialInput) (*Empty, error) {
+	if err := a.byokWrites(); err != nil {
+		return nil, err
+	}
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}

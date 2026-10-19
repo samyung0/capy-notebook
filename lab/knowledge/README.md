@@ -11,19 +11,27 @@ uv run --project pipeline python lab/knowledge/server.py --port 18766
 # then open http://127.0.0.1:18766  (the Claude app's launch entry is kb-builder)
 ```
 
+The server answers only requests whose Host is `127.0.0.1:<port>` or
+`localhost:<port>`, and refuses a mutating request without the
+`X-Capy-Builder: 1` header the page sends (403 for both).
+
 Secrets are lifted from the repository-root `.env.local`: `ALIBABA_API_KEY`,
-`ALIBABA_BASE_URL`, `LIBRARY_DATABASE_URL`, `DEEPINFRA_API_KEY` and the five
-`KNOWLEDGE_BASE_B2_*` values. The ordinary dashboard runner uses two models
+`ALIBABA_BASE_URL`, `LIBRARY_DATABASE_URL`, `DEEPINFRA_API_KEY`, the five
+`KNOWLEDGE_BASE_B2_*` values (endpoint, region, bucket and the read-only key
+retrieval also uses) and `KNOWLEDGE_BASE_B2_WRITER_KEY_ID` with
+`KNOWLEDGE_BASE_B2_WRITER_APP_KEY`. The writer key is the only one that may
+write the shared book bucket: publish uploads a missing source PDF with it (same
+endpoint, region and bucket) and fails the upload when either value is missing;
+the read key never stands in. The ordinary dashboard runner uses two models
 (`llm.py`): GLM-5.3-Flash on the local
 Ollama cloud model (`glm-5.3-flash:cloud`, 127.0.0.1:11434) serves topics and
 scraping; Qwen3.8-Flash on Alibaba Model Studio serves the transcribe and tag
 stages. Both wait and retry on a connection error, a 429 or a 5xx (5, 20, 60 s;
 a Retry-After in seconds is honoured, an HTTP date falls back to the pause),
-retry a schema failure once and never fall back to another endpoint; every live
-call is a row in `llm_calls`, and a batch task is one row with its totals once
-collected. Both workflows start paused. On start, books left `running` and
-downloads left `downloading` by a dead process go back to the queue; `waiting`
-books keep waiting for their batch.
+retry a schema failure once and never fall back to another endpoint; every call
+is a row in `llm_calls`. Both workflows start paused. On start, books left
+`running` and downloads left `downloading` by a dead process go back to the
+queue.
 
 ## Scraping: instructions for the scraping agent
 
@@ -97,7 +105,13 @@ once; links are followed to depth 4 from a seed; explicit `rel=next` links on
 the same catalog path keep their depth, so pagination can continue beyond four
 pages; at most 2,000 pending URLs per
 host; pages are read up to 20 MB and clipped to about 12k tokens before the
-model sees them; a PDF is capped at 200 MiB. The local builder parser container
+model sees them; a PDF is capped at 200 MiB. Redirects are followed by hand,
+at most five per request, and every request (robots.txt, page or PDF, the first
+hop included) is refused unless each address its host resolves to is public:
+private, loopback, link-local, shared, multicast, reserved, unspecified and
+IPv4-mapped forms of those are refused, and the page or download fails without
+a retry. The check and the connection look the name up separately, so a name
+whose answer changes between the two is not covered. The local builder parser container
 uses `CAPY_MAX_SOURCE_BYTES=209715200` to match; preserve this override when
 recreating it, and set `CAPY_PARSE_WORKERS=1` and `CAPY_PARSE_MAX_PAGES=100000`,
 which the parser requires; book ingestion takes books of any length and the
@@ -147,19 +161,13 @@ flags topics over 60; publish is not blocked.
 `transcribe.py` sends one Qwen3.8-Flash request per page image: every page a
 chunk touches is rendered once (PyMuPDF, zoom 1.4, JPEG 82) under
 `<run>/pages/`, and each request carries the developer's page-description
-prompt (thinking off, temperature 0) and returns `text`, the transcription,
-plus `figures` (printed label and what each figure visibly shows) under a
-strict JSON schema. By default a book goes through the Alibaba Batch API: page
-images are uploaded to the knowledge-base bucket as `pages/<sha256>/<page>.jpg`
-and presigned for 7 days, one JSONL line per page (`<book>:p<page>`) is
-submitted as one task, the task id lands in `review_tasks` (one row per book
-and stage), the book is `waiting` and the worker polls every ten minutes; once
-the task is terminal the stage saves each answer as `<run>/pages/<page>.json`
-and sends the pages still missing through the live endpoint once (a page that
-fails both fails the stage with the count; retry re-sends only the missing
-pages). The dashboard's "live endpoint" toggle sends every page live instead
-(four in flight, one retry pass), for small books; it is refused while a batch
-task is open, and a stage remembers the transport it started with. Recovery is
+prompt (thinking off, temperature 0) with the page inline and returns `text`,
+the transcription, plus `figures` (printed label and what each figure visibly
+shows) under a strict JSON schema. Pages go to the live endpoint four in
+flight (`<book>:p<page>`), with one retry pass for the pages still missing;
+each answer is saved as `<run>/pages/<page>.json`, a page that fails both
+passes fails the stage with the count, and a retry re-sends only the missing
+pages. Recovery is
 alignment, not model-labelled corrections: a chunk's original words are matched
 against the transcription of its pages (concatenated for a page-spanning
 chunk) in blocks of three or more words, extended over shorter blocks that
@@ -175,7 +183,7 @@ matched (table-of-contents fragments) are skipped and listed as
 `unaligned_short`. A literal backslash-n the model escaped inside the JSON
 string is unescaped unless it starts a LaTeX command. Every run reverts and
 re-aligns from the saved transcriptions, so a rule change reaches every chunk
-without a new batch and the receipt counts are book totals; decided held items
+without new calls and the receipt counts are book totals; decided held items
 keep their decision. Figures: each returned figure is matched to the corpus
 figures on its page by printed label, else by order; the description is stored
 on the figure (`library_figures.description` at publish) and appended as
@@ -185,17 +193,15 @@ the excerpt that lists the figure (not for decorative figures), never to
 `<run>/transcribe-<timestamp>.json` (pages, aligned, changed, held,
 unaligned_short, figures described, usage); `transcribe.json` holds the held
 ledger. `--redo` reverts, discards the transcriptions and the ledger, archives
-the batch state and submits a new task. Model directories of stages this round
+the stage state and sends every page again. Model directories of stages this round
 replaced (`review`, `tags`, `recovery`) are moved to `<run>/archive/` so the
 loader records this run's stages only.
 
 `tag.py` tags the corrected excerpts, text only: eight excerpts per request
-(corrected text, section path, id) with the candidate topics as id, label and
-aliases in the system prefix, one array entry per excerpt id, thinking capped
-at 4,096 tokens in Batch (`<book>:g<index>`), the same `review_tasks` and
-waiting flow; excerpts missing from a reply after collection are re-sent
-singly on the live endpoint (thinking off), and `--live` sends every group live
-with one single-excerpt retry pass. The prompt asks for evidence as a
+(`<book>:g<index>`: corrected text, section path, id) with the candidate topics
+as id, label and aliases in the system prefix, one array entry per excerpt id,
+on the live endpoint (four in flight, thinking off); excerpts missing from the
+replies are re-sent singly once. The prompt asks for evidence as a
 contiguous span of 5 to 30 words copied exactly from the excerpt text, no
 ellipsis; the verifier (`knowledge_base_pilot.evidence_verified`, shared with
 the pilot's `tag_outputs`) tolerates case and whitespace and splits on an
@@ -205,8 +211,7 @@ through the pilot's `tag_outputs`/`tags_document`, so `tags.json` has the
 the book with the count. Each run writes `<run>/tag-<timestamp>.json` (tagged,
 verified rate, failed, review items, usage). The stage state under
 `<run>/models/transcribe/` and `<run>/models/tag/` is what the loader records
-as the book version's model runs. A killed stage leaves
-`models/<stage>/command.lock`; the server removes stale locks at startup.
+as the book version's model runs.
 
 ## Library tab
 
@@ -239,24 +244,16 @@ The short fields supplement the full notes. Final topic assignment must retain
 them; indexing refuses metadata lost between review and final tags.
 The parent sends [sol-assignment.txt](sol-assignment.txt) verbatim with a
 separate assignment record and saves its exact wording/hash. The owner finishes
-with a reusable local text packet. The developer can send saved packets for
-Qwen review whenever needed and have someone else assess its response;
-submission and polling are outside this workflow. Qwen checks roles, full
-notes, scope, topics and necessary context links; initial page checks stay with
-the owner. No Qwen material review, image cache or feedback loop is required.
-`packet.py` produces fixed, self-contained review inputs locally; see the
-command and candidate format in [review.md](review.md). The realtime study loop
+with a reusable local text packet. `packet.py` produces fixed, self-contained
+review inputs locally; see the command and candidate format in
+[review.md](review.md). The realtime study loop
 continues using the user-selected model.
 Packets stay local under the Git-ignored `data/knowledge-base/`. Earlier
 artifacts keep their directory names: the first batch is in
 `sol-first-batch-2026-09-21/<book-id>/packet-exported.json`, the backfill in
 `sol-backfill-2026-09-21/` (`inventory.json` and per-book, per-scope
 artifacts) and new-book intake in `opus-intake-2026-09-23/`. Saving a packet
-does not submit it to Qwen or upload it to Drive.
-The optional [Qwen batch commands](qwen-batch.md) prepare and submit selected
-saved packets, poll every ten minutes and store raw responses for later
-assessment. They require an explicit thinking-mode choice, preserve strict JSON
-output without token caps, and never apply findings or start intake work.
+does not send it anywhere.
 Topics follows review in the same owner's assignment. Use `topics.py --run
 <run> --book <id> --review-context <full-review.json> --export-context <context>`
 to refresh the subject catalog and save the full reviewed context, rules and

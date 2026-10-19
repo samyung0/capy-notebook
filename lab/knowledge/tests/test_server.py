@@ -12,6 +12,39 @@ from fastapi.testclient import TestClient
 import server
 
 SHA = "d" * 64
+PORT = 18766
+ORIGIN = f"http://127.0.0.1:{PORT}"
+GUARD = {"X-Capy-Builder": "1"}
+
+
+def client() -> TestClient:
+    """The dashboard as the page reaches it: its own Host and the header."""
+    return TestClient(server.build_app(PORT), base_url=ORIGIN, headers=GUARD)
+
+
+def test_foreign_host_and_missing_header_are_refused(monkeypatch):
+    """(security regression) A rebinding page sends its own Host; a cross-site
+    form post cannot add the header."""
+    monkeypatch.setattr(server, "state", lambda held=None: {"ok": True})
+    app = server.build_app(PORT)
+    foreign = TestClient(app, base_url=f"http://rebind.test:{PORT}", headers=GUARD)
+    assert foreign.get("/api/state").status_code == 403
+    assert foreign.post("/api/workflows/scrape/start").status_code == 403
+    bare = TestClient(app, base_url=ORIGIN)
+    response = bare.post(
+        "/api/urls",
+        content='{"url": "https://a.test/"}',
+        headers={"content-type": "text/plain"},
+    )
+    assert response.status_code == 403
+    assert (
+        bare.delete("/api/urls", params={"url": "https://a.test/"}).status_code == 403
+    )
+    assert store.url_counts()["by_status"] == {} and store.setting("scrape") == "paused"
+    # The page's own requests pass, from either local name.
+    assert bare.get("/api/state").json() == {"ok": True}
+    local = TestClient(app, base_url=f"http://localhost:{PORT}", headers=GUARD)
+    assert local.post("/api/workflows/scrape/start").json() == {"scrape": "running"}
 
 
 def test_busy_rejection_does_not_block_other_requests(monkeypatch):
@@ -29,8 +62,9 @@ def test_busy_rejection_does_not_block_other_requests(monkeypatch):
 
     async def exercise():
         async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=server.build_app()),
-            base_url="http://test",
+            transport=httpx.ASGITransport(app=server.build_app(PORT)),
+            base_url=ORIGIN,
+            headers=GUARD,
         ) as client:
             rejection = asyncio.create_task(
                 client.post(
@@ -59,8 +93,9 @@ def test_busy_rejection_does_not_block_other_requests(monkeypatch):
 def test_manual_noncommercial_rejection_only_changes_403_errors(status, error):
     url = "https://example.test/book.pdf?edition=2&file=book"
     store.add_download({"pdf_url": url}, status, error)
-    client = TestClient(server.build_app())
-    response = client.post("/api/downloads/reject-noncommercial", json={"pdf_url": url})
+    response = client().post(
+        "/api/downloads/reject-noncommercial", json={"pdf_url": url}
+    )
     row = store.downloads()[0]
     if status in ("failed", "rejected") and "403" in error:
         assert response.status_code == 200

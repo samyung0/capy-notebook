@@ -6,10 +6,7 @@ parse -> figures -> topics -> transcribe -> tag -> index -> publish
 Pause is checked between stages (the current stage finishes). A non-zero exit
 marks the book failed with the stage and its log; retry resumes from that
 stage. A stage whose dependency is down pauses the workflow with the reason
-instead of failing the book. The transcribe and tag stages exit 3 while their
-Alibaba Batch task is in flight: the book is `waiting`, the worker polls the
-task every ten minutes and re-queues the book at that stage once the task is
-terminal.
+instead of failing the book.
 """
 
 from __future__ import annotations
@@ -26,7 +23,6 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import batches
 import store
 import topics
 import transcribe
@@ -39,9 +35,9 @@ PILOT = store.REPO / "bench/rag/scripts/knowledge_base_pilot.py"
 LOADER = store.REPO / "bench/rag/scripts/knowledge_base_library.py"
 SECRETS = store.REPO / ".env.local"
 STAGES = ("parse", "figures", "topics", "transcribe", "tag", "index", "publish")
-BATCH_STAGES = ("transcribe", "tag")
-WAITING = batches.WAITING
-POLL_SECONDS = 600
+# The only key that may write the shared book bucket; retrieval and the head
+# check below use the read key in KNOWLEDGE_BASE_B2_KEY_ID/APP_KEY.
+WRITER_KEYS = ("KNOWLEDGE_BASE_B2_WRITER_KEY_ID", "KNOWLEDGE_BASE_B2_WRITER_APP_KEY")
 CONTAINERS = {
     "postgres": "capy-kb-postgres-v4-pilot",
     "parser": "capy-kb-parser-v4-pilot",
@@ -50,7 +46,7 @@ NEEDS = {
     "parse": ("postgres", "parser"),
     "figures": (),
     "topics": ("ollama", "tunnel"),
-    "transcribe": ("alibaba", "bucket"),
+    "transcribe": ("alibaba",),
     "tag": ("alibaba",),
     "index": ("postgres",),
     "publish": ("postgres", "tunnel", "bucket"),
@@ -114,7 +110,7 @@ def dependencies() -> dict[str, bool]:
         "parser": CONTAINERS["parser"] in running,
         "ollama": ollama_up(),
         "tunnel": port_open(LIBRARY_PORT),
-        "bucket": all(os.environ.get(k) for k in KNOWLEDGE_B2_KEYS),
+        "bucket": all(os.environ.get(k) for k in (*KNOWLEDGE_B2_KEYS, *WRITER_KEYS)),
         "alibaba": bool(
             os.environ.get("ALIBABA_API_KEY") and os.environ.get("ALIBABA_BASE_URL")
         ),
@@ -124,8 +120,6 @@ def dependencies() -> dict[str, bool]:
 def check_dependencies(stage: str) -> str | None:
     """The refusal message when something the stage needs is down, else None."""
     needs = NEEDS[stage]
-    if stage == "transcribe" and store.setting("live_endpoint") == "1":
-        needs = ("alibaba",)  # the live path sends page images inline
     if "tunnel" in needs:
         try:
             ensure_tunnel((LIBRARY_PORT,))
@@ -140,7 +134,7 @@ def check_dependencies(stage: str) -> str | None:
         "parser": CONTAINERS["parser"],
         "ollama": "Ollama on 127.0.0.1:11434",
         "tunnel": f"the library tunnel on {LIBRARY_PORT}",
-        "bucket": "KNOWLEDGE_BASE_B2_* in .env.local",
+        "bucket": "KNOWLEDGE_BASE_B2_* (with the writer key) in .env.local",
         "alibaba": "ALIBABA_API_KEY and ALIBABA_BASE_URL in .env.local",
     }
     return f"{stage} refused: {', '.join(names[d] for d in down)} down"
@@ -292,11 +286,8 @@ def run_topics(
     )
 
 
-def run_batch_stage(stage: str):
-    """Exit 0 when applied, 3 (WAITING) while the batch task is in flight."""
-
+def run_model_stage(stage: str):
     def run_stage(book: dict, run_dir: Path, log: Path) -> int:
-        live = ["--live"] if store.setting("live_endpoint") == "1" else []
         return run_command(
             [
                 sys.executable,
@@ -305,7 +296,6 @@ def run_batch_stage(stage: str):
                 str(run_dir),
                 "--book",
                 book["book_id"],
-                *live,
             ],
             log,
         )
@@ -317,8 +307,30 @@ def run_index(book: dict, run_dir: Path, log: Path) -> int:
     return run_command(pilot("index", run_dir), log)
 
 
+def writer_client():
+    """The bucket client for uploads: the writer key with the read key's
+    endpoint and region. Missing writer values refuse; the read key never
+    stands in."""
+    import boto3
+    from pipeline.config import cfg
+
+    key_id, app_key = (os.environ.get(name) for name in WRITER_KEYS)
+    if not (key_id and app_key):
+        raise RuntimeError(
+            f"{' and '.join(WRITER_KEYS)} are needed in .env.local to upload a source"
+        )
+    return boto3.client(
+        "s3",
+        endpoint_url=cfg.knowledge_base_b2_endpoint,
+        region_name=cfg.knowledge_base_b2_region,
+        aws_access_key_id=key_id,
+        aws_secret_access_key=app_key,
+    )
+
+
 def upload_source(book: dict, log: Path) -> None:
-    """books/<sha256>.pdf into the knowledge-base bucket when head_object misses."""
+    """books/<sha256>.pdf into the knowledge-base bucket when head_object
+    (read key) misses; the upload uses the writer key."""
     sys.path.insert(0, str(store.REPO / "pipeline"))
     from pipeline.config import cfg
     from pipeline.store import blobstore
@@ -327,9 +339,10 @@ def upload_source(book: dict, log: Path) -> None:
     if blobstore.library_object_info(key) is not None:
         log_line(log, f"{key} already in the bucket")
         return
+    client = writer_client()
     pdf = store.REPO / book["manifest"]["pdf_path"]
     log_line(log, f"uploading {pdf.name} ({pdf.stat().st_size} bytes) as {key}")
-    blobstore.library_client().upload_file(
+    client.upload_file(
         str(pdf),
         cfg.knowledge_base_b2_bucket,
         key,
@@ -376,8 +389,8 @@ STAGE_RUNNERS = {
     "parse": run_parse,
     "figures": run_figures,
     "topics": run_topics,
-    "transcribe": run_batch_stage("transcribe"),
-    "tag": run_batch_stage("tag"),
+    "transcribe": run_model_stage("transcribe"),
+    "tag": run_model_stage("tag"),
     "index": run_index,
     "publish": run_publish,
 }
@@ -423,9 +436,6 @@ def run_book(book: dict) -> None:
             log_line(log, f"runner error: {type(exc).__name__}: {str(exc)[:300]}")
             code = 1
         store.finish_stage_run(run_id, code, stage_usage(book, stage, started))
-        if code == WAITING and stage in BATCH_STAGES:
-            store.set_book(sha, status="waiting")
-            return
         if code:
             store.set_book(
                 sha, status="failed", error=f"{stage} exited {code}; see {log}"
@@ -447,18 +457,6 @@ def run_book(book: dict) -> None:
             return
 
 
-def poll_waiting() -> bool:
-    """Check one waiting book's batch task when its poll is due; a terminal
-    task re-queues the book at its stage so the stage collects and applies.
-    True when a check happened."""
-    book = store.waiting_book_due(POLL_SECONDS)
-    if book is None:
-        return False
-    if batches.poll(book["sha256"], book["stage"]) in batches.TERMINAL:
-        store.set_book(book["sha256"], status="queued")
-    return True
-
-
 def worker(stop=None) -> None:
     while not (stop and stop.is_set()):
         if paused():
@@ -474,5 +472,5 @@ def worker(stop=None) -> None:
                     status="failed",
                     error=f"worker error: {type(exc).__name__}: {str(exc)[:200]}",
                 )
-        elif not poll_waiting():
+        else:
             time.sleep(2)

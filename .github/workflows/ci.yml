@@ -350,3 +350,5 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --extra test
       - run: uv run --extra test pytest
+      # The knowledge-base builder's tests, its security regressions included.
+      - run: uv run --extra test pytest lab/knowledge/tests -q

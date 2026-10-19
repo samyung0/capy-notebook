@@ -76,18 +76,6 @@ func encryptSecret(key, plaintext []byte) (nonce, ciphertext []byte, err error) 
 	return nonce, gcm.Seal(nil, nonce, plaintext, nil), nil
 }
 
-func decryptSecret(key, nonce, ciphertext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	return gcm.Open(nil, nonce, ciphertext, nil)
-}
-
 func secretLast4(key string) string {
 	runes := []rune(strings.TrimSpace(key))
 	if len(runes) <= 4 {
@@ -182,29 +170,6 @@ func (s *Store) UpsertLLMCredential(ctx context.Context, userID, providerSlug, a
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-func (s *Store) DecryptLLMCredential(ctx context.Context, userID, providerSlug string) (string, error) {
-	if err := s.requireCredKey(); err != nil {
-		return "", err
-	}
-	var nonce, ct []byte
-	err := s.pool.QueryRow(ctx, `
-		SELECT key_nonce, key_ciphertext
-		  FROM user_llm_credentials
-		 WHERE user_id=$1 AND provider_slug=$2`, userID, providerSlug).
-		Scan(&nonce, &ct)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
-	if err != nil {
-		return "", err
-	}
-	plain, err := decryptSecret(s.credKey, nonce, ct)
-	if err != nil {
-		return "", err
-	}
-	return string(plain), nil
 }
 
 func (s *Store) DeleteLLMCredential(ctx context.Context, userID, providerSlug string) error {
