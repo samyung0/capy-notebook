@@ -39,6 +39,7 @@ import { THEMES } from '@/theme/theme';
 import { useBottomInset } from './bottomInset';
 import { dropDocxViewerWorker } from './docxViewerWorker';
 import { exportCheckpoint } from './exportCheckpoint';
+import { ImageBudgetError, imageRoom } from './imageBudget';
 import type {
   OfficeExporter,
   OfficeFlusher,
@@ -97,6 +98,8 @@ interface LoadedFile {
   epoch?: number;
   fileName: string;
   format: OfficeFormat;
+  /** Edit loads only: what the room could still grow by when it opened. */
+  growthBudgetBytes?: number;
   /** Edit loads only: the payer's plan image cap. */
   imageMaxBytes?: number;
   initialUpdate?: Uint8Array;
@@ -270,8 +273,13 @@ function OfficeRuntime() {
     },
     [sendMenus]
   );
+  // The replica's state size once it held the room's document: the image
+  // budget counts what the document grew since. An image picked before the
+  // measure lands waits for it.
+  const openedStateBytesRef = useRef<Promise<number> | null>(null);
   const reportReplica = useCallback(
     (replica: OfficeReplica | null) => {
+      openedStateBytesRef.current = null;
       unsubscribeRef.current?.();
       replicaRef.current = replica;
       if (!replica) return;
@@ -296,7 +304,13 @@ function OfficeRuntime() {
         post({ bytes, capture, epoch, revision, type: 'update' }, [bytes]);
       });
       // The XLSX replica answers from its worker, after the updates above.
-      void Promise.resolve(replica.encodeStateAsUpdate()).then((state) => {
+      const opened = Promise.resolve(replica.encodeStateAsUpdate());
+      const measured = opened.then((state) => state.byteLength);
+      // A failed measure reaches the image that awaits it; unawaited it is
+      // the refusal below's alone.
+      measured.catch(() => undefined);
+      openedStateBytesRef.current = measured;
+      void opened.then((state) => {
         if (replicaRef.current !== replica) return;
         const bytes = state.slice().buffer;
         post({ bytes, epoch, revision, type: 'collaboration-ready' }, [bytes]);
@@ -318,13 +332,32 @@ function OfficeRuntime() {
         : null,
     [file?.initialUpdate, reportReplica]
   );
-  // An inserted image over the payer's plan cap is shrunk first, and one
-  // older Office apps cannot open is re-encoded; every edit load carries the
-  // cap (officeProtocol).
+  // An inserted image over the payer's plan cap, or over what the room may
+  // still grow by, is shrunk first, and one older Office apps cannot open is
+  // re-encoded; every edit load carries the cap and the budget
+  // (officeProtocol). One that cannot shrink into the budget is refused.
   const imageMaxBytes = file?.imageMaxBytes;
+  const growthBudgetBytes = file?.growthBudgetBytes;
+  const fileFormat = file?.format;
   const prepareImage = useCallback(
-    (image: File) => fitImage(image, imageMaxBytes!, { office: true }),
-    [imageMaxBytes]
+    async (image: File) => {
+      const replica = replicaRef.current;
+      const measured = openedStateBytesRef.current;
+      if (!replica || !measured) throw new ImageBudgetError();
+      const opened = await measured;
+      const now = (await replica.encodeStateAsUpdate()).byteLength;
+      const room = imageRoom(fileFormat!, growthBudgetBytes!, now - opened);
+      const cap = Math.min(imageMaxBytes!, room);
+      if (cap <= 0) throw new ImageBudgetError();
+      try {
+        return await fitImage(image, cap, { office: true });
+      } catch (error) {
+        if (cap < imageMaxBytes! && error instanceof ImageTooLargeError)
+          throw new ImageBudgetError(undefined, { cause: error });
+        throw error;
+      }
+    },
+    [fileFormat, growthBudgetBytes, imageMaxBytes]
   );
 
   useEffect(() => {
@@ -407,6 +440,7 @@ function OfficeRuntime() {
           epoch: message.collaboration?.epoch,
           fileName: message.fileName,
           format: message.format,
+          growthBudgetBytes: message.growthBudgetBytes,
           imageMaxBytes: message.imageMaxBytes,
           initialUpdate: message.collaboration
             ? new Uint8Array(message.collaboration.initialUpdate)
@@ -581,11 +615,13 @@ function OfficeRuntime() {
       if (runtimeRevision === undefined) return;
       // A refused image leaves the document as it was: a notice for Capy.
       const notice =
-        value instanceof ImageTooLargeError
-          ? 'image-too-large'
-          : value instanceof ImageUnreadableError
-            ? 'image-type'
-            : null;
+        value instanceof ImageBudgetError
+          ? 'image-budget'
+          : value instanceof ImageTooLargeError
+            ? 'image-too-large'
+            : value instanceof ImageUnreadableError
+              ? 'image-type'
+              : null;
       if (notice) {
         post({ notice, revision: runtimeRevision, type: 'notice' });
         return;

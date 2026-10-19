@@ -31,12 +31,18 @@ describe('office host protocol', () => {
       collaboration: { epoch: 1, initialUpdate: new ArrayBuffer(2) },
       mode: 'edit',
     };
-    expect(isOfficeHostMessage({ ...edit, imageMaxBytes: 2_097_152 })).toBe(
-      true
-    );
-    // An editor always knows the payer's image cap.
+    const limits = { growthBudgetBytes: 0, imageMaxBytes: 2_097_152 };
+    expect(isOfficeHostMessage({ ...edit, ...limits })).toBe(true);
+    // An editor always knows the payer's image cap and the room's growth
+    // budget, which may be spent (0).
     for (const imageMaxBytes of [undefined, 0, -1, 1.5, '2097152'])
-      expect(isOfficeHostMessage({ ...edit, imageMaxBytes })).toBe(false);
+      expect(isOfficeHostMessage({ ...edit, ...limits, imageMaxBytes })).toBe(
+        false
+      );
+    for (const growthBudgetBytes of [undefined, -1, 1.5, '0'])
+      expect(
+        isOfficeHostMessage({ ...edit, ...limits, growthBudgetBytes })
+      ).toBe(false);
     expect(isOfficeHostMessage(load)).toBe(false);
   });
 

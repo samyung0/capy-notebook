@@ -99,6 +99,8 @@ struct RoomRecord {
     checkpoint: u64,
     /// A NULL state with no rows: the first save reports the seed.
     seeded: bool,
+    /// The room's state cap ([`crate::state_cap`]).
+    state_cap: u64,
     /// Text: the indexed baseline and the last saved effect's window.
     baseline: Option<Arc<Vec<u16>>>,
     window: Option<TextWindow>,
@@ -111,6 +113,8 @@ pub struct Loaded {
     pub checkpoint: u64,
     /// The bytes applied (seed, base and rows), the room's first size estimate.
     pub bytes: u64,
+    /// The room's state cap ([`crate::state_cap`]).
+    pub state_cap: u64,
     /// An Office room's seed state vector: deleting what it holds frees
     /// nothing in the stored change (`ydoc::apply_freeing`).
     pub seed: Option<StateVector>,
@@ -180,6 +184,9 @@ pub(crate) struct Stored {
     pub(crate) epoch: u64,
     pub(crate) base_revision: i64,
     pub(crate) rows: Vec<(u64, Vec<u8>)>,
+    /// The largest plan source file (`plan_limits`), which publication's
+    /// export may not exceed.
+    pub(crate) export_cap: u64,
 }
 
 /// A rebase onto new bytes; none (no save after the capture) leaves the
@@ -540,7 +547,7 @@ impl Sources {
             .map_err(db_error)?;
         let row = txn
             .query_opt(
-                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
+                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision,(SELECT max(source_file_max_bytes) FROM plan_limits) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
                 &[&file_id],
             )
             .await
@@ -561,6 +568,10 @@ impl Sources {
             checkpoint: row.get::<_, i64>(2) as u64,
             epoch: epoch as u64,
             base_revision: row.get(4),
+            export_cap: row
+                .get::<_, Option<i64>>(5)
+                .ok_or_else(|| SourceError::Other("plan_limits has no source file cap".into()))?
+                as u64,
             rows: rows
                 .into_iter()
                 .map(|row| (row.get::<_, i64>(0) as u64, row.get(1)))
@@ -647,10 +658,15 @@ impl Sources {
             ));
         }
         let name = room.name();
-        let (_, layers) = self
+        let (seed, layers) = self
             .layers(session.format, &base, &sha, &stored, Some(&name), reader)
             .await?;
         stage(&mut times.seed);
+        let state_cap = crate::state_cap(
+            seed.state.len() as u64,
+            base.len() as u64,
+            stored.export_cap,
+        );
         let target = doc.clone();
         let layers = Arc::new(layers);
         let applied = layers.clone();
@@ -663,6 +679,7 @@ impl Sources {
             generation,
             checkpoint: stored.checkpoint,
             seeded: stored.state.is_none() && stored.rows.is_empty(),
+            state_cap,
             baseline: None,
             window: None,
             session: SourceSession {
@@ -687,6 +704,7 @@ impl Sources {
             format: session.format,
             checkpoint: stored.checkpoint,
             bytes: layers.iter().map(|layer| layer.len() as u64).sum(),
+            state_cap,
             seed: office(session.format).map(|_| seeded),
             base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
             rows: stored.rows.len() as u64,
@@ -924,8 +942,12 @@ impl Sources {
                 row_bytes: 0,
             });
         }
+        // The loaded room's cap; a room not loaded here has only the ceiling.
+        let cap = lock(&self.rooms)
+            .get(&name)
+            .map_or(MAX_SOURCE_STATE_BYTES as u64, |record| record.state_cap);
         if let Some(state) = &save.state
-            && state.len() > MAX_SOURCE_STATE_BYTES
+            && state.len() as u64 > cap
         {
             return Err(SourceError::request(
                 413,
@@ -1229,7 +1251,9 @@ impl Sources {
             state_seed_sha256: row.get(2),
             checkpoint: row.get::<_, i64>(3) as u64,
             epoch: epoch as u64,
+            // A fold checks neither.
             base_revision: 0,
+            export_cap: 0,
             rows: rows
                 .into_iter()
                 .map(|row| (row.get::<_, i64>(0) as u64, row.get(1)))

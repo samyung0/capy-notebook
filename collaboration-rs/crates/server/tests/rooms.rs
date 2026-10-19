@@ -303,7 +303,13 @@ impl Client {
         request
             .headers_mut()
             .insert("origin", ORIGIN.parse().expect("origin"));
-        let (ws, _) = tokio_tungstenite::connect_async(request)
+        // A browser takes any frame; the server's ceiling is a whole source
+        // state (tungstenite's own default is 16 MiB a frame).
+        let limit = Some(sources::MAX_SOURCE_STATE_BYTES + 1024 * 1024);
+        let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+            .max_frame_size(limit)
+            .max_message_size(limit);
+        let (ws, _) = tokio_tungstenite::connect_async_with_config(request, Some(config), false)
             .await
             .expect("connect");
         Client {
@@ -3144,7 +3150,12 @@ async fn gateway_post(
         .expect("preview");
     }
     txn.commit().await.expect("commit");
-    axum::Json(serde_json::json!({ "checkpoint": next })).into_response()
+    // An agent edit's receipt comes back with its checkpoint, as Go stores it.
+    let mut saved = serde_json::json!({ "checkpoint": next });
+    if let Some(receipt) = body["operation"].get("receipt") {
+        saved["operation"] = receipt.clone();
+    }
+    axum::Json(saved).into_response()
 }
 
 async fn gateway_blob(
@@ -3234,6 +3245,171 @@ async fn text_file(env: &Env, gateway: &Gateway, text: &str) -> (String, String)
         .expect("blobs")
         .insert(file.clone(), text.as_bytes().to_vec());
     (user, file)
+}
+
+/// Lowers every plan's source file cap, the export cap a source room reads at
+/// load, for one test so its base stays small; restores it when dropped,
+/// panics included. Tests that lower it take turns, but it edits the whole
+/// test database's `plan_limits`: a source room another test loads meanwhile
+/// gets the lowered cap, so the suite needs `--test-threads=1` (as CI runs it)
+/// once such a test holds a base past 1 MiB.
+struct ExportCap {
+    database: String,
+    before: Vec<(String, i64)>,
+    _turn: tokio::sync::MutexGuard<'static, ()>,
+}
+
+static EXPORT_CAP_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// The lowered cap: 1 MiB of growth for a small base, under the 1 MiB margin.
+const LOWERED_EXPORT_CAP: i64 = 2 * 1024 * 1024;
+
+impl ExportCap {
+    async fn lower(env: &Env) -> Self {
+        let turn = EXPORT_CAP_TURN.lock().await;
+        let client = db(env).await;
+        let before = client
+            .query(
+                "SELECT plan_tier, source_file_max_bytes FROM plan_limits",
+                &[],
+            )
+            .await
+            .expect("plan limits")
+            .iter()
+            .map(|row| (row.get(0), row.get(1)))
+            .collect();
+        client
+            .execute(
+                "UPDATE plan_limits SET source_file_max_bytes=$1",
+                &[&LOWERED_EXPORT_CAP],
+            )
+            .await
+            .expect("lower the cap");
+        ExportCap {
+            database: env.database.clone(),
+            before,
+            _turn: turn,
+        }
+    }
+}
+
+impl Drop for ExportCap {
+    fn drop(&mut self) {
+        let (database, before) = (self.database.clone(), std::mem::take(&mut self.before));
+        std::thread::spawn(move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime")
+                .block_on(async move {
+                    let (client, connection) =
+                        tokio_postgres::connect(&database, tokio_postgres::NoTls)
+                            .await
+                            .expect("postgres");
+                    tokio::spawn(connection);
+                    for (tier, bytes) in before {
+                        client
+                            .execute(
+                                "UPDATE plan_limits SET source_file_max_bytes=$2 WHERE plan_tier=$1",
+                                &[&tier, &bytes],
+                            )
+                            .await
+                            .expect("restore the cap");
+                    }
+                });
+        })
+        .join()
+        .expect("restore the plan limits");
+    }
+}
+
+/// A text source of `growth` bytes of room under the lowered export cap
+/// (less the margin), joined by a writer; returns the writer, user and file.
+async fn capped_text_source(
+    env: &Env,
+    gateway: &Gateway,
+    server: &Server,
+    growth: usize,
+) -> (Client, String, String, String) {
+    let base = format!(
+        "{}END",
+        "a".repeat(
+            LOWERED_EXPORT_CAP as usize - sources::STATE_GROWTH_MARGIN_BYTES as usize - growth - 3
+        )
+    );
+    let (user, file) = text_file(env, gateway, &base).await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(client.settle(|c| source_text(c).len() == base.len()).await);
+    (client, user, file, base)
+}
+
+/// Types `text` at the start of the writer's source and sends it.
+async fn type_at_start(client: &mut Client, text: &str) {
+    let before = client.doc.transact().state_vector();
+    client
+        .doc
+        .get_or_insert_text("source")
+        .insert(&mut client.doc.transact_mut(), 0, text);
+    let update = client.doc.transact().encode_state_as_update_v1(&before);
+    client.send(5, &sync(2, &update)).await;
+}
+
+fn closed_for_size(closed: Option<Vec<u8>>) {
+    let closed = closed.expect("closed");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("exceeds byte limit"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+}
+
+/// Epo 2026-10-17: a source room grows by at most the export cap (the
+/// largest plan source file) less its base file and a margin, not up to the
+/// ceiling every room shares. A base that leaves no room refuses the first
+/// keystroke.
+#[tokio::test]
+async fn a_source_room_refuses_growth_past_its_export_cap() {
+    let Some(env) = env() else { return };
+    let _cap = ExportCap::lower(&env).await;
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (mut client, ..) = capped_text_source(&env, &gateway, &server, 0).await;
+    type_at_start(&mut client, "x").await;
+    closed_for_size(client.until(4).await);
+}
+
+/// Epo 2026-10-17: an agent's edit counts toward the room's running size, so
+/// a writer's update that fits only beside an uncounted agent edit takes the
+/// exact measure and is refused.
+#[tokio::test]
+async fn an_agent_edit_counts_toward_a_source_rooms_cap() {
+    let Some(env) = env() else { return };
+    let _cap = ExportCap::lower(&env).await;
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    // 100 KiB of room past the write reserve.
+    let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 100 * 1024;
+    let (mut client, user, file, base) = capped_text_source(&env, &gateway, &server, growth).await;
+    let appended = "b".repeat(80 * 1024);
+    let edit = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{
+            "type": "replace_text",
+            "expectedText": "END",
+            "offset": base.len() - 3,
+            "text": format!("END{appended}"),
+        }],
+        "operation": { "id": format!("op_{file}"), "requestHash": "h1" },
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    let grown = base.len() + appended.len();
+    assert!(client.settle(|c| source_text(c).len() == grown).await);
+    type_at_start(&mut client, &"x".repeat(40 * 1024)).await;
+    closed_for_size(client.until(4).await);
 }
 
 /// Sends a checkpoint request and waits for the receipt naming it.

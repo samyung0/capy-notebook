@@ -472,6 +472,8 @@ export function join(room: Room, participant: Participant) {
 // reopened editor can wait for it).
 const UNREACHABLE = 'capy.mock.collaboration.unreachable';
 const REACHABILITY = 'capy:mock-collaboration-reachability';
+/** How many times this tab's source providers joined a room. */
+const SOURCE_JOINS = 'capy.mock.sourceJoins';
 // Unit tests run without a window: always reachable there.
 const browser = typeof window !== 'undefined';
 // The Office bench's co-editor case edits a source room as a second peer
@@ -765,6 +767,12 @@ class MockSourceProvider implements SourceProvider {
     this.config = config;
     this.room = room;
     this.leave = join(room, { document: config.document, origin: this });
+    // Counted for the e2e that checks an open at the size limit never joins.
+    if (browser)
+      sessionStorage.setItem(
+        SOURCE_JOINS,
+        String(Number(sessionStorage.getItem(SOURCE_JOINS) ?? 0) + 1)
+      );
     sourceProviders.add(this);
     queueMicrotask(() => config.onSynced?.({ state: true }));
   }

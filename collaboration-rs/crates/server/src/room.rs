@@ -291,6 +291,8 @@ struct Source {
     /// The room's state size by applied bytes less what deletes freed, for
     /// the cap check.
     estimate: sources::Estimate,
+    /// The room's state cap (`sources::state_cap`).
+    state_cap: u64,
     /// An Office room's seed state vector (`sources::Loaded::seed`).
     seed: Option<StateVector>,
     checkpoint: u64,
@@ -653,6 +655,7 @@ async fn load(
                 room,
                 format: loaded.format,
                 estimate: sources::Estimate::new(loaded.bytes),
+                state_cap: loaded.state_cap,
                 seed: loaded.seed,
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
@@ -1441,8 +1444,12 @@ impl Room {
         let applied = ydoc::decode(&edit.update)
             .map_err(|error| error.to_string())
             .and_then(|update| ydoc::apply(&self.doc, update).map_err(|error| error.to_string()));
-        match applied {
-            Ok(update) => self.broadcast_update(None, update),
+        let applied_bytes = match applied {
+            Ok(update) => {
+                let bytes = update.len() as u64;
+                self.broadcast_update(None, update);
+                bytes
+            }
             Err(error) => {
                 observe::capture(
                     &error,
@@ -1451,7 +1458,7 @@ impl Room {
                 );
                 return;
             }
-        }
+        };
         self.durable.union(&edit.durable);
         self.app
             .stats
@@ -1466,6 +1473,8 @@ impl Room {
                 note.log_bytes += edit.row_bytes as i64;
             }
             Kindly::Source(source) => {
+                // An agent's growth counts toward the cap as a writer's does.
+                source.estimate.applied(applied_bytes, 0);
                 source.checkpoint = source.checkpoint.max(edit.version);
                 source.log_rows += 1;
                 source.log_bytes += edit.row_bytes as i64;
@@ -2265,7 +2274,7 @@ impl Room {
                     &ydoc::Incoming::new(&update),
                     bytes.len(),
                 ) || source.estimate.bytes + bytes.len() as u64
-                    > sources::MAX_SOURCE_STATE_BYTES as u64
+                    > sources::admission_cap(source.state_cap)
             }
         };
         let mut admit = || match &mut self.kind {
@@ -2276,7 +2285,13 @@ impl Room {
                 crate::model::Admitted::Refused(message) => Verdict::Refused(message),
             },
             Kindly::Source(source) => {
-                match sources::admit_update(&self.doc, source.format, bytes, &mut source.estimate) {
+                match sources::admit_update(
+                    &self.doc,
+                    source.format,
+                    bytes,
+                    &mut source.estimate,
+                    source.state_cap,
+                ) {
                     sources::Admission::Accept => Verdict::Accept,
                     sources::Admission::Unheld => Verdict::Unheld,
                     sources::Admission::Refuse(refusal) => Verdict::Source(refusal),

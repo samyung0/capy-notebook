@@ -88,8 +88,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # fixture it returns, shaped like /api/internal/study-progress.
     "study_progress": None,
     # transport: send this pin to another OpenAI-compatible endpoint instead of the
-    # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "RELACE_API_KEY",
-    # "wire_model": "z-ai/glm-5.3-flash", "body": "zai"}. body picks the request builder.
+    # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "OTHER_API_KEY",
+    # "wire_model": "org/glm-5.3-flash", "body": "zai"}. body picks the request builder.
     # The production chat default: GLM-5.3-Flash at high reasoning (0009, 0042).
     "model": {
         "provider_slug": "zai",

@@ -20,7 +20,7 @@ use crate::engine::{EngineError, FailureKind};
 use crate::gateway::{CheckpointBody, CheckpointSaved};
 use crate::store::{Job, Reader, office, replay, text_of};
 use crate::text::{TEXT_ROOT, full_text_effects};
-use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceRoom, Sources};
+use crate::{BoxFuture, SourceError, SourceRoom, Sources};
 
 const ATTEMPTS: usize = 3;
 
@@ -416,7 +416,13 @@ impl Sources {
         let whole = doc
             .transact()
             .encode_state_as_update_v1(&StateVector::default());
-        if whole.len() > MAX_SOURCE_STATE_BYTES {
+        if whole.len() as u64
+            > crate::admission_cap(crate::state_cap(
+                seed.state.len() as u64,
+                base.len() as u64,
+                stored.export_cap,
+            ))
+        {
             return Err(SourceError::request(
                 413,
                 "Source checkpoint exceeds byte limit",

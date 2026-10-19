@@ -2261,22 +2261,23 @@ export const GetSourceSessionParams = zod.object({
 })
 
 export const GetSourceSessionQueryParams = zod.object({
-  "view": zod.boolean().optional().describe('Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
+  "view": zod.boolean().optional().describe('Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint')
 })
 
 export const GetSourceSessionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
+  "atSizeLimit": zod.boolean().optional(),
   "baseRevision": zod.int(),
   "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "growthBudgetBytes": zod.int().optional(),
   "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
-  "pendingEffects": zod.unknown(),
   "publishedSourceSHA256": zod.string().optional(),
   "publishedSourceURL": zod.string().optional(),
   "publishedState": zod.string().optional(),
@@ -7341,12 +7342,14 @@ export const BootstrapSourceDocumentHeader = zod.object({
 export const BootstrapSourceDocumentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
+  "atSizeLimit": zod.boolean().optional(),
   "baseRevision": zod.int(),
   "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "growthBudgetBytes": zod.int().optional(),
   "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
@@ -7520,12 +7523,14 @@ export const PublishSourceRefreshBody = zod.object({
 export const PublishSourceRefreshResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
+  "atSizeLimit": zod.boolean().optional(),
   "baseRevision": zod.int(),
   "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "growthBudgetBytes": zod.int().optional(),
   "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),

@@ -94,9 +94,9 @@ async def test_settlement_is_a_noop_outside_chat():
     assert state is None
 
 
-async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
-    monkeypatch,
-):
+async def test_glm_settles_under_its_catalog_pair(monkeypatch):
+    """Capacity and usage rows key on zai/glm-5.3-flash since Z.AI serves it
+    (2026-10-20); the relace transport pair is gone."""
     monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
     monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
     sent = {}
@@ -125,7 +125,7 @@ async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
     finally:
         accounting.reset(token)
 
-    assert sent["provider"] == "relace"
+    assert sent["provider"] == "zai"
     assert sent["model"] == "glm-5.3-flash"
     assert sent["thinking"] == "max"
     assert "modelVersion" not in sent

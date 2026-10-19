@@ -1254,6 +1254,9 @@ design, option d), and the nudge's release file on 2026-10-17.
   before the gate show Offline until reloaded, with their edits kept. The
   embeds round's live figure maps (a slate-yjs patch change, Epo 2026-10-17)
   raised `CLIENT_PROTOCOL` to 4 and `MIN_MATERIAL` to 4; `MIN_SOURCE` stays 3.
+  The Office protocol 11 (the edit `load`'s growth budget, Epo 2026-10-17)
+  raised `CLIENT_PROTOCOL` to 5 and `MIN_SOURCE` to 5; `MIN_MATERIAL` stays 4.
+  Its deploy request names "client protocol 4 -> 5, source 3 -> 5".
   The rate-limit round's open-slowed notice (both families) and an embed's
   note channel in its JOIN (Epo 2026-10-20) raise both minimums with
   `CLIENT_PROTOCOL` (numbers in `protocol.rs`).

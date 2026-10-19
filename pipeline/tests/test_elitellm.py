@@ -12,10 +12,8 @@ from pipeline.elitellm.client import (
     ANTHROPIC_URL,
     DEEPINFRA_EMBED_URL,
     OPENROUTER_CHAT_URL,
-    OPENROUTER_DEEPSEEK_MODEL,
-    RELACE_CHAT_URL,
-    RELACE_GLM_FLASH_MODEL,
-    RELACE_PROVIDER,
+    OPENROUTER_ROUTING,
+    ZAI_CHAT_URL,
     _as_obj,
     _thinking_for_call,
     anthropic_endpoint,
@@ -30,8 +28,7 @@ from pipeline.elitellm.client import (
     openai_chat_request,
     openai_reasoning_effort,
     openai_responses_request,
-    transport_model_slug,
-    transport_provider_slug,
+    openrouter_request,
     uses_responses,
     zai_request,
     zai_thinking_body,
@@ -40,7 +37,7 @@ from pipeline.elitellm.client import (
     complete as elitellm_complete,
 )
 from pipeline.elitellm.client import stream as elitellm_stream
-from pipeline.elitellm.providers import platform_env_name
+from pipeline.elitellm.providers import platform_env_name, provider_spec
 from pipeline.registry import (
     ModelConfig,
     RegistryError,
@@ -164,7 +161,7 @@ def test_no_reasoning_uses_provider_off_or_lowest_setting():
     assert _thinking_for_call(zai_vision, None) == "max"
 
 
-def test_zai_request_sends_relace_model_name_and_low_reasoning():
+def test_zai_request_sends_the_z_ai_model_name_and_low_reasoning():
     spec = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
@@ -196,7 +193,7 @@ def test_zai_request_sends_relace_model_name_and_low_reasoning():
         tool_choice=None,
     )
 
-    assert body["model"] == RELACE_GLM_FLASH_MODEL
+    assert body["model"] == "glm-5.3-flash"
     assert body["messages"] == messages
     assert "thinking" not in body
     assert body["reasoning_effort"] == "low"
@@ -205,7 +202,7 @@ def test_zai_request_sends_relace_model_name_and_low_reasoning():
 
 
 @pytest.mark.asyncio
-async def test_zai_complete_uses_relace(
+async def test_zai_complete_posts_to_z_ai_with_its_key(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
@@ -225,7 +222,7 @@ async def test_zai_complete_uses_relace(
         }
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("RELACE_API_KEY", "sk-relace")
+    monkeypatch.setenv("ZAI_API_KEY", "sk-zai")
     monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
 
     response = await elitellm_complete(
@@ -234,28 +231,35 @@ async def test_zai_complete_uses_relace(
         reasoning=False,
     )
 
-    assert seen["url"] == RELACE_CHAT_URL
+    assert (
+        seen["url"] == ZAI_CHAT_URL == "https://api.z.ai/api/paas/v4/chat/completions"
+    )
     assert seen["headers"] == {
-        "authorization": "Bearer sk-relace",
+        "authorization": "Bearer sk-zai",
         "content-type": "application/json",
     }
-    assert seen["body"]["model"] == RELACE_GLM_FLASH_MODEL
+    assert seen["body"]["model"] == "glm-5.3-flash"
     assert seen["body"]["reasoning_effort"] == "low"
-    assert transport_provider_slug(spec) == RELACE_PROVIDER
-    assert transport_model_slug(spec) == "glm-5.3-flash"
     assert response.choices[0].message.content == "caption"
 
 
 @pytest.mark.asyncio
-async def test_openrouter_deepseek_is_held_on_relace(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("model_slug", "provider"),
+    [
+        ("deepseek/deepseek-v4-flash-0731", "Relace"),
+        ("deepseek/deepseek-v4.1-flash-1017", "DeepInfra"),
+    ],
+)
+async def test_openrouter_pins_send_their_slug_held_on_one_provider(
+    monkeypatch: pytest.MonkeyPatch, model_slug: str, provider: str
 ):
     spec = _spec(
         provider_slug="openrouter",
-        model_slug=OPENROUTER_DEEPSEEK_MODEL,
+        model_slug=model_slug,
         byok_enabled=False,
         thinking_levels=("instant",),
-        slots=("ingest",),
+        slots=("ingest", "captioning"),
     )
     seen: dict[str, object] = {}
 
@@ -276,15 +280,33 @@ async def test_openrouter_deepseek_is_held_on_relace(
 
     assert seen["url"] == OPENROUTER_CHAT_URL
     assert seen["headers"]["authorization"] == "Bearer sk-or"
-    assert seen["body"]["model"] == OPENROUTER_DEEPSEEK_MODEL
-    assert seen["body"]["provider"] == {"order": ["Relace"], "allow_fallbacks": False}
+    assert seen["body"]["model"] == model_slug
+    assert seen["body"]["provider"] == {"order": [provider], "allow_fallbacks": False}
     assert seen["body"]["reasoning"] == {"enabled": False}
     assert seen["body"]["max_tokens"] == 400
-    assert transport_provider_slug(spec) == "openrouter"
+    # Every slug an operator may register has a provider pin.
+    assert set(provider_spec("openrouter")["allowedModelSlugs"]) == set(
+        OPENROUTER_ROUTING
+    )
+
+
+def test_an_openrouter_slug_without_a_provider_pin_is_refused():
+    spec = _spec(provider_slug="openrouter", model_slug="deepseek/deepseek-v4.1-flash")
+    with pytest.raises(RegistryError, match="deepseek/deepseek-v4.1-flash"):
+        openrouter_request(
+            spec,
+            [{"role": "user", "content": "hi"}],
+            temperature=None,
+            tools=None,
+            response_format=None,
+            max_tokens=None,
+            stream=False,
+            tool_choice=None,
+        )
 
 
 @pytest.mark.asyncio
-async def test_zai_stream_uses_relace_and_max_by_default(
+async def test_zai_stream_posts_to_z_ai_at_max_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
@@ -302,7 +324,7 @@ async def test_zai_stream_uses_relace_and_max_by_default(
         yield {"choices": [{"delta": {"content": "ok"}}]}
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("RELACE_API_KEY", "sk-relace")
+    monkeypatch.setenv("ZAI_API_KEY", "sk-zai")
     monkeypatch.setattr("pipeline.elitellm.client._stream_sse", stream_sse)
 
     chunks = [
@@ -311,8 +333,9 @@ async def test_zai_stream_uses_relace_and_max_by_default(
     ]
 
     assert len(chunks) == 1
-    assert seen["url"] == RELACE_CHAT_URL
-    assert seen["body"]["model"] == RELACE_GLM_FLASH_MODEL
+    assert seen["url"] == ZAI_CHAT_URL
+    assert seen["headers"]["authorization"] == "Bearer sk-zai"
+    assert seen["body"]["model"] == "glm-5.3-flash"
     assert seen["body"]["reasoning_effort"] == "max"
     assert seen["body"]["stream"] is True
 
@@ -522,7 +545,7 @@ def test_anthropic_max_is_adaptive():
 def test_anthropic_platform_env_is_first_party():
     assert platform_env_name("anthropic") == "ANTHROPIC_API_KEY"
     assert platform_env_name("openai") == "OPENAI_API_KEY"
-    assert platform_env_name("zai") == "RELACE_API_KEY"
+    assert platform_env_name("zai") == "ZAI_API_KEY"
 
 
 def test_platform_key_for_anthropic_reads_anthropic_env(monkeypatch):
