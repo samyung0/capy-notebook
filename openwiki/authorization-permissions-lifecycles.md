@@ -1157,6 +1157,15 @@ expire `incoming/` and `editor-assets/incoming/` objects after one day. The
 database sweep repairs quota/accounting state; the bucket rule is the final
 backstop for temporary objects that never obtained a database session.
 
+Object keys name their blob with 128 random bits (`store.ObjectKeyID`): the
+`final_path` uniqueness lasts only as long as the session row, and a deck's
+`Put` has no guard, so the key itself must not collide. A source key keeps the
+filename's extension only when it matches `^\.[a-z0-9]{1,11}$`
+(`keyExtension`), so no control or space character reaches the bucket. The
+import worker, which holds full-bucket credentials, writes only under
+`incoming/` and refuses any other path the gateway hands it. Entity and share
+ids keep their shorter length.
+
 Upload-session records are later pruned: completed sessions after 30 days and
 expired sessions seven days after their expiry deadline. Deleting a session
 re-evaluates its object paths through the same reference machinery, so pruning

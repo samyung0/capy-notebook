@@ -292,7 +292,8 @@ remaining quota. Finalize converts reservation → used (via status transitions
 2026-10-18): another editor's completion answers 404 (`completeSourceUpload`,
 `completeEditorAssetUpload`, `FinalizeUploadSession`).
 Completion (`completeSourceUpload`, and a drive import's internal completion)
-checks the object's size and type by HEAD, promotes it to its `sources/` key,
+checks the object's size and type by HEAD (a missing type is a mismatch: the
+PUT signs it and the import worker writes it), promotes it to its `sources/` key,
 and, for a file with source sessions (DOCX, XLSX, PPTX and text), reads it
 back once and records its SHA-256 as `files.source_sha256` in the finalize
 transaction (Epo 2026-10-17), so the first source session names its base and
