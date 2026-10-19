@@ -110,12 +110,20 @@ The gateway emits one access line per request from `obs.AccessLog`, including
 finding streams that hang. Its `path` hashes bearer-token segments
 (`obs.LogPath`: `/api/public/{kind}/{token}/…`, the workspace summary's
 `/api/public/workspaces/{token}/summary` and `/api/workspace-invites/{token}/accept`
-log `h_` plus 12 hex of the token's SHA-256), and the Go Sentry events drop the
-query string and hash the same segments in their URL, transaction and error
-text (`scrubEvent`) (Sam 2026-10-19). The SPA does the same in Sentry
-`beforeSend`/`beforeBreadcrumb` and PostHog `sanitize_properties`
+log `h_` plus 12 hex of the token's SHA-256), as does the rate limiter's 429
+line. Go Sentry errors and performance transactions alike (`BeforeSend`,
+`BeforeSendTransaction`, both `scrubEvent`) drop the query string and the
+`Referer` and `Origin` headers (the calling page may be an invite or share
+link) and hash the same segments in their URL, transaction name, span names
+and descriptions, and error text (Sam 2026-10-19). The SPA does the same in
+Sentry `beforeSend`/`beforeBreadcrumb`, a global event processor (replay
+events' URL list, transactions), Replay's `beforeAddRecordingEvent` (the
+recorded page href, navigation and fetch spans; the DOM frames are left
+whole, their text masked already) and PostHog `sanitize_properties`
 (`src/lib/urlTokens.ts`): a share link keeps its id without its signature, an
-invite link becomes `/workspace-invites/:token`.
+invite link becomes `/workspace-invites/:token`. Cloudflare Workers Logs keep
+the site Worker's request URLs (`/w/*`, `/share/*`, `/p/*`), accepted as a
+trusted platform log (Sam 2026-10-19).
 
 The collaboration server logs one `collab_health` line per minute
 (`collaboration-rs/crates/server/src/health.rs`, a background task; counting a message is an

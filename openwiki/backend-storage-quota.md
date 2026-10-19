@@ -286,10 +286,12 @@ deleted), the same admission points refuse with `account_over_quota` (see the
 authorization doc). Every write that changes a material's bytes locks the
 payer's account row with the owner's and the actors' in one ordered batch:
 the collaboration server's saves and agent edits (`lock_boundary`, which
-refuses a deleted, deleting or suspended owner or payer before it locks the
-material, so it never waits on a row `PurgeUser` holds), and Go's projection
+refuses any deleted, deleting or suspended account in that batch, actors
+included, before it locks the material, so it never waits on a row `PurgeUser`
+holds), and Go's projection
 (`ProjectMaterialContent`) and `UpdateMaterial` (`lockWorkspaceMutationTx`'s
-extra accounts). Ingest and source refresh fence the file's payer beside the
+extra accounts), and a source edit or checkpoint save locks and checks the
+file's payer the same way (`sourceLockTx`, `sourceEditLockTx`). Ingest and source refresh fence the file's payer beside the
 workspace owner and the actor (`_pipeline_source_cancellation`,
 `_lock_source_candidate`). Creation and upload
 reservations (`gateStorageTx`, `reserveStorageTx`) and the Office publication
