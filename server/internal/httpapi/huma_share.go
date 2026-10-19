@@ -99,7 +99,7 @@ func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*clo
 	}
 	ws, copies, skipped, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID, in.Body.ToWorkspaceCreate())
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	a.copyCloneThumbnails(ctx, copies)
 	statuses, err := a.accountStatuses(ctx, ws.OwnerUserID)
@@ -173,7 +173,7 @@ func (a *api) cloneMaterial(ctx context.Context, in *cloneMaterialInput) (*mater
 	}
 	mt, err := a.s.CloneMaterial(ctx, userID(ctx), in.ID, target)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), mt.ID)
 	if err != nil {

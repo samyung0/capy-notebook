@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -77,7 +76,7 @@ func (a *api) getAnonymousQuiz(ctx context.Context, in *shareTokenInput) (*anony
 	}
 	quiz, err := a.s.AnonymousQuiz(ctx, id)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	if quiz.Questions, err = learnerQuestions(quiz.Questions); err != nil {
 		return nil, hErr(err)
@@ -103,7 +102,7 @@ func (a *api) getAnonymousFlashcards(ctx context.Context, in *shareTokenInput) (
 	}
 	set, err := a.s.AnonymousFlashcards(ctx, id)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	return &anonymousFlashcardsOutput{CacheControl: "no-store", Body: set}, nil
 }
@@ -114,12 +113,8 @@ func (a *api) getAnonymousNote(ctx context.Context, in *shareTokenInput) (*anony
 		return nil, err
 	}
 	note, err := a.s.AnonymousNote(ctx, id)
-	if errors.Is(err, materialdoc.ErrInvalid) {
-		// A stored note a later rule refuses: the unreadable state, not a 500.
-		return nil, materialContentError(ctx, id, err)
-	}
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	for i, embed := range note.Embeds {
 		if embed.Kind != "quiz" {
@@ -138,11 +133,8 @@ func (a *api) getAnonymousNoteAsset(ctx context.Context, in *anonymousAssetInput
 		return nil, err
 	}
 	objectPath, contentType, err := a.s.AnonymousNoteAssetPath(ctx, id, in.AssetID)
-	if errors.Is(err, materialdoc.ErrInvalid) {
-		return nil, materialContentError(ctx, id, err)
-	}
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	return a.signedAnonymousAsset(ctx, objectPath, contentType)
 }
@@ -154,7 +146,7 @@ func (a *api) getAnonymousQuizAsset(ctx context.Context, in *anonymousAssetInput
 	}
 	objectPath, contentType, err := a.s.AnonymousQuizAssetPath(ctx, id, in.AssetID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	return a.signedAnonymousAsset(ctx, objectPath, contentType)
 }
@@ -166,7 +158,7 @@ func (a *api) getAnonymousFlashcardAsset(ctx context.Context, in *anonymousAsset
 	}
 	objectPath, contentType, err := a.s.AnonymousFlashcardAssetPath(ctx, id, in.AssetID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	return a.signedAnonymousAsset(ctx, objectPath, contentType)
 }

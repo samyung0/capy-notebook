@@ -3,10 +3,14 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -87,6 +91,54 @@ func TestAStoredNoteARuleRefusesStillListsAndOpens(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "material_content_unreadable") {
 		t.Errorf("grading its embedded quiz = %d %s, want the unreadable state", rec.Code, rec.Body.String())
 	}
+
+	// A shared quiz and flashcard set read the same way, signed in or not.
+	quizContent, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1",`+
+		`"blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],`+
+		`"layout":"paper","labels":"letters"}]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setContent, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{ID: "c1", Front: "a", Back: "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := func(kind, content string) (string, string) {
+		t.Helper()
+		created, err := st.CreateMaterial(ctx, store.Material{
+			CreatedBy: "u_owner", Kind: store.MaterialKind(kind), Title: "Unreadable " + kind, Content: content, Privacy: "private",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cleanupMaterial(t, st, created.ID)
+		if _, err := st.UpdateStandaloneMaterialPrivacy(ctx, "u_owner", created.ID, "", store.PrivacyLink); err != nil {
+			t.Fatal(err)
+		}
+		plant(created.ID)
+		return created.ID, store.ShareToken(nil, created.ID)
+	}
+	quiz, quizToken := item("quiz", quizContent)
+	set, setToken := item("flashcards", setContent)
+	for _, read := range []struct{ method, path, user string }{
+		{http.MethodGet, "/api/quizzes/" + quiz, "u_owner"},
+		{http.MethodGet, "/api/quizzes/" + quiz + "/edit", "u_owner"},
+		{http.MethodGet, "/api/flashcards/" + set + "/cards", "u_owner"},
+		{http.MethodGet, "/api/public/quizzes/" + quizToken, ""},
+		{http.MethodGet, "/api/public/quizzes/" + quizToken + "/assets/asset_1", ""},
+		{http.MethodPost, "/api/public/quizzes/" + quizToken + "/grade", ""},
+		{http.MethodGet, "/api/public/flashcards/" + setToken, ""},
+		{http.MethodGet, "/api/public/flashcards/" + setToken + "/assets/asset_1", ""},
+	} {
+		var body any
+		if read.method == http.MethodPost {
+			body = map[string]any{"answers": map[string]any{}}
+		}
+		rec := doReq(t, h, read.method, read.path, read.user, body)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "material_content_unreadable") {
+			t.Errorf("%s %s = %d %s, want the unreadable state", read.method, read.path, rec.Code, rec.Body.String())
+		}
+	}
 }
 
 // A workspace clone leaves out a material whose stored content the current
@@ -157,5 +209,45 @@ func TestAWorkspaceCloneSkipsAMaterialARuleRefuses(t *testing.T) {
 	}
 	if !strings.Contains(kept, `"hidden"`) {
 		t.Errorf("the source changed: %s", kept)
+	}
+}
+
+// Only stored content the rules refuse reads as unreadable (Epo 2026-10-20):
+// a quiz we generate that fails our own validation stays a 500, which
+// reaches Sentry, and questions a request sends for an embedded quiz a 400,
+// as a create answers them. Fails if either answers
+// material_content_unreadable.
+func TestContentWeGenerateOrAreSentIsNeverUnreadable(t *testing.T) {
+	question := `{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],` +
+		`"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}`
+	generator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Two questions with one id: our generator's bug, not the user's.
+		_, _ = fmt.Fprintf(w, `{"kind":"quiz","name":"n","questions":[%s,%s]}`, question, question)
+	}))
+	t.Cleanup(generator.Close)
+	h, st, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(generator.URL, ""))
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor",
+		generateBody("quiz", "Duplicate question ids"))
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("generate = %d %s, want 500", rec.Code, rec.Body.String())
+	}
+
+	note, err := st.CreateMaterial(context.Background(), store.Material{
+		CreatedBy: "u_owner", WorkspaceID: "ws_e2e_private", Kind: "note", Title: "Embeds a sent quiz",
+		Content: noteTestContent(t, "body"), Privacy: "private",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, st, note.ID)
+	var sent map[string]any
+	if err := json.Unmarshal([]byte(question), &sent); err != nil {
+		t.Fatal(err)
+	}
+	rec = doAsUser(t, h, http.MethodPost, "/api/materials/"+note.ID+"/embedded", "u_owner",
+		map[string]any{"kind": "quiz", "questions": []any{sent, sent}})
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("embedded create = %d %s, want 400", rec.Code, rec.Body.String())
 	}
 }

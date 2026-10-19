@@ -64,7 +64,7 @@ func (a *api) getFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*fl
 	}
 	res, err := a.s.GetFlashcardSet(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	res.IsOwner = role == store.RoleOwner
 	if res.CanEdit, res.CanEditContent, err = a.canEditMaterial(ctx, in.ID, role); err != nil {
@@ -128,7 +128,7 @@ func (a *api) listCards(ctx context.Context, in *flashcardSetIDInput) (*cardsOut
 	}
 	res, err := a.s.ListCards(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	return &cardsOutput{Body: res}, nil
 }

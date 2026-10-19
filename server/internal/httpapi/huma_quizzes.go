@@ -81,7 +81,7 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 	a.projectLive(ctx, in.ID)
 	res, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	out, err := a.quizOutputWithAccess(ctx, in.ID, res)
 	if err != nil {
@@ -104,7 +104,7 @@ func (a *api) getQuizForEdit(ctx context.Context, in *quizIDInput) (*quizOutput,
 	}
 	res, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }

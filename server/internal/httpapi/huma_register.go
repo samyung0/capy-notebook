@@ -73,12 +73,6 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())
 	}
-	// Stored content a later rule refuses, reached past a read (a clone, a
-	// grade of a quiz a shared note embeds): the read's unreadable state, not
-	// a 500. Routes that validate a request's content map it before hErr.
-	if errors.Is(err, materialdoc.ErrInvalid) {
-		return materialContentUnreadable()
-	}
 	var spending *store.SpendingLimitError
 	if errors.As(err, &spending) {
 		return &huma.ErrorModel{
@@ -462,16 +456,23 @@ func init() {
 // decode error stays in the log.
 func materialContentError(ctx context.Context, materialID string, err error) error {
 	obs.Log(ctx).Warn("material content unreadable", "material_id", materialID, "error", err)
-	return materialContentUnreadable()
-}
-
-func materialContentUnreadable() *huma.ErrorModel {
 	return &huma.ErrorModel{
 		Status: http.StatusUnprocessableEntity,
 		Title:  http.StatusText(http.StatusUnprocessableEntity),
 		Detail: "material content could not be decoded",
 		Errors: []*huma.ErrorDetail{{Message: "material_content_unreadable"}},
 	}
+}
+
+// storedContentError answers an error from a route that reads a material's
+// stored content (Epo 2026-10-20): content the rules refuse is the
+// unreadable state, anything else goes through hErr. Content a request sends
+// or we generate keeps its own answer (400, or a 500 that reaches Sentry).
+func storedContentError(ctx context.Context, materialID string, err error) error {
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return materialContentError(ctx, materialID, err)
+	}
+	return hErr(err)
 }
 
 const materialRequestMaxBytes = 3 << 20
