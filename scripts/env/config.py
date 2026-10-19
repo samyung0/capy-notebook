@@ -246,17 +246,13 @@ def render(values, environment, output, revision):
 
 
 def render_ops(values, environment, output, revision):
-    if not re.fullmatch("[0-9a-f]{40}", revision):
-        fail("revision must be a lowercase full Git SHA")
+    output = private_output(output, revision)
     ops = target_values(values, "ops")
     if ops["OPS_INGEST_PRIMARY_ENVIRONMENT"] != environment:
         fail("OPS_INGEST_PRIMARY_ENVIRONMENT must match the deployment environment")
     ops["VITE_CLERK_PUBLISHABLE_KEY"] = ops.pop("CLERK_PUBLISHABLE_KEY")
     ops["SENTRY_ENVIRONMENT"] = environment
     ops["RELEASE_SHA"] = revision
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(output, 0o700)
     private_write(output / "ops.json", json.dumps(ops))
     print(f"rendered {environment} Ops configuration; values redacted")
 
@@ -462,9 +458,11 @@ def main():
     else:
         if not args.environment or not args.output or not args.revision:
             fail("render requires --environment, --output, and --revision")
-        renderer = {"render-ops": render_ops, "render-build": render_build}.get(
-            args.command, render
-        )
+        renderer = {
+            "render": render,
+            "render-ops": render_ops,
+            "render-build": render_build,
+        }[args.command]
         renderer(values, args.environment, args.output, args.revision)
 
 
