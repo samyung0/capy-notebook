@@ -48,7 +48,7 @@ func TestUserDeleteCascadeSplitsOwnershipFromAuthorship(t *testing.T) {
 		t.Fatal(err)
 	}
 	ownMaterial, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: leaverID, WorkspaceID: ownWS.ID, Kind: "note", Title: "Own note",
+		CreatedBy: leaverID, WorkspaceID: ownWS.ID, Kind: "note", Title: "Own note", Content: materialTestContent(t, ""),
 	})
 	if err != nil {
 		t.Fatal(err)

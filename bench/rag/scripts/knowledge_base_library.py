@@ -8,12 +8,13 @@ reparse it.
 
 One live library: the workspace is `library` and each book is one file.
 Publishing a book loads its content under a new content id, records book
-version n+1, marks the previous version retained and swaps the book's pointer
-in one transaction. `rollback` points a book back at a retained version,
-`retire` drops a retained version's content rows while keeping its receipts,
-and `remove` deletes every row of a book (all versions' content rows, version
-rows, receipts and the book row). `remove` leaves the source PDF in the
-knowledge-base bucket, so a republish from the book's saved run restores it.
+version n+1, retires the previous version (its content rows go, its version
+row and model-run receipts stay) and swaps the book's pointer in one
+transaction. No older version is kept (decision 2026-10-19), so a bad publish
+is undone by republishing from the book's saved run. `remove` deletes every row
+of a book (all versions' content rows, version rows, receipts and the book
+row). `remove` leaves the source PDF in the knowledge-base bucket, so a
+republish from the book's saved run restores it.
 
 Taxonomy: subjects come from the committed fixture `lab/knowledge/subjects.json`,
 loaded by `schema` and refreshed by every `publish`; each manifest book names
@@ -22,9 +23,8 @@ builder's topics stage) or, for the pilot run, from the manifest's `topics`, and
 are upserted under the book's subject; a topic whose id is a subject id is
 refused. Topic ids are unique library-wide: a shared topic (another subject's,
 marked `shared` in topics.json) is never upserted, and a publish that would move
-a topic to another subject is refused. After a book's excerpts are written, and again when a version is
-retired or a book removed, topics no tagged excerpt of a current or retained
-version references are dropped.
+a topic to another subject is refused. After a publish, and again when a book
+is removed, topics no tagged excerpt references are dropped.
 
 `schema` creates the schema and adds the nullable reviewed retrieval metadata
 column and the figure label, credit and decorative columns to existing
@@ -372,9 +372,8 @@ def sync_subjects(conn, subjects: dict[str, dict]) -> None:
 def drop_unreferenced_topics(conn) -> int:
     """Drop topics no tagged excerpt carries.
 
-    Excerpt rows exist for current and retained versions only (`retire`
-    deletes a version's), so a retained version keeps its topics until it is
-    retired and a rollback never lands on excerpts whose topics are gone.
+    Excerpt rows exist for current versions only (`retire_current` deletes the
+    previous version's), so a topic only that version carried goes with it.
     """
     return conn.execute(
         "DELETE FROM library_topics t WHERE NOT EXISTS ("
@@ -504,7 +503,8 @@ def publish_book(
     identity: str,
     note: str,
 ) -> dict:
-    """Load one book as its next version and swap the book's pointer.
+    """Load one book as its next version, retire the previous one and swap the
+    book's pointer.
 
     The version's descriptor is the manifest attribution line and its summary
     the book's top-level section titles (decision 2026-09-19: no summary
@@ -516,8 +516,8 @@ def publish_book(
         book.get("attribution_reviewed") is not True or not book.get("attribution")
     ):
         raise PilotError(f"Book {book_id} needs attribution review before publication")
-    # Numbering follows the highest version ever published (a rollback leaves a
-    # higher one behind); the refusal compares the live one.
+    # Numbering continues after every version ever published, retired ones
+    # included; the refusal compares the live one.
     highest = target.execute(
         "SELECT coalesce(max(version), 0) FROM library_book_versions WHERE book_id=%s",
         (book_id,),
@@ -696,10 +696,7 @@ def publish_book(
                 book.get("withheld_pages", []),
             ),
         )
-        target.execute(
-            "UPDATE library_book_versions SET status='retained' WHERE book_id=%s AND status='current'",
-            (book_id,),
-        )
+        retired = retire_current(target, book_id)
         target.execute(
             "INSERT INTO library_book_versions"
             "(book_id,version,content_id,status,source_run,corpus_identity,parser_release,parser_fingerprint,chunker_version,descriptor,summary,object_key,note)"
@@ -737,6 +734,7 @@ def publish_book(
         "content_id": content_id,
         "object_key": key,
         "corpus_identity": identity,
+        "retired": retired,
         "counts": {
             "chunks": len(chunk_params),
             "searchable_chunks": searchable,
@@ -833,72 +831,45 @@ def publish(
     }
 
 
-def rollback(book_id: str, version: int) -> dict:
-    """Point a book back at one of its retained versions."""
-    with connect() as conn, conn.transaction():
-        row = conn.execute(
-            "SELECT content_id, status FROM library_book_versions WHERE book_id=%s AND version=%s",
-            (book_id, version),
-        ).fetchone()
-        if row is None:
-            raise PilotError(f"No version {version} of {book_id}")
-        if row[1] != "retained":
-            raise PilotError(f"{book_id} version {version} is {row[1]}, not retained")
-        conn.execute(
-            "UPDATE library_book_versions SET status='retained' WHERE book_id=%s AND status='current'",
-            (book_id,),
-        )
-        conn.execute(
-            "UPDATE library_book_versions SET status='current' WHERE book_id=%s AND version=%s",
-            (book_id, version),
-        )
-        conn.execute(
-            "UPDATE library_books SET content_id=%s, version=%s WHERE id=%s",
-            (row[0], version, book_id),
-        )
-        conn.execute(
-            "UPDATE rag_file_contents SET content_id=%s WHERE file_id=%s",
-            (row[0], book_id),
-        )
-    return status()
+def retire_current(conn, book_id: str) -> dict:
+    """Retire the book's current version inside the caller's transaction.
 
-
-def retire(book_id: str, version: int) -> dict:
-    """Drop a retained version's content rows, then the topics only it kept.
-
-    Its receipts stay: the version row and its `library_model_runs` are what a
-    reviewer needs to see which model wrote that version's tags and prose, and
-    they are small.
+    Its content rows go; its version row and `library_model_runs` stay, because
+    they are what a reviewer needs to see which run and models produced that
+    version, and they are small. Publish calls this right before recording the
+    next version. Returns the retired version and its deleted row counts, or
+    an empty dict for a book's first publish.
     """
-    with connect() as conn, conn.transaction():
-        row = conn.execute(
-            "SELECT content_id, status FROM library_book_versions WHERE book_id=%s AND version=%s",
-            (book_id, version),
-        ).fetchone()
-        if row is None:
-            raise PilotError(f"No version {version} of {book_id}")
-        if row[1] != "retained":
-            raise PilotError(f"{book_id} version {version} is {row[1]}, not retained")
-        content_id = row[0]
-        conn.execute(
+    row = conn.execute(
+        "SELECT version, content_id FROM library_book_versions "
+        "WHERE book_id=%s AND status='current' FOR UPDATE",
+        (book_id,),
+    ).fetchone()
+    if row is None:
+        return {}
+    version, content_id = row
+    deleted = {
+        "rag_chunk_vectors_2560": conn.execute(
             "DELETE FROM rag_chunk_vectors_2560 WHERE chunk_id IN "
             "(SELECT id FROM library_chunks WHERE content_id=%s)",
             (content_id,),
-        )
-        for table in ("library_chunks", "library_excerpts", "library_figures"):
-            conn.execute(f"DELETE FROM {table} WHERE content_id=%s", (content_id,))
-        conn.execute(
-            "UPDATE library_book_versions SET status='retired' WHERE book_id=%s AND version=%s",
-            (book_id, version),
-        )
-        dropped = drop_unreferenced_topics(conn)
-    return status() | {"topics_dropped": dropped}
+        ).rowcount
+    }
+    for table in ("library_chunks", "library_excerpts", "library_figures"):
+        deleted[table] = conn.execute(
+            f"DELETE FROM {table} WHERE content_id=%s", (content_id,)
+        ).rowcount
+    conn.execute(
+        "UPDATE library_book_versions SET status='retired' WHERE book_id=%s AND version=%s",
+        (book_id, version),
+    )
+    return {"version": version, "deleted": deleted}
 
 
 def remove(book_id: str) -> dict:
     """Delete every row of a book, then the topics only it kept.
 
-    All versions go (current, retained and retired): their content rows and
+    All versions go (current and retired): their content rows and
     receipts, the version rows, the book's index file rows and its book row.
     The source PDF stays in the knowledge-base bucket (`books/<sha256>.pdf`),
     so a republish from the book's saved run can restore it.
@@ -1288,15 +1259,6 @@ def main() -> None:
         help="repeatable; every book in the run by default",
     )
     p.add_argument("--note", default="")
-    p = sub.add_parser("rollback", help="point a book back at a retained version")
-    p.add_argument("--book", required=True)
-    p.add_argument("--version", type=int, required=True)
-    p = sub.add_parser(
-        "retire",
-        help="drop a retained version's content rows and the topics only it kept",
-    )
-    p.add_argument("--book", required=True)
-    p.add_argument("--version", type=int, required=True)
     p = sub.add_parser(
         "remove",
         help="delete every row of a book and the topics only it kept",
@@ -1325,10 +1287,6 @@ def main() -> None:
                 )
             )
         )
-    elif args.command == "rollback":
-        print(json.dumps(rollback(args.book, args.version), indent=1))
-    elif args.command == "retire":
-        print(json.dumps(retire(args.book, args.version), indent=1))
     elif args.command == "remove":
         print(json.dumps(remove(args.book), indent=1))
     else:

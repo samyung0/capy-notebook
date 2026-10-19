@@ -33,7 +33,6 @@ const (
 	libraryFigureLimit      = 200
 	libraryModelRunLimit    = 500
 	libraryIDMaxLen         = 128
-	libraryMaxBookVersion   = 10000
 	// Export bounds. One book's export is assembled in memory because the
 	// sha256 header has to precede the body.
 	libraryExportExcerptLimit = 2000
@@ -57,8 +56,8 @@ type LibraryOverview struct {
 }
 
 // LibraryBookVersion is one publish of one book: what produced it, the prose
-// written from its content, and where its source object lives. Retained
-// versions stay exportable.
+// written from its content, and where its source object lives. A publish
+// retires the previous version: its row stays as a receipt, its content goes.
 type LibraryBookVersion struct {
 	Version           int       `json:"version"`
 	Status            string    `json:"status"`
@@ -795,12 +794,11 @@ func (s *ReadStore) LibraryModelRuns(ctx context.Context) ([]LibraryModelRun, er
 }
 
 // LibraryExport is the machine-readable record for an independent reviewer:
-// one book version with its excerpts, their chunks and its figures. Version 0
-// means the current one; a retained version stays exportable.
+// the book's current version with its excerpts, their chunks and its figures.
+// Older versions are retired at publish and hold no content to export.
 func (s *ReadStore) LibraryExport(
 	ctx context.Context,
 	bookID string,
-	version int,
 ) (LibraryExport, error) {
 	out := LibraryExport{
 		GeneratedAt: time.Now().UTC(),
@@ -811,23 +809,17 @@ func (s *ReadStore) LibraryExport(
 	if err != nil {
 		return out, err
 	}
-	if version < 0 || version > libraryMaxBookVersion {
-		return out, validation("version must be between 1 and %d", libraryMaxBookVersion)
-	}
 	err = s.library.QueryRow(ctx, `
 		SELECT v.version, v.content_id
 		  FROM library_book_versions v
-		 WHERE v.book_id = $1
-		   AND (($2::int = 0 AND v.status = 'current') OR v.version = $2::int)
-		 LIMIT 1`, bookID, version).Scan(&out.Version, &out.ContentID)
+		 WHERE v.book_id = $1 AND v.status = 'current'`, bookID).Scan(&out.Version, &out.ContentID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return out, store.ErrNotFound
 	}
 	if err != nil {
 		return out, err
 	}
-	// The prose, content id and version come from the exported version, not
-	// the current one: a retained export must describe what it contains.
+	// The descriptor and summary live on the version row, written from its content.
 	out.Book, err = scanLibraryBook(s.library.QueryRow(ctx, `
 		SELECT b.id, b.title, b.authors, b.edition, b.source_url, b.download_url,
 		       b.license, b.license_url, b.attribution, b.sha256, b.bytes, b.pages,

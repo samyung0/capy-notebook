@@ -417,7 +417,7 @@ describe('knowledge library reads', () => {
             parserRelease: 'odl-2026-09-16',
             publishedAt: '2026-09-16T08:00:00Z',
             sourceRun: 'run-1',
-            status: 'retained',
+            status: 'retired',
             summary: 'older summary',
             version: 1,
           },
@@ -426,7 +426,7 @@ describe('knowledge library reads', () => {
     ]);
     expect(books[0].versions.map((item) => item.status)).toEqual([
       'current',
-      'retained',
+      'retired',
     ]);
   });
 
@@ -546,7 +546,7 @@ describe('knowledge library reads', () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
       new Response('{"book":{"id":"ahss"}}', {
         headers: {
-          'Content-Disposition': 'attachment; filename="library-ahss-v1.json"',
+          'Content-Disposition': 'attachment; filename="library-ahss-v2.json"',
           'Content-Type': 'application/json',
           'X-Capy-Export-Sha256': 'a'.repeat(64),
         },
@@ -558,12 +558,12 @@ describe('knowledge library reads', () => {
       getToken: async () => 'operator-token',
     });
 
-    const result = await api.libraryExport('ahss', 1);
+    const result = await api.libraryExport('ahss');
 
     expect(result.digest).toBe('a'.repeat(64));
-    expect(result.fileName).toBe('library-ahss-v1.json');
+    expect(result.fileName).toBe('library-ahss-v2.json');
     expect(String(fetcher.mock.calls[0][0])).toBe(
-      '/api/ops/library/export/ahss?version=1'
+      '/api/ops/library/export/ahss'
     );
   });
 

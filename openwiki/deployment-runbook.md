@@ -1902,8 +1902,9 @@ production over WireGuard. It is separate from every app database and from
 the lab containers, and it is not part of the release workflows: it is a
 stateful service managed by hand from `/opt/capy-library-db`. It holds one
 live library that every environment reads: versions are per book, so a
-republished book swaps its own pointer atomically and the previous version
-stays retained behind it. Nothing is pinned per environment.
+republished book swaps its own pointer atomically and retires the previous
+version (its content rows go, its version row and receipts stay). Nothing is
+pinned per environment.
 
 1. Copy `deploy/docker-compose.library-db.yml` to
    `/opt/capy-library-db/docker-compose.yml` together with
@@ -1961,12 +1962,12 @@ stays retained behind it. Nothing is pinned per environment.
    production read the same live books.
 8. Loading. The loader runs on the developer PC through the tunnel with the
    owner URL: `schema` creates the schema as `LIBRARY_SCHEMA` writes it,
-   `publish --run <run> [--book <id>]` loads each book as its next version and
-   swaps its pointer, refusing a corpus identity the current version already
-   holds, `rollback --book --version` points a book back at a retained version,
-   `retire --book --version` drops a retained version's content rows while
-   keeping its version row and model-run receipts, and `status` lists the books
-   with their history. There is no migration path: a changed `LIBRARY_SCHEMA`
+   `publish --run <run> [--book <id>]` loads each book as its next version,
+   retires the previous one (content rows dropped, version row and model-run
+   receipts kept) and swaps its pointer, refusing a corpus identity the current
+   version already holds; `remove --book` deletes a book; and `status` lists the
+   books with their history. There is no rollback: undo a bad publish by
+   republishing from the book's saved run. There is no migration path: a changed `LIBRARY_SCHEMA`
    means dropping the `library` database, running `schema` again and
    republishing every book. That costs one loader run and no model calls,
    because the builder's output is on the developer PC.

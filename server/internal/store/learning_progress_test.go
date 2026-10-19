@@ -19,7 +19,7 @@ func TestLearningProgressListsByLastStudied(t *testing.T) {
 	}
 	note := func(ws Workspace, title string) Material {
 		t.Helper()
-		mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: title, Content: "# " + title})
+		mt, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: title, Content: materialTestContent(t, "# "+title)})
 		if err != nil {
 			t.Fatal(err)
 		}

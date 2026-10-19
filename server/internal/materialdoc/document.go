@@ -1188,13 +1188,6 @@ func ExtractNoteText(raw string) (string, error) {
 	return text.String(), nil
 }
 
-func IncomingNoteText(content string) string {
-	if text, err := ExtractNoteText(content); err == nil {
-		return text
-	}
-	return content
-}
-
 func ExtractMermaidSource(raw string) (string, error) {
 	doc, err := Parse(raw)
 	if err != nil {
@@ -1374,18 +1367,22 @@ func find(nodes []map[string]any, typ string) map[string]any {
 	return nil
 }
 
-// FromLegacyMarkdown is only used at generator boundaries that still produce
-// markdown. Persisted diagram-like artifacts always use canonical mermaid
-// source and an annotatable caption child.
-func FromLegacyMarkdown(kind, markdown string) (string, error) {
-	if parsed, err := Parse(markdown); err == nil {
-		return Marshal(parsed)
+// FromLegacyMarkdown reads the content a create stores: a document, which must
+// validate, or for a mindmap or diagram the mermaid markdown a generator still
+// produces. Anything else is refused, so an invalid document is never stored
+// as its own JSON text. Persisted diagram-like artifacts always use canonical
+// mermaid source and an annotatable caption child.
+func FromLegacyMarkdown(kind, content string) (string, error) {
+	doc, err := decode(content)
+	if err != nil {
+		if kind == "mindmap" || kind == "diagram" {
+			return MermaidDocument(fenced(content, "mermaid"), "")
+		}
+		return "", err
 	}
-	if kind == "mindmap" || kind == "diagram" {
-		return MermaidDocument(fenced(markdown, "mermaid"), "")
+	if err := validate(doc, true); err != nil {
+		return "", err
 	}
-	doc := Empty()
-	doc.Value[0]["children"] = []any{textLeaf(markdown)}
 	return Marshal(doc)
 }
 

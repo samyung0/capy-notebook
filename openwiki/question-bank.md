@@ -587,8 +587,11 @@ and learners' progress (below); the bank has its own migrations and roles. See
 [deployment-runbook.md](deployment-runbook.md) for provisioning, environment
 values, public/private buckets, local tunnel, comment recipient and backups.
 
-Each source has a `kind`. A `library` source names an excerpt, book and
-historical version, resolved through the library database. A `web` source
+Each source has a `kind`. A `library` source names an excerpt, book and the
+version it was written from; the excerpt id ends with that version's `_v<n>`.
+Reads resolve the credit from the version's row in the library database,
+because publishing a book retires the previous version and drops its excerpts;
+publication (`bank publish`) also requires the excerpt to be in that version. A `web` source
 records an openly licensed page as it read on its retrieval date: URL, title,
 authors, publisher, licence and licence URL. Its licence must allow adapted
 commercial reuse, so ND and NC are refused. Both publisher and reader apply the

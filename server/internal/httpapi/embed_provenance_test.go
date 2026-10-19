@@ -137,7 +137,7 @@ func TestNoteReadsCreditLiveEmbeds(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
 	own := &store.Provenance{Books: []store.ProvenanceBook{{ID: "own", Title: "Own", Authors: []string{}, License: "CC BY-SA 4.0", ExcerptIDs: []string{"e_own"}, Version: 1}}, License: "CC BY-SA 4.0"}
-	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Credited embeds", Content: "# Embeds\n\nbody", Provenance: own})
+	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Credited embeds", Content: noteTestContent(t, "# Embeds\n\nbody"), Provenance: own})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,4 +297,16 @@ func TestFooterLicenceCoversNoteAndEmbeds(t *testing.T) {
 	if creditedBooks(footer) != "own_call_lic_plain sa_quiz" || footer.License != "CC BY-SA 4.0" {
 		t.Fatalf("plain note with a ShareAlike quiz reads %s", rec.Body.String())
 	}
+}
+
+// noteTestContent is a one-paragraph note document holding text.
+func noteTestContent(t *testing.T, text string) string {
+	t.Helper()
+	content, err := materialdoc.Marshal(materialdoc.Envelope{
+		SchemaVersion: materialdoc.SchemaVersion, Value: []map[string]any{materialdoc.ParagraphNode(text)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return content
 }

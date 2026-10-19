@@ -1336,7 +1336,11 @@ func (d MaterialDraft) material() (Material, error) {
 		}
 		mt.Content = d.Content
 	case "note":
-		if strings.TrimSpace(materialdoc.IncomingNoteText(d.Content)) == "" {
+		text, err := materialdoc.ExtractNoteText(d.Content)
+		if err != nil {
+			return Material{}, err
+		}
+		if strings.TrimSpace(text) == "" {
 			return Material{}, ErrEmptyMaterial
 		}
 		mt.Content = d.Content

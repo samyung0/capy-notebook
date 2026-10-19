@@ -1,0 +1,66 @@
+# The editor budgets from .github/workflows/perf.yml (job `perf`) on a
+# Shipfox runner. GitHub stays the default CI and the promotion gate; this
+# manual run is a second opinion on the numbers. The snapshot is printed to
+# the log; there is no baseline download here.
+name: Editor performance
+runner: shipfox-4cpu
+triggers:
+  manual:
+    source: manual
+jobs:
+  perf:
+    execution_timeout: 40m
+    env:
+      PERF_CPU: "4"
+      PERF_SNAPSHOT_DIR: bench/editor/.results
+    steps:
+      - key: runner-info
+        run: |
+          grep -m1 '^model name' /proc/cpuinfo; nproc; free -h; df -h .
+          for tool in git node pnpm bun cargo rustup wasm-pack wasm-opt sudo; do
+            printf '%s: ' "$tool"; command -v "$tool" || echo missing
+          done
+          sudo -n true && echo "sudo: passwordless" || echo "sudo: unavailable"
+          git rev-parse HEAD
+      - key: submodules
+        run: git submodule update --init --recursive --depth 1
+      - key: toolchain
+        run: |
+          set -euo pipefail
+          curl -fsSL https://bun.sh/install | bash -s "bun-v1.3.14"
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --target wasm32-unknown-unknown
+          # wasm-pack publishes no checksums; this is the hash of the v0.15.0 asset as downloaded 2026-10-19.
+          curl -fsSL -o /tmp/wasm-pack.tar.gz https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.0/wasm-pack-v0.15.0-x86_64-unknown-linux-musl.tar.gz
+          echo "c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a  /tmp/wasm-pack.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/wasm-pack.tar.gz -C "$HOME"
+          # From nodejs.org/dist/v22.20.0/SHASUMS256.txt.
+          curl -fsSL -o /tmp/node.tar.xz https://nodejs.org/dist/v22.20.0/node-v22.20.0-linux-x64.tar.xz
+          echo "00bbd05e306ea68b6e13e17360d0e2f680b493ef95f2fea1c4296ff7437530bc  /tmp/node.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/node.tar.xz -C "$HOME"
+          curl -fsSL -o /tmp/binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/version_132/binaryen-version_132-x86_64-linux.tar.gz
+          echo "195ddc94f9bc89f45abdabb0b9eea86023d727ba90eac8b35b80f2544fc30572  /tmp/binaryen.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/binaryen"
+          tar -xzf /tmp/binaryen.tar.gz -C "$HOME/binaryen" --strip-components=1
+          for dir in node-v22.20.0-linux-x64/bin .bun/bin .cargo/bin wasm-pack-v0.15.0-x86_64-unknown-linux-musl binaryen/bin; do
+            echo "$HOME/$dir" >> "$SHIPFOX_PATH"
+          done
+      - key: install
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm office:prepare
+          pnpm exec playwright install --with-deps chromium
+      - key: bench
+        run: pnpm bench:editor
+      - key: snapshot
+        run_after: always
+        run: |
+          set -euo pipefail
+          export PERF_CPU_MODEL="$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+          export PERF_CHROMIUM="$(pnpm exec playwright --version)"
+          export PERF_COMMIT="$(git rev-parse HEAD)"
+          pnpm exec tsx bench/editor/scripts/compare-cli.ts assemble bench/editor/.results perf-snapshot.json
+          echo "--- perf-snapshot.json"
+          cat perf-snapshot.json
+          echo "--- end"

@@ -50,7 +50,7 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	}
 	note, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Lecture 4",
-		Content: "# Lecture 4\n\nbody",
+		Content: materialTestContent(t, "# Lecture 4\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	ownerID := newBlobTestUser(t, s, "u_embed_share_owner")
 	readerID := newBlobTestUser(t, s, "u_embed_share_reader")
 	note, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: ownerID, Kind: "note", Title: "Shared note", Content: "# Shared\n\nbody",
+		CreatedBy: ownerID, Kind: "note", Title: "Shared note", Content: materialTestContent(t, "# Shared\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	}
 	wsNote, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Workspace note",
-		Content: "# Workspace note\n\nbody",
+		Content: materialTestContent(t, "# Workspace note\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -325,7 +325,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	newNote := func(createdBy string, workspace Workspace, title string) Material {
 		note, err := s.CreateMaterial(ctx, Material{
 			CreatedBy: createdBy, WorkspaceID: workspace.ID, WorkspaceName: workspace.Name,
-			Kind: "note", Title: title, Content: "# " + title + "\n\nbody",
+			Kind: "note", Title: title, Content: materialTestContent(t, "# "+title+"\n\nbody"),
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -364,7 +364,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	})
 	cut := embed(editorID, source.ID, EmbeddedDraft{Kind: "quiz", Questions: questions})
 	trash(cut.ID)
-	foreignNote, err := s.CreateMaterial(ctx, Material{CreatedBy: strangerID, Kind: "note", Title: "Foreign", Content: "# Foreign\n\nbody"})
+	foreignNote, err := s.CreateMaterial(ctx, Material{CreatedBy: strangerID, Kind: "note", Title: "Foreign", Content: materialTestContent(t, "# Foreign\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -505,7 +505,7 @@ func TestEmbedSourcesFollowLiveEmbeds(t *testing.T) {
 	own.Books[0].License, own.License = "CC BY-SA 4.0", "CC BY-SA 4.0"
 	note, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Sourced",
-		Content: "# Sourced\n\nbody", Provenance: own,
+		Content: materialTestContent(t, "# Sourced\n\nbody"), Provenance: own,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -650,11 +650,11 @@ func TestEmbedSourcesIgnoreOtherNotesRows(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_embed_forger")
 	otherID := newBlobTestUser(t, s, "u_embed_victim")
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Forger", Content: "# Forger\n\nbody", Provenance: bookCredit("own")})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Forger", Content: materialTestContent(t, "# Forger\n\nbody"), Provenance: bookCredit("own")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := s.CreateMaterial(ctx, Material{CreatedBy: otherID, Kind: "note", Title: "Victim", Content: "# Victim\n\nbody"})
+	other, err := s.CreateMaterial(ctx, Material{CreatedBy: otherID, Kind: "note", Title: "Victim", Content: materialTestContent(t, "# Victim\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -686,7 +686,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_embed_credit_owner")
 	readerID := newBlobTestUser(t, s, "u_embed_credit_reader")
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Credited", Content: "# Credited\n\nbody"})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Credited", Content: materialTestContent(t, "# Credited\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -712,7 +712,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 		}
 	}
 
-	other, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Pasted into", Content: "# Pasted\n\nbody"})
+	other, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Pasted into", Content: materialTestContent(t, "# Pasted\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,7 +726,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	// footer is left out (its block goes), as an agent write is refused.
 	nc := bookCredit("nc")
 	nc.Books[0].License, nc.License = "CC BY-NC-SA 4.0", "CC BY-NC-SA 4.0"
-	ncNote, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "NC", Content: "# NC\n\nbody"})
+	ncNote, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "NC", Content: materialTestContent(t, "# NC\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -736,7 +736,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	}
 	sa := bookCredit("sa")
 	sa.Books[0].License, sa.License = "CC BY-SA 4.0", "CC BY-SA 4.0"
-	saNote, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "SA", Content: "# SA\n\nbody", Provenance: sa})
+	saNote, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "SA", Content: materialTestContent(t, "# SA\n\nbody"), Provenance: sa})
 	if err != nil {
 		t.Fatal(err)
 	}

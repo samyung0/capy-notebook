@@ -48,7 +48,7 @@ func TestAdoptMaterialChildren(t *testing.T) {
 		t.Fatal(err)
 	}
 	note := func(title string) store.Material {
-		mt, err := st.CreateMaterial(ctx, store.Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: title, Content: "# " + title})
+		mt, err := st.CreateMaterial(ctx, store.Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: title, Content: noteTestContent(t, "# "+title)})
 		if err != nil {
 			t.Fatal(err)
 		}
