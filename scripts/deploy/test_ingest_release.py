@@ -219,8 +219,11 @@ class ReleaseTest(unittest.TestCase):
             "DATABASE_URL=previous\n",
         )
 
-    def test_activation_keeps_only_active_and_previous_images(self):
+    def test_activation_keeps_active_and_previous_images_and_prunes_old_build_cache(
+        self,
+    ):
         stale = "c" * 40
+        prune = ["builder", "prune", "-f", "--filter", "until=72h"]
         data = self.state_data()
         data["images"] = {
             "capy-ingest-nonprod-parser": [stale, PREVIOUS, CANDIDATE],
@@ -229,7 +232,9 @@ class ReleaseTest(unittest.TestCase):
         (self.root / "mock.json").write_text(json.dumps(data))
         self.run_phase("prepare")
         self.assertIn(stale, self.state_data()["images"]["capy-ingest-nonprod-parser"])
+        self.assertNotIn(prune, self.state_data()["calls"])
         self.run_phase("activate")
+        self.assertIn(prune, self.state_data()["calls"])
         self.assertEqual(
             self.state_data()["images"],
             {

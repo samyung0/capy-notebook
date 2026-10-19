@@ -520,7 +520,7 @@ def boxes_intersect(a: list, b: list) -> bool:
 def page_chunks(blocks: list[dict], raw: Path, source: Path):
     # worker._page_chunks cannot be imported on Windows: worker imports fcntl.
     # Keep its exact core calls and page-model selection, without worker plumbing.
-    from pipeline.retrieval.confidence import ocr_pages, score_chunks
+    from pipeline.retrieval.confidence import score_chunks, vlm_pages
     from pipeline.retrieval.headings import retain_headings
     from pipeline.retrieval.packing import pack_blocks
 
@@ -537,13 +537,13 @@ def page_chunks(blocks: list[dict], raw: Path, source: Path):
             blocks, source, chunks, verified=set(evidence["visible_headings"])
         )
         score_chunks(
-            chunks, source, ocr=ocr_pages(blocks), page_texts=evidence["page_texts"]
+            chunks, source, vlm=vlm_pages(blocks), page_texts=evidence["page_texts"]
         )
     else:
         repaired = raw / "parsed.pdf"
         page_pdf = repaired if repaired.is_file() else source
         chunks = retain_headings(blocks, page_pdf, chunks)
-        score_chunks(chunks, page_pdf, ocr=ocr_pages(blocks))
+        score_chunks(chunks, page_pdf, vlm=vlm_pages(blocks))
     return chunks
 
 

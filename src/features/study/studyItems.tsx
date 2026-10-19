@@ -45,14 +45,9 @@ export function useStudyActions(workspaceId: string) {
     target: StudyTarget,
     state: StudyState | undefined
   ): MenuItem[] {
-    if (state === 'removed')
-      return [
-        {
-          icon: 'view',
-          label: m.study_start_tracking(),
-          onClick: () => set(target, null),
-        },
-      ];
+    const removed = state === 'removed';
+    // The tracking toggle keeps the menu open and its slot: an untracked item
+    // shows Mark as read disabled rather than dropping it.
     return [
       state === 'done'
         ? {
@@ -61,14 +56,16 @@ export function useStudyActions(workspaceId: string) {
             onClick: () => set(target, null),
           }
         : {
+            disabled: removed,
             icon: 'bookOpenCheck',
             label: m.study_mark_read(),
             onClick: () => set(target, 'done'),
           },
       {
-        icon: 'viewOff',
-        label: m.study_stop_tracking(),
-        onClick: () => set(target, 'removed'),
+        closeOnSelect: false,
+        icon: removed ? 'view' : 'viewOff',
+        label: removed ? m.study_start_tracking() : m.study_stop_tracking(),
+        onClick: () => set(target, removed ? null : 'removed'),
       },
     ];
   }

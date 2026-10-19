@@ -2140,7 +2140,7 @@
   "study_done": "Done",
   "study_mark_read": "Mark as read",
   "study_mark_unread": "Mark as unread",
-  "study_nothing_yet": "Read a file or attempt a quiz to start tracking your progress.",
+  "study_nothing_yet": "Nothing is tracked yet. Add a file, or start tracking one from its menu in Files.",
   "study_of": "{done} of {total}",
   "study_off": "Progress is off in this workspace. Quiz results are still kept.",
   "study_others": "Others",

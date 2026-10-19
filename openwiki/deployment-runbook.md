@@ -1681,8 +1681,10 @@ workflow never invents a previous SHA or prunes another stack's images/volumes.
 Every release builds a new `<project>-parser:<sha>` / `<project>-pipeline:<sha>`
 pair on the host; activation then removes this stack's other tags, keeping
 only `active` and `previous` (rollback). Removed tags stay in the BuildKit
-cache until `docker builder prune --keep-storage` trims least-recently-used
-entries; the ingest host's `daemon.json` sets `builder.gc` to 20 GB like the UAT host, so it trims itself after each build.
+cache; activation then runs `docker builder prune -f --filter until=72h`, which
+drops build cache older than three days (the next release still builds warm).
+The ingest host's `daemon.json` has no `builder.gc` limit (checked 2026-10-19:
+only the log options), so this prune is what bounds the cache.
 Bootstrap only clones into an absent/empty checkout and records active after
 verification. A failed bootstrap stops candidate services and retains evidence.
 

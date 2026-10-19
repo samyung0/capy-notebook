@@ -2140,7 +2140,7 @@
   "study_done": "已完成",
   "study_mark_read": "标记为已读",
   "study_mark_unread": "标记为未读",
-  "study_nothing_yet": "阅读文件或完成测验，即可开始记录学习进度。",
+  "study_nothing_yet": "尚未追踪任何项目。添加文件，或在“文件”中通过其菜单开始追踪。",
   "study_of": "{done} / {total}",
   "study_off": "此工作区的学习进度已关闭，测验结果仍会保留。",
   "study_others": "其他",

@@ -2,13 +2,15 @@
 
 For every page in `bench/rag/intake/fixtures/audit-pages.json` this renders the
 PDF page (long edge 1568, like `capture_knowledge_page`) and collects the chunk
-texts that cover it from arm B's MinerU corpus and, when `--live-url` is given,
-from the live library's current version (arms A and C). Packets are what the
+texts that cover it from arm B's MinerU corpus, from the live library's current
+version (arms A and C) with `--live`, and from any builder run given as
+`--run-side NAME=DIR` (`DIR/<book>/books/<book>/corpus.json`, e.g. a raw
+current-parser parse with no review). Packets are what the
 blind judge reads; a page's packet is updated in place, so the MinerU side can
 be written before the tunnel to the live library is open.
 
     uv run --project pipeline --with pymupdf==1.28.2 python \\
-        bench/rag/intake/scripts/audit_packets.py [--live-url postgresql://...] [--book ahss4]
+        bench/rag/intake/scripts/audit_packets.py [--live] [--run-side raw_v15=DIR] [--book ahss4]
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ def render(pdf: Path, page: int, target: Path) -> None:
         p.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False).save(target, output="jpeg", jpg_quality=85)
 
 
-def mineru_texts(corpus: dict, page: int) -> list[dict]:
+def corpus_texts(corpus: dict, page: int) -> list[dict]:
     return [
         {"chunk_idx": c["chunk_idx"], "section_path": c["section_path"], "text": c["text"]}
         for c in corpus["chunks"]
@@ -61,8 +63,10 @@ def main() -> None:
         action="store_true",
         help="fill the reviewed side from the live library: LIBRARY_DATABASE_URL in .env.local, reached through the tunnel on 15433",
     )
+    parser.add_argument("--run-side", action="append", default=[], metavar="NAME=DIR", help="add side NAME from the builder run corpora under DIR")
     parser.add_argument("--book")
     args = parser.parse_args()
+    run_sides = dict(item.split("=", 1) for item in args.run_side)
     sample = json.loads(PAGES.read_text(encoding="utf-8"))["books"]
     manifest = {b["id"]: b for b in json.loads((ROOT / "lab/knowledge/books.json").read_text(encoding="utf-8"))["books"]}
     conn = None
@@ -94,8 +98,12 @@ def main() -> None:
             if not image.exists():
                 render(pdf, page, image)
             packet["image"] = str(image.relative_to(ROOT)).replace("\\", "/")
-            if corpus is not None:
-                packet["texts"]["mineru"] = mineru_texts(corpus, page)
+            # The judged MinerU side stays: the corpus on disk was rebuilt after the 10-07 verdicts.
+            if corpus is not None and "mineru" not in packet["texts"]:
+                packet["texts"]["mineru"] = corpus_texts(corpus, page)
+            for name, run_dir in run_sides.items():
+                side_corpus = json.loads((Path(run_dir) / book / "books" / book / "corpus.json").read_text(encoding="utf-8"))
+                packet["texts"][name] = corpus_texts(side_corpus, page)
             if conn is not None:
                 packet["texts"]["reviewed"] = live_texts(conn, book, page)
             packet_path.write_text(json.dumps(packet, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
