@@ -973,7 +973,10 @@ keeps its normal loading state, and after 5 s it adds the line "Opening is
 slowed because many large files were opened recently." (`SlowedOpenLine`,
 `useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
 (`FileLoading`), under a quiz's, a set's or an embed's skeleton, and as a strip
-over an Office or text source (`SourceBanners`). The room is reachable, so the
+over an Office or text source (`SourceBanners`). A note already on screen
+whose reconnect is slowed keeps its editor and holds its header's sync
+indicator tooltip open with the line (`NoteEditorStatus.slowed`,
+`EditorSaveStatus`; Epo 2026-10-20). The room is reachable, so the
 reconnector never counts the wait as stuck (`roomReconnector().slowed`), and
 an editor that went offline before (a socket drop) leaves offline mode when
 the notice arrives instead of when the answer does: notes, items and sources

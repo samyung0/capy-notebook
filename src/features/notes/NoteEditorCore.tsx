@@ -561,15 +561,36 @@ export function NoteEditorCore({
   const name = currentUserName;
 
   // Re-announcing a status the header already shows re-renders it for nothing.
-  const reportedStatus = useRef<string | null>(null);
+  const reportedStatus = useRef<NoteEditorStatus['saveState'] | null>(null);
+  // A note on screen whose reconnect is slowed by the open budget says so
+  // under the header's sync indicator (Epo 2026-10-20); a first open says so
+  // under its loading pane.
+  const reportedSlowed = useRef(false);
+  const report = useCallback(
+    (saveState: NoteEditorStatus['saveState']) =>
+      onEditorStatusChange?.(
+        reportedSlowed.current ? { saveState, slowed: true } : { saveState }
+      ),
+    [onEditorStatusChange]
+  );
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
       setHandshaking(next === 'connecting');
       if (reportedStatus.current === next) return;
       reportedStatus.current = next;
-      onEditorStatusChange?.({ saveState: next });
+      report(next);
     },
-    [onEditorStatusChange]
+    [report]
+  );
+  const markSlowed = useCallback(
+    (next: boolean) => {
+      setSlowed(next);
+      const shown = next && hasSynced.current;
+      if (reportedSlowed.current === shown) return;
+      reportedSlowed.current = shown;
+      if (reportedStatus.current) report(reportedStatus.current);
+    },
+    [report]
   );
 
   const markSyncing = useCallback(() => {
@@ -646,7 +667,7 @@ export function NoteEditorCore({
   const slowedNow = useRef(() => {});
   slowedNow.current = () => {
     reconnector.current?.slowed();
-    setSlowed(true);
+    markSlowed(true);
     if (!offlineMode.current) return;
     offlineMode.current = false;
     recorder.current?.connected();
@@ -884,7 +905,7 @@ export function NoteEditorCore({
           onSyncChange: ({ isSynced }) => {
             roomSynced.current = isSynced;
             if (!isSynced || rejected.current) return;
-            setSlowed(false);
+            markSlowed(false);
             hasSynced.current = true;
             reconnector.current?.connected();
             saveDelay.connected();
@@ -912,6 +933,7 @@ export function NoteEditorCore({
                     materialId: material.id,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
+                    onSlowed: () => slowedNow.current(),
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
@@ -924,7 +946,7 @@ export function NoteEditorCore({
                     onAuthenticationFailed,
                     onClose: () => {
                       roomSynced.current = false;
-                      setSlowed(false);
+                      markSlowed(false);
                       reconnector.current?.closed(
                         socketOpen(roomProvider(editorRef.current)?.provider)
                       );
@@ -986,6 +1008,7 @@ export function NoteEditorCore({
     discussions,
     handleStatelessEvent,
     hasUnsavedWork,
+    markSlowed,
     material.id,
     material.workspaceId,
     name,

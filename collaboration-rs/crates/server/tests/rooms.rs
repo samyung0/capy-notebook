@@ -243,15 +243,21 @@ fn varbytes(out: &mut Vec<u8>, bytes: &[u8]) {
 /// The client protocol an up-to-date browser sends: the server's own
 /// (`CLIENT_PROTOCOL` in `protocol.rs`).
 fn client_protocol() -> u64 {
+    protocol_constant("CLIENT_PROTOCOL")
+}
+
+/// A `pub const <name>: u32` of `protocol.rs`, so the tests follow a bump.
+fn protocol_constant(name: &str) -> u64 {
+    let prefix = format!("pub const {name}: u32 = ");
     include_str!("../src/protocol.rs")
         .lines()
         .find_map(|line| {
-            line.strip_prefix("pub const CLIENT_PROTOCOL: u32 = ")?
+            line.strip_prefix(prefix.as_str())?
                 .strip_suffix(';')?
                 .parse()
                 .ok()
         })
-        .expect("CLIENT_PROTOCOL in protocol.rs")
+        .unwrap_or_else(|| panic!("{name} in protocol.rs"))
 }
 
 /// A JOIN's payload: the room, the token and the client protocol (none from
@@ -620,9 +626,11 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 }
 
 /// The version gate: a JOIN or draft send without the client protocol (a tab
-/// from before the gate) or above the server's own (a rollback) is refused as
-/// `collaboration-outdated` before any lookup, in material and source rooms
-/// alike; a refused draft send stores nothing and is counted by family.
+/// from before the gate), below its family's minimum (`MIN_MATERIAL`,
+/// `MIN_SOURCE`, read from `protocol.rs`) or above the server's own (a
+/// rollback) is refused as `collaboration-outdated` before any lookup, in
+/// material and source rooms alike; a refused draft send stores nothing and
+/// is counted by family.
 #[tokio::test]
 async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let Some(env) = env() else { return };
@@ -631,21 +639,27 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let room = format!("material:{material}:schema:1");
     let write = token(&room, &user, "write");
     let mut client = Client::open(server.port).await;
-    for protocol in [None, Some(client_protocol() + 1)] {
+    for protocol in [
+        None,
+        Some(protocol_constant("MIN_MATERIAL") - 1),
+        Some(client_protocol() + 1),
+    ] {
         client.send(0, &join_payload(&room, &write, protocol)).await;
         let reason = text_payload(&client.until(2).await.expect("refused"));
         assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
     }
     // Before the gateway is asked about a file it does not know.
     let source = "source:file_outdated:epoch:1";
-    client
-        .send(
-            0,
-            &join_payload(source, &token(source, &user, "write"), None),
-        )
-        .await;
-    let reason = text_payload(&client.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-outdated");
+    for protocol in [None, Some(protocol_constant("MIN_SOURCE") - 1)] {
+        client
+            .send(
+                0,
+                &join_payload(source, &token(source, &user, "write"), protocol),
+            )
+            .await;
+        let reason = text_payload(&client.until(2).await.expect("refused"));
+        assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
+    }
     // The current protocol joins.
     assert_eq!(client.joined(&room, &write).await, 1);
     assert!(client.settle(|c| c.block_text() == "base").await);
@@ -672,8 +686,8 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     );
     let metrics = metrics_text(server.port).await;
     for line in [
-        "capy_collaboration_outdated_refusals_total{family=\"material\"} 3",
-        "capy_collaboration_outdated_refusals_total{family=\"source\"} 1",
+        "capy_collaboration_outdated_refusals_total{family=\"material\"} 4",
+        "capy_collaboration_outdated_refusals_total{family=\"source\"} 2",
         "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1",
     ] {
         assert!(

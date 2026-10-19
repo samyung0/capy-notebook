@@ -105,3 +105,44 @@ test('header distinguishes pending edits from durable saves', async ({
   await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(status).toHaveCount(0);
 });
+
+// A note on screen whose reconnect waits on the open budget keeps its editor
+// and, after 5 s, says why under the header's sync indicator; the line goes
+// once the room syncs (Epo 2026-10-20).
+test('a slowed reconnect says so under the sync indicator', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  const editor = page.locator(
+    '[data-slate-editor="true"][contenteditable="true"]'
+  );
+  const status = page.getByTestId('editor-save-state');
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+  await expect(status).toHaveAttribute('data-save-state', 'saved');
+  const line = page
+    .locator('[data-slot="tooltip-content"][data-open]')
+    .getByText(m.editor_open_slowed(), { exact: true });
+
+  const slow = (value: boolean) =>
+    page.evaluate(async (slowed) => {
+      const path = '/src/mocks/collaboration.ts';
+      const mock = (await import(
+        path
+      )) as typeof import('../../src/mocks/collaboration');
+      if (slowed) {
+        mock.setCollaborationSlowed(true);
+        // The room drops and joins again, its join slowed.
+        mock.setCollaborationReachable(false);
+        mock.setCollaborationReachable(true);
+      } else mock.setCollaborationSlowed(false);
+    }, value);
+  await slow(true);
+  await expect(status).toHaveAttribute('data-save-state', 'reconnecting');
+  await expect(line).toHaveCount(0);
+  await expect(line).toBeVisible({ timeout: 10_000 });
+  await expect(editor).toBeVisible();
+
+  await slow(false);
+  await expect(status).toHaveAttribute('data-save-state', 'saved');
+  await expect(line).toHaveCount(0);
+});
