@@ -35,12 +35,8 @@ describe('stripUrlTokensDeep', () => {
 });
 
 describe('scrubRecordingEvent', () => {
-  it("strips a replay's page href and span URLs", () => {
+  it("strips a replay span's fetch URL", () => {
     const invite = 'Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFi';
-    const meta = scrubRecordingEvent({
-      data: { href: `https://app.test/workspace-invites/${invite}` },
-      type: 4,
-    });
     const span = scrubRecordingEvent({
       data: {
         payload: {
@@ -51,6 +47,6 @@ describe('scrubRecordingEvent', () => {
       },
       type: 5,
     });
-    expect(JSON.stringify([meta, span])).not.toContain(invite);
+    expect(JSON.stringify(span)).not.toContain(invite);
   });
 });

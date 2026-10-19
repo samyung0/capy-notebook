@@ -174,7 +174,7 @@ func (s *Store) lockWorkspaceMutationTx(
 		actorID = ownerID
 	}
 	if err := s.lockAccountSessionsTx(ctx, tx, append([]string{ownerID, actorID}, also...)...); err != nil {
-		return "", ownerHidden(err, ownerID, actorID)
+		return "", ownerHidden(err, actorID)
 	}
 	return ownerID, nil
 }

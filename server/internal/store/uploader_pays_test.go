@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -602,29 +603,148 @@ func TestNoteContentIsChargedToTheNotesPayer(t *testing.T) {
 	}
 }
 
-// A frozen payer refuses an image added to its note by anyone.
+// A frozen payer refuses an image added to its note by anyone: here a member
+// whose note sits in a healthy owner's workspace, so only the note's payer
+// (not the workspace owner) can be the reason.
 func TestFrozenNotePayerRefusesAddedImages(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_frozen_doc_owner")
+	payer := newBlobTestUser(t, s, "u_frozen_doc_payer")
 	editor := newBlobTestUser(t, s, "u_frozen_doc_editor")
 	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Frozen docs", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
+	addWorkspaceEditor(t, s, ws.ID, payer)
 	addWorkspaceEditor(t, s, ws.ID, editor)
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Frozen note"})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Frozen note"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pushFrozen(t, s, owner, ws.ID)
+	pushFrozen(t, s, payer, ws.ID)
 	_, _, err = s.CreateEditorAssetReservation(ctx, NewEditorAssetReservation{
 		AssetID: uid("asset"), UploadID: uid("eau"), WorkspaceID: ws.ID, MaterialID: note.ID, CreatedBy: editor,
 		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/incoming/" + uid("blob"),
 		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
 	})
 	wantOverQuotaLock(t, "reserving into a frozen payer's note", err)
+}
+
+// A co-editor never learns another account's lifecycle lock or suspension
+// reason: writes on what a suspended payer pays for answer not found
+// (security review C2), while the frozen state still reads as frozen.
+func TestCoEditorsDoNotSeeAPayersSuspension(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_c2_owner")
+	payer := newBlobTestUser(t, s, "u_c2_payer")
+	editor := newBlobTestUser(t, s, "u_c2_editor")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "C2", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
+	addWorkspaceEditor(t, s, ws.ID, payer)
+	addWorkspaceEditor(t, s, ws.ID, editor)
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Payer's note"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := s.createReadyFile(ctx, ws.ID, payer, "payer.docx", "docx", nil, "", 10, "sources/"+uid("blob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='private reason' WHERE id=$1`, payer); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `UPDATE users SET suspended_at=NULL, suspended_reason=NULL WHERE id=$1`, payer)
+	})
+	title := "Renamed"
+	_, updateErr := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Title: &title, UpdatedBy: editor})
+	_, _, reserveErr := s.CreateEditorAssetReservation(ctx, NewEditorAssetReservation{
+		AssetID: uid("asset"), UploadID: uid("eau"), WorkspaceID: ws.ID, MaterialID: note.ID, CreatedBy: editor,
+		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/incoming/" + uid("blob"),
+		ContentType: "image/png", DeclaredSize: 100, ExpiresAt: time.Now().Add(time.Hour),
+	})
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, sourceErr := s.sourceEditLockTx(ctx, tx, file.ID, editor)
+	_ = tx.Rollback(ctx)
+	for name, err := range map[string]error{"rename": updateErr, "image": reserveErr, "file edit": sourceErr} {
+		var locked *AccountLockedError
+		if errors.As(err, &locked) || !errors.Is(err, ErrNotFound) {
+			t.Fatalf("%s on a suspended payer's item = %v, want a plain not found", name, err)
+		}
+	}
+}
+
+// Source edits follow the file's payer (security review B7): a frozen owner
+// leaves a member's file editable, a frozen payer makes its file refuse a
+// healthy editor, and a checkpoint for a deleting payer is refused before it
+// waits on the file row.
+func TestSourceEditsFollowTheFilesPayer(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_b7_owner")
+	member := newBlobTestUser(t, s, "u_b7_member")
+	editor := newBlobTestUser(t, s, "u_b7_editor")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "B7", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
+	addWorkspaceEditor(t, s, ws.ID, member)
+	addWorkspaceEditor(t, s, ws.ID, editor)
+	file, err := s.createReadyFile(ctx, ws.ID, member, "member.docx", "docx", nil, "", 10, "sources/"+uid("blob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	editLock := func(actor string) error {
+		t.Helper()
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		_, _, err = s.sourceEditLockTx(ctx, tx, file.ID, actor)
+		return err
+	}
+	// A frozen owner: the member's file stays editable for the member.
+	pushFrozen(t, s, owner, ws.ID)
+	if err := editLock(member); err != nil {
+		t.Fatalf("member editing its file under a frozen owner = %v", err)
+	}
+	// A frozen payer: a healthy editor is refused.
+	pushFrozen(t, s, member, ws.ID)
+	wantOverQuotaLock(t, "editor editing a frozen payer's file", editLock(editor))
+
+	// A deleting payer: the checkpoint answers at once while another
+	// transaction holds the file row.
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1`, member); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Rollback(ctx)
+	if _, err := holder.Exec(ctx, `SELECT 1 FROM files WHERE id=$1 FOR UPDATE`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = s.SaveSourceCheckpoint(waitCtx, file.ID, SourceCheckpoint{
+		ActorIDs: []string{editor}, Epoch: 1, BaseRevision: 1, Update: []byte{1}, PendingEffects: json.RawMessage(`[]`),
+	})
+	var locked *AccountLockedError
+	if !errors.As(err, &locked) || locked.UserID != member {
+		t.Fatalf("checkpoint for a deleting payer = %v, want the payer's lock before the file row", err)
+	}
 }
 
 // Under a suspended owner the payer still trashes and purges what it pays for

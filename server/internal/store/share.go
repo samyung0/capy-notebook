@@ -1174,7 +1174,7 @@ func (s *Store) cloneWorkspaceOnce(
 		return "", nil, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, src.OwnerUserID, userID); err != nil {
-		return "", nil, ownerHidden(err, src.OwnerUserID, userID)
+		return "", nil, ownerHidden(err, userID)
 	}
 	if err := assertCloneSourceTx(ctx, tx, userID, srcID); err != nil {
 		return "", nil, err
@@ -1626,7 +1626,7 @@ func (s *Store) lockCloneTargetTx(
 		return cloneDestination{}, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, sourceOwnerID, actorID, ownerID); err != nil {
-		return cloneDestination{}, ownerHidden(err, ownerID, actorID)
+		return cloneDestination{}, ownerHidden(err, actorID)
 	}
 	// The rows are already held; this adds the editor and frozen checks.
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, target.WorkspaceID, actorID); err != nil {
@@ -1675,12 +1675,14 @@ func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID str
 	return nil
 }
 
-// ownerHidden maps a locked (deleted, deletion-pending or suspended) owner to
-// not found for every actor but the owner: that owner's workspaces and content
-// are gone for everyone else, and the answer must not reveal why.
-func ownerHidden(err error, ownerID, actorID string) error {
+// ownerHidden maps another account's lifecycle lock (deleted,
+// deletion-pending or suspended) to not found: a locked owner's workspaces
+// and content are gone for everyone else, and a locked payer's state and
+// suspension reason are none of a co-editor's business (review C2). The
+// actor's own lock, and a frozen payer (whose items read as view-only), pass.
+func ownerHidden(err error, actorID string) error {
 	var locked *AccountLockedError
-	if ownerID != actorID && errors.As(err, &locked) && locked.UserID == ownerID {
+	if errors.As(err, &locked) && locked.UserID != actorID && locked.State != AccountOverQuotaFrozen {
 		return ErrNotFound
 	}
 	return err
@@ -1736,7 +1738,7 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
 	if err != nil {
-		return "", nil, ownerHidden(err, sourceOwnerID, userID)
+		return "", nil, ownerHidden(err, userID)
 	}
 	files, err := snapshotCloneFilesTx(ctx, tx, `f.id=$1`, fileID)
 	if err != nil {
@@ -1909,7 +1911,7 @@ func (s *Store) cloneMaterialOnce(
 	// its workspace remain unlocked so accepted collaboration stores can finish.
 	dest, err := s.lockCloneTargetTx(ctx, tx, src.OwnerUserID, userID, target)
 	if err != nil {
-		return "", ownerHidden(err, src.OwnerUserID, userID)
+		return "", ownerHidden(err, userID)
 	}
 
 	// A note brings its embedded rows along; their references are rewritten

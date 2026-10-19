@@ -1757,7 +1757,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		!(*p.Privacy == PrivacyLink && privacy == PrivacyPrivate)
 	if !narrowsOnly {
 		if err := s.assertEditableTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
-			return Material{}, err
+			return Material{}, ownerHidden(err, p.UpdatedBy)
 		}
 	}
 	ct, err := tx.Exec(ctx, `UPDATE materials SET `+strings.Join(sets, ", ")+where, args...)
