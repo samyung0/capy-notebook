@@ -41,7 +41,7 @@ func TestMemberPaysForWhatItAddsToAWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Member note",
+		CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Member note",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -72,11 +72,11 @@ func TestFullPayerMakesOnlyItsOwnItemsViewOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	addWorkspaceEditor(t, s, ws.ID, member)
-	memberNote, err := s.CreateMaterial(ctx, Material{CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Member note"})
+	memberNote, err := s.CreateMaterial(ctx, Material{CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Member note"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ownerNote, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Owner note"})
+	ownerNote, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Owner note"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,11 +197,11 @@ func TestPayerListingsFollowReach(t *testing.T) {
 	if _, err := s.createReadyFile(ctx, ws.ID, payer, "slides.pdf", "pdf", nil, "", 10, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
-	listed, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Listed"})
+	listed, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Listed"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	trashed, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Trashed"})
+	trashed, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Trashed"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestPayerListingsFollowReach(t *testing.T) {
 
 	// Sorted by workspace name, one per page: the hidden name pages by the
 	// stored one, so every row comes once.
-	other, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, Kind: "note", Title: "Standalone"})
+	other, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, Kind: "note", Content: materialTestContent(t, ""), Title: "Standalone"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	memberNote, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, ChapterID: &chapter.ID, Kind: "note", Title: "Member scope note",
+		CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name, ChapterID: &chapter.ID, Kind: "note", Content: materialTestContent(t, ""), Title: "Member scope note",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -502,7 +502,7 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 	if _, err := s.UpdateMaterial(ctx, memberNote.ID, MaterialPatch{Title: &renamed, UpdatedBy: owner}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateMaterial(ctx, Material{CreatedBy: member, Kind: "note", Title: "Loose"}); err != nil {
+	if _, err := s.CreateMaterial(ctx, Material{CreatedBy: member, Kind: "note", Content: materialTestContent(t, ""), Title: "Loose"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='test' WHERE id=$1`, owner); err != nil {
@@ -554,7 +554,7 @@ func TestNoteContentIsChargedToTheNotesPayer(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
 	addWorkspaceEditor(t, s, ws.ID, editor)
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Owner's note"})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Owner's note"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,7 +619,7 @@ func TestFrozenNotePayerRefusesAddedImages(t *testing.T) {
 	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
 	addWorkspaceEditor(t, s, ws.ID, payer)
 	addWorkspaceEditor(t, s, ws.ID, editor)
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Frozen note"})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Frozen note"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,7 +648,7 @@ func TestCoEditorsDoNotSeeAPayersSuspension(t *testing.T) {
 	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
 	addWorkspaceEditor(t, s, ws.ID, payer)
 	addWorkspaceEditor(t, s, ws.ID, editor)
-	note, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Payer's note"})
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: payer, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Content: materialTestContent(t, ""), Title: "Payer's note"})
 	if err != nil {
 		t.Fatal(err)
 	}
