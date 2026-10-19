@@ -3099,9 +3099,9 @@ export const handlers = [
       creditsPeriodStart: new Date(
         Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)
       ).toISOString(),
-      creditsPurchasedMicros: 4070 * 1_000_000,
-      creditsReservedMicros: 40 * 1_000_000,
-      creditsUsedMicros: 1250 * 1_000_000,
+      creditsPurchasedMicros: 0,
+      creditsReservedMicros: 0,
+      creditsUsedMicros: PLAN_LIMITS.pro.creditLimitMicros,
       planTier: db.user.planTier,
       storageLimitBytes: db.accountStatus.storageLimitBytes,
       storageReservedBytes: 0,
@@ -3119,11 +3119,11 @@ export const handlers = [
   http.get('/api/usage', async () =>
     HttpResponse.json({
       bySurface: [
-        { creditMicros: 820 * 1_000_000, events: 9, key: 'chat' },
-        { creditMicros: 250 * 1_000_000, events: 3, key: 'generate' },
-        { creditMicros: 150 * 1_000_000, events: 6, key: 'ingest' },
-        { creditMicros: 20 * 1_000_000, events: 4, key: 'editor' },
-        { creditMicros: 10 * 1_000_000, events: 1, key: 'system' },
+        { creditMicros: 9000 * 1_000_000, events: 9, key: 'chat' },
+        { creditMicros: 3000 * 1_000_000, events: 3, key: 'generate' },
+        { creditMicros: 1700 * 1_000_000, events: 6, key: 'ingest' },
+        { creditMicros: 300 * 1_000_000, events: 4, key: 'editor' },
+        { creditMicros: 70 * 1_000_000, events: 1, key: 'system' },
       ],
     })
   ),

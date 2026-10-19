@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
+import { userToast } from '@/components/ui/userToast';
 import { resetSourceTransfers } from '@/features/workspace/sourceTransfers';
 import { m } from '@/i18n';
 import { cancelMockAuthRequests } from '@/mocks/auth';
@@ -28,6 +29,7 @@ import {
 } from '@/mocks/scenarios';
 import { router } from '@/router';
 import { type MockDialogId, mockDialogOptions } from './mockDialogOptions';
+import { mockToastOptions } from './mockToastOptions';
 
 // The journeys and dialog previews import the editors and most dialogs; they
 // load on the first scenario that needs them, not with every dev page.
@@ -38,6 +40,7 @@ const isJourney = (id: string | null): id is JourneyId =>
   !!id && !FIXTURE_ID.test(id) && id !== 'page-not-found';
 
 const groups = [...new Set(journeyOptions.map(({ id }) => journeyGroup(id)))];
+const toastGroups = [...new Set(mockToastOptions.map(({ group }) => group))];
 
 export default function MockScenarioPanel() {
   const [active, setActive] = useState<string | null>(() =>
@@ -361,6 +364,52 @@ export default function MockScenarioPanel() {
             >
               Page not found
             </button>
+          </fieldset>
+          {/* Toasts spawn over the open page; no scenario runs. */}
+          <fieldset className="grid gap-1 border-line border-t pt-2">
+            <legend className="px-1 font-semibold">Toasts</legend>
+            <div className="flex gap-2">
+              <button
+                className="h-8 flex-1 rounded-button border border-line px-2"
+                onClick={() => {
+                  details.current?.removeAttribute('open');
+                  for (const option of mockToastOptions)
+                    userToast(option.toast());
+                }}
+                type="button"
+              >
+                Show all
+              </button>
+              <button
+                className="h-8 flex-1 rounded-button border border-line px-2"
+                onClick={() => toast.dismiss()}
+                type="button"
+              >
+                Dismiss all
+              </button>
+            </div>
+            {toastGroups.map((group) => (
+              <div className="grid gap-1" key={group}>
+                <p className="px-1 pt-1 text-fg-secondary">{group}</p>
+                {mockToastOptions
+                  .filter((option) => option.group === group)
+                  .map((option) => (
+                    <button
+                      className="min-h-8 rounded-button border border-line px-2 text-left"
+                      data-toast-preview={option.label}
+                      key={option.label}
+                      onClick={() => {
+                        // The panel sits over the toaster's corner.
+                        details.current?.removeAttribute('open');
+                        userToast(option.toast());
+                      }}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+              </div>
+            ))}
           </fieldset>
         </div>
       </details>

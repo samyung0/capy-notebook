@@ -146,10 +146,6 @@ function Study({ setId }: { setId: string }) {
           rating: SRS_RATINGS.indexOf(rating) + 1,
         }).catch(() =>
           userToast({
-            button: {
-              label: m.error_action_reload(),
-              onClick: () => window.location.reload(),
-            },
             id: 'flashcard-review-failed',
             title: m.flashcards_review_failed(),
             variant: 'error',

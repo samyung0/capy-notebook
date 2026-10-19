@@ -97,12 +97,12 @@ test('offline edits outlive a reload and save once the room is back', async ({
   expect(kinds.filter((kind) => kind === 'state')).toHaveLength(1);
   expect(kinds.filter((kind) => kind === 'update').length).toBeGreaterThan(1);
   await shot(page, 'offline');
-  // The workspace's offline toast goes after its 7 s; the banner stays.
+  // The workspace's offline toast goes after its 12 s; the banner stays.
   const toast = page
     .locator('[data-sonner-toast]')
     .filter({ hasText: m.connection_offline_body() });
   await expect(toast).toBeVisible();
-  await expect(toast).toHaveCount(0, { timeout: 9000 });
+  await expect(toast).toHaveCount(0, { timeout: 14_000 });
   await expect(offline).toBeVisible();
 
   // Back online while the service stays unreachable, then reload: the
