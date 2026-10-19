@@ -1528,7 +1528,10 @@ export const handlers = [
   http.post('/api/share/redeem', async ({ request }) => {
     const { token } = (await request.json()) as { token: string };
     const id = token.split('.')[0];
-    if (db.workspaces.some((row) => row.id === id))
+    if (
+      db.workspaces.some((row) => row.id === id) ||
+      db.publicWorkspaces.some((row) => row.id === id)
+    )
       return HttpResponse.json({ id, kind: 'workspace' });
     const material = db.materials.find(
       (row) => row.id === id && !row.workspaceId
