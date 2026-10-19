@@ -117,11 +117,15 @@ line. Go Sentry errors and performance transactions alike (`BeforeSend`,
 link) and hash the same segments in their URL, transaction name, span names
 and descriptions, and error text (Sam 2026-10-19). The SPA does the same in
 Sentry `beforeSend`/`beforeBreadcrumb`, a global event processor (replay
-events' URL list, transactions), Replay's `beforeAddRecordingEvent` (the
-recorded page href, navigation and fetch spans; the DOM frames are left
-whole, their text masked already) and PostHog `sanitize_properties`
+events' URL list, transactions), Replay's `beforeAddRecordingEvent` (which
+@sentry/replay 10.70 calls for Custom recording events only: breadcrumbs and
+navigation and fetch spans) and PostHog `sanitize_properties`
 (`src/lib/urlTokens.ts`): a share link keeps its id without its signature, an
-invite link becomes `/workspace-invites/:token`. Cloudflare Workers Logs keep
+invite link becomes `/workspace-invites/:token`. An error-sampled replay's
+Meta events (the page href at each full snapshot) and its DOM frames (their
+text masked; a share dialog's preview link) are not scrubbed, so a replay
+captured on `/open/{token}`, an invite page or `?clone=` still records that
+address (open, review C1). Cloudflare Workers Logs keep
 the site Worker's request URLs (`/w/*`, `/share/*`, `/p/*`), accepted as a
 trusted platform log (Sam 2026-10-19).
 

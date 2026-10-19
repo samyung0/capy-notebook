@@ -852,7 +852,10 @@ sources, and a copy into that owner's workspace. The answer comes before
 anything that could reveal the owner's state: the role read
 (`workspaceRoles`, `materialEffectiveAccess`, `sourceActorsAllowed`) leaves the
 workspace out, and a write that locks accounts before reading roles maps the
-owner's locked account to not found (`ownerHidden`). Becoming locked evicts
+owner's locked account to not found (`ownerHidden`). The same goes for any
+other account a write checks, such as an item's payer: a co-editor gets a
+plain not found, never another account's lifecycle state or suspension
+reason, while a frozen payer still reads as frozen (review C2). Becoming locked evicts
 the owner's note and source rooms with `discard` (`user_acl_eviction_trigger`,
 source rooms since migration 0090), so open viewers reconnect through that
 check. A member's unsynced edits in that owner's notes and files are dropped
