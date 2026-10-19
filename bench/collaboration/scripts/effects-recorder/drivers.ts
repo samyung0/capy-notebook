@@ -152,11 +152,20 @@ function locateInFrame([needle, occurrence, at, scope, scroll]: [string, number,
             const index = at === 'start' ? from : at === 'end' ? from + needle.length : from + at;
             const before = index >= text.length || (at === 'end' && index > 0);
             const char = before ? index - 1 : index;
-            const hit = nodes.filter((entry) => entry.start <= char).pop()!;
-            const range = document.createRange();
-            range.setStart(hit.node, char - hit.start);
-            range.setEnd(hit.node, char - hit.start + 1);
-            const rect = range.getBoundingClientRect();
+            // A collapsed space (one ending a run before a field) has no box:
+            // its neighbour inside the text stands in for it. No helper
+            // function here: tsx names those, and the frame has no __name.
+            let hit = nodes[0]!;
+            let rect = new DOMRect();
+            for (const at of [char, before ? char - 1 : char + 1]) {
+              if (at < 0 || at >= text.length) continue;
+              hit = nodes.filter((entry) => entry.start <= at).pop()!;
+              const range = document.createRange();
+              range.setStart(hit.node, at - hit.start);
+              range.setEnd(hit.node, at - hit.start + 1);
+              rect = range.getBoundingClientRect();
+              if (rect.width || rect.height) break;
+            }
             // Off the frame's viewport: bring the run to the middle, then retry.
             if (scroll && (rect.top < 60 || rect.bottom > window.innerHeight - 20)) {
               hit.node.parentElement?.scrollIntoView({ block: 'center' });
@@ -633,6 +642,11 @@ class FramePeer implements Peer {
         if (needle) {
           const end = await this.point(needle, { at: 'end', scope });
           await page.mouse.click(end.x, end.y);
+        } else {
+          // Nothing to click at: a click in the open region places the caret
+          // in its (empty) paragraph.
+          const inside = await target();
+          await page.mouse.click(inside.x, inside.y);
         }
         await this.placed();
         return;
