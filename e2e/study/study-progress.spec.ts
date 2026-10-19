@@ -671,7 +671,7 @@ test.describe('study progress', () => {
 
     // Back returns to where the session started.
     await ownerPage
-      .getByRole('button', { exact: true, name: m.review_back() })
+      .getByRole('button', { exact: true, name: m.action_back() })
       .click();
     await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${ws.id}$`));
 
@@ -706,7 +706,9 @@ test.describe('study progress', () => {
     ownerPage.on('pageerror', (error) => errors.push(error.message));
 
     await ownerPage.goto(`/workspaces/${workspace.id}?progress=true`);
-    await expect(ownerPage.getByText(m.progress_off_title())).toBeVisible();
+    await expect(
+      ownerPage.getByText(m.progress_off_title(), { exact: true })
+    ).toBeVisible();
     await ownerPage
       .getByRole('button', { name: m.progress_off_turn_on() })
       .click();
