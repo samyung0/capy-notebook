@@ -1271,6 +1271,7 @@
   "clone_workspace_not_allowed": "Only members and editors of this workspace can clone it.",
   "clone_item_not_allowed": "Only members and editors of its workspace can clone this.",
   "clone_embedded_not_allowed": "This is part of a note. Clone the note to copy it.",
+  "clone_unreadable": "This item can't be copied because its stored content could not be read.",
   "clone_owner_quota_body": "This workspace's owner is out of storage. Choose another workspace, or ask the owner to free space.",
   "support_faq_heading": "Frequently asked",
   "support_stuck_title": "Still stuck?",

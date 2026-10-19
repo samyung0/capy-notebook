@@ -1271,6 +1271,7 @@
   "clone_workspace_not_allowed": "只有此工作区的成员和编辑者可以克隆它。",
   "clone_item_not_allowed": "只有其所在工作区的成员和编辑者可以克隆此内容。",
   "clone_embedded_not_allowed": "此内容属于一篇笔记。请克隆该笔记来复制它。",
+  "clone_unreadable": "此项目无法复制，因为其存储的内容无法读取。",
   "clone_owner_quota_body": "此工作区所有者的存储已满。请选择其他工作区，或请所有者释放空间。",
   "support_faq_heading": "常见问题",
   "support_stuck_title": "还是没解决？",
