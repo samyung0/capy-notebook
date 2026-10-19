@@ -12,7 +12,7 @@
 -- GLM-5.3-Flash is served by Z.AI itself (2026-10-20), which holds about 50
 -- calls in flight per key (measured 2026-10-20: past that, connections hang and
 -- fail), so its gate is 48 in flight with 40 kept for interactive calls
--- (decision 2026-10-20; migration 0093 caps an existing Relace row the same).
+-- (decision 2026-10-20; migration 0097 caps an existing Relace row the same).
 -- OpenRouter DeepSeek V4 Flash 0731 (held on Relace) serves only the ingest
 -- descriptor, so it has no interactive reserve. Measured 2026-10-15: no 429 at
 -- up to 96 calls in flight; 32 in flight held ~600 requests/min (p95 5.5 s),

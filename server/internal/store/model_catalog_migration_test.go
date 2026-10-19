@@ -174,7 +174,7 @@ func TestZaiCapacityMigrationMovesTheRelaceRowUnderZAIsCap(t *testing.T) {
 	    ('relace', 'glm-5.3-flash', 100, 80), ('tencent', 'glm-5.3-flash', 30, 24)`); err != nil {
 		t.Fatal(err)
 	}
-	body, err := migrations.FS.ReadFile("0093_zai_glm_capacity.sql")
+	body, err := migrations.FS.ReadFile("0097_zai_glm_capacity.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
