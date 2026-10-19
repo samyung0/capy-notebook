@@ -206,7 +206,8 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 func TestTextSourceOverThePlanLimitHasNoGrowthBudget(t *testing.T) {
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
-	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "opendataloader", httpapi.Config{
+	memory := blob.NewMemory()
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
 		AuthDisabled: true,
 		E2EAuth:      true,
 		E2ESecret:    "e2e-test-secret",
@@ -219,6 +220,9 @@ func TestTextSourceOverThePlanLimitHasNoGrowthBudget(t *testing.T) {
 	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
 	file, err := uploadSource(ctx, st, workspace.ID, "u_owner", "notes.md", 100, "sources/notes.md")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = memory.Put("sources/notes.md", strings.NewReader("# Notes")); err != nil {
 		t.Fatal(err)
 	}
 	// Published past the 30 MiB export cap of the test catalog.
@@ -244,7 +248,8 @@ func TestTextSourceOverThePlanLimitHasNoGrowthBudget(t *testing.T) {
 func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
-	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "opendataloader", httpapi.Config{
+	memory := blob.NewMemory()
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
 		AuthDisabled: true,
 		E2EAuth:      true,
 		E2ESecret:    "e2e-test-secret",
@@ -257,6 +262,9 @@ func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
 	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
 	file, err := uploadSource(ctx, st, workspace.ID, "u_owner", "notes.md", 100, "sources/notes.md")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = memory.Put("sources/notes.md", strings.NewReader("# Notes")); err != nil {
 		t.Fatal(err)
 	}
 	if editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil); editor.Code != http.StatusOK {
