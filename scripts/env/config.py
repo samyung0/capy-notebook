@@ -196,7 +196,7 @@ def render(values, environment, output, revision):
     coolify["RELEASE_SHA"] = revision
     # Production pins the collaboration service to cores 2-3 of its 4 vCPU
     # (cpuset in docker-compose.prod.yml), mainly so the Office engine worker
-    # has its own core; UAT's 2 vCPU stay unpinned. Runbook Â§1.1.
+    # has its own core; UAT's 2 vCPU stay unpinned. Runbook §1.1.
     coolify["COLLABORATION_CPUSET"] = "2,3" if environment == "production" else ""
     # Office engine child processes (save lane, background lane) and each
     # one's memory cap: production 2 + 1 at 4 GiB (the box has swap), UAT 1 + 1
