@@ -659,12 +659,13 @@ test('a frozen account or full storage mid-edit drops open editors to view and d
   page,
 }) => {
   const strip = page.getByText(m.editor_read_only_strip());
-  for (const id of [
-    'note-frozen-while-editing',
-    'note-storage-full-while-editing',
+  for (const [id, reason] of [
+    ['note-frozen-while-editing', m.editor_read_only_strip()],
+    // Full storage names itself to its payer (Sam 2026-10-18).
+    ['note-storage-full-while-editing', m.storage_self_full_strip()],
   ]) {
     await launch(page, id);
-    await expect(strip).toBeVisible();
+    await expect(page.getByText(reason)).toBeVisible();
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
     // The refreshed note offers no Edit, and the refused edit is gone.
     await expect(
