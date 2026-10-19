@@ -510,6 +510,19 @@ export async function runJourney(
         'workspace-owner-grace': m.storage_payer_full_strip,
       } as Partial<Record<JourneyId, () => string>>
     )[id];
+    if (id === 'workspace-owner-frozen') {
+      // A frozen payer's note opens view-only with no storage strip: the
+      // server drops canEdit, so nothing is editable.
+      await ui.wait(
+        () =>
+          document.body.textContent?.includes(
+            'A note for trying application errors.'
+          ) === true &&
+          document.querySelector('[contenteditable="true"]') === null &&
+          !document.body.textContent.includes(m.storage_payer_full_strip()),
+        "frozen owner's note shown view-only"
+      );
+    }
     if (accountTitle) {
       // The header triangle carries the title as its label; the entry toast
       // may still be leaving from a previous run in this workspace.

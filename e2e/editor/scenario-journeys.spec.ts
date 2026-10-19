@@ -608,6 +608,18 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     });
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
 
+    // A frozen owner's note is view-only for a member too, with no storage
+    // strip (frozen is not full).
+    await launch(page, 'workspace-owner-frozen');
+    await page.goto(
+      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    );
+    await expect(
+      page.getByText('A note for trying application errors.')
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+    await expect(page.getByText(m.storage_payer_full_strip())).toHaveCount(0);
+
     await launch(page, 'account-frozen-create');
     await expect(
       page.getByRole('button', { exact: true, name: m.action_new_workspace() })
