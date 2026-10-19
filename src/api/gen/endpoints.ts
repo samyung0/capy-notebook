@@ -2557,7 +2557,7 @@ export const getListOwnedFilesUrl = (params?: ListOwnedFilesParams,) => {
 }
 
 /**
- * @summary List files across the caller's owned or member workspaces
+ * @summary List the files the caller pays for, or can open (scope=member)
  */
 export const listOwnedFiles = async (params?: ListOwnedFilesParams, options?: RequestInit): Promise<listOwnedFilesResponse> => {
 
@@ -4052,7 +4052,7 @@ export const getListOwnedMaterialsUrl = (params?: ListOwnedMaterialsParams,) => 
 }
 
 /**
- * @summary List notes, quizzes and flashcard sets across the caller's owned or member workspaces
+ * @summary List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)
  */
 export const listOwnedMaterials = async (params?: ListOwnedMaterialsParams, options?: RequestInit): Promise<listOwnedMaterialsResponse> => {
 
@@ -7390,7 +7390,7 @@ export const getListTrashUrl = (params?: ListTrashParams,) => {
 }
 
 /**
- * @summary List trashed files and materials the caller owns
+ * @summary List trashed files and materials the caller pays for, or a workspace's it owns
  */
 export const listTrash = async (params?: ListTrashParams, options?: RequestInit): Promise<listTrashResponse> => {
 

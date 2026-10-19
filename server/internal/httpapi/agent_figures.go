@@ -163,10 +163,11 @@ func (a *api) putAgentFigures(ctx context.Context, f *agentFigures, imageMaxByte
 }
 
 // ensureFigureAssets stores an edit's figures as assets of the note or quiz it
-// edits, under the actor's image cap and quota (the actor pays), and returns the ids of the
+// edits, under its payer's image cap and quota (the material's payer pays,
+// Sam 2026-10-19), and returns the ids of the
 // assets it added (a retried edit adds none).
 func (a *api) ensureFigureAssets(ctx context.Context, req internalDocumentsEditReq, f *agentFigures) ([]string, error) {
-	_, limits, err := a.s.EditorAssetMaterial(ctx, req.Target.ID, req.UserID)
+	_, limits, err := a.s.EditorAssetMaterial(ctx, req.Target.ID)
 	if err != nil {
 		return nil, err
 	}

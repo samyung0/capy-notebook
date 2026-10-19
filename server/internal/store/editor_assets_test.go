@@ -523,7 +523,7 @@ func TestEditorAssetMaterialTakesPayerCaps(t *testing.T) {
 	}
 	caps := func() (image, audio int64) {
 		t.Helper()
-		_, limits, err := s.EditorAssetMaterial(ctx, material.ID, ownerID)
+		_, limits, err := s.EditorAssetMaterial(ctx, material.ID)
 		if err != nil {
 			t.Fatal(err)
 		}

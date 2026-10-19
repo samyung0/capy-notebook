@@ -97,8 +97,15 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
+	// Files in what the caller can open: its workspaces and those it belongs
+	// to under a live owner, as the workspaces above (Sam 2026-10-19). Never
+	// rows it only pays for.
 	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name, f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
-		JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
+		JOIN workspaces w ON w.id=f.workspace_id
+		JOIN users owner ON owner.id=w.user_id
+		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
+			AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1184,17 +1191,30 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 			cardIDs[i] = card.ID
 		}
 	}
-	// The creator pays, in a workspace too (Sam 2026-10-18).
+	// The creator pays, in a workspace too (Sam 2026-10-18); an embedded
+	// row is charged to its note's payer, as the note's images are (Sam
+	// 2026-10-19). The payer is set once at insert, so the unlocked read is
+	// stable.
 	creatorID := mt.CreatedBy
 	ownerID := creatorID
 	if creatorID == "" {
 		return "", ErrNotFound
 	}
-	if mt.WorkspaceID != "" {
-		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, mt.WorkspaceID, creatorID); err != nil {
+	if mt.ParentMaterialID != "" {
+		err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1 AND trashed_at IS NULL`,
+			mt.ParentMaterialID).Scan(&ownerID)
+		if isNoRows(err) {
+			return "", ErrNotFound
+		}
+		if err != nil {
 			return "", err
 		}
-	} else if err := s.lockAccountSessionsTx(ctx, tx, creatorID); err != nil {
+	}
+	if mt.WorkspaceID != "" {
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, mt.WorkspaceID, creatorID, ownerID); err != nil {
+			return "", err
+		}
+	} else if err := s.lockAccountSessionsTx(ctx, tx, creatorID, ownerID); err != nil {
 		return "", err
 	}
 	storedSize, err := storageJSONSizeTx(ctx, tx, mt.Content)

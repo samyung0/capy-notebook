@@ -115,7 +115,7 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID, uid(r))
+	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID)
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false

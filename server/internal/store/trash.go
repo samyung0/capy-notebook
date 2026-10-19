@@ -291,12 +291,13 @@ func decodeTrashCursor(cursor string) (*time.Time, string, error) {
 	return &parsed, id, nil
 }
 
-// ListTrash returns the trashed files and materials the caller controls,
-// newest first: what they pay for (uploaded or created, wherever it sits) and
-// what sits in workspaces they own (Sam 2026-10-18). An editor who trashed
-// someone else's item never sees it here. workspaceID narrows to one
-// workspace; empty spans them all plus standalone materials. LostAccess marks
-// an item in a workspace the caller can no longer open (lostAccessSQL).
+// ListTrash returns trashed files and materials newest first. With no
+// workspaceID, the Files page's Trash: what the caller pays for, wherever it
+// sits (Sam 2026-10-19). With one (its owner only, checked by the handler):
+// everything trashed in that workspace, whoever pays. An editor who trashed
+// someone else's item never sees it here. LostAccess marks an item in a
+// workspace the caller can no longer open (lostAccessSQL), which shows only
+// its name, size and dates.
 func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limit int, cursor string) (TrashPage, error) {
 	if limit <= 0 || limit > trashPageMax {
 		limit = trashPageMax
@@ -313,13 +314,13 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 				w.name AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id,
 				COALESCE(f.thumbnail_key, '') AS thumbnail_key, f.preview
 			FROM files f JOIN workspaces w ON w.id=f.workspace_id
-			WHERE f.trashed_at IS NOT NULL AND (f.user_id=$1 OR w.user_id=$1) AND ($2='' OR f.workspace_id=$2)
+			WHERE f.trashed_at IS NOT NULL AND (($2='' AND f.user_id=$1) OR (f.workspace_id=$2 AND w.user_id=$1))
 			UNION ALL
 			SELECT 'material', m.id, m.title, m.kind, COALESCE(m.workspace_id,''), m.workspace_name,
 				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id, '', m.preview
 			FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id
-			WHERE m.trashed_at IS NOT NULL AND (m.owner_user_id=$1 OR w.user_id=$1) AND m.parent_material_id IS NULL
-				AND ($2='' OR m.workspace_id=$2)
+			WHERE m.trashed_at IS NOT NULL AND m.parent_material_id IS NULL
+				AND (($2='' AND m.owner_user_id=$1) OR (m.workspace_id=$2 AND w.user_id=$1))
 		) t
 		WHERE $3::timestamptz IS NULL OR (t.trashed_at, t.id) < ($3::timestamptz, $4::text)
 		ORDER BY t.trashed_at DESC, t.id DESC

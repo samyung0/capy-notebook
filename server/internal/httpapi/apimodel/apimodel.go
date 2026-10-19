@@ -221,8 +221,9 @@ type Material struct {
 	// embedded quizzes and flashcard sets that has credits, by id: the app
 	// computes the note's footer from it and the document's current embeds.
 	EmbedCredits map[string]*store.Provenance `json:"embedCredits,omitempty"`
-	// ImageMaxBytes caps one uploaded image by the viewer's plan: the
-	// uploader pays (Sam 2026-10-18). The browser shrinks larger images.
+	// ImageMaxBytes caps one uploaded image by the material payer's plan: it
+	// pays for the images added to it (Sam 2026-10-19). The browser shrinks
+	// larger images.
 	ImageMaxBytes int64 `json:"imageMaxBytes"`
 	// StorageFull: the material is view-only because its payer (its creator)
 	// is at its storage limit; "self" when that is the viewer. Editors only.

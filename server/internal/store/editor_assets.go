@@ -53,8 +53,8 @@ type EditorAssetUpload struct {
 }
 
 // NewEditorAssetReservation names the material that uploads it, and its
-// workspace when it has one. The uploader pays (Sam 2026-10-18). The material's saves and
-// purge delete it.
+// workspace when it has one. The material's payer pays (Sam 2026-10-19). The
+// material's saves and purge delete it.
 type NewEditorAssetReservation struct {
 	AssetID      string
 	UploadID     string
@@ -195,7 +195,7 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 	if err != nil {
 		return EditorAsset{}, err
 	}
-	// The reservation is charged to its uploader (uploader pays).
+	// The reservation is charged to the material's payer.
 	if storedOwnerID != ownerID {
 		return EditorAsset{}, ErrEditorAssetUploadState
 	}
@@ -281,18 +281,19 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 }
 
 // EditorAssetMaterial returns the live material's workspace (empty when
-// standalone) and the plan limits of the uploader, who pays for the assets
-// it adds (Sam 2026-10-18).
-func (s *Store) EditorAssetMaterial(ctx context.Context, id, uploaderID string) (workspaceID string, limits planlimits.Limits, err error) {
-	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,'')
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID)
+// standalone) and the plan limits of its payer, who pays for the images and
+// audio added to it whoever adds them (Sam 2026-10-19, Google Docs model).
+func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, limits planlimits.Limits, err error) {
+	var payerID string
+	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), owner_user_id
+		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &payerID)
 	if isNoRows(err) {
 		return "", planlimits.Limits{}, ErrNotFound
 	}
 	if err != nil {
 		return "", planlimits.Limits{}, err
 	}
-	limits, err = s.PayerPlanLimits(ctx, uploaderID)
+	limits, err = s.PayerPlanLimits(ctx, payerID)
 	return workspaceID, limits, err
 }
 
@@ -487,16 +488,34 @@ func editorAssetReadableTx(ctx context.Context, tx pgx.Tx, actorID string, asset
 }
 
 // lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
-// the payer, the actor itself (uploader pays). A workspace asset needs
-// workspace edit access; a standalone material is edited only by its owner.
-// Accounts lock before the material row, matching standalone material saves.
+// the payer: the material's own payer, who pays for every image, audio clip
+// and embedded item in it (Sam 2026-10-19); the actor for a workspace asset
+// naming no material. A workspace asset needs workspace edit access; a
+// standalone material is edited only by its owner. Accounts lock before the
+// material row, matching material saves.
 func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, actorID string) (string, error) {
 	if workspaceID != "" {
-		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID); err != nil {
+		payerID := actorID
+		if materialID != "" {
+			// Set once at insert, so the unlocked read is stable.
+			err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
+				WHERE id=$1 AND workspace_id=$2 AND trashed_at IS NULL`, materialID, workspaceID).Scan(&payerID)
+			if isNoRows(err) {
+				return "", ErrNotFound
+			}
+			if err != nil {
+				return "", err
+			}
+		}
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID, payerID); err != nil {
+			return "", err
+		}
+		// Nothing more is charged to a frozen payer.
+		if err := s.assertEditableTx(ctx, tx, payerID); err != nil {
 			return "", err
 		}
 		if materialID == "" {
-			return actorID, nil
+			return payerID, nil
 		}
 		// The asset also names the material, which must be live there.
 		var live bool
@@ -507,7 +526,7 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		if !live {
 			return "", ErrNotFound
 		}
-		return actorID, nil
+		return payerID, nil
 	}
 	var ownerID string
 	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials

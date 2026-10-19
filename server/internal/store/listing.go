@@ -12,14 +12,14 @@ import (
 // ErrInvalidCursor is a malformed or foreign page cursor: a client error.
 var ErrInvalidCursor = errors.New("invalid cursor")
 
-// Filtered, sorted, keyset-paginated listings behind the Create and Files
-// pages. Both list what the caller owns or pays for: materials and files in
-// their own workspaces, everything they uploaded or created wherever it sits
-// (uploader pays, Sam 2026-10-18), and their standalone materials. Member
-// widens that to every workspace the caller belongs to, as the dashboard
-// recents do. A row in a workspace the caller no longer owns or belongs to is
-// marked LostAccess and carries no preview or thumbnail: they may only delete
-// it.
+// Filtered, sorted, keyset-paginated listings behind the Files page (files,
+// blocks) and the dashboard's Recent. The Files page lists what the caller
+// pays for, wherever it sits, and is the storage breakdown; other people's
+// uploads in the caller's workspaces show inside the workspace. Member (Recent
+// and pickers) lists instead what the caller can open: its own workspaces,
+// those it belongs to under a live owner, and its standalone rows (Sam
+// 2026-10-19). A paid-for row the caller can no longer open is marked
+// LostAccess and shows only its name and size: they may only delete it.
 
 // liveWorkspaceSQL is true when wsCol names a workspace whose owner's account
 // is live (not deleted, pending deletion or suspended); every other path
@@ -151,13 +151,21 @@ func cursorPrimary(sort listSort, at time.Time, text string, n int64) string {
 
 /* ---------------------------------------------------------------- materials */
 
+// The updated and workspace sorts page on what a row shows: a lost row's
+// update time is its creation time and a closed owner's workspace name is
+// blank, so neither the order nor a cursor carries what the row hides.
+var (
+	lostMaterialSQL          = lostAccessSQL("m.workspace_id", "$1")
+	materialWorkspaceNameSQL = workspaceNameSQL("m.workspace_id", "m.workspace_name")
+)
+
 var materialListSorts = map[string]listSort{
-	"updated": {column: "m.updated_at", kind: "time"},
+	"updated": {column: "(CASE WHEN " + lostMaterialSQL + " THEN m.created_at ELSE m.updated_at END)", kind: "time"},
 	"created": {column: "m.created_at", kind: "time"},
 	"title":   {column: "lower(m.title)", kind: "text"},
 	"kind":    {column: "m.kind", kind: "text"},
 	// Standalone rows have no workspace name and sort first ascending.
-	"workspace": {column: "lower(m.workspace_name)", kind: "text"},
+	"workspace": {column: "lower(" + materialWorkspaceNameSQL + ")", kind: "text"},
 }
 
 // materialLocations are the Locations values: rows in or outside a
@@ -225,9 +233,12 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		kinds = []string{"note", "quiz", "flashcards"}
 	}
 	args := []any{ownerID, kinds}
-	where := ` WHERE (m.owner_user_id=$1 OR w.user_id=$1)`
+	// The Files page lists what the caller pays for; Member (dashboard
+	// Recent, pickers) what it can open: its standalone rows, its own
+	// workspaces and those it belongs to under a live owner (Sam 2026-10-19).
+	where := ` WHERE m.owner_user_id=$1`
 	if f.Member {
-		where = ` WHERE (m.owner_user_id=$1 OR w.user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))`
+		where = ` WHERE ((m.workspace_id IS NULL AND m.owner_user_id=$1) OR w.user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))`
 	}
 	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
@@ -252,13 +263,13 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), `+workspaceNameSQL("m.workspace_id", "m.workspace_name")+`,
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), `+materialWorkspaceNameSQL+`,
 			m.chapter_id, COALESCE(c.name,''),
 			m.privacy, m.created_at, m.updated_at, m.size_bytes,
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
-			m.preview, `+lostAccessSQL("m.workspace_id", "$1")+`
+			m.preview, `+lostMaterialSQL+`
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		LEFT JOIN users owner ON owner.id=w.user_id
@@ -277,10 +288,10 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess); err != nil {
 			return MaterialPage{}, err
 		}
-		if item.LostAccess {
-			item.Preview = nil
-		}
 		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, "")
+		if item.LostAccess {
+			item = lostMaterialItem(item)
+		}
 		page.Items = append(page.Items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -298,15 +309,32 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		case "kind":
 			text = string(last.Kind)
 		case "workspace":
-			// Read the stored name as the sort does: a closed owner's comes
-			// back blank in the row (workspaceNameSQL).
-			if err := s.pool.QueryRow(ctx, `SELECT lower(workspace_name) FROM materials WHERE id=$1`, last.ID).Scan(&text); err != nil {
-				return MaterialPage{}, err
-			}
+			// The shown (masked) name, as the sort uses.
+			text = strings.ToLower(last.WorkspaceName)
 		}
 		page.NextCursor = encodeListCursor(cursorPrimary(sort, at, text, 0), last.ID)
 	}
 	return page, nil
+}
+
+// lostMaterialItem keeps what a payer needs to recognise and delete a row it
+// can no longer open: its name and size, where it sits, and when it was
+// created (Sam 2026-10-19). Chapter, counts, preview, share link and later
+// activity stay hidden.
+func lostMaterialItem(item MaterialListItem) MaterialListItem {
+	return MaterialListItem{
+		ID: item.ID, Kind: item.Kind, Title: item.Title, WorkspaceID: item.WorkspaceID,
+		WorkspaceName: item.WorkspaceName, Privacy: item.Privacy, CreatedAt: item.CreatedAt,
+		UpdatedAt: item.CreatedAt, SizeBytes: item.SizeBytes, LostAccess: true,
+	}
+}
+
+// lostFile is lostMaterialItem for a file.
+func lostFile(file File) File {
+	return File{
+		ID: file.ID, WorkspaceID: file.WorkspaceID, Name: file.Name, Kind: file.Kind, SizeBytes: file.SizeBytes,
+		AddedAt: file.AddedAt, WorkspaceName: file.WorkspaceName, LostAccess: true,
+	}
 }
 
 /* -------------------------------------------------------------------- files */
@@ -316,8 +344,11 @@ var fileListSorts = map[string]listSort{
 	"name":      {column: "lower(f.name)", kind: "text"},
 	"size":      {column: "f.size_bytes", kind: "int"},
 	"kind":      {column: "f.kind", kind: "text"},
-	"workspace": {column: "lower(w.name)", kind: "text"},
+	"workspace": {column: "lower(" + fileWorkspaceNameSQL + ")", kind: "text"},
 }
+
+// fileWorkspaceNameSQL is the shown workspace name the workspace sort pages on.
+var fileWorkspaceNameSQL = workspaceNameSQL("w.id", "w.name")
 
 type FileListFilter struct {
 	Kinds        []string
@@ -346,9 +377,11 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 		f.Limit = listPageMax
 	}
 	args := []any{ownerID}
-	where := ` WHERE (w.user_id=$1 OR f.user_id=$1) AND f.trashed_at IS NULL`
+	// The Files page lists what the caller pays for; Member (dashboard
+	// Recent) what it can open (Sam 2026-10-19).
+	where := ` WHERE f.user_id=$1 AND f.trashed_at IS NULL`
 	if f.Member {
-		where = ` WHERE (w.user_id=$1 OR f.user_id=$1 OR (` + memberWorkspace("w.id") + `)) AND f.trashed_at IS NULL`
+		where = ` WHERE (w.user_id=$1 OR (` + memberWorkspace("w.id") + `)) AND f.trashed_at IS NULL`
 	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
@@ -365,7 +398,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+workspaceNameSQL("w.id", "w.name")+`, `+lostAccessSQL("f.workspace_id", "$1")+
+	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+fileWorkspaceNameSQL+`, `+lostAccessSQL("f.workspace_id", "$1")+
 		` FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN users owner ON owner.id=w.user_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
@@ -382,7 +415,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 		}
 		file.WorkspaceName = workspaceName
 		if lost {
-			file.LostAccess, file.ThumbnailKey, file.Preview = true, "", nil
+			file = lostFile(file)
 		}
 		page.Items = append(page.Items, file)
 	}
@@ -397,10 +430,8 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 		case "kind":
 			text = string(last.Kind)
 		case "workspace":
-			// A file row carries no workspace name; read it as the sort does.
-			if err := s.pool.QueryRow(ctx, `SELECT lower(name) FROM workspaces WHERE id=$1`, last.WorkspaceID).Scan(&text); err != nil {
-				return FilePage{}, err
-			}
+			// The shown (masked) name, as the sort uses.
+			text = strings.ToLower(last.WorkspaceName)
 		}
 		page.NextCursor = encodeListCursor(cursorPrimary(sort, last.AddedAt, text, last.SizeBytes), last.ID)
 	}

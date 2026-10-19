@@ -46,7 +46,7 @@ type workspaceRecentOutput struct {
 type filesListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
-	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the caller's workspaces; member: also every workspace they are a member of"`
+	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of"`
 	Sort        string `query:"sort" enum:"added,name,size,kind,workspace" default:"added"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
@@ -79,7 +79,7 @@ func (a *api) registerContent(api huma.API) {
 	reg(api, http.MethodPatch, "/api/chapters/{id}", "updateChapter", tag, "Update a chapter", http.StatusOK, a.updateChapter)
 	reg(api, http.MethodDelete, "/api/chapters/{id}", "deleteChapter", tag, "Delete a chapter", http.StatusNoContent, a.deleteChapter)
 
-	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List files across the caller's owned or member workspaces", http.StatusOK, a.listOwnedFiles)
+	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List the files the caller pays for, or can open (scope=member)", http.StatusOK, a.listOwnedFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/recent", "listWorkspaceRecent", tag, "List a workspace's newest files and materials", http.StatusOK, a.listWorkspaceRecent)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)

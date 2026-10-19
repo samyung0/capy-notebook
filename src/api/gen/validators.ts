@@ -1600,7 +1600,7 @@ export const ExploreWorkspacesResponse = zod.array(ExploreWorkspacesResponseItem
 
 
 /**
- * @summary List files across the caller's owned or member workspaces
+ * @summary List the files the caller pays for, or can open (scope=member)
  */
 export const listOwnedFilesQueryScopeDefault = `owned`;
 export const listOwnedFilesQuerySortDefault = `added`;
@@ -1613,7 +1613,7 @@ export const listOwnedFilesQueryLimitMax = 100;
 export const ListOwnedFilesQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated file kinds'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
-  "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the caller\'s workspaces; member: also every workspace they are a member of'),
+  "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the files the caller pays for, wherever they sit (the Files page); member: the files the caller can open, in its workspaces and those it is a member of'),
   "sort": zod.enum(['added', 'name', 'size', 'kind', 'workspace']).default(listOwnedFilesQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedFilesQueryDirDefault),
   "limit": zod.int().min(1).max(listOwnedFilesQueryLimitMax).default(listOwnedFilesQueryLimitDefault),
@@ -2796,7 +2796,7 @@ export const GetLearningProgressResponse = zod.object({
 
 
 /**
- * @summary List notes, quizzes and flashcard sets across the caller's owned or member workspaces
+ * @summary List the notes, quizzes and flashcard sets the caller pays for, or can open (scope=member)
  */
 export const listOwnedMaterialsQueryScopeDefault = `owned`;
 export const listOwnedMaterialsQuerySortDefault = `updated`;
@@ -2810,7 +2810,7 @@ export const ListOwnedMaterialsQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "location": zod.string().optional().describe('Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed'),
-  "scope": zod.enum(['owned', 'member']).default(listOwnedMaterialsQueryScopeDefault).describe('owned: the caller\'s workspaces and standalone materials; member: also every workspace they are a member of'),
+  "scope": zod.enum(['owned', 'member']).default(listOwnedMaterialsQueryScopeDefault).describe('owned: the materials the caller pays for, wherever they sit (the Files page); member: the materials the caller can open, in its workspaces, those it is a member of and its standalone ones'),
   "sort": zod.enum(['updated', 'created', 'title', 'kind', 'workspace']).default(listOwnedMaterialsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedMaterialsQueryDirDefault),
   "limit": zod.int().min(1).max(listOwnedMaterialsQueryLimitMax).default(listOwnedMaterialsQueryLimitDefault),
@@ -5432,7 +5432,7 @@ export const SaveCanvasResponse = zod.object({
 
 
 /**
- * @summary List trashed files and materials the caller owns
+ * @summary List trashed files and materials the caller pays for, or a workspace's it owns
  */
 export const listTrashQueryLimitDefault = 50;
 export const listTrashQueryLimitMax = 100;
