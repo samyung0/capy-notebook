@@ -670,7 +670,9 @@ func validateNode(node map[string]any, depth int, live bool) error {
 
 // validateCatalogKeys applies the key rules the embed catalog gives every
 // element, after its own checks: top-level placement, required keys, keys it
-// never carries (null counts as absent) and its closed field set.
+// never carries (null counts as absent), its closed field set, and a void
+// element's one empty text leaf (marks allowed: a mention is a markable void;
+// Epo 2026-10-18).
 func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error {
 	if e.TopLevel && depth != 0 {
 		return fmt.Errorf("%s must be a top-level block", e.Type)
@@ -690,6 +692,16 @@ func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error
 			if !slices.Contains(e.Fields, key) {
 				return fmt.Errorf("unexpected %s field %s", e.Type, key)
 			}
+		}
+	}
+	if e.Void {
+		children, _ := node["children"].([]any)
+		var leaf map[string]any
+		if len(children) == 1 {
+			leaf, _ = children[0].(map[string]any)
+		}
+		if text, isText := leaf["text"].(string); !isText || text != "" {
+			return fmt.Errorf("%s holds one empty text leaf", e.Type)
 		}
 	}
 	return nil
@@ -804,7 +816,7 @@ func validateYouTube(node map[string]any) error {
 		return errors.New("videoId must be a valid YouTube video ID")
 	}
 	for _, key := range []string{"assetId", "url", "src"} {
-		if _, exists := node[key]; exists {
+		if node[key] != nil {
 			return fmt.Errorf("YouTube video cannot contain %s", key)
 		}
 	}
@@ -845,7 +857,7 @@ func validateQuiz(node map[string]any) error {
 		return err
 	}
 	children := node["children"].([]any)
-	if _, ok := node["timeLimitMin"]; ok {
+	if node["timeLimitMin"] != nil {
 		return errors.New("quiz time limits are no longer supported")
 	}
 	if len(children) == 1 {
@@ -888,7 +900,7 @@ func validateQuizQuestion(node map[string]any) error {
 		return errors.New("question id must match wrapper id")
 	}
 	for _, key := range []string{"questionType", "level", "points", "rubrics", "pairs", "acceptedAnswers", "hints", "correctOptionIds", "correctBoolean"} {
-		if _, exists := node[key]; exists {
+		if node[key] != nil {
 			return fmt.Errorf("obsolete quiz property %s", key)
 		}
 	}
@@ -981,7 +993,7 @@ func validateTextElement(node map[string]any) error {
 
 func rejectOpaque(node map[string]any) error {
 	for _, key := range []string{"questions", "cards", "code"} {
-		if _, ok := node[key]; ok {
+		if node[key] != nil {
 			return fmt.Errorf("opaque %s property is not canonical", key)
 		}
 	}

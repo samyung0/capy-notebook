@@ -38,6 +38,7 @@ pub mod material;
 pub mod plate;
 pub mod prescan;
 pub mod questions;
+pub mod repair;
 pub mod slate;
 pub mod slate_yjs;
 pub mod validate;

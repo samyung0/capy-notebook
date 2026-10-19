@@ -219,7 +219,7 @@ export async function handleSiteRequest(
 ): Promise<Response> {
   const start = Date.now();
   const url = new URL(request.url);
-  const failure = async (status: number) => {
+  const failure = async (status: number, kind?: ShareKind) => {
     let template: string | undefined;
     if (request.method !== 'HEAD') {
       try {
@@ -251,7 +251,7 @@ export async function handleSiteRequest(
       await allowTemplateScripts(PAGE_POLICY, template)
     );
     return new Response(
-      request.method === 'HEAD' ? null : renderFailure(status, template),
+      request.method === 'HEAD' ? null : renderFailure(status, template, kind),
       { headers: failureHeaders, status }
     );
   };
@@ -326,6 +326,12 @@ export async function handleSiteRequest(
       if ([401, 403, 404].includes(upstream.status)) {
         await upstream.body?.cancel();
         return failure(404);
+      }
+      // 422 `material_content_unreadable`: the stored content is one a later
+      // rule refuses, so the page says it could not be loaded, with no retry.
+      if (upstream.status === 422) {
+        await upstream.body?.cancel();
+        return failure(422, kind);
       }
       if (!upstream.ok) {
         await upstream.body?.cancel();

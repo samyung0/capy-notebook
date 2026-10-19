@@ -232,7 +232,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 	}
 	quiz, err := a.s.AnonymousQuiz(ctx, id)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	return a.gradeAnonymous(ctx, quiz.Questions, in.Body)
 }
@@ -246,7 +246,7 @@ func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNote
 	}
 	stored, err := a.s.AnonymousNoteQuiz(ctx, id, in.QuizID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, id, err)
 	}
 	return a.gradeAnonymous(ctx, stored, in.Body)
 }

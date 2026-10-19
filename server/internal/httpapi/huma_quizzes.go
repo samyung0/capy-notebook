@@ -82,7 +82,7 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 	a.projectLive(ctx, in.ID)
 	res, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	out, err := a.quizOutputWithAccess(ctx, in.ID, res)
 	if err != nil {
@@ -105,7 +105,7 @@ func (a *api) getQuizForEdit(ctx context.Context, in *quizIDInput) (*quizOutput,
 	}
 	res, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
@@ -169,7 +169,7 @@ func (a *api) updateQuizSharing(ctx context.Context, in *updateQuizSharingInput)
 	}
 	res, err := a.s.GetQuiz(ctx, material.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, material.ID, err)
 	}
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
@@ -232,7 +232,7 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 	a.projectLive(ctx, in.ID)
 	quiz, err := a.s.GetQuiz(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	qs, err := decodeStoredQuestions(quiz.Questions)
 	if err != nil {

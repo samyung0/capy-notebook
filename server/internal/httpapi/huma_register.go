@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -461,6 +462,17 @@ func materialContentError(ctx context.Context, materialID string, err error) err
 		Detail: "material content could not be decoded",
 		Errors: []*huma.ErrorDetail{{Message: "material_content_unreadable"}},
 	}
+}
+
+// storedContentError answers an error from a route that reads a material's
+// stored content (Epo 2026-10-20): content the rules refuse is the
+// unreadable state, anything else goes through hErr. Content a request sends
+// or we generate keeps its own answer (400, or a 500 that reaches Sentry).
+func storedContentError(ctx context.Context, materialID string, err error) error {
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return materialContentError(ctx, materialID, err)
+	}
+	return hErr(err)
 }
 
 const materialRequestMaxBytes = 3 << 20

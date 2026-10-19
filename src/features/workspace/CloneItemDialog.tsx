@@ -3,7 +3,11 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { isApiError, isStorageQuotaError } from '@/api/client';
+import {
+  isApiError,
+  isMaterialContentUnreadable,
+  isStorageQuotaError,
+} from '@/api/client';
 import {
   CloneFileBody,
   CloneMaterialBody,
@@ -82,6 +86,9 @@ export function cloneErrorMessage(error: unknown) {
       mb: Math.round(error.body.maxBytes / 1024 / 1024),
     });
   }
+  // The source's stored content the current rules refuse: another name or
+  // destination cannot help (Epo 2026-10-20).
+  if (isMaterialContentUnreadable(error)) return m.clone_unreadable();
   return errorCopy(error, m.source_try_again());
 }
 

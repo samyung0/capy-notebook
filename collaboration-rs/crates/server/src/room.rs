@@ -2329,7 +2329,22 @@ impl Room {
                     class: Class::Limit,
                 };
             }
-            Verdict::Refused(error) => return Outcome::refused(Class::Malformed, error),
+            // Refused on entry (Epo 2026-10-18): the room keeps its state, the
+            // writer's editor reloads it on a fresh document and channel on
+            // the same socket, and only this channel closes.
+            Verdict::Refused(error) => {
+                let payload = json!({
+                    "code": "invalid_document",
+                    "materialId": self.material_id(),
+                    "room": self.name,
+                    "type": "document-rejected",
+                });
+                return Outcome::Refused {
+                    payloads: vec![payload.to_string()],
+                    reason: error,
+                    class: Class::Malformed,
+                };
+            }
         }
         self.placed(writer, context);
         if !changes {
@@ -2375,6 +2390,7 @@ impl Room {
         if !content.is_empty() {
             self.content_changed();
             self.broadcast_update(writer, content);
+            self.repair_on_entry(bytes, heavy);
             // A paste, undo or replayed draft that wrote child ids gets a
             // children pass; typing writes none and costs a decode.
             if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
@@ -2390,6 +2406,47 @@ impl Room {
             }
         }
         Outcome::Admitted
+    }
+
+    /// The cheap repairs after a writer's update went in (Epo 2026-10-19:
+    /// repaired on entry first), as a server transaction in the same flush:
+    /// keys no node carries stripped, an emptied note's paragraph, an emptied
+    /// set's blank card (`Model::repair_on_entry`). O(update), off the async
+    /// workers for an update that applied off them.
+    fn repair_on_entry(&mut self, bytes: &[u8], heavy: bool) {
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
+        let (model, kind) = (note.model, note.kind.clone());
+        if !model.repairs() {
+            return;
+        }
+        let repair = || {
+            let update = ydoc::decode(bytes).ok()?;
+            let mut txn = self.doc.transact_mut();
+            let repaired = model.repair_on_entry(&mut txn, &update, &kind);
+            Some((repaired, ydoc::committed_update(txn)))
+        };
+        let Some((repaired, fix)) = (if heavy {
+            tokio::task::block_in_place(repair)
+        } else {
+            repair()
+        }) else {
+            return;
+        };
+        if fix.is_empty() {
+            return;
+        }
+        log(
+            Level::Info,
+            "room repaired an edit",
+            json!({ "repaired": repaired, "room": self.name }),
+        );
+        if let Kindly::Note(note) = &mut self.kind {
+            // Content the validator did not admit: its growth bound is stale.
+            note.validator.invalidate();
+        }
+        self.broadcast_update(None, fix);
     }
 
     /// The writer's update was placed: its channel's unplaceable count and
@@ -2810,20 +2867,11 @@ impl Room {
         let claimed = self.receipts.clone();
         self.store.dirty = false;
         self.store.first_change = None;
+        let started = Instant::now();
+        // Checked (and repaired) first: the row holds what a repair wrote.
+        let validated = self.checked().await;
         let hidden = markers::live_items(&self.doc);
         let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
-        let started = Instant::now();
-        let Kindly::Note(note) = &self.kind else {
-            return;
-        };
-        let doc = self.doc.clone();
-        let (kind, model, doc_kind) = (note.kind.clone(), note.model, note.doc);
-        let previous = note.durable_metrics;
-        let peer = note.validator.peer();
-        let validated =
-            tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous, peer))
-                .await
-                .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())));
         let (metrics, limit_code) = match validated {
             Ok(validated) => validated,
             Err(error) => {
@@ -2837,7 +2885,7 @@ impl Room {
         let Kindly::Note(note) = &self.kind else {
             return;
         };
-        let (material_id, schema) = (note.material_id.clone(), note.schema);
+        let (material_id, schema, doc_kind) = (note.material_id.clone(), note.schema, note.doc);
         let actors: Vec<String> = {
             let mut actors: Vec<String> = contributors.iter().map(|c| c.user_id.clone()).collect();
             actors.sort();
@@ -2866,6 +2914,56 @@ impl Room {
             };
             let _ = handle.tx.send(RoomCmd::Stored(Box::new(done))).await;
         });
+    }
+
+    /// The store's check of the note room ([validate]), off the room's
+    /// thread. A document it refuses as invalid gets the canonical repairs
+    /// once (Epo 2026-10-19: repaired at save before the reset; an emptied
+    /// note or set, repeated top-level ids), as a server transaction every
+    /// editor receives, and is checked again.
+    async fn checked(
+        &mut self,
+    ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
+        let first = self.check().await;
+        let (Err(StoreError::Invalid(reason)), Kindly::Note(note)) = (&first, &self.kind) else {
+            return first;
+        };
+        let (model, kind) = (note.model, note.kind.clone());
+        // Its own scope: a transaction is not held across an await.
+        let (repaired, fix) = {
+            let mut txn = self.doc.transact_mut();
+            let repaired = model.repair(&mut txn, &kind);
+            (repaired, ydoc::committed_update(txn))
+        };
+        if fix.is_empty() {
+            return first;
+        }
+        log(
+            Level::Info,
+            "store repaired the document",
+            json!({ "reason": reason, "repaired": repaired, "room": self.name }),
+        );
+        if let Kindly::Note(note) = &mut self.kind {
+            note.validator.invalidate();
+        }
+        self.broadcast_update(None, fix);
+        self.check().await
+    }
+
+    /// [validate] of the note room as it is now.
+    async fn check(
+        &self,
+    ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
+        let Kindly::Note(note) = &self.kind else {
+            return Err(StoreError::Other("not a material room".into()));
+        };
+        let doc = self.doc.clone();
+        let (kind, model) = (note.kind.clone(), note.model);
+        let previous = note.durable_metrics;
+        let peer = note.validator.peer();
+        tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous, peer))
+            .await
+            .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())))
     }
 
     /// This room's registry handle (none once it unloaded).

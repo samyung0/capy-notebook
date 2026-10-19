@@ -667,7 +667,8 @@ func TestClonesCopyPartialFiles(t *testing.T) {
 }
 
 // A clone honours the per-file cap of the plan that pays for it, as an upload
-// does (Epo 2026-10-12): the file clone and the workspace clone are refused.
+// does (Epo 2026-10-12): the file clone is refused, and a workspace clone
+// leaves the file out, copies the rest and counts it (Epo 2026-10-20).
 func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -712,11 +713,23 @@ func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
 		t.Fatalf("Pro cloner into a Free owner's workspace: %v", err)
 	}
 
-	// A workspace clone is refused as a whole.
+	// A workspace clone is the cloner's to pay: the big file stays behind.
 	soloCloner := newBlobTestUser(t, s, "u_clone_cap")
 	source, _ := bigFile(soloCloner)
-	if _, err := s.CloneWorkspace(ctx, soloCloner, source.ID, WorkspaceCreate{Name: "Copy"}); !errors.As(err, &tooLarge) {
-		t.Fatalf("workspace clone = %v, want FileTooLargeError", err)
+	if _, err := s.createReadyFile(ctx, source.ID, soloCloner, "small.pdf", "pdf", nil, "", 100, "sources/"+uid("base")); err != nil {
+		t.Fatal(err)
+	}
+	copied, _, skipped, err := s.CloneWorkspaceThumbnails(ctx, soloCloner, source.ID, WorkspaceCreate{Name: "Copy"})
+	if err != nil {
+		t.Fatalf("workspace clone: %v", err)
+	}
+	var names []string
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(array_agg(name ORDER BY name), '{}') FROM files WHERE workspace_id=$1`,
+		copied.ID).Scan(&names); err != nil {
+		t.Fatal(err)
+	}
+	if skipped != 1 || len(names) != 1 || names[0] != "small.pdf" {
+		t.Fatalf("workspace clone copied %q and skipped %d, want small.pdf and 1", names, skipped)
 	}
 }
 
