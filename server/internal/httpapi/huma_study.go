@@ -23,6 +23,9 @@ type studyOutput struct {
 type reviewOutput struct {
 	Body store.ReviewSession
 }
+type reviewResultOutput struct {
+	Body store.ReviewResult
+}
 type reviewOverviewOutput struct {
 	Body store.ReviewOverview
 }
@@ -86,6 +89,7 @@ func (a *api) registerStudy(api huma.API) {
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "A new review session: a suggestion's items, or the whole workspace's", http.StatusOK, a.getWorkspaceReview)
 	reg(api, http.MethodGet, "/api/review/sessions/{id}", "resumeReviewSession", tag, "An unfinished review session's items still to answer", http.StatusOK, a.resumeReviewSession)
+	reg(api, http.MethodGet, "/api/review/sessions/{id}/result", "getReviewResult", tag, "A review session's result: its scores and every answered item", http.StatusOK, a.getReviewResult)
 	reg(api, http.MethodPost, "/api/review/sessions/{id}/finish", "finishReviewSession", tag, "End a review session before its last item", http.StatusNoContent, a.finishReviewSession)
 	reg(api, http.MethodGet, "/api/review/sessions", "listPastReviews", tag, "Finished review sessions with their quiz and flashcard results", http.StatusOK, a.listPastReviews)
 	reg(api, http.MethodPost, "/api/review/ratings", "rateReviewItem", tag, "Record a flashcard's review rating", http.StatusNoContent, a.rateReviewItem)
@@ -205,6 +209,21 @@ func (a *api) resumeReviewSession(ctx context.Context, in *reviewSessionIDInput)
 		return nil, hErr(err)
 	}
 	return &reviewOutput{Body: learnerSession(res)}, nil
+}
+
+func (a *api) getReviewResult(ctx context.Context, in *reviewSessionIDInput) (*reviewResultOutput, error) {
+	wsID, err := a.s.ReviewSessionWorkspace(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if _, err := a.workspaceRead(ctx, wsID); err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.ReviewSessionResult(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &reviewResultOutput{Body: res}, nil
 }
 
 func (a *api) finishReviewSession(ctx context.Context, in *reviewSessionIDInput) (*Empty, error) {

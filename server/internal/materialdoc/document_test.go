@@ -525,7 +525,7 @@ func TestFlashcardImagesAreFoundRewrittenAndChecked(t *testing.T) {
 	// The front is capped too, at 4,000 runes (security regression: a stored
 	// set Go cannot project breaks the material for everyone).
 	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", MaxCardFrontRunes+1), Back: "b"}}); err == nil ||
-		!strings.Contains(err.Error(), "a flashcard front holds at most 4000 characters") {
+		!strings.Contains(err.Error(), "a flashcard front holds at most 120 characters") {
 		t.Fatalf("a front over the limit: %v", err)
 	}
 	if _, err := FlashcardsDocument([]Card{{ID: "c", Front: strings.Repeat("é", MaxCardFrontRunes), Back: "b"}}); err != nil {
@@ -987,10 +987,10 @@ func TestValidateCardText(t *testing.T) {
 	if err := ValidateCardText(strings.Repeat("é", MaxCardFrontRunes), strings.Repeat("é", MaxCardBackRunes)); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateCardText(strings.Repeat("é", MaxCardFrontRunes+1), "b"); err == nil || err.Error() != "a flashcard front holds at most 4000 characters" {
+	if err := ValidateCardText(strings.Repeat("é", MaxCardFrontRunes+1), "b"); err == nil || err.Error() != "a flashcard front holds at most 120 characters" {
 		t.Fatalf("long front: %v", err)
 	}
-	if err := ValidateCardText("f", strings.Repeat("é", MaxCardBackRunes+1)); err == nil || err.Error() != "a flashcard back holds at most 2000 characters" {
+	if err := ValidateCardText("f", strings.Repeat("é", MaxCardBackRunes+1)); err == nil || err.Error() != "a flashcard back holds at most 1000 characters" {
 		t.Fatalf("long back: %v", err)
 	}
 }

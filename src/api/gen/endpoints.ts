@@ -134,6 +134,7 @@ import type {
   RequestAccountDeletionReq,
   RetryProcessingInputBody,
   ReviewOverview,
+  ReviewResult,
   ReviewSession,
   SaveCanvasReq,
   SearchParams,
@@ -6777,6 +6778,56 @@ export const finishReviewSession = async (id: string, options?: RequestInit): Pr
 
   const data: finishReviewSessionResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as finishReviewSessionResponse
+}
+
+
+
+export type getReviewResultResponse200 = {
+  data: ReviewResult
+  status: 200
+}
+
+export type getReviewResultResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getReviewResultResponseSuccess = (getReviewResultResponse200) & {
+  headers: Headers;
+};
+export type getReviewResultResponseError = (getReviewResultResponseDefault) & {
+  headers: Headers;
+};
+
+export type getReviewResultResponse = (getReviewResultResponseSuccess | getReviewResultResponseError)
+
+export const getGetReviewResultUrl = (id: string,) => {
+
+
+
+
+  return `/api/review/sessions/${id}/result`
+}
+
+/**
+ * @summary A review session's result: its scores and every answered item
+ */
+export const getReviewResult = async (id: string, options?: RequestInit): Promise<getReviewResultResponse> => {
+
+  const res = await fetch(getGetReviewResultUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getReviewResultResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getReviewResultResponse
 }
 
 

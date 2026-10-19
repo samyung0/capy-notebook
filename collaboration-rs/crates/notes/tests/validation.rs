@@ -281,11 +281,11 @@ fn a_card_holds_what_go_projects() {
     .unwrap();
     assert_eq!(
         set(card(&format!("{front}x"), "b", None)).unwrap_err(),
-        "a flashcard front holds at most 4000 characters"
+        "a flashcard front holds at most 120 characters"
     );
     assert_eq!(
         set(card("f", &format!("{back}x"), None)).unwrap_err(),
-        "a flashcard back holds at most 2000 characters"
+        "a flashcard back holds at most 1000 characters"
     );
     for image in [
         json!({ "assetId": "" }),

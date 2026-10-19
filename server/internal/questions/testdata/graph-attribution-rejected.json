@@ -8,12 +8,7 @@
       {
         "type": "graph",
         "board": {
-          "bbox": [
-            -5,
-            5,
-            5,
-            -5
-          ],
+          "bbox": [-5, 5, 5, -5],
           "axis": true,
           "grid": false
         },
@@ -22,104 +17,68 @@
             "type": "point",
             "id": "o",
             "name": "O",
-            "coords": [
-              0,
-              0
-            ]
+            "coords": [0, 0]
           },
           {
             "type": "point",
             "id": "a",
             "name": "A",
-            "coords": [
-              3,
-              0
-            ]
+            "coords": [3, 0]
           },
           {
             "type": "point",
             "id": "b",
             "name": "B",
-            "coords": [
-              0,
-              3
-            ]
+            "coords": [0, 3]
           },
           {
             "type": "point",
             "id": "c",
             "name": "C",
-            "coords": [
-              -2,
-              -2
-            ]
+            "coords": [-2, -2]
           },
           {
             "type": "angle",
             "id": "right",
-            "points": [
-              "a",
-              "o",
-              "b"
-            ]
+            "points": ["a", "o", "b"]
           },
           {
             "type": "angle",
             "id": "theta",
-            "points": [
-              "b",
-              "c",
-              "a"
-            ],
+            "points": ["b", "c", "a"],
             "label": "θ"
           },
           {
             "type": "arc",
             "id": "minor",
             "center": "o",
-            "points": [
-              "a",
-              "b"
-            ],
+            "points": ["a", "b"],
             "dash": true
           },
           {
             "type": "sector",
             "id": "wedge",
             "center": "o",
-            "points": [
-              "a",
-              "b"
-            ],
+            "points": ["a", "b"],
             "shade": true
           },
           {
             "type": "polygon",
             "id": "tri",
-            "points": [
-              "a",
-              "b",
-              "c"
-            ],
+            "points": ["a", "b", "c"],
             "shade": false,
             "dash": false
           },
           {
             "type": "segment",
             "id": "oa",
-            "points": [
-              "o",
-              "a"
-            ],
+            "points": ["o", "a"],
             "ticks": 2
           },
           {
             "type": "segment",
             "id": "ob",
-            "points": [
-              "o",
-              "b"
-            ],
+            "points": ["o", "b"],
             "ticks": 2
           }
         ],
@@ -143,9 +102,7 @@
         ],
         "answer": {
           "type": "short",
-          "accepted": [
-            "alpha"
-          ]
+          "accepted": ["alpha"]
         },
         "marks": 1,
         "solution": []

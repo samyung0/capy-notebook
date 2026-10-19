@@ -21,7 +21,6 @@ const (
 	previewStemRunes   = 200
 	previewChoices     = 4
 	previewChoiceRunes = 60
-	previewFrontRunes  = 200
 	previewSourceBytes = 1024
 	// previewGap stands for one numbered blank of a gaps question's text.
 	previewGap = "\u0001"
@@ -332,7 +331,7 @@ func flashcardsPreviewOf(nodes []map[string]any) flashcardsPreview {
 	if len(cards) > 0 {
 		front := strings.TrimSpace(nodeText(firstChild(cards[0], "flashcard_front")))
 		out.First = &cardPreview{
-			Front:    clipRunes(front, previewFrontRunes),
+			Front:    front,
 			HasImage: cardImage(cards[0]) != nil,
 		}
 	}

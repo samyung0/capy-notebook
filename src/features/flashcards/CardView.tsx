@@ -93,11 +93,54 @@ function ResolvedCardImage({
 }
 
 /** The back keeps its line breaks. */
-export function CardBack({ card }: { card: FlashcardContent }) {
+export function CardBack({ card }: { card: Pick<FlashcardContent, 'back'> }) {
   return (
     <p className="max-w-[52ch] whitespace-pre-line break-words text-center leading-relaxed">
       {card.back}
     </p>
+  );
+}
+
+/** A turned card: the front's text as a centred header pinned to the top, so
+ * a long front never moves the answer, which is centred in the rest. The
+ * image stays on the front. A tile (result lists) caps the front's and the
+ * back's heights, each scrolling without a scrollbar, edges fading. */
+export function CardBackFace({
+  card,
+  className,
+  size,
+}: {
+  card: Pick<FlashcardContent, 'back' | 'front'>;
+  className?: string;
+  size: 'large' | 'compact' | 'panel' | 'tile';
+}) {
+  return (
+    <div className={cn('flex min-h-0 flex-col', className)}>
+      <p
+        className={cn(
+          'shrink-0 whitespace-pre-line break-words border-divider border-b text-center font-bold text-fg-secondary',
+          size === 'large' && 'px-7 pt-5.5 pb-4 text-base',
+          size === 'compact' && 'px-5 pt-3.5 pb-2.5 text-sm',
+          size === 'panel' && 'px-4 pt-2.5 pb-2 text-xs',
+          size === 'tile' &&
+            'scroll-fade-y max-h-22 overflow-y-auto px-4.5 pt-4 pb-3 text-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+        )}
+      >
+        {card.front}
+      </p>
+      <div
+        className={cn(
+          'flex min-h-0 flex-1 items-center justify-center overflow-auto',
+          size === 'large' && 'p-7 text-lg',
+          size === 'compact' && 'p-5',
+          size === 'panel' && 'px-4 py-2.5',
+          size === 'tile' &&
+            'scroll-fade-y items-center-safe max-h-52 px-3 py-4 text-[15px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+        )}
+      >
+        <CardBack card={card} />
+      </div>
+    </div>
   );
 }
 

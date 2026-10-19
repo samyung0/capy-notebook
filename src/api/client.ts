@@ -421,7 +421,8 @@ export const qk = {
     ['review', 'past', params ?? null] as const,
   quiz: (id: string) => ['quiz', id] as const,
   reviewOverview: ['review', 'overview'] as const,
-  /** Everything under Learning's Review and Past reviews tabs. */
+  reviewResult: (id: string) => ['review', 'result', id] as const,
+  /** Everything under Learning's Review tab, past reviews included. */
   reviewRoot: ['review'] as const,
   reviewSession: (id: string) => ['review', 'session', id] as const,
   search: (q: string) => ['search', q] as const,

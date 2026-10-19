@@ -88,8 +88,8 @@ const (
 	AnonymousLocalID = 64
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
-	CardFront = 4_000
-	CardBack  = 2_000
+	CardFront = 120
+	CardBack  = 1_000
 )
 
 // QuestionBounds is exported into frontend and pipeline contracts; the

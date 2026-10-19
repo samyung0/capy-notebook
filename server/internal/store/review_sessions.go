@@ -855,7 +855,7 @@ type PastReview struct {
 	ChapterName   string        `json:"chapterName,omitempty"`
 	Mode          *string       `json:"mode,omitempty" enum:"tricky,fading,learned"`
 	StartedAt     time.Time     `json:"startedAt"`
-	FinishedAt    time.Time     `json:"finishedAt"`
+	FinishedAt    *time.Time    `json:"finishedAt,omitempty" doc:"Omitted on the result page of a session not finished yet"`
 	LastAnswerAt  time.Time     `json:"lastAnswerAt"`
 	Answered      int           `json:"answered"`
 	Total         int           `json:"total"`
@@ -868,8 +868,10 @@ type PastReviewParams struct {
 	Ascending  bool
 	Workspaces []string
 	Has        []string // quiz, flashcards
-	Offset     int
-	Limit      int
+	// ID reads one session, finished or not, for its result page.
+	ID     string
+	Offset int
+	Limit  int
 }
 
 // PastReviews lists the user's finished sessions. The second value is whether
@@ -893,11 +895,17 @@ func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewPara
 	if p.Ascending {
 		dir = " ASC NULLS LAST"
 	}
-	where := []string{"rs.user_id=$1", "rs.finished_at IS NOT NULL"}
+	where := []string{"rs.user_id=$1"}
 	args := []any{userID}
+	if p.ID != "" {
+		args = append(args, p.ID)
+		where = append(where, "rs.id = $2")
+	} else {
+		where = append(where, "rs.finished_at IS NOT NULL")
+	}
 	if len(p.Workspaces) > 0 {
 		args = append(args, p.Workspaces)
-		where = append(where, "rs.workspace_id = ANY($2)")
+		where = append(where, "rs.workspace_id = ANY($"+strconv.Itoa(len(args))+")")
 	}
 	q := `WITH s AS (SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind, COALESCE(c.name, '') AS chapter,
 			rs.mode, rs.chapter_id, rs.started_at, rs.finished_at, rs.last_answer_at, jsonb_array_length(rs.items) AS served,
@@ -964,4 +972,36 @@ func orZero[T any](v *T) T {
 		return zero
 	}
 	return *v
+}
+
+// ReviewResult is a session's result page: its Past reviews row, its answered
+// items in answer order with their records, and Better, how many were rated
+// above their latest answer before the session (gains only).
+type ReviewResult struct {
+	Session PastReview     `json:"session"`
+	Items   []ReviewAnswer `json:"items" nullable:"false"`
+	Better  int            `json:"better"`
+}
+
+func (s *Store) ReviewSessionResult(ctx context.Context, userID, id string) (ReviewResult, error) {
+	out := ReviewResult{Items: []ReviewAnswer{}}
+	rows, _, err := s.PastReviews(ctx, userID, PastReviewParams{ID: id, Limit: 1})
+	if err != nil {
+		return out, err
+	}
+	if len(rows) == 0 {
+		return out, ErrNotFound
+	}
+	out.Session = rows[0]
+	session, err := s.ResumeReviewSession(ctx, userID, id)
+	if err != nil {
+		return out, err
+	}
+	out.Items = session.Done
+	err = s.pool.QueryRow(ctx, `SELECT count(*) FROM review_answers ra JOIN review_sessions rs ON rs.id=ra.session_id
+		WHERE ra.session_id=$1 AND ra.rating > (SELECT rl.rating FROM review_log rl
+			WHERE rl.user_id=rs.user_id AND rl.material_id=ra.material_id AND rl.item_id=ra.item_id
+				AND rl.reviewed_at < rs.started_at
+			ORDER BY rl.reviewed_at DESC LIMIT 1)`, id).Scan(&out.Better)
+	return out, err
 }

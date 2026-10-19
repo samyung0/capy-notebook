@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
+  useAttempt,
   useCards,
   useFlashcardSet,
   useRateReviewItem,
@@ -155,6 +156,17 @@ function Study({ setId }: { setId: string }) {
       provenance={set.provenance}
       topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
       trail={[blockHomeCrumb(set)]}
+      usePrevious={
+        set.workspaceId && !set.parentMaterialId
+          ? usePreviousAttempt
+          : undefined
+      }
     />
   );
+}
+
+/** A recorded run's attempt read back for the set's attempt before it. */
+function usePreviousAttempt(attemptId: string) {
+  const { data } = useAttempt(attemptId, { errorBoundary: false });
+  return data?.previous;
 }

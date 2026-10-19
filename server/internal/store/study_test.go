@@ -517,6 +517,30 @@ func TestFlashcardAttemptRecordsRatings(t *testing.T) {
 	}
 }
 
+// A flashcard result carries the set's attempt before it.
+func TestFlashcardAttemptPrevious(t *testing.T) {
+	f := newStudyFixture(t, "u_study_card_previous")
+	ctx := context.Background()
+	cards := f.set(t, [2]string{"Mitochondria", "ATP"}, [2]string{"Ribosome", "Proteins"})
+	first, second := uuid.NewString(), uuid.NewString()
+	at := time.Now().Add(-time.Hour)
+	for _, run := range []struct {
+		id     string
+		at     time.Time
+		rating int
+	}{{first, at, 1}, {second, at.Add(time.Minute), 3}} {
+		rating := run.rating
+		ref := &FlashcardAttemptRef{ID: run.id, StartedAt: run.at.Add(-time.Minute)}
+		if err := f.s.RateItem(ctx, f.user, Rating{MaterialID: cards[0].MaterialID, ItemID: cards[0].ID, Rating: &rating, Attempt: ref}, run.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d, err := f.s.GetAttempt(ctx, second, f.user)
+	if err != nil || d.Previous == nil || d.Previous.Correct != 0 || d.Previous.Total != 1 {
+		t.Fatalf("previous = %+v, %v", d.Previous, err)
+	}
+}
+
 // A suspended account records no flashcard attempt, as it records no quiz
 // attempt.
 func TestSuspendedUserRecordsNoFlashcardAttempt(t *testing.T) {

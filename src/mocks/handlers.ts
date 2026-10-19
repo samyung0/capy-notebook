@@ -2876,11 +2876,27 @@ export const handlers = [
   http.get('/api/attempts/:id', async ({ params }) => {
     const at = db.attempts.find((a) => a.id === params.id);
     if (!at) return new HttpResponse(null, { status: 404 });
+    // A set's attempt before this one, as the server reads it.
+    const previous =
+      at.kind === 'flashcards'
+        ? db.attempts
+            .filter(
+              (a) => a.materialId === at.materialId && a.takenAt < at.takenAt
+            )
+            .sort((a, b) => b.takenAt.localeCompare(a.takenAt))[0]
+        : undefined;
     return HttpResponse.json({
       ...at,
       answers: at.answers ?? {},
       cards: at.cards ?? [],
       questions: at.questions ?? [],
+      ...(previous && {
+        previous: {
+          correct: previous.correct,
+          takenAt: previous.takenAt,
+          total: previous.total,
+        },
+      }),
     });
   }),
   // Grades every part, records the attempt and returns it with the keys.

@@ -474,6 +474,8 @@ components:
         pct:
           format: int64
           type: integer
+        previous:
+          $ref: "#/components/schemas/PreviousAttempt"
         questions:
           items:
             additionalProperties: {}
@@ -3515,6 +3517,7 @@ components:
         chapterName:
           type: string
         finishedAt:
+          description: Omitted on the result page of a session not finished yet
           format: date-time
           type: string
         group:
@@ -3555,7 +3558,6 @@ components:
         - iconId
         - group
         - startedAt
-        - finishedAt
         - lastAnswerAt
         - answered
         - total
@@ -3602,6 +3604,23 @@ components:
         - free
         - pro
       type: string
+    PreviousAttempt:
+      additionalProperties: false
+      properties:
+        correct:
+          format: double
+          type: number
+        takenAt:
+          format: date-time
+          type: string
+        total:
+          format: double
+          type: number
+      required:
+        - correct
+        - total
+        - takenAt
+      type: object
     Privacy:
       enum:
         - private
@@ -4503,6 +4522,29 @@ components:
         - suggestions
         - unfinished
         - workspaces
+      type: object
+    ReviewResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReviewResult.json
+          format: uri
+          readOnly: true
+          type: string
+        better:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/ReviewAnswer"
+          type: array
+        session:
+          $ref: "#/components/schemas/PastReview"
+      required:
+        - session
+        - items
+        - better
       type: object
     ReviewSession:
       additionalProperties: false
@@ -10440,6 +10482,32 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: End a review session before its last item
+      tags:
+        - Study
+  /api/review/sessions/{id}/result:
+    get:
+      operationId: getReviewResult
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "A review session's result: its scores and every answered item"
       tags:
         - Study
   /api/search:

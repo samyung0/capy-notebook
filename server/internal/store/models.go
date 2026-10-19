@@ -293,6 +293,16 @@ type AttemptDetail struct {
 	Attempt
 	Answers   json.RawMessage
 	Questions json.RawMessage
+	// Previous is a flashcard attempt's earlier attempt of the same set, for
+	// the result's change since then; nil for a quiz or a first attempt.
+	Previous *PreviousAttempt
+}
+
+// PreviousAttempt is the score and time of the attempt before a result.
+type PreviousAttempt struct {
+	Correct float64   `json:"correct"`
+	Total   float64   `json:"total"`
+	TakenAt time.Time `json:"takenAt"`
 }
 
 type FlashcardSet struct {

@@ -302,7 +302,7 @@ const appRoutes = [
       const saved =
         search.tab === 'results'
           ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
-          : search.tab === 'past'
+          : search.tab === 'review'
             ? savedSort(
                 'pastReviews',
                 PAST_REVIEW_SORTS,
@@ -344,6 +344,11 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     path: '/learning/review/$workspaceId',
     validateSearch: parseReviewSearch,
+  }),
+  createRoute({
+    component: lazyPage(() => import('@/routes/ReviewResult')),
+    getParentRoute: () => authShellRoute,
+    path: '/learning/reviews/$sessionId',
   }),
   createRoute({
     component: lazyPage(() => import('@/routes/MaterialOpen')),

@@ -624,41 +624,25 @@ test.describe('study progress', () => {
     await expect(
       ownerPage.getByText(m.question_ui_your_answer())
     ).toBeVisible();
-    // Next after the last item opens the summary: a right square for each
-    // item, then by kind the question's marks and the card's rating.
+    // Next after the last item opens the result: the question right with
+    // its mark, the card rated Good.
     await ownerPage
       .getByRole('button', { exact: true, name: m.action_next() })
       .click();
-
-    const squares = ownerPage.getByRole('list', {
-      name: m.quiz_question_results(),
-    });
-    await expect(squares.getByRole('button')).toHaveCount(2);
+    const rows = ownerPage.getByRole('button', { expanded: false });
+    await expect(rows.filter({ hasText: m.review_result_right() })).toHaveCount(
+      1
+    );
     await expect(
-      squares.getByRole('button', {
-        exact: true,
-        name: m.quiz_question_right({ number: 1 }),
-      })
-    ).toBeVisible();
+      ownerPage.getByText(m.srs_good(), { exact: true })
+    ).toHaveCount(1);
     await expect(
-      squares.getByRole('button', {
-        exact: true,
-        name: m.quiz_question_right({ number: 2 }),
-      })
-    ).toBeVisible();
-    await expect(
-      ownerPage.getByText(m.result_type_marks({ awarded: '1', max: '1' }), {
+      ownerPage.getByText(m.review_result_mark({ awarded: '1' }), {
         exact: true,
       })
     ).toBeVisible();
     await expect(
-      ownerPage.getByText(
-        m.review_summary_rating_count({ count: 1, rating: m.srs_good() }),
-        { exact: true }
-      )
-    ).toBeVisible();
-    await expect(
-      ownerPage.getByRole('button', { name: m.review_more() })
+      ownerPage.getByRole('button', { name: m.review_again() })
     ).toBeVisible();
     // Both answers carry the same session, recorded with the first one.
     expect(ratings).toHaveLength(1);

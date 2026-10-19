@@ -62,6 +62,7 @@ import {
   FilePlusIcon,
   Files01Icon,
   FilterVerticalIcon,
+  FireIcon,
   FitToScreenIcon,
   FlashIcon,
   Flowchart01Icon,
@@ -296,6 +297,7 @@ const HugeIcons = {
   fileText: File02Icon,
   filter: FilterVerticalIcon,
   fitToScreen: FitToScreenIcon,
+  flame: FireIcon,
   flashcards: [
     'M5 7h11a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z',
     'M8 4h11a2 2 0 012 2v8',

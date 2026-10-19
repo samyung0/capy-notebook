@@ -100,6 +100,7 @@ import type {
   RequestAccountDeletionReq,
   RetryProcessingReq,
   ReviewOverview,
+  ReviewResult,
   ReviewSession,
   ReviewStart,
   SaveCanvasReq,
@@ -2551,6 +2552,19 @@ export const useResumeReviewSession = (
     queryFn: () => api.get<ReviewSession>(`/review/sessions/${sessionId}`),
     queryKey: qk.reviewSession(sessionId),
     staleTime: 0,
+  });
+
+/** A session's result page, finished or just ended. */
+export const useReviewResult = (
+  sessionId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<ReviewResult>(`/review/sessions/${sessionId}/result`),
+    queryKey: qk.reviewResult(sessionId),
   });
 
 /** Ends a session before its last item (Done). */

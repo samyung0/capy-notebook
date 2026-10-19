@@ -280,10 +280,12 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
       .getByRole('button', { exact: true, name: m.action_next() })
       .click();
   }
-  // The summary: both items reviewed, each a right square.
-  await expect(
-    page.getByText(m.review_legend_full({ count: 2 }), { exact: true })
-  ).toBeVisible();
+  // The result: the question right, the card rated Good.
+  const rows = page.getByRole('button', { expanded: false });
+  await expect(rows.filter({ hasText: m.review_result_right() })).toHaveCount(
+    1
+  );
+  await expect(page.getByText(m.srs_good(), { exact: true })).toHaveCount(1);
 
   // The deployed database holds each record.
   const materials = [finishedQuiz, set, nextQuiz];

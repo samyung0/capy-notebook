@@ -1,7 +1,7 @@
 ---
 type: Backend
 title: "Study Progress and Review"
-description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, the Study tab, Continue, Quick review, Learning's Progress, Review, Past reviews and All results tabs, the railway map, lifecycle and access."
+description: "Per-user study progress in a workspace, FSRS review state in Go, suggested reviews and their scoring, recorded review sessions, the Study tab, Continue, Quick review, Learning's Progress, Review (past reviews at its end) and All results tabs, the railway map, lifecycle and access."
 tags: [backend, frontend, study, review, fsrs, flashcards, quizzes, progress]
 ---
 
@@ -121,6 +121,7 @@ workspace; writes need read access plus an account that can sign in
 | `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
 | `GET /api/workspaces/{id}/review?group=&chapterId=&mode=` | A new session: a suggestion's items (mode set) or the whole workspace's (no mode), each with its content (card faces, or the answer-free question, `questions.LearnerView`) and material title, plus the group, mode and evidence to send back with each answer. A chapter not in the workspace is 404. |
 | `GET /api/review/sessions/{id}` | Continue: an unfinished session's items still to answer, read now (items that left their material drop), with answered of total. Another user's session is 404. |
+| `GET /api/review/sessions/{id}/result` | A session's result, finished or not: its Past reviews row (`ID` read), its answered items in answer order with their records (the resume read's `done`), and `better`, how many were rated above their latest `review_log` rating before the session started. Another user's session is 404. |
 | `POST /api/review/sessions/{id}/finish` | Ends a session before its last item. |
 | `GET /api/review/sessions?sort=&dir=&workspaceId=&has=&offset=&limit=` | Past reviews: finished sessions with their quiz marks and cards remembered (Good or Easy). Sort date, quiz, cards or time; `has` quiz and/or flashcards. |
 | `GET /api/review/overview` | Learning's Review tab, below. |
@@ -325,15 +326,27 @@ A study run on the app page mints an attempt (`StudyAttempt` in
 with every rating; the server records it for workspace sets only. When the
 run ends, the page shows `FlashcardResult` (`src/features/flashcards/FlashcardResult.tsx`)
 in the quiz result's layout (TabContent, left aligned) from the page's own
-ratings, so embeds and share pages show it too: the score of first ratings
-Good or Easy, a bar per rating (Again, Hard, Good, Easy in
-`bg-solid-error/warning/info/success`, each with its count), then every card
-in the order first rated with front, image, back and its ratings; Study
-again sits where a quiz result's Redo quiz does. A recorded attempt's page,
-`/flashcards/attempts/$attemptId`, is `AttemptResult` with the same body and
-Study again in place of Redo quiz. Quiz results show minutes too:
-`AttemptBody` passes when the try began to `grade`, and `attemptMeta`
-writes "date · N min · workspace".
+ratings, so embeds and share pages show it too. The score of first ratings
+Good or Easy, the gain in that count since the set's previous attempt (shown only when it rose)
+(`previous` on `GET /api/attempts/{id}`, a flashcard attempt's latest earlier
+attempt of the same set; the study page reads its own attempt back through
+`usePrevious`, embeds and share pages show none) and a stat line (minutes,
+cards) sit beside a bar per rating (Again, Hard, Good, Easy in
+`bg-solid-error/warning/info/success`, each with its count, labelled by the
+axis). Under a rule, Cards lists every card's back (`CardBackFace` tile:
+front and answer each capped in height and scrolling with no scrollbar, edges
+fading; no image) in a grid (`ResultCardGrid`, columns of 350px or more; the
+page is `TabContent wide`, max-w-4xl) with its number in
+first-rated order and its ratings as tinted chips; the list pages' `SortMenu`
+orders them by Flashcard order, Hardest (first rating, then last) or
+Easiest. Study again sits where a quiz result's Redo quiz does. A recorded
+attempt's page, `/flashcards/attempts/$attemptId`, is `AttemptResult` with
+the same body and Study again in place of Redo quiz. Quiz results show
+minutes too: `AttemptBody` passes when the try began to `grade`; the score
+row reads "18.5 / 26 marks" with the minutes beside it under a clock
+(`ResultScore`; only the Question bank's topic summary shows a percentage
+there), and `attemptMeta` writes "date · workspace" in the stat line's type
+(text-sm, fg-secondary) for quiz and flashcard results alike.
 
 ## Review session
 
@@ -367,15 +380,9 @@ items already answered in answer order with what was recorded (a card's
 rating, or a question's rating, marks, answers and graded question), ahead of
 the items still to answer, so Previous reaches them read only.
 
-The last item opens the review summary (`src/features/study/ReviewSummary.tsx`),
-in the bank's topic summary style and built from the same `ResultSummary`
-pieces: "N reviewed" and the skips, one square per item (questions by marks;
-cards Good and Easy green, Hard amber, Again red; skipped grey), a by-kind row
-for questions (marks) and flashcards (rating counts), the misses to look at
-again with Open, the skipped items as numbers, and the next suggestion with
-Start. Open goes to the item in its material
-(`/workspaces/$id?material=&item=&mode=view`): a quiz scrolls to the question
-and a set opens that card in its preview. Review more waits for every pending
+The last item opens the session's result (below) once its pending ratings
+are saved, with the next suggestion and Start under it. Review again there
+waits for every pending
 rating, refreshes, and starts a new session on the same group; Back returns to
 where the session started. The session is finished once its answers are saved,
 skipped items or not, so a continued session whose items left their material
@@ -393,7 +400,9 @@ smaller panel size):
 "Card 1 of 6" centred above the card, which flips
 on a click (the text swaps in place, old face up and out, new face in from
 below, the ratings rising in one after another) and carries the text rating buttons
-(`src/features/study/RatingTiles.tsx`) on its back; small Previous and Next
+(`src/features/study/RatingTiles.tsx`) on its back; the back
+(`CardBackFace`) pins the front's text as a centred header at the top and
+centres the answer under it, the image staying on the front; small Previous and Next
 (`StepNav`) sit under it at the right. Next skips without rating (the card goes
 to the session's end), Previous shows the cards before it: a rated one read
 only with its rating ringed, a skipped one still to rate. Quick review steps
@@ -407,8 +416,8 @@ the browser. Embedded sets study there too and send no ratings
 
 ## Learning
 
-Learning has four tabs: Progress (default), Review, Past reviews (recorded
-review sessions) and All results (quiz attempts, the old Past reviews table). The title, tabs and tab padding
+Learning has three tabs: Progress (default), Review (ending with past
+reviews, the recorded review sessions) and All results (quiz attempts). The title, tabs and tab padding
 follow Settings (`TabContent`), without its width cap so the map runs to the
 panel's edges.
 
@@ -430,11 +439,16 @@ as on workspace cards).
 - **All workspaces**: name, last review or "Not reviewed yet" / "Nothing
   practised yet", "N items" a manual review draws from (hidden on phones), and
   Review, or Review again once any session exists there.
+- **Past reviews**: the table below.
 
-### Past reviews tab
+### Past reviews
 
-`src/features/study/PastReviews.tsx`: finished sessions in the Files table
-style (Date, Workspace, Chapter, Quiz, Flashcards, Time, ⋮ with Review again),
+`src/features/study/PastReviews.tsx`, the Review tab's last section, its
+filter beside the heading: finished sessions in Billing's plain table
+(`BillingTable`, no border, scrolls sideways) at every width (Date,
+Workspace, Chapter, Quiz, Flashcards, Time, Status, ⋮ with See result and
+Review again; Time and Status from xl; a click anywhere on a row opens the
+result),
 sorted from its column headers (`SortHeader`, no sort menu: date, workspace,
 chapter, quiz score, flashcard score, time spent, status; text columns start
 A to Z, the rest newest or largest first, a second click flips) and the list
@@ -443,19 +457,38 @@ URL (`parsePastReviewsSearch`). Chapter sorts chapter sessions by name with
 Others and whole-workspace sessions last; status puts completed before
 stopped. Quiz is marks of the questions answered, Flashcards
 cards rated Good or Easy. A session ended early shows "Stopped after
-N of M" under Status. Scores are plain "x / y" text. Below xl the Files table
-gives way to Billing's plain table (`BillingTable`, no border, scrolls
-sideways) without Time and Status, its headers sorting the same way. Thirty
-rows a page. Both table tabs lay out as Files' list does: toolbar right under
+N of M" under Status. Scores are plain "x / y" text. Thirty
+rows a page. All results lays out as Files' list does: toolbar right under
 the tabs, then the table in the list's padding. Workspace, chapter and quiz
 names show the workspace icon beside the name (`WorkspaceCell`) and wrap to
 two lines before the ellipsis; their columns are somewhat wider than the
 number columns, and every column shares the leftover width.
 
+### Review result
+
+`/learning/reviews/$sessionId` (`src/routes/ReviewResult.tsx`, breadcrumb
+Learning / Review), and the end of a session, draw `ReviewResultBody`
+(`src/features/study/ReviewResult.tsx`) over `GET /api/review/sessions/{id}/result`.
+The title is the group (chapter, Others, or the workspace), the meta the
+start's date and time, workspace and minutes. "N better than last time" (plain
+green, only when N > 0) sits beside an accent Review again. A split view puts
+questions (marks) left and flashcards (Good or Easy of all) right, one column
+on phones, each with one bar from best to worst and its counts (right, partial,
+wrong; Easy, Good, Hard, Again). Then a Questions section and a Flashcards
+section, each with its count and its own Sort (Review order, Hardest,
+Easiest); items keep their session numbers. A question row leads with one
+small square per part in its result colour, then "n. text", the quiz and its
+marks in the result colour, and Right, Partial or Wrong; it opens to the quiz
+result page's graded renderer (`QuestionRunner` with `review`,
+`headerMarks={false}` since the row shows the marks). Flashcards are the
+flashcard result page's tiles (`ResultCardTile`). A one-kind session shows
+its half alone.
+
 ### All results tab
 
-`src/features/study/AllResults.tsx`: quiz and flashcard attempts (Name with
-the item's icon, Workspace, Score, Date, ⋮ with See result and Redo quiz or
+`src/features/study/AllResults.tsx`: quiz and flashcard attempts (Date
+with the time, newest first by default; Name with the item's icon, Workspace,
+Score, ⋮ with See result and Redo quiz or
 Study again), the same table switch below md. A click anywhere on a row
 opens See result (`resultLink` in `src/features/study/attempts.ts`:
 `/quizzes/attempts/$id` or `/flashcards/attempts/$id`, one `AttemptResult`
@@ -489,7 +522,7 @@ active, else the first finished. The browser puts the items in reading order
 with `inReadingOrder`, the Study tab's sort, so the map and Continue always
 agree.
 
-- **Continue review**: the heading with an accent "Continue: <item>" link at
+- **Continue your study**: the heading with an accent "Continue: <item>" link at
   its right (the Study tab's next item: first in reading order not done), the
   map, then the workspace's icon and name and "done of total done".
 - **Other workspaces**: rows with icon, name, "Studied <when>", the small
