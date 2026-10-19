@@ -30,6 +30,12 @@ const RELEASE_COMMENT = /^\s+# \S+$/;
 const SECRET = /\bsecrets\./;
 const INSTALL =
   /\b(pnpm install|npm (ci|install)|bun install|uv sync|pip install|playwright install|e2e:install)\b/;
+const AUDITS = [
+  /^cargo deny check advisories$/,
+  /govulncheck@v[\d.]+ -format json/,
+  /^pnpm audit --prod$/,
+];
+const WRANGLER_FILE = /^wrangler.*\.jsonc$/;
 // The wrangler files comment only on whole lines.
 const LINE_COMMENT = /^\s*\/\/.*$/gm;
 
@@ -94,11 +100,7 @@ test('CI fails on known vulnerabilities in the Rust, Go and pnpm dependencies', 
     .flatMap((job) => job.steps)
     .filter((step) => !step['continue-on-error'])
     .map((step) => step.run ?? '');
-  for (const command of [
-    /^cargo deny check advisories$/,
-    /govulncheck@v[\d.]+ -format json/,
-    /^pnpm audit --prod$/,
-  ]) {
+  for (const command of AUDITS) {
     assert(
       steps.some((run) => command.test(run)),
       String(command)
@@ -107,11 +109,12 @@ test('CI fails on known vulnerabilities in the Rust, Go and pnpm dependencies', 
 });
 
 test('no Worker publishes a workers.dev or preview URL, with or without --env', () => {
-  for (const file of list('.').filter((name) =>
-    /^wrangler.*\.jsonc$/.test(name)
-  )) {
+  for (const file of list('.').filter((name) => WRANGLER_FILE.test(name))) {
     const config = JSON.parse(read(file).replace(LINE_COMMENT, ''));
-    const targets = [['top level', config], ...Object.entries(config.env ?? {})];
+    const targets = [
+      ['top level', config],
+      ...Object.entries(config.env ?? {}),
+    ];
     for (const [name, target] of targets) {
       assert.equal(target.workers_dev, false, `${file} ${name}`);
       assert.equal(target.preview_urls, false, `${file} ${name}`);
