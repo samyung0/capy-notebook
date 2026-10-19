@@ -59,6 +59,11 @@ func TestAStoredNoteARuleRefusesStillListsAndOpens(t *testing.T) {
 			t.Errorf("%s = %d %s", path, rec.Code, rec.Body.String())
 		}
 	}
+	// Indexing it is final: the ingest worker retries only 5xx and 429.
+	rec = doInternal(t, h, http.MethodGet, "/api/internal/materials/"+note+"/index-text?workspaceId=ws_e2e_private", pipeSecret, nil)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "material_content_unreadable") {
+		t.Errorf("its index text = %d %s, want a final 422", rec.Code, rec.Body.String())
+	}
 
 	shared := create(store.Material{Title: "Unreadable shared"})
 	if _, err := st.UpdateStandaloneMaterialPrivacy(ctx, "u_owner", shared, "", store.PrivacyLink); err != nil {
