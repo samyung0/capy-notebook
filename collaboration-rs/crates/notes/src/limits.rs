@@ -511,6 +511,7 @@ fn plain_content<T: ReadTxn>(
     // per element (whether each is `mermaid`).
     let mut holders: HashSet<BranchID> = HashSet::new();
     let mut types: HashMap<BranchID, Vec<bool>> = HashMap::new();
+    let mut structure = Structure::default();
     for item in incoming.items() {
         let id = item.id();
         if id.clock + item.len() <= state.get(&id.client) {
@@ -556,6 +557,7 @@ fn plain_content<T: ReadTxn>(
         if let Some(what) = refused {
             return Err(Refusal::Content(what));
         }
+        structure.see(&at, item)?;
         if let (Place::Sequence(parent), ItemContent::Type(_)) = (&at, item.content()) {
             shape.created.insert(BranchID::Nested(*id), parent.clone());
         }
@@ -692,6 +694,7 @@ fn plain_content<T: ReadTxn>(
             })
     });
     media.extend(closed);
+    media.extend(structure.finish(txn, incoming, &shape.created, material)?);
     Ok(media)
 }
 
@@ -1110,6 +1113,292 @@ fn candidate_of<T: ReadTxn>(txn: &T, update: &Update) -> Result<yrs::Doc, Refusa
     Ok(candidate)
 }
 
+// ------------------------------------------------------------- structure
+
+/// [Refusal::Content] for a mark no leaf carries ([leaf_never_carries]).
+pub const LEAF_MARK: &str = "a text mark no leaf carries";
+/// [Refusal::Content] for text written straight into the content root.
+pub const ROOT_TEXT: &str = "text outside a block";
+/// [Refusal::Content] for children an element's type cannot hold: content
+/// in a void element, an element in a text-only one, a Mermaid block without
+/// exactly its caption.
+pub const CHILDREN: &str = "an element with children its type cannot hold";
+/// [Refusal::Content] for a mindmap or diagram left without its `mermaid`.
+pub const MISSING_REQUIRED: &str = "a document without the element its kind requires";
+
+/// A mark the store refuses on a text leaf: `children` and `type` make the
+/// leaf read as an element's ("text leaf cannot contain children", "unknown
+/// element type"), and suggestions are obsolete. No editor writes one, and
+/// removing one would need the run's place in its text, so it is refused.
+/// Element keys of that kind (`text`, suggestions) are removed on entry
+/// instead (`crate::repair::on_entry`).
+fn leaf_never_carries(key: &str) -> bool {
+    key == "children" || key == "type" || key == "suggestion" || key.starts_with("suggestion_")
+}
+
+/// What an element of a type may hold as children.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Holds {
+    Anything,
+    /// A void element: one empty text leaf, an empty text in the room (Epo
+    /// 2026-10-18, all of the catalog's void elements).
+    Nothing,
+    /// Text leaves only (`material::TEXT_ELEMENTS`).
+    Text,
+    /// Exactly these elements, in order (the catalog's fixed `children`; a
+    /// room holds only `mermaid` of those).
+    Fixed(&'static [&'static str]),
+}
+
+fn holds(kind: Option<&str>) -> Holds {
+    let Some(kind) = kind else {
+        return Holds::Anything;
+    };
+    match catalog::element(kind) {
+        Some(element) if element.void => Holds::Nothing,
+        _ if crate::material::TEXT_ELEMENTS.contains(&kind) => Holds::Text,
+        Some(element) if !element.children.is_empty() => Holds::Fixed(element.children),
+        _ => Holds::Anything,
+    }
+}
+
+/// The store's structure rules, checked as the update arrives (Epo
+/// 2026-10-18 and 2026-10-19: a rule no cheap repair keeps is refused on
+/// entry, so the writer's editor reloads instead of the room resetting):
+/// marks no leaf carries, text only inside blocks, the children an element's
+/// type holds, and the element a material kind requires. O(update) plus one
+/// type lookup per element the update fills or deletes from; what needs the
+/// room as it would be (a retype, a Mermaid block made or changed, a
+/// mindmap's element deleted) is named for [holds_children] on the copy.
+#[derive(Default)]
+struct Structure {
+    /// The elements the update puts content into, and whether elements.
+    filled: HashMap<BranchID, bool>,
+    /// The `type` values the update writes per element.
+    typed: HashMap<BranchID, Vec<Option<Arc<str>>>>,
+}
+
+impl Structure {
+    /// One item of the update, where it sits.
+    fn see(&mut self, at: &Place, item: &yrs::block::Item) -> Result<(), Refusal> {
+        match (at, item.content()) {
+            (_, ItemContent::Deleted(_)) => {}
+            (Place::Sequence(_), ItemContent::Format(key, _)) if leaf_never_carries(key) => {
+                return Err(Refusal::Content(LEAF_MARK));
+            }
+            (Place::Sequence(Some(BranchID::Root(root))), ItemContent::String(_))
+                if &**root == plate::CONTENT_ROOT =>
+            {
+                return Err(Refusal::Content(ROOT_TEXT));
+            }
+            (Place::Sequence(Some(parent @ BranchID::Nested(_))), ItemContent::String(_)) => {
+                self.filled.entry(parent.clone()).or_insert(false);
+            }
+            (Place::Sequence(Some(parent @ BranchID::Nested(_))), ItemContent::Type(_)) => {
+                self.filled.insert(parent.clone(), true);
+            }
+            (Place::Entry(key, Some(element)), ItemContent::Any(values)) if &**key == "type" => {
+                self.typed
+                    .entry(element.clone())
+                    .or_default()
+                    .push(match values.last() {
+                        Some(Any::String(kind)) => Some(kind.clone()),
+                        _ => None,
+                    });
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// What `element` may hold after the update, by each type it may have:
+    /// those it writes and, when the room holds it, its own; none when it is
+    /// deleted.
+    fn kinds<T: ReadTxn>(
+        &self,
+        txn: &T,
+        incoming: &ydoc::Incoming,
+        element: &BranchID,
+    ) -> Option<Vec<Holds>> {
+        let mut kinds: Vec<Holds> = self
+            .typed
+            .get(element)
+            .into_iter()
+            .flatten()
+            .map(|kind| holds(kind.as_deref()))
+            .collect();
+        if let Some(branch) = held_branch(txn, element) {
+            let item = branch.item()?;
+            if item.is_deleted() || deleted_by(incoming, item.id()) {
+                return None;
+            }
+            kinds.push(holds(held_type(txn, element).as_deref()));
+        }
+        Some(kinds)
+    }
+
+    /// Refuses content no type the element may have takes; returns the
+    /// elements whose children the copy decides, and the content root when
+    /// the document must still hold its kind's required element.
+    fn finish<T: ReadTxn>(
+        &self,
+        txn: &T,
+        incoming: &ydoc::Incoming,
+        created: &HashMap<BranchID, Option<BranchID>>,
+        material: &str,
+    ) -> Result<HashSet<BranchID>, Refusal> {
+        let mut checked = HashSet::new();
+        for (element, &elements) in &self.filled {
+            let Some(kinds) = self.kinds(txn, incoming, element) else {
+                continue;
+            };
+            let breaks = |kind: &Holds| match kind {
+                Holds::Nothing | Holds::Fixed(_) => true,
+                Holds::Text => elements,
+                Holds::Anything => false,
+            };
+            if !kinds.iter().any(breaks) {
+                continue;
+            }
+            let refuses =
+                |kind: &Holds| *kind == Holds::Nothing || (*kind == Holds::Text && elements);
+            if kinds.iter().all(refuses) {
+                return Err(Refusal::Content(CHILDREN));
+            }
+            checked.insert(element.clone());
+        }
+        for (element, written) in &self.typed {
+            let Some(branch) = held_branch(txn, element) else {
+                // A Mermaid block made: the copy finds its caption.
+                if created.contains_key(element)
+                    && written
+                        .iter()
+                        .any(|kind| matches!(holds(kind.as_deref()), Holds::Fixed(_)))
+                {
+                    checked.insert(element.clone());
+                }
+                continue;
+            };
+            let Some(item) = branch.item() else { continue };
+            if item.is_deleted() || deleted_by(incoming, item.id()) {
+                continue;
+            }
+            // Retyped into a void, text-only or fixed element: its children
+            // decide, on the copy.
+            if written
+                .iter()
+                .any(|kind| holds(kind.as_deref()) != Holds::Anything)
+            {
+                checked.insert(element.clone());
+            }
+            // A retyped child of a Mermaid block (its caption).
+            if let Some(parent) = item.parent_branch()
+                && matches!(holds(held_type(txn, &parent.id()).as_deref()), Holds::Fixed(_))
+            {
+                checked.insert(parent.id());
+            }
+        }
+        // Deleted elements: a Mermaid block may lose its caption, and a
+        // mindmap or diagram its `mermaid` (its documents are small).
+        let requires = catalog::material_kind(material).and_then(|kind| kind.requires);
+        let mut required = requires.is_some()
+            && self
+                .typed
+                .keys()
+                .any(|element| held_branch(txn, element).is_some_and(|b| b.item().is_some()));
+        let state = txn.state_vector();
+        let store = txn.store();
+        for (client, ranges) in incoming.delete_ranges() {
+            let end = state.get(client);
+            for &(from, to) in ranges {
+                let until = to.min(end);
+                let mut clock = from;
+                while clock < until {
+                    ydoc::steps::step(ydoc::steps::Walk::DeleteRanges);
+                    let Some((range, item)) = store.get_block_range(&yrs::ID::new(*client, clock))
+                    else {
+                        break;
+                    };
+                    clock = range.clock + range.len;
+                    let Some(item) = item else { continue };
+                    if item.is_deleted()
+                        || item.parent_sub().is_some()
+                        || !matches!(item.content(), ItemContent::Type(_))
+                    {
+                        continue;
+                    }
+                    required |= requires.is_some();
+                    if let Some(parent) = item.parent_branch()
+                        && let Some(parent_item) = parent.item()
+                        && !parent_item.is_deleted()
+                        && !deleted_by(incoming, parent_item.id())
+                        && matches!(holds(held_type(txn, &parent.id()).as_deref()), Holds::Fixed(_))
+                    {
+                        checked.insert(parent.id());
+                    }
+                }
+            }
+        }
+        if required {
+            checked.insert(BranchID::Root(plate::CONTENT_ROOT.into()));
+        }
+        Ok(checked)
+    }
+}
+
+/// The elements [Structure::finish] named, read in `candidate`, the room with
+/// the update applied: each holds the children its type takes; the content
+/// root stands for the document, which still holds its kind's required
+/// element. The other elements of `touched` ([on_candidate]'s) pass as the
+/// room holds them.
+fn holds_children(
+    candidate: &yrs::Doc,
+    touched: &HashSet<BranchID>,
+    material: &str,
+) -> Result<(), Refusal> {
+    use yrs::Transact;
+    let txn = candidate.transact();
+    for id in touched {
+        if let BranchID::Root(_) = id {
+            if let Some(required) = catalog::material_kind(material).and_then(|kind| kind.requires)
+                && !plate::holds_element(&txn, required)
+            {
+                return Err(Refusal::Content(MISSING_REQUIRED));
+            }
+            continue;
+        }
+        let Some(branch) = id.get_branch(&txn) else {
+            continue;
+        };
+        if branch.item().is_some_and(|item| item.is_deleted()) {
+            continue;
+        }
+        let kind = holds(held_type(&txn, id).as_deref());
+        if kind == Holds::Anything {
+            continue;
+        }
+        let delta = plate::insert_delta(&branch)?;
+        let fits = match kind {
+            Holds::Anything => true,
+            Holds::Nothing => delta.is_empty(),
+            Holds::Text => delta.iter().all(|op| matches!(op.insert, Insert::Text(_))),
+            Holds::Fixed(children) => {
+                delta.len() == children.len()
+                    && delta.iter().zip(children).all(|(op, child)| match &op.insert {
+                        Insert::Element(element) => {
+                            held_type(&txn, &element.id()).as_deref() == Some(*child)
+                        }
+                        Insert::Text(_) => false,
+                    })
+            }
+        };
+        if !fits {
+            return Err(Refusal::Content(CHILDREN));
+        }
+    }
+    Ok(())
+}
+
 /// One note room's limit state between exact measurements (`RoomValidator`):
 /// the last exact metrics (the shrink baseline) and an upper bound of the
 /// metrics now, the exact ones plus each later update's growth bound. The
@@ -1180,6 +1469,7 @@ impl Validator {
                     }
                 };
                 on_candidate(&candidate, &media)?;
+                holds_children(&candidate, &media, &self.material)?;
                 trial = Some(candidate);
             }
         }

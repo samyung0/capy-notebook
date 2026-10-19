@@ -101,6 +101,33 @@ impl Model {
         }
     }
 
+    /// The cheap repairs after an admitted `update` is applied (Epo
+    /// 2026-10-19: repaired on entry first): a note's stripped keys and an
+    /// emptied note's paragraph, an emptied set's blank card. What it
+    /// repaired; the caller commits and broadcasts the transaction.
+    pub fn repair_on_entry(
+        self,
+        txn: &mut yrs::TransactionMut,
+        update: &yrs::Update,
+        kind: &str,
+    ) -> Vec<&'static str> {
+        match self {
+            Model::Note => notes::repair::on_entry(txn, update, kind),
+            Model::Item(items::Kind::Flashcards) => blank_card(txn),
+            Model::Item(_) => Vec::new(),
+        }
+    }
+
+    /// The repairs a store refusal tries once before the room resets: an
+    /// emptied note or set, repeated top-level ids.
+    pub fn repair(self, txn: &mut yrs::TransactionMut, kind: &str) -> Vec<&'static str> {
+        match self {
+            Model::Note => notes::repair::repair(txn, kind),
+            Model::Item(items::Kind::Flashcards) => blank_card(txn),
+            Model::Item(_) => Vec::new(),
+        }
+    }
+
     /// The room's admission for this document, of material kind `kind`.
     pub fn validator(self, kind: &str, metrics: Metrics) -> RoomValidator {
         match self {
@@ -111,6 +138,14 @@ impl Model {
             }),
             Model::Item(kind) => RoomValidator::Item(items::Validator::new(kind, Some(metrics))),
         }
+    }
+}
+
+fn blank_card(txn: &mut yrs::TransactionMut) -> Vec<&'static str> {
+    if items::flashcards::repair(txn) {
+        vec!["a blank card in an emptied set"]
+    } else {
+        Vec::new()
     }
 }
 
