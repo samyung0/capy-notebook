@@ -25,8 +25,13 @@ declare module 'capy-share-render' {
     sharePath: string,
     appOrigin: string
   ): string;
-  /** The error page, inside summary.html when given, standalone otherwise. */
-  export function renderFailure(status: number, template?: string): string;
+  /** The error page, inside summary.html when given, standalone otherwise;
+   * a share page's 422 names its kind. */
+  export function renderFailure(
+    status: number,
+    template?: string,
+    kind?: 'quizzes' | 'flashcards' | 'notes'
+  ): string;
   /** The report-only image-source policy for every rendered page. */
   export const IMAGE_POLICY: string;
   /** The enforced script policy for every rendered page, before the hashes

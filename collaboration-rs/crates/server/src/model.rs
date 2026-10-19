@@ -58,8 +58,8 @@ impl Model {
 
     /// How the room serves its stored document of material kind `kind` (Epo
     /// 2026-10-13): one holding a reference's imported fence body (the quiz's
-    /// answer keys) is refused, as Go's reads refuse it, so no reader receives
-    /// it; one the store would refuse (a type the embed catalog does not
+    /// answer keys, a `pending` not held at null) is refused, so no reader
+    /// receives it; one the store would refuse (a type the embed catalog does not
     /// list, or not for this kind, a closed element's extra key, a reference
     /// without its row, ...) or, in this quiz document, a question block kind
     /// the room does not admit, loads read-only: the reason, which the load
@@ -101,6 +101,41 @@ impl Model {
         }
     }
 
+    /// The cheap repairs after an admitted `update` is applied (Epo
+    /// 2026-10-19: repaired on entry first): a note's stripped keys and an
+    /// emptied note's paragraph, an emptied set's blank card. What it
+    /// repaired; the caller commits and broadcasts the transaction.
+    pub fn repair_on_entry(
+        self,
+        txn: &mut yrs::TransactionMut,
+        update: &yrs::Update,
+        kind: &str,
+    ) -> Vec<&'static str> {
+        match self {
+            Model::Note => notes::repair::on_entry(txn, update, kind),
+            // Only a deletion empties a set.
+            Model::Item(items::Kind::Flashcards) if !update.delete_set().is_empty() => {
+                blank_card(txn)
+            }
+            Model::Item(_) => Vec::new(),
+        }
+    }
+
+    /// Whether this document has repairs: a quiz's never does.
+    pub fn repairs(self) -> bool {
+        matches!(self, Model::Note | Model::Item(items::Kind::Flashcards))
+    }
+
+    /// The repairs a store refusal tries once before the room resets: an
+    /// emptied note or set, repeated top-level ids.
+    pub fn repair(self, txn: &mut yrs::TransactionMut, kind: &str) -> Vec<&'static str> {
+        match self {
+            Model::Note => notes::repair::repair(txn, kind),
+            Model::Item(items::Kind::Flashcards) => blank_card(txn),
+            Model::Item(_) => Vec::new(),
+        }
+    }
+
     /// The room's admission for this document, of material kind `kind`.
     pub fn validator(self, kind: &str, metrics: Metrics) -> RoomValidator {
         match self {
@@ -111,6 +146,15 @@ impl Model {
             }),
             Model::Item(kind) => RoomValidator::Item(items::Validator::new(kind, Some(metrics))),
         }
+    }
+}
+
+fn blank_card(txn: &mut yrs::TransactionMut) -> Vec<&'static str> {
+    let id = format!("card_{}", uuid::Uuid::new_v4().simple());
+    if items::flashcards::repair(txn, &id) {
+        vec!["a blank card in an emptied set"]
+    } else {
+        Vec::new()
     }
 }
 
@@ -212,6 +256,19 @@ mod tests {
         });
         assert!(note_stored("note", &[body.clone(), fence]).is_err());
         assert_eq!(note_stored("note", &[body]), Ok(None));
+    }
+
+    /// A reference holding `pending` at null carries no fence body: the store
+    /// and Go accept it, so its room loads writable. Fails if the load check
+    /// counts the null entry and refuses a note every save path accepts.
+    #[test]
+    fn a_null_pending_loads() {
+        let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
+        let reference = json!({
+            "type": "material_ref", "id": "r", "materialId": "mat_quiz", "refKind": "quiz",
+            "pending": null, "children": [{ "text": "" }],
+        });
+        assert_eq!(note_stored("note", &[body, reference]), Ok(None));
     }
 
     /// A stored Plate document the store would refuse loads read-only

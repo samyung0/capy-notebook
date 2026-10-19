@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -96,7 +97,7 @@ func itemsOf(mt Material) ([]studyItem, error) {
 	}
 	items, err := materialItems(mt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("material %s: %w", mt.ID, err)
 	}
 	size := len(mt.Content)
 	parsedItems.Lock()

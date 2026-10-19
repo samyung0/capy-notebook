@@ -29,7 +29,8 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// reference never keeping an imported fence body (live-items REVIEW5), and
 /// the embed catalog (Epo 2026-10-13): a type or material kind it does not
 /// list, an element in a material kind it does not list it for, and Go's
-/// wording for figures; and `multi`, merged into `mcq` (Epo 2026-10-15).
+/// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); and a
+/// void element holding anything but one empty text leaf (Epo 2026-10-18).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -63,6 +64,7 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.starts_with("unknown material kind")
         || message.contains(" cannot hold a ")
         || message.starts_with("chart, plot and graph embeds")
+        || message.ends_with("holds one empty text leaf")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()

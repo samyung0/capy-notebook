@@ -57,9 +57,13 @@ const respond = (
     },
     status,
   });
+const MESSAGES: Record<number, string> = {
+  404: 'not found',
+  422: 'material_content_unreadable',
+};
 const error = (status: number) =>
   respond(
-    JSON.stringify({ message: status === 404 ? 'not found' : 'unavailable' }),
+    JSON.stringify({ message: MESSAGES[status] ?? 'unavailable' }),
     status,
     {
       'Content-Type': 'application/json',
@@ -119,6 +123,12 @@ export async function handlePublicRequest(
   if ([401, 403, 404].includes(upstream.status)) {
     await upstream.body?.cancel();
     return error(404);
+  }
+  // The shared note's stored content is unreadable (422
+  // `material_content_unreadable`): final, not an outage to retry.
+  if (upstream.status === 422) {
+    await upstream.body?.cancel();
+    return error(422);
   }
   if (!upstream.ok) {
     await upstream.body?.cancel();

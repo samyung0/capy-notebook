@@ -24,6 +24,8 @@ pub const MATERIAL_REF_TYPE: &str = "material_ref";
 /// Media blocks name their file: an asset id, never a URL (Epo, 2026-10-10).
 /// The catalog's elements that require `assetId`.
 pub const MEDIA_TYPES: [&str; 2] = ["img", "audio"];
+/// Elements whose children are text leaves only (`validate_text_element`).
+pub const TEXT_ELEMENTS: [&str; 3] = ["flashcard_front", "flashcard_back", "mermaid_caption"];
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid material document: {0}")]
@@ -55,9 +57,15 @@ fn require_id(node: &Node) -> Check {
     }
 }
 
+/// Whether a node carries `key`: null counts as absent, as the catalog's
+/// key rules (and admission) read it.
+fn carries(node: &Node, key: &str) -> bool {
+    node.get(key).is_some_and(|value| !value.is_null())
+}
+
 fn reject_opaque(node: &Node) -> Check {
     for key in ["questions", "cards", "code"] {
-        if node.contains_key(key) {
+        if carries(node, key) {
             return fail(format!("opaque {key} property is not canonical"));
         }
     }
@@ -120,7 +128,7 @@ fn validate_quiz(node: &Node) -> Check {
             }
         }
     }
-    if node.contains_key("timeLimitMin") {
+    if carries(node, "timeLimitMin") {
         return fail("quiz time limits are no longer supported");
     }
     Ok(())
@@ -145,7 +153,7 @@ fn validate_quiz_question(node: &Node, policy: &Policy) -> Check {
         "correctOptionIds",
         "correctBoolean",
     ] {
-        if node.contains_key(key) {
+        if carries(node, key) {
             return fail(format!("obsolete quiz property {key}"));
         }
     }
@@ -230,7 +238,7 @@ fn validate_media(node: &Node, kind: &str) -> Check {
         return fail(format!("{kind} requires an assetId"));
     }
     for key in ["url", "src"] {
-        if node.get(key).is_some_and(|value| !value.is_null()) {
+        if carries(node, key) {
             return fail(format!("{kind} cannot contain {key}"));
         }
     }
@@ -412,7 +420,7 @@ fn validate_material_ref(node: &Node) -> Check {
     if js_trim(material_id).is_empty() {
         return fail("materialId is required");
     }
-    if node.contains_key("pending") {
+    if carries(node, "pending") {
         return fail("material reference carries an imported fence body");
     }
     // The catalog's item kinds (Go's `refKinds`).
@@ -489,8 +497,9 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
 
 /// The embed catalog's key rules for an element it lists, after the
 /// element's own checks (Go's `validateCatalogKeys`): top-level placement,
-/// required keys, keys it never carries (null counts as absent) and its
-/// closed field set.
+/// required keys, keys it never carries (null counts as absent), its closed
+/// field set, and a void element's one empty text leaf (marks allowed: a
+/// mention is a markable void; Epo 2026-10-18).
 fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) -> Check {
     let name = element.name;
     if element.top_level && depth != 0 {
@@ -502,7 +511,7 @@ fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) 
         }
     }
     for key in element.forbidden {
-        if node.get(*key).is_some_and(|value| !value.is_null()) {
+        if carries(node, key) {
             return fail(format!("{name} cannot carry {key}"));
         }
     }
@@ -510,6 +519,12 @@ fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) 
         && let Some(key) = node.keys().find(|key| !fields.contains(&key.as_str()))
     {
         return fail(format!("unexpected {name} field {key}"));
+    }
+    if element.void {
+        let leaves = children(node);
+        if leaves.len() != 1 || leaves[0].get("text") != Some(&Value::String(String::new())) {
+            return fail(format!("{name} holds one empty text leaf"));
+        }
     }
     Ok(())
 }
@@ -521,7 +536,7 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
         "chart" | "plot" | "graph" => validate_embed(node, kind, depth),
         "quiz_question" => validate_quiz_question(node, policy),
         HTML_EMBED_TYPE => validate_html_embed(node, depth),
-        "flashcard_front" | "flashcard_back" | "mermaid_caption" => validate_text_element(node),
+        _ if TEXT_ELEMENTS.contains(&kind) => validate_text_element(node),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),
         "mermaid" => validate_diagram(node),
@@ -543,7 +558,7 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
                 return fail("videoId must be a valid YouTube video ID");
             }
             for key in ["assetId", "url", "src"] {
-                if node.contains_key(key) {
+                if carries(node, key) {
                     return fail(format!("YouTube video cannot contain {key}"));
                 }
             }

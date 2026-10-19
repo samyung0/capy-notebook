@@ -128,7 +128,7 @@ func (a *api) listCards(ctx context.Context, in *flashcardSetIDInput) (*cardsOut
 	}
 	res, err := a.s.ListCards(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	return &cardsOutput{Body: res}, nil
 }

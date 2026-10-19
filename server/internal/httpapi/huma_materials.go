@@ -398,6 +398,10 @@ func (a *api) createEmbeddedMaterial(ctx context.Context, in *createEmbeddedMate
 		Kind: in.Body.Kind, Questions: apimodel.EncodeQuestions(in.Body.Questions),
 		Cards: cards,
 	})
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		// The request's questions or cards, answered as createMaterial does.
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}

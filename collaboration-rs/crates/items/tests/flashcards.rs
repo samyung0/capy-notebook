@@ -457,3 +457,33 @@ fn the_save_api_writes_only_what_differs() {
         .encode_state_as_update_v1(&StateVector::default());
     assert!(!state.is_empty());
 }
+
+/// Security regression (room reset as last resort, Epo 2026-10-19): two
+/// writers each delete one of a set's last two cards, as people editing
+/// together do. Both go in, and the emptied set gets a blank card as the
+/// second arrives (the entry repair), where the store refused a set with no
+/// card and reset the room. Fails if the repair is reverted.
+#[test]
+fn an_emptied_set_gets_a_blank_card() {
+    let (room, a) = room(&set_value(&[("c1", "One", "1"), ("c2", "Two", "2")]));
+    let b = Doc::with_options(ydoc::doc_options(3));
+    b.transact_mut()
+        .apply_update(Update::decode_v1(&diff(&a, &Doc::new())).unwrap())
+        .unwrap();
+    root(&a).remove(&mut a.transact_mut(), "c1");
+    root(&b).remove(&mut b.transact_mut(), "c2");
+    let mut validator = validator(&room);
+    for writer in [&a, &b] {
+        let (result, _) = admit(&mut validator, &room, &diff(writer, &room));
+        assert!(matches!(result, Ok(Admission::Accepted)));
+        flashcards::repair(&mut room.transact_mut(), "card_fresh");
+        let value = Kind::Flashcards.document_value(&room.transact());
+        notes::material::assert_canonical(&value, "flashcards").unwrap();
+    }
+    let left = cards(&room);
+    assert_eq!(left.len(), 1);
+    assert!(left[0].front.is_empty() && left[0].back.is_empty());
+    assert_eq!(left[0].id, "card_fresh");
+    // A set holding a card is left alone.
+    assert!(!flashcards::repair(&mut room.transact_mut(), "card_other"));
+}

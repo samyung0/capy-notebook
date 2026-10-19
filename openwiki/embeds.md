@@ -29,8 +29,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   (Epo 2026-10-15), so a stored `file` block is an unlisted type, below.
   Markdown footnotes are not
   elements: the import turns them into text (see the note imports section of
-  `frontend/plate-editor.md`). For each: `void`,
-  `inline`, `topLevel` (only a top-level block), `required` keys besides
+  `frontend/plate-editor.md`). For each: `void` (it holds exactly one
+  empty text leaf, which may carry marks: Go's `validateCatalogKeys`, the
+  store's `validate_catalog_keys` and room admission refuse anything else,
+  Epo 2026-10-18), `inline`, `topLevel` (only a top-level block), `required` keys besides
   `type` and `children`, `fields` (the closed key set, when there is one),
   `forbidden` keys, `sharedText` keys (held as a Y.Text so typing merges;
   only `mermaid.source`), `sharedMap` keys (held as a Y.Map, each entry
@@ -72,14 +74,27 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   Mermaid source); an eleventh interactive block (counted on the copy when
   an update makes one); or an element left without a key it requires
   (`OWN_KEYS`: the catalog's `required`, less the top-level `id` every block
-  needs and a media block's `assetId`, which the media check reads). Not
-  checked yet, each written only by a crafted update and refused at the
-  store: two top-level blocks given one `id` (checking it would read every
-  top-level id per update that makes a block, about 10,000 lookups per Enter
-  in a near-limit note), text inside a void block, a Mermaid block's caption
-  child removed or holding an element, a material kind's required element
-  deleted (a diagram's `mermaid`), and the obsolete `suggestion` and element
-  `text` keys. At load the room runs the store's whole check once, on
+  needs and a media block's `assetId`, which the media check reads). The
+  structure is refused on entry too (`Structure` in `limits.rs`, Epo
+  2026-10-18): content in a void element, an element in a Mermaid caption, a
+  Mermaid block without exactly its caption, a mindmap or diagram left
+  without its `mermaid` (checked on a copy only when the update deletes a
+  `mermaid`, or an element holding one, or retypes one away), a mark no leaf
+  carries (`children`, `type`, `suggestion*`) and text straight in the
+  content root. A key held at null counts as absent in every layer, the
+  store's own element checks included (a video's `assetId`, the opaque
+  `code`, `questions` and `cards`, a quiz's obsolete keys). What a writer's
+  editor or two writers together can leave and a canonical form fixes is
+  repaired instead of refused (Epo 2026-10-19, `notes::repair`): an element's
+  `text` key and the obsolete `suggestion` keys are removed right after the
+  update goes in, and a note left with no block gets an empty paragraph, on
+  entry; two top-level blocks given one `id` (checking it on entry would read
+  every top-level id per update that makes a block, about 10,000 lookups per
+  Enter in a near-limit note) get a fresh id for the later one at save. The
+  parity test (`tests/admission_parity.rs`, from the seeded rooms and from a
+  dirty seed where every element holds each key the store tolerates) holds
+  that no admitted update leaves a document the store refuses once those
+  repairs ran. At load the room runs the store's whole check once, on
   the background step that measures it: a note, mindmap or diagram the store
   would refuse (a type the catalog does not list, or not for this kind, a
   closed element's extra key, a reference without its row, duplicate ids,

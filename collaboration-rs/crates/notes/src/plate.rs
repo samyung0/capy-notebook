@@ -532,8 +532,13 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
 
 /// Whether `visit` holds for some element of the document (a Y.XmlText),
 /// walked with an explicit stack.
-fn any_element<T: ReadTxn>(txn: &T, mut visit: impl FnMut(BranchPtr) -> bool) -> bool {
-    let mut stack: Vec<BranchPtr> = content_root(txn).into_iter().collect();
+fn any_element<T: ReadTxn>(txn: &T, visit: impl FnMut(BranchPtr) -> bool) -> bool {
+    content_root(txn).is_some_and(|root| any_below(root, visit))
+}
+
+/// Whether `visit` holds for some element below `top`.
+fn any_below(top: BranchPtr, mut visit: impl FnMut(BranchPtr) -> bool) -> bool {
+    let mut stack = vec![top];
     while let Some(branch) = stack.pop() {
         let mut next = branch.start();
         while let Some(item) = next {
@@ -569,14 +574,35 @@ pub fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
 
 /// Whether a material reference carries an imported fence body (`pending`,
 /// the quiz's answer keys), which no stored document may hold: its room
-/// refuses to load, so no reader receives it, as Go's reads refuse it.
+/// refuses to load, so no reader receives it. A `pending` held at null is
+/// absent, as the store and Go's validator read it.
 pub fn holds_pending_reference<T: ReadTxn>(txn: &T) -> bool {
     any_element(txn, |element| {
         string_attribute(element, "type").as_deref() == Some(crate::material::MATERIAL_REF_TYPE)
             && element
                 .entry_item("pending")
-                .is_some_and(|entry| !entry.is_deleted())
+                .filter(|entry| !entry.is_deleted())
+                .is_some_and(|entry| {
+                    !matches!(
+                        entry_value("pending", entry),
+                        Ok(Any::Null | Any::Undefined)
+                    )
+                })
     })
+}
+
+/// Whether the document holds an element of type `kind` (a material kind's
+/// required element).
+pub fn holds_element<T: ReadTxn>(txn: &T, kind: &str) -> bool {
+    any_element(txn, |element| {
+        string_attribute(element, "type").as_deref() == Some(kind)
+    })
+}
+
+/// Whether `element` is of type `kind` or holds one below it.
+pub fn is_or_holds(element: BranchPtr, kind: &str) -> bool {
+    let is = |element: BranchPtr| string_attribute(element, "type").as_deref() == Some(kind);
+    is(element) || any_below(element, is)
 }
 
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.

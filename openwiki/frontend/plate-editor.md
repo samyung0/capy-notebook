@@ -1404,18 +1404,44 @@ room draws for each writer, and only the room maps it back to the user when a
 store records its contributors (Epo 2026-10-12; `markers.rs`). Loading
 durable Yjs state validates those markers before admitting the room.
 
-A rejected update closes only the offending connection, preceded by a
-`document-rejected` stateless message so the client discards its now-forked Y.Doc
-instead of reconnecting and resending forever. If an over-limit document reaches
-the store hook anyway, which with every update checked takes a sum no single
-check saw whole (two updates checked against the same room before either
-applied, the later one measured exactly without the earlier), the server
+A broken rule is first repaired cheaply on entry, else refused on entry,
+else handled at save: a canonical repair, otherwise the room reset (Epo
+2026-10-18 and 2026-10-19). An update room admission refuses (a limit, a key
+or structure rule, an update outside the document's shape) answers its writer
+alone with a `document-rejected` stateless message (a limit's code and metrics,
+else `invalid_document`, no eviction id), then closes that channel only: the
+socket stays, the client remounts on a fresh Y.Doc and a new channel on it
+(its old Y.Doc holds the refused structs, so no later edit of it could be
+placed) and keeps its unsaved edits as a refused draft, and co-editors and
+the room are untouched. Right after an admitted update goes in, the room
+repairs what a canonical form fixes cheaply, in one server transaction every
+editor gets in the same flush (`Model::repair_on_entry`,
+`notes::repair::on_entry`, `items::flashcards::repair`): an element's `text`
+and `suggestion` keys are removed, a note left with no block gets an empty
+paragraph with an id of its own (two writers each deleting one of the last
+two blocks leave it so), and a set left with no card, after an update that
+deletes, a blank card under a fresh id (a card id is a global key). A key
+held at null is absent to the store as to the catalog and admission (Rust
+`material.rs` and Go `document.go`), so a key set to null and a retype that
+later forbids it leave a document both take. When the store's check still
+refuses the document, the store repairs once (`Model::repair`: the same
+emptied note or set, and a fresh `<id>-2` for each top-level block repeating
+an earlier one's id, which no entry check sees cheaply), broadcasts it and
+checks again; the row it stores holds the repair. `tests/admission_parity.rs`
+(notes, from the seeded rooms and from a dirty seed holding every key the
+store tolerates) and `items/tests/flashcards_parity.rs` (sets, single writes
+and pairs) hold that no admitted update leaves a document the store refuses
+once these repairs ran. If an over-limit
+document reaches the store hook anyway, which with every update checked takes a
+sum no single check saw whole (two updates checked against the same room before
+either applied, the later one measured exactly without the earlier), the server
 broadcasts `document-rejected` to the room and evicts it; leaving the room
-loaded would mean it never persists again. A structurally invalid snapshot is
-discarded the same way (`document-rejected` with code `invalid_document`), and
-an `authorization-revoked` eviction makes every editor drop its copy too.
-`NoteEditor` responds by remounting `NoteEditorCore` under a new generation
-key, which reconnects onto the last durable state. Unsaved edits are kept as
+loaded would mean it never persists again. A structurally invalid snapshot no
+repair fixes is discarded the same way (`document-rejected` with code
+`invalid_document`), and an `authorization-revoked` eviction makes every editor
+drop its copy too. `NoteEditor` responds to a `document-rejected` (its writer's
+or the room's) by remounting `NoteEditorCore` under a new generation key, which
+reconnects onto the room's state (after a discard, the last durable state). Unsaved edits are kept as
 one refused draft first, so the remount shows them read-only for copying until
 Reload; a limit also shows the too-large toast, and only edits this device
 could not store end in the changes-undone toast. Invalidating the collaboration token alone is not enough, because
@@ -1483,7 +1509,17 @@ carry, which the gate cannot weigh anyway. The workspace route
 loader prefetches an open file for the same reason it leaves an open material
 alone. When the API cannot decode stored content it
 answers 422 `material_content_unreadable`, which `NoteEditor` and `MaterialBody`
-report as "this note could not be loaded" rather than "not found".
+report as "this note could not be loaded" rather than "not found". A stored
+note a later rule refuses (a void element holding text, from before the void
+rule) reads the same way: it stays listed and searchable, while its content
+read, shared page and shared images, a single clone and a grade of a quiz its
+shared page embeds answer that 422; the site Worker renders the shared page as
+"this note could not be loaded" with no retry (422, uncached) and passes the
+422 for its images; its index text answers 422 too, which ends the ingest job;
+a workspace clone leaves it out and reports it
+([authorization](../authorization-permissions-lifecycles.md)). Broken
+materials are kept as they are (Epo 2026-10-19). The room's load check reads a
+reference's `pending` held at null as absent, as the store and Go do.
 
 ## PostgreSQL read projection
 

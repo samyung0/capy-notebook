@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -454,6 +455,15 @@ func (a *api) internalMaterialIndexText(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	text, err := a.s.MaterialIndexText(r.Context(), chi.URLParam(r, "id"), workspaceID)
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		// A stored note a later rule refuses: a 4xx, so the ingest worker
+		// ends the job instead of retrying it (it retries 5xx and 429).
+		obs.ResponseError(w, err)
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"code": "material_content_unreadable", "message": "material content could not be decoded",
+		})
+		return
+	}
 	if err != nil {
 		a.fail(w, err)
 		return

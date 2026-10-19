@@ -160,6 +160,47 @@ describe('anonymous material routes', () => {
     expect(await response.text()).not.toContain('PRIVATE');
   });
 
+  it('answers an unreadable shared note and its images with the could-not-be-loaded state, never a retry', async () => {
+    // Go's 422 `material_content_unreadable`: a stored note a later rule
+    // refuses (broken materials stay, Epo 2026-10-19).
+    const unreadable = () =>
+      vi.fn<typeof fetch>(async () =>
+        Response.json(
+          { errors: [{ message: 'material_content_unreadable' }] },
+          { status: 422 }
+        )
+      );
+    const page = await handleSiteRequest(
+      request(`/share/notes/${TOKEN}`),
+      env,
+      unreadable()
+    );
+    expect(page.status).toBe(422);
+    expect(page.headers.get('Cache-Control')).toBe('no-store');
+    const html = await page.text();
+    expect(html).toContain('This note could not be loaded');
+    expect(html).not.toContain('Try again');
+    // A shared quiz names its kind.
+    const quizPage = await handleSiteRequest(
+      request(`/share/quizzes/${TOKEN}`),
+      env,
+      unreadable()
+    );
+    expect(quizPage.status).toBe(422);
+    expect(await quizPage.text()).toContain('This quiz could not be loaded');
+    const image = unreadable();
+    const asset = await handleSiteRequest(
+      request(`/p/notes/${TOKEN}/assets/asset_abc`),
+      env,
+      image
+    );
+    expect(asset.status).toBe(422);
+    expect(await asset.json()).toEqual({
+      message: 'material_content_unreadable',
+    });
+    expect(image).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['quizzes', 'flashcards'])(
     'serves %s images as raster bytes only',
     async (kind) => {
