@@ -114,13 +114,13 @@ describe('the notices a frame shows', () => {
     const toast = vi.fn();
     const notices = officeNotices(toast);
     for (let key = 0; key < 2; key += 1) {
-      notices.show('clear-too-large', 2_097_152);
+      notices.show('edit-too-large', 2_097_152);
       notices.show('copy-too-large', 2_097_152);
     }
     expect(toast.mock.calls).toEqual([
-      [m.files_office_clear_too_large()],
+      [m.files_office_edit_too_large()],
       [m.files_office_copy_too_large()],
-      [m.files_office_clear_too_large()],
+      [m.files_office_edit_too_large()],
       [m.files_office_copy_too_large()],
     ]);
   });
