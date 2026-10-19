@@ -67,8 +67,6 @@ The frontend and browser E2E CI jobs reuse compiled browser WASM through
 hash validation still runs before consuming the restored artifacts. This cache
 does not cover the separate collaboration Docker build.
 
-[`scripts/dev/test_tunnel.py`](../scripts/dev/test_tunnel.py) checks webhook-only routing
-and development-key enforcement with a fake Cloudflare CLI.
 [`scripts/dev/hosts.test.mjs`](../scripts/dev/hosts.test.mjs) checks macOS/Windows
 elevation command construction and argument quoting, hosts paths, idempotent
 edits, backup preservation, line endings, aliases and conflicting mappings.

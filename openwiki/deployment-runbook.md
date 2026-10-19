@@ -2774,25 +2774,12 @@ apply those settings. `deploy/b2-cors.uat.json` already covers this origin with
 if its optional subdomain allowlist is enabled.
 
 For full-local development, the gateway, database and UI run locally using the
-Clerk development keys. Open `http://localhost:5173` with `pnpm dev`. Clerk's
-servers still need a public route to deliver webhooks: set `CLERK_WEBHOOK_HOST`
-to your own `dev-<name>.uat.capynotebook.com` and run `pnpm dev:tunnel`. The tunnel
-publishes only `/webhooks/` to the local gateway; other public paths return 404.
-It requires a development `pk_test` key and does not need Vite running.
-
-Register the Clerk development endpoint at
-`https://dev-<name>.uat.capynotebook.com/webhooks/clerk` for `user.created`,
-`user.updated`, and `user.deleted`; put its signing secret in the local gateway's
-`CLERK_WEBHOOK_SECRET`. UAT's Clerk production instance keeps delivering directly
-to `uat-api`, independently of local UI or tunnel state.
-
-Endpoints are per developer, never shared: a hostname reaches exactly one
-laptop, and each endpoint carries its own signing secret. The development
-instance fans every subscribed event out to all of them, so a second
-developer's signup arrives at everyone's local gateway and lands in each local
-database. Create an endpoint only while actually working on webhook handling,
-and disable it afterwards, or Clerk eventually disables it for sustained
-delivery failures anyway.
+Clerk development keys. Open `http://localhost:5173` with `pnpm dev`. Clerk
+webhooks are not delivered to a laptop and the development instance has no
+webhook endpoint: the first authenticated request provisions the user
+(`admitClerkIdentity`), and webhook handling is checked on UAT, whose Clerk
+production instance delivers to `uat-api`. The local gateway still needs a
+`whsec_`-shaped `CLERK_WEBHOOK_SECRET` to start.
 
 This lane shares one UAT database and bucket, and it cannot change the
 backend. The migrator records a checksum per migration and refuses to run when
@@ -2893,8 +2880,7 @@ stripe listen --forward-to localhost:8080/webhooks/stripe
 ```
 
 which prints the `whsec_…` for that session's `STRIPE_WEBHOOK_SECRET` and
-needs no tunnel — unlike Clerk, whose development instance can only reach a
-laptop through the `dev-<name>` hostname (§12.3). Nothing persists in the
+needs no tunnel. Nothing persists in the
 dashboard, so there is no endpoint to auto-disable while a laptop is off and
 no per-developer secret to rotate. Other developers' events still arrive,
 because the fan-out is per environment; only per-developer sandboxes would
@@ -3100,7 +3086,7 @@ The uploader needs `gh auth login` with repository/environment administration
 access. It sends secrets through stdin, rejects unknown/duplicate keys, and
 does no shell expansion. An explicit blank deletes that key in GitHub; omitted
 keys are left alone. Review-only `STRIX_*`, `LLM_API_KEY`, tunnel/dev controls,
-and derived release values remain local. `CLERK_WEBHOOK_HOST` also stays local. Double-quoted `\n` escapes can hold
+and derived release values remain local. Double-quoted `\n` escapes can hold
 an SSH private key. Do not put actual multiline shell fragments in the file.
 
 Every deployment reads GitHub's environment values afresh, renders private

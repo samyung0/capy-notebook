@@ -69,18 +69,13 @@ UAT must allow `https://local.uat.capynotebook.com` in both
 developers use that same origin, each resolving it locally. The repository's
 B2 CORS configuration already includes `https://*.uat.capynotebook.com`.
 
-## Full-local backend and webhooks
+## Full-local backend
 
 Use `pnpm dev` on `http://localhost:5173`, local Docker Compose, the Clerk
 development keys, and `VITE_API_URL=http://localhost:8080`.
 
-For Clerk webhook testing, set `CLERK_WEBHOOK_HOST` to your per-developer public
-hostname, such as `dev-sam.uat.capynotebook.com`, and run `pnpm dev:tunnel`.
-On Windows this existing Bash script needs Git Bash or WSL, plus `cloudflared`
-and `jq`. It publishes only `/webhooks/` to the local gateway and refuses
-production Clerk keys. Register the Clerk development endpoint at
-`https://dev-sam.uat.capynotebook.com/webhooks/clerk` and use its signing secret.
-The hosts-file entry cannot deliver webhooks from Clerk's servers to your laptop.
+Clerk webhooks are not delivered to a laptop: the first signed-in request
+creates the user, and webhook handling is checked on UAT.
 
 For Stripe development events use
 `stripe listen --forward-to localhost:8080/webhooks/stripe`.
