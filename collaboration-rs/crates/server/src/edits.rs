@@ -790,7 +790,7 @@ pub async fn edit_material(
     access::lock_material(&tx, &material_id).await?;
     let boundary = access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor)).await?;
     access::assert_access(&tx, &material_id, &actor, crate::auth::Access::Write).await?;
-    if boundary.owner_locked() {
+    if boundary.owner_or_payer_locked() {
         return Err(DocumentError::Lifecycle(
             "material owner account is locked".into(),
         ));
@@ -1139,7 +1139,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     {
         return Err("material changed concurrently".into());
     }
-    if boundary.owner_locked() {
+    if boundary.owner_or_payer_locked() {
         return Err("material owner account is locked".into());
     }
     let base: Vec<u8> = current.get("state");

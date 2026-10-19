@@ -265,7 +265,7 @@ pub async fn append(
     for actor in actors {
         access::assert_editor(&tx, material_id, actor).await?;
     }
-    if boundary.owner_locked() {
+    if boundary.owner_or_payer_locked() {
         return Err(AccessError::Forbidden("material owner account is locked".into()).into());
     }
     let current = tx

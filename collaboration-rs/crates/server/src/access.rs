@@ -257,8 +257,7 @@ pub async fn live_access<C: GenericClient>(
                 share_role.unwrap_or_else(|| "viewer".into())
             }
             (None, _)
-                if material_privacy == "public"
-                    || (material_privacy == "link" && link_granted) =>
+                if material_privacy == "public" || (material_privacy == "link" && link_granted) =>
             {
                 "viewer".into()
             }
@@ -324,11 +323,12 @@ pub struct Boundary {
 }
 
 impl Boundary {
-    /// The owner's account is deleted, being deleted or suspended.
-    pub fn owner_locked(&self) -> bool {
-        self.accounts
-            .get(&self.owner_user_id)
-            .is_none_or(|account| account.locked)
+    /// The owner's or the payer's account is deleted, being deleted or
+    /// suspended; either way nothing more is written or charged.
+    pub fn owner_or_payer_locked(&self) -> bool {
+        [&self.owner_user_id, &self.payer_user_id]
+            .into_iter()
+            .any(|id| self.accounts.get(id).is_none_or(|account| account.locked))
     }
 }
 
@@ -378,8 +378,11 @@ pub async fn lock_boundary<C: GenericClient>(
         };
         owner = found.get("user_id");
     }
+    // The payer is charged by the write (agent inverses), so its row is
+    // locked with the owner's and the actors'.
     let mut ids: Vec<String> = actors.to_vec();
     ids.push(owner.clone());
+    ids.push(payer.clone());
     ids.sort();
     ids.dedup();
     let rows = client
