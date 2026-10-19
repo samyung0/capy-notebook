@@ -110,8 +110,10 @@ when `deploy-uat.yml` has any trigger besides `workflow_dispatch`, or when
 
 `scripts/ci/hardening.test.mjs` (in `pnpm test:deployment`) fails when a
 third-party action is not pinned to a commit, a job has no declared token
-scope, a secret reaches a workflow or job `env` or an install or action step,
-or a dependency-vulnerability job leaves `ci.yml` (deployment-runbook §12.7).
+scope, a checkout keeps the token in git config, a run script expands `${{ }}`,
+a secret reaches a workflow or job `env` or an install, fork-build or action
+step, or a dependency-vulnerability job leaves `ci.yml` (deployment-runbook
+§12.7).
 
 ## Coverage gaps
 

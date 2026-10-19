@@ -2983,7 +2983,10 @@ first new deployment; they are rejected as unknown inputs.
 with the release in a comment. Dependabot (`.github/dependabot.yml`) opens one
 grouped weekly pull request that moves the pins and comments together, the
 composite actions under `.github/actions/` included. Every workflow declares
-its token scope. Secrets sit only on the steps that use them, never in a
+its token scope, and every checkout sets `persist-credentials: false`: no step
+needs the token for git (the submodule and fork fetches are public, `gh` reads
+`GH_TOKEN`). A run script never expands `${{ }}`; values reach it through the
+step's `env`. Secrets sit only on the steps that use them, never in a
 workflow or job `env` or on an install or action step: the UAT journey job's
 secrets sit on its tunnel, ingest-check, journey and cleanup steps, and Deploy
 Ops passes the Coolify token only to its three Coolify steps. The SPA build
@@ -2997,11 +3000,17 @@ config line on stdin, never as an argument. `scripts/ci/hardening.test.mjs`
 **Dependency vulnerabilities.** CI runs one job per ecosystem and fails on a
 known advisory: `audit_rust` (`cargo deny check advisories` on
 `collaboration-rs`), `audit_go` (govulncheck on `server`, with the Go line the
-gateway and Ops images build with) and `audit_pnpm` (`pnpm audit --prod`). An
-advisory that has to wait goes on that ecosystem's commented ignore list, with
-its reason: `collaboration-rs/deny.toml`, `server/govulncheck-ignore.txt` and
-`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml`. Drop an entry when its fix
-lands, for example the Go entries with the version wave.
+gateway and Ops images build with; it prints its counts and also fails on a
+listed id it no longer reports), `audit_pnpm` (`pnpm audit --prod`) and
+`audit_python` (pip-audit over `uv.lock`'s runtime set, `parser/requirements.txt`
+and `pipeline/ppt-master-requirements.txt`). An advisory that has to wait goes
+on that ecosystem's commented ignore list, with its reason:
+`collaboration-rs/deny.toml`, `server/govulncheck-ignore.txt`,
+`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml` and `pip-audit-ignore.txt`.
+Prefer a version bump or a commented `overrides` entry (the developer's rule,
+2026-10-20); an advisory stays listed only when its fix breaks something, and
+the entry says what. Drop an entry when its fix lands, for example the Go
+entries with the version wave.
 
 Required families include application origins, Clerk/webhook keys, Postgres,
 B2, collaboration/pipeline secrets, actual provider/mail/billing keys, Coolify
