@@ -14,7 +14,11 @@ import {
 import { useReportEditorStatus } from './fileModeContext';
 import { SourceTextEditor } from './SourceTextEditor';
 import { applySavedSource } from './sourceState';
-import { sourceHeaderStatus, useSourceSession } from './useSourceSession';
+import {
+  sourceHeaderStatus,
+  useSizeLimitView,
+  useSourceSession,
+} from './useSourceSession';
 
 export function SourceTextView({
   file,
@@ -45,6 +49,14 @@ export function SourceTextView({
     setJoined(false);
     setMode('view');
   }, [editing, pausedAtOpen, setMode]);
+  // The view read says the file is at its size limit before any Edit
+  // attempt; an edit open stopped there drops to view.
+  const [viewAtSizeLimit, setViewAtSizeLimit] = useState(false);
+  const sizeLimited =
+    useSizeLimitView(source.atSizeLimit, editing, () => {
+      setJoined(false);
+      setMode('view');
+    }) || viewAtSizeLimit;
   useEffect(() => {
     onDirtyChange?.(source.dirty);
     return () => onDirtyChange?.(false);
@@ -83,6 +95,7 @@ export function SourceTextView({
       .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
       .then((session) => {
         if (cancelled) return;
+        setViewAtSizeLimit(!!session.atSizeLimit);
         const doc = new Y.Doc();
         if (applySavedSource(doc, session)) {
           url = URL.createObjectURL(
@@ -147,7 +160,7 @@ export function SourceTextView({
     >
       <FileModeControl
         canEdit={canEdit}
-        disabled={leaving || source.handoff || source.replaced}
+        disabled={leaving || source.handoff || source.replaced || sizeLimited}
         mode={mode}
         onChange={(mode) => {
           if (mode === 'edit') {

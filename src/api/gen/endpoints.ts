@@ -32,6 +32,7 @@ import type {
   BillingCheckoutReq,
   BillingInfo,
   BootstrapSourceDocumentParams,
+  BrowserSourceSession,
   Canvas,
   Chapter,
   CheckBankQuestionReq,
@@ -3249,7 +3250,7 @@ export const retryFileProcessing = async (id: string,
 
 
 export type getSourceSessionResponse200 = {
-  data: SourceSession
+  data: BrowserSourceSession
   status: 200
 }
 

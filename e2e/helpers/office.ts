@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { OFFICE_PROTOCOL_VERSION } from '../../src/features/files/officeProtocol';
 import { m } from '../i18n';
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
@@ -41,4 +42,25 @@ export function officeEditMenu(page: Page, format: OfficeFormat) {
 export async function saveOffice(page: Page, format: OfficeFormat) {
   await officeMenu(page, format, 'File').click();
   await page.getByRole('menuitem', { name: /^Save/ }).click();
+}
+
+/** Posts a host message to the page's Office runtime at the current protocol
+ * version, as Capy's host does. */
+export function postToOfficeRuntime(
+  page: Page,
+  message: Record<string, unknown>
+) {
+  return page.evaluate(
+    ([body, version]) => {
+      const iframe = document.querySelector<HTMLIFrameElement>(
+        'iframe[src*="office-runtime"]'
+      );
+      if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+      iframe.contentWindow.postMessage(
+        { ...body, version },
+        new URL(iframe.src).origin
+      );
+    },
+    [message, OFFICE_PROTOCOL_VERSION] as const
+  );
 }

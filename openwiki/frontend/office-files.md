@@ -350,8 +350,10 @@ mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 lock; a deleted, deletion-pending or suspended owner's files are not found)
 that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
-saved checkpoint is ahead of the indexed one (`pendingEffects` is omitted),
-with its `stateSeedSHA256`. The host passes that state as `checkpoint` and the
+saved checkpoint is ahead of the indexed one, with its `stateSeedSHA256`.
+Browser reads are `BrowserSourceSession`, which has no `pendingEffects`: only
+the collaboration service's bootstrap and publish answers (`SourceSession`)
+carry them. The host passes that state as `checkpoint` and the
 hash as `checkpointSeedSHA256` on the `load` message (protocol version 7); the
 runtime applies it over the base with the editor engines in a disposable
 `exportCheckpoint` worker, which for a change seeds the base first and refuses
@@ -968,10 +970,22 @@ shrinks one over the payer's plan image cap, which the edit `load` carries as
 `imageMaxBytes` (protocol v10; an edit session without one fails with the file
 error instead of loading), and re-encodes any type but PNG, JPEG and GIF, to
 JPEG or PNG (`fitImage` with `office`;
-[backend-storage-quota.md](../backend-storage-quota.md)). An image it cannot fit
-or decode reaches the runtime through the editor's `onError` as an
-`ImageTooLargeError` or `ImageUnreadableError`; the runtime sends a `notice`
-(`image-too-large` or `image-type`, beside parity-px's `equation-text`)
+[backend-storage-quota.md](../backend-storage-quota.md)). It also shrinks one
+into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
+`SourceGrowthBudget`: the export cap (the largest plan source file) less the
+base file, the 1 MiB margin, admission's 64 KiB reserve and the durable change
+over the seed, its state and rows, so 0 means nothing would be admitted) less
+what the
+replica's state grew since it held the room's document, a DOCX picture
+counting as its base64 data URL (4 bytes per 3; protocol v11, required on edit
+loads like the cap; a 4 KiB slack covers the data URL's prefix, the picture's
+Yjs items and unsaved growth already in the room at open). One it cannot fit
+there is an `ImageBudgetError`. The
+collaboration server's per-room state cap stays the backstop (Edit and save
+lifecycle below). An image it cannot fit or decode reaches the runtime through the
+editor's `onError` as an `ImageBudgetError`, `ImageTooLargeError` or
+`ImageUnreadableError`; the runtime sends a `notice` (`image-budget`,
+`image-too-large` or `image-type`, beside parity-px's `equation-text`)
 instead of `error`, and Capy shows a toast for each pick, leaving the document
 and the editor as they were (the PPTX editor treats a `prepareImage` refusal
 as it does `EquationTextError`: no error box of its own). While it
@@ -2180,8 +2194,44 @@ room's applied update bytes. The writer's access is revalidated at most every
 account change, close that user's connections through the collaboration
 eviction outbox; anything else (such as the owner's account state for a
 collaborator) takes effect within those 5 s, and every checkpoint rechecks each
-writer. Only when the estimate passes the 100 MB cap is the
-exact size computed; an update over the cap gets an unrecoverable
+writer. Each room has its own state cap (`sources::state_cap`, Epo
+2026-10-17): its seed plus the export cap (the largest plan source file,
+`max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
+less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
+shares (WebSocket frames, downloads, offline drafts).
+Pictures that came with the file are references in the seed but bytes in the
+export, and an inserted image is in the state at least as large as in the
+export (a DOCX picture is a base64 data URL there, 4 bytes per 3; a PPTX one
+its bytes), so a room's edits keep its export under the plan limit. An
+export over it still publishes (Epo 2026-10-19; `FinalizeSourceRefresh`
+refuses only past the source ceiling, Go's `sourceCeilingBytes`, KEEP IN SYNC
+with `MAX_SOURCE_STATE_BYTES`, which also stays the Rust export's hard stop),
+since its base and saved edits are already stored; after the rebuild its base
+leaves no growth budget, so the file opens at its size limit. A
+second use of an original picture binds the same package part
+(`bind_media_reference`), and DOCX paste carries text runs only, so no export
+writes an original twice. Admission keeps `STATE_WRITE_RESERVE_BYTES` (64 KiB)
+free under the cap, so the contributor marker written after an update fits and
+the save's check against the cap stays exact; an agent edit is held to the
+same reserve and counts toward the room's running size. A file with no
+growth budget left reads as not editable (Epo 2026-10-20): the view read's
+`atSizeLimit` (Go works it out on the current base, with no blob read)
+disables the mode control before any Edit attempt. An edit open whose read
+says `growthBudgetBytes` 0 stops before it joins the room
+(`opensAtSizeLimit`) and drops to view with a size-limit notice, the control
+disabled from then on (`useSizeLimitView`), unless it holds drafts (recovery,
+or restored drafts being sent), which still open so they can be seen, copied
+out or discarded. Text follows the same rule. The budget's growth is the
+durable state's over seed(base) as the room's estimate counts it
+(`sourceGrowthSQL`): an Office state and its rows are the change, and a text
+state, the whole text with its history, less its seed (`seed_bytes`). A base
+within the margin and the reserve of the export cap leaves no growth, so a
+Pro upload between about 28.94 and 30 MiB opens view-only from the start. An
+image picked once the replica exists waits for its first measure; one picked
+before is refused with the budget notice. A
+save's whole state and an agent edit's are held to the same cap. Only when
+the estimate passes the cap is the exact size computed; an update over the cap
+gets an unrecoverable
 `source-checkpoint-failed` message, so the client resets to the last saved
 version instead of reconnecting and resending. The exact limit at save still
 applies and is final too (a 413 `SourceRequestError`, never retried).
@@ -2265,8 +2315,9 @@ text.
 A source editor keeps editing while its room cannot be reached, as a note
 does (see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)): the
 `offline` banner, the header's Offline, and its rows written as it edits. Past
-the source state cap (`SOURCE_STATE_MAX_BYTES`, 100 MB, the service's
-`MAX_SOURCE_STATE_BYTES`) of unsaved state while offline (the last whole state
+the source state ceiling (`SOURCE_STATE_MAX_BYTES`, 100 MB, the service's
+`MAX_SOURCE_STATE_BYTES`; a room's own cap is lower, below) of unsaved state
+while offline (the last whole state
 written plus the update rows after it that no receipt covered, so saved edits
 never count) the editor stops
 taking edits (`offlineLimit`: Office `canEdit: false`, a paused textarea)

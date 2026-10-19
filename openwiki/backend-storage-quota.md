@@ -352,7 +352,8 @@ Edits a publication captured are charged once, in the file:
   change in the file's size: the published text is in the file's bytes now,
   and Yjs stores text as its UTF-8 bytes. What stays charged is Yjs history
   (deleted structs and item metadata; source states are never compacted, and
-  the 100 MiB state cap bounds them) and edits after the capture. Migration
+  a room's state cap bounds them: its seed plus the 30 MiB export cap less
+  the base file and a 1 MiB margin) and edits after the capture. Migration
   0054 gave every existing text state the seed size of its file (seed(text) is
   the text plus 15–18 bytes). `seed_bytes` is recorded for text only (a CHECK
   keeps it 0 for Office rows).
@@ -365,8 +366,12 @@ while transient: admission does not gate on them, and publication gates the net
 change of the file's bytes and its source row. Before a parse is paid for,
 finalize refuses (except for system jobs) what publication would certainly
 refuse: the new bytes minus the old, plus a source row with no state or
-effects, minus the current row, all on the file's payer. Reconciliation sums
-the same columns. A checkpoint is not gated on quota
+effects, minus the current row, all on the file's payer. The plan file limit
+does not refuse a publication (Epo 2026-10-19): an export over it publishes,
+up to the 100 MiB source ceiling, and the file freezes at its size limit (no
+growth budget; [office-files.md](frontend/office-files.md)). Such a file is
+still past the cap a clone checks, so a clone refuses it (`file_too_large`).
+Reconciliation sums the same columns. A checkpoint is not gated on quota
 (edits are admitted by the room, see view-only at the limit); finalize and
 publication run under source/workspace/account locks and gate the net growth.
 Negative changes remain negative ledger deltas.

@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { expect, type FrameLocator, type Page, test } from '@playwright/test';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
+import {
+  officeEditMenu,
+  officeMenu,
+  postToOfficeRuntime,
+  saveOffice,
+} from '../helpers/office';
 import { m } from '../i18n';
 
 declare global {
@@ -1125,16 +1130,10 @@ test.describe('DOCX on a phone', () => {
     await reference.setViewportSize({ height: 1024, width: 768 });
     const referenceFrame = await open(reference);
     expect(await pageWidth(referenceFrame)).toBe(816);
-    await reference.evaluate((text) => {
-      const iframe = document.querySelector<HTMLIFrameElement>(
-        'iframe[src*="office-runtime"]'
-      );
-      if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-      iframe.contentWindow.postMessage(
-        { citation: { quote: text }, type: 'set-citation', version: 10 },
-        new URL(iframe.src).origin
-      );
-    }, quote);
+    await postToOfficeRuntime(reference, {
+      citation: { quote },
+      type: 'set-citation',
+    });
     await expect(
       referenceFrame.locator('[data-citation-highlight]').first()
     ).toBeAttached({ timeout: 60_000 });
@@ -1503,19 +1502,9 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
   const position = () =>
     scroller.evaluate((node) => [node.scrollLeft, node.scrollTop]);
   const cite = () =>
-    page.evaluate(() => {
-      const iframe = document.querySelector<HTMLIFrameElement>(
-        'iframe[src*="office-runtime"]'
-      );
-      if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-      iframe.contentWindow.postMessage(
-        {
-          citation: { quote: 'UAT_RUN_MARKER' },
-          type: 'set-citation',
-          version: 10,
-        },
-        new URL(iframe.src).origin
-      );
+    postToOfficeRuntime(page, {
+      citation: { quote: 'UAT_RUN_MARKER' },
+      type: 'set-citation',
     });
   // Slide 1's UAT_RUN_MARKER line, centred across the 960x540 slide in a box
   // from y 333 to 485, is out of view at 200% from the top-right.
@@ -1665,19 +1654,10 @@ for (const [format, text] of [
     await cdp.send('Input.insertText', { text: '日本語' });
     await cdp.detach();
     await page.keyboard.press('Backspace');
-    await page.evaluate(
-      (id) => {
-        const iframe = document.querySelector<HTMLIFrameElement>(
-          'iframe[src*="office-runtime"]'
-        );
-        if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-        iframe.contentWindow.postMessage(
-          { id, type: 'menu-command', version: 10 },
-          new URL(iframe.src).origin
-        );
-      },
-      format === 'docx' ? 'insert-page-break' : 'insertRowAbove'
-    );
+    await postToOfficeRuntime(page, {
+      id: format === 'docx' ? 'insert-page-break' : 'insertRowAbove',
+      type: 'menu-command',
+    });
     await page.waitForTimeout(1500);
     expect(await updates.evaluate((seen) => seen.count)).toBe(0);
     expect(await copySelectAll()).toBe(before);
@@ -1840,16 +1820,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await chat.fill('');
     await chat.click();
     const capabilities = (canEdit: boolean) =>
-      page.evaluate((canEdit) => {
-        const iframe = document.querySelector<HTMLIFrameElement>(
-          'iframe[src*="office-runtime"]'
-        );
-        if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-        iframe.contentWindow.postMessage(
-          { canEdit, type: 'set-capabilities', version: 10 },
-          new URL(iframe.src).origin
-        );
-      }, canEdit);
+      postToOfficeRuntime(page, { canEdit, type: 'set-capabilities' });
     await capabilities(false);
     await page.waitForTimeout(1000);
     const updates = await page.evaluateHandle(() => {
@@ -2025,16 +1996,7 @@ test('a view-only XLSX viewer still selects and copies a cell after canEdit:fals
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   const grid = frame.locator('canvas').first();
   await expect(grid).toBeVisible({ timeout: 60_000 });
-  await page.evaluate(() => {
-    const iframe = document.querySelector<HTMLIFrameElement>(
-      'iframe[src*="office-runtime"]'
-    );
-    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-    iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 10 },
-      new URL(iframe.src).origin
-    );
-  });
+  await postToOfficeRuntime(page, { canEdit: false, type: 'set-capabilities' });
   // CCHU8003, the first course code under the headers.
   await grid.click({ position: { x: 60, y: 60 } });
   const contents = frame.getByLabel(m.files_office_spreadsheet_cell_contents());
@@ -2241,16 +2203,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   await expect(rulers).toHaveCount(2);
 
   // Paused, the rulers stay and the toggle still works.
-  await page.evaluate(() => {
-    const iframe = document.querySelector<HTMLIFrameElement>(
-      'iframe[src*="office-runtime"]'
-    );
-    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-    iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 10 },
-      new URL(iframe.src).origin
-    );
-  });
+  await postToOfficeRuntime(page, { canEdit: false, type: 'set-capabilities' });
   await officeMenu(page, 'docx', 'File').click();
   await expect(page.getByRole('menuitem', { name: /^Save/ })).toHaveAttribute(
     'aria-disabled',
@@ -2358,16 +2311,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   await expect.poll(span).toBeGreaterThan(before + 20);
   expect(await span()).toBeLessThan(before + 60);
 
-  await page.evaluate(() => {
-    const iframe = document.querySelector<HTMLIFrameElement>(
-      'iframe[src*="office-runtime"]'
-    );
-    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
-    iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 10 },
-      new URL(iframe.src).origin
-    );
-  });
+  await postToOfficeRuntime(page, { canEdit: false, type: 'set-capabilities' });
   await officeMenu(page, 'docx', 'Format').click();
   await expect(
     page.getByRole('menuitem', { exact: true, name: 'Table' })

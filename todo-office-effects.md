@@ -184,10 +184,11 @@ Effects follow saves: 5 s after the last change, at most 30 s while typing
   server-sequenced last-writer-wins would be leaner, at the cost of offline
   merging for that data.
 - **XLSX cell keys** are about 50 B of JSON each.
-- **`MAX_SOURCE_STATE_BYTES` = 100 MiB** has no recorded reason. It came with
-  the first Office collaboration commit (2026-09-06) and ignores the plan caps
-  (10 / 30 MiB). It counts the seed, and memory runs about 13× the encoded
-  bytes for text-heavy DOCX.
+- **`MAX_SOURCE_STATE_BYTES` = 100 MiB** is now only the shared ceiling:
+  each room's cap is its seed plus the export cap less the base and a 1 MiB
+  margin, and admission keeps a 64 KiB reserve under it (Epo 2026-10-17,
+  `sources::state_cap`). Memory still runs about 13× the encoded bytes for
+  text-heavy DOCX.
 - **Rooms are never evicted by size.** A room unloads only when it is empty
   and clean.
 - **Typing walks the list:** yrs `find_position` walks from the story start
@@ -195,6 +196,22 @@ Effects follow saves: 5 s after the last change, at most 30 s while typing
   and a long DOCX body is one story.
 - **DOCX table rows:** inserting one rewrites the table embed's whole `rows`
   value, so two concurrent row inserts lose one.
+
+## Follow-ups from the per-room cap
+
+- **Offline drafts capped at the room's budget** (Epo 2026-10-17, its own
+  branch after effects/limits lands). The browser still caps a device's
+  unsaved source state at the 100 MB ceiling (`SOURCE_STATE_MAX_BYTES`,
+  `useSourceSession.ts` `recordDrafts`), so offline edits can outgrow what
+  the room admits and land in recovery on reconnect. Cap Office drafts at the
+  session's `growthBudgetBytes` over the opened state instead, with the
+  offline banner's limit message.
+- **The ceiling in Go's budget.** A room's cap is also held under the
+  100 MiB ceiling, which depends on the seed's size; Go never sees an Office
+  seed (`seed_bytes` stays 0 for Office rows), so its `growthBudgetBytes`
+  can stay positive for a file whose seed is near the ceiling, which then
+  opens in Edit with its first change refused (as on main before the cap).
+  Recording the Office seed size at the first save would let Go cap it.
 
 ## Open questions for Epo
 
