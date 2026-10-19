@@ -327,6 +327,12 @@ export async function handleSiteRequest(
         await upstream.body?.cancel();
         return failure(404);
       }
+      // 422 `material_content_unreadable`: the stored content is one a later
+      // rule refuses, so the page says it could not be loaded, with no retry.
+      if (upstream.status === 422) {
+        await upstream.body?.cancel();
+        return failure(422);
+      }
       if (!upstream.ok) {
         await upstream.body?.cancel();
         return failure(503);

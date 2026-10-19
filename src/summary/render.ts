@@ -10,7 +10,7 @@ import { fileIconName } from '@/lib/fileIcons';
 import { escapeHTML } from '@/lib/html';
 import { iconUrl } from '@/lib/icon-catalog';
 import { seoHead } from '@/lib/seoHead';
-import { SummaryFailure } from './SummaryFailure';
+import { failureCopy, SummaryFailure } from './SummaryFailure';
 
 /* The site Worker's renderer for `/w/{id}` workspace summaries and the error
    pages (workers/site/handler.ts). It ships inside the share renderer's build
@@ -106,10 +106,8 @@ export function renderSummary(
 
 export function renderFailure(status: number, template?: string): string {
   const unavailable = status === 404;
+  const { body, retry, title } = failureCopy(status);
   if (template?.includes('<!--capy-summary-body-->')) {
-    const title = unavailable
-      ? m.error_not_found_page_title()
-      : m.summary_error_title();
     return template
       .replace(
         '<!--capy-summary-head-->',
@@ -120,5 +118,5 @@ export function renderFailure(status: number, template?: string): string {
         `<div class="summary-shell">${unavailable ? '' : `<header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a>${publicNav()}</header>`}<main class="summary-panel">${renderToString(createElement(SummaryFailure, { status }))}</main></div>`
       );
   }
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHTML(unavailable ? m.error_not_found_page_title() : m.summary_error_title())} | Capy Notebook</title><body style="font:16px/1.6 system-ui;margin:12vh auto;padding:24px;max-width:580px">${unavailable ? '' : '<a href="/">Capy Notebook</a>'}<h1>${escapeHTML(unavailable ? m.error_not_found_page_title() : m.summary_error_title())}</h1><p>${escapeHTML(unavailable ? m.error_not_found_page_body() : m.summary_error_body())}</p>${unavailable ? '' : `<a href="">${escapeHTML(m.summary_retry())}</a>`}</body></html>`;
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHTML(title)} | Capy Notebook</title><body style="font:16px/1.6 system-ui;margin:12vh auto;padding:24px;max-width:580px">${unavailable ? '' : '<a href="/">Capy Notebook</a>'}<h1>${escapeHTML(title)}</h1><p>${escapeHTML(body)}</p>${retry ? `<a href="">${escapeHTML(m.summary_retry())}</a>` : ''}</body></html>`;
 }

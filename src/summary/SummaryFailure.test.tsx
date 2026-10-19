@@ -14,4 +14,9 @@ it('uses the shared page error with manual retry only for loading failures', () 
   expect(failed).toContain('data-error-surface="page"');
   expect(failed).toContain('Unable to load workspace');
   expect(failed).toContain('Try again');
+  // An unreadable shared material (422) reads as the app's "could not be
+  // loaded" state; retrying it never helps.
+  const unreadable = renderToStaticMarkup(<SummaryFailure status={422} />);
+  expect(unreadable).toContain('This note could not be loaded');
+  expect(unreadable).not.toContain('Try again');
 });
