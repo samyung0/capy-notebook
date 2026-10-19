@@ -1420,7 +1420,7 @@ concurrency is the separate cap of 20 above, not this one.
 
 **Per-model outbound concurrency** bounds what reaches a provider.
 `model_capacities` stores `concurrency_total` and `interactive_reserve` per
-transport provider/model, independently of versioned `model_configs`. Ops exposes
+provider/model, independently of versioned `model_configs`. Ops exposes
 both required fields in the model form, including for existing embedding models;
 capacity-only edits do not create a catalog version. A row's capacity is keyed
 on its catalog identity, shared across its versions: GLM uses
@@ -1470,8 +1470,8 @@ Migration `0010` copies any configured Flash Vision capacity to its new identity
 Health shows attempts abandoned on a provider 429, 503 or 529
 answer per provider and model over the last hour, and the usage explorer's
 provider-attempts table shows every attempt (applied, abandoned, busy, open) by
-transport provider and model for the selected range; the pre-call row carries
-the transport provider and model so abandoned attempts are attributable. A gate
+provider and model for the selected range; the pre-call row carries
+the provider and model so abandoned attempts are attributable. A gate
 refusal writes no call row and is not counted.
 
 **Redis failures fail open.** A limiter outage must not become an API outage;
