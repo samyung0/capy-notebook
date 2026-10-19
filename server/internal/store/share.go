@@ -1055,7 +1055,9 @@ func (s *Store) snapshotWorkspaceForClone(
 // object survives until its last holder is gone, so deleting either workspace no
 // longer leaks or destroys the other's bytes. The clone lands private regardless
 // of the source's visibility. The copy takes its name, description, icon, tags
-// and cover from input, which the clone dialog prefills from the source.
+// and cover from input, which the clone dialog prefills from the source. It
+// drops the thumbnails and the skipped count (CloneWorkspaceThumbnails has
+// both), so a test asserting a skip calls that one.
 func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string, input WorkspaceCreate) (Workspace, error) {
 	workspace, _, _, err := s.CloneWorkspaceThumbnails(ctx, userID, srcID, input)
 	return workspace, err
