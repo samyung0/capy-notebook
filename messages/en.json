@@ -418,6 +418,7 @@
   "workspace_privacy_shared": "Shared",
   "workspace_share_title": "Share workspace",
   "workspace_cloned": "Workspace cloned successfully",
+  "workspace_cloned_skipped": "Workspace cloned, but some files could not be read and were not copied",
   "copy_name": "{name} (copy)",
   "workspace_missing_title": "Cannot find workspace",
   "workspace_stats_title": "Statistics",

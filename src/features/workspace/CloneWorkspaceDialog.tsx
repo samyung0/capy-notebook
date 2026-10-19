@@ -10,7 +10,8 @@ import { WorkspaceFormDialog } from './WorkspaceFormDialog';
 
 /** Clone asks for the copy's name, description, icon, tags and cover,
  * prefilled from the source, and opens the copy once it exists; a refusal
- * shows in the form. */
+ * shows in the form. Files whose stored content could not be read are left
+ * out of the copy, and the toast says so (Epo 2026-10-20). */
 export function CloneWorkspaceDialog({
   open,
   setOpen,
@@ -60,12 +61,16 @@ export function CloneWorkspaceDialog({
       errorMessage={cloneErrorMessage}
       mode="clone"
       onSubmit={async ({ cover, ...values }) => {
-        const { workspace: cloned } = await cloneWorkspace({
+        const { skippedMaterials, workspace: cloned } = await cloneWorkspace({
           body: { ...values, ...(cover ? { cover } : {}) },
           id: workspace.id,
         });
         trackItemCloned('workspace');
-        userToast({ title: m.workspace_cloned(), variant: 'success' });
+        userToast(
+          skippedMaterials > 0
+            ? { title: m.workspace_cloned_skipped(), variant: 'warning' }
+            : { title: m.workspace_cloned(), variant: 'success' }
+        );
         onCloned?.();
         await navigate({
           params: { workspaceId: cloned.id },

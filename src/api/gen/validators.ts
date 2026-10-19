@@ -6024,6 +6024,8 @@ export const CloneWorkspaceBody = zod.object({
 })).max(cloneWorkspaceBodyTagsMax).nullish().describe('Tags; at most 5; reuse existing by id or create new by value')
 })
 
+export const cloneWorkspaceResponseSkippedMaterialsMin = 0;
+
 export const cloneWorkspaceResponseWorkspaceCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
 export const cloneWorkspaceResponseWorkspaceCoverLineMax = 40;
 
@@ -6037,6 +6039,7 @@ export const cloneWorkspaceResponseWorkspaceTagsItemValueMax = 35;
 
 export const CloneWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "skippedMaterials": zod.int().min(cloneWorkspaceResponseSkippedMaterialsMin),
   "workspace": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "autoProcess": zod.boolean(),

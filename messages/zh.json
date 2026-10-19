@@ -418,6 +418,7 @@
   "workspace_privacy_shared": "已分享",
   "workspace_share_title": "分享工作区",
   "workspace_cloned": "工作区已克隆",
+  "workspace_cloned_skipped": "工作区已克隆，但部分文件无法读取，未被复制",
   "copy_name": "{name}（副本）",
   "workspace_missing_title": "找不到工作区",
   "workspace_stats_title": "统计",

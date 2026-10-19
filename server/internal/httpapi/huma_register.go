@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -71,6 +72,12 @@ func mapHTTPError(err error) error {
 	}
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())
+	}
+	// Stored content a later rule refuses, reached past a read (a clone, a
+	// grade of a quiz a shared note embeds): the read's unreadable state, not
+	// a 500. Routes that validate a request's content map it before hErr.
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return materialContentUnreadable()
 	}
 	var spending *store.SpendingLimitError
 	if errors.As(err, &spending) {
@@ -455,6 +462,10 @@ func init() {
 // decode error stays in the log.
 func materialContentError(ctx context.Context, materialID string, err error) error {
 	obs.Log(ctx).Warn("material content unreadable", "material_id", materialID, "error", err)
+	return materialContentUnreadable()
+}
+
+func materialContentUnreadable() *huma.ErrorModel {
 	return &huma.ErrorModel{
 		Status: http.StatusUnprocessableEntity,
 		Title:  http.StatusText(http.StatusUnprocessableEntity),

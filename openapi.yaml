@@ -1046,10 +1046,15 @@ components:
           format: uri
           readOnly: true
           type: string
+        skippedMaterials:
+          format: int64
+          minimum: 0
+          type: integer
         workspace:
           $ref: "#/components/schemas/Workspace"
       required:
         - workspace
+        - skippedMaterials
       type: object
     CognitiveLevel:
       enum:

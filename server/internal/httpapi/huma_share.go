@@ -97,7 +97,7 @@ func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*clo
 			return nil, huma.Error422UnprocessableEntity(err.Error())
 		}
 	}
-	ws, copies, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID, in.Body.ToWorkspaceCreate())
+	ws, copies, skipped, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID, in.Body.ToWorkspaceCreate())
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -107,7 +107,8 @@ func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*clo
 		return nil, err
 	}
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
-		Workspace: apimodel.FromWorkspace(ws, statuses[ws.OwnerUserID]),
+		Workspace:        apimodel.FromWorkspace(ws, statuses[ws.OwnerUserID]),
+		SkippedMaterials: skipped,
 	}}, nil
 }
 

@@ -1606,7 +1606,10 @@ export const handlers = [
           db.flashcardCards[card.id] = { materialId };
         }
       });
-    return HttpResponse.json({ workspace }, { status: 201 });
+    return HttpResponse.json(
+      { skippedMaterials: 0, workspace },
+      { status: 201 }
+    );
   }),
   http.post('/api/files/:id/clone', async ({ params, request }) => {
     const body = (await request.json()) as CloneFileReq;
