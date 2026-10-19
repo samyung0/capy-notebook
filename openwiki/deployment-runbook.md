@@ -2955,9 +2955,9 @@ is empty and refuses `cloudflare` outright under `APP_ENV=e2e`. Setting
 `EMAIL_BACKEND=cloudflare` without the token or `CLOUDFLARE_ACCOUNT_ID` fails
 gateway startup rather than degrading.
 
-**What sends.** Templates are Maily sources in `emails/templates/`
-(`pnpm email:dev` edits them, `pnpm email:build` regenerates the Go copies the
-API embeds); `emailTemplateData` in `server/cmd/api/email.go` formats each
+**What sends.** Templates are Maily JSON sources in `emails/templates/`,
+edited by hand (the template editor is gone, developer decision 2026-10-20);
+`pnpm email:build` regenerates the Go copies the API embeds; `emailTemplateData` in `server/cmd/api/email.go` formats each
 outbox payload for the recipient's locale. Clerk sends its own sign-up and
 password-reset codes with its unchanged templates, so they cost this quota
 nothing; share and comment mentions are in-app only.

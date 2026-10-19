@@ -1,4 +1,0 @@
-User-Agent: *
-
-Host: https://maily.to
-Sitemap: https://maily.to/sitemap.xml

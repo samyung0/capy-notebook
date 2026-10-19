@@ -1,7 +1,6 @@
 packages:
   - .
   - collaboration-rs/crates/notes/markdown
-  - emails/editor
   - ops
 
 injectWorkspacePackages: true
@@ -63,9 +62,3 @@ auditConfig:
     # KaTeX: the trust bypass needs prototype pollution first, and `trust`
     # stays off. 0.18.2 waits for the version wave (todo-security P4, KaTeX).
     - GHSA-238p-pmpm-9mq7
-    # @tiptap/core under emails/editor's @maily-to/core: fixed only in tiptap
-    # 3.30.4+, but @maily-to/core 0.3.7 (its latest) needs tiptap 2 and imports
-    # BubbleMenu from @tiptap/react, which tiptap 3 moved to
-    # @tiptap/react/menus, so the override breaks the template editor. That
-    # editor is developer-local (`pnpm email:dev`) and never deployed.
-    - GHSA-cp6q-959q-f8rh
