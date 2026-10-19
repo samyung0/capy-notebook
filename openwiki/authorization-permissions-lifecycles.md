@@ -265,7 +265,9 @@ privacy` would miss that). The checks are `workspaceRoles`,
 `materialEffectiveAccess`, `linkReachSQL` (source access, chat), the comment
 lock, the collaboration server's `live_access` and the pipeline's source
 refresh fences. Logs and telemetry keep share and invite tokens out
-(`stripUrlTokens`, `obs.LogPath`; see the observability doc). Files and
+(`stripUrlTokens`, `obs.LogPath`), and the SPA moves an arriving token out of
+the address bar into sessionStorage before anything records the page
+(`urlTokenStash.ts`; see the observability doc). Files and
 materials inherit their workspace visibility, but reading their content requires
 a session. Anonymous visitors receive only the minimal workspace summary below.
 

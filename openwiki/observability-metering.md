@@ -121,11 +121,17 @@ events' URL list, transactions), Replay's `beforeAddRecordingEvent` (which
 @sentry/replay 10.70 calls for Custom recording events only: breadcrumbs and
 navigation and fetch spans) and PostHog `sanitize_properties`
 (`src/lib/urlTokens.ts`): a share link keeps its id without its signature, an
-invite link becomes `/workspace-invites/:token`. An error-sampled replay's
-Meta events (the page href at each full snapshot) and its DOM frames (their
-text masked; a share dialog's preview link) are not scrubbed, so a replay
-captured on `/open/{token}`, an invite page or `?clone=` still records that
-address (open, review C1). Cloudflare Workers Logs keep
+invite link becomes `/workspace-invites/:token`. A replay's Meta events (the
+page href at each full snapshot) and DOM frames never reach those hooks, so
+the tokens leave the address bar before Sentry starts instead (Sam
+2026-10-19, review C1): `src/lib/bootUrlTokens.ts`, imported right after Zod
+jitless in `main.tsx`, moves the token of `/open/{token}`,
+`/workspace-invites/{token}` and `?clone=<kind>:<token>` into this tab's
+sessionStorage and replaces the address (`history.replaceState`, no reload)
+with a `-` placeholder; the page reads the token from there, a refresh too,
+and drops it once redeemed, accepted or refused (`urlTokenStash.ts`). A share
+dialog's workspace preview link can still appear in a DOM frame (text is
+masked, link targets are not). Cloudflare Workers Logs keep
 the site Worker's request URLs (`/w/*`, `/share/*`, `/p/*`), accepted as a
 trusted platform log (Sam 2026-10-19).
 
