@@ -3817,7 +3817,10 @@ restored or unsuspended, until an edit.
 The ingest worker branches on `materialId`: it fetches the note's
 markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`
 (workspace-scoped, pipeline secret; `text`, and `blocks`, the same text per
-top-level block as `{id, text}`, which `text` joins with blank lines).
+top-level block as `{id, text}`, which `text` joins with blank lines). A note
+whose stored content the current rules refuse answers 422
+`material_content_unreadable`, which ends the job without a retry (the worker
+retries only 5xx and 429).
 `MaterialIndexText` reads the note and, in one query, its active embedded
 items, and `materialdoc.ExtractIndexBlocks` renders each element by its embed
 catalog index rule ([embeds](embeds.md#index-text)): headings keep their

@@ -1507,8 +1507,14 @@ answers 422 `material_content_unreadable`, which `NoteEditor` and `MaterialBody`
 report as "this note could not be loaded" rather than "not found". A stored
 note a later rule refuses (a void element holding text, from before the void
 rule) reads the same way: it stays listed and searchable, while its content
-read, shared page and shared images answer that 422; broken materials are kept
-as they are (Epo 2026-10-19).
+read, shared page and shared images, a single clone and a grade of a quiz its
+shared page embeds answer that 422; the site Worker renders the shared page as
+"this note could not be loaded" with no retry (422, uncached) and passes the
+422 for its images; its index text answers 422 too, which ends the ingest job;
+a workspace clone leaves it out and reports it
+([authorization](../authorization-permissions-lifecycles.md)). Broken
+materials are kept as they are (Epo 2026-10-19). The room's load check reads a
+reference's `pending` held at null as absent, as the store and Go do.
 
 ## PostgreSQL read projection
 
