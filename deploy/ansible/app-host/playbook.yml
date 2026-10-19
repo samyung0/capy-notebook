@@ -1,5 +1,5 @@
 ---
-- name: Configure the Coolify app host service link
+- name: Configure the Coolify app host service link, firewall and SSH
   hosts: all
   become: true
   vars:
@@ -8,6 +8,10 @@
     app_wireguard_service_ports:
       - "5432"
       - "6379"
+    # The interface the internet reaches this host on.
+    app_public_interface: "{{ ansible_default_ipv4.interface }}"
+    # Container networks allowed to reach the host (see the ufw task below).
+    app_docker_host_networks: ["10.0.0.0/16", "fdda:ad28:f840::/64"]
 
   pre_tasks:
     - name: Refuse incomplete WireGuard configuration
@@ -19,6 +23,7 @@
           - app_wireguard_address | default('') is match('^[0-9.]+/[0-9]+$')
           - app_wireguard_peer_address | default('') is match('^[0-9.]+/[0-9]+$')
         fail_msg: Fill the WireGuard peer values in inventory.yml first.
+      tags: [firewall]
 
   tasks:
     - name: Install WireGuard
@@ -65,6 +70,32 @@
       notify: Restart WireGuard
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
 
+    # ufw is this host's only inbound firewall. It denies by default (below)
+    # and opens only SSH on 22, to all (restricting it is not decided; Coolify
+    # also manages this host over SSH from its own container), and WireGuard
+    # from the ingest host. ufw's built-in rules keep loopback and established
+    # traffic, so cloudflared, which only connects out, still reaches the
+    # Coolify proxy on localhost:80. ufw never sees Docker-published ports:
+    # Docker forwards them before ufw's chains run. The database, Redis and
+    # gateway are published on the WireGuard address only, for the ingest host
+    # (GitHub runners reach the database by SSH through the ingest host); the
+    # ports published on the public interface are dropped in DOCKER-USER below.
+    - name: Install ufw
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      tags: [firewall]
+
+    - name: Keep SSH open to all
+      community.general.ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        comment: SSH, key-only
+      tags: [firewall]
+
     - name: Allow WireGuard only from the ingest host
       community.general.ufw:
         rule: allow
@@ -73,6 +104,22 @@
         from_ip: "{{ app_wireguard_peer_public_ip }}"
         to_port: "{{ app_wireguard_listen_port }}"
         comment: Capy Notebook ingest-host private service link
+      tags: [firewall]
+
+    # Containers reach the host itself (Coolify's sentinel pushes to the
+    # host's published port 8000 through Docker's userland proxy, which ufw's
+    # input rules see). Docker allocates its /24 networks from the start of
+    # its 10.0.0.0/8 pool, so 10.0.0.0/16 covers them without the WireGuard
+    # link's addresses, which sit elsewhere in 10/8. The IPv6 range is
+    # Coolify's own network on this host (Epo 2026-10-20).
+    - name: Allow Docker networks to reach the host
+      community.general.ufw:
+        rule: allow
+        direction: in
+        from_ip: "{{ item }}"
+        comment: Docker networks to the host
+      loop: "{{ app_docker_host_networks }}"
+      tags: [firewall]
 
     - name: Stop the unused native PostgreSQL cluster
       ansible.builtin.systemd_service:
@@ -107,6 +154,7 @@
         proto: tcp
         delete: true
       when: app_retire_native_postgresql | default(false)
+      tags: [firewall]
 
     - name: Remove the obsolete alternate PostgreSQL port
       community.general.ufw:
@@ -118,6 +166,7 @@
         to_ip: "{{ app_wireguard_address | regex_replace('/.*$', '') }}"
         to_port: "55432"
         delete: true
+      tags: [firewall]
 
     - name: Allow ingest-host access to private app services
       community.general.ufw:
@@ -130,6 +179,54 @@
         to_port: "{{ item }}"
         comment: Capy Notebook ingest-host private app service
       loop: "{{ app_wireguard_service_ports }}"
+      tags: [firewall]
+
+    # Docker-published ports bypass ufw, so the public interface's drop sits
+    # in Docker's DOCKER-USER chain, for IPv4 (after.rules) and IPv6
+    # (after6.rules). It drops every new connection from the internet into
+    # any container, whatever its port or protocol, so a port a compose file
+    # publishes later stays closed too; replies to the containers' own
+    # outbound connections (cloudflared's tunnel among them) are not new.
+    # ufw loads these files at boot and on every reload, flushing and
+    # refilling the chain, and Docker keeps the chain's rules when it
+    # restarts. Only the public interface matches: the WireGuard address's
+    # published services, traffic between containers and the tunnel's
+    # loopback hop to the proxy are untouched.
+    - name: Drop new public connections into containers
+      ansible.builtin.blockinfile:
+        path: "/etc/ufw/{{ item }}"
+        marker: "# {mark} CAPY DOCKER-USER"
+        block: |
+          *filter
+          :DOCKER-USER - [0:0]
+          -A DOCKER-USER -i {{ app_public_interface }} -m conntrack --ctstate NEW -j DROP
+          COMMIT
+      loop: [after.rules, after6.rules]
+      notify: Reload ufw
+      tags: [firewall]
+
+    - name: Deny inbound traffic by default
+      community.general.ufw:
+        default: deny
+        direction: incoming
+      tags: [firewall]
+
+    - name: Allow outbound traffic by default
+      community.general.ufw:
+        default: allow
+        direction: outgoing
+      tags: [firewall]
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+      tags: [firewall]
+
+    - name: Load ufw at boot
+      ansible.builtin.systemd_service:
+        name: ufw
+        enabled: true
+      tags: [firewall]
 
     - name: Enable the private service link
       ansible.builtin.systemd_service:
@@ -151,6 +248,34 @@
         msg: "App host WireGuard public key: {{ app_wireguard_public_key.stdout }}"
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
 
+    # Key-only SSH. Ansible connects as root with a key, so a root key must
+    # already be authorized; verify a key login in a second terminal before
+    # running this (openwiki/deployment-runbook.md, "Host lockdown").
+    - name: Read root's authorized SSH keys
+      ansible.builtin.stat:
+        path: /root/.ssh/authorized_keys
+      register: app_root_authorized_keys
+      tags: [ssh]
+
+    - name: Refuse key-only SSH without an authorized root key
+      ansible.builtin.assert:
+        that:
+          - app_root_authorized_keys.stat.exists
+          - app_root_authorized_keys.stat.size > 0
+        fail_msg: Authorize a root SSH key and log in with it before turning password logins off.
+      tags: [ssh]
+
+    - name: Allow SSH logins with keys only
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../shared/sshd-key-only.conf"
+        dest: /etc/ssh/sshd_config.d/10-capy-key-only.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Reload SSH
+      tags: [ssh]
+
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd_service:
@@ -160,3 +285,21 @@
       ansible.builtin.systemd_service:
         name: "wg-quick@{{ app_wireguard_interface }}"
         state: restarted
+
+    - name: Reload ufw
+      community.general.ufw:
+        state: reloaded
+
+    # Both listen on "Reload SSH" and run in this order: the whole effective
+    # configuration must pass `sshd -t` before sshd reloads it. A reload keeps
+    # open sessions.
+    - name: Check the SSH configuration
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+      listen: Reload SSH
+
+    - name: Reload the SSH service
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: reloaded
+      listen: Reload SSH

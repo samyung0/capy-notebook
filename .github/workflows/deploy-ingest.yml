@@ -43,8 +43,9 @@ jobs:
     outputs:
       revision: ${{ steps.resolve.outputs.revision }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           ref: main
       - name: Resolve the revision the backend already serves
         id: resolve
@@ -79,8 +80,9 @@ jobs:
     timeout-minutes: 60
     environment: ${{ inputs.environment_name }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           ref: ${{ needs.resolve_revision.outputs.revision }}
           fetch-depth: 0
       - name: Validate target and immutable revision
@@ -112,7 +114,9 @@ jobs:
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
           CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
-        run: python3 scripts/env/config.py render --environment '${{ inputs.environment_name }}' --revision '${{ needs.resolve_revision.outputs.revision }}' --output "$RUNNER_TEMP/capy-config"
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+          DEPLOY_REVISION: ${{ needs.resolve_revision.outputs.revision }}
+        run: python3 scripts/env/config.py render --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-config"
       - name: Configure SSH access
         env:
           INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}

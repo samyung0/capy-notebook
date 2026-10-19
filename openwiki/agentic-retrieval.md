@@ -2195,7 +2195,9 @@ practice. Once a write lands the turn context shows the responses left under the
 stall guard. Search continuation caching is absent.
 
 The loader (`bench/rag/scripts/knowledge_base_library.py`) publishes a
-completed run. `schema` creates `LIBRARY_SCHEMA` and loads the subjects
+completed run. It runs from a developer checkout: the retrieval image carries
+the other `bench/rag/scripts` diagnostics but not the loader (`.dockerignore`,
+developer decision 6c). `schema` creates `LIBRARY_SCHEMA` and loads the subjects
 fixture; every `publish` refreshes it first (upsert by id; a subject gone from
 the fixture is deleted only when no topic references it, otherwise the publish
 refuses naming the subjects). The default manifest is `lab/knowledge/books.json`

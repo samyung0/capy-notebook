@@ -129,6 +129,9 @@ from the gateway over the docker network (`PIPELINE_URL=http://retrieval:8001`).
 If the domain is **already** on Cloudflare, skip nameserver migration.
 
 1. **Site.** Deploy `wrangler.jsonc` with `--env uat` or `--env production`.
+   Every wrangler file sets `workers_dev: false` and `preview_urls: false` at
+   its top level and in each environment, so even a deploy without `--env`
+   publishes no `workers.dev` or preview URL (developer decision 14b).
    The Worker serves `dist/`, renders `/w/{workspaceId}` from the live Go summary
    endpoint. The UAT zone routes `/api/*` directly through the tunnel as described
    in §1.0.1; production must provision the same tunnel and scriptless route
@@ -332,15 +335,17 @@ bypasses that asset/script routing altogether. Removing it from that list alone
 would serve the SPA fallback, not the API.
 
 Two zone rules preserve the API behavior previously supplied by the Worker.
-During the hostname transition both match:
+Both are in `deploy/cloudflare/rules.json` (§2), and during the hostname
+transition both match the old and new UAT hosts as well as the production
+app host:
 
 ```text
-(http.host in {"app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/"))
+http.host in {"app.capynotebook.com" "app.uat.capynotebook.com" "uat.capynotebook.com"} and starts_with(http.request.uri.path, "/api/")
 ```
 
-- **Cache Rule:** bypass cache (`cache: false`).
-- **Response Header Transform Rule:** set `Cache-Control: no-store` and
-  `X-Content-Type-Options: nosniff`.
+- **Cache Rule** `capy_app_api_bypass_cache`: bypass cache (`cache: false`).
+- **Response Header Transform Rule** `capy_app_api_no_store_nosniff`: set
+  `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
 
 Save the current DNS, Worker routes, tunnel configuration and these rules
 before editing. Add the new host's ingress and extend the zone rules, then add
@@ -951,32 +956,63 @@ webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 
 ## 2. Cloudflare — rules
 
-**Rate limiting rules** (free tier allows one; Pro allows several). The edge
-layer only handles volumetric floods — semantic limits are in the gateway.
+The zone's WAF custom rules, cache rules and response header transform rules
+are code. One zone holds production and UAT, and
+[`deploy/cloudflare/rules.json`](../deploy/cloudflare/rules.json) lists every
+rule of those three phases for both environments.
+`scripts/deploy/cloudflare_rules.py` applies the file or checks the zone
+against it:
 
+```bash
+# A token for the capynotebook.com zone with Zone: Read, Zone WAF: Edit,
+# Transform Rules: Edit and Cache Rules: Edit. The script never prints it.
+export CLOUDFLARE_API_TOKEN=...
+python3 scripts/deploy/cloudflare_rules.py --check   # exit 1 on any drift; writes nothing
+python3 scripts/deploy/cloudflare_rules.py           # replace each drifted phase's rules with the file's
 ```
-Rule:  (
-         (http.host eq "api.capynotebook.com")
-         or (http.host eq "app.capynotebook.com" and starts_with(http.request.uri.path, "/api"))
-       )
-       and not starts_with(http.request.uri.path, "/webhooks/")
-Rate:  100 requests per 10 seconds per IP
-Action: Block, 60s timeout
+
+The file owns each phase it lists: the phase's entry point ruleset must hold
+exactly the file's rules, in the file's order, matched by `ref`, and nothing
+else. `--check` prints every difference: `+` a rule the zone lacks, `~` a rule
+whose fields differ (both versions printed), `-` a live rule the file does not
+list, or a changed order. An apply rewrites only the phases that drifted, then
+reads them back. It refuses to delete a live-only rule unless given `--prune`:
+fold a rule made in the dashboard into the file first (keep its live `ref`, so
+it keeps its id), or prune it on purpose. If the readback still differs, the
+API stores a field the file leaves out (a default it adds); copy that field
+from the printed live version into the file. Change these rules only in the
+file, through a commit, then apply; run `--check` after any dashboard visit.
+Phases the file does not list stay manual: redirect rules (the old UAT host's
+redirect in §1.0.2), configuration rules and Managed Transforms.
+
+Before an apply that removes or replaces rules, save each phase's live rules
+for rollback; rolling back is a `PUT` of the saved `rules` to the same entry
+point. The file holds the UAT hosts' search-indexing exclusion from §1.0.2
+(`capy_uat_app_noindex`, its live `ref`).
+
+```bash
+zone=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones?name=capynotebook.com" | jq -r '.result[0].id')
+for phase in http_request_firewall_custom http_ratelimit http_request_cache_settings http_response_headers_transform; do
+  curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/zones/$zone/rulesets/phases/$phase/entrypoint" > "before-$phase.json"
+done
 ```
 
-The window on the free tier is fixed at 10 seconds, which is why anything
-expressed in requests-per-hour lives in the application instead.
+**No edge rate limiting rule yet.** The zone is on the Free plan, where a
+rate limiting rule may match only the path (no host), counts per IP over 10 s
+and blocks for 10 s, and the zone gets one rule. Production and UAT share the
+zone and their paths, so a production-only limit cannot be written; it needs
+the Pro plan (host in the expression, blocks up to an hour, two rules). Until
+then the gateway's limits are the only ones. When the rule is added it goes in
+the file's `http_ratelimit` phase and must leave `/webhooks/` out: Stripe and
+Clerk burst deliveries and retries from small sets of IPs, and rate limiting
+them can lose subscription or identity events.
 
-**Excluding `/webhooks/` is not optional.** Stripe and Clerk burst deliveries
-and retries from small sets of IPs. Rate limiting them can lose subscription or
-identity events.
-
-**WAF custom rules:**
-
-```
-Skip all security rules for:
-  starts_with(http.request.uri.path, "/webhooks/")
-```
+**WAF custom rule** (`capy_webhooks_skip_security`): requests under
+`/webhooks/` on the API hosts (`api`, `uat-api`) skip every security rule (the remaining custom rules, rate
+limiting, managed rules, Super Bot Fight Mode, and Zone Lockdown, User Agent
+Blocking, Browser Integrity Check, Hotlink Protection and Security Level).
 
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
@@ -986,10 +1022,12 @@ beacon (`static.cloudflareinsights.com`), Zaraz and Rocket Loader each add a
 script to every page, which the public pages' script policy (§2.4) blocks
 with a console error.
 
-**Cache rules:** bypass cache for `api.capynotebook.com`, `collab.capynotebook.com`, and
-`ops.capynotebook.com` entirely. A cached SSE or WebSocket response breaks
-streaming. Cached operator responses can disclose one operator's data to
-another.
+**Cache rules:** `capy_backend_hosts_bypass_cache` bypasses the cache for the
+API, collaboration and ops hosts of both environments (`api`, `collab`, `ops`,
+`uat-api`, `uat-collab`, `uat-ops`) entirely. A cached SSE or WebSocket
+response breaks streaming. Cached operator responses can disclose one
+operator's data to another. `capy_app_api_bypass_cache` does the same for the
+app hosts' same-origin `/api/` (§1.0.1).
 
 **Worker caching checks** (read-only; nothing here is set by Wrangler):
 
@@ -1006,11 +1044,12 @@ another.
   and is the setting to keep on. Workers Cache and Workers static assets
   tier on their own, and Regional Tiered Cache is an Enterprise add-on.
 
-For `ops.capynotebook.com`, add a response-header rule with
+**Response header rules:** `capy_ops_no_store_noindex` sets
 `Cache-Control: private, no-store` and
-`X-Robots-Tag: noindex, nofollow, noarchive`. Keep the dashboard's HTML
-`robots` meta tag too. These headers prevent accidental cache and search
-indexing; they are not access controls.
+`X-Robots-Tag: noindex, nofollow, noarchive` on both ops hosts. Keep the
+dashboard's HTML `robots` meta tag too. These headers prevent accidental cache
+and search indexing; they are not access controls.
+`capy_app_api_no_store_nosniff` sets the app hosts' `/api/` headers (§1.0.1).
 
 ### 2.1 Cloudflare Access for ops
 
@@ -1303,6 +1342,109 @@ Pick one:
   and enable **Authenticated Origin Pulls**. Requires re-checking the ranges
   periodically.
 
+### 3.1 Host lockdown: SSH and firewalls
+
+Both hosts' SSH and firewall settings are code: `deploy/ansible/app-host`
+(the UAT Coolify host, and the production one) and `deploy/ansible/ingest-host`.
+A rebuilt host gets them back from one playbook run, and a host changed by
+hand drifts back on the next one.
+
+**SSH, both hosts: key-only.** Both playbooks install
+`deploy/ansible/shared/sshd-key-only.conf` as
+`/etc/ssh/sshd_config.d/10-capy-key-only.conf`: `PasswordAuthentication no`,
+`KbdInteractiveAuthentication no`, `PermitRootLogin prohibit-password` and
+`X11Forwarding no`. sshd keeps the first value it reads and Debian's
+`sshd_config` includes its drop-ins before its own settings, so this file wins
+over the stock `PermitRootLogin yes` and over a cloud image's
+`50-cloud-init.conf`. The copy is checked with `sshd -t -f`, and the handler
+runs `sshd -t` on the whole configuration before it reloads sshd; a reload
+keeps open sessions. The play refuses while root has no authorized key. On the
+ingest host it also removes the old `90-capy-ingest.conf`, which kept password
+logins on. Port 22 stays open to all: restricting it to an admin or WireGuard
+range is not decided. Ansible itself connects as root with a key.
+
+**App host firewall: ufw.** The playbook installs ufw and enables it at boot,
+denying inbound by default and allowing outbound. What stays reachable:
+
+- SSH on 22, from anywhere, IPv4 and IPv6. Coolify manages its own host over
+  SSH from its container, so a later restriction must keep the Docker bridges.
+- WireGuard on UDP 51820, from the ingest host's public address only.
+- Loopback and established traffic (ufw's built-in rules). `cloudflared` only
+  connects out, and the Coolify proxy serves the tunnel on `localhost:80`.
+- The database, Redis and gateway published on the WireGuard address, which
+  the ingest host reaches over the link (and GitHub runners through it, by SSH
+  to the ingest host). Docker forwards published ports before ufw sees them,
+  so ufw neither blocks nor protects them.
+
+That last point is why the public interface needs its own rule. The playbook
+appends a `DOCKER-USER` block to ufw's `after.rules` (IPv4) and `after6.rules`
+(IPv6) that drops every new connection arriving on the public interface (the
+default route's, `eth0` on the UAT VM) for any container, whatever the port or
+protocol: Traefik's 80 and 443 (TCP and UDP), Coolify's 8000, 6001 and 6002, and
+any port a compose file publishes later. Replies to the containers' own
+outbound connections, the cloudflared tunnel among them, are not new and pass.
+ufw creates and refills the chain at boot and on
+every reload, and Docker keeps the chain's rules when it restarts, so the rule
+survives both. The WireGuard address's services, traffic between containers
+and the tunnel's loopback hop are not on the public interface.
+
+**Ingest host firewall: nftables.** `templates/nftables.conf.j2` stays the only
+firewall there (no ufw beside it). Its input chain drops by default and accepts
+loopback, established traffic, ICMP, SSH on 22 (open to all), the WireGuard UDP
+port and everything arriving on `wg0`. Its forward chain's drop policy keeps
+any port a container publishes closed, TCP and UDP, IPv4 and IPv6: the job
+DOCKER-USER does on the app host. `nftables.service` loads it at boot and Docker
+never edits the table. The output chain's parser rule is §7.4.
+
+`pipeline/tests/test_host_hardening.py` keeps all of this in the playbooks.
+
+**Applying, lockout-safe.** Run from the playbook's directory with its ignored
+`inventory.yml` (the README lists the values). The `ssh` and `firewall` tags
+apply only these tasks. Use them on hosts that already run: a full ingest-host
+run also rewrites `/etc/docker/daemon.json` and restarts Docker when it differs.
+
+1. Prove the key works before anything else:
+   `ssh -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no root@<host> true`.
+2. Open a root session on the host and keep it open until step 5. An
+   established session survives the sshd reload and ufw's enable. The
+   provider's console is the fallback.
+3. Review, then apply:
+   ```bash
+   ansible-playbook playbook.yml --tags ssh,firewall --check --diff
+   ansible-playbook playbook.yml --tags ssh,firewall
+   ```
+   A check run cannot evaluate the ufw tasks on a host without ufw. Install
+   it first there (`apt-get install ufw`); it stays inactive until the play
+   enables it.
+4. In a second terminal, log in again with the key, and confirm a password
+   login is refused before it asks: `ssh -o PubkeyAuthentication=no root@<host>`
+   answers `Permission denied (publickey)`.
+5. Verify, then close the first session:
+   - `sshd -T | grep -E '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication) '`
+     prints `without-password`, `no`, `no`.
+   - App host: `ufw status verbose` shows `active`, `deny (incoming)`, 22/tcp
+     open to all (v4 and v6) and 51820/udp from the ingest host;
+     `iptables -S DOCKER-USER` and `ip6tables -S DOCKER-USER` each list one
+     `--ctstate NEW` drop on the public interface; from outside, port 8000 and
+     443/udp on the host's public address time out while the app hostnames
+     still load through the tunnel; from the ingest host,
+     `curl --fail http://<app WireGuard address>:8080/healthz` answers;
+     `pnpm review:uat:smoke` passes; Coolify's dashboard loads, its server
+     validates and a deploy runs; `journalctl -k --since -15min | grep 'UFW BLOCK'`
+     shows nothing arriving from `docker0` or a `br-` bridge.
+   - Ingest host: `nft list table inet capy_ingest_filter` is unchanged, and
+     the next Deploy ingest (SSH as the service account) succeeds.
+
+**Rolling back.** SSH: delete `/etc/ssh/sshd_config.d/10-capy-key-only.conf`
+and `systemctl reload ssh` from the open session or the console. ufw:
+`ufw disable` stops filtering inbound; it also sets the `FORWARD` policy to
+`ACCEPT`, so put Docker's back with `iptables -P FORWARD DROP` and
+`ip6tables -P FORWARD DROP`. The `DOCKER-USER` drops stay until
+`iptables -F DOCKER-USER` and `ip6tables -F DOCKER-USER`; remove the
+`CAPY DOCKER-USER` block from `/etc/ufw/after.rules` and `after6.rules` to keep
+them off after a reboot. The ingest host's nftables rules are unchanged by this
+playbook revision.
+
 ---
 
 ## 4. Backblaze B2
@@ -1541,7 +1683,8 @@ The compose init service gives the unprivileged pipeline user access before
 those services start.
 
 1. Apply `deploy/ansible/app-host/playbook.yml` to build the app side of the
-   point-to-point WireGuard service network, then put its displayed public key
+   point-to-point WireGuard service network (it also sets the app host's
+   firewall and key-only SSH, §3.1), then put its displayed public key
    in the ingest-host inventory. The app host uses `10.77.0.1/32` and the ingest host
    uses `10.77.0.2/32`. Netcup's
    [community WireGuard guide](https://community.netcup.com/en/tutorials/how-to-setup-wireguard-ubuntu)
@@ -1676,10 +1819,11 @@ pair on the host; activation then removes this stack's other tags, keeping
 only `active` and `previous` (rollback). Removed tags stay in the BuildKit
 cache; activation then runs `docker builder prune -f --filter until=72h`, which
 drops build cache older than three days (the next release still builds warm).
-The ingest host's `/etc/docker/daemon.json` also sets `builder.gc` to 20 GB
-(restored 2026-10-19 after it was found missing; the previous file is kept as
-`daemon.json.before-builder-gc-20261019`), so BuildKit trims the cache past that
-size between releases.
+The ingest host's `/etc/docker/daemon.json` also sets `builder.gc` to 20 GB, so
+BuildKit trims the cache past that size between releases. The ingest-host
+playbook writes it (a hand fix on 2026-10-19 restored it after a playbook run
+had dropped it; the file from before is kept as
+`daemon.json.before-builder-gc-20261019`).
 Bootstrap only clones into an absent/empty checkout and records active after
 verification. A failed bootstrap stops candidate services and retains evidence.
 
@@ -2082,9 +2226,11 @@ Apply the host rules with the provisioning playbook (see the
 
 ```bash
 cd deploy/ansible/ingest-host
-ansible-playbook --ask-pass playbook.yml --check --diff   # review the output-chain change
-ansible-playbook --ask-pass playbook.yml
+ansible-playbook playbook.yml --tags firewall --check --diff   # review the output-chain change
+ansible-playbook playbook.yml --tags firewall
 ```
+
+SSH is key-only (§3.1), so Ansible connects with a key.
 
 The template task checks the file with `nft -c` before installing it, and the
 handler reloads nftables. The reload replaces the `capy_ingest_filter` table in
@@ -2144,9 +2290,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    configured DSNs so they match by construction; edit those DSNs first and
    `env:push` them after. Re-running only resets the passwords and re-grants, so
    it is also the way to pick up a migration that adds a column Ops reads. The grants name every
-   readable column. In particular, neither role can read `messages`, file
-   `content` or blob paths, job `payload`, email recipients or `payload`, or
-   `usage_events.metadata`. Apply them as the database owner:
+   readable column. In particular, neither role can read `messages` columns,
+   file names, content or blob paths, job `payload`, email recipients or
+   `payload`, or `usage_events.metadata`. The exception is the
+   `ops_assistant_turns` view below: its tool details can carry a chat search
+   query or a file title. Apply them as the database owner:
 
    ```bash
    docker exec -i db-<main-resource-uuid> psql -U capy -d capy \
@@ -2167,9 +2315,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    startup catalog. A missing grant therefore fails as a role-contract error,
    rather than as a later plan-catalog query error.
 
-   `ops_assistant_turns` exposes only an assistant message id, owning user id,
-   lifecycle status, trace id, and timestamp. Do not replace that view grant
-   with `SELECT` on `messages`.
+   `ops_assistant_turns` (migration 0014) exposes an assistant message id,
+   owning user id, lifecycle status, trace id and timestamp, plus each tool
+   call's name, outcome and detail capped at 240 characters, as decided
+   (human/observability-metering.md, 2026-09-13). A detail can quote what the
+   tool was given or found, such as a chat search query or a file title, so
+   operators can see those. Do not replace that view grant with `SELECT` on
+   `messages`.
 
    `edit_incidents` holds ids, kinds, reason tokens and sizes, never content.
    Migration 0066 grants `capy_ops` `SELECT` on it where the role already
@@ -2630,25 +2782,12 @@ apply those settings. `deploy/b2-cors.uat.json` already covers this origin with
 if its optional subdomain allowlist is enabled.
 
 For full-local development, the gateway, database and UI run locally using the
-Clerk development keys. Open `http://localhost:5173` with `pnpm dev`. Clerk's
-servers still need a public route to deliver webhooks: set `CLERK_WEBHOOK_HOST`
-to your own `dev-<name>.uat.capynotebook.com` and run `pnpm dev:tunnel`. The tunnel
-publishes only `/webhooks/` to the local gateway; other public paths return 404.
-It requires a development `pk_test` key and does not need Vite running.
-
-Register the Clerk development endpoint at
-`https://dev-<name>.uat.capynotebook.com/webhooks/clerk` for `user.created`,
-`user.updated`, and `user.deleted`; put its signing secret in the local gateway's
-`CLERK_WEBHOOK_SECRET`. UAT's Clerk production instance keeps delivering directly
-to `uat-api`, independently of local UI or tunnel state.
-
-Endpoints are per developer, never shared: a hostname reaches exactly one
-laptop, and each endpoint carries its own signing secret. The development
-instance fans every subscribed event out to all of them, so a second
-developer's signup arrives at everyone's local gateway and lands in each local
-database. Create an endpoint only while actually working on webhook handling,
-and disable it afterwards, or Clerk eventually disables it for sustained
-delivery failures anyway.
+Clerk development keys. Open `http://localhost:5173` with `pnpm dev`. Clerk
+webhooks are not delivered to a laptop and the development instance has no
+webhook endpoint: the first authenticated request provisions the user
+(`admitClerkIdentity`), and webhook handling is checked on UAT, whose Clerk
+production instance delivers to `uat-api`. The local gateway still needs a
+`whsec_`-shaped `CLERK_WEBHOOK_SECRET` to start.
 
 This lane shares one UAT database and bucket, and it cannot change the
 backend. The migrator records a checksum per migration and refuses to run when
@@ -2749,8 +2888,7 @@ stripe listen --forward-to localhost:8080/webhooks/stripe
 ```
 
 which prints the `whsec_…` for that session's `STRIPE_WEBHOOK_SECRET` and
-needs no tunnel — unlike Clerk, whose development instance can only reach a
-laptop through the `dev-<name>` hostname (§12.3). Nothing persists in the
+needs no tunnel. Nothing persists in the
 dashboard, so there is no endpoint to auto-disable while a laptop is off and
 no per-developer secret to rotate. Other developers' events still arrive,
 because the fan-out is per environment; only per-developer sandboxes would
@@ -2816,9 +2954,9 @@ is empty and refuses `cloudflare` outright under `APP_ENV=e2e`. Setting
 `EMAIL_BACKEND=cloudflare` without the token or `CLOUDFLARE_ACCOUNT_ID` fails
 gateway startup rather than degrading.
 
-**What sends.** Templates are Maily sources in `emails/templates/`
-(`pnpm email:dev` edits them, `pnpm email:build` regenerates the Go copies the
-API embeds); `emailTemplateData` in `server/cmd/api/email.go` formats each
+**What sends.** Templates are Maily JSON sources in `emails/templates/`,
+edited by hand (the template editor is gone, developer decision 2026-10-20);
+`pnpm email:build` regenerates the Go copies the API embeds; `emailTemplateData` in `server/cmd/api/email.go` formats each
 outbox payload for the recipient's locale. Clerk sends its own sign-up and
 password-reset codes with its unchanged templates, so they cost this quota
 nothing; share and comment mentions are in-app only.
@@ -2956,7 +3094,7 @@ The uploader needs `gh auth login` with repository/environment administration
 access. It sends secrets through stdin, rejects unknown/duplicate keys, and
 does no shell expansion. An explicit blank deletes that key in GitHub; omitted
 keys are left alone. Review-only `STRIX_*`, `LLM_API_KEY`, tunnel/dev controls,
-and derived release values remain local. `CLERK_WEBHOOK_HOST` also stays local. Double-quoted `\n` escapes can hold
+and derived release values remain local. Double-quoted `\n` escapes can hold
 an SSH private key. Do not put actual multiline shell fragments in the file.
 
 Every deployment reads GitHub's environment values afresh, renders private
@@ -2968,6 +3106,39 @@ The Cloudflare token needs Worker scripts/assets deployment access and
 Cloudflare Pages edit access for the interactive block frame (§2.3). Retire
 `CLOUDFLARE_PAGES_PROJECT` and `CLOUDFLARE_PAGES_BRANCH` in GitHub before the
 first new deployment; they are rejected as unknown inputs.
+
+**Workflow hardening.** Third-party actions are pinned by full commit SHA
+with the release in a comment. Dependabot (`.github/dependabot.yml`) opens one
+grouped weekly pull request that moves the pins and comments together, the
+composite actions under `.github/actions/` included. Every workflow declares
+its token scope, and every checkout sets `persist-credentials: false`: no step
+needs the token for git (the submodule and fork fetches are public, `gh` reads
+`GH_TOKEN`). A run script never expands `${{ }}`; values reach it through the
+step's `env`. Secrets sit only on the steps that use them, never in a
+workflow or job `env` or on an install or action step: the UAT journey job's
+secrets sit on its tunnel, ingest-check, journey and cleanup steps, and Deploy
+Ops passes the Coolify token only to its three Coolify steps. The SPA build
+job renders only the build values (`config.py render-build`); the deploy job
+renders the Coolify and ingest configuration, so it is never on disk while
+third-party build code runs. `SENTRY_AUTH_TOKEN` stays in the build values
+(developer decision 6b). `coolify-deploy.sh` hands curl the API token as a
+config line on stdin, never as an argument. `scripts/ci/hardening.test.mjs`
+(in `pnpm test:deployment`) holds these rules.
+
+**Dependency vulnerabilities.** CI runs one job per ecosystem and fails on a
+known advisory: `audit_rust` (`cargo deny check advisories` on
+`collaboration-rs`), `audit_go` (govulncheck on `server`, with the Go line the
+gateway and Ops images build with; it prints its counts and also fails on a
+listed id it no longer reports), `audit_pnpm` (`pnpm audit --prod`) and
+`audit_python` (pip-audit over `uv.lock`'s runtime set, `parser/requirements.txt`
+and `pipeline/ppt-master-requirements.txt`). An advisory that has to wait goes
+on that ecosystem's commented ignore list, with its reason:
+`collaboration-rs/deny.toml`, `server/govulncheck-ignore.txt`,
+`auditConfig.ignoreGhsas` in `pnpm-workspace.yaml` and `pip-audit-ignore.txt`.
+Prefer a version bump or a commented `overrides` entry (the developer's rule,
+2026-10-20); an advisory stays listed only when its fix breaks something, and
+the entry says what. Drop an entry when its fix lands, for example the Go
+entries with the version wave.
 
 Required families include application origins, Clerk/webhook keys, Postgres,
 B2, collaboration/pipeline secrets, actual provider/mail/billing keys, Coolify

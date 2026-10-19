@@ -13,3 +13,6 @@
 vendor/betteroffice/target
 collaboration-rs/target
 vendor/betteroffice/.git
+# The retrieval image copies its diagnostics from bench/rag/scripts; the
+# library writer (publish, rollback, retire) is not shipped with them.
+bench/rag/scripts/knowledge_base_library.py

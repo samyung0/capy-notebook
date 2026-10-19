@@ -30,23 +30,28 @@ timeout="${COOLIFY_DEPLOY_TIMEOUT_SECONDS:-2700}"
 [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || die "COOLIFY_DEPLOY_TIMEOUT_SECONDS must be a positive integer"
 
 api_url="${COOLIFY_API_URL%/}"
-auth_header="Authorization: Bearer $COOLIFY_API_TOKEN"
 json_header="Content-Type: application/json"
+
+# curl reads the token from a config line on stdin (printf is a shell builtin),
+# so it is never in curl's arguments, which other processes can read.
+coolify_curl() {
+  local token="${COOLIFY_API_TOKEN//\\/\\\\}"
+  token="${token//\"/\\\"}"
+  printf 'header = "Authorization: Bearer %s"\n' "$token" | curl --config - "$@"
+}
 
 # Pin the resource before starting it. Coolify otherwise resolves the moving
 # branch head when its deployment worker begins, which can differ from the SHA
 # that CI approved when several pushes arrive close together.
 update_body="$(jq -cn --arg revision "$DEPLOY_REVISION" '{git_commit_sha: $revision, is_auto_deploy_enabled: false}')"
-curl --silent --show-error --fail --retry 3 --retry-all-errors \
+coolify_curl --silent --show-error --fail --retry 3 --retry-all-errors \
   --request PATCH "$api_url/applications/$COOLIFY_RESOURCE_UUID" \
-  --header "$auth_header" \
   --header "$json_header" \
   --data "$update_body" >/dev/null
 
 deploy_body="$(jq -cn --arg uuid "$COOLIFY_RESOURCE_UUID" '{uuid: $uuid, force: false}')"
-deploy_response="$(curl --silent --show-error --fail \
+deploy_response="$(coolify_curl --silent --show-error --fail \
   --request POST "$api_url/deploy" \
-  --header "$auth_header" \
   --header "$json_header" \
   --data "$deploy_body")"
 
@@ -71,9 +76,8 @@ while (( SECONDS - started_at < timeout )); do
   # own deployment keeps running. Abandoning the poll there would leave the
   # workflow and the host disagreeing about a release that is still in flight,
   # so an unreachable API is just an unknown status: keep waiting out the timeout.
-  if ! deployment="$(curl --silent --fail --retry 3 --retry-all-errors \
-    "$api_url/deployments/$deployment_uuid" \
-    --header "$auth_header" 2>/dev/null)"; then
+  if ! deployment="$(coolify_curl --silent --fail --retry 3 --retry-all-errors \
+    "$api_url/deployments/$deployment_uuid" 2>/dev/null)"; then
     if [[ "$last_status" != "unreachable" ]]; then
       printf 'Coolify API is unreachable; deployment %s is still running.\n' "$deployment_uuid"
       last_status="unreachable"
