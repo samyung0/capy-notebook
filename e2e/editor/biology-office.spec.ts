@@ -1395,14 +1395,14 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await page.keyboard.press('ArrowUp');
   await expect(formula).toHaveValue('67');
 
-  // Input the engine refuses: the editor reports it in the frame, and Capy
-  // shows no file error for a save nobody asked for.
+  // Input the engine refuses: the editor reports it on its line under the
+  // formula bar, and Capy shows no file error for a save nobody asked for.
   await page.mouse.click(box.x + 150, box.y + 75);
   await page.keyboard.press('9');
   await editor.fill('x'.repeat(40_000));
   await frameFocus(false);
   await chat.click();
-  await expect(frame.getByTestId('xlsx-error')).toBeVisible();
+  await expect(frame.getByTestId('xlsx-edit-refusal')).toBeVisible();
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
