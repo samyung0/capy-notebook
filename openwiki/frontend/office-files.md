@@ -1311,7 +1311,28 @@ cell) and Enter selects and reveals that cell, opening the other sheet when it
 names one; text that names no cell stays in the box and Escape restores the
 address. Capy's own View (`XlsxViewer`) reads the address with the fork's
 parser (`parseHyperlinkLocation` from `@betteroffice/xlsx/viewer`), switches
-the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`). An open cell edit keeps its input mounted and
+the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`).
+The pressed cell is the active cell, as in Excel and Sheets: a drag, Shift+click
+or Shift+arrows move only the selection's far end, the next bare move steps
+from the active cell, a press inside a merged block selects its top-left cell,
+and Select all keeps the active cell where it was (the fork's `Selection`
+anchor, or its `active` cell after select all). A typed formula that leaves
+parentheses open is closed by the engine when that makes it parse
+(`=SUM(B2:B5` stores `=SUM(B2:B5)`, `=TODAY(` stores `=TODAY()`, `=SUM(B3,`
+stores `=SUM(B3,)`; `=SUM(` is not); in the cell editor and the formula bar a formula that still fails to
+parse, or text over 32,767 characters, is refused with a translated line under
+the formula bar while the draft stays open, and a formula's edit closes only
+once the browser's engine took it; paste and agent writes store such a formula
+as text. Point mode (v1): while a formula waits for an operand, a click or
+drag writes the cell or range reference (pointing again replaces it, typing
+ends it), arrows point from the edited cell in an edit opened by typing (Shift
+extends, F2 switches to caret movement) and commit and move where no
+reference fits, merged cells are named by their top-left cell and a range
+cutting a merge grows over it, the pointed range has a dashed outline, and the
+formula bar points by mouse too. The cell editor and the text awaiting its
+frame use the active cell's own font, size, bold, italic and colour as the
+grid paints them, whatever fonts the rest of the selection uses (Calibri 11 pt
+black until the frame describes the cell), over a white fill. An open cell edit keeps its input mounted and
 focused while its cell scrolls away, so the next key that types, composition
 included, is typed into the edit and scrolls the cell back whole, as in Excel
 and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
