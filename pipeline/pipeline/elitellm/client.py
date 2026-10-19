@@ -22,11 +22,9 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
-# Relace serves GLM-5.3-Flash through an OpenAI-compatible chat route; it is
-# the only route for the zai pin. Relace names the model with an org prefix.
-RELACE_CHAT_URL = "https://models.relace.ai/v1/chat/completions"
-RELACE_PROVIDER = "relace"
-RELACE_GLM_FLASH_MODEL = "z-ai/glm-5.3-flash"
+# Z.AI serves its GLM-5.3-Flash pin itself, OpenAI-compatible (decision
+# 2026-10-20, replacing Relace).
+ZAI_CHAT_URL = "https://api.z.ai/api/paas/v4/chat/completions"
 # OpenRouter pins, each held on one provider with fallbacks off, reasoning off.
 # Default routing moves between providers that differ on image input, so a slug
 # with no entry is refused, never routed. 0731 is the ingest descriptor model
@@ -43,7 +41,6 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
-ZAI_GLM_FLASH_MODEL = "glm-5.3-flash"
 
 CONTINUITY_KEYS = (
     "thinking_blocks",
@@ -67,10 +64,6 @@ _ANTHROPIC_BUDGET = {
     "high": 16384,
     "max": 32000,
 }
-
-
-def _is_routed_zai_glm(spec: ModelConfig) -> bool:
-    return spec.provider_slug == "zai" and spec.model_slug == ZAI_GLM_FLASH_MODEL
 
 
 BUSY_STATUSES = frozenset({429, 503, 529})
@@ -231,18 +224,6 @@ def zai_thinking_body(thinking: str) -> dict[str, Any]:
             "Z.ai GLM-5.3-Flash supports only low, high, or max reasoning"
         )
     return {"reasoning_effort": thinking}
-
-
-def transport_provider_slug(spec: ModelConfig) -> str:
-    if _is_routed_zai_glm(spec):
-        return RELACE_PROVIDER
-    return spec.provider_slug
-
-
-def transport_model_slug(spec: ModelConfig) -> str:
-    # Capacity and usage rows key on the pin's slug; only zai_request sends
-    # Relace's prefixed wire name.
-    return spec.model_slug
 
 
 def anthropic_endpoint(spec: ModelConfig) -> tuple[str, dict[str, str]]:
@@ -463,7 +444,7 @@ def zai_request(
     tool_choice: Any | None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "model": RELACE_GLM_FLASH_MODEL,
+        "model": spec.model_slug,
         "messages": messages,
     }
     body.update(zai_thinking_body(thinking))
@@ -819,7 +800,7 @@ async def complete(
             tool_choice=tool_choice,
         )
         return _as_obj(await _post_json(DEEPSEEK_CHAT_URL, _bearer(key), body))
-    if _is_routed_zai_glm(spec):
+    if spec.provider_slug == "zai":
         body = zai_request(
             spec,
             messages,
@@ -831,7 +812,7 @@ async def complete(
             stream=False,
             tool_choice=tool_choice,
         )
-        return _as_obj(await _post_json(RELACE_CHAT_URL, _bearer(key), body))
+        return _as_obj(await _post_json(ZAI_CHAT_URL, _bearer(key), body))
     if spec.provider_slug == "openrouter":
         body = openrouter_request(
             spec,
@@ -925,7 +906,7 @@ async def stream(
         async for event in _stream_sse(DEEPSEEK_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
-    if _is_routed_zai_glm(spec):
+    if spec.provider_slug == "zai":
         body = zai_request(
             spec,
             messages,
@@ -937,7 +918,7 @@ async def stream(
             stream=True,
             tool_choice=tool_choice,
         )
-        async for event in _stream_sse(RELACE_CHAT_URL, _bearer(key), body):
+        async for event in _stream_sse(ZAI_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
     if spec.provider_slug == "openrouter":
@@ -1017,10 +998,10 @@ async def rerank(
 
 
 def _thinking_for_call(spec: ModelConfig, reasoning: bool | None) -> str:
-    # Reasoning off is "instant", the level the receipt records; routed GLM
+    # Reasoning off is "instant", the level the receipt records; GLM-5.3-Flash
     # cannot turn thinking off, so it runs at its low floor.
     if reasoning is False:
-        if _is_routed_zai_glm(spec):
+        if spec.provider_slug == "zai":
             return "low"
         return "instant"
     return spec.resolve_thinking(_request_thinking())

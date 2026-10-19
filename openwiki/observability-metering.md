@@ -495,14 +495,14 @@ named provider directly. These exact routing exceptions are allowed:
   `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
   (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
   `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
-- `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
-  Relace (`https://models.relace.ai/v1/chat/completions`, OpenAI-compatible,
-  wire model `z-ai/glm-5.3-flash`, transport provider `relace`, platform-only
-  `RELACE_API_KEY`). The identity stays with ZAI because ZAI is the model's
-  maker; the hop exists because ZAI's own API needs a monthly plan. There is
-  no fallback route: Relace replaced Tencent TokenHub on 2026-09-26, which had
-  replaced DeepInfra (`human/agentic-retrieval.md`). Thinking cannot be
-  disabled on this route; `low` is the floor and the catalog default.
+- `zai/glm-5.3-flash` is served by Z.AI itself
+  (`https://api.z.ai/api/paas/v4/chat/completions`, OpenAI-compatible, model
+  `glm-5.3-flash`, platform-only `ZAI_API_KEY`) for chat and ingest alike
+  (decision 2026-10-20). Earlier hops (DeepInfra, Tencent TokenHub, then Relace
+  from 2026-09-26 until its GLM stopped reading prompts on 2026-10-19) are
+  history in `human/agentic-retrieval.md`; there is no fallback route. Thinking
+  cannot be disabled: `reasoning_effort` takes `low`, `high` or `max`, and `low`
+  is the floor a reasoning-off call runs at.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` and the slug's
@@ -673,14 +673,12 @@ There is no USD estimate on `model_configs` or `usage_events`.
 `(input-cached)*input + cached*cache + output*output`. A 0 stays 0. Missing or
 unproven cache details charge all reported input at the input rate and do not
 fail the request. Cache writes are ordinary input under the three-rate design.
-DeepSeek, OpenAI, and routed GLM under its `zai` slug report a cache
-split proven inclusive of their own reported input; Anthropic's disjoint
-counters are folded into input separately. Routed GLM counts because Relace
-serves the model and bills us directly, so its split is the one the row's
-cached rate is priced against (the 2026-09-26 bench run in
-`bench/rag/reports/2026-09-26-glm-relace-tencent.md` recorded
-`prompt_tokens_details.cached_tokens` ≤ `prompt_tokens` on every Relace call;
-Relace reports `reasoning_tokens` at the top level of `usage`). A split larger
+DeepSeek, OpenAI, Z.AI (GLM under its `zai` slug) and OpenRouter report a
+cache split proven inclusive of their own reported input; Anthropic's disjoint
+counters are folded into input separately. Z.AI's was observed on 2026-10-20:
+a repeated 2,744-token prompt reported `prompt_tokens_details.cached_tokens`
+2,688 with `prompt_tokens` unchanged, and reasoning under
+`completion_tokens_details.reasoning_tokens`. A split larger
 than reported input is still refused as
 `cached_gt_input` and charged in full.
 The web app offers no key entry since 2026-10-16 (Settings → LLM has no keys
@@ -1424,11 +1422,12 @@ concurrency is the separate cap of 20 above, not this one.
 `model_capacities` stores `concurrency_total` and `interactive_reserve` per
 transport provider/model, independently of versioned `model_configs`. Ops exposes
 both required fields in the model form, including for existing embedding models;
-capacity-only edits do not create a catalog version. Routed GLM shares
-`relace:glm-5.3-flash` across all its versions (earlier `tencent:` and
-`deepinfra:` rows are history and unused). Each environment's database
-holds its own limits; no capacity values are seeded across environments, so
-the Relace capacity row must be created in Ops before GLM traffic.
+capacity-only edits do not create a catalog version. A row's capacity is keyed
+on its catalog identity, shared across its versions: GLM uses
+`zai:glm-5.3-flash` (earlier `relace:`, `tencent:` and `deepinfra:` rows are
+history and unused). Each environment's database holds its own limits; no
+capacity values are seeded across environments, so the `zai` GLM capacity row
+must be created in Ops before GLM traffic.
 An enabled platform model missing capacity or a provider credential has a
 clickable warning icon in the registry. It opens a dialog listing the missing
 configuration for that model.
@@ -1454,19 +1453,18 @@ share.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
 and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
-DeepSeek Flash 2500/1500, Relace GLM 100/80, OpenRouter DeepSeek V4 Flash
+DeepSeek Flash 2500/1500, Z.AI GLM 100/80, OpenRouter DeepSeek V4 Flash
 0731 32/0 and V4.1 Flash 1017 32/0 (ingest-only, so no interactive reserve;
 page reads lease the `vlm_page` gate instead), Qwen embedding 200/80
 (total/interactive reserve). Existing settings, including GLM 200/120, remain.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
 limits; the reserves are application policy. GLM's 100 concurrent calls with
-80 reserved for interactive use (at most 20 ingest calls) are deliberately set
-above Relace's per-key budget, measured at roughly 700-800 RPM on 2026-09-26:
-at the ~4 s median chat-agent turn a full gate is about 1,500 RPM, so the
-provider limit binds first. Its 429s appear under Health "Busy models", which
-is the signal to request a higher Relace limit. An interactive 429 fails at
-once with the busy message (Relace asks for 60 s, past the 3 s interactive
-retry budget); ingest captions wait and retry within their 120 s budget. See the script for assumptions and
+80 reserved for interactive use (at most 20 ingest calls) were sized against
+Relace's per-key budget (roughly 700-800 RPM, measured 2026-09-26) and are kept
+for Z.AI, whose per-account limits were not measured. Its 429s appear under
+Health "Busy models", which is the signal to revisit the limit. An interactive
+429 fails at once with the busy message when its `Retry-After` is past the 3 s
+interactive retry budget; ingest calls wait and retry within their 120 s budget. See the script for assumptions and
 official sources; split capacities when environments share a provider account.
 Migration `0010` copies any configured Flash Vision capacity to its new identity.
 Health shows attempts abandoned on a provider 429, 503 or 529
@@ -1579,9 +1577,9 @@ custom range of at most 366 inclusive days. Month and quarter use daily buckets;
 year and longer custom ranges use monthly buckets. Each response carries one
 `dataAsOf` timestamp so live rows are not presented as a periodic snapshot.
 Provider/model grouping uses the catalog provider, model slug, and version as
-the primary billing identity; the transport-observed provider/model is shown as
-secondary diagnostic data. Routed GLM rows therefore group under
-`zai/glm-5.3-flash` while the observed pair is `relace/glm-5.3-flash`.
+the primary billing identity; the provider/model the call reported is shown as
+secondary diagnostic data. Every current route reports its catalog pair
+(before 2026-10-20 GLM rows were observed as `relace/glm-5.3-flash`).
 
 The header's refresh button refetches all active Ops GET queries. It never
 calls an LLM provider, the parser, or Stripe and it never starts reconciliation.

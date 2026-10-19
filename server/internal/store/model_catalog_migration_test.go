@@ -117,7 +117,7 @@ func TestDeepSeekFlashMigrationRefusesConflictingCatalog(t *testing.T) {
 	}
 }
 
-func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) {
+func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
 	tx, err := s.pool.Begin(ctx)
@@ -147,7 +147,7 @@ func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) 
 		total, reserve  int
 	}{
 		{"deepseek", "deepseek-flash", 91, 13},
-		{"relace", "glm-5.3-flash", 100, 80},
+		{"zai", "glm-5.3-flash", 100, 80},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
 		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
 	} {

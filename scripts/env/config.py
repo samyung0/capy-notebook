@@ -210,9 +210,6 @@ def render(values, environment, output, revision):
         GATEWAY_URL=f"http://{address}:8080",
     )
     queue["SENTRY_DSN"] = queue.pop("SENTRY_DSN_WORKER")
-    # Ingest calls Relace on its own account (Epo 2026-10-15); the pipeline
-    # reads the provider's one key name, so the queue env renames it.
-    queue["RELACE_API_KEY"] = queue.pop("RELACE_INGEST_API_KEY")
     private_write(output / f"{environment}.queue.env", dotenv(queue))
     target = "ingest-shared" if environment == "uat" else "ingest-production"
     shared = target_values(values, target)

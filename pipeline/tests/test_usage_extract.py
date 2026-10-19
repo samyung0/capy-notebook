@@ -27,19 +27,19 @@ def test_openai_nested_cached_tokens_are_discounted():
     assert usage.cached_read_tokens == 20
 
 
-def test_routed_zai_cache_split_prices_against_the_glm_row():
-    # The catalog slug stays zai; Relace serves and bills the call, and
-    # reports reasoning_tokens at the top level.
+def test_zai_cache_split_prices_against_the_glm_row():
+    # Z.AI's shape, observed 2026-10-20: nested cached_tokens inclusive of
+    # prompt_tokens, reasoning under completion_tokens_details.
     usage = extract_usage(
         {
-            "prompt_tokens": 172,
+            "prompt_tokens": 2744,
             "completion_tokens": 53,
-            "prompt_tokens_details": {"cached_tokens": 128},
-            "reasoning_tokens": 21,
+            "prompt_tokens_details": {"cached_tokens": 2688},
+            "completion_tokens_details": {"reasoning_tokens": 21},
         },
         provider="zai",
     )
-    assert usage.cached_read_tokens == 128
+    assert usage.cached_read_tokens == 2688
     assert usage.reasoning_tokens == 21
     assert usage.anomaly == ""
 

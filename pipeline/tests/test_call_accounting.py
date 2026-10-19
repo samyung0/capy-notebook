@@ -94,43 +94,6 @@ async def test_settlement_is_a_noop_outside_chat():
     assert state is None
 
 
-async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
-    monkeypatch,
-):
-    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
-    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
-    sent = {}
-
-    async def post_settlement(payload):
-        sent.update(payload)
-        return {}
-
-    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
-    token = accounting.bind("cr_glm")
-    try:
-        await accounting.settle(
-            call_id="pc_glm",
-            kind=accounting.KIND_LLM,
-            purpose=accounting.PURPOSE_AGENT,
-            thinking="max",
-            spec=_spec(
-                provider_slug="zai",
-                model_slug="glm-5.3-flash",
-                byok_enabled=False,
-                thinking_levels=("low", "high", "max"),
-                default_thinking="max",
-            ),
-            usage=NormalizedUsage(input_tokens=10, output_tokens=4),
-        )
-    finally:
-        accounting.reset(token)
-
-    assert sent["provider"] == "relace"
-    assert sent["model"] == "glm-5.3-flash"
-    assert sent["thinking"] == "max"
-    assert "modelVersion" not in sent
-
-
 async def test_rerank_settles_under_its_own_catalog_version(monkeypatch):
     """A rerank names its catalog version, and its late background reply
     never rolls back the exhaustion flags a newer LLM settlement set."""

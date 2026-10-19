@@ -9,15 +9,11 @@
 -- https://api-docs.deepseek.com/quick_start/rate_limit/
 -- DeepInfra: 200 concurrent requests per account/model.
 -- https://docs.deepinfra.com/account/rate-limits
--- Relace limits requests per key over a rolling minute, not concurrency.
--- https://docs.relace.ai/api-reference/introduction
--- Measured on the subscribed key (2026-09-26): roughly 700-800 RPM
--- (bench/rag/reports/2026-09-26-glm-relace-tencent.md).
--- GLM capacity: 100 concurrent calls / 80 interactive reserve, deliberately
--- above the key's budget. At the ~4 s median chat-agent turn in that report,
--- a full gate is ~1,500 RPM, so Relace's RPM limit binds first and its 429s
--- show under Ops Health "Busy models": that is the signal to ask Relace for a
--- higher limit. The gate stays as a runaway bound.
+-- GLM-5.3-Flash is served by Z.AI itself (2026-10-20), whose limits are set per
+-- account and were not measured. Its gate keeps the 100 concurrent calls / 80
+-- interactive reserve sized for Relace, which served it before: Z.AI's 429s
+-- show under Ops Health "Busy models", the signal to revisit the limit. The
+-- gate stays as a runaway bound.
 -- OpenRouter DeepSeek V4 Flash 0731 (held on Relace) serves only the ingest
 -- descriptor, so it has no interactive reserve. Measured 2026-10-15: no 429 at
 -- up to 96 calls in flight; 32 in flight held ~600 requests/min (p95 5.5 s),
@@ -26,7 +22,7 @@
 -- images for captioning, so it has no interactive reserve either. It copies the
 -- 0731 gate unmeasured. Page reads lease the fixed vlm_page gate of 20 instead
 -- of this row, so it gates standalone image captions only.
--- Interactive reserves: 80% Relace GLM / 60% DeepSeek / 40% embedding.
+-- Interactive reserves: 80% GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
 -- binds; it copies the embedding's 80.
@@ -34,7 +30,7 @@
 WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
   VALUES
     ('deepseek', 'deepseek-flash', 2500, 2200),
-    ('relace', 'glm-5.3-flash', 100, 80),
+    ('zai', 'glm-5.3-flash', 100, 80),
     ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32, 0),
     ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 32, 0),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
@@ -45,7 +41,7 @@ SELECT provider, model, concurrency_total, interactive_reserve FROM capacities c
 WHERE EXISTS (
   SELECT 1 FROM model_configs m WHERE m.enabled AND m.platform_enabled
     AND m.model_slug = c.model
-    AND m.provider_slug = CASE WHEN c.provider = 'relace' THEN 'zai' ELSE c.provider END
+    AND m.provider_slug = c.provider
 )
 ON CONFLICT (provider, model) DO NOTHING;
 

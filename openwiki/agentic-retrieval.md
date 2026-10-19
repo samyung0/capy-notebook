@@ -1412,8 +1412,8 @@ Relace stopped reading its input; the provider pin is described in
 Its catalog and capacity rows
 are UAT data. The caption prompt rides as the system message and the image as
 the user turn, since Relace refuses image input with no conversation context.
-On the routed `zai/glm-5.3-flash` row (wire model `z-ai/glm-5.3-flash`),
-which cannot turn thinking off, captioning sends `reasoning_effort: low`.
+On the `zai/glm-5.3-flash` row (served by Z.AI), which cannot turn thinking
+off, captioning sends `reasoning_effort: low`.
 
 ### VLM page read
 
@@ -1443,15 +1443,11 @@ its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
 flight (`VLM_PAGE_CAPACITY`), taken in place of the captioning model's `model_capacities` row,
 so page reads neither need that row nor count against its ingest share.
 
-On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`.
-While the slot points at GLM, ingest calls Relace on a second account: GitHub holds its key as
-`RELACE_INGEST_API_KEY`, and the env renderer (`scripts/env/config.py`) writes
-it into the ingest queue env as `RELACE_API_KEY`, the one name the pipeline
-reads. Chat on the app host keeps its own `RELACE_API_KEY`. Both accounts share
-Relace's server pool (a server already serving 32 requests sheds new
-sessions), so the second key adds no capacity and ingest reads stay inside
-their gate. Quality against RapidOCR, the 1,280 px render size, per-page speed
-and cost, and the load where shedding starts are in
+On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`; a
+slot pointed at GLM uses `ZAI_API_KEY`, the one Z.AI key chat also uses
+(decision 2026-10-20, replacing the second Relace account ingest had). GLM's
+quality against RapidOCR on Relace, the 1,280 px render size, per-page speed
+and cost are in
 [`bench/parsers/reports/2026-10-15-glm-ocr.md`](../bench/parsers/reports/2026-10-15-glm-ocr.md).
 
 Reads go through the caption cache keyed by the SHA-256 of `vlm-page\0` plus
@@ -2564,9 +2560,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    editor authorization and storage quota checks still apply.
 8. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
    encrypted reasoning items inside the current tool loop. DeepSeek,
-   Anthropic, and ZAI GLM (served from Relace,
-   `models.relace.ai/v1/chat/completions`, wire model
-   `z-ai/glm-5.3-flash`, `RELACE_API_KEY`, no fallback route) use Chat
+   Anthropic, and ZAI GLM (served by Z.AI,
+   `api.z.ai/api/paas/v4/chat/completions`, model `glm-5.3-flash`,
+   `ZAI_API_KEY`, no fallback route) use Chat
    Completions-compatible paths. The GLM
    adapter preserves `reasoning_content` on the assistant message immediately
    before the matching tool result in the next request. Raw chain-of-thought
@@ -4088,7 +4084,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `ZAI_API_KEY`, `OPENROUTER_API_KEY` | The ingest queue env carries the same `ZAI_API_KEY` as chat and the `OPENROUTER_API_KEY` of the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
@@ -4100,7 +4096,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the routed ZAI GLM-5.3-Flash row (served from Relace) captions at `reasoning_effort: low`. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the ZAI GLM-5.3-Flash row (served by Z.AI) captions at `reasoning_effort: low`. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |

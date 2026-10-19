@@ -174,17 +174,6 @@ def test_fetch_available_model_slugs_rejects_unauthorized_key(status: int):
         fetch_available_model_slugs("openai", "bad-key", get=get)
 
 
-def test_fetch_available_model_slugs_names_relace_key_when_zai_rejects():
-    def get(url: str, **_kwargs):
-        return httpx.Response(401, request=httpx.Request("GET", url))
-
-    with pytest.raises(
-        ModelListAuthError,
-        match=r"RELACE_API_KEY was rejected by zai \(401\)",
-    ):
-        fetch_available_model_slugs("zai", "bad-key", get=get)
-
-
 def test_fetch_available_model_slugs_rejects_provider_error():
     def get(url: str, **_kwargs):
         return httpx.Response(500, request=httpx.Request("GET", url))
@@ -194,19 +183,12 @@ def test_fetch_available_model_slugs_rejects_provider_error():
     assert not isinstance(error.value, ModelListAuthError)
 
 
-def test_zai_model_list_is_read_from_relace():
-    captured = {}
-
+def test_zai_has_no_model_list_so_its_slug_is_typed():
     def get(url: str, **_kwargs):
-        captured["url"] = url
-        return httpx.Response(
-            200,
-            request=httpx.Request("GET", url),
-            json={"data": [{"id": "z-ai/glm-5.3-flash"}, {"id": "other-model"}]},
-        )
+        raise AssertionError(f"no model list request expected, got {url}")
 
-    assert fetch_available_model_slugs("zai", "sk-test", get=get) == ["glm-5.3-flash"]
-    assert captured["url"] == "https://models.relace.ai/v1/models"
+    with pytest.raises(ModelListError, match="zai does not have a model-list"):
+        fetch_available_model_slugs("zai", "sk-test", get=get)
 
 
 def test_selectable_models_retain_certified_slugs_missing_from_provider():
