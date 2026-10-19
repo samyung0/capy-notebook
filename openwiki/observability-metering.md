@@ -107,7 +107,15 @@ Field names are shared across all three: `service`, `env`, `trace_id`,
 The gateway emits one access line per request from `obs.AccessLog`, including
 `client_aborted` for disconnects. Streaming responses are logged when the stream
 **closes**, so `duration_ms` is the life of the stream — the useful number for
-finding streams that hang.
+finding streams that hang. Its `path` hashes bearer-token segments
+(`obs.LogPath`: `/api/public/{kind}/{token}/…`, the workspace summary's
+`/api/public/workspaces/{token}/summary` and `/api/workspace-invites/{token}/accept`
+log `h_` plus 12 hex of the token's SHA-256), and the Go Sentry events drop the
+query string and hash the same segments in their URL, transaction and error
+text (`scrubEvent`) (Sam 2026-10-19). The SPA does the same in Sentry
+`beforeSend`/`beforeBreadcrumb` and PostHog `sanitize_properties`
+(`src/lib/urlTokens.ts`): a share link keeps its id without its signature, an
+invite link becomes `/workspace-invites/:token`.
 
 The collaboration server logs one `collab_health` line per minute
 (`collaboration-rs/crates/server/src/health.rs`, a background task; counting a message is an

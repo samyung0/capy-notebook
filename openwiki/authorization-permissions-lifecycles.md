@@ -264,8 +264,8 @@ are plain `AFTER UPDATE` with a `WHEN` on the final row, since `UPDATE OF
 privacy` would miss that). The checks are `workspaceRoles`,
 `materialEffectiveAccess`, `linkReachSQL` (source access, chat), the comment
 lock, the collaboration server's `live_access` and the pipeline's source
-refresh fences. Analytics strip share signatures from page URLs
-(`stripShareSignatures`). Files and
+refresh fences. Logs and telemetry keep share and invite tokens out
+(`stripUrlTokens`, `obs.LogPath`; see the observability doc). Files and
 materials inherit their workspace visibility, but reading their content requires
 a session. Anonymous visitors receive only the minimal workspace summary below.
 
