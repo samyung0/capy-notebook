@@ -185,7 +185,7 @@ and the catalog. Follow the field names in the book-review-v2 sample packet.
 Keep large books in explicit bounded scopes and record completed and pending
 scopes in the inventory. Hash inputs and reference other artifacts for
 provenance; mutable file paths alone do not make a reusable remote packet.
-Keep the owner's own page inspection records; Qwen needs no dedicated image cache.
+Keep the owner's own page inspection records.
 
 Generate packets with the local exporter after the assigned final tags are ready:
 
@@ -197,7 +197,7 @@ For a repaired book, the candidate also carries the chunk-level `source_repairs`
 described in the repair contract. Export final scope packets with
 `--source-review <assembled-review.json>` to embed repaired linked context from
 other scopes. The exporter projects the repairs without changing its input run.
-Keep the existing book-review-v2 packet schema; Qwen still reviews supplied text.
+Keep the existing book-review-v2 packet schema.
 
 The candidate review contains `source_sha256`, `tags`, `model_provenance`,
 `inspection_records`, `validation_receipts` and `unresolved_items`; when supplied,
@@ -208,9 +208,7 @@ rejecting a mismatch before writing the packet. It embeds
 assigned and directly linked source passages, and records the book's other
 excerpt IDs as outside this assignment, not as known-unfinished work. It preserves candidate
 defects for review rather than treating a packet as approval. It makes no
-network request and refuses to overwrite an existing packet. An output packet
-can be supplied to the sample helper's `build_request(packet)` without changing
-its fields; sending and polling remain the developer's separate work.
+network request and refuses to overwrite an existing packet.
 Pass the assigned run directory and frozen baseline. `enrich --apply` changes
 the live `reviewed-notes.json`; its existing
 `retrieval-review-backups/<artifact-sha256>/reviewed-notes.json` can supply the
@@ -218,19 +216,5 @@ original bytes when they match the assignment hash. Do not overwrite live notes
 to export or recompute the expected hash from revised notes. Revised synopses
 belong in `final_tags`, with old notes retained separately.
 
-Packet emission completes the intake workflow. The developer may submit those
-packets whenever needed, using a separate script or manual request, and have
-another reviewer assess the response. Submission, polling and response triage
-are outside this workflow; existing books are not waiting in a Qwen queue.
-
-Qwen is an optional text-only book-artifact reviewer. It checks
-roles, note fidelity/preservation, retrieval scope, topic fit/reuse and necessary
-context links against supplied text. It does not verify page images, numerical
-accuracy or formula/table transcription, review generated study materials, or
-run a separate duplicate-example audit. Its findings are proposals for later
-triage, not automatic edits or a publication gate. The owner does not submit, monitor
-or repair Qwen reviews. Realtime study generation uses the user's chosen model.
-Use Qwen3.8-Max with thinking disabled, strict JSON Schema output and no
-caller-specified token limit for this review.
-The bounded prompt trial lives in
-[the sample pack](../../bench/rag/fixtures/knowledge-review-v2/README.md).
+Packet emission completes the intake workflow. Realtime study generation uses
+the user's chosen model.

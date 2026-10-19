@@ -8,6 +8,16 @@ import scrape
 import store
 from jsonschema import Draft202012Validator
 
+PUBLIC = "93.184.216.34"
+
+
+@pytest.fixture(autouse=True)
+def public_dns(monkeypatch):
+    """Every test host resolves to one public address unless a test says
+    otherwise; robots.txt answers are not cached across tests."""
+    monkeypatch.setattr(scrape, "resolve", lambda host, port: [PUBLIC])
+    monkeypatch.setattr(scrape, "_robots", {})
+
 
 def test_subject_schema_accepts_parent_subjects_but_rejects_invented_ids():
     validator = Draft202012Validator(scrape.VERDICT_SCHEMA["properties"]["subject_id"])
@@ -145,33 +155,18 @@ def test_extract_preserves_format_labels_for_opaque_urls():
     assert links[2]["text"] == "Download PDF"
 
 
-class FakeResponse:
-    def __init__(self, url, body, content_type="text/html"):
-        self.url, self._body, self.headers = url, body, {"content-type": content_type}
+def fake_client(pages, content_type="text/html"):
+    """Serves `pages` by URL; robots.txt is missing everywhere."""
 
-    def raise_for_status(self):
-        pass
+    def handle(request):
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        assert request.headers["accept"] == "text/html"
+        return httpx.Response(
+            200, content=pages[str(request.url)], headers={"content-type": content_type}
+        )
 
-    def iter_bytes(self):
-        yield self._body
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        pass
-
-
-class FakeClient:
-    def __init__(self, pages):
-        self.pages = pages
-
-    def stream(self, method, url, **kwargs):
-        assert kwargs.get("headers") == {"Accept": "text/html"}
-        return FakeResponse(url, self.pages[url])
-
-    def get(self, url):
-        return httpx.Response(404, request=httpx.Request("GET", url))
+    return httpx.Client(transport=httpx.MockTransport(handle))
 
 
 def test_scrape_follows_links_within_depth_and_queues_gated_pdfs(monkeypatch):
@@ -206,7 +201,7 @@ def test_scrape_follows_links_within_depth_and_queues_gated_pdfs(monkeypatch):
         "reason": "catalog",
     }
     monkeypatch.setattr(scrape, "judge", lambda url, text, links: verdict)
-    client = FakeClient(pages)
+    client = fake_client(pages)
     store.enqueue_url("https://a.test/")
     scrape.scrape_one(client, store.next_url(0))
     counts = store.url_counts()
@@ -258,12 +253,9 @@ def test_direct_pdf_response_cannot_inherit_the_landing_verdict(monkeypatch):
     )
     store.enqueue_url("https://a.test/orphan.pdf")
 
-    class PdfClient(FakeClient):
-        def stream(self, method, url, **kwargs):
-            return FakeResponse(url, b"%PDF", "application/pdf")
-
-    scrape.scrape_one(PdfClient({}), store.next_url(0))
-    scrape.scrape_one(PdfClient({}), store.next_url(0))
+    pdfs = {"https://a.test/dl": b"%PDF", "https://a.test/orphan.pdf": b"%PDF"}
+    scrape.scrape_one(fake_client(pdfs, "application/pdf"), store.next_url(0))
+    scrape.scrape_one(fake_client(pdfs, "application/pdf"), store.next_url(0))
     rows = {d["pdf_url"]: d for d in store.downloads()}
     assert (
         rows["https://a.test/dl"]["status"] == "rejected"
@@ -294,12 +286,12 @@ def test_catalog_discovers_books_without_poisoning_pdf_dedupe(monkeypatch):
     html = b"CC BY 4.0 <a href='/book'>Book</a><a href='/book.pdf'>PDF</a>"
     monkeypatch.setattr(scrape, "judge", lambda *args: verdict)
     store.enqueue_url("https://a.test/")
-    scrape.scrape_one(FakeClient({"https://a.test/": html}), store.next_url(0))
+    scrape.scrape_one(fake_client({"https://a.test/": html}), store.next_url(0))
     assert store.downloads() == []
     assert [r["url"] for r in store.url_counts()["pending_head"]] == [book]
     verdict["page_type"] = "book"
     verdict["pdf_links"].append({"url": "https://invented.test/file.pdf"})
-    scrape.scrape_one(FakeClient({book: html}), store.next_url(0))
+    scrape.scrape_one(fake_client({book: html}), store.next_url(0))
     assert [(r["pdf_url"], r["status"]) for r in store.downloads()] == [(pdf, "queued")]
 
 
@@ -399,7 +391,7 @@ def test_book_licence_quote_must_be_on_fetched_page(monkeypatch):
     monkeypatch.setattr(scrape, "judge", lambda *args: verdict)
     store.enqueue_url("https://a.test/")
     scrape.scrape_one(
-        FakeClient({"https://a.test/": b"<a href='/book.pdf'>PDF</a>"}),
+        fake_client({"https://a.test/": b"<a href='/book.pdf'>PDF</a>"}),
         store.next_url(0),
     )
     assert store.downloads()[0]["status"] == "rejected"
@@ -428,7 +420,7 @@ def test_catalog_pagination_keeps_depth_and_only_same_catalog(monkeypatch):
         lambda *args: {"page_type": "catalog", "follow_links": ["https://a.test/book"]},
     )
     store.enqueue_url(url, depth=4)
-    scrape.scrape_one(FakeClient({url: html}), store.next_url(0))
+    scrape.scrape_one(fake_client({url: html}), store.next_url(0))
     assert [(r["url"], r["depth"]) for r in store.url_counts()["pending_head"]] == [
         ("https://a.test/books?page=5", 4)
     ]
@@ -543,3 +535,111 @@ def test_download_respects_robots_the_cap_and_a_corrupt_pdf(server, monkeypatch)
     same = {d["title"]: d for d in store.downloads()}["same"]
     assert same["status"] == "failed" and same["last_error"] == "pdf over 200 MB"
     assert not list(store.SOURCES.glob(".*.part"))
+
+
+# --- redirects and addresses (security regression: builder scraper redirects) --
+
+
+@pytest.mark.parametrize(
+    ("address", "allowed"),
+    [
+        (PUBLIC, True),
+        ("2606:4700:4700::1111", True),
+        ("10.0.0.5", False),
+        ("127.0.0.1", False),
+        ("169.254.169.254", False),
+        ("100.64.0.1", False),
+        ("224.0.0.1", False),
+        ("240.0.0.1", False),
+        ("0.0.0.0", False),
+        ("::1", False),
+        ("fe80::1", False),
+        ("fc00::1", False),
+        ("ff02::1", False),
+        ("::ffff:10.0.0.5", False),
+        ("::ffff:127.0.0.1", False),
+    ],
+)
+def test_only_public_addresses_pass(address, allowed):
+    assert scrape.public(address) is allowed
+
+
+def redirects(chain, monkeypatch, addresses):
+    """A client where each URL of `chain` redirects to the next and the last
+    serves a page or a PDF; `addresses` is the stubbed DNS. Returns the client
+    and the URLs it actually requested."""
+    monkeypatch.setattr(
+        scrape, "resolve", lambda host, port: addresses.get(host, [host])
+    )
+    sent = []
+
+    def handle(request):
+        url = str(request.url)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        sent.append(url)
+        i = chain.index(url)
+        if i + 1 < len(chain):
+            return httpx.Response(302, headers={"location": chain[i + 1]})
+        pdf = url.endswith(".pdf")
+        return httpx.Response(
+            200,
+            content=b"%PDF-1.4 x" if pdf else b"<p>CC BY 4.0</p>",
+            headers={"content-type": "application/pdf" if pdf else "text/html"},
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(handle)), sent
+
+
+DNS = {"a.test": [PUBLIC], "b.test": ["2606:4700:4700::1111"]}
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://intranet.test/admin",  # a name resolving privately
+        "http://169.254.169.254/latest/meta-data/",  # a literal link-local address
+        "http://[::ffff:127.0.0.1]:8080/",  # loopback behind an IPv4-mapped address
+        "http://split.test/",  # one public and one private record
+    ],
+)
+def test_a_page_redirect_to_a_private_address_is_never_sent(monkeypatch, target):
+    dns = {**DNS, "intranet.test": ["10.0.0.5"], "split.test": [PUBLIC, "192.168.1.1"]}
+    client, sent = redirects(["https://a.test/start", target], monkeypatch, dns)
+    store.enqueue_url("https://a.test/start")
+    scrape.scrape_one(client, store.next_url(0))
+    assert sent == ["https://a.test/start"]
+    assert store.url_verdict("https://a.test/start")["reason"].startswith(
+        "Refused: refused "
+    )
+
+
+def test_a_pdf_redirect_to_a_private_address_fails_without_a_retry(monkeypatch):
+    chain = ["https://a.test/book.pdf", "http://127.0.0.1:8080/book.pdf"]
+    client, sent = redirects(chain, monkeypatch, DNS)
+    store.add_download({"pdf_url": chain[0], "title": "Book"}, "queued")
+    scrape.download_one(client, store.next_download(0))
+    row = store.downloads()[0]
+    assert sent == [chain[0]] and row["status"] == "failed" and row["attempts"] == 1
+    assert row["last_error"] == "refused 127.0.0.1: resolves to 127.0.0.1"
+    assert not list(store.SOURCES.glob("*.pdf"))
+
+
+def test_a_public_redirect_chain_is_followed_up_to_five_hops(monkeypatch):
+    chain = [
+        "https://a.test/book",
+        "https://b.test/mirror",
+        "https://a.test/landing",
+    ]
+    client, sent = redirects(chain, monkeypatch, DNS)
+    assert scrape.fetch_html(client, chain[0])[0] == chain[-1] and sent == chain
+    pdfs = [f"https://a.test/{i}.pdf" for i in range(6)]
+    client, sent = redirects(pdfs, monkeypatch, DNS)
+    monkeypatch.setattr(scrape, "page_count", lambda path: 1)
+    store.add_download({"pdf_url": pdfs[0], "title": "Book"}, "queued")
+    scrape.download_one(client, store.next_download(0))
+    assert store.downloads()[0]["status"] == "downloaded" and sent == pdfs
+    client, sent = redirects([*pdfs, "https://a.test/6.pdf"], monkeypatch, DNS)
+    with pytest.raises(scrape.Refused, match="more than 5 redirects"):
+        scrape.fetch_html(client, pdfs[0])
+    assert len(sent) == 6

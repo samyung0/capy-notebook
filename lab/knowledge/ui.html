@@ -107,9 +107,6 @@ pre {
 .book.published {
   border-left-color: #48c;
 }
-.book.waiting {
-  border-left-color: #b80;
-}
 .held {
   padding: 6px 8px;
   margin: 6px 0;
@@ -323,10 +320,6 @@ table.cov {
       <div class="row">
         <button id="ingestStart" type="button">Start</button
         ><button id="ingestPause" type="button">Pause</button>
-        <label
-          ><input id="liveEndpoint" type="checkbox"> live endpoint (small
-          books; batch otherwise)</label
-        >
         <span class="muted"
           >pause finishes the current stage; a running book is removable once
           paused</span
@@ -397,10 +390,13 @@ let state = null,
   coverageLoading = false,
   openSubjects = {};
 
+// The server refuses a mutating request without this header (server.py).
+const GUARD = { 'x-capy-builder': '1' };
+
 async function post(url, body) {
   const r = await fetch(url, {
     body: body ? JSON.stringify(body) : undefined,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...GUARD },
     method: 'POST',
   });
   if (!r.ok) alert(await r.text());
@@ -431,16 +427,11 @@ function renderDeps(d, containers) {
 function renderModel(m) {
   const rows = Object.entries(m.today).map(
     ([e, u]) =>
-      `${e.includes('11434') ? 'ollama' : e.endsWith('/batches') ? 'alibaba batch' : e.includes('aliyuncs') ? 'alibaba' : new URL(e).hostname}: ${u.calls} calls (${u.ok} ok), ${k(u.input_tokens)} in / ${k(u.output_tokens)} out`
-  );
-  const batches = m.batches.map(
-    (t) =>
-      `${esc(t.book_id)} ${esc(t.stage)} <code>${esc(t.batch_id)}</code> ${esc(t.status)}${t.done != null ? ` ${t.done}/${t.requests} done, ${t.failed || 0} failed` : ''} · checked ${when(t.checked_at)}`
+      `${e.includes('11434') ? 'ollama' : e.includes('aliyuncs') ? 'alibaba' : new URL(e).hostname}: ${u.calls} calls (${u.ok} ok), ${k(u.input_tokens)} in / ${k(u.output_tokens)} out`
   );
   $('model').innerHTML =
     `<b>Models</b> topics, scrape <code>${esc(m.ollama.model)}</code> @ ${esc(m.ollama.endpoint)} · transcribe, tag <code>${esc(m.alibaba.model)}</code> @ ${esc(m.alibaba.endpoint)} ${m.alibaba.configured ? '' : '<span class="bad">(ALIBABA_* missing)</span>'}` +
-    ` · today: ${rows.length ? rows.join('; ') : 'no calls'}` +
-    (batches.length ? ` · open batch: ${batches.join('; ')}` : '');
+    ` · today: ${rows.length ? rows.join('; ') : 'no calls'}`;
 }
 
 function renderSources(list) {
@@ -550,7 +541,6 @@ function renderScrape(sc, settings) {
 function renderBooks(list, settings) {
   $('ingestState').textContent = settings.ingest;
   $('ingestNotice').textContent = settings.ingest_notice;
-  $('liveEndpoint').checked = settings.live_endpoint === '1';
   $('books').innerHTML =
     list
       .map((b) => {
@@ -583,12 +573,6 @@ function renderBooks(list, settings) {
         ${t.proposed.map((p) => `<div class="q"><b>${esc(p.id)}</b>${count(p.id)} ${esc(p.label)} <span class="muted">${esc(p.aliases.join(', '))} — ${esc(p.scope)}</span></div>`).join('')}
         ${t.mapped.length ? `<div class="q muted">mapped to existing: ${t.mapped.map((m) => `${esc(m.proposed)}→${esc(m.existing)}`).join(', ')}</div>` : ''}</details>`
           : '';
-        const tasks = b.tasks
-          .map(
-            (task) =>
-              `<div class="q ${b.status === 'waiting' && task.stage === b.stage ? 'warn' : 'muted'}">${esc(task.stage)} batch <code>${esc(task.batch_id)}</code> ${esc(task.status)}${task.done != null ? ` · ${task.done}/${task.requests} done, ${task.failed || 0} failed` : ` · ${task.requests} requests`} · submitted ${when(task.submitted_at)} · last check ${when(task.checked_at)}${task.error ? ` · <span class="bad">${esc(task.error)}</span>` : ''}</div>`
-          )
-          .join('');
         const usage = (u) =>
           `${k(u.prompt_tokens)} in / ${k(u.completion_tokens)} out${u.reasoning_tokens ? ` (${k(u.reasoning_tokens)} reasoning)` : ''}`;
         const transcribe = tr
@@ -617,13 +601,12 @@ function renderBooks(list, settings) {
             : '';
         return `<div class="card book ${b.status}">
       <div><b>${esc(b.title)}</b> <span class="muted">${esc(b.book_id)} · ${esc(b.subject_id)} · ${b.pages} pages${b.first_content_page ? ' · content from p.' + b.first_content_page : ''}</span></div>
-      <div class="row"><span class="${b.status === 'failed' ? 'bad' : b.status === 'published' ? 'ok' : b.status === 'waiting' ? 'warn' : ''}">${b.status}${b.stage && b.status !== 'running' ? ' · next ' + b.stage : ''}${b.version ? ' · library v' + b.version : ''}</span>
+      <div class="row"><span class="${b.status === 'failed' ? 'bad' : b.status === 'published' ? 'ok' : ''}">${b.status}${b.stage && b.status !== 'running' ? ' · next ' + b.stage : ''}${b.version ? ' · library v' + b.version : ''}</span>
         <button type="button" onclick="post('/api/books/${b.sha256}/up').then(refresh)">↑</button><button type="button" onclick="post('/api/books/${b.sha256}/down').then(refresh)">↓</button>
         ${b.status === 'failed' ? `<button type="button" onclick="post('/api/books/${b.sha256}/retry').then(refresh)">retry from ${b.stage}</button>` : ''}
-        ${b.status === 'waiting' ? `<button type="button" onclick="post('/api/books/${b.sha256}/retry').then(refresh)">check now</button>` : ''}
         ${b.status === 'running' ? '' : `<button type="button" onclick="if(confirm('Remove ${esc(b.book_id)} from the queue?')) post('/api/books/${b.sha256}/remove').then(refresh)">remove</button>`}</div>
       ${b.error ? `<div class="q bad">${esc(b.error)}</div>` : ''}
-      ${live}${tasks}${topics}${transcribe}${tag}
+      ${live}${topics}${transcribe}${tag}
       <details ${openPanels['r' + b.sha256] ? 'open' : ''} ontoggle="openPanels['r${b.sha256}']=this.open"><summary>Stage runs (${b.stage_runs.length})</summary>${runs}</details>
       ${logKey && logKey.startsWith(b.sha256) ? `<pre id="log-${b.sha256}"></pre>` : ''}
     </div>`;
@@ -706,7 +689,7 @@ $('addForm').onsubmit = async (e) => {
       body[el.name] = el.name === 'authors' ? el.value.split('\n') : el.type === 'checkbox' ? el.checked : el.value;
   const r = await fetch('/api/books', {
     body: JSON.stringify(body),
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...GUARD },
     method: 'POST',
   });
   if (!r.ok) {
@@ -718,7 +701,10 @@ $('addForm').onsubmit = async (e) => {
 };
 
 async function removeUrl(url) {
-  await fetch('/api/urls?url=' + encodeURIComponent(url), { method: 'DELETE' });
+  await fetch('/api/urls?url=' + encodeURIComponent(url), {
+    headers: GUARD,
+    method: 'DELETE',
+  });
   refresh();
 }
 $('addUrl').onclick = async () => {
@@ -738,10 +724,6 @@ $('ingestPause').onclick = () =>
   post('/api/workflows/ingest/pause').then(refresh);
 $('delay').onchange = () =>
   post('/api/settings', { host_delay_seconds: $('delay').value }).then(refresh);
-$('liveEndpoint').onchange = () =>
-  post('/api/settings', { live_endpoint: $('liveEndpoint').checked }).then(
-    refresh
-  );
 
 // Held items carry a page transcription each, so /api/state sends them for
 // the one book whose held panel is open.

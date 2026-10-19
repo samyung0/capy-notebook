@@ -60,23 +60,16 @@ CREATE TABLE IF NOT EXISTS llm_calls (
   input_tokens INTEGER, output_tokens INTEGER, elapsed_ms INTEGER NOT NULL,
   ok INTEGER NOT NULL, error TEXT
 );
-CREATE TABLE IF NOT EXISTS review_tasks (
-  sha256 TEXT NOT NULL, stage TEXT NOT NULL, batch_id TEXT NOT NULL, input_file_id TEXT, status TEXT NOT NULL,
-  submitted_at REAL NOT NULL, checked_at REAL, output_file_id TEXT, error_file_id TEXT,
-  requests INTEGER NOT NULL, done INTEGER, failed INTEGER, error TEXT, PRIMARY KEY (sha256, stage)
-);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 """
 
 # Worker states and knobs live in `settings`; these are the values used when a
-# key was never written. `live_endpoint` sends the transcribe and tag stages
-# through the live endpoint instead of Alibaba Batch.
+# key was never written.
 DEFAULT_SETTINGS = {
     "scrape": "paused",
     "ingest": "paused",
     "ingest_notice": "",
     "host_delay_seconds": "5",
-    "live_endpoint": "0",
 }
 
 
@@ -94,8 +87,7 @@ def init() -> None:
 
 def startup_reset() -> dict:
     """Rows a dead process left behind: running books and claimed downloads go
-    back to the queue at their current stage; waiting books keep waiting (the
-    batch poll resumes)."""
+    back to the queue at their current stage."""
     with db() as conn:
         books = conn.execute(
             "UPDATE books SET status='queued' WHERE status='running'"
@@ -422,18 +414,6 @@ def next_queued_book() -> dict | None:
     return book_dict(row) if row else None
 
 
-def waiting_book_due(poll_seconds: float) -> dict | None:
-    """A book waiting on its current stage's batch whose task was not checked
-    within the poll interval."""
-    with db() as conn:
-        row = conn.execute(
-            "SELECT b.* FROM books b JOIN review_tasks t ON t.sha256=b.sha256 AND t.stage=b.stage "
-            "WHERE b.status='waiting' AND coalesce(t.checked_at, 0) < ? ORDER BY b.queue_position LIMIT 1",
-            (time.time() - poll_seconds,),
-        ).fetchone()
-    return book_dict(row) if row else None
-
-
 def move_book(sha256: str, direction: int) -> None:
     """Swap queue positions with the neighbour above (-1) or below (+1)."""
     with db() as conn:
@@ -465,53 +445,6 @@ def remove_book(sha256: str) -> None:
         if row and row["status"] == "running":
             raise ValueError("the book is running; pause ingestion first")
         conn.execute("DELETE FROM books WHERE sha256=?", (sha256,))
-
-
-# --- review tasks -------------------------------------------------------------
-
-
-def set_review_task(sha256: str, stage: str, **fields) -> None:
-    """One row per book and stage: inserted on submit (batch_id, requests,
-    submitted_at, status), updated by every poll; a redo replaces it."""
-    with db() as conn:
-        if conn.execute(
-            "SELECT 1 FROM review_tasks WHERE sha256=? AND stage=?", (sha256, stage)
-        ).fetchone():
-            conn.execute(
-                f"UPDATE review_tasks SET {', '.join(f'{k}=?' for k in fields)} WHERE sha256=? AND stage=?",
-                (*fields.values(), sha256, stage),
-            )
-        else:
-            conn.execute(
-                f"INSERT INTO review_tasks(sha256,stage,{','.join(fields)}) VALUES(?,?,{','.join('?' * len(fields))})",
-                (sha256, stage, *fields.values()),
-            )
-
-
-def review_task(sha256: str, stage: str) -> dict | None:
-    with db() as conn:
-        row = conn.execute(
-            "SELECT * FROM review_tasks WHERE sha256=? AND stage=?", (sha256, stage)
-        ).fetchone()
-    return dict(row) if row else None
-
-
-def review_tasks(sha256: str) -> list[dict]:
-    with db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM review_tasks WHERE sha256=? ORDER BY submitted_at", (sha256,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def open_review_tasks() -> list[dict]:
-    """The current-stage batch task of every waiting book, for the model strip."""
-    with db() as conn:
-        rows = conn.execute(
-            "SELECT t.*, b.book_id FROM review_tasks t JOIN books b ON b.sha256=t.sha256 AND b.stage=t.stage "
-            "WHERE b.status='waiting' ORDER BY t.submitted_at"
-        ).fetchall()
-    return [dict(r) for r in rows]
 
 
 # --- receipts -----------------------------------------------------------------

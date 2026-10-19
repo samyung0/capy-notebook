@@ -6,6 +6,11 @@ the page. Secrets come from the repository-root .env.local; PDFs, SQLite, runs
 and logs live under the ignored data/knowledge-base/.
 
   uv run --project pipeline python lab/knowledge/server.py --port 18766
+
+Every request must carry Host 127.0.0.1:<port> or localhost:<port>, and every
+mutating request the X-Capy-Builder header the page sends: a site elsewhere can
+reach this port by DNS rebinding or a cross-site form post, and either one
+misses one of the two.
 """
 
 from __future__ import annotations
@@ -49,7 +54,11 @@ ENV_KEYS = (
     "LIBRARY_DATABASE_URL",
     "DEEPINFRA_API_KEY",
     *KNOWLEDGE_B2_KEYS,
+    # Only the source upload at publish uses these (ingest.writer_client).
+    "KNOWLEDGE_BASE_B2_WRITER_KEY_ID",
+    "KNOWLEDGE_BASE_B2_WRITER_APP_KEY",
 )
+GUARD_HEADER = "x-capy-builder"
 LOG = logging.getLogger("builder")
 PILOT_CONFIG = store.REPO / "data/knowledge-base-pilot-v4/config.json"
 UI = Path(__file__).resolve().parent / "ui.html"
@@ -342,10 +351,10 @@ def read_json(path: Path):
 def transcribe_view(run_dir: Path, with_held: bool) -> dict | None:
     """The latest transcribe receipt; the held ledger only for the book the
     dashboard selected (each item carries a page transcription)."""
-    import batches
+    import stages
     import transcribe
 
-    latest = batches.latest_receipt(run_dir, "transcribe")
+    latest = stages.latest_receipt(run_dir, "transcribe")
     if latest is None:
         return None
     held = transcribe.ledger(run_dir)["held"]
@@ -361,7 +370,7 @@ def transcribe_view(run_dir: Path, with_held: bool) -> dict | None:
 
 
 def book_view(book: dict, with_held: bool = False) -> dict:
-    import batches
+    import stages
 
     run_dir = Path(book["run_dir"])
     topics = read_json(run_dir / "topics.json")
@@ -395,8 +404,7 @@ def book_view(book: dict, with_held: bool = False) -> dict:
             ),
         },
         "transcribe": transcribe_view(run_dir, with_held),
-        "tag": batches.latest_receipt(run_dir, "tag"),
-        "tasks": store.review_tasks(book["sha256"]),
+        "tag": stages.latest_receipt(run_dir, "tag"),
     }
 
 
@@ -421,7 +429,6 @@ def state(held_for: str | None = None) -> dict:
                 ),
             },
             "today": store.llm_usage(midnight),
-            "batches": store.open_review_tasks(),
         },
         "sources": sources(),
         "scrape": {"urls": store.url_counts(), "downloads": store.downloads(2_000)},
@@ -449,7 +456,7 @@ def supervised(target, stop: threading.Event) -> None:
             stop.wait(5)
 
 
-def build_app():
+def build_app(port: int):
     import ingest
     import scrape
     import transcribe
@@ -471,6 +478,20 @@ def build_app():
         stop.set()
 
     app = FastAPI(lifespan=lifespan)
+    hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        if request.headers.get("host") not in hosts:
+            return JSONResponse(status_code=403, content={"detail": "unknown Host"})
+        if (
+            request.method not in ("GET", "HEAD")
+            and request.headers.get(GUARD_HEADER) != "1"
+        ):
+            return JSONResponse(
+                status_code=403, content={"detail": "missing X-Capy-Builder header"}
+            )
+        return await call_next(request)
 
     @app.exception_handler(sqlite3.OperationalError)
     async def database_error(request: Request, exc: sqlite3.OperationalError):
@@ -515,12 +536,6 @@ def build_app():
             store.set_setting(
                 "host_delay_seconds", str(float(body["host_delay_seconds"]))
             )
-        if "live_endpoint" in body:
-            if store.open_review_tasks():
-                raise HTTPException(
-                    409, "a batch task is open; wait for it or redo the stage"
-                )
-            store.set_setting("live_endpoint", "1" if body["live_endpoint"] else "0")
         return {k: store.setting(k) for k in store.DEFAULT_SETTINGS}
 
     @app.post("/api/urls")
@@ -564,8 +579,8 @@ def build_app():
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
         elif action == "retry":
-            if book["status"] not in ("failed", "waiting"):
-                raise HTTPException(409, "only a failed or waiting book is retried")
+            if book["status"] != "failed":
+                raise HTTPException(409, "only a failed book is retried")
             store.set_book(sha, status="queued", error=None)
         else:
             raise HTTPException(404)
@@ -576,7 +591,7 @@ def build_app():
         book = store.book(sha)
         if not book or decision not in ("accept", "reject"):
             raise HTTPException(404)
-        if book["status"] in ("running", "waiting"):
+        if book["status"] == "running":
             raise HTTPException(409, "the book is running; decide once it has stopped")
         try:
             item = transcribe.decide(
@@ -717,10 +732,6 @@ def main() -> None:
     reset = store.startup_reset()
     if any(reset.values()):
         print(f"requeued after restart: {reset}", flush=True)
-    # A killed stage leaves its batch lock; nothing of ours runs at startup.
-    for lock in store.RUNS.glob("*/models/*/command.lock"):
-        lock.unlink()
-        print(f"removed stale {lock}", flush=True)
     import uvicorn
 
     print(
@@ -732,7 +743,11 @@ def main() -> None:
         # Windows, so serve on a selector loop of our own.
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     config = uvicorn.Config(
-        build_app(), host="127.0.0.1", port=args.port, log_level="warning", loop="none"
+        build_app(args.port),
+        host="127.0.0.1",
+        port=args.port,
+        log_level="warning",
+        loop="none",
     )
     asyncio.run(uvicorn.Server(config).serve())
 

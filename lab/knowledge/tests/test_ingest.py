@@ -1,9 +1,12 @@
 import json
 import sys
 
-import batches
+import boto3
 import ingest
+import pytest
 import store
+from pipeline.config import cfg
+from pipeline.store import blobstore
 
 SHA = "c" * 64
 
@@ -123,66 +126,52 @@ def test_a_down_dependency_pauses_the_workflow_with_the_reason(tmp_path, monkeyp
     assert store.stage_runs(SHA) == []
 
 
-def test_batch_stages_wait_on_their_task_then_resume_when_the_poll_finds_it_terminal(
-    tmp_path, monkeypatch
-):
-    trace = []
-    monkeypatch.setattr(ingest, "check_dependencies", lambda stage: None)
-    monkeypatch.setattr(ingest, "published_version", lambda run_dir, book_id: 1)
-    monkeypatch.setattr(store, "BOOKS_JSON", tmp_path / "books.json")
+class Bucket:
+    """Records the clients built and the uploads made through them."""
 
-    def runner(book, run_dir, log):
-        trace.append(log.stem)
-        if log.stem in ingest.BATCH_STAGES and store.review_task(SHA, log.stem) is None:
-            store.set_review_task(
-                SHA,
-                log.stem,
-                batch_id=f"batch-{log.stem}",
-                status="in_progress",
-                submitted_at=1.0,
-                checked_at=1.0,
-                requests=4,
-            )
-            return ingest.WAITING
-        return 0
+    def __init__(self):
+        self.clients, self.uploads = [], []
 
-    monkeypatch.setattr(ingest, "STAGE_RUNNERS", dict.fromkeys(ingest.STAGES, runner))
-    store.set_setting("ingest", "running")
-    ingest.run_book(queue_book(tmp_path))
-    book = store.book(SHA)
-    assert book["status"] == "waiting" and book["stage"] == "transcribe"
-    assert store.stage_runs(SHA)[-1]["exit_code"] == ingest.WAITING
-    # the poll is due (checked_at is old); an in-flight task keeps waiting
-    polled = []
+    def client(self, service, **credentials):
+        self.clients.append(credentials)
+        return self
+
+    def upload_file(self, path, bucket, key, ExtraArgs):
+        self.uploads.append((self.clients[-1]["aws_access_key_id"], bucket, key))
+
+
+def test_source_upload_uses_only_the_writer_key(tmp_path, monkeypatch):
+    """(security regression: library writer key, coverage I-F3) Retrieval's
+    read key never writes the shared bucket."""
+    bucket = Bucket()
+    monkeypatch.setattr(boto3, "client", bucket.client)
+    monkeypatch.setattr(blobstore, "library_object_info", lambda key: None)
     monkeypatch.setattr(
-        batches, "poll", lambda sha, stage: polled.append(stage) or "in_progress"
+        blobstore, "library_client", lambda: pytest.fail("the read key wrote")
     )
-    assert ingest.poll_waiting() and store.book(SHA)["status"] == "waiting"
-    monkeypatch.setattr(
-        batches, "poll", lambda sha, stage: polled.append(stage) or "completed"
-    )
-    assert ingest.poll_waiting() and store.book(SHA)["status"] == "queued"
-    ingest.run_book(store.book(SHA))
-    assert store.book(SHA)["status"] == "waiting" and store.book(SHA)["stage"] == "tag"
-    assert ingest.poll_waiting() and store.book(SHA)["status"] == "queued"
-    ingest.run_book(store.book(SHA))
-    assert trace == [
-        "parse",
-        "figures",
-        "topics",
-        "transcribe",
-        "transcribe",
-        "tag",
-        "tag",
-        "index",
-        "publish",
+    pdf = tmp_path / "book.pdf"
+    pdf.write_bytes(b"%PDF-1.4 x")
+    book = {"sha256": SHA, "manifest": {"pdf_path": str(pdf)}}
+    log = tmp_path / "publish.log"
+    for name in ingest.WRITER_KEYS:
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(RuntimeError, match="KNOWLEDGE_BASE_B2_WRITER_KEY_ID and"):
+        ingest.upload_source(book, log)
+    assert bucket.uploads == []
+    monkeypatch.setenv("KNOWLEDGE_BASE_B2_WRITER_KEY_ID", "writer-id")
+    monkeypatch.setenv("KNOWLEDGE_BASE_B2_WRITER_APP_KEY", "writer-secret")
+    ingest.upload_source(book, log)
+    assert bucket.clients == [
+        {
+            "endpoint_url": cfg.knowledge_base_b2_endpoint,
+            "region_name": cfg.knowledge_base_b2_region,
+            "aws_access_key_id": "writer-id",
+            "aws_secret_access_key": "writer-secret",
+        }
     ]
-    assert polled == ["transcribe", "transcribe", "tag"]
-    assert store.book(SHA)["status"] == "published"
-    # a task checked within the interval is not polled again
-    store.set_book(SHA, status="waiting", stage="tag")
-    store.set_review_task(SHA, "tag", checked_at=9e12)
-    assert not ingest.poll_waiting()
+    assert bucket.uploads == [
+        ("writer-id", cfg.knowledge_base_b2_bucket, f"books/{SHA}.pdf")
+    ]
 
 
 def test_publish_refuses_while_a_held_chunk_is_undecided(tmp_path):
