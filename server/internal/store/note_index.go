@@ -3,12 +3,14 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 // Workspace notes are indexed for retrieval like files. Projection marks a
@@ -135,6 +137,12 @@ func (s *Store) NotePendingChanges(ctx context.Context, workspaceID string, mate
 	out := []NotePending{}
 	for _, n := range notes {
 		before, now, err := noteBlocks(ctx, s.pool, n.pending.MaterialID, workspaceID, n.content, n.baseline)
+		if errors.Is(err, materialdoc.ErrInvalid) {
+			// A stored note the rules refuse is unreadable: it gives no
+			// changes, and the rest of the workspace still does.
+			obs.Log(ctx).Warn("note changes skipped: content unreadable", "material_id", n.pending.MaterialID, "error", err)
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -220,10 +228,49 @@ func markParentNoteDirtyTx(ctx context.Context, tx pgx.Tx, itemID string) error 
 	return err
 }
 
+// measureNoteChange is the net tokens of a dirty note's change since its
+// last index when admission must measure them (not stale, not measured since
+// its last content write), with the revision they were measured at; nil
+// otherwise. An embedded item's write clears the measure without a new
+// revision, so one landing mid-measure can leave an older count until the
+// note goes stale.
+func (s *Store) measureNoteChange(ctx context.Context, materialID string) (*int64, int64, error) {
+	var workspaceID string
+	var revision int64
+	var content *string
+	var baseline []byte
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, revision,
+			CASE WHEN due THEN content END, CASE WHEN due THEN indexed_blocks END
+		FROM (SELECT *, index_dirty_at IS NOT NULL AND pending_tokens IS NULL
+				AND index_dirty_at >= now()-make_interval(secs => $2) AS due
+			FROM materials
+			WHERE id=$1 AND kind='note' AND workspace_id IS NOT NULL AND trashed_at IS NULL) m`,
+		materialID, NoteIndexStale.Seconds()).Scan(&workspaceID, &revision, &content, &baseline)
+	if isNoRows(err) {
+		return nil, 0, ErrNotFound
+	}
+	if err != nil || content == nil {
+		return nil, 0, err
+	}
+	before, now, err := noteBlocks(ctx, s.pool, materialID, workspaceID, *content, baseline)
+	if err != nil {
+		return nil, 0, err
+	}
+	_, tokens := materialdoc.NoteChanges(before, now)
+	return &tokens, revision, nil
+}
+
 // RequestMaterialIndex turns a dirty, idle, not yet queued workspace note into
 // one ingest job paid by the workspace owner. ErrConflict means the note is
 // not due: the scheduler treats it as a skip, not a failure.
 func (s *Store) RequestMaterialIndex(ctx context.Context, materialID string) (string, error) {
+	// The measure runs before the workspace and account locks: a large
+	// note's diff would hold them. A stored note the rules refuse fails here
+	// with materialdoc.ErrInvalid (a 422 that parks it).
+	measured, measuredRevision, err := s.measureNoteChange(ctx, materialID)
+	if err != nil {
+		return "", err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -245,41 +292,38 @@ func (s *Store) RequestMaterialIndex(ctx context.Context, materialID string) (st
 	if err != nil {
 		return "", err
 	}
-	var autoProcess bool
-	var dirtyAt *time.Time
+	var autoProcess, dirty, stale bool
 	var runningJob, indexError *string
 	var revision int64
 	var pendingTokens *int64
-	var content string
-	var baseline []byte
-	if err := tx.QueryRow(ctx, `SELECT w.auto_process, m.index_dirty_at,
-			m.index_job_id, m.index_error, m.revision, m.pending_tokens, m.content, m.indexed_blocks
+	if err := tx.QueryRow(ctx, `SELECT w.auto_process, m.index_dirty_at IS NOT NULL,
+			COALESCE(m.index_dirty_at < now()-make_interval(secs => $3), false),
+			m.index_job_id, m.index_error, m.revision, m.pending_tokens
 		FROM materials m JOIN workspaces w ON w.id=m.workspace_id
 		WHERE m.id=$1 AND m.workspace_id=$2 AND m.kind='note' AND m.trashed_at IS NULL FOR UPDATE OF m`,
-		materialID, workspaceID).
-		Scan(&autoProcess, &dirtyAt, &runningJob, &indexError, &revision, &pendingTokens, &content, &baseline); err != nil {
+		materialID, workspaceID, NoteIndexStale.Seconds()).
+		Scan(&autoProcess, &dirty, &stale, &runningJob, &indexError, &revision, &pendingTokens); err != nil {
 		if isNoRows(err) {
 			return "", ErrNotFound
 		}
 		return "", err
 	}
-	if !autoProcess || dirtyAt == nil || runningJob != nil || indexError != nil {
+	if !autoProcess || !dirty || runningJob != nil || indexError != nil {
 		return "", ErrConflict
 	}
 	// A small change is not due until it goes stale. Its measure is kept
 	// until the next content write clears it, so the scheduler skips the
 	// note meanwhile instead of measuring it again.
-	if time.Since(*dirtyAt) < NoteIndexStale {
+	if !stale {
 		if pendingTokens == nil {
-			before, now, err := noteBlocks(ctx, tx, materialID, workspaceID, content, baseline)
-			if err != nil {
+			// Written since the measure: not due now, measured on the next pass.
+			if measured == nil || measuredRevision != revision {
+				return "", ErrConflict
+			}
+			if _, err := tx.Exec(ctx, `UPDATE materials SET pending_tokens=$2 WHERE id=$1`, materialID, *measured); err != nil {
 				return "", err
 			}
-			_, tokens := materialdoc.NoteChanges(before, now)
-			if _, err := tx.Exec(ctx, `UPDATE materials SET pending_tokens=$2 WHERE id=$1`, materialID, tokens); err != nil {
-				return "", err
-			}
-			pendingTokens = &tokens
+			pendingTokens = measured
 		}
 		if *pendingTokens < NoteIndexTokens {
 			if err := tx.Commit(ctx); err != nil {

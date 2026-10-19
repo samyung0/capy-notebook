@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -82,5 +83,48 @@ func TestNoteChangesStayInTheirWorkspaceAndCarryNoKeys(t *testing.T) {
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &text) != nil ||
 		text.Before != "" || !strings.Contains(text.After, "Pending quiz prompt?") || !keyFree(rec.Body.String()) {
 		t.Fatalf("resolve as a reader: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Review B2 (2026-10-20): a stored note a later rule refuses is the
+// unreadable state for note effects too. Admission answers 422, which the
+// collaboration scheduler parks (a 500 was retried every tick, holding its
+// batch), and the workspace's note changes skip it instead of failing.
+func TestAnUnreadableNoteIsParkedAndLeftOutOfNoteChanges(t *testing.T) {
+	h, st, _, _ := openInternalHTTPWith(t, nil, func(_ *store.Store, config *httpapi.Config) {
+		config.CollaborationSecret = "collab-test-secret"
+	})
+	ctx := context.Background()
+	create := func(title string) string {
+		t.Helper()
+		note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_editor", WorkspaceID: "ws_e2e_private",
+			Kind: "note", Title: title, Content: noteTestContent(t, "# "+title+"\n\nbody")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cleanupMaterial(t, st, note.ID)
+		return note.ID
+	}
+	readable, broken := create("Readable note"), create("Refused note")
+	if _, err := st.Pool().Exec(ctx, `UPDATE materials SET content=$2::jsonb WHERE id=$1`, broken,
+		`{"schemaVersion":1,"value":[{"type":"p","id":"p1","children":[{"text":"say "},`+
+			`{"type":"mention","value":"Ada","children":[{"text":"hidden"}]},{"text":""}]}]}`); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/internal/collaboration/materials/"+broken+"/index", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Collaboration-Secret", "collab-test-secret")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, request)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "material_content_unreadable") {
+		t.Fatalf("admission of the refused note = %d %s, want a final 422", rec.Code, rec.Body.String())
+	}
+
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/note-changes", pipeSecret, map[string]any{
+		"workspaceId": "ws_e2e_private", "materialIds": []string{readable, broken},
+	})
+	if body := rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(body, readable) || strings.Contains(body, broken) {
+		t.Fatalf("note changes = %d %s, want the readable note only", rec.Code, body)
 	}
 }

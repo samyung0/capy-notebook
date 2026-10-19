@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
+
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 // Chat and generation read their notes' changes since the last index once
@@ -54,6 +58,13 @@ func (a *api) internalResolveNoteChange(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	text, err := a.s.ResolveNoteChange(r.Context(), req.WorkspaceID, req.MaterialID, req.BlockID)
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		obs.ResponseError(w, err)
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"code": "material_content_unreadable", "message": "material content could not be decoded",
+		})
+		return
+	}
 	if err != nil {
 		a.fail(w, err)
 		return

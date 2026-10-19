@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf16"
@@ -98,6 +99,12 @@ var dataUnits = map[string]string{"chart": "cells", "plot": "points", "graph": "
 // lineDiffKinds are the embeds whose changes are line diffs within the block.
 var lineDiffKinds = map[string]bool{"chart": true, "plot": true, "graph": true, "mermaid": true, "material_ref": true}
 
+// lineDiffCells bounds a line diff's work: past this many cells of lines
+// before × lines after (once the common first and last lines are trimmed)
+// the change is a placeholder counting its lines, not an LCS. A Mermaid
+// source is bounded only by the document cap.
+const lineDiffCells = 1 << 18
+
 // NoteChanges are the effects from `before` (the indexed blocks) to `after`
 // and the net tokens of the change, a placeholder counted at its full diff
 // (what the reindex threshold measures).
@@ -123,9 +130,13 @@ func NoteChanges(before, after []NoteBlock) ([]NoteEffect, int64) {
 			effects, tokens = append(effects, e...), tokens+t
 		}
 	}
-	for id, list := range old {
-		for _, prev := range list[min(used[id], len(list)):] {
-			e, t := blockEffect(&prev.NoteBlock, nil)
+	// Removed blocks in document order: the evidence reads the same every turn.
+	seen := map[string]int{}
+	for i := range before {
+		prev := before[i]
+		seen[prev.ID]++
+		if seen[prev.ID] > used[prev.ID] {
+			e, t := blockEffect(&prev, nil)
 			effects, tokens = append(effects, e...), tokens+t
 		}
 	}
@@ -136,7 +147,7 @@ func NoteChanges(before, after []NoteBlock) ([]NoteEffect, int64) {
 		if !stay[i] {
 			block := before[position]
 			effects = append(effects, NoteEffect{
-				ID: effectID(block.ID, "move", "", ""), Kind: "text", Operation: "move",
+				ID: effectID(block.ID, "move", fmt.Sprint(position)), Kind: "text", Operation: "move",
 				Label: blockLabel(block), BlockID: block.ID,
 			})
 		}
@@ -191,12 +202,27 @@ func blockEffect(prev, next *NoteBlock) ([]NoteEffect, int64) {
 	case next == nil:
 		operation = "remove"
 	}
+	bounded := true
 	if lineDiffKinds[named.Kind] {
-		before, after = lineDiff(before, after)
+		before, after, bounded = lineDiff(before, after)
 	} else {
 		before, after = trimChange(before, after)
 	}
 	tokens := changeTokens(before, after)
+	if !bounded {
+		changed := max(len(splitLines(before)), len(splitLines(after)))
+		total := len(splitLines(textOf(next)))
+		if next == nil {
+			total = len(splitLines(textOf(prev)))
+		}
+		return []NoteEffect{{
+			ID:        effectID(named.ID, operation, textOf(prev), textOf(next)),
+			Kind:      "data",
+			Operation: operation,
+			Label:     fmt.Sprintf("%s: %d of %d lines changed", blockLabel(*named), changed, total),
+			BlockID:   named.ID,
+		}}, tokens
+	}
 	if unit, data := dataUnits[named.Kind]; data && tokens > NoteDataPlaceholderTokens {
 		changed, total := dataCount(named.Kind, textOf(prev), textOf(next))
 		return []NoteEffect{{
@@ -275,9 +301,16 @@ func commonEnds[T comparable](a, b []T) (int, int) {
 }
 
 // lineDiff keeps only the lines before lost and after gained (a longest
-// common subsequence of lines), each side joined by newlines.
-func lineDiff(before, after string) (string, string) {
+// common subsequence of lines), each side joined by newlines. Past
+// lineDiffCells it is not bounded (false) and gives every line between the
+// common first and last ones.
+func lineDiff(before, after string) (string, string, bool) {
 	b, a := splitLines(before), splitLines(after)
+	prefix, suffix := commonEnds(b, a)
+	b, a = b[prefix:len(b)-suffix], a[prefix:len(a)-suffix]
+	if len(b)*len(a) > lineDiffCells {
+		return strings.Join(b, "\n"), strings.Join(a, "\n"), false
+	}
 	keepB, keepA := lcsKeep(b, a)
 	var removed, added []string
 	for i, line := range b {
@@ -290,7 +323,7 @@ func lineDiff(before, after string) (string, string) {
 			added = append(added, line)
 		}
 	}
-	return strings.Join(removed, "\n"), strings.Join(added, "\n")
+	return strings.Join(removed, "\n"), strings.Join(added, "\n"), true
 }
 
 func splitLines(text string) []string {
@@ -300,19 +333,18 @@ func splitLines(text string) []string {
 	return strings.Split(text, "\n")
 }
 
-// lcsKeep marks the elements of a longest common subsequence of a and b.
+// lcsKeep marks the elements of a longest common subsequence of a and b;
+// callers bound len(a)*len(b) (lineDiffCells).
 func lcsKeep(a, b []string) ([]bool, []bool) {
 	n, m := len(a), len(b)
-	table := make([][]int, n+1)
-	for i := range table {
-		table[i] = make([]int, m+1)
-	}
+	w := m + 1
+	table := make([]int32, (n+1)*w)
 	for i := n - 1; i >= 0; i-- {
 		for j := m - 1; j >= 0; j-- {
 			if a[i] == b[j] {
-				table[i][j] = table[i+1][j+1] + 1
+				table[i*w+j] = table[(i+1)*w+j+1] + 1
 			} else {
-				table[i][j] = max(table[i+1][j], table[i][j+1])
+				table[i*w+j] = max(table[(i+1)*w+j], table[i*w+j+1])
 			}
 		}
 	}
@@ -322,7 +354,7 @@ func lcsKeep(a, b []string) ([]bool, []bool) {
 		case a[i] == b[j]:
 			keepA[i], keepB[j] = true, true
 			i, j = i+1, j+1
-		case table[i+1][j] >= table[i][j+1]:
+		case table[(i+1)*w+j] >= table[i*w+j+1]:
 			i++
 		default:
 			j++
@@ -376,25 +408,29 @@ func dataCount(kind, before, after string) (int, int) {
 	return max(gained, lost), total
 }
 
-// longestIncreasing marks a longest increasing subsequence of positions.
+// longestIncreasing marks a longest increasing subsequence of positions
+// (patience sorting, n log n).
 func longestIncreasing(positions []int) []bool {
 	n := len(positions)
-	length, prev := make([]int, n), make([]int, n)
-	best := -1
-	for i := range positions {
-		length[i], prev[i] = 1, -1
-		for j := 0; j < i; j++ {
-			if positions[j] < positions[i] && length[j]+1 > length[i] {
-				length[i], prev[i] = length[j]+1, j
-			}
+	prev := make([]int, n)
+	var tails []int // tails[k]: index of the smallest tail of a run of k+1
+	for i, position := range positions {
+		k := sort.Search(len(tails), func(k int) bool { return positions[tails[k]] >= position })
+		prev[i] = -1
+		if k > 0 {
+			prev[i] = tails[k-1]
 		}
-		if best < 0 || length[i] > length[best] {
-			best = i
+		if k == len(tails) {
+			tails = append(tails, i)
+		} else {
+			tails[k] = i
 		}
 	}
 	keep := make([]bool, n)
-	for i := best; i >= 0; i = prev[i] {
-		keep[i] = true
+	if len(tails) > 0 {
+		for i := tails[len(tails)-1]; i >= 0; i = prev[i] {
+			keep[i] = true
+		}
 	}
 	return keep
 }
@@ -422,27 +458,4 @@ func changeTokens(before, after string) int64 {
 	}
 	units := int64(len(utf16.Encode(b)) + len(utf16.Encode(a)))
 	return (units-changed+3)/4 + changed
-}
-
-// NoteEffectTokens are the tokens chat reads for a list of effects: a move
-// counts 0, a placeholder its label.
-func NoteEffectTokens(effects []NoteEffect) int64 {
-	var total int64
-	for _, effect := range effects {
-		switch {
-		case effect.Operation == "move":
-		case effect.Kind == "data":
-			total += changeTokens("", effect.Label) + 1
-		default:
-			total += changeTokens(deref(effect.Before), deref(effect.After))
-		}
-	}
-	return total
-}
-
-func deref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }

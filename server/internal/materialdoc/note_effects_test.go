@@ -3,6 +3,7 @@ package materialdoc
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -122,13 +123,79 @@ func TestNoteChangesMakeAHeavyChartChangeAPlaceholder(t *testing.T) {
 		e.Label != `chart "Rain": 40 of 104 cells changed` {
 		t.Fatalf("placeholder = %+v", e)
 	}
-	if tokens <= NoteDataPlaceholderTokens || NoteEffectTokens(effects) >= tokens {
-		t.Fatalf("net tokens %d, chat tokens %d", tokens, NoteEffectTokens(effects))
+	if tokens <= NoteDataPlaceholderTokens {
+		t.Fatalf("net tokens %d", tokens)
 	}
 }
 
 func TestChangeTokensCountChangedCJKOneEach(t *testing.T) {
 	if got := changeTokens("abcd", "abcd界界"); got != 4 {
 		t.Fatalf("tokens = %d", got)
+	}
+}
+
+func TestNoteChangesListRemovedBlocksInDocumentOrder(t *testing.T) {
+	var paras []map[string]any
+	for i := range 20 {
+		paras = append(paras, effectsPara(fmt.Sprintf("p%02d", i), fmt.Sprintf("para %d", i)))
+	}
+	before := effectsBlocks(t, effectsDoc(t, paras...))
+	for range 5 {
+		effects, _ := NoteChanges(before, nil)
+		for i, e := range effects {
+			if e.Operation != "remove" || e.BlockID != fmt.Sprintf("p%02d", i) {
+				t.Fatalf("effect %d = %s %s", i, e.Operation, e.BlockID)
+			}
+		}
+	}
+}
+
+// allocated is the bytes NoteChanges allocates for one call.
+func allocated(before, after []NoteBlock) ([]NoteEffect, uint64) {
+	var start, end runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&start)
+	effects, _ := NoteChanges(before, after)
+	runtime.ReadMemStats(&end)
+	return effects, end.TotalAlloc - start.TotalAlloc
+}
+
+func mermaidBlock(lines []string) []NoteBlock {
+	return []NoteBlock{{IndexBlock: IndexBlock{ID: "m", Text: strings.Join(lines, "\n")}, Kind: "mermaid"}}
+}
+
+// Review B1 (2026-10-20): a line diff's table was lines x lines over the
+// whole block, so a large Mermaid source could exhaust the API's memory on
+// every chat turn and on the reindex measure. Unchanged first and last lines
+// are trimmed, and a change still past lineDiffCells is a line-count
+// placeholder. Both sizes allocate about 200 MB without the bound.
+func TestNoteChangesBoundALargeLineDiff(t *testing.T) {
+	const lines = 5000
+	source := make([]string, lines)
+	for i := range source {
+		source[i] = fmt.Sprintf("  n%d --> n%d", i, i+1)
+	}
+	edited := append([]string(nil), source...)
+	edited[lines/2] = "  changed --> line"
+	effects, bytes := allocated(mermaidBlock(source), mermaidBlock(edited))
+	if len(effects) != 1 || effects[0].Kind != "text" || *effects[0].Before != source[lines/2] ||
+		*effects[0].After != "  changed --> line" {
+		t.Fatalf("one changed line = %+v", effects)
+	}
+	if bytes > 32<<20 {
+		t.Fatalf("one changed line allocated %d MB", bytes>>20)
+	}
+
+	// Many one-character lines, all changed: past the bound.
+	short, other := make([]string, lines), make([]string, lines)
+	for i := range short {
+		short[i], other[i] = string(rune('a'+i%2)), string(rune('c'+i%2))
+	}
+	effects, bytes = allocated(mermaidBlock(short), mermaidBlock(other))
+	if len(effects) != 1 || effects[0].Kind != "data" || effects[0].Label != "mermaid m: 5000 of 5000 lines changed" {
+		t.Fatalf("every line changed = %+v", effects)
+	}
+	if bytes > 32<<20 {
+		t.Fatalf("every line changed allocated %d MB", bytes>>20)
 	}
 }

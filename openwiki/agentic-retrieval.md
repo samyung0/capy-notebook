@@ -3802,9 +3802,12 @@ with no running job and no parked error, in workspaces with `auto_process`
 on, that are idle and not yet measured (`pending_tokens` NULL) or measured at
 the threshold, or that are stale. It asks Go to admit each.
 `POST /internal/collaboration/materials/{id}/index` (`RequestMaterialIndex`)
-measures a note that is not stale: the net tokens of its changes (below) go
-into `pending_tokens`, and a change under the threshold is not due (409) until
-the next content write clears the measure or it goes stale. A due note gets
+measures a note that is not stale, before it takes the workspace and account
+locks: the net tokens of its changes (below) go into `pending_tokens` if the
+note's revision is unchanged by then, and a change under the threshold is not
+due (409) until the next content write clears the measure or it goes stale
+(staleness is the database clock's, as in the SQL). A stored note the rules
+refuse answers 422 `material_content_unreadable`, which parks it. A due note gets
 ingest credits reserved on the workspace owner and one `ingest` job carrying
 `materialId`, recorded in `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
@@ -4082,11 +4085,13 @@ Notes get the same evidence from Go (Epo 2026-10-17). The same read calls
 each scoped note the index does not hold as it stands (dirty, being indexed or
 failed), its index blocks now (`MaterialIndexText`'s blocks from
 `materials.content`) against `indexed_blocks`, aligned by element id
-(`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. Each
+(`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
 change names its `blockId`. Text changes have Office's shape: one span with
 40 UTF-16 units of context. Reordered blocks are moves without text. An
 embed's small change is a line diff of its index text. A chart, plot, graph or
-Mermaid change whose diff exceeds 150 tokens is a `data` placeholder labelled
+Mermaid change whose diff exceeds 150 tokens, or a line diff past 2^18 cells
+of changed lines before by after (once unchanged first and last lines are
+trimmed; `N of M lines changed`), is a `data` placeholder labelled
 with its kind, title and a count (`chart "Rain": 40 of 104 cells changed`).
 `resolve_source_change` with `material_id` and `block_id` reads that block's
 index text before and after through `POST /api/internal/note-changes/resolve`,
