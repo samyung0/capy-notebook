@@ -888,7 +888,7 @@
   "files_office_edit_too_large": "此更改过大，无法一次完成。请每次修改较少的单元格。",
   "files_office_copy_too_large": "所选区域过大，无法复制。请选择较少的单元格。",
   "files_office_copy_failed": "无法复制所选内容。请重试，或选择较少的单元格。",
-  "files_office_cut_peer_change": "剪切时有其他人修改了此工作表。单元格已复制，但未清除。",
+  "files_office_cut_peer_change": "剪切时有其他人修改了这些单元格。单元格已复制，但未清除。",
   "files_office_png_failed": "无法保存图片，请重试。",
   "files_office_print_truncated": "已打印前 {count} 页",
   "files_office_spreadsheet_formula_bar": "编辑栏",

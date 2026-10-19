@@ -888,7 +888,7 @@
   "files_office_edit_too_large": "This change is too large to make at once. Change fewer cells at a time.",
   "files_office_copy_too_large": "This selection is too large to copy. Select fewer cells.",
   "files_office_copy_failed": "Couldn't copy this selection. Try again, or select fewer cells.",
-  "files_office_cut_peer_change": "Someone changed the sheet while you were cutting. The cells were copied, not cleared.",
+  "files_office_cut_peer_change": "Someone changed these cells while you were cutting them. They were copied, not cleared.",
   "files_office_png_failed": "Couldn't save the image. Try again.",
   "files_office_print_truncated": "Printed the first {count} pages",
   "files_office_spreadsheet_formula_bar": "Formula bar",

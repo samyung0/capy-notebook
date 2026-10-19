@@ -1317,7 +1317,7 @@ Excel, and trims only past the used range's last row and column; it reads that
 area in pieces of at most 100,000 cells (the engine's read cap) without
 skipping empty cells, up to the fork's `XLSX_COPY_MAX_CELLS` ceiling (5,000,000 cells), past
 which it shows the `copy-too-large` notice, and stops with the same notice
-once its text passes 64 MB (`XLSX_COPY_MAX_BYTES`, UTF-8 counted as the
+once its text passes 64 MiB (`XLSX_COPY_MAX_BYTES`, UTF-8 counted as the
 pieces arrive); a selection wholly past the used range sends nothing. The
 clipboard write starts in the key press, as a `ClipboardItem` whose text is
 a promise filled once the pieces are read (`writeText` after the read where
@@ -1329,9 +1329,13 @@ while it reads, then clears the range it copied; past either ceiling, or when
 the write fails, it clears nothing. Before reading, a cut asks the engine
 (`checkClearContents`, from the count of the clear's filled cells) whether
 its clear fits the 64 MiB update cap: over it nothing is read, copied or
-cleared and the `edit-too-large` notice shows. A cut that saw a peer's change
-arrive while it read clears nothing and shows the `cut-peer-change` notice,
-the clipboard keeping what was read; a copy accepts the rare row a
+cleared and the `edit-too-large` notice shows. That check also has the
+workbook worker watch the cut's selection: a peer's update whose changed
+cells (the engine's `changed` list) fall inside it marks the cut in the
+worker's own queue, and the cut's clear (`clearCut`) is then refused with
+the `cut-peer-change` notice, also when the change lands between the read
+and the clear; the clipboard keeps what was read. A peer's change outside
+the selection leaves the cut whole. A copy accepts the rare row a
 concurrent row insert or delete duplicates or skips. The latest copy or cut
 owns the clipboard: one still reading when a newer copy or cut starts stops
 reading and writes nothing, and such a cut clears nothing. A cell the keyboard reaches past the used range grows the scroll area
@@ -1392,7 +1396,9 @@ file error and no failed Save, since nobody asked to save. A formula-bar draft
 stays open over an app or tab switch too. A draft whose sheet a peer removes,
 or whose sheet stops being the active one in a peer's update, is dropped, not
 committed; otherwise a draft commits to its own sheet even when a peer's update
-shifted that sheet's index. Once a draft is dropped neither the grid nor the
+shifted that sheet's index, and so does every sheet call the worker runs for
+the editor (clear and its pre-check included): it takes the active sheet's
+current index, not the one the editor last drew. Once a draft is dropped neither the grid nor the
 formula bar keeps the focus, so the keys still being typed do nothing until a
 click. Clicking a sheet
 tab gives the grid the keys. A cell wider
