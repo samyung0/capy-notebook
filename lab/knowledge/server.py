@@ -8,9 +8,7 @@ and logs live under the ignored data/knowledge-base/.
   uv run --project pipeline python lab/knowledge/server.py --port 18766
 
 Every request must carry Host 127.0.0.1:<port> or localhost:<port>, and every
-mutating request the X-Capy-Builder header the page sends: a site elsewhere can
-reach this port by DNS rebinding or a cross-site form post, and either one
-misses one of the two.
+mutating request the X-Capy-Builder header the page sends.
 """
 
 from __future__ import annotations

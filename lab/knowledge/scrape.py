@@ -307,7 +307,10 @@ def public(address: str) -> bool:
     if ip.version == 6 and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
     # is_global already excludes private, loopback, link-local, unspecified and
-    # most reserved ranges; multicast counts as global, so it is checked here.
+    # most reserved ranges; multicast and IPv6 site-local count as global, so
+    # they are checked here.
+    if ip.version == 6 and ip.is_site_local:
+        return False
     return ip.is_global and not ip.is_multicast and not ip.is_reserved
 
 
@@ -315,10 +318,11 @@ def check_host(url: httpx.URL) -> None:
     """Refuse a URL whose host resolves to any non-public address."""
     if url.scheme not in ("http", "https") or not url.host:
         raise Refused(f"refused {url}: not an http(s) URL")
+    # The ASCII host httpx connects to, not the decoded form: the two can
+    # resolve differently for internationalized names.
+    host = url.raw_host.decode("ascii")
     try:
-        addresses = resolve(
-            url.host, url.port or (443 if url.scheme == "https" else 80)
-        )
+        addresses = resolve(host, url.port or (443 if url.scheme == "https" else 80))
     except OSError as exc:
         # As httpx reports a failed lookup: retried for downloads like any
         # other connection error.

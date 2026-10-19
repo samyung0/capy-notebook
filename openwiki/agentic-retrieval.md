@@ -2238,7 +2238,8 @@ at admission, enforced again before publication. Titles and filenames containing
 `Free Courseware` are rejected. Page fetches request HTML explicitly and
 same-catalog `rel=next` pagination preserves crawl depth; the scraper follows
 redirects itself (at most five) and refuses any hop whose host resolves to a
-non-public address. The dashboard answers only its own Host
+non-public address (the check and the connection resolve separately, so an
+answer that changes between them is not covered). The dashboard answers only its own Host
 (`127.0.0.1:<port>` or `localhost:<port>`) and refuses a mutating request
 without its `X-Capy-Builder` header. Its ingestion
 worker runs one-book manifests through parse, figures, topics (TOC-derived,

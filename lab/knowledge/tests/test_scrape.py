@@ -555,6 +555,7 @@ def test_download_respects_robots_the_cap_and_a_corrupt_pdf(server, monkeypatch)
         ("::1", False),
         ("fe80::1", False),
         ("fc00::1", False),
+        ("fec0::1", False),
         ("ff02::1", False),
         ("::ffff:10.0.0.5", False),
         ("::ffff:127.0.0.1", False),
@@ -601,10 +602,17 @@ DNS = {"a.test": [PUBLIC], "b.test": ["2606:4700:4700::1111"]}
         "http://169.254.169.254/latest/meta-data/",  # a literal link-local address
         "http://[::ffff:127.0.0.1]:8080/",  # loopback behind an IPv4-mapped address
         "http://split.test/",  # one public and one private record
+        "http://xn--fa-hia.test/",  # checked as the ASCII host it connects to
     ],
 )
 def test_a_page_redirect_to_a_private_address_is_never_sent(monkeypatch, target):
-    dns = {**DNS, "intranet.test": ["10.0.0.5"], "split.test": [PUBLIC, "192.168.1.1"]}
+    dns = {
+        **DNS,
+        "intranet.test": ["10.0.0.5"],
+        "split.test": [PUBLIC, "192.168.1.1"],
+        "xn--fa-hia.test": ["127.0.0.1"],
+        "fass.test": [PUBLIC],
+    }
     client, sent = redirects(["https://a.test/start", target], monkeypatch, dns)
     store.enqueue_url("https://a.test/start")
     scrape.scrape_one(client, store.next_url(0))

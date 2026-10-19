@@ -110,7 +110,8 @@ at most five per request, and every request (robots.txt, page or PDF, the first
 hop included) is refused unless each address its host resolves to is public:
 private, loopback, link-local, shared, multicast, reserved, unspecified and
 IPv4-mapped forms of those are refused, and the page or download fails without
-a retry. The local builder parser container
+a retry. The check and the connection look the name up separately, so a name
+whose answer changes between the two is not covered. The local builder parser container
 uses `CAPY_MAX_SOURCE_BYTES=209715200` to match; preserve this override when
 recreating it, and set `CAPY_PARSE_WORKERS=1` and `CAPY_PARSE_MAX_PAGES=100000`,
 which the parser requires; book ingestion takes books of any length and the

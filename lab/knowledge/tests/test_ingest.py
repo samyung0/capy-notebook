@@ -141,7 +141,7 @@ class Bucket:
 
 
 def test_source_upload_uses_only_the_writer_key(tmp_path, monkeypatch):
-    """(security regression: library writer key, coverage I-F3) Retrieval's
+    """(security regression: library writer key) Retrieval's
     read key never writes the shared bucket."""
     bucket = Bucket()
     monkeypatch.setattr(boto3, "client", bucket.client)

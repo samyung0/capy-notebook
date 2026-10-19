@@ -1387,7 +1387,7 @@ developer PC holds a key that can write.
    object per book at `books/<sha256>.pdf`; nothing else writes into it.
 2. Two application keys, each **scoped to that bucket only**; each secret is
    shown once:
-   - **Reader**, `readFiles` only: the retrieval service's
+   - **Reader**, `listFiles` and `readFiles`: the retrieval service's
      `KNOWLEDGE_BASE_B2_KEY_ID`/`KNOWLEDGE_BASE_B2_APP_KEY`, in UAT and
      production alike. Because the bucket is shared, a writable key here would
      let either environment change the books every tenant renders.
