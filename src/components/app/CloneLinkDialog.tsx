@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { type RefObject, useRef } from 'react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
 import { useMaterial, useWorkspace } from '@/api/hooks';
 import { WarningBanner } from '@/components/banners/WarningBanner';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -11,6 +11,7 @@ import { m } from '@/i18n';
 import { type CloneKind, cloneLabel, parseCloneTarget } from '@/lib/cloneLink';
 import { errorCopy } from '@/lib/errors';
 import { redeemShareToken } from '@/lib/shareRedeem';
+import { clearStashedToken, stashedToken } from '@/lib/urlTokenStash';
 
 /** The dashboard's `?clone=<kind>:<token>`, which public pages' Clone opens:
  * loads the item into its clone form (a workspace's prefilled form, an item's
@@ -18,7 +19,17 @@ import { redeemShareToken } from '@/lib/shareRedeem';
  * a full plan) in it, and opens the copy. */
 export function CloneLinkDialog() {
   const search = useSearch({ strict: false }) as { clone?: unknown };
-  const target = parseCloneTarget(search.clone);
+  // A new link remounts it, reading its token afresh.
+  return <CloneLink key={String(search.clone)} value={search.clone} />;
+}
+
+function CloneLink({ value }: { value: unknown }) {
+  // The boot module moved the token out of the address bar (urlTokenStash).
+  const [target] = useState(() =>
+    parseCloneTarget(
+      typeof value === 'string' ? stashedToken('clone', value) : value
+    )
+  );
   const navigate = useNavigate();
   // The dialog closes itself when the path changes; opening the copy must not
   // send the user back to the dashboard.
@@ -36,6 +47,11 @@ export function CloneLinkDialog() {
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
+  // Used or refused: it has no further use in this tab.
+  const settled = redeemed || !!redeemError;
+  useEffect(() => {
+    if (settled) clearStashedToken('clone');
+  }, [settled]);
   if (!target) return null;
 
   const close = () => {

@@ -59,7 +59,7 @@ test('a material cloned into a workspace opens there, not on the standalone page
 test("a public page's Clone link tells a non-member why they cannot copy", async ({
   page,
 }) => {
-  await page.goto('/?clone=workspace:pub_ws_2');
+  await page.goto('/?clone=workspace:pub_ws_2.AAAAAAAAAAAAAAAA');
   await expect(
     page
       .getByRole('dialog', { name: m.action_clone_workspace() })
@@ -638,7 +638,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     ).toBeVisible();
 
     // A public page's Clone link names the frozen account, not the workspace.
-    await page.goto('/?clone=workspace:ws_bio');
+    await page.goto('/?clone=workspace:ws_bio.AAAAAAAAAAAAAAAA');
     await expect(
       page
         .getByRole('dialog', { name: m.action_clone_workspace() })

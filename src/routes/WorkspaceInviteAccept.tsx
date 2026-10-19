@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useAcceptWorkspaceInvite } from '@/api/hooks';
 import { AuthGate } from '@/components/app/AuthProvider';
@@ -9,6 +10,7 @@ import { Button, ErrorAction } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { describeError, isNonDisclosing } from '@/lib/errors';
+import { clearStashedToken, stashedToken } from '@/lib/urlTokenStash';
 
 export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
   // The reader's own frozen account is theirs to hear about.
@@ -34,7 +36,9 @@ export default function WorkspaceInviteAccept() {
 }
 
 function InviteContent() {
-  const { token } = useParams({ strict: false }) as { token: string };
+  const { token: param } = useParams({ strict: false }) as { token: string };
+  // The boot module moved the token out of the address bar (urlTokenStash).
+  const [token] = useState(() => stashedToken('invite', param));
   const navigate = useNavigate();
   const {
     data: acceptData,
@@ -44,8 +48,16 @@ function InviteContent() {
     isSuccess: acceptIsSuccess,
     mutate: accept,
   } = useAcceptWorkspaceInvite();
+  // Used or refused: the retry below keeps it in state, a refresh does not.
+  const settled = acceptIsSuccess || acceptIsError;
+  useEffect(() => {
+    if (settled) clearStashedToken('invite');
+  }, [settled]);
 
-  if (acceptIsError && isUnavailableWorkspaceInviteError(acceptError)) {
+  if (
+    !token ||
+    (acceptIsError && isUnavailableWorkspaceInviteError(acceptError))
+  ) {
     return (
       <WorkspaceError backLabel={m.workspace_back_to()} backTo="/workspaces" />
     );
