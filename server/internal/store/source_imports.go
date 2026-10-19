@@ -184,11 +184,14 @@ func (s *Store) createSourceImports(
 	if len(imports) == 0 && completion == nil {
 		return nil, nil
 	}
-	workspaceID := ""
+	// The requesting actor pays for every import (uploader pays). The handler
+	// builds every item from that one actor, so a mismatch is a bug, like a
+	// mismatched workspace.
+	workspaceID, payerID := "", ""
 	if completion != nil {
-		workspaceID = completion.workspaceID
+		workspaceID, payerID = completion.workspaceID, completion.actorUserID
 	} else {
-		workspaceID = imports[0].Upload.WorkspaceID
+		workspaceID, payerID = imports[0].Upload.WorkspaceID, imports[0].Upload.CreatedBy
 	}
 	var total int64
 	keys := make(map[string]struct{}, len(imports))
@@ -196,7 +199,7 @@ func (s *Store) createSourceImports(
 		if item.Upload.WorkspaceID != workspaceID {
 			return nil, errors.New("source imports must share a workspace")
 		}
-		if completion != nil && item.Upload.CreatedBy != completion.actorUserID {
+		if item.Upload.CreatedBy != payerID {
 			return nil, errors.New("source imports must share the request actor")
 		}
 		if item.Provider != "google" && item.Provider != "microsoft" {
@@ -226,18 +229,6 @@ func (s *Store) createSourceImports(
 	}
 	defer tx.Rollback(ctx)
 
-	// The requesting actor pays for every import (uploader pays).
-	payerID := ""
-	if completion != nil {
-		payerID = completion.actorUserID
-	} else {
-		payerID = imports[0].Upload.CreatedBy
-	}
-	for _, item := range imports {
-		if item.Upload.CreatedBy != payerID {
-			return nil, errors.New("source imports must share the request actor")
-		}
-	}
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, payerID); err != nil {
 		return nil, err
 	}
