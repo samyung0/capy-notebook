@@ -512,7 +512,7 @@ func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspace
 		}
 		// Nothing more is charged to a frozen payer.
 		if err := s.assertEditableTx(ctx, tx, payerID); err != nil {
-			return "", ownerHidden(err, actorID)
+			return "", HideOtherAccountLock(err, actorID)
 		}
 		if materialID == "" {
 			return payerID, nil

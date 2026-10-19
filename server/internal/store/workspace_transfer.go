@@ -47,8 +47,10 @@ func (s *Store) TransferWorkspace(
 		return Workspace{}, ErrForbidden
 	}
 	// Workspace-scoped writes take the workspace lock before lifecycle locks.
+	// A locked recipient reads as a non-member: its state and reason stay its
+	// own (review C2).
 	if err := s.lockAccountSessionsTx(ctx, tx, actorID, recipientID); err != nil {
-		return Workspace{}, err
+		return Workspace{}, HideOtherAccountLock(err, actorID)
 	}
 	recipientLimits, err := s.gateOwnedWorkspacesTx(ctx, tx, recipientID, 1)
 	if err != nil {

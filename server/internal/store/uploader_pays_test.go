@@ -664,6 +664,7 @@ func TestCoEditorsDoNotSeeAPayersSuspension(t *testing.T) {
 	})
 	title := "Renamed"
 	_, updateErr := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Title: &title, UpdatedBy: editor})
+	_, renameErr := s.UpdateFile(ctx, editor, file.ID, FilePatch{Name: &title})
 	_, _, reserveErr := s.CreateEditorAssetReservation(ctx, NewEditorAssetReservation{
 		AssetID: uid("asset"), UploadID: uid("eau"), WorkspaceID: ws.ID, MaterialID: note.ID, CreatedBy: editor,
 		Name: "figure.png", Purpose: "image", ObjectPath: "editor-assets/incoming/" + uid("blob"),
@@ -675,7 +676,7 @@ func TestCoEditorsDoNotSeeAPayersSuspension(t *testing.T) {
 	}
 	_, _, sourceErr := s.sourceEditLockTx(ctx, tx, file.ID, editor)
 	_ = tx.Rollback(ctx)
-	for name, err := range map[string]error{"rename": updateErr, "image": reserveErr, "file edit": sourceErr} {
+	for name, err := range map[string]error{"rename": updateErr, "file rename": renameErr, "image": reserveErr, "file edit": sourceErr} {
 		var locked *AccountLockedError
 		if errors.As(err, &locked) || !errors.Is(err, ErrNotFound) {
 			t.Fatalf("%s on a suspended payer's item = %v, want a plain not found", name, err)
@@ -684,44 +685,54 @@ func TestCoEditorsDoNotSeeAPayersSuspension(t *testing.T) {
 }
 
 // Source edits follow the file's payer (security review B7): a frozen owner
-// leaves a member's file editable, a frozen payer makes its file refuse a
-// healthy editor, and a checkpoint for a deleting payer is refused before it
-// waits on the file row.
+// leaves a member's file editable, a frozen payer under a healthy owner makes
+// its file refuse a healthy editor, and a checkpoint for a deleting payer is
+// refused before it waits on the file row. Each case fails on the old
+// owner-only check.
 func TestSourceEditsFollowTheFilesPayer(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "u_b7_owner")
 	member := newBlobTestUser(t, s, "u_b7_member")
 	editor := newBlobTestUser(t, s, "u_b7_editor")
-	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "B7", Tags: []TagRef{}})
-	if err != nil {
-		t.Fatal(err)
+	workspace := func(owner string) (string, File) {
+		t.Helper()
+		ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "B7", Tags: []TagRef{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
+		addWorkspaceEditor(t, s, ws.ID, member)
+		addWorkspaceEditor(t, s, ws.ID, editor)
+		file, err := s.createReadyFile(ctx, ws.ID, member, "member.docx", "docx", nil, "", 10, "sources/"+uid("blob"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ws.ID, file
 	}
-	t.Cleanup(func() { _ = s.DeleteWorkspace(context.Background(), owner, ws.ID) })
-	addWorkspaceEditor(t, s, ws.ID, member)
-	addWorkspaceEditor(t, s, ws.ID, editor)
-	file, err := s.createReadyFile(ctx, ws.ID, member, "member.docx", "docx", nil, "", 10, "sources/"+uid("blob"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	editLock := func(actor string) error {
+	editLock := func(fileID, actor string) error {
 		t.Helper()
 		tx, err := s.pool.Begin(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer tx.Rollback(ctx)
-		_, _, err = s.sourceEditLockTx(ctx, tx, file.ID, actor)
+		_, _, err = s.sourceEditLockTx(ctx, tx, fileID, actor)
 		return err
 	}
+
 	// A frozen owner: the member's file stays editable for the member.
-	pushFrozen(t, s, owner, ws.ID)
-	if err := editLock(member); err != nil {
+	frozenOwner := newBlobTestUser(t, s, "u_b7_frozen_owner")
+	frozenWS, kept := workspace(frozenOwner)
+	pushFrozen(t, s, frozenOwner, frozenWS)
+	if err := editLock(kept.ID, member); err != nil {
 		t.Fatalf("member editing its file under a frozen owner = %v", err)
 	}
-	// A frozen payer: a healthy editor is refused.
-	pushFrozen(t, s, member, ws.ID)
-	wantOverQuotaLock(t, "editor editing a frozen payer's file", editLock(editor))
+
+	// A frozen payer under a healthy owner: a healthy editor is refused.
+	healthyOwner := newBlobTestUser(t, s, "u_b7_healthy_owner")
+	healthyWS, file := workspace(healthyOwner)
+	pushFrozen(t, s, member, healthyWS)
+	wantOverQuotaLock(t, "editor editing a frozen payer's file", editLock(file.ID, editor))
 
 	// A deleting payer: the checkpoint answers at once while another
 	// transaction holds the file row.

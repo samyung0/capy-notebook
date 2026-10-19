@@ -159,7 +159,7 @@ func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID strin
 // commit while the mutation is still in flight. also names further accounts
 // the write charges (an item's payer, uploader pays) for the same ordered
 // batch. A locked owner's workspace is not found for any other actor
-// (ownerHidden).
+// (HideOtherAccountLock).
 func (s *Store) lockWorkspaceMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -174,7 +174,7 @@ func (s *Store) lockWorkspaceMutationTx(
 		actorID = ownerID
 	}
 	if err := s.lockAccountSessionsTx(ctx, tx, append([]string{ownerID, actorID}, also...)...); err != nil {
-		return "", ownerHidden(err, actorID)
+		return "", HideOtherAccountLock(err, actorID)
 	}
 	return ownerID, nil
 }

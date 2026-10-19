@@ -262,7 +262,7 @@ func (s *Store) assertEditableTx(ctx context.Context, q rowQueryer, userIDs ...s
 // view-only, while organizing (rename, move, reorder, delete) goes on.
 func (s *Store) assertContentEditableTx(ctx context.Context, q rowQueryer, ownerID, actorID string) error {
 	if err := s.assertEditableTx(ctx, q, ownerID, actorID); err != nil {
-		return ownerHidden(err, actorID)
+		return HideOtherAccountLock(err, actorID)
 	}
 	return s.storageFullErr(ctx, q, ownerID)
 }

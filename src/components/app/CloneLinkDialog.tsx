@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { type RefObject, useEffect, useRef, useState } from 'react';
+import { type RefObject, useRef } from 'react';
 import { useMaterial, useWorkspace } from '@/api/hooks';
 import { WarningBanner } from '@/components/banners/WarningBanner';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -11,7 +11,8 @@ import { m } from '@/i18n';
 import { type CloneKind, cloneLabel, parseCloneTarget } from '@/lib/cloneLink';
 import { errorCopy } from '@/lib/errors';
 import { redeemShareToken } from '@/lib/shareRedeem';
-import { clearStashedToken, stashedToken } from '@/lib/urlTokenStash';
+import { clearStashedToken } from '@/lib/urlTokenStash';
+import { useStashedToken } from '@/lib/useStashedToken';
 
 /** The dashboard's `?clone=<kind>:<token>`, which public pages' Clone opens:
  * loads the item into its clone form (a workspace's prefilled form, an item's
@@ -25,10 +26,8 @@ export function CloneLinkDialog() {
 
 function CloneLink({ value }: { value: unknown }) {
   // The boot module moved the token out of the address bar (urlTokenStash).
-  const [target] = useState(() =>
-    parseCloneTarget(
-      typeof value === 'string' ? stashedToken('clone', value) : value
-    )
+  const target = parseCloneTarget(
+    useStashedToken('clone', typeof value === 'string' ? value : '')
   );
   const navigate = useNavigate();
   // The dialog closes itself when the path changes; opening the copy must not
@@ -42,16 +41,15 @@ function CloneLink({ value }: { value: unknown }) {
   const { error: redeemError, isSuccess: redeemed } = useQuery({
     enabled: !!target && !frozen,
     meta: { errorBoundary: false },
-    queryFn: () => redeemShareToken(target?.token ?? ''),
+    // Used or refused: it has no further use in this tab.
+    queryFn: () =>
+      redeemShareToken(target?.token ?? '').finally(() =>
+        clearStashedToken('clone')
+      ),
     queryKey: ['share-redeem', target?.token],
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
-  // Used or refused: it has no further use in this tab.
-  const settled = redeemed || !!redeemError;
-  useEffect(() => {
-    if (settled) clearStashedToken('clone');
-  }, [settled]);
   if (!target) return null;
 
   const close = () => {

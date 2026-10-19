@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -92,5 +93,30 @@ func TestTransferMovesOwnershipButNoCharges(t *testing.T) {
 	}
 	if roles[recipientID] != "owner" || roles[senderID] != "editor" {
 		t.Errorf("roles after transfer = %v, want recipient owner and sender editor", roles)
+	}
+}
+
+// A suspended recipient reads as a non-member to the sender: its state and
+// suspension reason stay its own (security review C2).
+func TestTransferToASuspendedMemberIsNotFound(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	senderID := newTransferTestUser(t, s, "u_sender")
+	recipientID := newTransferTestUser(t, s, "u_recipient")
+	ws, err := s.CreateWorkspace(ctx, senderID, WorkspaceCreate{Name: "Handover", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,$2,'editor')`, ws.ID, recipientID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(), suspended_reason='private reason' WHERE id=$1`, recipientID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.TransferWorkspace(ctx, senderID, ws.ID, recipientID)
+	var locked *AccountLockedError
+	if errors.As(err, &locked) || !errors.Is(err, ErrNotFound) {
+		t.Fatalf("transfer to a suspended member = %v, want a plain not found", err)
 	}
 }

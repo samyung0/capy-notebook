@@ -227,14 +227,14 @@ func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws string, actors []
 
 // sourceEditLockTx admits a refresh: sourceLockTx with edit access, refused
 // when the file's payer or the actor is frozen (another account's lifecycle
-// lock answers not found, ownerHidden). Room edits are
+// lock answers not found, HideOtherAccountLock). Room edits are
 // admitted by CheckSourceAccess, which also refuses at the storage limit; a
 // checkpoint saves edits the room already admitted, so it takes sourceLockTx
 // alone (frozen and the limit are enforced at admission only).
 func (s *Store) sourceEditLockTx(ctx context.Context, tx pgx.Tx, fileID string, actor string) (string, string, error) {
 	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true)
 	if err != nil {
-		return "", "", ownerHidden(err, actor)
+		return "", "", HideOtherAccountLock(err, actor)
 	}
 	// Nobody edits what a frozen account pays for (per item, Sam 2026-10-18).
 	payer, err := filePayer(ctx, tx, fileID)
@@ -242,7 +242,7 @@ func (s *Store) sourceEditLockTx(ctx context.Context, tx pgx.Tx, fileID string, 
 		return "", "", err
 	}
 	if err := s.assertEditableTx(ctx, tx, payer, actor); err != nil {
-		return "", "", ownerHidden(err, actor)
+		return "", "", HideOtherAccountLock(err, actor)
 	}
 	return ws, owner, nil
 }
