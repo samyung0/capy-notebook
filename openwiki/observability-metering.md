@@ -1451,18 +1451,20 @@ reads need no `model_capacities` row and do not count against GLM's ingest
 share.
 
 Before enabling traffic, configure the environment's limits in Ops. The approved
-production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
+production values are GLM 48/40 and Qwen embedding 200/80; UAT uses its own account
 and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
-DeepSeek Flash 2500/1500, Z.AI GLM 100/80, OpenRouter DeepSeek V4 Flash
+DeepSeek Flash 2500/1500, Z.AI GLM 48/40, OpenRouter DeepSeek V4 Flash
 0731 32/0 and V4.1 Flash 1017 32/0 (ingest-only, so no interactive reserve;
 page reads lease the `vlm_page` gate instead), Qwen embedding 200/80
-(total/interactive reserve). Existing settings, including GLM 200/120, remain.
+(total/interactive reserve). Existing settings remain.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
-limits; the reserves are application policy. GLM's 100 concurrent calls with
-80 reserved for interactive use (at most 20 ingest calls) were sized against
-Relace's per-key budget (roughly 700-800 RPM, measured 2026-09-26) and are kept
-for Z.AI, whose per-account limits were not measured. Its 429s appear under
-Health "Busy models", which is the signal to revisit the limit. An interactive
+limits; the reserves are application policy. GLM's 48 calls in flight with 40
+reserved for interactive use (decision 2026-10-20) stay under Z.AI's measured
+hold of about 50 per key, past which connections hang about 21 s and fail; ingest
+uses no GLM once page reads run on DeepSeek. Migration `0093` moves an existing
+`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40 and drops the
+relace row (the `tencent` row stays as history). Z.AI 429s appear under Health
+"Busy models". An interactive
 429 fails at once with the busy message when its `Retry-After` is past the 3 s
 interactive retry budget; ingest calls wait and retry within their 120 s budget. See the script for assumptions and
 official sources; split capacities when environments share a provider account.

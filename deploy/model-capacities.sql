@@ -9,11 +9,10 @@
 -- https://api-docs.deepseek.com/quick_start/rate_limit/
 -- DeepInfra: 200 concurrent requests per account/model.
 -- https://docs.deepinfra.com/account/rate-limits
--- GLM-5.3-Flash is served by Z.AI itself (2026-10-20), whose limits are set per
--- account and were not measured. Its gate keeps the 100 concurrent calls / 80
--- interactive reserve sized for Relace, which served it before: Z.AI's 429s
--- show under Ops Health "Busy models", the signal to revisit the limit. The
--- gate stays as a runaway bound.
+-- GLM-5.3-Flash is served by Z.AI itself (2026-10-20), which holds about 50
+-- calls in flight per key (measured 2026-10-20: past that, connections hang and
+-- fail), so its gate is 48 in flight with 40 kept for interactive calls
+-- (decision 2026-10-20; migration 0093 caps an existing Relace row the same).
 -- OpenRouter DeepSeek V4 Flash 0731 (held on Relace) serves only the ingest
 -- descriptor, so it has no interactive reserve. Measured 2026-10-15: no 429 at
 -- up to 96 calls in flight; 32 in flight held ~600 requests/min (p95 5.5 s),
@@ -22,7 +21,7 @@
 -- images for captioning, so it has no interactive reserve either. It copies the
 -- 0731 gate unmeasured. Page reads lease the fixed vlm_page gate of 20 instead
 -- of this row, so it gates standalone image captions only.
--- Interactive reserves: 80% GLM / 60% DeepSeek / 40% embedding.
+-- Interactive reserves: 83% GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
 -- binds; it copies the embedding's 80.
@@ -30,7 +29,7 @@
 WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
   VALUES
     ('deepseek', 'deepseek-flash', 2500, 2200),
-    ('zai', 'glm-5.3-flash', 100, 80),
+    ('zai', 'glm-5.3-flash', 48, 40),
     ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32, 0),
     ('openrouter', 'deepseek/deepseek-v4.1-flash-1017', 32, 0),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),

@@ -815,14 +815,15 @@ are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
 120/minute editor class are not env-overridable. Configure model capacity in the
 Ops model catalog before allowing platform model calls. Each environment stores
-its own transport provider/model limits in `model_capacities`; new databases start
+its own provider/model limits in `model_capacities`; new databases start
 without limits and missing capacity fails explicitly. Production uses GLM
-200 total / 120 interactive reserve and Qwen embedding 200 / 80. UAT and full local
+48 total / 40 interactive reserve (Z.AI holds about 50 calls in flight per key;
+migration 0093 moves an existing Relace GLM row there under that cap) and Qwen
+embedding 200 / 80. UAT and full local
 development must use limits appropriate to their own provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
 only missing enabled platform-model capacities using the documented DeepSeek
-and DeepInfra concurrency limits, and a GLM limit first sized for Relace's
-per-key requests-per-minute budget and kept for Z.AI. Its source links and
+and DeepInfra concurrency limits, and Z.AI's measured GLM limit. Its source links and
 allocation assumptions are in the SQL. Existing operator values are preserved.
 Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
