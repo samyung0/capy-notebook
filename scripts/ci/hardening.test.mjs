@@ -1,7 +1,8 @@
 // CI and deploy configuration rules (security regressions: CI hardening):
-// third-party actions pinned by commit, a limited token per workflow, secrets
-// only on the steps that use them, a vulnerability job per ecosystem, and no
-// workers.dev or preview URL for any Worker.
+// third-party actions pinned by commit, a limited token per workflow, no token
+// left in git config after checkout, no expression expanded inside a run
+// script, secrets only on the steps that use them, a vulnerability job per
+// ecosystem, and no workers.dev or preview URL for any Worker.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -23,17 +24,32 @@ const actionFiles = list('.github/actions').map(
   (name) => `.github/actions/${name}/action.yml`
 );
 const workflows = workflowFiles.map((file) => [file, parse(read(file))]);
+// Every step of every workflow job and composite action, with where it is.
+const steps = [
+  ...workflows.flatMap(([file, workflow]) =>
+    Object.entries(workflow.jobs).flatMap(([name, job]) =>
+      (job.steps ?? []).map((step) => [`${file}: ${name}`, step])
+    )
+  ),
+  ...actionFiles.flatMap((file) =>
+    parse(read(file)).runs.steps.map((step) => [file, step])
+  ),
+];
 
 const USES = /^\s*(?:-\s+)?uses:\s*(\S+)(.*)$/;
 const PINNED = /^[\w.-]+\/[\w./-]+@[0-9a-f]{40}$/;
 const RELEASE_COMMENT = /^\s+# \S+$/;
-const SECRET = /\bsecrets\./;
+// `secrets.X`, `secrets[...]` and `toJSON(secrets)`.
+const SECRET = /\bsecrets\b/;
+// Steps that run third-party or fork code: installs and the fork's build.
 const INSTALL =
-  /\b(pnpm install|npm (ci|install)|bun install|uv sync|pip install|playwright install|e2e:install)\b/;
+  /\b(pnpm install|npm (ci|install)|bun install|uv sync|pip install|playwright install|e2e:install|office:prepare)\b/;
+const EXPRESSION = '${{';
 const AUDITS = [
   /^cargo deny check advisories$/,
   /govulncheck@v[\d.]+ -format json/,
   /^pnpm audit --prod$/,
+  /pip-audit==[\d.]+ /,
 ];
 const WRANGLER_FILE = /^wrangler.*\.jsonc$/;
 // The wrangler files comment only on whole lines.
@@ -47,6 +63,22 @@ test('every third-party action is pinned to a commit with its release in a comme
       assert.match(match[1], PINNED, `${file}: ${line.trim()}`);
       assert.match(match[2], RELEASE_COMMENT, `${file}: ${line.trim()}`);
     }
+  }
+});
+
+test('no checkout leaves the token in git config', () => {
+  for (const [where, step] of steps) {
+    if (!step.uses?.startsWith('actions/checkout@')) continue;
+    assert.equal(step.with?.['persist-credentials'], false, where);
+  }
+});
+
+test('run scripts take expressions through env, never expanded in the script', () => {
+  for (const [where, step] of steps) {
+    assert(
+      !step.run?.includes(EXPRESSION),
+      `${where}: ${step.name ?? step.run}`
+    );
   }
 });
 
@@ -94,7 +126,7 @@ test('the SPA build job renders only the build values; the deploy job renders th
   assert.deepEqual(renders(jobs.deploy), ['render']);
 });
 
-test('CI fails on known vulnerabilities in the Rust, Go and pnpm dependencies', () => {
+test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies', () => {
   const steps = Object.values(parse(read('.github/workflows/ci.yml')).jobs)
     .filter((job) => !job['continue-on-error'])
     .flatMap((job) => job.steps)

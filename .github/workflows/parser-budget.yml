@@ -43,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           ref: ${{ inputs.revision || github.sha }}
       # `runner.temp` is not available in job-level env.
       - run: echo "OUT=$RUNNER_TEMP/parser-budget" >> "$GITHUB_ENV"
