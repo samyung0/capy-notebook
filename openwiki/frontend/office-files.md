@@ -2197,7 +2197,7 @@ collaborator) takes effect within those 5 s, and every checkpoint rechecks each
 writer. Each room has its own state cap (`sources::state_cap`, Epo
 2026-10-17): its seed plus the export cap (the largest plan source file,
 `max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
-less the base file and a 1 MiB margin, within the 100 MB ceiling every room
+less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
 shares (WebSocket frames, downloads, offline drafts).
 Pictures that came with the file are references in the seed but bytes in the
 export, and an inserted image is in the state at least as large as in the
@@ -2214,15 +2214,21 @@ writes an original twice. Admission keeps `STATE_WRITE_RESERVE_BYTES` (64 KiB)
 free under the cap, so the contributor marker written after an update fits and
 the save's check against the cap stays exact; an agent edit is held to the
 same reserve and counts toward the room's running size. A file with no
-growth budget left (`growthBudgetBytes` 0) opens to view only with a
-size-limit notice instead of Edit (`opensAtSizeLimit`, `useSizeLimitView`),
-its mode control disabled from then on so it reads as not editable, unless it
-holds drafts (recovery, or restored drafts being sent), which still open so
-they can be seen, copied out or discarded. A text source follows the same
-rule (Epo 2026-10-20): its edit read carries a budget from its base alone,
-since a text state is the whole text rather than a change over the seed; a base within the margin and the reserve of
-the export cap leaves no growth. An image picked before the replica's first
-measure waits for it. A
+growth budget left reads as not editable (Epo 2026-10-20): the view read's
+`atSizeLimit` (Go works it out on the current base, with no blob read)
+disables the mode control before any Edit attempt. An edit open whose read
+says `growthBudgetBytes` 0 stops before it joins the room
+(`opensAtSizeLimit`) and drops to view with a size-limit notice, the control
+disabled from then on (`useSizeLimitView`), unless it holds drafts (recovery,
+or restored drafts being sent), which still open so they can be seen, copied
+out or discarded. Text follows the same rule. The budget's growth is the
+durable state's over seed(base) as the room's estimate counts it
+(`sourceGrowthSQL`): an Office state and its rows are the change, and a text
+state, the whole text with its history, less its seed (`seed_bytes`). A base
+within the margin and the reserve of the export cap leaves no growth, so a
+Pro upload between about 28.94 and 30 MiB opens view-only from the start. An
+image picked once the replica exists waits for its first measure; one picked
+before is refused with the budget notice. A
 save's whole state and an agent edit's are held to the same cap. Only when
 the estimate passes the cap is the exact size computed; an update over the cap
 gets an unrecoverable

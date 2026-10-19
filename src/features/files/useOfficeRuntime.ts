@@ -154,15 +154,14 @@ export function useOfficeRuntime({
     setJoined(false);
     setMode('view');
   }, [mode, pausedAtOpen, setMode]);
-  // No edit frame loads for a file at its size limit (the load waits below).
-  const { atSizeLimit, sizeLimited } = useSizeLimitView(
-    source,
-    mode === 'edit',
-    () => {
+  // The view read says the file is at its size limit before any Edit
+  // attempt; an edit open stopped there drops to view.
+  const [viewAtSizeLimit, setViewAtSizeLimit] = useState(false);
+  const sizeLimited =
+    useSizeLimitView(source.atSizeLimit, mode === 'edit', () => {
       setJoined(false);
       setMode('view');
-    }
-  );
+    }) || viewAtSizeLimit;
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const modeRef = useRef(mode);
@@ -358,6 +357,8 @@ export function useOfficeRuntime({
     const controller = new AbortController();
     void takeSourceOpen(file.id, 'view', controller.signal)
       .then(async ({ base, session }) => {
+        if (!controller.signal.aborted)
+          setViewAtSizeLimit(!!session.atSizeLimit);
         const bytes = (await base).buffer;
         const saved =
           session.checkpoint === session.indexedCheckpoint
@@ -385,7 +386,6 @@ export function useOfficeRuntime({
       mode === 'edit' &&
       (!source.doc ||
         !source.session ||
-        atSizeLimit ||
         !source.bytes ||
         (!source.synced && source.status !== 'recovery' && !source.outdated))
     )
@@ -450,7 +450,6 @@ export function useOfficeRuntime({
       )
     );
   }, [
-    atSizeLimit,
     frameLoaded,
     frameGeneration,
     frameBoot,

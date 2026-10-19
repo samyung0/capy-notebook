@@ -729,6 +729,14 @@ test('a text source at its size limit opens to view only', async ({ page }) => {
     page.getByRole('textbox', { name: m.source_edit_raw() })
   ).toHaveCount(0);
   await expect(toggle).toBeDisabled();
+  // The open stopped before joining the room (review r3 S1).
+  expect(
+    await page.evaluate(() => sessionStorage.getItem('capy.mock.sourceJoins'))
+  ).toBeNull();
+  // A fresh view knows before any attempt (review r3 E1).
+  await page.reload();
+  await expect(toggle).toBeDisabled({ timeout: 30_000 });
+  await expect(page.getByText(m.files_size_limit())).toHaveCount(0);
 });
 
 test('a failed annotation save shows its strip on the PDF', async ({

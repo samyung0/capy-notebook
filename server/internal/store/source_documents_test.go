@@ -2123,25 +2123,22 @@ func TestTextSavesWriteTheFilePreview(t *testing.T) {
 // file (a negative one would fail every edit read's validation).
 func TestSourceGrowthBudgetStopsAtZero(t *testing.T) {
 	const exportCap = 30 << 20
-	change := SourceSession{BrowserSourceSession: BrowserSourceSession{State: make([]byte, 100), StateRows: [][]byte{make([]byte, 50)}}}
 	for _, tc := range []struct {
-		name    string
-		base    int64
-		session SourceSession
-		want    int64
+		name  string
+		base  int64
+		grown int64
+		want  int64
 	}{
-		{"small base, saved change", 1000, change, exportCap - 1000 - sourceGrowthMarginBytes - sourceWriteReserveBytes - 150},
-		{"base at the export cap", exportCap, SourceSession{}, 0},
-		{"change past the budget", exportCap - sourceGrowthMarginBytes - 100, change, 0},
+		{"small base, saved change", 1000, 150, exportCap - 1000 - sourceGrowthMarginBytes - sourceWriteReserveBytes - 150},
+		{"base at the export cap", exportCap, 0, 0},
+		{"change past the budget", exportCap - sourceGrowthMarginBytes - 100, 150, 0},
 		// A base published over the export cap (Epo 2026-10-19) freezes at
 		// its size limit.
-		{"base over the export cap", exportCap + 5<<20, SourceSession{}, 0},
+		{"base over the export cap", exportCap + 5<<20, 0, 0},
 		// Less than admission's reserve left admits nothing: view only.
-		{"budget inside the reserve", exportCap - sourceGrowthMarginBytes - sourceWriteReserveBytes + 100, change, 0},
-		// A text state is the whole text: only the base counts (Epo 2026-10-20).
-		{"text state", 1000, SourceSession{BrowserSourceSession: BrowserSourceSession{Format: "text", State: make([]byte, 100)}}, exportCap - 1000 - sourceGrowthMarginBytes - sourceWriteReserveBytes},
+		{"budget inside the reserve", exportCap - sourceGrowthMarginBytes - sourceWriteReserveBytes + 100, 150, 0},
 	} {
-		if got := SourceGrowthBudget(exportCap, tc.base, tc.session); got != tc.want {
+		if got := SourceGrowthBudget(exportCap, tc.base, tc.grown); got != tc.want {
 			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
 		}
 	}

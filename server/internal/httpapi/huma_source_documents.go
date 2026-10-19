@@ -151,6 +151,14 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 		if err != nil {
 			return nil, hErr(err)
 		}
+		// On the current base only: the view read heads no blob.
+		if session.BaseBytes != nil {
+			exportCap, err := a.s.MaxSourceFileBytes()
+			if err != nil {
+				return nil, hErr(err)
+			}
+			session.AtSizeLimit = store.SourceGrowthBudget(exportCap, *session.BaseBytes, session.GrownBytes) == 0
+		}
 		return a.browserSourceSession(ctx, session)
 	}
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
@@ -163,7 +171,7 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 	}
 	// A pending rebuild is the collaboration service's.
 	session.RebuildPending, session.PublishedState, session.PublishedStateSeedSHA256, session.PublishedSourceSHA256 = false, nil, nil, ""
-	budget, err := a.sourceGrowthBudget(ctx, session)
+	budget, err := a.sourceGrowthBudget(ctx, session.BrowserSourceSession)
 	if err != nil {
 		return nil, err
 	}
@@ -186,13 +194,13 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*br
 // sourceGrowthBudget is an Office edit read's SourceGrowthBudget. The base
 // is the file's current revision unless editing stays on an older one, whose
 // size the bucket answers.
-func (a *api) sourceGrowthBudget(ctx context.Context, session store.SourceSession) (int64, error) {
+func (a *api) sourceGrowthBudget(ctx context.Context, session store.BrowserSourceSession) (int64, error) {
 	exportCap, err := a.s.MaxSourceFileBytes()
 	if err != nil {
 		return 0, hErr(err)
 	}
 	if session.BaseBytes != nil {
-		return store.SourceGrowthBudget(exportCap, *session.BaseBytes, session), nil
+		return store.SourceGrowthBudget(exportCap, *session.BaseBytes, session.GrownBytes), nil
 	}
 	if a.blob == nil {
 		return 0, huma.Error503ServiceUnavailable("blob store not configured")
@@ -201,7 +209,7 @@ func (a *api) sourceGrowthBudget(ctx context.Context, session store.SourceSessio
 	if err != nil {
 		return 0, hErr(err)
 	}
-	return store.SourceGrowthBudget(exportCap, info.Size, session), nil
+	return store.SourceGrowthBudget(exportCap, info.Size, session.GrownBytes), nil
 }
 func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapInput) (*sourceSessionOutput, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {

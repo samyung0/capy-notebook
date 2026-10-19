@@ -11,6 +11,7 @@ export interface BrowserSourceSession {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   access: BrowserSourceSessionAccess;
+  atSizeLimit?: boolean;
   baseRevision: number;
   baseSourceSHA256: string;
   checkpoint: number;

@@ -74,6 +74,7 @@ import { editorAssetHandlers } from './editorAssets';
 import { questionBankHandlers } from './questionBank';
 import {
   clearMockThumbnailStale,
+  mockAtSizeLimit,
   scenarioSourceSession,
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
@@ -686,6 +687,7 @@ export const handlers = [
     )
       return HttpResponse.json({
         access: 'read',
+        atSizeLimit: mockAtSizeLimit(file.id),
         fileId: file.id,
         format: 'text',
         state: savedSourceState(file.id),

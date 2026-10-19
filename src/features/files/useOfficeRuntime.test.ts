@@ -127,27 +127,13 @@ describe('the notices a frame shows', () => {
   });
 });
 
-describe('an Office edit open at the size limit', () => {
-  const full = { growthBudgetBytes: 0 };
+describe('an edit open at the size limit', () => {
   it('stops when nothing is left to admit and no drafts wait', () => {
-    expect(
-      opensAtSizeLimit({ dirty: false, session: full, status: 'saved' })
-    ).toBe(true);
-    expect(
-      opensAtSizeLimit({
-        dirty: false,
-        session: { growthBudgetBytes: 1 },
-        status: 'saved',
-      })
-    ).toBe(false);
+    expect(opensAtSizeLimit({ growthBudgetBytes: 0 }, 0)).toBe(true);
+    expect(opensAtSizeLimit({ growthBudgetBytes: 1 }, 0)).toBe(false);
   });
 
-  it('still opens recovery and restored drafts, so they can be copied out or discarded', () => {
-    expect(
-      opensAtSizeLimit({ dirty: false, session: full, status: 'recovery' })
-    ).toBe(false);
-    expect(
-      opensAtSizeLimit({ dirty: true, session: full, status: 'saving' })
-    ).toBe(false);
+  it('still opens restored drafts, so they can be sent, copied out or discarded', () => {
+    expect(opensAtSizeLimit({ growthBudgetBytes: 0 }, 2)).toBe(false);
   });
 });

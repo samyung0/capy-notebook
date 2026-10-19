@@ -296,10 +296,20 @@ test('a DOCX with no growth budget left opens to view only with the size-limit n
     timeout: 60_000,
   });
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
-  // It reads as not editable (Epo 2026-10-20).
-  await expect(
-    page.getByRole('button', { name: m.material_mode() })
-  ).toBeDisabled();
+  // It reads as not editable (Epo 2026-10-20), and the open stopped before
+  // joining the room (review r3 S1).
+  const toggle = page.getByRole('button', { name: m.material_mode() });
+  await expect(toggle).toBeDisabled();
+  expect(
+    await page.evaluate(() => sessionStorage.getItem('capy.mock.sourceJoins'))
+  ).toBeNull();
+  // A fresh view knows before any attempt (review r3 E1).
+  await page.reload();
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(toggle).toBeDisabled();
+  await expect(page.getByText(m.files_size_limit())).toHaveCount(0);
 });
 
 test('pptx Insert › Image shrinks a picture toward the growth budget and refuses one that still does not fit', async ({

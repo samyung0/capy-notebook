@@ -49,10 +49,14 @@ export function SourceTextView({
     setJoined(false);
     setMode('view');
   }, [editing, pausedAtOpen, setMode]);
-  const { sizeLimited } = useSizeLimitView(source, editing, () => {
-    setJoined(false);
-    setMode('view');
-  });
+  // The view read says the file is at its size limit before any Edit
+  // attempt; an edit open stopped there drops to view.
+  const [viewAtSizeLimit, setViewAtSizeLimit] = useState(false);
+  const sizeLimited =
+    useSizeLimitView(source.atSizeLimit, editing, () => {
+      setJoined(false);
+      setMode('view');
+    }) || viewAtSizeLimit;
   useEffect(() => {
     onDirtyChange?.(source.dirty);
     return () => onDirtyChange?.(false);
@@ -91,6 +95,7 @@ export function SourceTextView({
       .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
       .then((session) => {
         if (cancelled) return;
+        setViewAtSizeLimit(!!session.atSizeLimit);
         const doc = new Y.Doc();
         if (applySavedSource(doc, session)) {
           url = URL.createObjectURL(

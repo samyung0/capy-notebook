@@ -2235,6 +2235,7 @@ export const GetSourceSessionQueryParams = zod.object({
 export const GetSourceSessionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
+  "atSizeLimit": zod.boolean().optional(),
   "baseRevision": zod.int(),
   "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),
@@ -7234,6 +7235,7 @@ export const BootstrapSourceDocumentHeader = zod.object({
 export const BootstrapSourceDocumentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
+  "atSizeLimit": zod.boolean().optional(),
   "baseRevision": zod.int(),
   "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),
@@ -7413,6 +7415,7 @@ export const PublishSourceRefreshBody = zod.object({
 export const PublishSourceRefreshResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
+  "atSizeLimit": zod.boolean().optional(),
   "baseRevision": zod.int(),
   "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),

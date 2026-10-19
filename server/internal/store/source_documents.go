@@ -43,7 +43,10 @@ type BrowserSourceSession struct {
 	// BaseBytes is the base file's size when it is the file's current
 	// revision (files.size_bytes); nil while editing stays on an older one.
 	BaseBytes *int64 `json:"-"`
-	Access    string `json:"access" enum:"write,read"`
+	// GrownBytes is the durable state's growth over seed(base)
+	// (sourceGrowthSQL), which the growth budget subtracts.
+	GrownBytes int64  `json:"-"`
+	Access     string `json:"access" enum:"write,read"`
 	// ImageMaxBytes: the browser's Office edit read only. The plan image cap
 	// of the workspace owner, who pays for the file: inserted images over it
 	// are shrunk in the browser first.
@@ -53,6 +56,11 @@ type BrowserSourceSession struct {
 	// the file to view only, and the Office editor refuses an inserted image
 	// past it.
 	GrowthBudgetBytes *int64 `json:"growthBudgetBytes,omitempty"`
+	// AtSizeLimit: the browser's view read only. The file has no growth
+	// budget left, so the view shows it cannot be edited before any attempt
+	// (Epo 2026-10-20). Known on the current base only; editing that stays
+	// on an older one learns it from the edit read.
+	AtSizeLimit bool `json:"atSizeLimit,omitempty"`
 	// ThumbnailStale: the browser's Office edit read only. The file's card is
 	// older than its saved document (ThumbnailStale), so the editor uploads
 	// the page 1 it draws, once per open.
@@ -97,22 +105,18 @@ const sourceWriteReserveBytes = 64 << 10
 
 // SourceGrowthBudget is what a source room may still admit: the export cap
 // (the largest plan source file) less the base file, the margin, admission's
-// write reserve and the durable change over seed(base), its state and rows
-// (Epo 2026-10-17; the collaboration server's admission_cap of state_cap).
-// Never negative; 0 means nothing would be admitted, so the file opens to
-// view only.
-func SourceGrowthBudget(exportCap, baseBytes int64, session SourceSession) int64 {
-	// A text state is the whole text, not a change over the seed: only its
-	// base says whether the file is at its size limit (Epo 2026-10-20).
-	var grown int64
-	if session.Format != "text" {
-		grown = int64(len(session.State))
-		for _, row := range session.StateRows {
-			grown += int64(len(row))
-		}
-	}
-	return max(0, exportCap-baseBytes-sourceGrowthMarginBytes-sourceWriteReserveBytes-grown)
+// write reserve and the durable growth over seed(base) (Epo 2026-10-17; the
+// collaboration server's admission_cap of state_cap). Never negative; 0
+// means nothing would be admitted, so the file opens to view only.
+func SourceGrowthBudget(exportCap, baseBytes, grownBytes int64) int64 {
+	return max(0, exportCap-baseBytes-sourceGrowthMarginBytes-sourceWriteReserveBytes-grownBytes)
 }
+
+// sourceGrowthSQL is a source row's durable growth over seed(base), as the
+// collaboration server's room estimate counts it: an Office state and its
+// rows are the change itself; a text state is the whole text with its
+// history, so its seed (seed_bytes) comes off. 0 for a file with no row.
+const sourceGrowthSQL = `GREATEST(0,COALESCE(octet_length(d.state),0)+COALESCE((SELECT sum(octet_length(u.update)) FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch)::bigint,0)-CASE WHEN d.format='text' THEN d.seed_bytes ELSE 0 END)`
 
 type SourceCheckpoint struct {
 	ActorIDs           []string `json:"actorIds" minItems:"1"`
@@ -323,7 +327,8 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (BrowserSourceSession, error) {
 	out := BrowserSourceSession{FileID: fileID, Access: "read"}
 	var name, kind string
-	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN `+sourceStateRowsSQL+` END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows)
+	var revision, size int64
+	err := s.pool.QueryRow(ctx, `SELECT f.revision,f.size_bytes,`+sourceGrowthSQL+`,f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN `+sourceStateRowsSQL+` END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&revision, &size, &out.GrownBytes, &out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows)
 	if isNoRows(err) {
 		return out, ErrNotFound
 	}
@@ -333,6 +338,9 @@ func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (BrowserSo
 	out.Format = editableSourceFormat(name, kind)
 	if out.Format == "" || out.BaseBlobPath == "" {
 		return out, ErrForbidden
+	}
+	if out.BaseRevision == revision {
+		out.BaseBytes = &size
 	}
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
@@ -391,7 +399,7 @@ const sourceStateRowsSQL = `ARRAY(SELECT u.update FROM source_document_updates u
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{BrowserSourceSession: BrowserSourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}}
-	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,`+sourceStateRowsSQL+`,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256)
+	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,`+sourceStateRowsSQL+`,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END,`+sourceGrowthSQL+` FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.StateRows, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256, &out.GrownBytes)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err

@@ -231,6 +231,47 @@ func TestTextSourceOverThePlanLimitHasNoGrowthBudget(t *testing.T) {
 		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":0`)) {
 		t.Fatalf("text editor session = %d body=%s", editor.Code, editor.Body.String())
 	}
+	// The view read says so before any Edit attempt (review r3 E1).
+	if view := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil); view.Code != http.StatusOK ||
+		!bytes.Contains(view.Body.Bytes(), []byte(`"atSizeLimit":true`)) {
+		t.Fatalf("text view session = %d body=%s", view.Code, view.Body.String())
+	}
+}
+
+// A text state is the whole text with its history: its growth over the seed
+// (seed_bytes) counts against the budget, as the room's estimate does
+// (review r3 S2).
+func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
+	ctx := context.Background()
+	st := openAccessTestStoreForPreview(t)
+	handler := httpapi.New(st, blob.NewMemory(), nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled: true,
+		E2EAuth:      true,
+		E2ESecret:    "e2e-test-secret",
+		E2EUserIDs:   []string{"u_owner"},
+	})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Text growth", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
+	file, err := uploadSource(ctx, st, workspace.ID, "u_owner", "notes.md", 100, "sources/notes.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil); editor.Code != http.StatusOK {
+		t.Fatalf("editor session = %d body=%s", editor.Code, editor.Body.String())
+	}
+	if _, err = st.Pool().Exec(ctx, `UPDATE source_documents SET checkpoint=checkpoint+1,state=$2,seed_bytes=100 WHERE file_id=$1`, file.ID, make([]byte, 1000)); err != nil {
+		t.Fatal(err)
+	}
+	// 30 MiB less the 100 byte base, the 1 MiB margin, the 64 KiB reserve
+	// and the 900 bytes the state grew past its seed.
+	editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
+	if editor.Code != http.StatusOK ||
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":30342168`)) {
+		t.Fatalf("text editor session = %d body=%s", editor.Code, editor.Body.String())
+	}
 }
 
 // Office inserts shrink images to the plan cap of the workspace owner, who

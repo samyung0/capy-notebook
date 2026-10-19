@@ -151,34 +151,29 @@ export function sourceHeaderStatus(
 }
 
 /**
- * Whether an edit open stops at the file's size limit: no growth budget left
- * (Epo 2026-10-17; text too, 2026-10-20), and no drafts to show, whether
- * recovery or restored ones still being sent, which open so they can be seen,
- * copied out or discarded.
+ * Whether an edit open stops at the file's size limit, before it joins the
+ * room (review r3 S1): no growth budget left (Epo 2026-10-17; text too,
+ * 2026-10-20) and no restored drafts still to send. Recovery drafts open
+ * before this check, so they can be seen, copied out or discarded.
  */
-export function opensAtSizeLimit(source: {
-  dirty: boolean;
-  session?: { growthBudgetBytes?: number } | null;
-  status: string;
-}) {
-  return (
-    source.session?.growthBudgetBytes === 0 &&
-    source.status !== 'recovery' &&
-    !source.dirty
-  );
+export function opensAtSizeLimit(
+  session: { growthBudgetBytes?: number },
+  restoredDrafts: number
+) {
+  return session.growthBudgetBytes === 0 && restoredDrafts === 0;
 }
 
 /**
- * A file at its size limit opens to view only, with a notice, instead of
- * refusing its first change, and its mode control stays disabled from then on
- * so it reads as not editable (Epo 2026-10-20). `toView` leaves the session.
+ * An edit open the session stopped at the size limit drops to view with a
+ * notice, and the mode control stays disabled from then on so the file reads
+ * as not editable (Epo 2026-10-20); `toView` leaves the session. Returns
+ * whether the control is disabled for it.
  */
 export function useSizeLimitView(
-  source: Parameters<typeof opensAtSizeLimit>[0],
+  atSizeLimit: boolean,
   editing: boolean,
   toView: () => void
 ) {
-  const atSizeLimit = opensAtSizeLimit(source);
   const [limited, setLimited] = useState(false);
   const toViewRef = useRef(toView);
   toViewRef.current = toView;
@@ -188,7 +183,7 @@ export function useSizeLimitView(
     toViewRef.current();
     userToast({ title: m.files_size_limit() });
   }, [editing, atSizeLimit]);
-  return { atSizeLimit, sizeLimited: limited || atSizeLimit };
+  return limited || atSizeLimit;
 }
 
 export function maintenancePaused(value: unknown): boolean {
@@ -228,6 +223,8 @@ export function useSourceSession(
   // view stays read-only under the outdated strip and the unsaved changes
   // stay stored for the reloaded page.
   const [outdated, setOutdated] = useState(false);
+  // The edit open stopped at the file's size limit (`opensAtSizeLimit`).
+  const [atSizeLimit, setAtSizeLimit] = useState(false);
   // The file was trashed or deleted, or access to it lost, while editing.
   const [unavailable, setUnavailable] = useState<
     'notFound' | 'forbidden' | null
@@ -385,6 +382,7 @@ export function useSourceSession(
     setBanner(null);
     setOfflineLimit(false);
     setOutdated(false);
+    setAtSizeLimit(false);
     setLoaded(null);
     void (async () => {
       // The route may have started the session, token and base already.
@@ -450,6 +448,13 @@ export function useSourceSession(
       // read stays for the next open.
       if (opened === 'dropped') toastDraftsLost();
       recoveryDrafts = null;
+      if (opensAtSizeLimit(session, restoredDrafts.length)) {
+        controller.abort();
+        shared.destroy();
+        doc = null;
+        setAtSizeLimit(true);
+        return;
+      }
       // The room opens while the base downloads; the view gets the document
       // with its base (`show`), however the room answers first.
       let shown = false;
@@ -1036,6 +1041,7 @@ export function useSourceSession(
 
   return {
     ...loaded,
+    atSizeLimit,
     banner,
     dirty: dirty || bufferDirty,
     discardDraft,

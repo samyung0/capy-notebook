@@ -833,6 +833,8 @@ components:
             - write
             - read
           type: string
+        atSizeLimit:
+          type: boolean
         baseRevision:
           format: int64
           type: integer
@@ -5423,6 +5425,8 @@ components:
             - write
             - read
           type: string
+        atSizeLimit:
+          type: boolean
         baseRevision:
           format: int64
           type: integer
