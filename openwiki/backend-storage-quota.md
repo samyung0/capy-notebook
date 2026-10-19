@@ -299,8 +299,9 @@ net-growth check stay.
 
 ## Reservations and clones
 
-Direct B2 uploads and editor-asset reservations call `reserveStorageTx` on the
-uploader's counter before the client receives a signed PUT URL. Reserved bytes
+Direct B2 uploads call `reserveStorageTx` on the uploader's counter, and
+editor-asset reservations on the material's payer's counter, before the client
+receives a signed PUT URL. Reserved bytes
 count toward the gate immediately so concurrent uploads cannot double-spend
 remaining quota. Finalize converts reservation → used (via status transitions
 / triggers). Only the account that reserved an upload completes it (Sam
