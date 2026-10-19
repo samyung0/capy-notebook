@@ -2145,9 +2145,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    configured DSNs so they match by construction; edit those DSNs first and
    `env:push` them after. Re-running only resets the passwords and re-grants, so
    it is also the way to pick up a migration that adds a column Ops reads. The grants name every
-   readable column. In particular, neither role can read `messages`, file
-   `content` or blob paths, job `payload`, email recipients or `payload`, or
-   `usage_events.metadata`. Apply them as the database owner:
+   readable column. In particular, neither role can read `messages` columns,
+   file names, content or blob paths, job `payload`, email recipients or
+   `payload`, or `usage_events.metadata`. The exception is the
+   `ops_assistant_turns` view below: its tool details can carry a chat search
+   query or a file title. Apply them as the database owner:
 
    ```bash
    docker exec -i db-<main-resource-uuid> psql -U capy -d capy \
@@ -2168,9 +2170,13 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
    startup catalog. A missing grant therefore fails as a role-contract error,
    rather than as a later plan-catalog query error.
 
-   `ops_assistant_turns` exposes only an assistant message id, owning user id,
-   lifecycle status, trace id, and timestamp. Do not replace that view grant
-   with `SELECT` on `messages`.
+   `ops_assistant_turns` (migration 0014) exposes an assistant message id,
+   owning user id, lifecycle status, trace id and timestamp, plus each tool
+   call's name, outcome and detail capped at 240 characters, as decided
+   (human/observability-metering.md, 2026-09-13). A detail can quote what the
+   tool was given or found, such as a chat search query or a file title, so
+   operators can see those. Do not replace that view grant with `SELECT` on
+   `messages`.
 
    `edit_incidents` holds ids, kinds, reason tokens and sizes, never content.
    Migration 0066 grants `capy_ops` `SELECT` on it where the role already
