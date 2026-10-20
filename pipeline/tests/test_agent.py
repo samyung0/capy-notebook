@@ -1792,6 +1792,235 @@ async def test_relay_stops_sse_and_waits_for_agent():
     assert not any("done" in c for c in chunks)
 
 
+# ------------------------------------- turn saves, however it ends (Epo 2026-10-21)
+
+_LEAKED_TOOL_CALL = (
+    _answer(("Safe prefix", []))
+    + '<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="create_material">'
+)
+
+
+def _listing_then(monkeypatch, second) -> None:
+    """A turn whose first response lists sources (call c1) and whose second is
+    ``second``: a response, or an exception the provider call raises."""
+    responses = [_assembled("", [_call("list_sources", "{}", "c1")]), second]
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        reply = responses.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        if on_event is not None and reply.text:
+            on_event(StreamEvent(kind="text", text=reply.text))
+        return reply
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+
+
+def _saved_listing(event: dict) -> None:
+    assert [b["callId"] for b in event["activity"] if b["kind"] == "tool"] == ["c1"]
+    assert [n["text"] for n in event["toolEvidence"]["tools"]] == ["ran list_sources"]
+
+
+async def test_a_client_drop_after_a_tool_leaves_a_checkpoint_with_it(monkeypatch):
+    client = agent.ClientDrop()
+    _listing_then(monkeypatch, _assembled(_answer(("late", []))))
+    real = agent.models.stream_agent_response
+
+    async def _stream(*args, **kwargs):
+        reply = await real(*args, **kwargs)
+        if reply.text:  # the user stops while the second response streams
+            client.mark()
+        return reply
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert not any(e["type"] in ("done", "error") for e in events)
+    _saved_listing([e for e in events if e["type"] == "turn_checkpoint"][-1])
+
+
+@pytest.mark.parametrize(
+    "code, second, compaction",
+    [
+        ("agent_failed", RuntimeError("provider disconnected"), None),
+        ("provider_busy", agent.elitellm.ProviderBusy("busy", retry_after=1), None),
+        ("invalid_key", agent.models.UserKeyError("invalid_key", "rejected"), None),
+        ("source_changed", pending.SourceChanged(), None),
+        ("invalid_answer", _assembled(""), None),
+        ("response_flagged", _assembled(_LEAKED_TOOL_CALL), None),
+        ("context_too_large", None, agent.compact.ContextTooLarge("full")),
+        ("compaction_failed", None, agent.compact.InvalidSummary("empty")),
+    ],
+)
+async def test_an_error_after_a_tool_carries_the_turn_so_far(
+    monkeypatch, code, second, compaction
+):
+    _listing_then(monkeypatch, second)
+    if compaction is not None:
+        real = agent.compact.compact_messages
+        steps = itertools.count()
+
+        async def _compact(*args, **kwargs):
+            if next(steps):  # the second step's compaction fails
+                raise compaction
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(agent.compact, "compact_messages", _compact)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    assert events[-1]["type"] == "error" and events[-1]["code"] == code
+    _saved_listing(events[-1])
+
+
+async def test_a_turn_without_an_answer_still_records_its_searches(monkeypatch):
+    _listing_then(monkeypatch, RuntimeError("provider disconnected"))
+    recorded: list[dict] = []
+
+    async def _record(events):
+        recorded.extend(events)
+
+    monkeypatch.setattr(agent.store, "record_search_events", _record)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx.search_events.append({"chunk_ids": ["c_1"]})  # a search the turn ran
+    await _collect("q", ctx)
+
+    assert [event["cited"] for event in recorded] == [[False]]
+
+
+async def test_a_turn_failed_mid_batch_keeps_the_calls_that_finished(monkeypatch):
+    stream, _seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call("list_sources", "{}", "c1"),
+                    _call("create_material", '{"kind":"note"}', "c2"),
+                ],
+            )
+        ]
+    )
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        if name == "create_material":
+            raise TurnFailed("the receipt read timed out")
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1", user_id="u1"))
+
+    assert events[-1]["type"] == "error" and events[-1]["code"] == "agent_failed"
+    assert not any(e["type"] == "turn_checkpoint" for e in events)
+    _saved_listing(events[-1])
+
+
+async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
+    monkeypatch,
+):
+    stream, _seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call("list_sources", "{}", "c1"),
+                    _call("list_trashed_files", "{}", "c2"),
+                ],
+            ),
+            _assembled(_answer(("done", []))),
+        ]
+    )
+    second_done = asyncio.Event()
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        if name == "list_sources":
+            await second_done.wait()  # the first call finishes last
+        else:
+            second_done.set()
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    done = events[-1]
+    assert set(done) == {
+        "type",
+        "tokenCount",
+        "telemetry",
+        "activity",
+        "answer",
+        "toolEvidence",
+    }
+    assert done["telemetry"]["stopReason"] == "answer"
+    assert {b["callId"] for b in done["activity"] if b["kind"] == "tool"} == {
+        "c1",
+        "c2",
+    }
+    assert done["toolEvidence"] == {
+        "tools": [
+            {
+                "name": "list_sources",
+                "detail": "listing sources",
+                "outcome": "succeeded",
+                "text": "ran list_sources",
+            },
+            {
+                "name": "list_trashed_files",
+                "detail": "",
+                "outcome": "succeeded",
+                "text": "ran list_trashed_files",
+            },
+        ],
+        "passages": [],
+        "skills": [],
+    }
+    checkpoint = next(e for e in events if e["type"] == "turn_checkpoint")
+    assert checkpoint["toolEvidence"] == done["toolEvidence"]
+
+
+async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypatch):
+    from pipeline.retrieve import service
+
+    async def _agent(*, ctx, **_kwargs):
+        ctx.activity.append({"id": "c1", "kind": "tool", "callId": "c1"})
+        ctx.evidence_notes.append({"name": "list_sources", "text": "ran list_sources"})
+        yield {"type": "phase", "phase": "planning"}
+        raise RuntimeError("citation regions unavailable")
+
+    class _Request:
+        async def is_disconnected(self) -> bool:
+            return False
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        providerSlug="deepseek",
+        modelSlug="deepseek-v4-flash",
+        configVersion=1,
+        userId="u_1",
+        paidBy="platform",
+        thinking="high",
+        query="q",
+        workspaceId="ws_1",
+        contractVersion=contract.VERSION,
+        operations=[],
+        spendSessionId="cr_1",
+    )
+    chunks = [chunk async for chunk in service._chat_events(req, _Request())]
+
+    last = json.loads(chunks[-1].removeprefix("data: "))
+    assert last["code"] == "agent_failed"
+    _saved_listing(last)
+
+
 # ------------------------------------------------------------- trash tools
 
 

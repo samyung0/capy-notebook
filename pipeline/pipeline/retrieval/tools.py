@@ -197,6 +197,9 @@ class ToolContext:
     # widen the scope to every file.
     file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
+    # The turn's narration and tool blocks so far: what its checkpoints and
+    # whatever event ends it carry, so Go saves them however the turn ends.
+    activity: list[dict[str, Any]] = field(default_factory=list)
     evidence_notes: list[dict[str, Any]] = field(default_factory=list)
     evidence_passage_ids: set[str] = field(default_factory=set)
     # Each searched passage's unindexed-edit count as its line first showed it,

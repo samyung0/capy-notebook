@@ -36,7 +36,13 @@ from ..retrieval import (
     store,
     workflows,
 )
-from ..retrieval.agent import CLIENT_ERROR, CLIENT_ERROR_CODE, ClientDrop, run_agent
+from ..retrieval.agent import (
+    CLIENT_ERROR,
+    CLIENT_ERROR_CODE,
+    ClientDrop,
+    run_agent,
+    with_turn_state,
+)
 from ..retrieval.chunking import estimate_tokens
 from ..retrieval.events import error as client_error
 from ..retrieval.tools import ToolContext
@@ -401,18 +407,18 @@ async def _chat_events(req: ChatStreamReq, request: Request):
     _bind_llm(req)
     accounting_token = None
     client = ClientDrop()
+    ctx = ToolContext(
+        workspace_id=req.workspaceId,
+        user_id=req.userId or "",
+        operations=frozenset(req.operations),
+        file_ids=None if req.fileIds is None else list(req.fileIds),
+        assistant_message_id=req.assistantMessageId or "",
+        library=req.library,
+        open_resource=dict(req.openResource or {}),
+        study_preferences=dict(req.studyPreferences or {}),
+        study_progress=req.studyProgress,
+    )
     try:
-        ctx = ToolContext(
-            workspace_id=req.workspaceId,
-            user_id=req.userId or "",
-            operations=frozenset(req.operations),
-            file_ids=None if req.fileIds is None else list(req.fileIds),
-            assistant_message_id=req.assistantMessageId or "",
-            library=req.library,
-            open_resource=dict(req.openResource or {}),
-            study_preferences=dict(req.studyPreferences or {}),
-            study_progress=req.studyProgress,
-        )
         accounting_token = accounting.bind(req.spendSessionId)
         agen = run_agent(
             query=req.query,
@@ -435,7 +441,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
         log.exception("chat stream failed")
         event = obs.reported_event(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE), exc)
         if not client.dropped:
-            yield _sse(event)
+            yield _sse(with_turn_state(event, ctx))
     finally:
         if accounting_token is not None:
             accounting.reset(accounting_token)

@@ -80,6 +80,7 @@ from .response_guard import (
     ResponseGuard,
     contains_tool_protocol,
 )
+from .search import Passage
 from .stream import AssembledResponse, StreamEvent, ToolCall
 from .tools import ToolContext, ToolResult, TurnFailed
 
@@ -213,10 +214,16 @@ def _busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
     return _with_usage(event)
 
 
-def _flagged_error(activity: list[dict[str, Any]]) -> dict[str, Any]:
-    event = events.error(FLAGGED_MESSAGE, FLAGGED_CODE)
-    event["activity"] = activity
-    return _with_usage(event)
+def _flagged_error() -> dict[str, Any]:
+    return _with_usage(events.error(FLAGGED_MESSAGE, FLAGGED_CODE))
+
+
+def with_turn_state(event: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    """An event that ends the turn without an answer carries the turn so far:
+    its activity and its evidence, nothing cited (Epo 2026-10-21)."""
+    event["activity"] = ctx.activity
+    event["toolEvidence"] = evidence.pack(ctx, [])
+    return event
 
 
 async def _admit_checkpoint(
@@ -277,9 +284,12 @@ async def run_agent(
     """The turn, plus the one piece of it that outlives the turn.
 
     However the loop ends — the answer, the stall guard, a failure, a lost
-    client — its deck working directory goes away. ``script`` is UAT's
-    scripted turn (``scripted.py``): its steps stand in for the model.
+    client — its deck working directory goes away. Every error event carries
+    the turn so far, and a turn without an answer still records its searches.
+    ``script`` is UAT's scripted turn (``scripted.py``): its steps stand in
+    for the model.
     """
+    answered = False
     try:
         async for event in _run_turn(
             query=query,
@@ -291,8 +301,13 @@ async def run_agent(
             client=client,
             script=script,
         ):
+            if event["type"] == "error":
+                with_turn_state(event, ctx)
+            answered = answered or event["type"] == "done"
             yield event
     finally:
+        if not answered:
+            await _record_searches(ctx, [])
         if ctx.deck_dir:
             shutil.rmtree(ctx.deck_dir, ignore_errors=True)
 
@@ -312,7 +327,7 @@ async def _run_turn(
     ctx.budget = budget
     spec = models._as_spec(model)
     citation_version = 0
-    activity: list[dict[str, Any]] = []
+    activity = ctx.activity
     answer = ""
     cited_order: list[int] = []
     block_n = 0
@@ -677,7 +692,7 @@ async def _run_turn(
             return
         except Exception as exc:
             log.exception("agent step failed")
-            event = _flagged_error(activity) if guard.flagged else _client_error(exc)
+            event = _flagged_error() if guard.flagged else _client_error(exc)
             if not _client_gone(client):
                 yield event
             budget.stop_reason = STOP_ERROR
@@ -695,7 +710,7 @@ async def _run_turn(
         if guard.flagged or contains_tool_protocol(assembled.text):
             if not tools_off:
                 budget.stop_reason = STOP_ERROR
-                yield _flagged_error(activity)
+                yield _flagged_error()
                 return
             # GLM writes a tool call as text when tools are off. The turn ends
             # as if it had reached its cap: the call text is dropped, the
@@ -828,6 +843,12 @@ async def _run_turn(
                 yield _client_error(exc)
                 budget.stop_reason = STOP_TURN_FAILED
                 return
+            # Go saves the turn so far: a stop, a crash or a lost stream keeps
+            # every finished batch (Epo 2026-10-21).
+            ctx.skills_read = skills.retained(messages)
+            yield events.turn_checkpoint(
+                list(activity), evidence.pack(ctx, cited_order)
+            )
             stalled = 0 if writes > writes_before else stalled + 1
             # The next response is the last with tools: say so where the model
             # reads first, under each result (Epo 2026-10-14).
@@ -906,7 +927,6 @@ async def _run_turn(
             break
         if not building:
             budget.stop_reason = STOP_ERROR
-            await _record_searches(ctx, cited_order)
             yield _with_usage(
                 events.error("The model returned an empty answer.", "invalid_answer")
             )
@@ -1053,9 +1073,8 @@ def _ordered_citations(ctx: ToolContext, order: list[int]) -> list[dict[str, Any
 async def _record_searches(ctx: ToolContext, cited_order: list[int]) -> None:
     """Write the turn's search events with the hits the answer cited.
 
-    Only turns that reach ``done`` are recorded; a turn that errors out or
-    loses its client has no answer to attribute and is visible in the logs.
-    Telemetry never fails the turn.
+    Every turn records its searches (``run_agent``); one that ends without an
+    answer cites none. Telemetry never fails the turn.
     """
     if not ctx.search_events:
         return
@@ -1147,11 +1166,31 @@ async def _run_tools(
     accepted: list[tuple[ToolCall, dict[str, Any], str]] = []
     results: list[tuple[ToolCall, ToolResult]] = []
     runs: dict[str, _Run] = {}
+    notes: dict[str, dict[str, Any]] = {}
+    first_note = len(ctx.evidence_notes)
     await _resolve_labels(ctx, calls)
 
     def _start(call: ToolCall, name: str, args: dict[str, Any]) -> dict[str, Any]:
         runs[call.id] = _Run(_describe(name, args, ctx), _now())
         return _tool_start(call, name, runs[call.id])
+
+    def _keep_evidence(call: ToolCall, result: ToolResult) -> None:
+        """A call's evidence is kept as it finishes, so a batch cut short keeps
+        its finished calls. Full-retention tools return no passages, so their
+        text does not wait for the batch's citation numbers."""
+        definition = tools.contract.definition(call.name)
+        if not definition:
+            return
+        if definition["retention"] in ("full", "cited_passages"):
+            ctx.evidence_passage_ids.update(p.chunk_id for p in result.passages)
+        if definition["retention"] == "full":
+            notes[call.id] = {
+                "name": call.name,
+                "detail": runs[call.id].detail,
+                "outcome": result.outcome,
+                "text": _result_text(result, []),
+            }
+            ctx.evidence_notes.append(notes[call.id])
 
     for call in calls:
         args = _parse_args(call.arguments)
@@ -1168,6 +1207,7 @@ async def _run_tools(
             results.append((call, result))
             yield _start(call, call.name, args)
             yield _tool_end(call, result, runs[call.id])
+            _keep_evidence(call, result)
             yield {
                 "type": "activity",
                 "block": _activity(call, call.name, runs[call.id], result),
@@ -1185,6 +1225,7 @@ async def _run_tools(
         executed[call_id] = result
         results.append((call, result))
         run = runs[call_id]
+        _keep_evidence(call, result)
         return [
             _tool_end(call, result, run),
             {"type": "activity", "block": _activity(call, name, run, result, ctx)},
@@ -1230,31 +1271,16 @@ async def _run_tools(
         if call.id in by_id:
             ordered.append((call, by_id[call.id]))
 
+    # The batch's notes in call order, as the model reads the results.
+    ctx.evidence_notes[first_note:] = [notes[c.id] for c in calls if c.id in notes]
     # Retrieved-but-unused passages never reach the browser: the citation
     # list is sent with the answer, renumbered, as its markers appear.
     for call, result in ordered:
-        numbered = tools.assign_citations(ctx, result.passages)
-        text = tools.limit_tool_result(
-            tools.render_result(result, numbered), tail=result.tail
-        )
-        if result.pending:
-            text += "\n\n" + result.pending
+        text = _result_text(result, tools.assign_citations(ctx, result.passages))
         if ctx.library:
             args = _parse_args(call.arguments)
             ctx.library_evidence.observe(
                 call.name, args, result, text, ctx.library_reads
-            )
-        definition = tools.contract.definition(call.name)
-        if definition and definition["retention"] in ("full", "cited_passages"):
-            ctx.evidence_passage_ids.update(p.chunk_id for p in result.passages)
-        if definition and definition["retention"] == "full":
-            ctx.evidence_notes.append(
-                {
-                    "name": call.name,
-                    "detail": runs[call.id].detail,
-                    "outcome": result.outcome,
-                    "text": text,
-                }
             )
         result.text_parts = [text]
         message = {"role": "tool", "tool_call_id": call.id, "content": text}
@@ -1262,6 +1288,17 @@ async def _run_tools(
             # A search's unindexed edits are hints: condensing drops them.
             message["_hint_tail"] = result.tail
         messages.append(message)
+
+
+def _result_text(result: ToolResult, numbered: list[tuple[int, Passage]]) -> str:
+    """A result as the model reads it: numbered passages, clipped, then its
+    unclipped tail and the read document's pending changes."""
+    text = tools.limit_tool_result(
+        tools.render_result(result, numbered), tail=result.tail
+    )
+    if result.pending:
+        text += "\n\n" + result.pending
+    return text
 
 
 def _limit_for(
