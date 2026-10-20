@@ -1,7 +1,6 @@
 packages:
   - .
   - collaboration-rs/crates/notes/markdown
-  - emails/editor
   - ops
 
 injectWorkspacePackages: true
@@ -30,7 +29,10 @@ allowBuilds:
 patchedDependencies:
   "@hocuspocus/provider@3.4.4": patches/@hocuspocus__provider@3.4.4.patch
   # Capy patch (live-items, Epo 2026-10-10): a `mermaid` element's `source` is
-  # a nested Y.Text, read as its string in Slate (Mermaid shape A).
+  # a nested Y.Text, read as its string in Slate (Mermaid shape A); a chart's,
+  # plot's or graph's `block` is a Y.Map edited entry by entry (Epo 2026-10-17).
+  # A position that falls on an inline element (an inline equation, a link)
+  # resolves to the text beside it, so a co-editor's caret there is drawn.
   "@slate-yjs/core@1.0.2": patches/@slate-yjs__core@1.0.2.patch
   # Capy patch: Yjs has no option to skip its after-transaction formatting
   # cleanup; a doc built with `meta: { formattingCleanup: false }` skips it.
@@ -45,6 +47,20 @@ patchedDependencies:
 # - xmlbuilder2 3.x (its last 3.x is 3.1.1, and @platejs/docx-io needs ^3.1.1)
 #   pins js-yaml 3.14.1, which has merge-key DoS and prototype-pollution
 #   fixes in 3.15.2; docx-io never converts YAML.
+# - argparse 1.x (under mammoth and js-yaml 3) pulls in sprintf-js, whose
+#   precision DoS (GHSA-hp3w-g68c-fv3c) has no fixed release; argparse 2 has
+#   no sprintf-js. Both packages load argparse only in their command-line tools
+#   (bin/mammoth, bin/js-yaml.js), which nothing here runs and which argparse 2
+#   no longer serves; their libraries never import it.
 overrides:
   "geopattern>extend": 3.0.2
   "xmlbuilder2>js-yaml": 3.15.2
+  "argparse@<2": 2.0.1
+
+# `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
+# here. Each entry says why it waits.
+auditConfig:
+  ignoreGhsas:
+    # KaTeX: the trust bypass needs prototype pollution first, and `trust`
+    # stays off. 0.18.2 waits for the version wave (todo-security P4, KaTeX).
+    - GHSA-238p-pmpm-9mq7

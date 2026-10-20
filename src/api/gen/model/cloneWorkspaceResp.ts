@@ -9,5 +9,7 @@ import type { Workspace } from './workspace.ts';
 export interface CloneWorkspaceResp {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** @minimum 0 */
+  skippedMaterials: number;
   workspace: Workspace;
 }

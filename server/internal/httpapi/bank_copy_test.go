@@ -172,7 +172,7 @@ func TestBankCopiesWithCredits(t *testing.T) {
 	}
 	ctx := context.Background()
 	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_editor", WorkspaceID: "ws_e2e_private",
-		Kind: "note", Title: "Embeds " + msg, Content: "# Embeds\n\nbody", Provenance: bookOf("note")})
+		Kind: "note", Title: "Embeds " + msg, Content: noteTestContent(t, "# Embeds\n\nbody"), Provenance: bookOf("note")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestBankCopiesWithCredits(t *testing.T) {
 	// The embed shares its note's footer: a ShareAlike question copied into a
 	// quiz under a NonCommercial-ShareAlike note is refused.
 	ncNote, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_editor", WorkspaceID: "ws_e2e_private",
-		Kind: "note", Title: "NC embeds " + msg, Content: "# NC\n\nbody",
+		Kind: "note", Title: "NC embeds " + msg, Content: noteTestContent(t, "# NC\n\nbody"),
 		Provenance: &store.Provenance{Books: []store.ProvenanceBook{{ID: "nc", Title: "nc", Authors: []string{}, License: "CC BY-NC-SA 4.0", ExcerptIDs: []string{"e_nc"}, Version: 1}}, License: "CC BY-NC-SA 4.0"}})
 	if err != nil {
 		t.Fatal(err)

@@ -106,7 +106,7 @@ func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*stu
 	}
 	res, err := a.s.StudySummary(ctx, userID(ctx), in.ID, time.Now())
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, "", err)
 	}
 	// Quick review questions are checked on the server, like a session's.
 	for i, it := range res.QuickReview {
@@ -129,7 +129,7 @@ func (a *api) getWorkspaceAttempts(ctx context.Context, in *workspaceIDInput) (*
 	}
 	items, err := a.s.WorkspaceAttempts(ctx, userID(ctx), in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, "", err)
 	}
 	out := &workspaceAttemptsOutput{}
 	out.Body.Items = items
@@ -180,7 +180,7 @@ func (a *api) getWorkspaceReview(ctx context.Context, in *workspaceReviewInput) 
 		return nil, huma.Error404NotFound(err.Error())
 	}
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, "", err)
 	}
 	return &reviewOutput{Body: learnerSession(res)}, nil
 }
@@ -206,7 +206,7 @@ func (a *api) resumeReviewSession(ctx context.Context, in *reviewSessionIDInput)
 	}
 	res, err := a.s.ResumeReviewSession(ctx, userID(ctx), in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, "", err)
 	}
 	return &reviewOutput{Body: learnerSession(res)}, nil
 }
@@ -260,7 +260,7 @@ func commaValues(v string) []string {
 func (a *api) getReviewOverview(ctx context.Context, _ *struct{}) (*reviewOverviewOutput, error) {
 	res, err := a.s.ReviewOverview(ctx, userID(ctx), time.Now())
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, "", err)
 	}
 	return &reviewOverviewOutput{Body: res}, nil
 }
@@ -303,7 +303,10 @@ func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty
 	if errors.Is(err, store.ErrStudyRating) || errors.Is(err, store.ErrStudyEmbedded) || errors.Is(err, store.ErrReviewSession) || errors.Is(err, store.ErrFlashcardAttempt) {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
-	return &Empty{}, hErr(err)
+	if err != nil {
+		return nil, storedContentError(ctx, in.Body.MaterialID, err)
+	}
+	return &Empty{}, nil
 }
 
 // checkReviewItem grades one question of a review session on the server,
@@ -320,7 +323,7 @@ func (a *api) checkReviewItem(ctx context.Context, in *reviewCheckInput) (*grade
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.Body.MaterialID, err)
 	}
 	plan, err := planGrading([]map[string]any{q}, in.Body.Answers)
 	if err != nil {

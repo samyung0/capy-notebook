@@ -132,13 +132,14 @@ func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*clo
 			return nil, huma.Error422UnprocessableEntity(err.Error())
 		}
 	}
-	ws, copies, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID, in.Body.ToWorkspaceCreate())
+	ws, copies, skipped, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID, in.Body.ToWorkspaceCreate())
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	a.copyCloneThumbnails(ctx, copies)
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
-		Workspace: apimodel.FromWorkspace(ws),
+		Workspace:        apimodel.FromWorkspace(ws),
+		SkippedMaterials: skipped,
 	}}, nil
 }
 
@@ -203,7 +204,7 @@ func (a *api) cloneMaterial(ctx context.Context, in *cloneMaterialInput) (*mater
 	}
 	mt, err := a.s.CloneMaterial(ctx, userID(ctx), in.ID, target)
 	if err != nil {
-		return nil, hErr(err)
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), mt.ID)
 	if err != nil {

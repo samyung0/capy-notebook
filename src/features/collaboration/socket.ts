@@ -1,8 +1,12 @@
+import { Allowance, tabAllowance } from './allowance';
+import { setHeld } from './held';
 import { decodeFrame, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
 export interface ChannelHandler {
   onMessage(message: Message): void;
+  /** The user's timeout ended: a room paused by it joins again and resyncs. */
+  onResume(): void;
   /** The socket closed: every channel on it ended. */
   onSocketClose(): void;
   /** The socket opened (again): a room that wants to be joined joins. */
@@ -15,8 +19,10 @@ const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 /** A socket with no room left closes after this long (a quick remount reuses it). */
 const IDLE_CLOSE_MS = 5000;
-/** How long `warm` holds a socket open for the room expected on it. */
-const WARM_MS = 10_000;
+/** How long `warm` holds a socket open for the room expected on it: under
+ * the server's 10 s deadline for a socket that joins no room
+ * (`JOIN_DEADLINE`, collaboration-rs/crates/server/src/socket.rs). */
+const WARM_MS = 8000;
 /** Joins the server authenticates at once per socket; it closes the socket on
  * one more (`MAX_PENDING_JOINS`, collaboration-rs/crates/server/src/socket.rs).
  * A note with many embeds on screen queues the rest here. */
@@ -30,9 +36,10 @@ const MAX_PENDING_JOINS = 8;
 export class CollabSocket {
   private static readonly sockets = new Map<string, CollabSocket>();
 
-  /** A socket of its own (a load generator's peer), not the tab's shared one. */
+  /** A socket of its own (a load generator's peer), not the tab's shared
+   * one, pacing its updates under an allowance of its own. */
   static create(url: string): CollabSocket {
-    return new CollabSocket(url);
+    return new CollabSocket(url, new Allowance());
   }
 
   static for(url: string): CollabSocket {
@@ -50,6 +57,7 @@ export class CollabSocket {
     const socket = CollabSocket.for(url);
     const holder: ChannelHandler = {
       onMessage() {},
+      onResume() {},
       onSocketClose() {},
       onSocketOpen() {},
     };
@@ -64,15 +72,29 @@ export class CollabSocket {
   /** Channels whose JOIN went out without an answer yet. */
   private readonly pending = new Set<number>();
   private queued: { bytes: Uint8Array<ArrayBuffer>; channel: number }[] = [];
+  /** Frames waiting for the allowance (`reserve`), in order, each with the
+   * time it may go; a frame sent behind them waits its turn. */
+  private outbox: {
+    at: number;
+    bytes: Uint8Array<ArrayBuffer>;
+    charged: boolean;
+  }[] = [];
+  private draining: ReturnType<typeof setTimeout> | undefined;
+  /** The user's timeout: it ends at this timer (`timeOut`). */
+  private timeout: ReturnType<typeof setTimeout> | undefined;
+  private timeoutEnds = 0;
   private nextChannel = 1;
   private attempts = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
 
   readonly url: string;
+  /** Its own allowance; the tab's (`tabAllowance`) when none. */
+  private readonly allowance: Allowance | null;
 
-  private constructor(url: string) {
+  private constructor(url: string, allowance: Allowance | null = null) {
     this.url = url;
+    this.allowance = allowance;
     // Back online: reconnect now instead of waiting out the backoff.
     if (typeof window !== 'undefined')
       window.addEventListener('online', () => {
@@ -119,15 +141,104 @@ export class CollabSocket {
     this.answered(channel);
   }
 
-  send(bytes: Uint8Array<ArrayBuffer>) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(bytes);
+  /**
+   * Sends a frame now, or after the frames waiting before it. A frame the
+   * server charges (`charged`: SYNC, awareness) takes its share of the
+   * user's update allowance first and waits while the allowance is spent;
+   * nothing overtakes it, so a checkpoint request still follows the updates
+   * it covers. In a timeout a charged frame is not sent (the server would
+   * drop it; the rooms resync after). A JOIN (`join`) costs the server one
+   * message and none of its bytes; it goes in a timeout too (the server
+   * answers it with the notice).
+   */
+  send(
+    bytes: Uint8Array<ArrayBuffer>,
+    cost: 'free' | 'charged' | 'join' = 'free'
+  ) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const charged = cost === 'charged';
+    if (charged && this.timeout) return;
+    const now = performance.now();
+    const allowance = this.allowance ?? tabAllowance;
+    const wait =
+      cost === 'free' ? 0 : allowance.reserve(charged ? bytes.byteLength : 0);
+    const at = Math.max(now + wait, this.outbox.at(-1)?.at ?? 0);
+    if (at <= now && !this.outbox.length) {
+      this.ws.send(bytes);
+      return;
+    }
+    this.outbox.push({ at, bytes, charged });
+    this.drainLater();
+    this.updateHeld();
   }
 
-  /** Sends a channel's JOIN, or holds it while eight others wait for theirs. */
+  /**
+   * The user is in a timeout for `ms` (the server said so on one of their
+   * channels; Epo 2026-10-18): charged frames waiting are dropped, none goes
+   * until it ends, then the allowance is full again and every room paused by
+   * it joins again on this socket and resyncs (`onResume`).
+   */
+  timeOut(ms: number) {
+    const ends = performance.now() + ms;
+    if (this.timeout && ends <= this.timeoutEnds) return;
+    this.timeoutEnds = ends;
+    clearTimeout(this.timeout);
+    this.timeout = setTimeout(() => {
+      this.timeout = undefined;
+      (this.allowance ?? tabAllowance).reset();
+      this.updateHeld();
+      for (const handler of [...this.handlers]) handler.onResume();
+    }, ms);
+    const now = performance.now();
+    this.outbox = this.outbox
+      .filter((frame) => !frame.charged)
+      .map((frame) => ({ ...frame, at: now }));
+    clearTimeout(this.draining);
+    this.draining = undefined;
+    this.drainLater();
+    this.updateHeld();
+  }
+
+  private drainLater() {
+    if (this.draining || !this.outbox.length) return;
+    this.draining = setTimeout(
+      () => {
+        this.draining = undefined;
+        const now = performance.now();
+        while (this.outbox.length && this.outbox[0].at <= now) {
+          const { bytes } = this.outbox.shift()!;
+          if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(bytes);
+        }
+        this.drainLater();
+        this.updateHeld();
+      },
+      Math.max(0, this.outbox[0].at - performance.now())
+    );
+  }
+
+  /** The tab holds back while frames wait or the user is in a timeout. */
+  private updateHeld() {
+    setHeld(this, this.outbox.length > 0 || this.timeout !== undefined);
+  }
+
+  /** The socket ended: what waited is dropped, and a timeout is forgotten
+   * (rooms resync on rejoin; the server tells them again if it runs). */
+  private dropOutbox() {
+    clearTimeout(this.draining);
+    this.draining = undefined;
+    this.outbox = [];
+    clearTimeout(this.timeout);
+    this.timeout = undefined;
+    this.updateHeld();
+  }
+
+  /** Sends a channel's JOIN, or holds it while eight others wait for theirs.
+   * A channel whose JOIN the server answered with a timeout notice keeps its
+   * place and joins again from it when the timeout ends. */
   join(channel: number, bytes: Uint8Array<ArrayBuffer>) {
-    if (this.pending.size < MAX_PENDING_JOINS) {
+    if (this.pending.has(channel) || this.pending.size < MAX_PENDING_JOINS) {
       this.pending.add(channel);
-      this.send(bytes);
+      this.send(bytes, 'join');
     } else this.queued.push({ bytes, channel });
   }
 
@@ -140,7 +251,7 @@ export class CollabSocket {
     while (this.pending.size < MAX_PENDING_JOINS && this.queued.length) {
       const next = this.queued.shift() as (typeof this.queued)[number];
       this.pending.add(next.channel);
-      this.send(next.bytes);
+      this.send(next.bytes, 'join');
     }
   }
 
@@ -186,6 +297,7 @@ export class CollabSocket {
       this.status = 'disconnected';
       this.channels.clear();
       this.forgetJoins();
+      this.dropOutbox();
       for (const handler of [...this.handlers]) handler.onSocketClose();
       if (this.handlers.size > 0) this.scheduleRetry();
     };
@@ -208,6 +320,7 @@ export class CollabSocket {
     this.status = 'disconnected';
     this.channels.clear();
     this.forgetJoins();
+    this.dropOutbox();
     ws?.close();
   }
 }

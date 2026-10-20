@@ -171,45 +171,15 @@ def test_book_queue_orders_moves_and_refuses_removing_a_running_book():
     assert store.setting("scrape") == "running"
 
 
-def test_review_tasks_and_the_startup_reset():
-    for i in range(3):
+def test_startup_reset_requeues_running_books_and_claimed_downloads():
+    for i in range(2):
         store.add_book(str(i) * 64, f"b{i}", {"id": f"b{i}"}, f"runs/b{i}")
-    store.set_review_task(
-        "0" * 64,
-        "transcribe",
-        batch_id="batch-0",
-        status="completed",
-        submitted_at=1.0,
-        checked_at=None,
-        requests=9,
-    )
-    store.set_review_task(
-        "0" * 64,
-        "tag",
-        batch_id="batch-1",
-        status="validating",
-        submitted_at=2.0,
-        requests=3,
-    )
-    assert store.review_task("0" * 64, "tag")["batch_id"] == "batch-1"
-    assert store.review_task("1" * 64, "tag") is None
-    assert [t["stage"] for t in store.review_tasks("0" * 64)] == ["transcribe", "tag"]
-    store.set_book("0" * 64, status="waiting", stage="tag")
+    store.set_book("0" * 64, status="failed", stage="tag")
     store.set_book("1" * 64, status="running", stage="index")
     store.add_download({"pdf_url": "https://a.test/x.pdf"}, "queued")
     assert store.next_download(0)["status"] == "downloading"
-    # the waiting book's current stage task only
-    assert [(t["book_id"], t["stage"]) for t in store.open_review_tasks()] == [
-        ("b0", "tag")
-    ]
-    assert store.waiting_book_due(600)["book_id"] == "b0"  # never checked
-    store.set_review_task(
-        "0" * 64, "tag", status="in_progress", checked_at=9e12, done=3
-    )
-    assert store.waiting_book_due(600) is None
-    assert store.review_task("0" * 64, "tag")["done"] == 3
     assert store.startup_reset() == {"books": 1, "downloads": 1, "urls": 0}
     assert store.book("1" * 64)["status"] == "queued"
     assert store.book("1" * 64)["stage"] == "index"
-    assert store.book("0" * 64)["status"] == "waiting"
+    assert store.book("0" * 64)["status"] == "failed"
     assert store.downloads()[0]["status"] == "queued"

@@ -79,32 +79,29 @@ def read_file(path):
 
 
 def github_values():
-    missing = [
-        name
-        for name in ("CAPY_GITHUB_VARS", "CAPY_GITHUB_SECRETS")
-        if name not in os.environ
-    ]
-    if missing:
+    """Variables come from the whole `vars` context; each secret comes from its
+    own `CAPY_SECRET_<KEY>` step variable. The render steps name exactly the
+    secrets their render reads (test_config.py checks the wiring): a step given
+    `toJSON(secrets)` makes GitHub hold the run for approval."""
+    if "CAPY_GITHUB_VARS" not in os.environ:
         fail(
-            ", ".join(missing)
-            + " unset; outside the deploy workflows pass --file with a local env file"
+            "CAPY_GITHUB_VARS unset; outside the deploy workflows pass --file with a local env file"
         )
     variables = json.loads(os.environ["CAPY_GITHUB_VARS"])
-    secrets = json.loads(os.environ["CAPY_GITHUB_SECRETS"])
-    # GitHub contexts also contain unrelated repository and organization settings.
+    # The vars context also holds unrelated repository and organization settings.
     result = {}
     for key, spec in MANIFEST.items():
         if spec["targets"] == ["local"]:
             continue
-        source, other = (
-            (secrets, variables) if spec["kind"] == "secret" else (variables, secrets)
-        )
-        if key in other:
-            fail(
-                f"{key} is stored in the wrong GitHub namespace; expected {spec['kind']}"
-            )
-        if key in source:
-            result[key] = source[key]
+        if spec["kind"] == "variable":
+            if key in variables:
+                result[key] = variables[key]
+            continue
+        if key in variables:
+            fail(f"{key} is stored in the wrong GitHub namespace; expected secret")
+        # GitHub expands an unset secret to blank; both stay absent.
+        if os.environ.get("CAPY_SECRET_" + key):
+            result[key] = os.environ["CAPY_SECRET_" + key]
     return result
 
 
@@ -147,12 +144,44 @@ def refuse_other_environments(values, environment):
             fail(f"{key} is not allowed in {environment}")
 
 
-def render(values, environment, output, revision):
+def private_output(output, revision):
     if not re.fullmatch("[0-9a-f]{40}", revision):
         fail("revision must be a lowercase full Git SHA")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output, 0o700)
+    return output
+
+
+def build_values(values, environment, revision):
+    build = target_values(values, "build")
+    build.update(
+        VITE_APP_ENV=environment,
+        VITE_APP_URL=values.get("DEPLOYMENT_APP_URL", ""),
+        VITE_CLERK_PUBLISHABLE_KEY=values.get("CLERK_PUBLISHABLE_KEY", ""),
+        # Copied bank questions keep linking their figures here.
+        VITE_BANK_ASSETS_URL=values.get("BANK_ASSETS_URL", ""),
+        VITE_RELEASE_SHA=revision,
+        VITE_E2E_EDITOR_SEED="false",
+        VITE_LOAD_TEST_SEED="false",
+        VITE_USE_MSW="false",
+    )
+    if not build["VITE_APP_URL"] or not build["VITE_CLERK_PUBLISHABLE_KEY"]:
+        fail("DEPLOYMENT_APP_URL and CLERK_PUBLISHABLE_KEY are required")
+    return build
+
+
+def render_build(values, environment, output, revision):
+    """Only the SPA build's values: the build job runs third-party build code,
+    so the deploy job renders the Coolify and ingest configuration itself."""
+    output = private_output(output, revision)
+    build = build_values(values, environment, revision)
+    private_write(output / "build.json", json.dumps(build))
+    print(f"rendered {environment} build configuration; values redacted")
+
+
+def render(values, environment, output, revision):
+    output = private_output(output, revision)
     coolify = target_values(values, "coolify")
     refuse_other_environments(coolify, environment)
     password = values.get("POSTGRES_PASSWORD", "")
@@ -179,20 +208,7 @@ def render(values, environment, output, revision):
     # (Epo 2026-10-17).
     coolify["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
     private_write(output / "coolify.json", json.dumps(coolify))
-    build = target_values(values, "build")
-    build.update(
-        VITE_APP_ENV=environment,
-        VITE_APP_URL=values.get("DEPLOYMENT_APP_URL", ""),
-        VITE_CLERK_PUBLISHABLE_KEY=values.get("CLERK_PUBLISHABLE_KEY", ""),
-        # Copied bank questions keep linking their figures here.
-        VITE_BANK_ASSETS_URL=values.get("BANK_ASSETS_URL", ""),
-        VITE_RELEASE_SHA=revision,
-        VITE_E2E_EDITOR_SEED="false",
-        VITE_LOAD_TEST_SEED="false",
-        VITE_USE_MSW="false",
-    )
-    if not build["VITE_APP_URL"] or not build["VITE_CLERK_PUBLISHABLE_KEY"]:
-        fail("DEPLOYMENT_APP_URL and CLERK_PUBLISHABLE_KEY are required")
+    build = build_values(values, environment, revision)
     private_write(output / "build.json", json.dumps(build))
     queue = target_values(values, "ingest-queue")
     refuse_other_environments(queue, environment)
@@ -210,9 +226,6 @@ def render(values, environment, output, revision):
         GATEWAY_URL=f"http://{address}:8080",
     )
     queue["SENTRY_DSN"] = queue.pop("SENTRY_DSN_WORKER")
-    # Ingest calls Relace on its own account (Epo 2026-10-15); the pipeline
-    # reads the provider's one key name, so the queue env renames it.
-    queue["RELACE_API_KEY"] = queue.pop("RELACE_INGEST_API_KEY")
     private_write(output / f"{environment}.queue.env", dotenv(queue))
     target = "ingest-shared" if environment == "uat" else "ingest-production"
     shared = target_values(values, target)
@@ -227,17 +240,13 @@ def render(values, environment, output, revision):
 
 
 def render_ops(values, environment, output, revision):
-    if not re.fullmatch("[0-9a-f]{40}", revision):
-        fail("revision must be a lowercase full Git SHA")
+    output = private_output(output, revision)
     ops = target_values(values, "ops")
     if ops["OPS_INGEST_PRIMARY_ENVIRONMENT"] != environment:
         fail("OPS_INGEST_PRIMARY_ENVIRONMENT must match the deployment environment")
     ops["VITE_CLERK_PUBLISHABLE_KEY"] = ops.pop("CLERK_PUBLISHABLE_KEY")
     ops["SENTRY_ENVIRONMENT"] = environment
     ops["RELEASE_SHA"] = revision
-    output = Path(output)
-    output.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(output, 0o700)
     private_write(output / "ops.json", json.dumps(ops))
     print(f"rendered {environment} Ops configuration; values redacted")
 
@@ -257,6 +266,21 @@ def run_gh(args, value=None):
 
 def push(values, environment, repo):
     classify(values)
+    common = ["--env", environment, "--repo", repo]
+    # Deploys read only the secrets their render steps name, so they cannot see
+    # a manifest variable stored as a secret; refuse before changing anything.
+    stored = json.loads(run_gh(["secret", "list", *common, "--json", "name"]))
+    misplaced = sorted(
+        row["name"]
+        for row in stored
+        if MANIFEST.get(row["name"], {}).get("kind") == "variable"
+    )
+    if misplaced:
+        fail(
+            f"manifest variables stored as GitHub secrets in {environment}: "
+            + ", ".join(misplaced)
+            + "; delete those secrets first"
+        )
     # Empty optional values delete GitHub entries; rendering always supplies blank.
     for key, value in values.items():
         spec = MANIFEST[key]
@@ -265,7 +289,6 @@ def push(values, environment, repo):
         ):
             continue
         kind = "secret" if spec["kind"] == "secret" else "variable"
-        common = ["--env", environment, "--repo", repo]
         if value:
             run_gh([kind, "set", key, *common], value)
         else:
@@ -374,7 +397,14 @@ def apply_coolify(values):
         if key.startswith("CAPY_")
         and key in MANIFEST
         and "coolify" in MANIFEST[key]["targets"]
-    } | {"EVO_QUERY_MODEL", "IMPORT_RELAY_ENQUEUE_URL", "IMPORT_RELAY_SECRET"}
+    } | {
+        "EVO_QUERY_MODEL",
+        "IMPORT_RELAY_ENQUEUE_URL",
+        "IMPORT_RELAY_SECRET",
+        # GLM left Relace for Z.AI (Epo 2026-10-20); ZAI_API_KEY replaces both.
+        "RELACE_API_KEY",
+        "RELACE_INGEST_API_KEY",
+    }
     obsolete = [
         row
         for row in actual
@@ -407,6 +437,7 @@ def main():
             "push",
             "render",
             "render-ops",
+            "render-build",
             "verify-ops-target",
             "apply-coolify",
             "build",
@@ -442,7 +473,11 @@ def main():
     else:
         if not args.environment or not args.output or not args.revision:
             fail("render requires --environment, --output, and --revision")
-        renderer = render_ops if args.command == "render-ops" else render
+        renderer = {
+            "render": render,
+            "render-ops": render_ops,
+            "render-build": render_build,
+        }[args.command]
         renderer(values, args.environment, args.output, args.revision)
 
 

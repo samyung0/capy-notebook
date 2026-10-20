@@ -219,7 +219,7 @@ rule decides whether a discard moves the epoch).
 | --- | --- | --- | --- | --- |
 | `save_refused` | collaboration | a save refused for good discarded the room (an engine refusal, a 422, an ended epoch, an invalid note), or an Office update broke the room's roots and its writer went to recovery | the error: `engine_refused`, `epoch_changed`, `http_422`, `invalid_document`, `office_update` | room state, or the update |
 | `slow_save_limit` | collaboration | five minutes of failed saves discarded a source room | the last failure: `engine_transient`, `pending`, `backoff`, `http_503` | room state |
-| `over_limit` | collaboration | a note update or store past the document limits, a source update or save past the 100 MB state cap | the limit code, `source_state_bytes` | room state, or the update |
+| `over_limit` | collaboration | a note update or store past the document limits, a source update or save past its room's state cap | the limit code, `source_state_bytes` | room state, or the update |
 | `discard_unsaved` | collaboration | a discard with unsaved state for any other cause: lost write access at a store (read-only for the storage limit or a frozen account, revoked, the file gone, a locked account) or an outbox eviction; and a writer's update refused for lost write access | `storage_quota_exceeded`, `account_over_quota`, `read_only`, `forbidden`, `not_found`, an account-lock code, the outbox event type | room state, or the update |
 | `discard_unsaved` | browser | a connect or reconnect refused read-only discarded this session's unsaved edits; drafts deleted because the account lost the file (at open, on a refused reconnect, by the once-per-load sweep, or, after a save refused for lost access, the drafts of other lineages: this lineage's edits, another tab's included, are taken to have reached the room and be in the service's row, so a same-lineage tab that was offline at the refusal goes uncounted) | `read_only`, `forbidden`, `not_found` | unsaved bytes, or the drafts deleted |
 | `epoch_reset` | collaboration | that discard's epoch (or room schema) move landed | the discard's kind | NULL, user NULL |
@@ -353,7 +353,30 @@ unavailable. A steady count means the cap is too small for the
 rooms open at once. Next to it, the gauge
 `capy_collaboration_source_disk_held_bytes` is the bytes of the files loaded
 rooms hold, which is what a refusal compares with the cap (idle files go
-first and are not in it). Sentry holds failures
+first and are not in it). A user put in a timeout for going past their
+update allowance or sending an update over 8 MiB (the update allowance in
+[plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals))
+is logged at warn as `user timed out` with the room, the socket and the user
+id (never content) when a socket's message starts it, counted once per
+timeout in `capy_collaboration_timeouts_total`, and never captured; a draft
+send that starts one is counted there too (one over 8 MiB answers
+`too_large`, `class="too_large"`), and every draft send refused during one
+answers `too_fast`, logged as `draft send refused` and counted in
+`capy_collaboration_draft_refusals_total{class="too_fast"}`. Capy's tab
+paces its own messages under the allowance and splits updates into 2 MiB
+pieces, so a count that keeps growing means a runaway or hostile client (or
+one user's several busy tabs), and the warn lines name it. A JOIN costs one
+message of the allowance, so a join loop is a timeout too. A socket refused
+for its client address's socket cap is logged at warn (`client address over
+its socket cap`) and counted in
+`capy_collaboration_seat_refusals_total{seat="address"}`; a channel closed as
+its user's oldest when they joined one past their 22, or one past their 4 to
+one document, is counted in
+`capy_collaboration_oldest_closed_total`; a socket closed for joining no room
+within 10 s is logged at warn as `socket closed before any join`, and one
+that missed timeout announcements (too many at once) as `timeout
+announcements missed`. Full-document answers slowed by a spent open budget
+are not counted: they wait, nothing is refused. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal
@@ -515,33 +538,46 @@ Every inference path is actor-billed.
 `provider_slug` + `model_slug` from the closed EliteLLM list
 (`elitellm_providers.json`). Ops rejects leading or trailing whitespace on
 either slug before it constructs or persists that identity. Most rows call the
-named provider directly. Two exact routing exceptions are allowed:
+named provider directly. These exact routing exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
   OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
   `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
   (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
   `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
-- `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
-  Relace (`https://models.relace.ai/v1/chat/completions`, OpenAI-compatible,
-  wire model `z-ai/glm-5.3-flash`, transport provider `relace`, platform-only
-  `RELACE_API_KEY`). The identity stays with ZAI because ZAI is the model's
-  maker; the hop exists because ZAI's own API needs a monthly plan. There is
-  no fallback route: Relace replaced Tencent TokenHub on 2026-09-26, which had
-  replaced DeepInfra (`human/agentic-retrieval.md`). Thinking cannot be
-  disabled on this route; `low` is the floor and the catalog default.
-- `openrouter/deepseek/deepseek-v4-flash-0731` is the ingest descriptor pin.
-  EliteLLM posts it to OpenRouter (`https://openrouter.ai/api/v1/chat/completions`,
-  platform-only `OPENROUTER_API_KEY`) with `provider: {order: ["Relace"],
-  allow_fallbacks: false}` and `reasoning: {enabled: false}`, so a busy Relace
-  answers 429 rather than moving to another host. OpenRouter bills its listed
-  Relace price, below Relace's own account rate: response `usage.cost`,
-  the Logs page and the key's usage agreed on 2026-10-15. Accounting still
+- `zai/glm-5.3-flash` is served by Z.AI itself
+  (`https://api.z.ai/api/paas/v4/chat/completions`, OpenAI-compatible, model
+  `glm-5.3-flash`, platform-only `ZAI_API_KEY`) for chat and ingest alike
+  (decision 2026-10-20). Earlier hops (DeepInfra, Tencent TokenHub, then Relace
+  from 2026-09-26 until its GLM stopped reading prompts on 2026-10-19) are
+  history in `human/agentic-retrieval.md`; there is no fallback route. Thinking
+  cannot be disabled: `reasoning_effort` takes `low`, `high` or `max`, and `low`
+  is the floor a reasoning-off call runs at.
+- `openrouter` rows post their own slug to OpenRouter
+  (`https://openrouter.ai/api/v1/chat/completions`, platform-only
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` and the slug's
+  provider list from `OPENROUTER_ROUTING` in `pipeline/elitellm/client.py`: an
+  ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
+  providers in turn and never a host outside the list, and the call answers 429
+  only when every listed provider is busy. `deepseek/deepseek-v4-flash-0731`,
+  the ingest descriptor pin, goes to Reka, then DigitalOcean, then StreamLake
+  (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
+  each held 32 summary calls in flight without a 429 when probed that day);
+  `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
+  image captions (decision 2026-10-19), DeepInfra only. Default routing is
+  never used: providers behind one slug differ on images (one drops them
+  silently, others take none), so a slug with no pin fails when its request is
+  built, naming the slug. The allowlist in
+  `elitellm_providers.json` lists the same slugs. OpenRouter bills the
+  listed price of the provider that served the call (response `usage.cost`,
+  the Logs page and the key's usage agreed on 2026-10-15); for 0731 Reka lists
+  $0.021 / $0.0056 / $0.528 per million input / cached / output tokens, and the
+  two fallbacks list more. Accounting still
   prices tokens from the catalog row. Its nested `cached_tokens` is inclusive
   of `prompt_tokens` (1,024 of 1,208 observed).
 
-Neither exception opens a general router path. Other DeepInfra slugs
-and other ZAI slugs fail registry validation. A ZAI user key cannot
+No exception opens a general router path. Other DeepInfra, ZAI and
+OpenRouter slugs fail registry validation. A ZAI user key cannot
 authenticate the routed GLM call.
 A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
@@ -683,8 +719,8 @@ cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, OpenRouter DeepSeek V4 Flash
-0731 32 / 32 / 1280 (OpenRouter's Relace price, cached reads at the input
-price), embedding 40, reranker 50.
+0731 42 / 12 / 1056 (Reka's list price, its first route, decision 2026-10-20),
+embedding 40, reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -692,19 +728,21 @@ There is no USD estimate on `model_configs` or `usage_events`.
 `(input-cached)*input + cached*cache + output*output`. A 0 stays 0. Missing or
 unproven cache details charge all reported input at the input rate and do not
 fail the request. Cache writes are ordinary input under the three-rate design.
-DeepSeek, OpenAI, and routed GLM under its `zai` slug report a cache
-split proven inclusive of their own reported input; Anthropic's disjoint
-counters are folded into input separately. Routed GLM counts because Relace
-serves the model and bills us directly, so its split is the one the row's
-cached rate is priced against (the 2026-09-26 bench run in
-`bench/rag/reports/2026-09-26-glm-relace-tencent.md` recorded
-`prompt_tokens_details.cached_tokens` ≤ `prompt_tokens` on every Relace call;
-Relace reports `reasoning_tokens` at the top level of `usage`). A split larger
+DeepSeek, OpenAI, Z.AI (GLM under its `zai` slug) and OpenRouter report a
+cache split proven inclusive of their own reported input; Anthropic's disjoint
+counters are folded into input separately. Z.AI's was observed on 2026-10-20:
+a repeated 2,744-token prompt reported `prompt_tokens_details.cached_tokens`
+2,688 with `prompt_tokens` unchanged, and reasoning under
+`completion_tokens_details.reasoning_tokens`. A split larger
 than reported input is still refused as
 `cached_gt_input` and charged in full.
 The web app offers no key entry since 2026-10-16 (Settings → LLM has no keys
 section), so the BYOK paths below stay in the backend but no user can reach
-them, and UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
+them: saving or removing a key (`PUT /api/me/llm-credentials`, `DELETE
+/api/me/llm-credentials/{provider}`) answers 404 unless the API runs with
+`BYOK_ENABLED=true`, which no deployment sets. Before BYOK returns, stored
+keys need associated data (user and provider) and a key version, and a
+user-supplied base URL needs an SSRF policy. UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
 reranker and descriptor rows. Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
 (`model_configs_credit_rates_check`). Platform chat/generate/editor/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
@@ -1382,6 +1420,16 @@ Three layers, each doing what the ones below it cannot:
 | Go middleware | Clerk identity, plan, route class | per-user semantic limits |
 | Credits ledger | measured cost | spend, in money rather than requests |
 
+The collaboration server limits its own writers apart: each user's SYNC,
+awareness and query messages, over every socket and draft send, take from an
+update allowance (a burst, then a rate, in messages and bytes; the step 1
+and query answers the room encodes for them are charged by their bytes), a
+user over it or sending an update over 8 MiB is in a timeout instead of
+disconnected, and sockets per client address, joined channels per user and
+awareness client ids per channel and room are capped
+([plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals),
+metrics above).
+
 The edge cannot express "200 AI requests an hour for this Clerk user" because
 it never sees the identity. `server/internal/ratelimit` uses Redis GCRA so
 limits hold across replicas — the in-process counters it replaces only ever
@@ -1414,6 +1462,28 @@ IP and must not consume one anonymous caller's 60/minute allowance. Their
 service-secret checks, per-file authorization and ingest admission gates still
 apply. Public file session/token/process routes retain their normal user limits.
 
+**Unlimited routes refuse before reading** (Epo 2026-10-19). Nothing limits
+these routes, so a caller without credentials must not cost a body read or a
+large answer:
+
+- `internalSecretFirst` (`server.go`) checks `X-Collaboration-Secret` for
+  `/internal/collaboration/*` and `X-Pipeline-Secret` for `/api/internal/*`
+  before anything reads the body (Huma decodes and validates a body before the
+  handler runs), and answers 401 otherwise. Callers with the secret get one
+  150 MiB body cap, the largest any internal route takes; a route with a
+  tighter bound keeps it (study progress 4 KiB; an agent's file, the largest
+  plan file in base64).
+- The errors Huma builds about a request (each names a `location`) carry no
+  `value` and number at most 10 (`trimRequestErrors`); typed errors keep
+  their value.
+- `/webhooks/clerk` and `/webhooks/stripe` read at most 1 MiB before the
+  signature check (413 past it); the unsubscribe form reads at most 4 KiB.
+- Boot refuses a `CLERK_WEBHOOK_SECRET` that is not a Svix signing secret, so a
+  typo does not fail every delivery after reading it.
+- `POST /api/internal/source-changes/resolve` checks in Go that the actor can
+  read the named workspace and the file is in it before it forwards to the
+  collaboration authority.
+
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone
 still allows arbitrary parallel spend. `BeginProviderSession` counts open
@@ -1423,13 +1493,14 @@ concurrency is the separate cap of 20 above, not this one.
 
 **Per-model outbound concurrency** bounds what reaches a provider.
 `model_capacities` stores `concurrency_total` and `interactive_reserve` per
-transport provider/model, independently of versioned `model_configs`. Ops exposes
+provider/model, independently of versioned `model_configs`. Ops exposes
 both required fields in the model form, including for existing embedding models;
-capacity-only edits do not create a catalog version. Routed GLM shares
-`relace:glm-5.3-flash` across all its versions (earlier `tencent:` and
-`deepinfra:` rows are history and unused). Each environment's database
-holds its own limits; no capacity values are seeded across environments, so
-the Relace capacity row must be created in Ops before GLM traffic.
+capacity-only edits do not create a catalog version. A row's capacity is keyed
+on its catalog identity, shared across its versions: GLM uses
+`zai:glm-5.3-flash` (earlier `relace:`, `tencent:` and `deepinfra:` rows are
+history and unused). Each environment's database holds its own limits; no
+capacity values are seeded across environments, so the `zai` GLM capacity row
+must be created in Ops before GLM traffic.
 An enabled platform model missing capacity or a provider credential has a
 clickable warning icon in the registry. It opens a dialog listing the missing
 configuration for that model.
@@ -1453,27 +1524,31 @@ reads need no `model_capacities` row and do not count against GLM's ingest
 share.
 
 Before enabling traffic, configure the environment's limits in Ops. The approved
-production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
+production values are GLM 48/40 and Qwen embedding 200/80; UAT uses its own account
 and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
-DeepSeek Flash 2500/1500, Relace GLM 100/80, OpenRouter DeepSeek V4 Flash
-0731 32/0 (ingest-only, so no interactive reserve), Qwen embedding 200/80
-(total/interactive reserve). Existing settings, including GLM 200/120, remain.
+DeepSeek Flash 2500/1500, Z.AI GLM 48/40, OpenRouter DeepSeek V4 Flash
+0731 32/0 and V4.1 Flash 1017 32/0 (ingest-only, so no interactive reserve;
+page reads lease the `vlm_page` gate instead), Qwen embedding 200/80
+(total/interactive reserve). Existing settings remain.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
-limits; the reserves are application policy. GLM's 100 concurrent calls with
-80 reserved for interactive use (at most 20 ingest calls) are deliberately set
-above Relace's per-key budget, measured at roughly 700-800 RPM on 2026-09-26:
-at the ~4 s median chat-agent turn a full gate is about 1,500 RPM, so the
-provider limit binds first. Its 429s appear under Health "Busy models", which
-is the signal to request a higher Relace limit. An interactive 429 fails at
-once with the busy message (Relace asks for 60 s, past the 3 s interactive
-retry budget); ingest captions wait and retry within their 120 s budget. See the script for assumptions and
+limits; the reserves are application policy. GLM's 48 calls in flight with 40
+reserved for interactive use (decision 2026-10-20) stay under Z.AI's measured
+hold of about 50 per key, past which connections hang about 21 s and fail; ingest
+uses no GLM once page reads run on DeepSeek. Migration `0097` copies an existing
+`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40. It keeps the
+relace row, which retrieval containers on the previous release still lease
+against while a deploy rolls out; an operator removes it by hand afterwards
+(the `tencent` row stays as history). Z.AI 429s appear under Health
+"Busy models". An interactive
+429 fails at once with the busy message when its `Retry-After` is past the 3 s
+interactive retry budget; ingest calls wait and retry within their 120 s budget. See the script for assumptions and
 official sources; split capacities when environments share a provider account.
 Migration `0010` copies any configured Flash Vision capacity to its new identity.
 Health shows attempts abandoned on a provider 429, 503 or 529
 answer per provider and model over the last hour, and the usage explorer's
 provider-attempts table shows every attempt (applied, abandoned, busy, open) by
-transport provider and model for the selected range; the pre-call row carries
-the transport provider and model so abandoned attempts are attributable. A gate
+provider and model for the selected range; the pre-call row carries
+the provider and model so abandoned attempts are attributable. A gate
 refusal writes no call row and is not counted.
 
 **Redis failures fail open.** A limiter outage must not become an API outage;
@@ -1554,10 +1629,12 @@ topics and tagged excerpts the library holds under each) and topics with their
 `subjectId` and excerpt counts by role (the Topics tab shows the subject as a
 column and filters by subject), a filtered excerpt browser paging
 50 at a time, excerpt detail with chunk, figure and parser/chunker locators,
-model runs, and a per-book JSON export (`?version=` for a retained version)
-whose sha256 travels in `X-Capy-Export-Sha256` so another reviewer can verify
-the bytes they were handed. Every query follows the book's current content
-unless a version is named; every query is bounded; no route mutates.
+model runs, and a per-book JSON export of the current version whose sha256
+travels in `X-Capy-Export-Sha256` so another reviewer can verify the bytes
+they were handed. Older versions keep only their version rows and receipts
+(a publish retires the previous version), so the Books tab lists them without
+an export. Every query follows the book's current content; every query is
+bounded; no route mutates.
 
 `operator_audit_events` is the chronological record of accepted Ops mutations.
 Registry saves and manual reconciliation requests append an actor-role snapshot,
@@ -1577,9 +1654,9 @@ custom range of at most 366 inclusive days. Month and quarter use daily buckets;
 year and longer custom ranges use monthly buckets. Each response carries one
 `dataAsOf` timestamp so live rows are not presented as a periodic snapshot.
 Provider/model grouping uses the catalog provider, model slug, and version as
-the primary billing identity; the transport-observed provider/model is shown as
-secondary diagnostic data. Routed GLM rows therefore group under
-`zai/glm-5.3-flash` while the observed pair is `relace/glm-5.3-flash`.
+the primary billing identity; the provider/model the call reported is shown as
+secondary diagnostic data. Every current route reports its catalog pair
+(before 2026-10-20 GLM rows were observed as `relace/glm-5.3-flash`).
 
 The header's refresh button refetches all active Ops GET queries. It never
 calls an LLM provider, the parser, or Stripe and it never starts reconciliation.

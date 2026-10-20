@@ -215,10 +215,13 @@ ON CONFLICT (id) DO UPDATE SET
   purge_after = NULL,
   revision = 1;
 
--- u_other came in through the signed links once: a link resource reaches a
--- signed-in nonmember only after that (Sam 2026-10-18).
+-- u_other and u_editor came in through the signed links once: a link resource
+-- reaches a signed-in nonmember only after that (Sam 2026-10-18). Both edit
+-- ws_e2e_edit through its editor share role.
 INSERT INTO workspace_link_grants (workspace_id, user_id) VALUES
-  ('ws_e2e_link', 'u_other')
+  ('ws_e2e_link', 'u_other'),
+  ('ws_e2e_edit', 'u_other'),
+  ('ws_e2e_edit', 'u_editor')
 ON CONFLICT DO NOTHING;
 INSERT INTO material_link_grants (material_id, user_id) VALUES
   ('qz_e2e_link', 'u_other'),

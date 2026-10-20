@@ -1,13 +1,12 @@
 import json
 
-import batches
-import httpx
 import knowledge_base_pilot as pilot
 import llm
 import pytest
+import stages
 import store
 import tag
-from knowledge_base_batch import BatchClient, read_json, save_json
+from knowledge_base_common import read_json, save_json
 
 SHA = "cd" * 32
 TOPICS = [
@@ -104,8 +103,8 @@ def answer(messages, skip=(), evidence=None):
 def fake_live(monkeypatch, make_value):
     calls = []
 
-    def alibaba(messages, schema, *, stage, sha256, thinking):
-        calls.append((thinking, sent_ids(messages)))
+    def alibaba(messages, schema, *, stage, sha256):
+        calls.append(sent_ids(messages))
         return llm.Result(
             make_value(messages),
             "qwen3.8-flash",
@@ -114,7 +113,7 @@ def fake_live(monkeypatch, make_value):
             {"prompt_tokens": 100, "completion_tokens": 10, "reasoning_tokens": 0},
         )
 
-    monkeypatch.setattr(batches.llm, "alibaba", alibaba)
+    monkeypatch.setattr(stages.llm, "alibaba", alibaba)
     return calls
 
 
@@ -143,7 +142,7 @@ def test_tolerant_verifier_table(evidence, verified):
     assert pilot.evidence_verified(evidence, text) is verified
 
 
-# --- live path, batching, ceiling ---------------------------------------------
+# --- groups, singles, ceiling ---------------------------------------------------
 
 
 def test_eight_per_request_and_a_missing_excerpt_is_resent_singly(run_dir, monkeypatch):
@@ -151,19 +150,15 @@ def test_eight_per_request_and_a_missing_excerpt_is_resent_singly(run_dir, monke
         monkeypatch,
         lambda m: answer(m, skip=("e3",)) if len(sent_ids(m)) > 1 else answer(m),
     )
-    assert tag.run(run_dir, "b", live=True) == 0
-    assert calls == [
-        (False, [f"e{i}" for i in range(8)]),
-        (False, ["e8", "e9"]),
-        (False, ["e3"]),
-    ]
+    assert tag.run(run_dir, "b") == 0
+    assert calls == [[f"e{i}" for i in range(8)], ["e8", "e9"], ["e3"]]
     tags = read_json(run_dir / "tags.json")
     assert sorted(tags["tags"]) == [f"e{i}" for i in range(10)]
     assert all(t["evidence_verified"] for t in tags["tags"].values())
     assert tags["model_transport"] == "live" and tags["batch_id"] is None
     assert tags["failed_tags"] == {} and tags["review_items"] == []
     assert read_json(run_dir / "topics.json")["excerpts"] == {"t1": 10, "t2": 0}
-    receipt = batches.latest_receipt(run_dir, "tag")
+    receipt = stages.latest_receipt(run_dir, "tag")
     assert receipt["groups"] == 2 and receipt["sent_live"] == 3
     assert (
         receipt["tagged"] == 10
@@ -182,7 +177,7 @@ def test_eight_per_request_and_a_missing_excerpt_is_resent_singly(run_dir, monke
     assert system["success"]["b:e3"]["value"]["excerpts"][0]["id"] == "e3"
     # a re-run sends nothing
     calls.clear()
-    assert tag.run(run_dir, "b", live=True) == 0 and calls == []
+    assert tag.run(run_dir, "b") == 0 and calls == []
 
     # tags.json: byte-for-byte the shape apply_tags writes from the same outputs
     other = run_dir.parent / "pilot"
@@ -223,10 +218,10 @@ def test_more_than_two_percent_untagged_fails_without_tags_json(run_dir, monkeyp
     calls = fake_live(
         monkeypatch, lambda m: answer(m, skip=("e3",), evidence="nowhere")
     )
-    assert tag.run(run_dir, "b", live=True) == 1
-    assert [c[1] for c in calls][-1] == ["e3"]
+    assert tag.run(run_dir, "b") == 1
+    assert calls[-1] == ["e3"]
     assert not (run_dir / "tags.json").exists()
-    receipt = batches.latest_receipt(run_dir, "tag")
+    receipt = stages.latest_receipt(run_dir, "tag")
     assert (
         receipt["failed"] == 1
         and receipt["failed_ids"] == ["e3"]
@@ -249,110 +244,3 @@ def test_messages_carry_candidates_in_the_prefix_and_the_evidence_rule():
     assert tag.schema(["t1"])["properties"]["excerpts"]["items"]["properties"][
         "topic_ids"
     ]["items"]["enum"] == ["t1"]
-
-
-# --- batch path ---------------------------------------------------------------
-
-
-def test_batch_path_collects_then_resends_missing_singly(run_dir, monkeypatch):
-    job = {
-        "id": "batch-1",
-        "status": "in_progress",
-        "request_counts": {"total": 2, "completed": 0, "failed": 0},
-    }
-    output = []
-
-    def handler(request):
-        path = request.url.path
-        if path.endswith("/files") and request.method == "POST":
-            return httpx.Response(200, json={"id": "file-in"})
-        if path.endswith("/batches") and request.method == "POST":
-            return httpx.Response(200, json={"id": "batch-1", "status": "validating"})
-        if path.endswith("/batches/batch-1"):
-            return httpx.Response(200, json=job)
-        if path.endswith("/files/file-out/content"):
-            return httpx.Response(
-                200, text="".join(json.dumps(r) + "\n" for r in output)
-            )
-        raise AssertionError(path)
-
-    transport = httpx.MockTransport(handler)
-    monkeypatch.setattr(
-        batches,
-        "client",
-        lambda: BatchClient(
-            "key", base_url="https://alibaba.test/v1", transport=transport
-        ),
-    )
-    uploads = httpx.Client(base_url="https://alibaba.test/v1", transport=transport)
-    monkeypatch.setattr(
-        "knowledge_base_batch.requests.post",
-        lambda url, **kwargs: uploads.post(
-            "/files", data=kwargs["data"], files=kwargs["files"]
-        ),
-    )
-    live = fake_live(monkeypatch, answer)
-
-    assert tag.run(run_dir, "b") == batches.WAITING
-    task = store.review_task(SHA, "tag")
-    assert task["batch_id"] == "batch-1" and task["requests"] == 2
-    rows = [
-        json.loads(l)
-        for l in (run_dir / "models/tag/input.jsonl").read_text().splitlines()
-    ]
-    assert [r["custom_id"] for r in rows] == ["b:g0", "b:g1"]
-    assert (
-        rows[0]["body"]["enable_thinking"] is True
-        and rows[0]["body"]["thinking_budget"] == 4096
-    )
-    assert sent_ids(rows[0]["body"]["messages"]) == [f"e{i}" for i in range(8)]
-    with pytest.raises(Exception, match="batch task is open"):
-        tag.run(run_dir, "b", live=True)
-
-    job.update(
-        status="completed", output_file_id="file-out", created_at=1, completed_at=5
-    )
-    output.append(
-        {
-            "custom_id": "b:g0",
-            "response": {
-                "status_code": 200,
-                "request_id": "r0",
-                "body": {
-                    "choices": [
-                        {
-                            "finish_reason": "stop",
-                            "message": {
-                                "content": json.dumps(
-                                    answer(rows[0]["body"]["messages"], skip=("e5",))
-                                )
-                            },
-                        }
-                    ],
-                    "usage": {"prompt_tokens": 1000, "completion_tokens": 300},
-                },
-            },
-        }
-    )
-    output.append(
-        {
-            "custom_id": "b:g1",
-            "response": {"status_code": 500, "body": {}},
-            "error": {"code": "x"},
-        }
-    )
-    assert tag.run(run_dir, "b") == 0
-    assert [c[1] for c in live] == [["e5"], ["e8"], ["e9"]]
-    tags = read_json(run_dir / "tags.json")
-    assert tags["batch_id"] == "batch-1" and tags["model_transport"] == "batch"
-    assert sorted(tags["tags"]) == [f"e{i}" for i in range(10)]
-    receipt = batches.latest_receipt(run_dir, "tag")
-    assert receipt["usage"] == {
-        "prompt_tokens": 1300,
-        "completion_tokens": 330,
-        "reasoning_tokens": 0,
-    }
-    assert receipt["sent_live"] == 3
-    assert store.llm_usage(0)["https://alibaba.test/v1/batches"]["calls"] == 1
-    live.clear()
-    assert tag.run(run_dir, "b") == 0 and live == []

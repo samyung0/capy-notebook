@@ -37,7 +37,7 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 	}
 	note, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Alpha note",
-		Content: "# Alpha\n\nbody",
+		Content: materialTestContent(t, "# Alpha\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	standalone, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: ownerID, Kind: "note", Title: "Zulu standalone", Content: "# Zulu\n\nbody",
+		CreatedBy: ownerID, Kind: "note", Title: "Zulu standalone", Content: materialTestContent(t, "# Zulu\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)

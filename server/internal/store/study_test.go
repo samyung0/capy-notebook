@@ -126,7 +126,7 @@ func TestPracticeRecordsStudyProgress(t *testing.T) {
 	// A quiz inside a note is a quick check that records nothing: the graded
 	// attempt comes back without an id, and no attempt, progress or review state
 	// is stored.
-	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: "Note", Content: "# Note"})
+	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: "Note", Content: materialTestContent(t, "# Note")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestReviewSkipsEmbeddedOrphanedAndEditedItems(t *testing.T) {
 		f.rate(t, c, 3)
 	}
 	f.rate(t, cards[2], 3)
-	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: "Note", Content: "# Note"})
+	note, err := f.s.CreateMaterial(ctx, Material{CreatedBy: f.user, WorkspaceID: f.ws.ID, WorkspaceName: f.ws.Name, Kind: "note", Title: "Note", Content: materialTestContent(t, "# Note")})
 	if err != nil {
 		t.Fatal(err)
 	}

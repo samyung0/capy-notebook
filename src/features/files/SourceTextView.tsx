@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceSession, ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
 import {
@@ -14,7 +15,11 @@ import {
 import { useReportEditorStatus } from './fileModeContext';
 import { SourceTextEditor } from './SourceTextEditor';
 import { applySavedSource } from './sourceState';
-import { sourceHeaderStatus, useSourceSession } from './useSourceSession';
+import {
+  sourceHeaderStatus,
+  useSizeLimitView,
+  useSourceSession,
+} from './useSourceSession';
 
 export function SourceTextView({
   file,
@@ -45,6 +50,14 @@ export function SourceTextView({
     setJoined(false);
     setMode('view');
   }, [editing, pausedAtOpen, setMode]);
+  // The view read says the file is at its size limit before any Edit
+  // attempt; an edit open stopped there drops to view.
+  const [viewAtSizeLimit, setViewAtSizeLimit] = useState(false);
+  const sizeLimited =
+    useSizeLimitView(source.atSizeLimit, editing, () => {
+      setJoined(false);
+      setMode('view');
+    }) || viewAtSizeLimit;
   useEffect(() => {
     onDirtyChange?.(source.dirty);
     return () => onDirtyChange?.(false);
@@ -83,6 +96,7 @@ export function SourceTextView({
       .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
       .then((session) => {
         if (cancelled) return;
+        setViewAtSizeLimit(!!session.atSizeLimit);
         const doc = new Y.Doc();
         if (applySavedSource(doc, session)) {
           url = URL.createObjectURL(
@@ -147,7 +161,7 @@ export function SourceTextView({
     >
       <FileModeControl
         canEdit={canEdit}
-        disabled={leaving || source.handoff || source.replaced}
+        disabled={leaving || source.handoff || source.replaced || sizeLimited}
         mode={mode}
         onChange={(mode) => {
           if (mode === 'edit') {
@@ -177,25 +191,28 @@ export function SourceTextView({
         readOnly={source.readOnly}
         reloading={source.discarding}
         replaced={source.replaced}
+        slowed={editing && source.slowed}
         storageFull={source.session?.storageFull}
       />
       <div className="min-h-0 flex-1 overflow-auto">
         {editing ? (
           source.doc ? (
-            <SourceTextEditor
-              doc={source.doc}
-              onPendingChange={source.pendingInput}
-              onSave={source.save}
-              paused={
-                !canEdit ||
-                source.handoff ||
-                source.replaced ||
-                source.offlineLimit ||
-                source.outdated ||
-                source.status === 'recovery'
-              }
-              registerFlush={source.flushHandler}
-            />
+            <CollaborationHold className="h-full">
+              <SourceTextEditor
+                doc={source.doc}
+                onPendingChange={source.pendingInput}
+                onSave={source.save}
+                paused={
+                  !canEdit ||
+                  source.handoff ||
+                  source.replaced ||
+                  source.offlineLimit ||
+                  source.outdated ||
+                  source.status === 'recovery'
+                }
+                registerFlush={source.flushHandler}
+              />
+            </CollaborationHold>
           ) : (
             <div
               aria-label={m.a11y_loading()}

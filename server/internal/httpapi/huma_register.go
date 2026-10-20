@@ -12,21 +12,33 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// humaConfig builds the OpenAPI document metadata. huma serves the spec at
-// /openapi.yaml, /openapi.json (+ 3.0 variants) and docs at /docs.
-func humaConfig() huma.Config {
-	return huma.DefaultConfig("Capy Notebook API", "0.1.0")
+// humaConfig builds the OpenAPI document metadata. With apiDocs (local
+// development only) huma serves the spec at /openapi.yaml, /openapi.json
+// (+ 3.0 variants), docs at /docs and schemas at /schemas/*, and links each
+// body to its schema with `$schema`. Without it none of those routes exist and
+// bodies carry no `$schema` link.
+func humaConfig(apiDocs bool) huma.Config {
+	config := huma.DefaultConfig("Capy Notebook API", "0.1.0")
+	if !apiDocs {
+		config.OpenAPIPath, config.DocsPath, config.SchemasPath = "", "", ""
+		// DefaultConfig's only create hook adds the `$schema` link transformer.
+		config.CreateHooks = nil
+	}
+	return config
 }
 
 // SpecYAML renders the OpenAPI 3.0.3 spec (safest for orval) without a live DB;
-// handlers are registered but never executed during spec generation.
+// handlers are registered but never executed during spec generation. It keeps
+// the local-development config, so schemas list the optional, read-only
+// `$schema` field that deployed bodies leave out.
 func SpecYAML() ([]byte, error) {
 	r := chi.NewRouter()
-	api := humachi.New(r, humaConfig())
+	api := humachi.New(r, humaConfig(true))
 	registerRoutes(api, &api2{})
 	return api.OpenAPI().DowngradeYAML()
 }
@@ -247,7 +259,7 @@ func mapHTTPError(err error) error {
 			Detail: pendingTooLarge.Error(),
 			Errors: []*huma.ErrorDetail{{
 				Message: "pending_sources_too_large",
-				Value:   map[string]any{"fileIds": pendingTooLarge.FileIDs},
+				Value:   map[string]any{"fileIds": pendingTooLarge.FileIDs, "materialIds": pendingTooLarge.MaterialIDs},
 			}},
 		}
 	}
@@ -409,13 +421,36 @@ func publicError(ctx context.Context, err error) error {
 	return newUnexpectedError(status.GetStatus(), obs.TraceID(ctx))
 }
 
+// maxRequestErrors bounds the errors in one answer: Huma reports every
+// failing element, so a long array would answer one error per element.
+const maxRequestErrors = 10
+
+// trimRequestErrors keeps the first maxRequestErrors and drops the value Huma
+// echoes on the errors it builds about the request (each names a location:
+// body, path, query or header; a body it could not parse echoes all of it).
+// Our typed errors name no location and keep their value.
+func trimRequestErrors(model *huma.ErrorModel) {
+	details := model.Errors[:min(len(model.Errors), maxRequestErrors)]
+	model.Errors = make([]*huma.ErrorDetail, len(details))
+	for i, detail := range details {
+		if detail != nil && detail.Location != "" {
+			detail = &huma.ErrorDetail{Message: detail.Message, Location: detail.Location}
+		}
+		model.Errors[i] = detail
+	}
+}
+
 func init() {
 	// The errors huma builds itself (a request body it could not read,
 	// writeStatusErr) follow the same rule; their cause goes to the logs and
 	// Sentry instead of the body.
 	huma.NewErrorWithContext = func(ctx huma.Context, status int, msg string, errs ...error) huma.StatusError {
 		built := huma.NewError(status, msg, errs...)
-		if model, ok := built.(*huma.ErrorModel); status < http.StatusInternalServerError || ok && typedServerError(model.Errors) {
+		model, ok := built.(*huma.ErrorModel)
+		if ok {
+			trimRequestErrors(model)
+		}
+		if status < http.StatusInternalServerError || ok && typedServerError(model.Errors) {
 			return built
 		}
 		if cause := errors.Join(errs...); cause != nil {
@@ -438,6 +473,17 @@ func materialContentError(ctx context.Context, materialID string, err error) err
 		Detail: "material content could not be decoded",
 		Errors: []*huma.ErrorDetail{{Message: "material_content_unreadable"}},
 	}
+}
+
+// storedContentError answers an error from a route that reads a material's
+// stored content (Epo 2026-10-20): content the rules refuse is the
+// unreadable state, anything else goes through hErr. Content a request sends
+// or we generate keeps its own answer (400, or a 500 that reaches Sentry).
+func storedContentError(ctx context.Context, materialID string, err error) error {
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		return materialContentError(ctx, materialID, err)
+	}
+	return hErr(err)
 }
 
 const materialRequestMaxBytes = 3 << 20

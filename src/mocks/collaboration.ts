@@ -472,6 +472,8 @@ export function join(room: Room, participant: Participant) {
 // reopened editor can wait for it).
 const UNREACHABLE = 'capy.mock.collaboration.unreachable';
 const REACHABILITY = 'capy:mock-collaboration-reachability';
+/** How many times this tab's source providers joined a room. */
+const SOURCE_JOINS = 'capy.mock.sourceJoins';
 // Unit tests run without a window: always reachable there.
 const browser = typeof window !== 'undefined';
 // The Office bench's co-editor case edits a source room as a second peer
@@ -506,6 +508,8 @@ export function mockNotePeer(materialId: string) {
         ...slateNodesToInsertDelta(blocks),
       ]),
     awareness,
+    /** The peer's own document, for edits inside a block (a figure's map). */
+    document,
     leave,
     /** Puts `block` where the top-level block `id` is. */
     replace: (id: string, block: MaterialValue[number]) => {
@@ -524,6 +528,16 @@ export function mockNotePeer(materialId: string) {
 export function setCollaborationReachable(value: boolean) {
   if (value) sessionStorage.removeItem(UNREACHABLE);
   else sessionStorage.setItem(UNREACHABLE, 'true');
+  window.dispatchEvent(new Event(REACHABILITY));
+}
+
+// A journey's spent open budget (Epo 2026-10-20): a note room's join waits,
+// told `onSlowed`, until the flag clears.
+const SLOWED = 'capy.mock.collaboration.slowed';
+
+export function setCollaborationSlowed(value: boolean) {
+  if (value) sessionStorage.setItem(SLOWED, 'true');
+  else sessionStorage.removeItem(SLOWED);
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
@@ -572,6 +586,7 @@ interface MockCollaborationOptions {
   materialId: string;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
+  onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
 }
 
@@ -641,6 +656,10 @@ class MockCollaborationProvider implements UnifiedProvider {
       void queryClient.invalidateQueries({
         queryKey: ['material', this.options.materialId, 'collaboration-token'],
       });
+      return;
+    }
+    if (browser && sessionStorage.getItem(SLOWED) === 'true') {
+      this.options.onSlowed?.(true);
       return;
     }
     const room = materialRoom(this.options.name, this.options.initialValue);
@@ -763,6 +782,12 @@ class MockSourceProvider implements SourceProvider {
     this.config = config;
     this.room = room;
     this.leave = join(room, { document: config.document, origin: this });
+    // Counted for the e2e that checks an open at the size limit never joins.
+    if (browser)
+      sessionStorage.setItem(
+        SOURCE_JOINS,
+        String(Number(sessionStorage.getItem(SOURCE_JOINS) ?? 0) + 1)
+      );
     sourceProviders.add(this);
     queueMicrotask(() => config.onSynced?.({ state: true }));
   }
@@ -1161,6 +1186,8 @@ class MockItemProvider implements ItemProvider {
   }
 
   connect() {}
+
+  wake() {}
 
   announceOutdated() {
     this.disconnect();

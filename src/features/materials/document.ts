@@ -1,7 +1,9 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { Question, QuestionBlock } from '@/api/types';
+import { repairFigureBlock } from '@/features/questions/repair';
 import {
   descriptionFits,
+  liveFigureSchema,
   questionBlockSchema,
   validateQuestion,
   validateQuestions,
@@ -110,6 +112,9 @@ export const HTML_EMBED_MAX_BYTES = EMBED_CATALOG.limits.HTML_EMBED_MAX_BYTES;
 export const HTML_EMBED_MAX_COUNT = EMBED_CATALOG.limits.HTML_EMBED_MAX_COUNT;
 /** An HTML embed's caption, and the inline Mermaid caption's input bound. */
 export const BLOCK_CAPTION_MAX = EMBED_CATALOG.limits.BLOCK_CAPTION_MAX;
+/** Any block's indent (lists, indented paragraphs): the editor stops at it
+ * and every validator refuses more (Epo 2026-10-18). */
+export const LIST_INDENT_MAX = EMBED_CATALOG.limits.LIST_INDENT_MAX;
 
 export function htmlBytes(html: string): number {
   return new TextEncoder().encode(html).length;
@@ -169,6 +174,21 @@ const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** `nodes` with each block indent past LIST_INDENT_MAX set to it: the cheap
+ * repair an import makes on entry (Epo 2026-10-19), so a Word or Markdown
+ * list nested deeper still imports. Every direct write is refused instead. */
+export function clampIndents<T>(nodes: T[]): T[] {
+  return nodes.map((node) => {
+    if (!isRecord(node)) return node;
+    const clamped: Record<string, unknown> = { ...node };
+    if (Array.isArray(node.children))
+      clamped.children = clampIndents(node.children);
+    if (typeof node.indent === 'number' && node.indent > LIST_INDENT_MAX)
+      clamped.indent = LIST_INDENT_MAX;
+    return clamped as T;
+  });
 }
 
 function isTextNode(value: unknown): value is MaterialText {
@@ -237,8 +257,13 @@ function followsCatalog(
   );
 }
 
-/** One element's own values; the catalog's key rules follow. */
-function validateCustomElement(element: MaterialElement): boolean {
+/** One element's own values; the catalog's key rules follow. A `live` read
+ * (a stored or room document) takes a figure as a room holds it, repaired
+ * (`liveFigureSchema`, Epo 2026-10-18); a write takes it strictly. */
+function validateCustomElement(
+  element: MaterialElement,
+  live: boolean
+): boolean {
   switch (element.type) {
     case 'chart':
     case 'plot':
@@ -250,7 +275,9 @@ function validateCustomElement(element: MaterialElement): boolean {
         element.children[0].text !== ''
       )
         return false;
-      const result = questionBlockSchema.safeParse(element.block);
+      const result = (live ? liveFigureSchema : questionBlockSchema).safeParse(
+        element.block
+      );
       return (
         result.success &&
         result.data.type === element.type &&
@@ -379,11 +406,14 @@ function validateMediaElement(
 
 export function isMaterialNode(
   value: unknown,
-  depth = 0
+  depth = 0,
+  live = false
 ): value is MaterialNode {
   if (isTextNode(value)) return true;
   if (!isElementNode(value)) return false;
-  if (!value.children.every((child) => isMaterialNode(child, depth + 1)))
+  if (!value.children.every((child) => isMaterialNode(child, depth + 1, live)))
+    return false;
+  if (typeof value.indent === 'number' && value.indent > LIST_INDENT_MAX)
     return false;
   const catalog = ELEMENTS.get(value.type);
   // A stored document holding a type the catalog does not list stays
@@ -391,7 +421,7 @@ export function isMaterialNode(
   if (!catalog) return true;
   return (
     validateMediaElement(value, catalog) &&
-    validateCustomElement(value) &&
+    validateCustomElement(value, live) &&
     followsCatalog(value, catalog, depth)
   );
 }
@@ -406,14 +436,21 @@ function unknownElementType(nodes: MaterialNode[]): string | undefined {
   }
 }
 
-export function isMaterialDocument(value: unknown): value is MaterialDocument {
+/** Whether `value` is a material document; `live` reads one stored or held
+ * by a room, whose figures may be what a merge leaves (`liveFigureSchema`). */
+export function isMaterialDocument(
+  value: unknown,
+  live = false
+): value is MaterialDocument {
   if (!isRecord(value)) return false;
   if (
     !(
       value.schemaVersion === MATERIAL_SCHEMA_VERSION &&
       Array.isArray(value.value) &&
       value.value.length > 0 &&
-      value.value.every((node) => isElementNode(node) && isMaterialNode(node))
+      value.value.every(
+        (node) => isElementNode(node) && isMaterialNode(node, 0, live)
+      )
     )
   )
     return false;
@@ -437,6 +474,25 @@ export function isMaterialDocument(value: unknown): value is MaterialDocument {
   return (value.value as MaterialValue).every(uniqueParts);
 }
 
+/** A document with its live figures' merges repaired as readers draw them
+ * (`repairFigureBlock`, Epo 2026-10-17): reads take one, writes
+ * (`createMaterialDocument`) refuse it. Figures are top-level blocks whose
+ * `block` the catalog shares as a map. */
+function withRepairedFigures(candidate: unknown): unknown {
+  if (!isRecord(candidate) || !Array.isArray(candidate.value)) return candidate;
+  let changed = false;
+  const value = candidate.value.map((node: unknown) => {
+    if (!isRecord(node) || typeof node.type !== 'string') return node;
+    const catalog = ELEMENTS.get(node.type);
+    if (!(catalog && 'sharedMap' in catalog)) return node;
+    const block = repairFigureBlock(node.block);
+    if (block === node.block) return node;
+    changed = true;
+    return { ...node, block };
+  });
+  return changed ? { ...candidate, value } : candidate;
+}
+
 function parseMaterialDocumentInput(input: unknown): MaterialDocument | null {
   let candidate = input;
   if (typeof input === 'string') {
@@ -446,7 +502,8 @@ function parseMaterialDocumentInput(input: unknown): MaterialDocument | null {
       return null;
     }
   }
-  return isMaterialDocument(candidate) ? candidate : null;
+  candidate = withRepairedFigures(candidate);
+  return isMaterialDocument(candidate, true) ? candidate : null;
 }
 
 export function parseMaterialDocumentWithMetrics(

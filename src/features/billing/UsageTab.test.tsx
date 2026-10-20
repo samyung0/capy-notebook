@@ -29,6 +29,7 @@ vi.mock('@/api/hooks', () => ({
     isFetching: true,
     isPending: pending.billing,
   }),
+  useCancelReloadRetry: () => ({ isPending: false, mutate: vi.fn() }),
   useUsage: () => ({
     data: pending.usage ? undefined : { bySurface: [] },
     isFetching: true,

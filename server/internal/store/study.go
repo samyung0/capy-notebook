@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -85,6 +86,14 @@ type parsedMaterial struct {
 // take several times that in memory (about 7.6x for a 2 MiB quiz).
 const parsedItemsBytes = 32 << 20
 
+// refused reports a quiz or set whose stored content the current rules refuse:
+// the Study tab, Learning's Review tab and review sessions leave it out and
+// show everything else, while opening it shows the center file error (Epo
+// 2026-10-20).
+func refused(err error) bool {
+	return errors.Is(err, materialdoc.ErrInvalid)
+}
+
 // itemsOf is materialItems through the cache. Titles are not cached: a rename
 // does not bump the revision.
 func itemsOf(mt Material) ([]studyItem, error) {
@@ -96,7 +105,7 @@ func itemsOf(mt Material) ([]studyItem, error) {
 	}
 	items, err := materialItems(mt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("material %s: %w", mt.ID, err)
 	}
 	size := len(mt.Content)
 	parsedItems.Lock()
@@ -704,10 +713,15 @@ func (s *Store) reviewPool(ctx context.Context, userID, wsID string, now time.Ti
 				rows.Close()
 				return nil, err
 			}
-			if byID[mt.ID].items, err = itemsOf(mt); err != nil {
+			items, err := itemsOf(mt)
+			if refused(err) {
+				continue
+			}
+			if err != nil {
 				rows.Close()
 				return nil, err
 			}
+			byID[mt.ID].items = items
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {
@@ -974,16 +988,30 @@ func (s *Store) itemCounts(ctx context.Context, wsID string) ([]ItemAttempts, er
 		return nil, err
 	}
 	defer rows.Close()
+	left := map[string]bool{}
 	for rows.Next() {
 		mt, err := scanMaterial(rows)
 		if err != nil {
 			return nil, err
 		}
 		items, err := itemsOf(mt)
+		if refused(err) {
+			left[mt.ID] = true
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
 		out[missAt[mt.ID]].Size = len(items)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil || len(left) == 0 {
+		return out, err
+	}
+	kept := out[:0]
+	for _, it := range out {
+		if !left[it.MaterialID] {
+			kept = append(kept, it)
+		}
+	}
+	return kept, nil
 }

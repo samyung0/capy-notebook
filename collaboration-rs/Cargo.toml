@@ -62,6 +62,15 @@ dbg_macro = "warn"
 print_stdout = "warn"
 unwrap_used = "warn"
 
+# Test binaries link with line tables only and dependencies without debug
+# info: full debug info made each link take 2-3 GB, and parallel test links
+# ran a developer machine out of memory.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 debug = "line-tables-only"
 # The room task catches a panic from yrs or the notes checks on one update

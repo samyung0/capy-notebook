@@ -240,3 +240,106 @@ for (const [format, name] of [
     ]);
   });
 }
+
+test('docx Insert › Image refuses a picture past the growth budget of the file with a notice', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  // Under the runtime's 4 KiB slack, so no room at all: refused before any
+  // shrink. Set once, not as an init script, which every runtime frame would
+  // run.
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      'capy.mock.growthBudgetBytes.bio-office-docx',
+      '2000'
+    )
+  );
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
+  const before = media(await download(page, 'docx'));
+  const buffer = Buffer.from(await makeImage(page, 'webp'), 'base64');
+  await insert(page, 'docx', {
+    buffer,
+    mimeType: 'image/webp',
+    name: 'chart.webp',
+  });
+  await expect(page.getByText(m.files_office_image_budget())).toBeVisible();
+  await expect(page.getByText(m.error_file_body())).toHaveCount(0);
+  expect(media(await download(page, 'docx')).size).toBe(before.size);
+});
+
+test('a DOCX with no growth budget left opens to view only with the size-limit notice', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.evaluate(() =>
+    sessionStorage.setItem('capy.mock.growthBudgetBytes.bio-office-docx', '0')
+  );
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(page.getByText(m.files_size_limit())).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(officeEditMenu(page, 'docx')).toHaveCount(0);
+  // The saved view loads into a fresh frame.
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByText(m.error_file_body())).toHaveCount(0);
+  // It reads as not editable (Epo 2026-10-20), and the open stopped before
+  // joining the room (review r3 S1).
+  const toggle = page.getByRole('button', { name: m.material_mode() });
+  await expect(toggle).toBeDisabled();
+  expect(
+    await page.evaluate(() => sessionStorage.getItem('capy.mock.sourceJoins'))
+  ).toBeNull();
+  // A fresh view knows before any attempt (review r3 E1).
+  await page.reload();
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(toggle).toBeDisabled();
+  await expect(page.getByText(m.files_size_limit())).toHaveCount(0);
+});
+
+test('pptx Insert › Image shrinks a picture toward the growth budget and refuses one that still does not fit', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-pptx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  // About 16 KB of room past the slack: under the plan cap, so the budget is
+  // the cap the photo is shrunk toward, and no JPEG of it gets that small.
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      'capy.mock.growthBudgetBytes.bio-office-pptx',
+      '20000'
+    )
+  );
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page, 'pptx')).toBeVisible({ timeout: 30_000 });
+  const before = media(await download(page, 'pptx'));
+  const buffer = Buffer.from(await makeImage(page, 'photo'), 'base64');
+  await insert(page, 'pptx', {
+    buffer,
+    mimeType: 'image/jpeg',
+    name: 'photo.jpg',
+  });
+  await expect(page.getByText(m.files_office_image_budget())).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(page.getByText(m.error_file_body())).toHaveCount(0);
+  expect(media(await download(page, 'pptx')).size).toBe(before.size);
+});

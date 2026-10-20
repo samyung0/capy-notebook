@@ -1,5 +1,9 @@
 import type { z } from 'zod';
-import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
+import {
+  QUESTION_CHART_SERIES_MAX,
+  QUESTION_MARKS_MAX,
+  QUESTION_PLOT_SERIES_MAX,
+} from '@/api/limits.generated';
 import { m } from '@/i18n';
 import {
   blockWithoutBlanks,
@@ -36,28 +40,88 @@ export type QuestionIssue = {
 type Section = 'stem' | 'blocks' | 'solution';
 
 /** A block's schema issue in the dialog's words; the generic line for rules
- * its editor cannot break. */
+ * its editor cannot break. A note's live figure (`live`) also names what a
+ * merge of two editors' changes leaves (Epo 2026-10-18): another series on a
+ * pie, a negative value, no series, a line of one point. */
 function blockMessage(
   block: QuestionBlock | undefined,
-  issue: z.core.$ZodIssue
+  issue: z.core.$ZodIssue,
+  live = false
 ) {
   if (
     block?.type === 'chart' &&
     issue.message === m.question_validation_pie_series()
-  )
+  ) {
+    if (live && block.series.length > 1) return m.question_issue_pie_series();
+    if (live && block.series[0]?.values.some((n) => n !== null && n < 0))
+      return m.question_issue_pie_negative();
     return m.question_issue_pie();
+  }
+  if (
+    live &&
+    (block?.type === 'chart' || block?.type === 'plot') &&
+    issue.code === 'too_small' &&
+    issue.path.at(-1) === 'series'
+  )
+    return m.question_issue_add_series();
+  if (
+    live &&
+    block?.type === 'plot' &&
+    issue.message === m.question_validation_plot_line_points()
+  )
+    return m.question_issue_plot_points();
+  if (
+    live &&
+    block?.type === 'plot' &&
+    issue.code === 'too_big' &&
+    issue.path.at(-1) === 'series'
+  )
+    return m.question_ui_plot_series_over({
+      max: QUESTION_PLOT_SERIES_MAX,
+    });
+  // What a merge of two editors' charts can leave (Epo 2026-10-17).
+  if (
+    block?.type === 'chart' &&
+    issue.message === m.question_validation_series_values()
+  )
+    return issue.message;
+  if (
+    block?.type === 'chart' &&
+    issue.code === 'too_big' &&
+    issue.path.at(-1) === 'series'
+  )
+    return m.question_ui_chart_series_over({
+      max: QUESTION_CHART_SERIES_MAX,
+    });
   if (block?.type === 'graph' && issue.code === 'custom')
     return m.question_issue_graph({ message: issue.message });
   return m.question_issue_generic();
 }
 
-/** A standalone block's issues (a note's chart or graph), each listed once. */
+/** A note's plot issue its editor can leave (an empty cell, a line of one
+ * point); a quiz shows its plots uneditable, so there it is the generic line. */
+function plotMessage(block: QuestionBlock, issue: z.core.$ZodIssue) {
+  // A line's points read as `blockMessage` words them (Epo 2026-10-18).
+  if (
+    block.type === 'plot' &&
+    issue.message === m.question_validation_plot_number()
+  )
+    return m.question_issue_plot({ message: issue.message });
+}
+
+/** A standalone block's issues (a note's chart, plot or graph), each listed
+ * once. */
 export function blockIssues(block: QuestionBlock): string[] {
   const normal = blockWithoutBlanks(block);
   const parsed = questionBlockSchema.safeParse(normal);
   if (parsed.success) return [];
   return [
-    ...new Set(parsed.error.issues.map((issue) => blockMessage(normal, issue))),
+    ...new Set(
+      parsed.error.issues.map(
+        (issue) =>
+          plotMessage(normal, issue) ?? blockMessage(normal, issue, true)
+      )
+    ),
   ];
 }
 const blank = (block: QuestionBlock) =>

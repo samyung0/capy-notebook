@@ -2,6 +2,9 @@ import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { isAccountForbiddenError, isApiError } from '@/api/client';
 import type { MaterialCollaborationToken } from '@/api/types';
+import { tabAllowance } from '@/features/collaboration/allowance';
+import { setHeld } from '@/features/collaboration/held';
+import { MAX_UPDATE_BYTES } from '@/features/collaboration/pieces';
 import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import {
@@ -40,7 +43,7 @@ export interface EditDraft {
   base?: string;
   data: Uint8Array;
   /** A sweep left it for the editor's next open: the service could not take
-   * it (it needs the room's state, it is larger than a sync message, or it
+   * it (it needs the room's state, a piece is over the service's cap, or it
    * is of another lineage or Office base), so no sweep sends it again. */
   held?: true;
   /** `${session}:state`, or `${session}:${seq}` for an update (or a run
@@ -763,11 +766,6 @@ export interface SweepApi {
   post: (path: string, body: unknown) => Promise<unknown>;
 }
 
-/** The collaboration service's cap on a note room's sync message
- * (`NOTE_MAX_SYNC_BYTES`, Epo b80da056): a larger draft waits for the
- * editor, which sends only what the room lacks. */
-const NOTE_SYNC_MAX_BYTES = 4 * 1024 * 1024;
-
 /**
  * The document a stored key names: `${actor}:material:${id}` (a note, a
  * flashcard set, a quiz's content), `${actor}:material:${id}:keys` (a quiz's
@@ -799,12 +797,13 @@ function roomToken(
  * What sending one group of rows came to:
  * - `sent`: a store holds it (the answer is the receipt for every row sent);
  * - `refused`: over a limit or not an update a writer may send;
- * - `waits`: only the editor can send it (larger than a sync message, a base
- *   the room lacks, another lineage or Office base), at the file's next open;
+ * - `waits`: only the editor can send it (a piece over the service's cap, a
+ *   base the room lacks, another lineage or Office base), at the file's next
+ *   open;
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
- * - `retry`: no answer (offline) or the rows changed: tried at the next
- *   trigger;
+ * - `retry`: no answer (offline), the rows changed, or the user is in a
+ *   timeout (`too_fast`, Epo 2026-10-18): tried at the next trigger;
  * - `outdated`: the service refuses this build's client protocol (Capy was
  *   updated): nothing more goes until the page reloads, and no row changes.
  */
@@ -831,24 +830,57 @@ function sendableGroups(rows: DraftInfo[], room: string) {
 }
 
 /** POST one group to the collaboration service's `/drafts` (its WebSocket
- * URL's host) with the editor's token, merged in the drafts worker. */
+ * URL's host) with the editor's token, merged in the drafts worker and sent
+ * as its pieces of at most 2 MiB, in order, each paced under the user's
+ * update allowance (Epo 2026-10-18). A piece the service does not take stops
+ * the send; the pieces before it are in the room, so the group's rows become
+ * one row of the pieces not sent (Epo 2026-10-18), which `refs` names. */
 async function sendGroup(
   token: RoomToken,
-  group: { base?: string; refs: DraftRef[] },
-  note: boolean
-): Promise<Sent> {
-  let body: Uint8Array<ArrayBuffer> | null;
+  group: { base?: string; refs: DraftRef[] }
+): Promise<{ refs: DraftRef[]; sent: Sent }> {
+  let pieces: Uint8Array<ArrayBuffer>[] | null;
   try {
-    body = await call<Uint8Array<ArrayBuffer> | null>({
+    pieces = await call<Uint8Array<ArrayBuffer>[] | null>({
       op: 'merged',
       rows: group.refs,
     });
   } catch (error) {
     console.warn('Drafts cannot be merged:', error);
-    return 'waits';
+    return { refs: group.refs, sent: 'waits' };
   }
-  if (!body) return 'retry';
-  if (note && body.byteLength > NOTE_SYNC_MAX_BYTES) return 'waits';
+  if (!pieces) return { refs: group.refs, sent: 'retry' };
+  for (const [index, piece] of pieces.entries()) {
+    const sent = await sendPiece(token, group, piece);
+    if (sent === 'sent') continue;
+    if (index === 0) return { refs: group.refs, sent };
+    const kept = await call<DraftRef | null>({
+      from: index,
+      op: 'unsent',
+      rows: group.refs,
+    });
+    return kept ? { refs: [kept], sent } : { refs: group.refs, sent: 'retry' };
+  }
+  return { refs: group.refs, sent: 'sent' };
+}
+
+/** What a draft send waiting for the allowance holds the tab back with. */
+const DRAFT_PACING = {};
+
+async function sendPiece(
+  token: RoomToken,
+  group: { base?: string },
+  body: Uint8Array<ArrayBuffer>
+): Promise<Sent> {
+  // Over the service's cap (a struct that cannot be cut): never sendable as
+  // it is, so the editor gets it.
+  if (body.byteLength > MAX_UPDATE_BYTES) return 'waits';
+  const wait = tabAllowance.reserve(body.byteLength);
+  if (wait > 0) {
+    setHeld(DRAFT_PACING, true);
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    setHeld(DRAFT_PACING, false);
+  }
   const headers: Record<string, string> = {
     authorization: `Bearer ${token.token}`,
     'content-type': 'application/octet-stream',
@@ -879,6 +911,8 @@ async function sendGroup(
       return 'waits';
     case 'outdated':
       return 'outdated';
+    case 'too_fast':
+      return 'retry';
     default:
       return 'later';
   }
@@ -946,21 +980,21 @@ async function sweepDocument(
   const rows = await call<DraftInfo[]>({ key, op: 'rows' });
   for (const group of sendableGroups(rows, token.room)) {
     if (!current()) return false;
-    const sent = await sendGroup(token, group, kind === 'material');
+    const { refs, sent } = await sendGroup(token, group);
     if (!current()) return false;
     if (sent === 'outdated') {
       outdated = true;
       markUpdateAvailable();
       return false;
     }
-    if (sent === 'sent') await deleteDrafts(group.refs);
+    if (sent === 'sent') await deleteDrafts(refs);
     else if (sent === 'refused' || sent === 'waits') {
       const draws =
         sent === 'refused' &&
-        (await call<boolean | null>({ op: 'draws', rows: group.refs }));
+        (await call<boolean | null>({ op: 'draws', rows: refs }));
       await markDrafts(
         key,
-        group.refs.map((row) => row.id),
+        refs.map((row) => row.id),
         draws ? 'refused' : 'held'
       );
     } else if (sent === 'retry') settled = false;

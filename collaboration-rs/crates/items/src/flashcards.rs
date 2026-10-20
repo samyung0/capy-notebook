@@ -258,6 +258,27 @@ fn card_prelim(card: &Card, order: &str) -> MapPrelim {
     prelim
 }
 
+/// A set left without a card gets one blank card, as a new set starts (Epo
+/// 2026-10-19: the canonical repair of an emptied set, on entry and at save;
+/// two writers each deleting one of the last two cards leave it so). `id` is
+/// the new card's, fresh (a card id is a global key). Stops at the first live
+/// card. Whether it wrote one.
+pub fn repair(txn: &mut TransactionMut, id: &str) -> bool {
+    let root = txn.get_or_insert_map(ROOT);
+    if root.iter(txn).next().is_some() {
+        return false;
+    }
+    let card = Card {
+        id: id.to_owned(),
+        order: order::after(None),
+        front: String::new(),
+        back: String::new(),
+        image: None,
+    };
+    root.insert(txn, card.id.clone(), card_prelim(&card, &card.order));
+    true
+}
+
 /// The set document seeded from a Plate value (first open, a clone's first
 /// open, a lineage rebuild): every card in order, keys `a0`, `a1`, ...
 pub fn state_from_value(value: &[Value], client_id: u64) -> Vec<u8> {

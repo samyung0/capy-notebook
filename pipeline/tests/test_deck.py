@@ -244,7 +244,22 @@ async def test_figures_are_this_turns_bbox_captures_and_credit_their_book(
     assert [(b["id"], b["excerptIds"]) for b in books] == [("b_circles", ["exc_1"])]
 
 
-def test_the_image_pins_the_commit_and_dependencies_the_module_names():
-    dockerfile = (Path(__file__).resolve().parents[1] / "Dockerfile").read_text()
+def test_the_image_pins_the_commit_and_hashes_the_dependencies_the_module_names():
+    """(security regression: CI hardening, ppt-master's virtualenv unpinned)"""
+    pipeline = Path(__file__).resolve().parents[1]
+    dockerfile = (pipeline / "Dockerfile").read_text()
     assert f"ARG PPT_MASTER_COMMIT={deck.PPT_MASTER_COMMIT}" in dockerfile
-    assert " ".join(deck.PPT_MASTER_DEPS) in dockerfile
+    assert "--require-hashes" in dockerfile
+    assert "-r /tmp/ppt-master-requirements.txt" in dockerfile
+    requirements = (pipeline / "ppt-master-requirements.txt").read_text()
+    # Every requirement is an exact pin followed by its hashes.
+    pinned = re.findall(
+        r"^([a-z0-9-]+)==\S+ \\\n(?:    --hash=sha256:[0-9a-f]{64}(?: \\)?\n)+",
+        requirements,
+        re.MULTILINE,
+    )
+    lines = [
+        line for line in requirements.splitlines() if line[:1] not in ("", "#", " ")
+    ]
+    assert len(pinned) == len(lines)
+    assert set(deck.PPT_MASTER_DEPS) <= set(pinned)

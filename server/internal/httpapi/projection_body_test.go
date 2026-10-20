@@ -22,7 +22,8 @@ import (
 // that keeps Huma's validation and stops where the real one reaches the store.
 func TestProjectionBodyRefusalsMatchHumaValidation(t *testing.T) {
 	router := chi.NewRouter()
-	api := humachi.New(router, humaConfig())
+	// The spec's config (SpecYAML): its schemas list the optional `$schema` link.
+	api := humachi.New(router, humaConfig(true))
 	(&api2{cfg: Config{CollaborationSecret: "secret"}}).registerCollaboration(api)
 	type validatedInput struct {
 		ID   string `path:"id"`
@@ -119,7 +120,7 @@ func TestProjectionRouteChecksTheSecretBeforeTheBody(t *testing.T) {
 		{"no secret configured", "", "", invalid},
 	} {
 		router := chi.NewRouter()
-		api := humachi.New(router, humaConfig())
+		api := humachi.New(router, humaConfig(false))
 		(&api2{cfg: Config{CollaborationSecret: tc.configured}}).registerCollaboration(api)
 		req := httptest.NewRequest(http.MethodPost, "/internal/collaboration/materials/m/projection", strings.NewReader(tc.body))
 		req.Header.Set("Content-Type", "application/json")

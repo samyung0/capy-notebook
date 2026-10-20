@@ -1,0 +1,13 @@
+# Actions are pinned by full commit SHA with the release in a comment;
+# Dependabot moves both together, in one weekly pull request.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/*
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

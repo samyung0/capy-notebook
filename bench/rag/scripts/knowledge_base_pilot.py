@@ -5,7 +5,6 @@ run as resumable normal chat-completions calls through `--provider ollama`
 (GLM-5.3-Flash on the local Ollama cloud model) or `tokenhub`. Run
 `normal --stage STAGE --workers N` or `finish --questions FILE --workers N`.
 Common arguments: --manifest, --config, --run and optional --secrets.
-`collect`/`recover` only inspect historical Batch work. No new Batch submissions.
 The builder (lab/knowledge) drives one-book manifests through parse,
 refresh-figures and index; its review stage tags through `tag_outputs` and
 `tags_document`, so `tags.json` keeps one shape. `prepare-tags`, `normal
@@ -29,18 +28,10 @@ import sys
 import time
 from pathlib import Path
 
-from knowledge_base_batch import (
-    BatchClient,
-    PilotError,
-    digest,
-    lock,
-    prepare,
-    read_json,
-    save_json,
-    shard_unsubmitted,
-)
+from knowledge_base_common import PilotError, digest, lock, read_json, save_json
 from knowledge_base_realtime import (
     object_schema,
+    prepare,
     stage_results,
     structured_request,
     validate_output_schema,
@@ -1717,9 +1708,6 @@ def main() -> None:
             "prepare-materials",
             "export-materials",
             "normal",
-            "collect",
-            "recover",
-            "shard-tags",
             "finish",
         ],
     )
@@ -1732,7 +1720,6 @@ def main() -> None:
     parser.add_argument("--book")
     parser.add_argument("--stage", choices=["preflight", "tags", "materials"])
     parser.add_argument("--questions", type=Path)
-    parser.add_argument("--shard-size", type=int)
     parser.add_argument("--workers", type=int)
     parser.add_argument(
         "--retry-failed",
@@ -1759,12 +1746,6 @@ def main() -> None:
     configure(config)
     manifest = load_manifest(args.manifest)
     args.run.mkdir(parents=True, exist_ok=True)
-    if args.command == "shard-tags":
-        if not args.shard_size:
-            raise PilotError("shard-tags requires an explicit --shard-size")
-        state = shard_unsubmitted(args.run / "batches/tags", args.shard_size)
-        print(json.dumps({"shards": len(state["shards"])}))
-        return
     from pipeline import use_compatible_event_loop
 
     use_compatible_event_loop()
@@ -1774,8 +1755,6 @@ def main() -> None:
         if args.command == "finish":
             names.append("DEEPINFRA_API_KEY")
         load_secrets(args.secrets, *names)
-    elif args.command in {"collect", "recover"}:
-        load_secrets(args.secrets, "ALIBABA_API_KEY")
     elif args.command in {"index", "evaluate", "evaluate-baseline"}:
         load_secrets(args.secrets, "DEEPINFRA_API_KEY")
     if args.command == "normal":
@@ -1789,29 +1768,6 @@ def main() -> None:
             retry_failed=args.retry_failed,
             timeout_seconds=args.timeout_seconds,
         )
-        return
-    if args.command in {"collect", "recover"}:
-        if not args.stage:
-            raise PilotError("Batch command requires --stage")
-        client = BatchClient(os.environ["ALIBABA_API_KEY"])
-        try:
-            stage_path = args.run / "batches" / args.stage
-            if args.command == "recover":
-                with lock(stage_path / "command.lock"):
-                    state = client.recover(stage_path)
-            else:
-                state = getattr(client, args.command)(stage_path)
-            print(
-                json.dumps(
-                    {
-                        key: state[key]
-                        for key in ("status", "batch_id", "collection", "complete")
-                        if key in state
-                    }
-                )
-            )
-        finally:
-            client.close()
         return
     with lock(args.run / "pilot.lock"):
         if args.command == "parse":

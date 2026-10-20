@@ -15,8 +15,8 @@ ROOT = Path(__file__).resolve().parents[3]
 BASE = ROOT / "bench/parsers/reports/local/2026-09-16-selective-recovery"
 FIXTURE = ROOT / "bench/parsers/fixtures/selective-recovery-cases.json"
 sys.path.insert(0, str(ROOT / "bench/rag/scripts"))
-from knowledge_base_batch import PilotError
-from knowledge_base_realtime import object_schema, structured_request
+from knowledge_base_common import PilotError
+from knowledge_base_realtime import object_schema, prepare, structured_request
 
 TRANSCRIPTION_SCHEMA = object_schema(
     {
@@ -78,8 +78,6 @@ def render(source, page, bbox, destination):
 
 
 def prepare_images(directory, cases):
-    from knowledge_base_batch import prepare
-
     sources = read(ROOT / "bench/parsers/fixtures/selective-recovery-sources.json")
     for source in sources["sources"]:
         if sha(ROOT / source["path"]) != source["sha256"]:
@@ -137,36 +135,6 @@ def prepare_images(directory, cases):
     )
 
 
-def batch(directory, action):
-    from dotenv import dotenv_values
-    from knowledge_base_batch import BatchClient
-
-    values = dotenv_values(ROOT / "data/knowledge-base-pilot/secrets.env")
-    client = BatchClient(values.get("ALIBABA_API_KEY", ""))
-    started = time.time()
-    try:
-        state = getattr(client, action)(directory / "batch")
-        save(
-            directory / f"{action}-last.json",
-            {
-                "started_at": started,
-                "finished_at": time.time(),
-                "status": state.get("status"),
-                "batch_id": state.get("batch_id"),
-            },
-        )
-        print(
-            json.dumps(
-                {
-                    k: state.get(k)
-                    for k in ["status", "batch_id", "collection", "complete"]
-                }
-            )
-        )
-    finally:
-        client.close()
-
-
 def normal(directory, workers):
     from dotenv import dotenv_values
     from knowledge_base_realtime import run, stage_results
@@ -188,54 +156,6 @@ def normal(directory, workers):
             raise PilotError(f"Invalid transcription schema: {case_id}")
         (transcripts / f"{case_id}.md").write_text(value["markdown"], encoding="utf-8")
     save(directory / "realtime-summary.json", state)
-
-
-def summarize_batch(directory):
-    state = read(directory / "batch/state.json")
-    result_path = directory / "batch/results.json"
-    if not result_path.exists():
-        return
-    result = read(result_path)
-    transcripts = directory / "transcripts"
-    transcripts.mkdir(exist_ok=True)
-    for case_id, item in result["success"].items():
-        if not case_id.replace("-", "").replace("_", "").isalnum():
-            raise ValueError("Unsafe request ID")
-        value = item["value"]
-        if isinstance(value.get("markdown"), str):
-            (transcripts / f"{case_id}.md").write_text(
-                value["markdown"], encoding="utf-8"
-            )
-    usage = {"prompt_tokens": 0, "completion_tokens": 0}
-    usage_records = 0
-    for name in ("output.jsonl", "errors.jsonl"):
-        path = directory / "batch" / name
-        if not path.exists():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            body = (json.loads(line).get("response") or {}).get("body") or {}
-            tokens = body.get("usage") or {}
-            if all(isinstance(tokens.get(k), int) and tokens[k] >= 0 for k in usage):
-                usage_records += 1
-                for key in usage:
-                    usage[key] += tokens[key]
-    created, completed = state.get("created_at"), state.get("completed_at")
-    save(
-        directory / "usage-summary.json",
-        {
-            **usage,
-            "records_with_usage": usage_records,
-            "list_price_cny": (
-                usage["prompt_tokens"] * 0.4 + usage["completion_tokens"] * 1.35
-            )
-            / 1_000_000,
-            "created_to_completed_seconds": completed - created
-            if completed and created
-            else None,
-            "caveat": "List-price estimate, not invoice. Job wall time includes scheduling and processing; per-request inference latency is not reported.",
-            "collection": state.get("collection"),
-        },
-    )
 
 
 def mineru(inputs, output, repeats, prefix):
@@ -337,9 +257,7 @@ def mineru(inputs, output, repeats, prefix):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "mode", choices=["probe", "prepare", "collect", "mineru", "normal"]
-    )
+    parser.add_argument("mode", choices=["probe", "prepare", "mineru", "normal"])
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--inputs", type=Path)
     parser.add_argument("--repeats", type=int, default=2)
@@ -372,9 +290,5 @@ if __name__ == "__main__":
             if args.workers is None:
                 parser.error("normal requires --workers")
             normal(args.output, args.workers)
-        else:
-            batch(args.output, args.mode)
-            if args.mode == "collect":
-                summarize_batch(args.output)
     except PilotError as exc:
         raise SystemExit(str(exc)) from None

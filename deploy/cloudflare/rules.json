@@ -1,0 +1,88 @@
+{
+  "zone": "capynotebook.com",
+  "phases": {
+    "http_request_firewall_custom": [
+      {
+        "ref": "capy_webhooks_skip_security",
+        "description": "Webhooks on the API hosts skip every security rule: Stripe and Clerk retry in bursts and cannot solve a challenge",
+        "expression": "http.host in {\"api.capynotebook.com\" \"uat-api.capynotebook.com\"} and starts_with(http.request.uri.path, \"/webhooks/\")",
+        "action": "skip",
+        "action_parameters": {
+          "ruleset": "current",
+          "phases": [
+            "http_ratelimit",
+            "http_request_firewall_managed",
+            "http_request_sbfm"
+          ],
+          "products": ["zoneLockdown", "uaBlock", "bic", "hot", "securityLevel"]
+        },
+        "logging": { "enabled": true },
+        "enabled": true
+      }
+    ],
+    "http_request_cache_settings": [
+      {
+        "ref": "capy_backend_hosts_bypass_cache",
+        "description": "API, collaboration and ops hosts are never cached: a cached stream breaks and an operator response could reach another operator",
+        "expression": "http.host in {\"api.capynotebook.com\" \"collab.capynotebook.com\" \"ops.capynotebook.com\" \"uat-api.capynotebook.com\" \"uat-collab.capynotebook.com\" \"uat-ops.capynotebook.com\"}",
+        "action": "set_cache_settings",
+        "action_parameters": { "cache": false },
+        "enabled": true
+      },
+      {
+        "ref": "capy_app_api_bypass_cache",
+        "description": "The app hosts' same-origin /api/ is never cached",
+        "expression": "http.host in {\"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
+        "action": "set_cache_settings",
+        "action_parameters": { "cache": false },
+        "enabled": true
+      }
+    ],
+    "http_response_headers_transform": [
+      {
+        "ref": "capy_ops_no_store_noindex",
+        "description": "Ops responses: private, no-store and kept out of search indexes",
+        "expression": "http.host in {\"ops.capynotebook.com\" \"uat-ops.capynotebook.com\"}",
+        "action": "rewrite",
+        "action_parameters": {
+          "headers": {
+            "Cache-Control": {
+              "operation": "set",
+              "value": "private, no-store"
+            },
+            "X-Robots-Tag": {
+              "operation": "set",
+              "value": "noindex, nofollow, noarchive"
+            }
+          }
+        },
+        "enabled": true
+      },
+      {
+        "ref": "capy_app_api_no_store_nosniff",
+        "description": "The app hosts' same-origin /api/: no-store and nosniff, as the Worker set them",
+        "expression": "http.host in {\"app.capynotebook.com\" \"app.uat.capynotebook.com\" \"uat.capynotebook.com\"} and starts_with(http.request.uri.path, \"/api/\")",
+        "action": "rewrite",
+        "action_parameters": {
+          "headers": {
+            "Cache-Control": { "operation": "set", "value": "no-store" },
+            "X-Content-Type-Options": { "operation": "set", "value": "nosniff" }
+          }
+        },
+        "enabled": true
+      },
+      {
+        "ref": "capy_uat_app_noindex",
+        "description": "The UAT app hosts are kept out of search indexes",
+        "expression": "http.host in {\"app.uat.capynotebook.com\" \"uat.capynotebook.com\"}",
+        "action": "rewrite",
+        "action_parameters": {
+          "headers": {
+            "X-Robots-Tag": { "operation": "set", "value": "noindex, nofollow" }
+          }
+        },
+        "enabled": true
+      }
+    ]
+  }
+}

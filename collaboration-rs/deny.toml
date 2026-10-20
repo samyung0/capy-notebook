@@ -1,0 +1,11 @@
+# `cargo deny check advisories` (CI job audit_rust) fails on any RustSec
+# advisory against Cargo.lock that is not ignored here. Each entry says why it
+# waits.
+[advisories]
+ignore = [
+  # Unmaintained, no advisory against the code; no maintained release to move to.
+  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; pulled in by v8" },
+  { id = "RUSTSEC-2026-0206", reason = "rustybuzz is unmaintained; pulled in by betteroffice-ooxml-text" },
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser is unmaintained; pulled in by rustybuzz" },
+  { id = "RUSTSEC-2026-0215", reason = "smallstr is unmaintained; pulled in by the fork's yrs" },
+]

@@ -4,6 +4,7 @@ import {
   type MaterialValue,
   normalizeMaterialBlock,
 } from '@/features/materials/document';
+import { repairFigureBlock } from '@/features/questions/repair';
 
 /* A note's value read from its room for a live View (live-items DESIGN.md 3),
  * block by block: each top-level block keeps its object until the room
@@ -61,8 +62,9 @@ function slateEquals(a: Attributes, b: Attributes): boolean {
 }
 
 /**
- * `yTextToSlateElement` of @slate-yjs/core 1.0.2 with Capy's shape-A patch
- * (a Mermaid source text reads as its string), without loading slate: the
+ * `yTextToSlateElement` of @slate-yjs/core 1.0.2 with Capy's patch (a
+ * Mermaid source text reads as its string, a figure's block map as its plain
+ * value, Epo 2026-10-17), without loading slate: the
  * element's attributes, then its delta as children, empty strings dropped and
  * neighbouring strings of equal attributes merged; no children reads as the
  * placeholder leaf.
@@ -70,7 +72,12 @@ function slateEquals(a: Attributes, b: Attributes): boolean {
 export function yTextElement(yText: Y.XmlText): Attributes {
   const node: Attributes = {};
   for (const [key, value] of Object.entries(yText.getAttributes()))
-    node[key] = value instanceof Y.AbstractType ? value.toString() : value;
+    node[key] =
+      value instanceof Y.Map || value instanceof Y.Array
+        ? value.toJSON()
+        : value instanceof Y.AbstractType
+          ? value.toString()
+          : value;
   const children: Attributes[] = [];
   let run: { attributes?: Attributes; leaf: Attributes } | null = null;
   for (const op of yText.toDelta() as {
@@ -100,12 +107,14 @@ export function yTextElement(yText: Y.XmlText): Attributes {
   return node;
 }
 
-/** A top-level entry of the room's root as a normalized Plate block. */
+/** A top-level entry of the room's root as a normalized Plate block, a live
+ * figure's merge repaired as readers draw it. */
 function blockOf(insert: unknown): MaterialElement {
   const node =
     insert instanceof Y.XmlText
       ? yTextElement(insert)
       : { text: typeof insert === 'string' ? insert : '' };
+  if ('block' in node) node.block = repairFigureBlock(node.block);
   return normalizeMaterialBlock(node as unknown as MaterialElement);
 }
 

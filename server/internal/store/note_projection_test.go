@@ -14,7 +14,7 @@ func TestProjectLiveNoteCallsOnlyWhenTheProjectionLags(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_live_projection")
-	material, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Live"})
+	material, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Live", Content: materialTestContent(t, "")})
 	if err != nil {
 		t.Fatal(err)
 	}

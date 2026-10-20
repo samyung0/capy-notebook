@@ -1165,13 +1165,16 @@ async def test_the_descriptor_regenerates_at_two_percent_or_first(
     published = {
         "descriptor": "Stored descriptor.",
         "change_share": 0.0199,
+        "updated_at": "written",
         "chunks": chunks,
     }
-    fresh = ("Fresh descriptor.", 0.0, None)
+    fresh = ("Fresh descriptor.", 0.0, None, None)
 
+    # A reuse keeps when the descriptor was written.
     assert await indexing._descriptor("f", chunks, published) == (
         "Stored descriptor.",
         0.0199,
+        "written",
         None,
     )
     assert (
@@ -1200,16 +1203,27 @@ async def test_a_failed_descriptor_is_pending_or_keeps_the_published_one(
 
     monkeypatch.setattr(indexing, "summarize_file", _fail)
     chunks = [Chunk(text="Chlorophyll absorbs red and blue light.")]
-    published = {"descriptor": "Stored.", "change_share": 0.05, "chunks": chunks}
+    published = {
+        "descriptor": "Stored.",
+        "change_share": 0.05,
+        "updated_at": "written",
+        "chunks": chunks,
+    }
 
     assert await indexing._descriptor("f", chunks, published) == (
         "Stored.",
         0.05,
+        "written",
         None,
     )
-    assert await indexing._descriptor("f", chunks, None) == (None, 0.0, failure)
+    assert await indexing._descriptor("f", chunks, None) == (None, 0.0, None, failure)
     blank = {**published, "descriptor": ""}
-    assert await indexing._descriptor("f", chunks, blank) == (None, 0.0, failure)
+    assert await indexing._descriptor("f", chunks, blank) == (
+        None,
+        0.0,
+        None,
+        failure,
+    )
     for raised in (
         accounting.SettlementError("receipt rejected"),
         accounting.AccountingError("model capacity is not configured"),

@@ -1,0 +1,385 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "value": [
+      {
+        "type": "h4",
+        "id": "head",
+        "children": [
+          {
+            "text": "Containers"
+          }
+        ]
+      },
+      {
+        "type": "mermaid",
+        "id": "flow",
+        "source": "flowchart LR\n  A[Start] --> B{Choice}\n  B -->|yes| C",
+        "children": [
+          {
+            "type": "mermaid_caption",
+            "children": [
+              {
+                "text": "  The flow  "
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "mermaid",
+        "id": "uncaptioned",
+        "source": "pie\n  \"a\" : 1",
+        "children": [
+          {
+            "type": "mermaid_caption",
+            "children": [
+              {
+                "text": ""
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "mermaid",
+        "id": "empty",
+        "source": "  ",
+        "children": [
+          {
+            "type": "mermaid_caption",
+            "children": [
+              {
+                "text": ""
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "column_group",
+        "id": "cols",
+        "children": [
+          {
+            "type": "column",
+            "width": "50%",
+            "children": [
+              {
+                "type": "callout",
+                "variant": "info",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Inside a callout"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Nested item"
+                      }
+                    ],
+                    "listStyleType": "decimal",
+                    "indent": 3
+                  }
+                ]
+              },
+              {
+                "type": "mermaid",
+                "id": "nested_map",
+                "source": "mindmap\n  root((Cells))",
+                "children": [
+                  {
+                    "type": "mermaid_caption",
+                    "children": [
+                      {
+                        "text": "Nested map"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "column",
+            "width": "50%",
+            "children": [
+              {
+                "type": "blockquote",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Quoted in a column"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "Open task"
+                  }
+                ],
+                "listStyleType": "todo",
+                "indent": 1
+              },
+              {
+                "type": "p",
+                "children": [
+                  {
+                    "text": "   "
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "id": "table",
+        "children": [
+          {
+            "type": "tr",
+            "children": [
+              {
+                "type": "th",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Term"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "th",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Meaning"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "tr",
+            "children": [
+              {
+                "type": "td",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "Osmosis "
+                      },
+                      {
+                        "type": "inline_equation",
+                        "texExpression": "H_2O",
+                        "children": [
+                          {
+                            "text": ""
+                          }
+                        ]
+                      },
+                      {
+                        "text": ""
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "td",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "see "
+                      },
+                      {
+                        "type": "a",
+                        "url": "https://example.com",
+                        "children": [
+                          {
+                            "text": "this link"
+                          }
+                        ]
+                      },
+                      {
+                        "text": " by "
+                      },
+                      {
+                        "type": "mention",
+                        "key": "u1",
+                        "value": "Ada",
+                        "children": [
+                          {
+                            "text": ""
+                          }
+                        ]
+                      },
+                      {
+                        "text": ""
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "tr",
+            "children": [
+              {
+                "type": "td",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": ""
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "td",
+                "children": [
+                  {
+                    "type": "p",
+                    "children": [
+                      {
+                        "text": "empty left"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "code_block",
+        "id": "code",
+        "lang": "python",
+        "children": [
+          {
+            "type": "code_line",
+            "children": [
+              {
+                "text": "def f(x):"
+              }
+            ]
+          },
+          {
+            "type": "code_line",
+            "children": [
+              {
+                "text": ""
+              }
+            ]
+          },
+          {
+            "type": "code_line",
+            "children": [
+              {
+                "text": "    return x | 1"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "code_block",
+        "id": "plain_code",
+        "children": [
+          {
+            "type": "code_line",
+            "children": [
+              {
+                "text": "no language"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "html_embed",
+        "id": "snippet",
+        "caption": "A slider",
+        "html": "<input type=\"range\">",
+        "children": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      {
+        "type": "p",
+        "children": [
+          {
+            "text": "End"
+          }
+        ],
+        "id": "end"
+      }
+    ]
+  },
+  "items": {},
+  "blocks": [
+    {
+      "id": "head",
+      "text": "#### Containers"
+    },
+    {
+      "id": "flow",
+      "text": "The flow\n```mermaid\nflowchart LR\n  A[Start] --\u003e B{Choice}\n  B --\u003e|yes| C\n```"
+    },
+    {
+      "id": "uncaptioned",
+      "text": "```mermaid\npie\n  \"a\" : 1\n```"
+    },
+    {
+      "id": "cols",
+      "text": "Inside a callout\n\n    1. Nested item\n\nNested map\n```mermaid\nmindmap\n  root((Cells))\n```\n\n\u003e Quoted in a column\n\n- [ ] Open task"
+    },
+    {
+      "id": "table",
+      "text": "| Term | Meaning |\n| Osmosis | see this link by |\n|  | empty left |"
+    },
+    {
+      "id": "code",
+      "text": "```python\ndef f(x):\n\n    return x | 1\n```"
+    },
+    {
+      "id": "plain_code",
+      "text": "```\nno language\n```"
+    },
+    {
+      "id": "end",
+      "text": "End"
+    }
+  ]
+}

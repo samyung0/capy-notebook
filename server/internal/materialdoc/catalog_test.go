@@ -173,10 +173,30 @@ func TestValidatorFollowsTheCatalog(t *testing.T) {
 			if err := with(func(n []map[string]any) { nodeAt(n, s.path)[key] = "x" }); err == nil {
 				t.Errorf("a %s carrying %s is accepted", e.Type, key)
 			}
+			// Null counts as absent, as room admission reads it, unless a
+			// closed field set leaves the key out.
+			if e.Fields == nil || slices.Contains(e.Fields, key) {
+				if err := with(func(n []map[string]any) { nodeAt(n, s.path)[key] = nil }); err != nil {
+					t.Errorf("a %s holding %s at null is refused: %v", e.Type, key, err)
+				}
+			}
 		}
 		if e.Fields != nil {
 			if err := with(func(n []map[string]any) { nodeAt(n, s.path)["extra"] = "x" }); err == nil {
 				t.Errorf("a %s with an unknown field is accepted", e.Type)
+			}
+		}
+		// Security regression (Epo 2026-10-18): a void element holds one empty
+		// text leaf, whatever else it holds instead.
+		if e.Void {
+			for name, held := range map[string][]any{
+				"text":       {textLeaf("hidden")},
+				"an element": {textElement("p", "hidden")},
+				"two leaves": {textLeaf(""), textLeaf("")},
+			} {
+				if err := with(func(n []map[string]any) { nodeAt(n, s.path)["children"] = held }); err == nil {
+					t.Errorf("a %s holding %s is accepted", e.Type, name)
+				}
 			}
 		}
 		if e.TopLevel {
@@ -200,6 +220,15 @@ func TestValidatorFollowsTheCatalog(t *testing.T) {
 
 	// A type the catalog does not list is refused on every write, and a
 	// stored document holding one stays readable (Epo 2026-10-13).
+	// A mention is a markable void: its one empty leaf may carry a mark.
+	marked := []map[string]any{{"type": "p", "id": "m", "children": []any{
+		textLeaf("say "),
+		map[string]any{"type": "mention", "value": "Ada", "children": []any{map[string]any{"text": "", "bold": true}}},
+		textLeaf(""),
+	}}}
+	if err := validateAs(embeds.Note, marked); err != nil {
+		t.Errorf("a mention holding a marked empty leaf is refused: %v", err)
+	}
 	unknown := []map[string]any{{"type": "toggle", "id": "t", "children": []any{textLeaf("")}}}
 	if err := validateAs(embeds.Note, unknown); err == nil {
 		t.Error("an element type the catalog does not list is accepted")
@@ -210,5 +239,31 @@ func TestValidatorFollowsTheCatalog(t *testing.T) {
 	}
 	if _, err := Parse(string(raw)); err != nil {
 		t.Errorf("a stored document with an unknown type does not read: %v", err)
+	}
+}
+
+// What every catalog element gives the index text is its catalog rule
+// (notes::index_text tests the same in the collaboration server): a probe
+// carrying a marker wherever a rule reads (its children, a figure's block,
+// the Mermaid source, a question, a referenced item) shows it unless the
+// rule is none. A type the catalog does not list gives its text, as the
+// View shows an unsupported block's.
+func TestIndexTextFollowsTheCatalog(t *testing.T) {
+	probe := func(typ string) string {
+		node := map[string]any{
+			"type": typ, "id": "probe", "materialId": "m", "source": "marker",
+			"block":    map[string]any{"type": typ, "title": "marker", "description": "marker"},
+			"question": map[string]any{"stem": []any{map[string]any{"type": "text", "text": "marker"}}},
+			"children": []any{map[string]any{"type": "p", "children": []any{textLeaf("marker")}}},
+		}
+		return strings.Join(indexPieces([]map[string]any{node}, map[string]string{"m": "marker"}), "\n\n")
+	}
+	for _, e := range embeds.Elements() {
+		if text := probe(e.Type); strings.Contains(text, "marker") != (e.Index != embeds.IndexNone) {
+			t.Errorf("a %s (%s) gives %q", e.Type, e.Index, text)
+		}
+	}
+	if text := probe("toggle"); text != "marker" {
+		t.Errorf("an unlisted type gives %q", text)
 	}
 }

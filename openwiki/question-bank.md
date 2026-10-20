@@ -136,7 +136,13 @@ has none; the editor sets a closed part's marks from a dropdown and an open
 part's from its items. Authored parts are told from learner parts by their
 worked solution (`isAuthoredPart`). A matching
 answer stores the full choice pool independently from its correct pairings, so
-unused and reused options survive generation, editing and rendering.
+unused and reused options survive generation, editing and rendering. The
+editor keeps the pool in the author's order, which readers and index text see
+too: each option row has move up and down buttons (off at the ends), and
+Alt+ArrowUp or Alt+ArrowDown moves the focused option with focus following it;
+a move swaps the two options and every pair's `right` with them, so each
+prompt keeps its answer, as removing an option does (Epo 2026-10-18,
+`StringList`'s `onMove` in `editorFields.tsx`).
 
 The Go validator is `server/internal/questions`; the browser and collaboration
 service share its JSON fixtures. Bounds originate in
@@ -313,18 +319,36 @@ the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4
 `series` of `{name, points: [[x, y], …]}` (2–60 finite points drawn as straight
 segments in x order, or 1–60 drawn as dots for a scatter, Epo 2026-10-14), and optional `lines`
 (`{axis: x|y, value, label?}`, dashed reference lines) and `marks`
-(`{x, y, label}`), at most 8 of each (`QUESTION_PLOT_*` in fieldlimits).
+(`{x, y, label}`), at most 8 of each (`QUESTION_PLOT_*` in fieldlimits). Its
+text is bounded as a chart's (Epo 2026-10-17): title, axis titles and unit at
+`QUESTION_PLOT_TITLE_MAX` (100), each series name and line or mark label at
+`QUESTION_PLOT_LABEL_MAX` (60) code points, on every layer.
 `PlotChart` (beside `CategoryChart`, same frame, theme variables and ticks) draws
-it in quizzes, notes and chat. It has no editor: the question dialog shows a plot
-and can remove it, but the add menu does not offer one. Go and the browser
+it in quizzes, notes and chat. Notes edit it (the embed catalog's plot
+`edit.user` is `[note]`): the note's figure dialog shows `PlotEditor`
+(`BlockEditor.tsx`, the chart editor's frame) with the type (line or scatter),
+title, axis titles and unit, a points table per series (a series keeps one
+point; add and remove rows and series up to the bounds), and under Advanced
+the reference lines (added as horizontal or vertical), labelled points and the
+description, the plot drawn beside them once every cell holds a number. New
+rows come filled (Epo 2026-10-17): a point copies the row above it (or is
+[0, 0]), a series starts with the points [0, 0] and [1, 1] on a line plot
+and [0, 0] on a scatter, so it saves as it is, a reference line takes the
+last value on its axis (or 0) and a labelled point the last one's place (or
+(0, 0)), names and labels starting empty, which every validator allows. An
+emptied cell is `NaN` in the draft, which the dialog's issue strip names
+("Plot error: …", `blockIssues`) and which holds Save. Quizzes do not edit a
+plot: the question dialog shows it (BlockEditor without `editPlot`) and can
+remove it, and its add menu does not offer one. Go and the browser
 validate it, and so does the Rust collaboration server (`questions.rs`,
 `material.rs`: a live quiz question holding a plot and a note's `plot` embed,
 with Go's bounds; Node's validator never knew it, Epo 2026-10-12). A live quiz
 room keeps a plot as one value, as it keeps a chart (`items/src/quiz.rs`,
 `liveQuiz.ts`; before 2026-10-13 the room's reader dropped it, so an agent's
-plot vanished from the projection). A valid plot is in the shared fixtures
-(`plot.json`), so the live quiz round trip and the browser/server parity
-corpus carry one; refused plot cases are tested in each validator. Grading text lists its curves' points and labels. User quizzes and notes keep validated
+plot vanished from the projection). Valid plots are in the shared fixtures
+(`plot.json`, `plot-at-limits.json`), so the live quiz round trip and the
+browser/server parity corpus carry them; refused plot cases are tested in each
+validator, the text bounds by the shared `plot-long-*-rejected.json` fixtures. Grading text lists its curves' points and labels. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed
@@ -569,8 +593,11 @@ and learners' progress (below); the bank has its own migrations and roles. See
 [deployment-runbook.md](deployment-runbook.md) for provisioning, environment
 values, public/private buckets, local tunnel, comment recipient and backups.
 
-Each source has a `kind`. A `library` source names an excerpt, book and
-historical version, resolved through the library database. A `web` source
+Each source has a `kind`. A `library` source names an excerpt, book and the
+version it was written from; the excerpt id ends with that version's `_v<n>`.
+Reads resolve the credit from the version's row in the library database,
+because publishing a book retires the previous version and drops its excerpts;
+publication (`bank publish`) also requires the excerpt to be in that version. A `web` source
 records an openly licensed page as it read on its retrieval date: URL, title,
 authors, publisher, licence and licence URL. Its licence must allow adapted
 commercial reuse, so ND and NC are refused. Both publisher and reader apply the

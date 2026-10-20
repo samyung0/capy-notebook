@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,13 +15,14 @@ import (
 )
 
 func TestPendingSourcesTooLargeKeepsFileIDs(t *testing.T) {
-	mapped := pipelineGenerateError(&pipeline.Error{Path: "/generate", Status: http.StatusBadRequest, Body: []byte(`{"code":"pending_sources_too_large","fileIds":["f_1","f_2"]}`)})
+	mapped := pipelineGenerateError(&pipeline.Error{Path: "/generate", Status: http.StatusBadRequest, Body: []byte(`{"code":"pending_sources_too_large","fileIds":["f_1","f_2"],"materialIds":["m_1"]}`)})
 	var model *huma.ErrorModel
 	if !errors.As(hErr(mapped), &model) || model.Status != http.StatusBadRequest || len(model.Errors) != 1 || model.Errors[0].Message != "pending_sources_too_large" {
 		t.Fatalf("generation lost pending sources error: %#v", model)
 	}
-	if ids := model.Errors[0].Value.(map[string]any)["fileIds"]; fmt.Sprint(ids) != "[f_1 f_2]" {
-		t.Fatalf("file ids = %v", ids)
+	value := model.Errors[0].Value.(map[string]any)
+	if fmt.Sprint(value["fileIds"]) != "[f_1 f_2]" || fmt.Sprint(value["materialIds"]) != "[m_1]" {
+		t.Fatalf("named = %v", value)
 	}
 }
 
@@ -119,5 +121,18 @@ func TestKeyErrorFromEvent(t *testing.T) {
 		&eventErr,
 	) || eventErr.Code != "invalid_scope" {
 		t.Fatalf("scope event did not retain its code: %#v", eventErr)
+	}
+}
+
+func TestBYOKWritesAreOffByDefault(t *testing.T) {
+	a := &api{} // no store: a refused write must not reach it
+	_, err := a.upsertLLMCredential(context.Background(), &upsertLLMCredentialInput{})
+	var model *huma.ErrorModel
+	if !errors.As(err, &model) || model.Status != http.StatusNotFound {
+		t.Fatalf("save with BYOK off: %v", err)
+	}
+	_, err = a.deleteLLMCredential(context.Background(), &deleteLLMCredentialInput{Provider: "openai"})
+	if !errors.As(err, &model) || model.Status != http.StatusNotFound {
+		t.Fatalf("remove with BYOK off: %v", err)
 	}
 }

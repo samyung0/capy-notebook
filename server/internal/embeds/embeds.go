@@ -31,6 +31,10 @@ const (
 	// A resizable block stores its width as a whole percentage in this range.
 	MediaWidthMin = 20
 	MediaWidthMax = 100
+	// ListIndentMax bounds any block's indent (lists and indented
+	// paragraphs): the editor stops at it and every validator refuses more
+	// (Epo 2026-10-18).
+	ListIndentMax = 8
 )
 
 // Material kinds.
@@ -52,6 +56,10 @@ const (
 	ClassValue Class = "value"
 	// ClassLiveSource keeps its source in a shared text, so typing merges.
 	ClassLiveSource Class = "live_source"
+	// ClassLiveMap keeps its value in a shared map (Element.SharedMap): each
+	// field, list entry and entry field is replaced whole on its own, so edits
+	// to different ones merge and the same one takes the last writer.
+	ClassLiveMap Class = "live_map"
 	// ClassItem is a child material row with its own rooms, referenced from a
 	// note by a material_ref node.
 	ClassItem Class = "item"
@@ -67,9 +75,35 @@ const (
 	SurfaceExport   = "export"   // DOCX, PDF and markdown export
 )
 
+// Index is what an element gives its document's index text, the text a
+// note is searched and its effects read by (openwiki/embeds.md "Index text").
+// Every element names one; there is no default.
+type Index string
+
+const (
+	// IndexNone gives nothing (media, equations, inline voids, html_embed).
+	IndexNone Index = "none"
+	// IndexText renders its children markdown-like: headings keep their level,
+	// list items their bullets, tables their rows, code its fence, and
+	// containers give each child's text.
+	IndexText Index = "text"
+	// IndexFigure renders a chart, plot or graph `block`.
+	IndexFigure Index = "figure"
+	// IndexMermaid gives the caption, then the source in a ```mermaid fence.
+	IndexMermaid Index = "mermaid"
+	// IndexQuestion renders a quiz question: stem, parts, options, solutions.
+	IndexQuestion Index = "question"
+	// IndexItem gives the referenced item's text at the reference's place.
+	IndexItem Index = "item"
+)
+
+// IndexRules lists every index rule.
+var IndexRules = []Index{IndexNone, IndexText, IndexFigure, IndexMermaid, IndexQuestion, IndexItem}
+
 // Element is one element type a material document may hold.
 type Element struct {
 	Type   string `json:"type"`
+	Index  Index  `json:"index"`
 	Void   bool   `json:"void,omitempty"`
 	Inline bool   `json:"inline,omitempty"`
 	// TopLevel elements are only stored as top-level blocks.
@@ -83,6 +117,13 @@ type Element struct {
 	Forbidden []string `json:"forbidden,omitempty"`
 	// SharedText keys are held as shared text in a room, so typing merges.
 	SharedText []string `json:"sharedText,omitempty"`
+	// SharedMap keys are held as a shared map in a room (a Y.Map), each entry
+	// replaced whole on its own, so edits to different fields merge.
+	SharedMap []string `json:"sharedMap,omitempty"`
+	// SharedLists are the keys of a SharedMap value held as a list of maps
+	// (a Y.Array of Y.Map), each entry's fields replaced whole on their own;
+	// entries carrying an `id` are matched by it, others by index.
+	SharedLists []string `json:"sharedLists,omitempty"`
 	// Assets are the paths naming editor assets ([] walks a list); the
 	// children pass, asset pruning and clone rewrites follow them.
 	Assets []string `json:"assets,omitempty"`
@@ -162,38 +203,47 @@ type Limit struct {
 	Value int    `json:"value"`
 }
 
-func plain(typ string) Element {
-	return Element{Type: typ, Materials: allMaterials}
+func plain(typ string, index Index) Element {
+	return Element{Type: typ, Index: index, Materials: allMaterials}
 }
 
-func void(typ string) Element {
-	e := plain(typ)
+func void(typ string, index Index) Element {
+	e := plain(typ, index)
 	e.Void = true
 	return e
 }
 
-func inline(typ string, isVoid bool) Element {
-	e := plain(typ)
+func inline(typ string, isVoid bool, index Index) Element {
+	e := plain(typ, index)
 	e.Inline, e.Void = true, isVoid
 	return e
 }
 
-// media is an uploaded file: it names its editor asset, never a URL.
+// media is an uploaded file: it names its editor asset, never a URL. Its
+// caption is not indexed. One that does not resize stores no width (audio,
+// Epo 2026-10-18).
 func media(typ string, resizable bool) Element {
-	e := void(typ)
+	e := void(typ, IndexNone)
 	e.Required = []string{"assetId"}
 	e.Forbidden = []string{"url", "src"}
+	if !resizable {
+		e.Forbidden = append(e.Forbidden, "width")
+	}
 	e.Assets = []string{"assetId"}
 	e.Resizable = resizable
 	return e
 }
 
-// figure is a chart, plot or graph: one question block under `block`.
-func figure(typ string) Element {
-	e := void(typ)
+// figure is a chart, plot or graph: one question block under `block`, held
+// live in rooms with its `list` (series, graph elements) entry by entry
+// (Epo 2026-10-17).
+func figure(typ, list string) Element {
+	e := void(typ, IndexFigure)
 	e.TopLevel = true
 	e.Required = []string{"id", "block"}
 	e.Fields = []string{"type", "id", "block", "children", "width"}
+	e.SharedMap = []string{"block"}
+	e.SharedLists = []string{list}
 	e.Resizable = true
 	return e
 }
@@ -205,13 +255,14 @@ var opaque = []string{"questions", "cards", "code"}
 // transient ones (a media placeholder while it uploads, the mention and slash
 // inputs while typing) are documents' nodes too, so they are listed.
 func Elements() []Element {
-	quiz := plain("quiz")
+	// An item's own elements: a note gives their text at its reference.
+	quiz := plain("quiz", IndexText)
 	quiz.Required = []string{"id"}
 	quiz.Forbidden = append(append([]string{}, opaque...), "timeLimitMin")
 	quiz.Children = []string{"quiz_question"}
 	quiz.Materials = []string{Quiz}
 
-	question := void("quiz_question")
+	question := void("quiz_question", IndexQuestion)
 	question.Required = []string{"id", "question"}
 	question.Forbidden = append(append([]string{}, opaque...),
 		"questionType", "level", "points", "rubrics", "pairs", "acceptedAnswers", "hints",
@@ -223,67 +274,72 @@ func Elements() []Element {
 	}
 	question.Materials = []string{Quiz}
 
-	cards := plain("flashcards")
+	cards := plain("flashcards", IndexText)
 	cards.Required = []string{"id"}
 	cards.Forbidden = opaque
 	cards.Children = []string{"flashcard"}
 	cards.Materials = []string{Flashcards}
 
-	card := plain("flashcard")
+	card := plain("flashcard", IndexText)
 	card.Required = []string{"id"}
 	card.Forbidden = opaque
 	card.Children = []string{"flashcard_front", "flashcard_back"}
 	card.Assets = []string{"image.assetId"}
 	card.Materials = []string{Flashcards}
 
-	front, back := plain("flashcard_front"), plain("flashcard_back")
+	front, back := plain("flashcard_front", IndexText), plain("flashcard_back", IndexText)
 	front.Materials, back.Materials = []string{Flashcards}, []string{Flashcards}
 
-	mermaid := plain("mermaid")
+	mermaid := plain("mermaid", IndexMermaid)
 	mermaid.Required = []string{"id", "source"}
 	mermaid.Forbidden = opaque
 	mermaid.SharedText = []string{"source"}
 	mermaid.Resizable = true
 	mermaid.Children = []string{"mermaid_caption"}
 
-	html := void("html_embed")
+	// No live, index or effects work for html_embed (Epo 2026-10-17).
+	html := void("html_embed", IndexNone)
 	html.TopLevel = true
 	html.Required = []string{"id", "html"}
 	html.Fields = []string{"type", "id", "html", "caption", "children"}
 
-	ref := void("material_ref")
+	ref := void("material_ref", IndexItem)
 	ref.TopLevel = true
 	ref.Required = []string{"id", "materialId", "refKind"}
 	ref.Forbidden = []string{"pending"}
 	ref.Materials = []string{Note}
 
-	video := void("video")
+	video := void("video", IndexNone)
 	video.Required = []string{"provider", "videoId"}
 	video.Forbidden = []string{"assetId", "url", "src"}
 	video.Resizable = true
 
 	return []Element{
-		plain("p"),
-		plain("h1"), plain("h2"), plain("h3"), plain("h4"), plain("h5"), plain("h6"),
-		plain("blockquote"),
-		void("hr"),
-		plain("code_block"), plain("code_line"),
-		plain("table"), plain("tr"), plain("td"), plain("th"),
-		void("toc"),
-		plain("callout"),
-		plain("column_group"), plain("column"),
-		void("equation"),
-		inline("inline_equation", true),
-		inline("a", false),
-		inline("mention", true),
-		inline("mention_input", true),
-		inline("slash_input", true),
+		plain("p", IndexText),
+		plain("h1", IndexText), plain("h2", IndexText), plain("h3", IndexText),
+		plain("h4", IndexText), plain("h5", IndexText), plain("h6", IndexText),
+		plain("blockquote", IndexText),
+		void("hr", IndexNone),
+		plain("code_block", IndexText), plain("code_line", IndexText),
+		plain("table", IndexText), plain("tr", IndexText), plain("td", IndexText), plain("th", IndexText),
+		void("toc", IndexNone),
+		plain("callout", IndexText),
+		plain("column_group", IndexText), plain("column", IndexText),
+		void("equation", IndexNone),
+		// Inline voids hold no text of their own: an equation's TeX, a
+		// mention's name and the transient inputs stay out, as before.
+		inline("inline_equation", true, IndexNone),
+		inline("a", false, IndexText),
+		inline("mention", true, IndexNone),
+		inline("mention_input", true, IndexNone),
+		inline("slash_input", true, IndexNone),
 		media("img", true), media("audio", false),
 		video,
-		void("placeholder"),
-		figure("chart"), figure("plot"), figure("graph"),
+		// An upload in progress holds nothing yet.
+		void("placeholder", IndexNone),
+		figure("chart", "series"), figure("plot", "series"), figure("graph", "elements"),
 		html,
-		mermaid, plain("mermaid_caption"),
+		mermaid, plain("mermaid_caption", IndexText),
 		ref,
 		quiz, question,
 		cards, card, front, back,
@@ -295,7 +351,7 @@ func Embeds() []Embed {
 	writeNote := []string{"create_material", "edit_document"}
 	return []Embed{
 		{
-			Kind: "chart", Class: ClassValue, Element: "chart",
+			Kind: "chart", Class: ClassLiveMap, Element: "chart",
 			Fence: Fence{Lang: "chart", Body: "json"}, Chat: "Chart",
 			QuestionBlock: true, QuestionMedia: true,
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
@@ -306,20 +362,20 @@ func Embeds() []Embed {
 			Schema: chartSchema(),
 		},
 		{
-			Kind: "plot", Class: ClassValue, Element: "plot",
+			Kind: "plot", Class: ClassLiveMap, Element: "plot",
 			Fence: Fence{Lang: "plot", Body: "json"}, Chat: "Plot",
 			QuestionBlock: true, QuestionMedia: true,
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
-			// No plot editor yet (Epo 2026-10-13): users can only remove one.
+			// Notes edit a plot (Epo 2026-10-17); a quiz shows one.
 			Edit: Edit{
-				User:  []string{},
+				User:  []string{SurfaceNote},
 				Agent: []string{"create_material", "edit_document", "add_question_media"},
 			},
 			Schema: plotSchema(),
 		},
 		{
 			// The agent writes no graph; a fence still converts (paste, export).
-			Kind: "graph", Class: ClassValue, Element: "graph",
+			Kind: "graph", Class: ClassLiveMap, Element: "graph",
 			Fence:         Fence{Lang: "graph", Body: "json"},
 			QuestionBlock: true,
 			Surfaces:      []string{SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
@@ -401,6 +457,7 @@ func Limits() []Limit {
 		{"BLOCK_CAPTION_MAX", BlockCaptionMax},
 		{"MEDIA_WIDTH_MIN", MediaWidthMin},
 		{"MEDIA_WIDTH_MAX", MediaWidthMax},
+		{"LIST_INDENT_MAX", ListIndentMax},
 		{"CARD_FRONT_MAX", fieldlimits.CardFront},
 		{"CARD_BACK_MAX", fieldlimits.CardBack},
 	}
@@ -454,10 +511,7 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-var (
-	label  = map[string]any{"type": "string", "maxLength": fieldlimits.QuestionMetadata}
-	number = map[string]any{"type": "number"}
-)
+var number = map[string]any{"type": "number"}
 
 func list(min, max int, items map[string]any) map[string]any {
 	return map[string]any{"type": "array", "minItems": min, "maxItems": max, "items": items}
@@ -484,19 +538,21 @@ func chartSchema() map[string]any {
 }
 
 func plotSchema() map[string]any {
+	title := map[string]any{"type": "string", "maxLength": fieldlimits.QuestionPlotTitle}
+	name := map[string]any{"type": "string", "maxLength": fieldlimits.QuestionPlotLabel}
 	return obj(map[string]any{
 		"type": map[string]any{"const": "plot"}, "kind": map[string]any{"enum": []string{"line", "scatter"}},
-		"title": label, "xTitle": label, "yTitle": label, "unit": label,
+		"title": title, "xTitle": title, "yTitle": title, "unit": title,
 		// A scatter series needs one point, a line two (questions.ValidateBlock).
 		"series": list(1, fieldlimits.QuestionPlotSeries, obj(map[string]any{
-			"name":   label,
+			"name":   name,
 			"points": list(1, fieldlimits.QuestionPlotPoints, list(2, 2, number)),
 		}, "name", "points")),
 		"lines": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
-			"axis": map[string]any{"enum": []string{"x", "y"}}, "value": number, "label": label,
+			"axis": map[string]any{"enum": []string{"x", "y"}}, "value": number, "label": name,
 		}, "axis", "value")),
 		"marks": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
-			"x": number, "y": number, "label": label,
+			"x": number, "y": number, "label": name,
 		}, "x", "y", "label")),
 	}, "type", "title", "xTitle", "yTitle", "series")
 }

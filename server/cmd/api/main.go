@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	svix "github.com/svix/svix-webhooks/go"
 
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
@@ -131,6 +132,13 @@ func validateAuthConfiguration(
 	if !authDisabled && !e2eAuth && strings.TrimSpace(clerkWebhookSecret) == "" {
 		return errors.New("CLERK_WEBHOOK_SECRET is required unless AUTH_DISABLED or E2E_AUTH is enabled")
 	}
+	// A malformed secret would answer every delivery 500 after reading it,
+	// which the provider retries.
+	if strings.TrimSpace(clerkWebhookSecret) != "" {
+		if _, err := svix.NewWebhook(clerkWebhookSecret); err != nil {
+			return errors.New("CLERK_WEBHOOK_SECRET is not a Svix signing secret (whsec_ followed by base64)")
+		}
+	}
 	return nil
 }
 
@@ -190,7 +198,12 @@ func main() {
 	addr := env("ADDR", ":8080")
 	parser := env("CAPY_PARSER", "opendataloader")
 	appURL := env("APP_URL", "http://localhost:5173")
-	appEnv := env("APP_ENV", "development")
+	// Every start names its environment, so local-only behaviour (AUTH_DISABLED,
+	// API docs, the dev seed) never comes from a missing value.
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		log.Fatal("APP_ENV must be set: development locally, e2e on the test stack, production when deployed")
+	}
 	authDisabled := envBool("AUTH_DISABLED")
 	clerkSecret := env("CLERK_SECRET_KEY", "")
 	clerkWebhookSecret := env("CLERK_WEBHOOK_SECRET", "")
@@ -428,12 +441,14 @@ func main() {
 		}
 	}
 	cfg := httpapi.Config{
+		BYOKEnabled:            env("BYOK_ENABLED", "false") == "true",
 		Bank:                   bankStore,
 		BankAssets:             bankAssets,
 		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
 		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
 		MailSender:             emailSender,
 		ReleaseSHA:             env("RELEASE_SHA", ""),
+		APIDocs:                appEnv == "development",
 		ClerkSecretKey:         clerkSecret,
 		ClerkWebhookSecret:     clerkWebhookSecret,
 		AuthDisabled:           authDisabled,

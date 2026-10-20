@@ -134,7 +134,7 @@ func TestMaterialInheritsParentWorkspaceShare(t *testing.T) {
 	mt, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: "u_owner", WorkspaceID: "ws_e2e_link", WorkspaceName: "E2E Link Workspace",
 		Kind: "note", Title: "Inherited private note",
-		Content: "body",
+		Content: materialTestContent(t, "body"),
 		Privacy: PrivacyPrivate,
 	})
 	if err != nil {
@@ -157,7 +157,7 @@ func TestWorkspaceMaterialCannotOverrideWorkspaceVisibility(t *testing.T) {
 	mt, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: "u_owner", WorkspaceID: "ws_e2e_private", WorkspaceName: "E2E Private Workspace",
 		Kind: "note", Title: "Standalone-shared note",
-		Content: "shared",
+		Content: materialTestContent(t, "shared"),
 		Privacy: PrivacyLink,
 	})
 	if err != nil {

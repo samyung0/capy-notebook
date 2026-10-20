@@ -108,6 +108,7 @@
     "BANK_PRIVATE_B2_BUCKET": { "kind": "variable", "targets": ["local"] },
     "BANK_PRIVATE_B2_KEY_ID": { "kind": "secret", "targets": ["local"] },
     "BANK_PRIVATE_B2_APP_KEY": { "kind": "secret", "targets": ["local"] },
+    "BYOK_ENABLED": { "kind": "variable", "targets": ["local"] },
     "CAPY_CAPTION_CACHE_TTL_DAYS": {
       "kind": "variable",
       "targets": ["coolify", "ingest-production", "ingest-shared"]
@@ -372,10 +373,6 @@
       "kind": "secret",
       "targets": ["coolify", "ops", "quality"],
       "required_for": ["coolify", "ops"]
-    },
-    "CLERK_WEBHOOK_HOST": {
-      "kind": "variable",
-      "targets": ["local"]
     },
     "CLERK_WEBHOOK_SECRET": {
       "kind": "secret",
@@ -703,14 +700,6 @@
     "REDIS_URL": {
       "kind": "secret",
       "targets": ["local"]
-    },
-    "RELACE_API_KEY": {
-      "kind": "secret",
-      "targets": ["coolify", "ops"]
-    },
-    "RELACE_INGEST_API_KEY": {
-      "kind": "secret",
-      "targets": ["ingest-queue"]
     },
     "RELEASE_SHA": {
       "kind": "variable",
@@ -1071,6 +1060,10 @@
     "WORKER_REPLICAS": {
       "kind": "variable",
       "targets": ["ingest-production"]
+    },
+    "ZAI_API_KEY": {
+      "kind": "secret",
+      "targets": ["coolify", "ingest-queue", "ops"]
     }
   }
 }

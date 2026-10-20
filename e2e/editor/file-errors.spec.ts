@@ -191,7 +191,7 @@ test('workspace statistics and indexing share a recoverable inline error', async
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();
-  // Dialogs show the one-line inline error (human/frontend/error-handling.md).
+  // A dialog shows the inline error, never the page one (Epo 2026-10-19).
   const error = await expectErrorSurface(page, 'inline', undefined, 30_000);
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })

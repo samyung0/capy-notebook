@@ -3,6 +3,8 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"errors"
 	"testing"
 )
@@ -123,4 +125,18 @@ func TestDeleteLLMCredentialRequiresCatalogDefaultsBeforeMutation(t *testing.T) 
 	if count != 1 {
 		t.Fatalf("credential count = %d, want 1", count)
 	}
+}
+
+// decryptSecret mirrors the pipeline's decryption for the round-trip test;
+// the API itself never decrypts a stored key.
+func decryptSecret(key, nonce, ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }

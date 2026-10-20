@@ -4,11 +4,12 @@
 //! validator and the room's admission apply its rules to every element it
 //! lists and refuse a type it does not list (Epo 2026-10-13), and the
 //! shared-text key, the media types, inspect, the reference kinds, each
-//! material kind's required element and the figure messages follow it. A
-//! test names what a new element or kind lacks here.
+//! material kind's required element, the figure messages and the index text
+//! follow it. A test names what a new element or kind lacks here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use notes::index_text::{self, ItemText};
 use notes::limits::{self, Refusal, Validator};
 use notes::{catalog, edit, material, plate, slate_yjs};
 use serde_json::{Value, json};
@@ -176,10 +177,32 @@ fn the_store_follows_the_catalog() {
         for key in element.forbidden {
             let carrying = stored(&|nodes| node_at(nodes, &sample.path)[*key] = json!("x"));
             assert!(carrying.is_err(), "a {name} carrying {key} is stored");
+            // Null counts as absent, as admission reads it, unless a closed
+            // field set leaves the key out.
+            if element.fields.is_none_or(|fields| fields.contains(key)) {
+                let null = stored(&|nodes| node_at(nodes, &sample.path)[*key] = Value::Null);
+                assert!(
+                    null.is_ok(),
+                    "a {name} holding {key} at null is refused: {null:?}"
+                );
+            }
         }
         if element.fields.is_some() {
             let extra = stored(&|nodes| node_at(nodes, &sample.path)["extra"] = json!("x"));
             assert!(extra.is_err(), "a {name} with an unknown field is stored");
+        }
+        // Security regression (Epo 2026-10-18): a void element holds one
+        // empty text leaf, whatever else it holds instead.
+        if element.void {
+            for children in [
+                json!([{ "text": "hidden" }]),
+                json!([{ "type": "p", "children": [{ "text": "hidden" }] }]),
+                json!([{ "text": "" }, { "text": "" }]),
+            ] {
+                let held =
+                    stored(&|nodes| node_at(nodes, &sample.path)["children"] = children.clone());
+                assert!(held.is_err(), "a {name} holding {children} is stored");
+            }
         }
         if element.top_level {
             let nested = stored(&|nodes| {
@@ -564,9 +587,19 @@ fn admission_checks_placement_values_and_the_embed_count() {
             "caption",
             text(&"c".repeat(catalog::BLOCK_CAPTION_MAX + 1)),
         ),
-        ("chart", "block", text("not a block")),
         ("mermaid", "source", yrs::Any::Number(1.0)),
+        (
+            "p",
+            "indent",
+            yrs::Any::Number((catalog::LIST_INDENT_MAX + 1) as f64),
+        ),
     ];
+    // A figure's block is its live map only, never one plain value
+    // (Epo 2026-10-18).
+    assert!(refused_as(
+        admit(&room, &set("chart", "block", text("not a block"))),
+        limits::PLAIN_BLOCK
+    ));
     for (name, key, value) in refused {
         assert!(
             refused_as(
@@ -586,6 +619,11 @@ fn admission_checks_placement_values_and_the_embed_count() {
             "caption",
             text(&"c".repeat(catalog::BLOCK_CAPTION_MAX)),
         ),
+        (
+            "p",
+            "indent",
+            yrs::Any::Number(catalog::LIST_INDENT_MAX as f64),
+        ),
     ];
     for (name, key, value) in accepted {
         assert!(
@@ -595,35 +633,98 @@ fn admission_checks_placement_values_and_the_embed_count() {
     }
 }
 
+/// Any block's indent stops at the catalog's `LIST_INDENT_MAX` in the
+/// store (Epo 2026-10-18), with Go's message; room admission refuses a
+/// deeper one written (`admission_checks_placement_values_and_the_embed_count`).
+#[test]
+fn a_block_indent_stops_at_the_catalog_max() {
+    let item = |indent: usize| {
+        [
+            json!({ "type": "p", "id": "l1", "indent": indent, "listStyleType": "disc",
+            "children": [{ "text": "deep" }] }),
+        ]
+    };
+    material::assert_canonical(&item(catalog::LIST_INDENT_MAX), "note").unwrap();
+    assert_eq!(
+        material::assert_canonical(&item(catalog::LIST_INDENT_MAX + 1), "note")
+            .unwrap_err()
+            .0,
+        format!("indent is over {} levels", catalog::LIST_INDENT_MAX)
+    );
+}
+
 /// The catalog's one shared-text key is the one the projection, the
 /// growth bound, admission and the seed hold as a text, and the seed makes it
-/// a text on that element alone.
+/// a text on that element alone; its shared maps (a figure's `block`) are
+/// maps on those elements alone, their lists lists of maps.
 #[test]
-fn the_shared_text_key_is_the_catalogs() {
+fn the_shared_keys_are_the_catalogs() {
     let shared: Vec<(&str, &[&str])> = catalog::ELEMENTS
         .iter()
         .filter(|element| !element.shared_text.is_empty())
         .map(|element| (element.name, element.shared_text))
         .collect();
-    assert_eq!(
-        shared,
-        [(plate::SHARED_TEXT_ELEMENT, &[plate::SHARED_TEXT_KEY][..])]
-    );
+    assert_eq!(shared, [("mermaid", &["source"][..])]);
+    assert!(plate::holds_text("mermaid", "source") && !plate::holds_text("p", "source"));
     let value = [
-        json!({ "type": plate::SHARED_TEXT_ELEMENT, "id": "m", "source": "flowchart LR", "children": [
+        json!({ "type": "mermaid", "id": "m", "source": "flowchart LR", "children": [
             { "type": "mermaid_caption", "children": [{ "text": "" }] },
         ] }),
         json!({ "type": "p", "id": "p", "source": "plain", "children": [{ "text": "x" }] }),
     ];
     let doc = room(&value);
     let txn = doc.transact();
-    let text = |index: usize| {
-        element_at(&txn, &[index])
-            .entry_item(plate::SHARED_TEXT_KEY)
-            .is_some_and(|item| matches!(item.content(), ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Text)))
+    let held = |index: usize, key: &str, kind: TypeRef| {
+        element_at(&txn, &[index]).entry_item(key).is_some_and(
+            |item| matches!(item.content(), ItemContent::Type(branch) if *branch.type_ref() == kind),
+        )
     };
-    assert!(text(0) && !text(1));
+    assert!(held(0, "source", TypeRef::Text) && !held(1, "source", TypeRef::Text));
     assert_eq!(plate::value(&txn).unwrap(), value);
+    drop(txn);
+
+    let docs = documents();
+    let figures: Vec<&catalog::Element> = catalog::ELEMENTS
+        .iter()
+        .filter(|element| !element.shared_map.is_empty())
+        .collect();
+    assert_eq!(
+        figures
+            .iter()
+            .map(|element| element.name)
+            .collect::<Vec<_>>(),
+        ["chart", "plot", "graph"]
+    );
+    for element in &figures {
+        assert_eq!(element.shared_map, ["block"]);
+        let node = docs["note"]
+            .iter()
+            .find(|node| node["type"] == element.name)
+            .unwrap();
+        let mut paragraph = node.clone();
+        paragraph["type"] = json!("p");
+        let value = [node.clone(), paragraph];
+        let doc = room(&value);
+        let txn = doc.transact();
+        assert!(map_held(&txn, 0, element.shared_lists), "{}", element.name);
+        assert!(!map_held(&txn, 1, &[]), "a paragraph's block");
+        assert_eq!(plate::value(&txn).unwrap(), value);
+    }
+    fn map_held<T: ReadTxn>(txn: &T, index: usize, lists: &[&str]) -> bool {
+        let Some(item) = element_at(txn, &[index]).entry_item("block") else {
+            return false;
+        };
+        let ItemContent::Type(map) = item.content() else {
+            return false;
+        };
+        let map = BranchPtr::from(map.as_ref());
+        *map.type_ref() == TypeRef::Map
+            && lists.iter().all(|key| {
+                map.entry_item(key).is_some_and(|list| {
+                    matches!(list.content(), ItemContent::Type(list) if *list.type_ref() == TypeRef::Array)
+                })
+            })
+    }
 }
 
 /// One media list: the blocks naming their file are the catalog's elements
@@ -731,4 +832,42 @@ fn figure_messages_are_gos() {
             "Go never says {message:?}"
         );
     }
+}
+
+/// What every catalog element gives the index text is its catalog rule
+/// (`index_text`, Go's `TestIndexTextFollowsTheCatalog`): a probe carrying
+/// a marker wherever a rule reads (its children, a figure's block, the
+/// Mermaid source, a question, a referenced item) shows it unless the rule
+/// is `none`. A type the catalog does not list gives its text, as the View
+/// shows an unsupported block's. The rule itself is a generated enum, so an
+/// element without one, or with one `index_text` does not handle, does not
+/// build.
+#[test]
+fn index_text_follows_the_catalog() {
+    struct Marked;
+    impl ItemText for Marked {
+        fn item_text(&self, _: &str) -> Option<String> {
+            Some("marker".into())
+        }
+    }
+    let probe = |name: &str| {
+        let note = json!({ "schemaVersion": 1, "value": [{
+            "type": name, "id": "probe", "materialId": "m", "source": "marker",
+            "block": { "type": name, "title": "marker", "description": "marker" },
+            "question": { "stem": [{ "type": "text", "text": "marker" }] },
+            "children": [{ "type": "p", "children": [{ "text": "marker" }] }],
+        }] });
+        index_text::join(&index_text::from_content(&note, &Marked))
+    };
+    for element in catalog::ELEMENTS {
+        let text = probe(element.name);
+        assert_eq!(
+            text.contains("marker"),
+            element.index != catalog::Index::None,
+            "a {} ({:?}) gives {text:?}",
+            element.name,
+            element.index
+        );
+    }
+    assert_eq!(probe("toggle"), "marker");
 }

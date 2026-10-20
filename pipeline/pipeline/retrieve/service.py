@@ -138,6 +138,7 @@ async def pending_source_context_handler(
             "code": "pending_sources_too_large",
             "message": str(exc),
             "fileIds": exc.file_ids,
+            "materialIds": exc.material_ids,
         },
         status_code=400,
     )

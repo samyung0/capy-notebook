@@ -350,8 +350,10 @@ mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 lock; a deleted, deletion-pending or suspended owner's files are not found)
 that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
-saved checkpoint is ahead of the indexed one (`pendingEffects` is omitted),
-with its `stateSeedSHA256`. The host passes that state as `checkpoint` and the
+saved checkpoint is ahead of the indexed one, with its `stateSeedSHA256`.
+Browser reads are `BrowserSourceSession`, which has no `pendingEffects`: only
+the collaboration service's bootstrap and publish answers (`SourceSession`)
+carry them. The host passes that state as `checkpoint` and the
 hash as `checkpointSeedSHA256` on the `load` message (protocol version 7); the
 runtime applies it over the base with the editor engines in a disposable
 `exportCheckpoint` worker, which for a change seeds the base first and refuses
@@ -968,10 +970,22 @@ shrinks one over the payer's plan image cap, which the edit `load` carries as
 `imageMaxBytes` (protocol v10; an edit session without one fails with the file
 error instead of loading), and re-encodes any type but PNG, JPEG and GIF, to
 JPEG or PNG (`fitImage` with `office`;
-[backend-storage-quota.md](../backend-storage-quota.md)). An image it cannot fit
-or decode reaches the runtime through the editor's `onError` as an
-`ImageTooLargeError` or `ImageUnreadableError`; the runtime sends a `notice`
-(`image-too-large` or `image-type`, beside parity-px's `equation-text`)
+[backend-storage-quota.md](../backend-storage-quota.md)). It also shrinks one
+into the room's growth budget: the edit read's `growthBudgetBytes` (Go's
+`SourceGrowthBudget`: the export cap (the largest plan source file) less the
+base file, the 1 MiB margin, admission's 64 KiB reserve and the durable change
+over the seed, its state and rows, so 0 means nothing would be admitted) less
+what the
+replica's state grew since it held the room's document, a DOCX picture
+counting as its base64 data URL (4 bytes per 3; protocol v11, required on edit
+loads like the cap; a 4 KiB slack covers the data URL's prefix, the picture's
+Yjs items and unsaved growth already in the room at open). One it cannot fit
+there is an `ImageBudgetError`. The
+collaboration server's per-room state cap stays the backstop (Edit and save
+lifecycle below). An image it cannot fit or decode reaches the runtime through the
+editor's `onError` as an `ImageBudgetError`, `ImageTooLargeError` or
+`ImageUnreadableError`; the runtime sends a `notice` (`image-budget`,
+`image-too-large` or `image-type`, beside parity-px's `equation-text`)
 instead of `error`, and Capy shows a toast for each pick, leaving the document
 and the editor as they were (the PPTX editor treats a `prepareImage` refusal
 as it does `EquationTextError`: no error box of its own). While it
@@ -1139,8 +1153,12 @@ clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too),
 over body paragraphs only (not tables, headers, footers or notes). The fork's
 Page setup and Watermark commands are left out of the menus (Epo 2026-10-13):
 they change only the open editor's document model, outside the Yjs state Capy
-saves, so neither would reach the saved file or co-editors; the ruler's margin
-drags still change the open copy only (DOCX parity checklist).
+saves, so neither would reach the saved file or co-editors. For the same
+reason the rulers' margins do not drag and a header or footer's Options menu
+offers no Remove (Epo 2026-10-20): the host passes the fork's
+`finalSectionEditable={false}`, and each margin zone and marker carries
+`data-draggable`. Shared final-section settings, which would let all of these
+save, come after the security todo.
 
 Format › Table ▸ (Google Docs' place) has Vertical alignment ▸
 Top/Middle/Bottom and Table alignment ▸ Left/Center/Right (radio items ticked
@@ -1293,14 +1311,52 @@ the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
 cell). Clear and cut act on the selection's part inside the used range
 (inputs committed but not drawn yet count) and resolve in the engine
 (`clearContents`) to edits for only the cells that hold a value or a formula,
-so their cost is bounded by the cells that hold content; a clear whose update
-could exceed the room's per-message limit (2 MiB, counted at 128 bytes per
-cleared cell) is refused with a notice and changes nothing, and a cut clears
-only after its copy reached the clipboard. Copy keeps the selection's own
-top-left corner, leading blanks included as in Excel, and trims only past the
-used range's last row and column; a copy over the engine's 100,000-cell read
-is refused with a notice, and a selection wholly past the used range sends
-nothing. A cell the keyboard reaches past the used range grows the scroll area
+so their cost is bounded by the cells that hold content. Any edit (a clear,
+cut or paste) whose update could pass the engine's 64 MiB cap
+(`MAX_COLLABORATION_BYTES`, one action's most: about 500,000 filled cells,
+counted at 160 bytes per value cell plus its input and 512 per formula plus 128
+per input byte) changes nothing and shows the `edit-too-large` notice. The
+check covers batches of cell inputs only; Undo, Redo, row and column deletes
+and resyncs are left to the server's limits, and the formula bound may
+overestimate (a paste of more than about 37,000-50,000 simple formulas is
+refused). While the tab holds back its collaboration messages (pacing, an
+update's pieces, a timeout), `XlsxEditorHost` passes `sending` to the editor:
+the grid and formula bar show a loading cursor (`aria-busy` on the grid) and
+every edit is refused as in read-only; an open cell edit or formula-bar draft
+stays open, read-only, on its cell (a press elsewhere, a sheet switch, the name
+box and the host's `selectCells` and `clearSelection` are refused while it is
+open), while an armed paint brush, a chart drag or an arrow burst is dropped;
+selection, scrolling and copy still work. A gesture that resumes after a wait
+(a cut's read, a row/column op or host clear waiting on a commit, an unmerge's
+merged-range read) does not edit if the pause began meanwhile: the cut ends as
+a copy.
+Copy keeps the selection's own top-left corner, leading blanks included as in
+Excel, and trims only past the used range's last row and column; it reads that
+area in pieces of at most 100,000 cells (the engine's read cap) without
+skipping empty cells, up to the fork's `XLSX_COPY_MAX_CELLS` ceiling (5,000,000 cells), past
+which it shows the `copy-too-large` notice, and stops with the same notice
+once its text passes 64 MiB (`XLSX_COPY_MAX_BYTES`, UTF-8 counted as the
+pieces arrive); a selection wholly past the used range sends nothing. The
+clipboard write starts in the key press, as a `ClipboardItem` whose text is
+a promise filled once the pieces are read (`writeText` after the read where
+the browser has no `ClipboardItem`), so a long read keeps the browser's
+permission; a write the browser still refuses shows the `copy-failed`
+notice. Only headless Chromium is measured; Firefox and Safari wait for a
+measurement. A cut shows the same loading cursor and refuses edits
+while it reads, then clears the range it copied; past either ceiling, or when
+the write fails, it clears nothing. Before reading, a cut asks the engine
+(`checkClearContents`, from the count of the clear's filled cells) whether
+its clear fits the 64 MiB update cap: over it nothing is read, copied or
+cleared and the `edit-too-large` notice shows. Once its read finishes a cut
+always clears its range, even when another person changed a cell inside it
+during the read (that change is lost; the read takes up to about 8 s at the
+5,000,000-cell ceiling). A copy reads, and a cut checks and clears, on its
+own sheet by id (the proxy's `inSheet`), so a sheet switch during the read
+changes nothing; a sheet removed meanwhile clears nothing, without a notice.
+A copy accepts the rare row a concurrent row insert or delete duplicates or
+skips. The latest copy or cut
+owns the clipboard: one still reading when a newer copy or cut starts stops
+reading and writes nothing, and such a cut clears nothing. A cell the keyboard reaches past the used range grows the scroll area
 to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
 Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
 200% page zoom), so cells past it are selected but not scrolled to, as in
@@ -1311,7 +1367,37 @@ cell) and Enter selects and reveals that cell, opening the other sheet when it
 names one; text that names no cell stays in the box and Escape restores the
 address. Capy's own View (`XlsxViewer`) reads the address with the fork's
 parser (`parseHyperlinkLocation` from `@betteroffice/xlsx/viewer`), switches
-the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`). An open cell edit keeps its input mounted and
+the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`).
+The pressed cell is the active cell, as in Excel and Sheets: a drag, Shift+click
+or Shift+arrows move only the selection's far end, the next bare move steps
+from the active cell, a press inside a merged block selects its top-left cell,
+Select all keeps the active cell where it was, or moves it to A1 when it lies
+outside the used range it selects, so the selection always holds it, and
+Shift+click extends from the active cell, after Select all too (the fork's
+`Selection` anchor, or its `active` cell after select all). A typed formula that leaves
+parentheses open is closed by the engine when that makes it parse
+(`=SUM(B2:B5` stores `=SUM(B2:B5)`, `=TODAY(` stores `=TODAY()`, `=SUM(B3,`
+stores `=SUM(B3,)`; `=SUM(` is not); in the cell editor and the formula bar a formula that still fails to
+parse, or text over 32,767 characters, is refused with a translated line under
+the formula bar while the draft stays open on its cell (its arrows then move the
+caret, as Excel's Edit mode). Such an edit closes only once the browser's engine
+took it: keys typed meanwhile are dropped, a press elsewhere (from the cell
+editor or the formula bar), a sheet switch, a name box Enter or a row/column op
+waits for it and does nothing after a refusal, and the grid takes the focus back only if it
+stayed in the edit; a refusal that lands after the focus left the edit leaves
+the focus there. A formula-bar draft commits to the cell it started on,
+whatever moved the selection since (the menu's Select all, a press while
+sending), and while it is open a key that reaches the grid gives the focus back
+to the formula bar and does nothing else. Paste and agent writes store such a formula as text. Point mode (v1): while a formula waits for an operand, a click or
+drag writes the cell or range reference (pointing again replaces it, typing
+ends it), arrows point from the edited cell in an edit opened by typing (Shift
+extends, F2 or a click in the edit switches to caret movement) and commit and move where no
+reference fits, merged cells are named by their top-left cell and a range
+cutting a merge grows over it, the pointed range has a dashed outline, and the
+formula bar points by mouse too. The cell editor and the text awaiting its
+frame use the active cell's own font, size, bold, italic and colour as the
+grid paints them, whatever fonts the rest of the selection uses (Calibri 11 pt
+black until the frame describes the cell), over a white fill. An open cell edit keeps its input mounted and
 focused while its cell scrolls away, so the next key that types, composition
 included, is typed into the edit and scrolls the cell back whole, as in Excel
 and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
@@ -1328,7 +1414,9 @@ file error and no failed Save, since nobody asked to save. A formula-bar draft
 stays open over an app or tab switch too. A draft whose sheet a peer removes,
 or whose sheet stops being the active one in a peer's update, is dropped, not
 committed; otherwise a draft commits to its own sheet even when a peer's update
-shifted that sheet's index. Once a draft is dropped neither the grid nor the
+shifted that sheet's index, and so does every sheet call the worker runs for
+the editor (clear and its pre-check included): it takes the active sheet's
+current index, not the one the editor last drew. Once a draft is dropped neither the grid nor the
 formula bar keeps the focus, so the keys still being typed do nothing until a
 click. Clicking a sheet
 tab gives the grid the keys. A cell wider
@@ -1403,7 +1491,19 @@ source, so a runtime that boots before the source loads gets
 `set-capabilities` first: the runtime keeps the last `canEdit` it was sent and
 applies it on `load`. A runtime that reloads during a handoff, a replacement,
 recovery, a discard or while connecting therefore opens paused (read-only and
-selectable) whichever message comes first. Pages stay white in
+selectable) whichever message comes first. While the tab holds back its
+collaboration messages (frames waiting for the update allowance, an
+update's pieces over 2 MiB waiting for the room's acknowledgement, or the
+user in a timeout; see
+[plate-editor](plate-editor.md#connection-lifetime-and-refusals)) a DOCX or
+PPTX editor is paused the same way (`canEdit: false`, Epo 2026-10-18). In
+edit mode the host also sends that state as `sending` (`pending`), whenever
+it changes and after every boot: the runtime keeps it in state and passes it
+to `XlsxEditorHost`, which hands it to the fork's `XlsxEditor` (its `sending`
+prop, from the XLSX pieces round): the XLSX editor marks its grid busy
+(`aria-busy`) and refuses edits instead of pausing (`held-back.spec.ts`). It
+shipped with the rate-limit landing's Office protocol 12; a runtime without
+it drops a message it does not know, and the host and runtime ship together. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
@@ -2175,13 +2275,64 @@ controls Saved. A failed DOCX input queue stays pending until the session ends.
 
 Each incoming source update is checked without copying the room: contributor
 markers against the decoded update, and size against an estimate kept from the
-room's applied update bytes. The writer's access is revalidated at most every
+room's applied update bytes, less the payload bytes each update's deletes free
+(Epo 2026-10-19, `ydoc::apply_freeing`): counted after the apply and before
+the commit over the transaction's own delete set, so the cost follows the
+deleted structs; a string's bytes, a binary's length and a value's strings and
+buffers, never the item headers or the deleted markers, and only items that
+existed before the update, that the commit collected, and (Office) newer than
+the seed, whose content a delete only marks in the stored change. Overwrites,
+deletes and replaced pictures no longer drift the estimate toward refusals,
+and it stays an upper bound of the state. The writer's access is revalidated at most every
 5 s per connection. Membership, role and share changes, and a user's own
 account change, close that user's connections through the collaboration
 eviction outbox; anything else (such as the owner's account state for a
 collaborator) takes effect within those 5 s, and every checkpoint rechecks each
-writer. Only when the estimate passes the 100 MB cap is the
-exact size computed; an update over the cap gets an unrecoverable
+writer. Each room has its own state cap (`sources::state_cap`, Epo
+2026-10-17): its seed plus the export cap (the largest plan source file,
+`max(plan_limits.source_file_max_bytes)`, read with the room's stored rows)
+less the base file and a 1 MiB margin, within the 100 MiB ceiling every room
+shares (WebSocket frames, downloads, offline drafts).
+Pictures that came with the file are references in the seed but bytes in the
+export, and an inserted image is in the state at least as large as in the
+export (a DOCX picture is a base64 data URL there, 4 bytes per 3; a PPTX one
+its bytes), so a room's edits keep its export under the plan limit. An
+export over it still publishes (Epo 2026-10-19; `FinalizeSourceRefresh`
+refuses only past the source ceiling, Go's `sourceCeilingBytes`, KEEP IN SYNC
+with `MAX_SOURCE_STATE_BYTES`, which also stays the Rust export's hard stop),
+since its base and saved edits are already stored; after the rebuild its base
+leaves no growth budget, so the file opens at its size limit. A
+second use of an original picture binds the same package part
+(`bind_media_reference`), and DOCX paste carries text runs only, so no export
+writes an original twice. Admission keeps `STATE_WRITE_RESERVE_BYTES` (64 KiB)
+free under the cap, so the contributor marker written after an update fits and
+the save's check against the cap stays exact; an agent edit is held to the
+same reserve and counts toward the room's running size. A file with no
+growth budget left reads as not editable (Epo 2026-10-20): the view read's
+`atSizeLimit` (Go works it out on the current base, with no blob read)
+disables the mode control before any Edit attempt. An edit open whose read
+says `growthBudgetBytes` 0 stops before it joins the room
+(`opensAtSizeLimit`) and drops to view with a size-limit notice, the control
+disabled from then on (`useSizeLimitView`), unless it holds drafts (recovery,
+or restored drafts being sent), which still open so they can be seen, copied
+out or discarded. Text follows the same rule. The budget's growth is the
+durable state's over seed(base) as the room's estimate counts it
+(`sourceGrowthSQL`): an Office state and its rows are the change, and a text
+state, the whole text with its history, less its seed (`seed_bytes`). A base
+within the margin and the reserve of the export cap leaves no growth, so a
+Pro upload between about 28.94 and 30 MiB opens view-only from the start. An
+image picked once the replica exists waits for its first measure; one picked
+before is refused with the budget notice. A
+save's whole state and an agent edit's are held to the same cap. Only when
+the estimate passes the room's cap is the exact size computed, at most once per
+1,000 updates (`MEASURE_EVERY` in `collaboration-rs/crates/sources/src/admit.rs`,
+about 13 ms per MB of state) or sooner once the estimate grew 8 MiB since the
+last measure (`MEASURE_GROWTH`, the allowance's byte burst: a large action's
+pieces over existing cells near the cap are measured, not refused; at most one
+measure per 4 s per writer); an update past the estimate otherwise is refused
+by it alone, with the update's apply to the measured copy limited to
+`ydoc::MAX_WORK` steps (Epo 2026-10-19); an update over the cap gets an
+unrecoverable
 `source-checkpoint-failed` message, so the client resets to the last saved
 version instead of reconnecting and resending. The exact limit at save still
 applies and is final too (a 413 `SourceRequestError`, never retried).
@@ -2265,8 +2416,9 @@ text.
 A source editor keeps editing while its room cannot be reached, as a note
 does (see [plate-editor.md](plate-editor.md#offline-editing-and-drafts)): the
 `offline` banner, the header's Offline, and its rows written as it edits. Past
-the source state cap (`SOURCE_STATE_MAX_BYTES`, 100 MB, the service's
-`MAX_SOURCE_STATE_BYTES`) of unsaved state while offline (the last whole state
+the source state ceiling (`SOURCE_STATE_MAX_BYTES`, 100 MB, the service's
+`MAX_SOURCE_STATE_BYTES`; a room's own cap is lower, below) of unsaved state
+while offline (the last whole state
 written plus the update rows after it that no receipt covered, so saved edits
 never count) the editor stops
 taking edits (`offlineLimit`: Office `canEdit: false`, a paused textarea)

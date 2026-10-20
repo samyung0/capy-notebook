@@ -64,3 +64,16 @@ func TestEmailUnsubscribeGETDoesNotMutate(t *testing.T) {
 		t.Fatalf("POST changed the wrong category: %#v", prefs)
 	}
 }
+
+// Security regression: the anonymous unsubscribe form is read at most 4 KiB.
+func TestEmailUnsubscribeCapsTheForm(t *testing.T) {
+	a := &api{cfg: Config{EmailUnsubscribeSecret: "aVeryLongRandomSecretValue-123456"}}
+	body := &countingBody{size: 1 << 20}
+	req := httptest.NewRequest(http.MethodPost, "/api/email/unsubscribe", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	a.emailUnsubscribe(rec, req)
+	if rec.Code != http.StatusBadRequest || body.read > 4<<10+1 {
+		t.Fatalf("status %d, read %d bytes", rec.Code, body.read)
+	}
+}

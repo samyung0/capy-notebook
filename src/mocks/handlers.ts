@@ -75,6 +75,7 @@ import { editorAssetHandlers } from './editorAssets';
 import { questionBankHandlers } from './questionBank';
 import {
   clearMockThumbnailStale,
+  mockAtSizeLimit,
   scenarioSourceSession,
 } from './scenarioFixtures';
 import { studyHandlers } from './study';
@@ -233,7 +234,6 @@ async function mockSourceSession(
     format: 'text',
     indexedCheckpoint: 0,
     netTokens: 0,
-    pendingEffects: null,
     room: sourceRoomName(fileId, SOURCE_EPOCH),
     sourceIdentity: `mock-${fileId}`,
     sourceURL: link.url,
@@ -689,9 +689,9 @@ export const handlers = [
     )
       return HttpResponse.json({
         access: 'read',
+        atSizeLimit: mockAtSizeLimit(file.id),
         fileId: file.id,
         format: 'text',
-        pendingEffects: null,
         state: savedSourceState(file.id),
       });
     if (dialogFiles.some((file) => file.id === params.id)) {
@@ -1529,7 +1529,10 @@ export const handlers = [
   http.post('/api/share/redeem', async ({ request }) => {
     const { token } = (await request.json()) as { token: string };
     const id = token.split('.')[0];
-    if (db.workspaces.some((row) => row.id === id))
+    if (
+      db.workspaces.some((row) => row.id === id) ||
+      db.publicWorkspaces.some((row) => row.id === id)
+    )
       return HttpResponse.json({ id, kind: 'workspace' });
     const material = db.materials.find(
       (row) => row.id === id && !row.workspaceId
@@ -1623,7 +1626,10 @@ export const handlers = [
           db.flashcardCards[card.id] = { materialId };
         }
       });
-    return HttpResponse.json({ workspace }, { status: 201 });
+    return HttpResponse.json(
+      { skippedMaterials: 0, workspace },
+      { status: 201 }
+    );
   }),
   http.post('/api/files/:id/clone', async ({ params, request }) => {
     const body = (await request.json()) as CloneFileReq;

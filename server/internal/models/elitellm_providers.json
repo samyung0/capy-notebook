@@ -22,7 +22,7 @@
     "zai": {
       "name": "Z.ai",
       "byok": false,
-      "platformEnv": "RELACE_API_KEY",
+      "platformEnv": "ZAI_API_KEY",
       "allowedModelSlugs": ["glm-5.3-flash"],
       "thinking": ["low", "high", "max"]
     },
@@ -30,7 +30,10 @@
       "name": "OpenRouter",
       "byok": false,
       "platformEnv": "OPENROUTER_API_KEY",
-      "allowedModelSlugs": ["deepseek/deepseek-v4-flash-0731"],
+      "allowedModelSlugs": [
+        "deepseek/deepseek-v4-flash-0731",
+        "deepseek/deepseek-v4.1-flash-1017"
+      ],
       "thinking": ["instant"]
     },
     "deepinfra": {

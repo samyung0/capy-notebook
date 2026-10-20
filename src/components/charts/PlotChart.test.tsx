@@ -37,3 +37,13 @@ it('draws curves in x order with clean ticks, a dashed reference line and labell
   const xs = points.map((point) => Number(point.split(',')[0]));
   expect(xs).toEqual([...xs].sort((a, b) => a - b));
 });
+
+it('draws a plot without series as the empty frame', () => {
+  const html = renderToStaticMarkup(
+    <PlotChart
+      data={{ series: [], title: 'Merged', xTitle: 'x', yTitle: 'y' }}
+    />
+  );
+  expect(html).toContain('Merged');
+  expect(html).not.toContain('<svg');
+});

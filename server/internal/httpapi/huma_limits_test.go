@@ -14,7 +14,7 @@ import (
 
 func TestMaterialRequestBodyLimit(t *testing.T) {
 	router := chi.NewRouter()
-	api := humachi.New(router, humaConfig())
+	api := humachi.New(router, humaConfig(false))
 	type input struct {
 		Body string
 	}

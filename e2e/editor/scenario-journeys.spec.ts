@@ -658,12 +658,13 @@ test('a frozen account or full storage mid-edit drops open editors to view and d
   page,
 }) => {
   const strip = page.getByText(m.editor_read_only_strip());
-  for (const id of [
-    'note-frozen-while-editing',
-    'note-storage-full-while-editing',
+  for (const [id, reason] of [
+    ['note-frozen-while-editing', m.editor_read_only_strip()],
+    // Full storage names itself to its payer (Sam 2026-10-18).
+    ['note-storage-full-while-editing', m.storage_self_full_strip()],
   ]) {
     await launch(page, id);
-    await expect(strip).toBeVisible();
+    await expect(page.getByText(reason)).toBeVisible();
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
     // The refreshed note offers no Edit, and the refused edit is gone.
     await expect(
@@ -719,6 +720,36 @@ test('a text source in view mode shows its latest saved state, not only the publ
     .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-text"]')
     .click();
   await expect(page.getByText(savedMarker)).toBeVisible();
+});
+
+// Epo 2026-10-20: a text source published over the plan file limit (no
+// growth budget) opens to view only with a notice, its mode control disabled.
+test('a text source at its size limit opens to view only', async ({ page }) => {
+  await page.goto('/workspaces/ws_scenarios?file=mock-scenario-text');
+  const toggle = page.getByRole('button', { name: m.material_mode() });
+  await expect(toggle).toBeEnabled({ timeout: 30_000 });
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      'capy.mock.growthBudgetBytes.mock-scenario-text',
+      '0'
+    )
+  );
+  await toggle.click();
+  await expect(page.getByText(m.files_size_limit())).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    page.getByRole('textbox', { name: m.source_edit_raw() })
+  ).toHaveCount(0);
+  await expect(toggle).toBeDisabled();
+  // The open stopped before joining the room (review r3 S1).
+  expect(
+    await page.evaluate(() => sessionStorage.getItem('capy.mock.sourceJoins'))
+  ).toBeNull();
+  // A fresh view knows before any attempt (review r3 E1).
+  await page.reload();
+  await expect(toggle).toBeDisabled({ timeout: 30_000 });
+  await expect(page.getByText(m.files_size_limit())).toHaveCount(0);
 });
 
 test('a failed annotation save shows its strip on the PDF', async ({

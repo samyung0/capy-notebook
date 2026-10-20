@@ -200,7 +200,7 @@ func TestCloneCounterCannotFailTheCopy(t *testing.T) {
 	proceed := make(chan struct{})
 	result := make(chan error, 1)
 	go func() {
-		_, _, err := s.cloneWorkspaceOnce(ctx, pausingCloneStarter{
+		_, _, _, err := s.cloneWorkspaceOnce(ctx, pausingCloneStarter{
 			starter: s.pool, reached: reached, proceed: proceed, pauseOn: "FROM blobs",
 		}, clonerID, source.ID, WorkspaceCreate{Name: "Clone"})
 		result <- err

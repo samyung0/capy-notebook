@@ -17,6 +17,9 @@ export type NoteEditorSaveState =
 /** Transient chrome status for the note editor (header, not toolbar). */
 export type NoteEditorStatus = {
   saveState: NoteEditorSaveState;
+  /** A note on screen whose reconnect waits on the open budget: the header
+   * says so under its sync indicator after 5 s (Epo 2026-10-20). */
+  slowed?: boolean;
 };
 
 export function noteEditorStatusLabel(

@@ -227,9 +227,15 @@ async fn main() {
     let update = encode(&edit_doc, &doc.transact().state_vector());
     probe.out.insert("updateBytes".into(), json!(update.len()));
     let source_format: SourceFormat = serde_json::from_value(json!(format)).unwrap();
-    let mut estimate = seed.len() as u64;
+    let mut estimate = sources::Estimate::new(seed.len() as u64);
     let admitted = probe.local("admitUpdate", reps, || {
-        admit_update(&doc, source_format, &update, &mut estimate)
+        admit_update(
+            &doc,
+            source_format,
+            &update,
+            &mut estimate,
+            sources::MAX_SOURCE_STATE_BYTES as u64,
+        )
     });
     assert_eq!(admitted, sources::Admission::Accept);
     probe.local("applyUpdate", 1, || replay(&doc, &[&update]));

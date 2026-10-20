@@ -4,6 +4,7 @@ import { authHeaders } from '@/api/auth';
 import type { SourceFile } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
+import { useCollaborationHeld } from '@/features/collaboration/held';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
@@ -51,6 +52,7 @@ import {
 import {
   SOURCE_IFRAME_ORIGIN,
   sessionReported,
+  useSizeLimitView,
   useSourceSession,
 } from './useSourceSession';
 
@@ -153,6 +155,14 @@ export function useOfficeRuntime({
     setJoined(false);
     setMode('view');
   }, [mode, pausedAtOpen, setMode]);
+  // The view read says the file is at its size limit before any Edit
+  // attempt; an edit open stopped there drops to view.
+  const [viewAtSizeLimit, setViewAtSizeLimit] = useState(false);
+  const sizeLimited =
+    useSizeLimitView(source.atSizeLimit, mode === 'edit', () => {
+      setJoined(false);
+      setMode('view');
+    }) || viewAtSizeLimit;
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const modeRef = useRef(mode);
@@ -348,6 +358,8 @@ export function useOfficeRuntime({
     const controller = new AbortController();
     void takeSourceOpen(file.id, 'view', controller.signal)
       .then(async ({ base, session }) => {
+        if (!controller.signal.aborted)
+          setViewAtSizeLimit(!!session.atSizeLimit);
         const bytes = (await base).buffer;
         const saved =
           session.checkpoint === session.indexedCheckpoint
@@ -395,10 +407,16 @@ export function useOfficeRuntime({
         : undefined;
     const imageMaxBytes =
       mode === 'edit' ? source.session!.imageMaxBytes : undefined;
+    const growthBudgetBytes =
+      mode === 'edit' ? source.session!.growthBudgetBytes : undefined;
     initializedFrame.current = frameGeneration;
-    // An Office edit session always names the payer's image cap; without one
-    // the editor cannot open, so it fails here instead of hanging.
-    if (mode === 'edit' && !(imageMaxBytes && imageMaxBytes > 0)) {
+    // An Office edit session always names the payer's image cap and the
+    // room's growth budget; without them the editor cannot open, so it fails
+    // here instead of hanging.
+    if (
+      mode === 'edit' &&
+      !(imageMaxBytes && imageMaxBytes > 0 && growthBudgetBytes !== undefined)
+    ) {
       setError(m.error_file_body());
       return;
     }
@@ -420,6 +438,7 @@ export function useOfficeRuntime({
         collaboration,
         fileName: file.name,
         format,
+        growthBudgetBytes,
         imageMaxBytes,
         mode,
         revision: revisionRef.current,
@@ -463,17 +482,40 @@ export function useOfficeRuntime({
   // A capture uploads only what the room has (saved) while the user may edit.
   const captureAllowed = useRef<() => boolean>(() => false);
   captureAllowed.current = () => editable && source.status === 'saved';
+  const sending = useCollaborationHeld();
   // After the load above, and again whenever the runtime document boots. A
   // paused editor shows its content read-only, for selecting and copying.
   useEffect(() => {
     if (frameLoaded)
       post({
-        canEdit:
-          editable && (mode !== 'edit' || frameDoc.current === source.doc),
+        canEdit: frameCanEdit({
+          current: mode !== 'edit' || frameDoc.current === source.doc,
+          editable,
+          format,
+          sending,
+        }),
         type: 'set-capabilities',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [editable, frameBoot, frameLoaded, mode, post, source.doc]);
+  }, [
+    editable,
+    format,
+    frameBoot,
+    frameLoaded,
+    mode,
+    post,
+    sending,
+    source.doc,
+  ]);
+
+  useEffect(() => {
+    if (frameLoaded && mode === 'edit')
+      post({
+        pending: sending,
+        type: 'sending',
+        version: OFFICE_PROTOCOL_VERSION,
+      });
+  }, [frameBoot, frameLoaded, mode, post, sending]);
 
   useEffect(() => {
     const doc = source.doc;
@@ -934,6 +976,8 @@ export function useOfficeRuntime({
     sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
+    sizeLimited,
+    slowed: mode === 'edit' && source.slowed,
     status: source.status,
     storageFull: source.session?.storageFull,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
@@ -959,17 +1003,21 @@ const OFFICE_NOTICE_TOASTS: Record<
   OfficeNotice,
   { once: boolean; title: (imageMaxBytes: number) => string }
 > = {
-  // Each refused clear or copy is its own keystroke: every time.
-  'clear-too-large': {
-    once: false,
-    title: () => m.files_office_clear_too_large(),
-  },
+  // Each copy or cut is its own keystroke: every time.
+  'copy-failed': { once: false, title: () => m.files_office_copy_failed() },
   'copy-too-large': {
     once: false,
     title: () => m.files_office_copy_too_large(),
   },
+  // Each refused edit is its own keystroke: every time.
+  'edit-too-large': {
+    once: false,
+    title: () => m.files_office_edit_too_large(),
+  },
   // A refused keystroke repeats on every key: once per frame.
   'equation-text': { once: true, title: () => m.files_office_equation_text() },
+  // Each refused image is its own pick: every time.
+  'image-budget': { once: false, title: () => m.files_office_image_budget() },
   // Each refused image is its own pick: every time.
   'image-too-large': {
     once: false,
@@ -978,6 +1026,27 @@ const OFFICE_NOTICE_TOASTS: Record<
   },
   'image-type': { once: false, title: () => m.image_unreadable() },
 };
+
+/**
+ * The `set-capabilities` canEdit: an editable frame showing the room's
+ * current document. While the tab holds back its collaboration messages
+ * (pacing, pieces, a timeout; Epo 2026-10-18) a DOCX or PPTX editor pauses,
+ * as for any pause; the XLSX editor takes `sending` instead and refuses edits
+ * with a busy cursor.
+ */
+export function frameCanEdit({
+  current,
+  editable,
+  format,
+  sending,
+}: {
+  current: boolean;
+  editable: boolean;
+  format: OfficeFormat;
+  sending: boolean;
+}) {
+  return editable && current && !(sending && format !== 'xlsx');
+}
 
 /**
  * The notices a frame shows, each as its entry says: a `once` notice once per

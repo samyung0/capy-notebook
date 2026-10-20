@@ -292,8 +292,8 @@ async def open_call(
         raise AccountingError("provider call open requires a database")
     call_context = context or ContextComposition()
     if spec is not None:
-        provider = provider or elitellm.transport_provider_slug(spec)
-        model = model or elitellm.transport_model_slug(spec)
+        provider = provider or spec.provider_slug
+        model = model or spec.model_slug
     if state.settlement_mode == "ingest":
         provider_timeout_s = cfg.ingest_provider_timeout_s
     else:
@@ -575,8 +575,8 @@ async def settle(
         "kind": kind,
         "purpose": purpose,
         "thinking": thinking,
-        "provider": elitellm.transport_provider_slug(spec),
-        "model": elitellm.transport_model_slug(spec),
+        "provider": spec.provider_slug,
+        "model": spec.model_slug,
         **usage.as_dict(),
     }
     if kind == KIND_RERANK:
@@ -721,8 +721,8 @@ def _settle_ingest_call_sync(
                 kind=kind,
                 purpose=purpose,
                 thinking=thinking,
-                provider=elitellm.transport_provider_slug(spec),
-                model=elitellm.transport_model_slug(spec),
+                provider=spec.provider_slug,
+                model=spec.model_slug,
                 catalog_provider_slug=spec.provider_slug,
                 catalog_model_slug=spec.model_slug,
                 model_version=spec.version,

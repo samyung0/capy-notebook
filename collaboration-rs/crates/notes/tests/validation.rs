@@ -29,7 +29,8 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// reference never keeping an imported fence body (live-items REVIEW5), and
 /// the embed catalog (Epo 2026-10-13): a type or material kind it does not
 /// list, an element in a material kind it does not list it for, and Go's
-/// wording for figures; and `multi`, merged into `mcq` (Epo 2026-10-15).
+/// wording for figures; `multi`, merged into `mcq` (Epo 2026-10-15); and a
+/// void element holding anything but one empty text leaf (Epo 2026-10-18).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -63,6 +64,7 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.starts_with("unknown material kind")
         || message.contains(" cannot hold a ")
         || message.starts_with("chart, plot and graph embeds")
+        || message.ends_with("holds one empty text leaf")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()
@@ -459,6 +461,37 @@ fn a_plot_validates_as_go_validates_it() {
     };
     embed(plot(|_| {})).unwrap();
     assert!(embed(plot(refused[0].1)).is_err());
+}
+
+/// A plot's text is bounded as a chart's (Epo 2026-10-17): the shared plot
+/// fixtures at and past those bounds validate as Go and the browser validate
+/// them, and a live quiz's caps (`figure_caps`) refuse a title past its bound.
+#[test]
+fn plot_text_stops_at_the_charts_bounds() {
+    for name in [
+        "plot-at-limits",
+        "plot-long-title-rejected",
+        "plot-long-series-name-rejected",
+        "plot-long-mark-label-rejected",
+    ] {
+        let path = format!(
+            "{}/../../../server/internal/questions/testdata/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let ours =
+            questions::validate_question(&fixture["question"], &Policy::default()).map(|_| ());
+        assert_eq!(
+            ours.is_ok(),
+            fixture["valid"] == json!(true),
+            "{name}: {ours:?}"
+        );
+    }
+    let title = |n: usize| json!({ "title": "t".repeat(n) });
+    questions::figure_caps("plot", &title(questions::QUESTION_PLOT_TITLE_MAX)).unwrap();
+    assert!(
+        questions::figure_caps("plot", &title(questions::QUESTION_PLOT_TITLE_MAX + 1)).is_err()
+    );
 }
 
 /// An image's or graph's description holds QUESTION_DESCRIPTION_MAX in a

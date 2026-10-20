@@ -504,7 +504,7 @@ func TestEditorCompletesItsImageInAnotherPayersNote(t *testing.T) {
 	h, st, mem := openInternalHTTPWithBlob(t)
 	ctx := context.Background()
 	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", WorkspaceID: "ws_e2e_private",
-		Kind: "note", Title: "Payer's note"})
+		Kind: "note", Title: "Payer's note", Content: noteTestContent(t, "")})
 	if err != nil {
 		t.Fatal(err)
 	}

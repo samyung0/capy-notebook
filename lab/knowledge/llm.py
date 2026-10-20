@@ -1,7 +1,6 @@
 """Model routing for the builder: GLM-5.3-Flash through the local Ollama cloud
-model for topics and scraping, Qwen3.8-Flash through Alibaba Model Studio for
-the transcribe and tag stages (the live endpoint here; `alibaba_body` is also
-the Batch request body). Both endpoints wait and retry on a connection error, a 429 and
+model for topics and scraping, Qwen3.8-Flash through Alibaba Model Studio's
+live endpoint for the transcribe and tag stages. Both endpoints wait and retry on a connection error, a 429 and
 a 5xx (5, 20, 60 s), retry a schema failure once on the same endpoint and
 never fall back to another endpoint. Every attempt is an `llm_calls` row.
 """
@@ -22,7 +21,6 @@ from jsonschema import Draft202012Validator
 OLLAMA = "http://127.0.0.1:11434/v1/chat/completions"
 OLLAMA_MODEL = "glm-5.3-flash:cloud"
 ALIBABA_MODEL = "qwen3.8-flash"
-THINKING_BUDGET = 4096
 BACKOFF = (5, 20, 60)
 # Measured 2026-09-19 on the Ollama cloud model: `thinking: false` still
 # returned reasoning, `reasoning_effort: none` leaked the reasoning into the
@@ -70,22 +68,19 @@ def alibaba_headers() -> dict:
     return {"Authorization": f"Bearer {os.environ['ALIBABA_API_KEY']}"}
 
 
-def alibaba_body(messages: list[dict], schema: dict, *, thinking: bool) -> dict:
+def alibaba_body(messages: list[dict], schema: dict) -> dict:
     """The Qwen request the probe proved: strict json_schema, temperature 0,
-    thinking capped at 4,096 tokens in batch and off live."""
-    body = {
+    thinking off."""
+    return {
         "model": ALIBABA_MODEL,
         "messages": messages,
         "temperature": 0,
-        "enable_thinking": thinking,
+        "enable_thinking": False,
         "response_format": {
             "type": "json_schema",
             "json_schema": {"name": "review", "strict": True, "schema": schema},
         },
     }
-    if thinking:
-        body["thinking_budget"] = THINKING_BUDGET
-    return body
 
 
 def alibaba(
@@ -94,13 +89,12 @@ def alibaba(
     *,
     stage: str,
     sha256: str | None = None,
-    thinking: bool = False,
     timeout: float = 600,
     transport: httpx.BaseTransport | None = None,
 ) -> Result:
     return post(
         alibaba_base() + "/chat/completions",
-        alibaba_body(messages, schema, thinking=thinking),
+        alibaba_body(messages, schema),
         headers=alibaba_headers(),
         schema=schema,
         stage=stage,

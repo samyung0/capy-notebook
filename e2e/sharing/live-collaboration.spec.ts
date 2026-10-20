@@ -60,6 +60,11 @@ test.describe('live Yjs collaboration', () => {
     await expect(
       ownerPage.getByText(`${body}${suffix}`, { exact: true })
     ).toBeVisible();
+    // Typing collapses the editor's selection to a caret, which the owner
+    // still sees (a zero-width mark whose bar the stylesheet draws), once.
+    await expect(
+      ownerPage.locator('[data-remote-caret="E2E Editor"]')
+    ).toBeAttached();
     // Durability is the client's 1s checkpoint debounce plus the server's store
     // debounce, which stretches to COLLABORATION_MAX_DEBOUNCE_MS (10s) under
     // continuous updates. The default 10s expect budget cannot cover that.

@@ -87,7 +87,9 @@ import (
 // they wrote (effect.blockIds); replace_card keeps a side it is not sent (Epo
 // 2026-10-14).
 // v30: an open question's model_answer is optional (Epo 2026-10-15).
-const ContractVersion = 30
+// v31: resolve_source_change also takes a note's material_id and block_id,
+// returning that block's index text before and after (Epo 2026-10-17).
+const ContractVersion = 31
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -832,16 +834,20 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "resolve_source_change",
 			Retention: RetainNone,
-			Description: "See an added or changed source image from an exact " +
-				"pending-change placeholder; the image is attached to the next " +
-				"message. Only use identifiers supplied in the pending-source evidence.",
+			Description: "Resolve an exact pending-change placeholder. For a file's image " +
+				"change give file_id, change_id and checkpoint: the image is attached to " +
+				"the next message. For a note's data change give material_id and " +
+				"block_id: the block's text before and after is returned. Only use " +
+				"identifiers supplied in the pending-source evidence.",
 			InputSchema: obj(map[string]any{
-				"file_id":    str(""),
-				"change_id":  str(""),
-				"checkpoint": map[string]any{"type": "integer", "minimum": 0},
-			}, "file_id", "change_id", "checkpoint"),
+				"file_id":     str(""),
+				"change_id":   str(""),
+				"checkpoint":  map[string]any{"type": "integer", "minimum": 0},
+				"material_id": str(""),
+				"block_id":    str(""),
+			}),
 			Concurrency:        "read",
-			RequiredOperations: []Operation{OpSourceRead},
+			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
 			Name:      "inspect_document",

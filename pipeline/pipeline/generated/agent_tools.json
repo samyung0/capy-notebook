@@ -1,5 +1,5 @@
 {
-  "version": 30,
+  "version": 31,
   "operations": [
     "source.read",
     "material.read",
@@ -771,10 +771,14 @@
     {
       "name": "resolve_source_change",
       "version": 1,
-      "description": "See an added or changed source image from an exact pending-change placeholder; the image is attached to the next message. Only use identifiers supplied in the pending-source evidence.",
+      "description": "Resolve an exact pending-change placeholder. For a file's image change give file_id, change_id and checkpoint: the image is attached to the next message. For a note's data change give material_id and block_id: the block's text before and after is returned. Only use identifiers supplied in the pending-source evidence.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
+          "block_id": {
+            "minLength": 1,
+            "type": "string"
+          },
           "change_id": {
             "minLength": 1,
             "type": "string"
@@ -786,13 +790,12 @@
           "file_id": {
             "minLength": 1,
             "type": "string"
+          },
+          "material_id": {
+            "minLength": 1,
+            "type": "string"
           }
         },
-        "required": [
-          "file_id",
-          "change_id",
-          "checkpoint"
-        ],
         "type": "object"
       },
       "mutates": false,
@@ -802,7 +805,8 @@
         "chat"
       ],
       "requiredOperations": [
-        "source.read"
+        "source.read",
+        "material.read"
       ],
       "retention": "none"
     },
@@ -1402,7 +1406,7 @@
                 ]
               },
               "label": {
-                "maxLength": 1000,
+                "maxLength": 60,
                 "type": "string"
               },
               "value": {
@@ -1424,7 +1428,7 @@
             "additionalProperties": false,
             "properties": {
               "label": {
-                "maxLength": 1000,
+                "maxLength": 60,
                 "type": "string"
               },
               "x": {
@@ -1450,7 +1454,7 @@
             "additionalProperties": false,
             "properties": {
               "name": {
-                "maxLength": 1000,
+                "maxLength": 60,
                 "type": "string"
               },
               "points": {
@@ -1478,22 +1482,22 @@
           "type": "array"
         },
         "title": {
-          "maxLength": 1000,
+          "maxLength": 100,
           "type": "string"
         },
         "type": {
           "const": "plot"
         },
         "unit": {
-          "maxLength": 1000,
+          "maxLength": 100,
           "type": "string"
         },
         "xTitle": {
-          "maxLength": 1000,
+          "maxLength": 100,
           "type": "string"
         },
         "yTitle": {
-          "maxLength": 1000,
+          "maxLength": 100,
           "type": "string"
         }
       },

@@ -34,6 +34,7 @@ from . import (
     library,
     models,
     pending,
+    pending_hints,
     scripted,
     skills,
     store,
@@ -255,7 +256,9 @@ async def _admit_checkpoint(
         "modelVersion": spec.version,
         "estimatedTokens": estimate_tokens(folded),
     }
-    rebuilt = [messages[0], chat_prompts.memory_message(folded), query_msg]
+    # The query and what follows it (its hint message) stay as they are.
+    after = messages[compact._current_query_index(messages) + 1 :]
+    rebuilt = [messages[0], chat_prompts.memory_message(folded), query_msg, *after]
     budget.checkpoint_rewrites += 1
     return rebuilt, replacement
 
@@ -343,6 +346,8 @@ async def _run_turn(
             return
 
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+    # Changes reach the agent only for the documents it reads (Epo 2026-10-20).
+    ctx.pending_sources.read_ids = set()
     prior = await evidence.history_turns(history, ctx)
     schemas = tools.schemas_for(ctx)
     messages = chat_prompts.chat_messages(
@@ -355,12 +360,25 @@ async def _run_turn(
         writes=any(s["function"]["name"] in skills.REQUIRES for s in schemas),
     )
     query_msg = messages[-1]
-
-    _, pending_reserve, pending_omitted = pending.reserve(
-        messages, ctx.pending_sources, spec, schemas
+    # Unindexed edits matching the user's words, not hinted earlier in the
+    # conversation, follow the message as source data (Epo 2026-10-20).
+    earlier = {
+        hint.key
+        for message in prior
+        if message.get("_kind") == pending_hints.KIND
+        for hint, _ in message["_hints"]
+    }
+    hint_message = pending_hints.message(
+        await pending_hints.for_message(query, ctx.pending_sources, skip=earlier)
     )
-    if ctx.pending_sources.files:
-        yield ctx.pending_sources.event(pending_omitted)
+    if hint_message is not None:
+        messages.append(hint_message)
+        ctx.pending_hints = hint_message["_hints"]
+    ctx.hinted = earlier | {hint.key for hint, _ in ctx.pending_hints}
+
+    # Pending changes reach the agent in the tool result of a read of their
+    # document (pending.PendingSources.for_read); none are sent up front.
+    reported_omitted: set[str] = set()
     try:
         await ctx.pending_sources.validate()
         messages, replacement = await _admit_checkpoint(
@@ -371,7 +389,6 @@ async def _run_turn(
             schemas=schemas,
             budget=budget,
             query_msg=query_msg,
-            extra=pending_reserve,
         )
     except pending.SourceChanged as exc:
         yield _with_usage(events.error(str(exc), exc.code))
@@ -494,12 +511,10 @@ async def _run_turn(
                 )
             )
             outside = image_tokens + context_tokens
-            pending_message, pending_reserve, omitted = pending.reserve(
-                messages, ctx.pending_sources, spec, active_schemas, extra=outside
-            )
-            if omitted != pending_omitted:
-                pending_omitted = omitted
-                yield ctx.pending_sources.event(omitted)
+            if not ctx.pending_sources.omitted_ids <= reported_omitted:
+                # A read's changes were too large to pass on: offer Process.
+                reported_omitted |= ctx.pending_sources.omitted_ids
+                yield ctx.pending_sources.event(True)
             await ctx.pending_sources.validate()
             messages = await compact.compact_messages(
                 messages,
@@ -507,7 +522,7 @@ async def _run_turn(
                 schemas=active_schemas,
                 protect_live_chain=True,
                 on_compact=_count,
-                extra=pending_reserve + outside,
+                extra=outside,
                 allow_summary=not terminal_call,
             )
             state = accounting.current()
@@ -526,7 +541,7 @@ async def _run_turn(
                     schemas=active_schemas,
                     protect_live_chain=True,
                     allow_summary=False,
-                    extra=pending_reserve + outside,
+                    extra=outside,
                 )
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
@@ -542,7 +557,7 @@ async def _run_turn(
                 ),
             )
             request_messages = capture.inject_images(
-                pending.inject(messages, pending_message),
+                messages,
                 ctx.pending_images,
                 spec.provider_slug,
             )
@@ -1013,10 +1028,11 @@ def _append_turn_context(
 ) -> None:
     """Send this call's turn context last and keep it where it was sent.
 
-    Each request then extends the previous one exactly. GLM-5.3-Flash reuses
-    its cache only at the end of an earlier request, so a context that moved
-    or changed in place would leave every later step uncached. A context not
-    yet followed by a step is replaced.
+    Each request then extends the previous one exactly, so all of it is a
+    cached prefix: providers reuse any shared prefix (GLM on Z.AI measured
+    2026-10-20), and a context that moved or changed in place would leave
+    every step after its old place uncached. A context not yet followed by a
+    step is replaced.
     """
     if messages and messages[-1].get("_kind") == "turn_context":
         messages[-1] = message
@@ -1218,7 +1234,11 @@ async def _run_tools(
     # list is sent with the answer, renumbered, as its markers appear.
     for call, result in ordered:
         numbered = tools.assign_citations(ctx, result.passages)
-        text = tools.limit_tool_result(tools.render_result(result, numbered))
+        text = tools.limit_tool_result(
+            tools.render_result(result, numbered), tail=result.tail
+        )
+        if result.pending:
+            text += "\n\n" + result.pending
         if ctx.library:
             args = _parse_args(call.arguments)
             ctx.library_evidence.observe(
@@ -1237,7 +1257,11 @@ async def _run_tools(
                 }
             )
         result.text_parts = [text]
-        messages.append({"role": "tool", "tool_call_id": call.id, "content": text})
+        message = {"role": "tool", "tool_call_id": call.id, "content": text}
+        if result.tail:
+            # A search's unindexed edits are hints: condensing drops them.
+            message["_hint_tail"] = result.tail
+        messages.append(message)
 
 
 def _limit_for(

@@ -1,8 +1,9 @@
 # Ingest host provisioning
 
 This playbook installs Docker, WireGuard, nftables, bounded logs, unattended
-updates, the `capy-ingest` service account and selected parser watchdogs.
-GitHub deployment workflows own application configuration and release checkouts.
+updates, the `capy-ingest` service account and selected parser watchdogs, and
+makes SSH key-only. GitHub deployment workflows own application configuration
+and release checkouts.
 
 Copy `inventory.example.yml` to ignored `inventory.yml`, mode `0600`. Fill the
 WireGuard peer and administrator public key. Set `ingest_watchdog_stacks` to
@@ -12,12 +13,27 @@ false` permits base provisioning before the peer is ready.
 
 ```sh
 ansible-galaxy collection install -r requirements.yml
-ansible-playbook --ask-pass playbook.yml
+ansible-playbook playbook.yml --check --diff
+ansible-playbook playbook.yml
 ```
 
-Verify SSH access as `capy-ingest` in a second terminal. Existing root/password
-SSH behavior is retained. The service network carries only private app/ingest
-addresses; it does not change the default route, configure NAT or forwarding.
+Ansible connects as root with a key. The SSH drop-in
+(`../shared/sshd-key-only.conf`) turns password and keyboard-interactive
+logins off and lets root in with a key only; the play refuses to install it
+while root has no authorized key. Follow the lockout-safe order in
+[deployment runbook](../../../openwiki/deployment-runbook.md) §3.1 the first
+time: keep a root session open, run the play, log in with the key in a second
+terminal, then close the first. `--tags ssh` or `--tags firewall` applies only
+the SSH drop-in or the nftables rules.
+
+Verify SSH access as `capy-ingest` in a second terminal. The service network
+carries only private app/ingest addresses; it does not change the default
+route, configure NAT or forwarding.
+
+nftables is the only firewall here. Its input chain denies by default and
+keeps loopback, established traffic, ICMP, SSH on 22 (open to all) and
+WireGuard; its forward chain's drop policy keeps any port a container
+publishes closed, TCP and UDP, IPv4 and IPv6.
 
 Fill and upload the environment's complete `deploy/.env.uat` or `.env.prod`
 using `pnpm env:push`. See [deployment runbook](../../../openwiki/deployment-runbook.md).

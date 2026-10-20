@@ -36,7 +36,17 @@ from ..generated import MATERIAL_TITLE_MAX
 from ..generated.limits import QUESTION_DESCRIPTION_MAX, QUESTION_METADATA_MAX
 from ..prompts import preferences
 from ..prompts.sources import source_block
-from . import capture, contract, deck, library, pending, questions, skills, store
+from . import (
+    capture,
+    contract,
+    deck,
+    library,
+    pending,
+    pending_hints,
+    questions,
+    skills,
+    store,
+)
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
@@ -63,6 +73,11 @@ class ToolResult:
     refused: bool = False
     failed: bool = False
     paged: bool = False
+    # Rendered after the result and kept whole when it is clipped.
+    tail: str = ""
+    # A read document's pending changes, appended after the clipped result
+    # (pending.PendingSources.for_read).
+    pending: str = ""
 
     @property
     def outcome(self) -> str:
@@ -187,6 +202,10 @@ class ToolContext:
     pending_sources: pending.PendingSources = field(
         default_factory=pending.PendingSources
     )
+    # The unindexed edits this turn's user message was hinted (pending_hints),
+    # and every edit already shown this conversation, which search skips.
+    pending_hints: list[tuple[pending_hints.Hint, str]] = field(default_factory=list)
+    hinted: set[tuple[str, str]] = field(default_factory=set)
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
@@ -332,6 +351,7 @@ async def _resolve_scope(
         indexed=(
             any(int(file.get("chunks") or 0) > 0 for file in selected_files)
             or any(file["fileId"] in selected for file in ctx.pending_sources.files)
+            or any(note["materialId"] in selected for note in ctx.pending_sources.notes)
         ),
     )
 
@@ -400,6 +420,10 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
             overlap=overlap,
         )
     )
+    edits = await _unindexed_edits(query, ctx, ids)
+    if not passages and edits:
+        # Still a tail, so condensing drops the listed edits.
+        return ToolResult(text_parts=["No indexed passages matched."], tail=edits)
     if not passages:
         return _result(
             "No passages matched. Try different wording, or list_sources first."
@@ -407,7 +431,30 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     return ToolResult(
         passages=passages,
         text_parts=[_overlap_footer(overlap, len(passages))],
+        tail=edits,
     )
+
+
+async def _unindexed_edits(query: str, ctx: ToolContext, ids: list[str]) -> str:
+    """Edits not in the index yet that match the search (Epo 2026-10-20): not
+    citable, they name the document to read. Documents already read this turn
+    pass their changes on in full, and edits already shown are skipped."""
+    sources = ctx.pending_sources
+    read = sources.read_ids or set()
+    pool = [
+        p
+        for p in await pending_hints.prepared(sources)
+        if p.hint.doc_id not in read
+        and p.hint.key not in ctx.hinted
+        and (not ids or p.hint.doc_id in ids)
+    ]
+    matched = await pending_hints.match(query, pool)
+    block, shown = pending_hints.render(
+        [(hint, pending_hints.snippet(hint, query)) for hint in matched],
+        pending_hints.SEARCH_HEADING,
+    )
+    ctx.hinted |= {hint.key for hint, _ in shown}
+    return block
 
 
 def _search_event(
@@ -485,6 +532,12 @@ def _source_listing(
     file_ids: list[str] | None,
 ) -> ToolResult:
     sources = {item["id"]: item for item in documents if item["kind"] == "source_file"}
+    # A note's summary comes from the outline, as a file's descriptor does.
+    summaries = {
+        f["id"]: f["descriptor"]
+        for f in outline["files"]
+        if f.get("kind") == "material"
+    }
     allowed = None if file_ids is None else set(file_ids)
     lines: list[str] = []
     by_chapter: dict[str | None, list[dict[str, Any]]] = {}
@@ -507,7 +560,7 @@ def _source_listing(
             continue
         lines.append(f"\n## {chapter['name']} (chapter_id={chapter['id']})")
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in files)
-        lines.extend(_material_line(item) for item in filed)
+        lines.extend(_material_line(item, summaries) for item in filed)
     unfiled = [f for files in by_chapter.values() for f in files]
     if unfiled:
         lines.append("\n## Unfiled")
@@ -515,7 +568,7 @@ def _source_listing(
     loose = [item for items in materials.values() for item in items]
     if loose:
         lines.append("\n## Unfiled study materials")
-        lines.extend(_material_line(item) for item in loose)
+        lines.extend(_material_line(item, summaries) for item in loose)
     return _result(
         "\n".join(lines)
         if lines
@@ -523,7 +576,7 @@ def _source_listing(
     )
 
 
-def _material_line(item: dict[str, Any]) -> str:
+def _material_line(item: dict[str, Any], summaries: dict[str, str]) -> str:
     line = (
         f"- {item['title']} (id={item['id']}, kind=material, "
         f"material_kind={item['materialKind']}, editable={str(item['editable']).lower()})"
@@ -531,6 +584,8 @@ def _material_line(item: dict[str, Any]) -> str:
     if item["materialKind"] != "note":
         # Only notes are indexed and outlined; the other kinds read as blocks.
         line += "; inspect_document and edit_document take its id"
+    elif summaries.get(item["id"]):
+        line += f"\n  {summaries[item['id']]}"
     return line
 
 
@@ -564,13 +619,17 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start=start,
         count=count,
     )
+    changes = ctx.pending_sources.for_read(resolved.file_ids[0])
     if not rows:
-        return _result("No passages at that position.")
+        result = _result("No passages at that position.")
+        result.pending = changes
+        return result
     passages = [Passage.from_row(row) for row in rows]
     return ToolResult(
         text_parts=[f"(next start = {rows[-1]['chunk_idx'] + 1})"],
         passages=passages,
         paged=True,
+        pending=changes,
     )
 
 
@@ -618,6 +677,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_page: {exc}")
+    changes = ctx.pending_sources.for_read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
     label = f"{resolved.file_names[0]} page {page}" + (
@@ -639,11 +699,13 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         capture.data_url(jpeg),
     )
     numbers = "".join(f"[{i}]" for i in existing)
-    return _result(
+    result = _result(
         f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
         f"{numbers}; cite those numbers for what the capture shows."
     )
+    result.pending = changes
+    return result
 
 
 # ------------------------------------------------ knowledge library tools
@@ -1673,7 +1735,26 @@ def _gateway_error_code(resp: requests.Response) -> str:
 
 
 async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Attach a pending source image to the next request, as capture_page does."""
+    """Attach a pending source image to the next request, as capture_page does,
+    or return a note block's text before and after a data change."""
+    material_id, block_id = args.get("material_id"), args.get("block_id")
+    if material_id is not None or block_id is not None:
+        if not isinstance(material_id, str) or not isinstance(block_id, str):
+            return _refused("A note's material id and block id are required.")
+        try:
+            text = await pending.resolve_note(
+                sources=ctx.pending_sources,
+                workspace_id=ctx.workspace_id,
+                user_id=ctx.user_id,
+                material_id=material_id,
+                block_id=block_id,
+            )
+        except ValueError as exc:
+            return _refused(f"resolve_source_change: {exc}")
+        return _result(
+            f"Block {block_id} of note {material_id}, as source data:\n"
+            + json.dumps(text, ensure_ascii=False)
+        )
     file_id, change_id, checkpoint = (
         args.get("file_id"),
         args.get("change_id"),
@@ -1741,7 +1822,15 @@ async def _after_lifecycle_change(
     ctx._scope_outline = None
     if trashed and kind == "source_file" and ctx.file_ids is not None:
         ctx.file_ids = [fid for fid in ctx.file_ids if fid != rid]
+    await _reload_pending(ctx, rid)
+
+
+async def _reload_pending(ctx: ToolContext, changed: str) -> None:
+    """Re-read the turn's pending changes after it changed a document,
+    keeping what it read, passed on and omitted (PendingSources.carry)."""
+    previous = ctx.pending_sources
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+    ctx.pending_sources.carry(previous, changed)
 
 
 def _chat_context(ctx: ToolContext, call_id: str) -> dict[str, Any]:
@@ -1945,13 +2034,16 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
+    changes = ctx.pending_sources.for_read(rid)
     shown = None
     if kind == "material":
         seen = ctx.seen_blocks.setdefault(rid, {})
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
         shown = ctx.shown_quizzes.setdefault(rid, {})
-    return _result(_render_inspection(body, shown, source=kind == "source_file"))
+    result = _result(_render_inspection(body, shown, source=kind == "source_file"))
+    result.pending = changes
+    return result
 
 
 # How much of a missed block's current text a refused edit shows.
@@ -2104,7 +2196,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         # pending evidence so the next source-dependent call sees the edit.
         ctx._scope_outline = None
         if kind == "source_file":
-            ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+            await _reload_pending(ctx, rid)
         else:
             landed(ctx, credited)
             _saw_edit(ctx.seen_blocks.get(rid, {}), commands)
@@ -2574,13 +2666,22 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
         return ctx.library and library.enabled()
     if spec.name != "resolve_source_change":
         return True
+    # Offered from every captured change: the tools stay fixed for the turn
+    # (provider cache), and resolving refuses a document not read yet.
     return bool(
         ctx.user_id
         and _gateway_ready()
-        and any(
-            change.get("assetRef")
-            for file in ctx.pending_sources.files
-            for change in file["changes"]
+        and (
+            any(
+                change.get("assetRef")
+                for file in ctx.pending_sources.files
+                for change in file["changes"]
+            )
+            or any(
+                change["kind"] == "data"
+                for note in ctx.pending_sources.notes
+                for change in note["changes"]
+            )
         )
     )
 
@@ -2737,15 +2838,18 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
 TOOL_RESULT_MAX_TOKENS = 8192
 
 
-def limit_tool_result(text: str) -> str:
+def limit_tool_result(text: str, tail: str = "") -> str:
     """Bound stored tool output while making truncation visible to the model.
-    A clip inside a source block closes the block, so the notice stays outside."""
-    if estimate_tokens(text) <= TOOL_RESULT_MAX_TOKENS:
-        return text
+    A clip inside a source block closes the block, so the notice stays outside.
+    ``tail`` (a search's unindexed edits) is kept whole after the clip."""
+    tail = "\n\n" + tail if tail else ""
+    budget = TOOL_RESULT_MAX_TOKENS - estimate_tokens(tail)
+    if estimate_tokens(text) <= budget:
+        return text + tail
     marker = "\n\n[Tool output truncated. Narrow the request or continue reading.]"
     close = "\n</source>"
-    room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(close + marker))
+    room = max(0, budget - estimate_tokens(close + marker))
     clipped = clip_to_tokens(text, room)
     if clipped.rfind("<source>") > clipped.rfind("</source>"):
         clipped += close
-    return clipped + marker
+    return clipped + marker + tail

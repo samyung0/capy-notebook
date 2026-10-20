@@ -59,7 +59,7 @@ Mandatory to read when the task touches that domain. Prefer the listed file over
 | Chat decks: ppt-master in the retrieval image, create_deck/write_slide, the stored PPTX (`/api/internal/files`), figures and credits, main-format preference              | `[decks.md](openwiki/decks.md)`                                                               |
 | List-card thumbnails and previews: `thumbs/` keys and their blob lifecycle, hour-stable presigned links and their access rule, the ingest page-1 render, material `preview` JSON | `[thumbnails.md](openwiki/thumbnails.md)`                                                     |
 | The embed catalog: every element type a document may hold, embed kinds (chart, plot, graph, HTML, Mermaid, embedded quizzes and sets) and their names per layer, storage classes, the generated JSON/TS/Rust files | `[embeds.md](openwiki/embeds.md)`                                                             |
-| Plate/Yjs editor, collab tokens/modes (`view`/`comment`/`edit`), checkpoints, projections, comment anchors, AI previews                                               | `[frontend/plate-editor.md](openwiki/frontend/plate-editor.md)`                               |
+| Plate/Yjs editor, collab tokens/modes (`view`/`edit`; no commenter role), checkpoints, projections, comment anchors, AI previews                                               | `[frontend/plate-editor.md](openwiki/frontend/plate-editor.md)`                               |
 | Frontend error surfaces, query/mutation defaults, boundaries, offline/streaming behavior, and error test tooling                                                      | `[frontend/error-handling.md](openwiki/frontend/error-handling.md)`                           |
 | Trace ids, structured logging, Sentry/PostHog wiring, LLM + parse metering (`usage_events`, credits reserve/settle), rate limiting, operator access                   | `[observability-metering.md](openwiki/observability-metering.md)`                             |
 | Manual setup outside this repo: DNS, Cloudflare rules (including Coolify tunnels), origin lockdown, B2 bucket/CORS/lifecycle, Sentry, PostHog, ingest host, operator grants | `[deployment-runbook.md](openwiki/deployment-runbook.md)`                                     |
@@ -94,7 +94,7 @@ changing any of them.
 
 | Family          | Measures                                                                         | Runs in CI |
 | --------------- | -------------------------------------------------------------------------------- | ---------- |
-| `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`) | Yes, manual |
+| `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`); update rates one user's editing sends (`pnpm bench:rates`) | Yes, manual (stress) |
 | `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
 | `bench/share-pages` | Shared pages on deployed UAT: Lighthouse paint, shift, blocking and bytes; Workers Cache hits (`pnpm bench:share-pages`) | Yes, manual |
 | `bench/parity`  | Office feature parity per format against Google's apps: tested view/edit/save/collab statuses, ranked remaining work, living `PARITY-<FMT>.md` reports (`python3 bench/parity/scripts/parity.py`) | Yes, `--check` |

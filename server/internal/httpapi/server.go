@@ -53,6 +53,12 @@ type Config struct {
 	ClerkWebhookSecret string
 	AuthDisabled       bool
 	DevUserID          string
+	// BYOKEnabled turns on saving and removing provider keys (off by default).
+	BYOKEnabled bool
+	// APIDocs serves /docs, /openapi.* and /schemas/* and links bodies to their
+	// schemas: local development only (APP_ENV=development). Deployed
+	// environments, UAT included, leave it off.
+	APIDocs bool
 	// E2EAuth enables X-E2E-User-Id identity headers (disposable E2E only).
 	E2EAuth                bool
 	E2ESecret              string
@@ -127,8 +133,8 @@ type api struct {
 	treeLive atomic.Bool
 }
 
-// New builds the full HTTP handler. huma owns every JSON operation (and the
-// live OpenAPI spec at /openapi.yaml + docs at /docs); a handful of endpoints
+// New builds the full HTTP handler. huma owns every JSON operation (and, in
+// local development only, the live OpenAPI spec and docs); a handful of endpoints
 // huma can't model — streaming SSE, blob download redirects,
 // webhooks, and the pipeline chat passthrough — stay on raw chi and are
 // intentionally absent from the spec. /api/internal/* stays off Huma so Orval
@@ -173,8 +179,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		// the anonymous daily caps.
 		"/api/public/quizzes/",
 		"/api/public/notes/",
-		// Service-to-service, authenticated by X-Pipeline-Secret inside the
-		// handler; there is no Clerk session to verify.
+		// Service-to-service, authenticated by X-Pipeline-Secret in
+		// internalSecretFirst; there is no Clerk session to verify.
 		"/api/internal/",
 	}
 	if served != nil {
@@ -209,6 +215,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 			next.ServeHTTP(w, r)
 		})
 	})
+	r.Use(a.internalSecretFirst)
 	r.Use(auth.Middleware(auth.Config{
 		SecretKey:    cfg.ClerkSecretKey,
 		Disabled:     cfg.AuthDisabled,
@@ -228,7 +235,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 
 	// Mount huma on the chi router. Doc/spec routes register at construction, so
 	// this must come after all r.Use(...) calls.
-	humaAPI := humachi.New(r, humaConfig())
+	humaAPI := humachi.New(r, humaConfig(cfg.APIDocs))
 	registerRoutes(humaAPI, a)
 
 	// Raw (OpenAPI-excluded) routes.
@@ -258,6 +265,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/trash/restore", a.internalRestore)
 		r.Get("/api/internal/trash", a.internalListTrash)
 		r.Get("/api/internal/materials/{id}/index-text", a.internalMaterialIndexText)
+		r.Post("/api/internal/note-changes", a.internalNoteChanges)
+		r.Post("/api/internal/note-changes/resolve", a.internalResolveNoteChange)
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
 		r.Post("/api/internal/documents/edit", a.internalEditDocument)
@@ -276,6 +285,35 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 }
 
 /* ------------------------------------------------------------------ helpers */
+
+// internalBodyMaxBytes caps every service-to-service body at the largest an
+// internal route takes (a source state); routes with a tighter bound keep it.
+const internalBodyMaxBytes = 150 << 20
+
+// internalSecretFirst refuses a call to /internal/collaboration/* or
+// /api/internal/* without that prefix's service secret before anything reads
+// its body (Huma decodes and validates a body before the handler runs), and
+// caps the body of the callers that hold it. Neither prefix is rate limited.
+func (a *api) internalSecretFirst(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ok bool
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/internal/collaboration/"):
+			ok = a.collaborationSecretOK(r.Header.Get("X-Collaboration-Secret"))
+		case strings.HasPrefix(r.URL.Path, "/api/internal/"):
+			ok = a.pipelineSecretOK(r)
+		default:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !ok {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, internalBodyMaxBytes)
+		next.ServeHTTP(w, r)
+	})
+}
 
 func healthHandler(releaseSHA string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {

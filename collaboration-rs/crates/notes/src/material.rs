@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 
 use crate::catalog::{
     self, BLOCK_CAPTION_MAX, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES,
-    HTML_EMBED_MAX_COUNT, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
+    HTML_EMBED_MAX_COUNT, LIST_INDENT_MAX, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
 };
 use crate::questions::{self, Policy, js_trim};
 
@@ -24,6 +24,8 @@ pub const MATERIAL_REF_TYPE: &str = "material_ref";
 /// Media blocks name their file: an asset id, never a URL (Epo, 2026-10-10).
 /// The catalog's elements that require `assetId`.
 pub const MEDIA_TYPES: [&str; 2] = ["img", "audio"];
+/// Elements whose children are text leaves only (`validate_text_element`).
+pub const TEXT_ELEMENTS: [&str; 3] = ["flashcard_front", "flashcard_back", "mermaid_caption"];
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid material document: {0}")]
@@ -55,9 +57,15 @@ fn require_id(node: &Node) -> Check {
     }
 }
 
+/// Whether a node carries `key`: null counts as absent, as the catalog's
+/// key rules (and admission) read it.
+fn carries(node: &Node, key: &str) -> bool {
+    node.get(key).is_some_and(|value| !value.is_null())
+}
+
 fn reject_opaque(node: &Node) -> Check {
     for key in ["questions", "cards", "code"] {
-        if node.contains_key(key) {
+        if carries(node, key) {
             return fail(format!("opaque {key} property is not canonical"));
         }
     }
@@ -120,7 +128,7 @@ fn validate_quiz(node: &Node) -> Check {
             }
         }
     }
-    if node.contains_key("timeLimitMin") {
+    if carries(node, "timeLimitMin") {
         return fail("quiz time limits are no longer supported");
     }
     Ok(())
@@ -145,7 +153,7 @@ fn validate_quiz_question(node: &Node, policy: &Policy) -> Check {
         "correctOptionIds",
         "correctBoolean",
     ] {
-        if node.contains_key(key) {
+        if carries(node, key) {
             return fail(format!("obsolete quiz property {key}"));
         }
     }
@@ -230,7 +238,7 @@ fn validate_media(node: &Node, kind: &str) -> Check {
         return fail(format!("{kind} requires an assetId"));
     }
     for key in ["url", "src"] {
-        if node.get(key).is_some_and(|value| !value.is_null()) {
+        if carries(node, key) {
             return fail(format!("{kind} cannot contain {key}"));
         }
     }
@@ -288,16 +296,33 @@ pub fn youtube_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-/// A chart, plot or graph node's `block`: a question block of the node's
-/// type, valid as a question block, a graph drawn from its own SVG.
+/// A chart, plot or graph node's `block` as a writer outside a room sends it
+/// (an agent's edit, the content API): a question block of the node's type,
+/// valid as a question block, a graph drawn from its own SVG.
 pub fn figure_block(kind: &str, block: &Value) -> Check {
+    figure_block_in(kind, block, false)
+}
+
+/// [figure_block] as a room holds it, repaired: it may also have no series,
+/// and a pie or stacked chart no positive total (`questions::live_block`,
+/// Epo 2026-10-18). [assert_canonical] checks room documents with it.
+pub fn live_figure_block(kind: &str, block: &Value) -> Check {
+    figure_block_in(kind, block, true)
+}
+
+fn figure_block_in(kind: &str, block: &Value, live: bool) -> Check {
     let typed = block
         .as_object()
         .is_some_and(|b| b.get("type").and_then(Value::as_str) == Some(kind));
     if !typed {
         return fail("embed block type must match node type");
     }
-    let parsed = questions::block(block).map_err(ValidationError)?;
+    let parsed = if live {
+        questions::live_block(block)
+    } else {
+        questions::block(block)
+    }
+    .map_err(ValidationError)?;
     parsed.description_fits(false).map_err(ValidationError)?;
     if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
         // The TS raises this inside its try and re-wraps the message.
@@ -342,7 +367,7 @@ fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
         return fail("unexpected embed field");
     }
     validate_width(node)?;
-    figure_block(kind, block)
+    live_figure_block(kind, block)
 }
 
 fn validate_html_embed(node: &Node, depth: usize) -> Check {
@@ -395,7 +420,7 @@ fn validate_material_ref(node: &Node) -> Check {
     if js_trim(material_id).is_empty() {
         return fail("materialId is required");
     }
-    if node.contains_key("pending") {
+    if carries(node, "pending") {
         return fail("material reference carries an imported fence body");
     }
     // The catalog's item kinds (Go's `refKinds`).
@@ -452,6 +477,15 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
     if !has_text_descendant(node) {
         return fail("element must contain a text descendant");
     }
+    // Any block's indent (lists, indented paragraphs) stops at the
+    // catalog's LIST_INDENT_MAX (Epo 2026-10-18).
+    if node
+        .get("indent")
+        .and_then(Value::as_f64)
+        .is_some_and(|indent| indent > LIST_INDENT_MAX as f64)
+    {
+        return fail(format!("indent is over {LIST_INDENT_MAX} levels"));
+    }
     // A type the catalog does not list is refused by the placement walk
     // (`placement`), as Go's `validateKind` refuses it.
     let Some(element) = catalog::element(kind) else {
@@ -463,8 +497,9 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
 
 /// The embed catalog's key rules for an element it lists, after the
 /// element's own checks (Go's `validateCatalogKeys`): top-level placement,
-/// required keys, keys it never carries (null counts as absent) and its
-/// closed field set.
+/// required keys, keys it never carries (null counts as absent), its closed
+/// field set, and a void element's one empty text leaf (marks allowed: a
+/// mention is a markable void; Epo 2026-10-18).
 fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) -> Check {
     let name = element.name;
     if element.top_level && depth != 0 {
@@ -476,7 +511,7 @@ fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) 
         }
     }
     for key in element.forbidden {
-        if node.get(*key).is_some_and(|value| !value.is_null()) {
+        if carries(node, key) {
             return fail(format!("{name} cannot carry {key}"));
         }
     }
@@ -484,6 +519,12 @@ fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) 
         && let Some(key) = node.keys().find(|key| !fields.contains(&key.as_str()))
     {
         return fail(format!("unexpected {name} field {key}"));
+    }
+    if element.void {
+        let leaves = children(node);
+        if leaves.len() != 1 || leaves[0].get("text") != Some(&Value::String(String::new())) {
+            return fail(format!("{name} holds one empty text leaf"));
+        }
     }
     Ok(())
 }
@@ -495,7 +536,7 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
         "chart" | "plot" | "graph" => validate_embed(node, kind, depth),
         "quiz_question" => validate_quiz_question(node, policy),
         HTML_EMBED_TYPE => validate_html_embed(node, depth),
-        "flashcard_front" | "flashcard_back" | "mermaid_caption" => validate_text_element(node),
+        _ if TEXT_ELEMENTS.contains(&kind) => validate_text_element(node),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),
         "mermaid" => validate_diagram(node),
@@ -517,7 +558,7 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
                 return fail("videoId must be a valid YouTube video ID");
             }
             for key in ["assetId", "url", "src"] {
-                if node.contains_key(key) {
+                if carries(node, key) {
                     return fail(format!("YouTube video cannot contain {key}"));
                 }
             }

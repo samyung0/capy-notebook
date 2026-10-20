@@ -74,7 +74,7 @@ If the gateway is unhealthy, check these before anything else:
 | Gateway exits at startup, logs a credential that reads like a sentence | Coolify stored a `${VAR:?message}` guard's message as the variable's value. Every unset variable must be stored blank, not left absent. |
 | Gateway exits complaining about the email secret | `EMAIL_UNSUBSCRIBE_SECRET` needs 32+ characters across 3 character classes. Plain hex fails. |
 | Gateway exits with `unknown EMAIL_BACKEND "resend"` or `cloudflare email token is required` | Coolify still has the Resend settings. Set `EMAIL_BACKEND=cloudflare` and `CLOUDFLARE_EMAIL_TOKEN` in GitHub `uat` (deployment runbook §12.5) and redeploy. |
-| Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank. Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
+| Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank, or `CLERK_WEBHOOK_SECRET` is not a Svix signing secret (`whsec_` followed by base64). Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
 | Variables changed but the container behaves as before | Coolify's compose parse is cached and only refreshes on deploy. Redeploy rather than restart. |
 | A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total and interactive reserve for each active model in Ops. |
 
@@ -105,10 +105,8 @@ purged.
 A `401` from the endpoint means the signing secret does not match the instance
 that sent the delivery. A `503` means `CLERK_WEBHOOK_SECRET` is still blank.
 
-The Clerk development instance has its own endpoint, pointed at a developer's
-tunnel (`https://dev-<name>.uat.capynotebook.com/webhooks/clerk`) rather than
-at `uat-api`. The two instances never share a signing secret, and a gateway
-verifies with exactly one.
+The Clerk development instance has no webhook endpoint: local runs provision
+users on their first request, and webhooks are only checked here.
 
 ### Cloud import consent
 

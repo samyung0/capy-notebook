@@ -148,6 +148,9 @@ meta: { errorToast: false }
 Copy comes from paraglide only, chosen by error code: the browser keeps any
 snake_case code Huma sends in `errors[].message` (`parseErrorBody`), and
 `describeError` maps known codes before falling back to the status class.
+Huma's own request errors (schema validation, an unparsable body) name a
+`location`, carry no `value` and number at most 10; a typed code keeps its
+`value`, which `parseErrorBody` spreads into the error.
 `errorCopy(error, fallback)` never returns an error's own text; `CopyError`
 carries already-localized copy. A 409 always names its conflict:
 `revision_conflict` (a stale revision: someone else changed it first, with

@@ -1900,8 +1900,9 @@ async def _process_ingest_job_bound(job: dict) -> None:
 async def _process_material_index_bound(job: dict) -> None:
     """Index one workspace note: fetch its text from the gateway, chunk it like
     a text file, embed the chunks that changed and publish the canonical
-    content. Notes get no parse stage, no summary and no page model. A failed
-    claim is abandoned; the note keeps its previous index."""
+    content with the note's summary (indexing._note_summary). Notes get no
+    parse stage and no page model. A failed claim is abandoned; the note keeps
+    its previous index."""
     payload = job["payload"] or {}
     material_id = str(payload["materialId"])
     ws = str(payload["workspaceId"])
@@ -1933,11 +1934,13 @@ async def _process_material_index_bound(job: dict) -> None:
             await asyncio.to_thread(_finish_material_index, job)
             return
         chunks = chunk_markdown(str(note.get("text") or ""))
+        blocks = note["blocks"]
         association = await store.attach_material_content(
             workspace_id=ws,
             material_id=material_id,
             content_hash="note:" + indexing.content_hash(chunks),
             claim_job_id=job["id"],
+            blocks=blocks,
         )
         embedded = 0
         if not association["ready"]:
@@ -1947,15 +1950,25 @@ async def _process_material_index_bound(job: dict) -> None:
                 result = await indexing.index_material(
                     workspace_id=ws,
                     material_id=material_id,
+                    title=str(note.get("title") or ""),
                     content_id=association["content_id"],
                     previous_content_id=association["previous_content_id"],
                     chunks=chunks,
                     claim_job_id=job["id"],
+                    blocks=blocks,
                 )
             except BaseException:
                 await store.abandon_content(association["content_id"])
                 raise
             embedded = result["embedded"]
+        else:
+            await indexing.fill_note_summary(
+                workspace_id=ws,
+                material_id=material_id,
+                title=str(note.get("title") or ""),
+                content_id=association["content_id"],
+                chunks=chunks,
+            )
         telemetry.record(chunks_created=len(chunks), chunks_embedded=embedded)
         await asyncio.to_thread(_finish_material_index, job)
     finally:

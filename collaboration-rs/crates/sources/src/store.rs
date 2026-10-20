@@ -99,6 +99,8 @@ struct RoomRecord {
     checkpoint: u64,
     /// A NULL state with no rows: the first save reports the seed.
     seeded: bool,
+    /// The room's state cap ([`crate::state_cap`]).
+    state_cap: u64,
     /// Text: the indexed baseline and the last saved effect's window.
     baseline: Option<Arc<Vec<u16>>>,
     window: Option<TextWindow>,
@@ -111,6 +113,11 @@ pub struct Loaded {
     pub checkpoint: u64,
     /// The bytes applied (seed, base and rows), the room's first size estimate.
     pub bytes: u64,
+    /// The room's state cap ([`crate::state_cap`]).
+    pub state_cap: u64,
+    /// An Office room's seed state vector: deleting what it holds frees
+    /// nothing in the stored change (`ydoc::apply_freeing`).
+    pub seed: Option<StateVector>,
     /// The stored base's size and the rows over it (the room's fold sizes).
     pub base_bytes: u64,
     pub rows: u64,
@@ -177,6 +184,9 @@ pub(crate) struct Stored {
     pub(crate) epoch: u64,
     pub(crate) base_revision: i64,
     pub(crate) rows: Vec<(u64, Vec<u8>)>,
+    /// The largest plan source file (`plan_limits`), which publication's
+    /// export may not exceed.
+    pub(crate) export_cap: u64,
 }
 
 /// A rebase onto new bytes; none (no save after the capture) leaves the
@@ -274,22 +284,25 @@ fn decode(bytes: &[u8]) -> Result<Update, SourceError> {
 /// Applies `updates` in one transaction (seed plus change, as a fresh
 /// document applies a whole state) and refuses a result with pending
 /// content: every item a change refers to must be in what precedes it.
+/// Returns the state vector after the first update (an Office room's seed).
 pub(crate) fn replay<'a>(
     doc: &Doc,
     updates: impl IntoIterator<Item = &'a [u8]>,
-) -> Result<(), SourceError> {
+) -> Result<StateVector, SourceError> {
     let mut txn = doc.transact_mut();
+    let mut first = None;
     for bytes in updates {
         txn.apply_update(decode(bytes)?).map_err(|error| {
             SourceError::State(format!("stored update does not apply: {error}"))
         })?;
+        first.get_or_insert_with(|| txn.state_vector());
     }
     if txn.store().pending_update().is_some() || txn.store().pending_ds().is_some() {
         return Err(SourceError::State(
             "The saved changes refer to content missing from the seed".into(),
         ));
     }
-    Ok(())
+    Ok(first.unwrap_or_default())
 }
 
 /// A document to replay stored state into (a fold, a capture, a save's
@@ -534,7 +547,7 @@ impl Sources {
             .map_err(db_error)?;
         let row = txn
             .query_opt(
-                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
+                "SELECT d.state,d.state_seed_sha256,d.checkpoint,d.epoch,d.base_revision,(SELECT max(source_file_max_bytes) FROM plan_limits) FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND f.trashed_at IS NULL",
                 &[&file_id],
             )
             .await
@@ -555,6 +568,10 @@ impl Sources {
             checkpoint: row.get::<_, i64>(2) as u64,
             epoch: epoch as u64,
             base_revision: row.get(4),
+            export_cap: row
+                .get::<_, Option<i64>>(5)
+                .ok_or_else(|| SourceError::Other("plan_limits has no source file cap".into()))?
+                as u64,
             rows: rows
                 .into_iter()
                 .map(|row| (row.get::<_, i64>(0) as u64, row.get(1)))
@@ -641,21 +658,28 @@ impl Sources {
             ));
         }
         let name = room.name();
-        let (_, layers) = self
+        let (seed, layers) = self
             .layers(session.format, &base, &sha, &stored, Some(&name), reader)
             .await?;
         stage(&mut times.seed);
+        let state_cap = crate::state_cap(
+            seed.state.len() as u64,
+            base.len() as u64,
+            stored.export_cap,
+        );
         let target = doc.clone();
         let layers = Arc::new(layers);
         let applied = layers.clone();
-        tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
-            .await
-            .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
+        let seeded =
+            tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
+                .await
+                .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
         stage(&mut times.replay);
         let mut record = RoomRecord {
             generation,
             checkpoint: stored.checkpoint,
             seeded: stored.state.is_none() && stored.rows.is_empty(),
+            state_cap,
             baseline: None,
             window: None,
             session: SourceSession {
@@ -680,6 +704,8 @@ impl Sources {
             format: session.format,
             checkpoint: stored.checkpoint,
             bytes: layers.iter().map(|layer| layer.len() as u64).sum(),
+            state_cap,
+            seed: office(session.format).map(|_| seeded),
             base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
             rows: stored.rows.len() as u64,
             row_bytes: stored.rows.iter().map(|(_, row)| row.len() as u64).sum(),
@@ -916,8 +942,12 @@ impl Sources {
                 row_bytes: 0,
             });
         }
+        // The loaded room's cap; a room not loaded here has only the ceiling.
+        let cap = lock(&self.rooms)
+            .get(&name)
+            .map_or(MAX_SOURCE_STATE_BYTES as u64, |record| record.state_cap);
         if let Some(state) = &save.state
-            && state.len() > MAX_SOURCE_STATE_BYTES
+            && state.len() as u64 > cap
         {
             return Err(SourceError::request(
                 413,
@@ -1221,7 +1251,9 @@ impl Sources {
             state_seed_sha256: row.get(2),
             checkpoint: row.get::<_, i64>(3) as u64,
             epoch: epoch as u64,
+            // A fold checks neither.
             base_revision: 0,
+            export_cap: 0,
             rows: rows
                 .into_iter()
                 .map(|row| (row.get::<_, i64>(0) as u64, row.get(1)))
@@ -1781,7 +1813,14 @@ impl Sources {
     pub async fn schedule_note_indexes(&self) -> Result<(), SourceError> {
         let client = self.db.get().await.map_err(db_error)?;
         let eligible = client
-            .query(crate::refresh::NOTE_INDEX_SQL, &[])
+            .query(
+                crate::refresh::NOTE_INDEX_SQL,
+                &[
+                    &crate::refresh::NOTE_INDEX_TOKENS,
+                    &crate::refresh::NOTE_INDEX_IDLE,
+                    &crate::refresh::NOTE_INDEX_STALE,
+                ],
+            )
             .await
             .map_err(db_error)?;
         for row in eligible {

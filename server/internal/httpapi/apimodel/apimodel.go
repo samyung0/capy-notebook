@@ -505,6 +505,10 @@ func FromPublicFlashcardSets(ds []store.PublicFlashcardSet) []PublicFlashcardSet
 // report.
 type CloneWorkspaceResp struct {
 	Workspace Workspace `json:"workspace"`
+	// Files left out of the copy (Epo 2026-10-20): materials whose stored
+	// content the current rules refuse and files past the cloner's per-file
+	// cap. The app shows a toast when above zero.
+	SkippedMaterials int `json:"skippedMaterials" minimum:"0"`
 }
 
 // SubscriptionBlocker is a live subscription standing in the way of account

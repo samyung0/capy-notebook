@@ -759,8 +759,10 @@ const BUDGETS = {
   bytesKb: {
     flashcards: 480,
     notes: 720,
-    // Provisional: the notes budgets, until a developer signs off its own.
-    'notes-near-limit': 720,
+    // Raised from the notes budget on 2026-10-19 (Epo) after run 39219742634
+    // (719.6). Its HTML compresses 37:1, so Cloudflare's per-flush zstd blocks
+    // weigh more than on any real note; re-measure rather than chase it.
+    'notes-near-limit': 760,
     'notes-server-only': 480,
     quizzes: 520,
     workspace: 150,

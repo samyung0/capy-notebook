@@ -17,7 +17,7 @@
 # - retrieval : Python FastAPI chat/generate over the in-house retrieval index.
 #
 # Worker downloads B2 objects before parsing. Real ingest needs B2 credentials,
-# API keys (DeepSeek/DeepInfra/Relace/Google/Whisper), and a parser service URL.
+# API keys (DeepSeek/DeepInfra/Z.AI/OpenRouter/Google/Whisper), and a parser service URL.
 # Set them in deploy/.env (see .env.example) or the shell environment.
 #
 # Only `server` (:8080), `collaboration` (:1234), and the Access-protected
@@ -28,7 +28,8 @@
 # omitted on purpose: an empty string from compose interpolation would override
 # the code defaults (text in development, json otherwise).
 x-observability: &observability
-  APP_ENV: ${APP_ENV:-development}
+  # This stack is local development; the e2e and prod files name their own.
+  APP_ENV: development
   RELEASE_SHA: ${RELEASE_SHA:-}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
   # The Sentry environment tag. Empty falls back to APP_ENV in code; UAT sets
@@ -219,7 +220,7 @@ services:
       SENTRY_DSN: ${SENTRY_DSN_OPS:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
-      RELACE_API_KEY: ${RELACE_API_KEY:-}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -270,7 +271,7 @@ services:
       # model_configs.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
-      RELACE_API_KEY: ${RELACE_API_KEY:-}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -349,7 +350,7 @@ services:
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
-      RELACE_API_KEY: ${RELACE_API_KEY:-}
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}

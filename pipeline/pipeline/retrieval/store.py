@@ -11,6 +11,7 @@ import json
 import logging
 import secrets
 import time
+from datetime import datetime
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -184,14 +185,21 @@ async def existing_content_vectors(
 
 
 async def attach_material_content(
-    *, workspace_id: str, material_id: str, content_hash: str, claim_job_id: str
+    *,
+    workspace_id: str,
+    material_id: str,
+    content_hash: str,
+    claim_job_id: str,
+    blocks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Claim canonical workspace content for a note, like attach_file_content
     without a source revision: the note's projection is the only version.
 
     The alias moves now only onto content that is already ready. A new claim
     is aliased by ``publish_material_content`` once it is ready, so the old
-    index keeps serving search and lends its vectors until then."""
+    index keeps serving search and lends its vectors until then. ``blocks``
+    is the per-block index text the content was chunked from (Go's
+    MaterialIndexText.Blocks); it moves with the alias."""
     content_id = f"rgc_{secrets.token_hex(8)}"
     db = await pool()
     async with db.connection() as conn, conn.transaction():
@@ -232,7 +240,9 @@ async def attach_material_content(
             created = True
         ready = row["status"] == "ready"
         if ready:
-            await _alias_material_content(conn, material_id, workspace_id, row["id"])
+            await _alias_material_content(
+                conn, material_id, workspace_id, row["id"], blocks
+            )
         return {
             "content_id": row["id"],
             "previous_content_id": previous["content_id"] if previous else None,
@@ -242,7 +252,12 @@ async def attach_material_content(
 
 
 async def publish_material_content(
-    *, workspace_id: str, material_id: str, content_id: str, claim_job_id: str
+    *,
+    workspace_id: str,
+    material_id: str,
+    content_id: str,
+    claim_job_id: str,
+    blocks: list[dict[str, Any]],
 ) -> None:
     """Mark a note's claimed content ready and move its alias in one
     transaction; the orphan trigger then drops the previous content."""
@@ -258,12 +273,25 @@ async def publish_material_content(
         )
         if not cur.rowcount:
             raise RetryableError("content claim taken over")
-        await _alias_material_content(conn, material_id, workspace_id, content_id)
+        await _alias_material_content(
+            conn, material_id, workspace_id, content_id, blocks
+        )
 
 
 async def _alias_material_content(
-    conn, material_id: str, workspace_id: str, content_id: str
+    conn,
+    material_id: str,
+    workspace_id: str,
+    content_id: str,
+    blocks: list[dict[str, Any]],
 ) -> None:
+    # The blocks become the note's indexed_blocks, the baseline Go measures
+    # its pending changes against (Epo 2026-10-17); its pending tokens are
+    # measured again.
+    await conn.execute(
+        "UPDATE materials SET indexed_blocks = %s, pending_tokens = NULL WHERE id = %s",
+        (Jsonb(blocks), material_id),
+    )
     await conn.execute(
         """
         INSERT INTO rag_material_contents (material_id, workspace_id, content_id)
@@ -965,7 +993,10 @@ async def upsert_content_summary(
     fingerprint: str,
     descriptor: str,
     change_share: float,
+    written_at: datetime | None = None,
 ) -> None:
+    """``updated_at`` is when the descriptor was written: ``written_at`` for a
+    reused one, else now."""
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
@@ -973,13 +1004,13 @@ async def upsert_content_summary(
             INSERT INTO rag_content_summaries
                 (content_id, workspace_id, fingerprint, descriptor, change_share,
                  updated_at)
-            VALUES (%s, %s, %s, %s, %s, now())
+            VALUES (%s, %s, %s, %s, %s, coalesce(%s, now()))
             ON CONFLICT (content_id) DO UPDATE SET
                 workspace_id    = EXCLUDED.workspace_id,
                 fingerprint     = EXCLUDED.fingerprint,
                 descriptor      = EXCLUDED.descriptor,
                 change_share    = EXCLUDED.change_share,
-                updated_at      = now()
+                updated_at      = EXCLUDED.updated_at
             """,
             (
                 content_id,
@@ -987,6 +1018,7 @@ async def upsert_content_summary(
                 fingerprint,
                 descriptor,
                 change_share,
+                written_at,
             ),
         )
 
@@ -1000,26 +1032,48 @@ async def published_summary(
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT cs.content_id, cs.descriptor, cs.change_share
+            SELECT fc.content_id
             FROM rag_file_contents fc
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
-            JOIN rag_content_summaries cs ON cs.content_id = rc.id
             WHERE fc.file_id = %s AND fc.workspace_id = %s
             """,
             (file_id, workspace_id),
         )
         row = await cur.fetchone()
-        if row is None:
-            return None
-        cur = await conn.execute(
-            "SELECT text, section_path FROM rag_chunks WHERE content_id = %s "
-            "ORDER BY chunk_idx",
-            (row["content_id"],),
-        )
-        chunks = [
-            Chunk(text=chunk["text"], section_path=chunk["section_path"] or "")
-            for chunk in await cur.fetchall()
-        ]
+        return await _summary_row(conn, row["content_id"]) if row else None
+
+
+async def content_summary(content_id: str) -> dict[str, Any] | None:
+    """A content's descriptor row with the chunks it describes, for a note's
+    summary gate; None when it has none."""
+    db = await pool()
+    async with db.connection() as conn:
+        return await _summary_row(conn, content_id)
+
+
+async def _summary_row(conn, content_id: str) -> dict[str, Any] | None:
+    """The descriptor, its change share, when it was written and its age in
+    seconds, and the chunks it describes."""
+    cur = await conn.execute(
+        """
+        SELECT descriptor, change_share, updated_at,
+               extract(epoch FROM now() - updated_at)::float AS age
+        FROM rag_content_summaries WHERE content_id = %s
+        """,
+        (content_id,),
+    )
+    row = await cur.fetchone()
+    if row is None:
+        return None
+    cur = await conn.execute(
+        "SELECT text, section_path FROM rag_chunks WHERE content_id = %s "
+        "ORDER BY chunk_idx",
+        (content_id,),
+    )
+    chunks = [
+        Chunk(text=chunk["text"], section_path=chunk["section_path"] or "")
+        for chunk in await cur.fetchall()
+    ]
     return {**dict(row), "chunks": chunks}
 
 
@@ -1427,11 +1481,12 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         cur = await conn.execute(
             """
             SELECT m.id, m.title AS name, m.chapter_id, 'ready' AS status,
-                   '' AS descriptor, 'material' AS kind,
+                   coalesce(cs.descriptor, '') AS descriptor, 'material' AS kind,
                    (SELECT count(*) FROM rag_chunks c
-                    JOIN rag_material_contents mc ON mc.content_id = c.content_id
-                    WHERE mc.material_id = m.id) AS chunks
+                    WHERE c.content_id = mc.content_id) AS chunks
             FROM materials m
+                 LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
+                 LEFT JOIN rag_content_summaries cs ON cs.content_id = mc.content_id
             WHERE m.workspace_id = %s AND m.kind = 'note' AND m.trashed_at IS NULL
               AND m.parent_material_id IS NULL
             ORDER BY m.position, m.created_at

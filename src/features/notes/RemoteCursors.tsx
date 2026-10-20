@@ -1,17 +1,24 @@
 import {
   CursorEditor,
   type CursorEditor as CursorEditorType,
-  relativeRangeToSlateRange,
-  type YjsEditor,
+  type RelativeRange,
+  relativePositionToSlatePoint,
+  YjsEditor,
 } from '@slate-yjs/core';
-import type { Path, Point } from 'platejs';
+import {
+  type Path,
+  PathApi,
+  type Point,
+  type SlateEditor,
+  type TElement,
+} from 'platejs';
 import {
   createPlatePlugin,
   PlateLeaf,
   type PlateLeafProps,
-  type useEditorRef,
 } from 'platejs/react';
-import { useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
+import * as Y from 'yjs';
 import { m } from '@/i18n';
 
 const REMOTE_CURSOR_KEY = 'capy_remote_cursor';
@@ -29,153 +36,195 @@ export const remoteCursorDecorationPlugin = createPlatePlugin({
         typeof props.leaf.remoteCursorName === 'string'
           ? props.leaf.remoteCursorName
           : m.editor_collaborator();
+      // A caret is a collapsed decoration, an empty leaf with no width: the
+      // stylesheet draws its bar (::before), so it adds no DOM to the text.
+      // The stylesheet also tints a selection, mixing the colour in CSS since
+      // peers send it in any CSS form (hsl()).
+      const caret = props.leaf.remoteCursorCaret === true;
       return (
         <PlateLeaf
           {...props}
           attributes={{
             ...props.attributes,
-            'data-remote-cursor': name,
+            [caret ? 'data-remote-caret' : 'data-remote-cursor']: name,
           }}
-          style={{
-            ...props.style,
-            backgroundColor: `${color}22`,
-            boxShadow: `inset 2px 0 ${color}`,
-            pointerEvents: 'none',
-          }}
+          style={
+            {
+              ...props.style,
+              '--remote-cursor': color,
+              pointerEvents: 'none',
+            } as CSSProperties
+          }
         />
       );
     },
   },
 });
 
-type CollaborativeEditor = YjsEditor &
-  ReturnType<typeof useEditorRef> &
-  CursorEditorType;
+type CollaborativeEditor = YjsEditor & SlateEditor & CursorEditorType;
+
+/** A peer's selection as its awareness state holds it: Yjs relative
+ * positions, which follow the text and are resolved only when drawn. */
+type RemotePeer = {
+  color: string | undefined;
+  name: string | undefined;
+  selection: RelativeRange;
+};
 
 type RemoteCursorDecoration = {
   anchor: Point;
   focus: Point;
   [REMOTE_CURSOR_KEY]: true;
+  remoteCursorCaret?: true;
   remoteCursorColor: string | undefined;
   remoteCursorName: string | undefined;
 };
 
+const NO_PEERS: RemotePeer[] = [];
 const NO_REMOTE_CURSORS: RemoteCursorDecoration[] = [];
 
-function readRemoteCursors(
-  editor: ReturnType<typeof useEditorRef>
-): RemoteCursorDecoration[] {
-  if (!CursorEditor.isCursorEditor(editor)) return NO_REMOTE_CURSORS;
-  const collaborative = editor as CollaborativeEditor;
-  return Object.values(CursorEditor.cursorStates(collaborative)).flatMap(
-    (cursor) => {
-      if (
-        cursor.clientId === collaborative.awareness.clientID ||
-        !cursor.relativeSelection
-      ) {
-        return [];
-      }
-      const range = relativeRangeToSlateRange(
-        collaborative.sharedRoot,
-        collaborative,
-        cursor.relativeSelection
-      );
-      if (!range) return [];
-      return [
-        {
-          ...range,
-          [REMOTE_CURSOR_KEY]: true,
-          remoteCursorColor:
-            typeof cursor.data?.color === 'string'
-              ? cursor.data.color
-              : undefined,
-          remoteCursorName:
-            typeof cursor.data?.name === 'string'
-              ? cursor.data.name
-              : undefined,
-        },
-      ];
-    }
+export function readRemotePeers(editor: SlateEditor): RemotePeer[] {
+  if (!CursorEditor.isCursorEditor(editor)) return NO_PEERS;
+  return Object.values(
+    CursorEditor.cursorStates(editor as CollaborativeEditor)
+  ).flatMap(({ data, relativeSelection }) =>
+    relativeSelection
+      ? [
+          {
+            color: typeof data?.color === 'string' ? data.color : undefined,
+            name: typeof data?.name === 'string' ? data.name : undefined,
+            selection: relativeSelection,
+          },
+        ]
+      : []
   );
 }
 
-function samePoint(left: Point, right: Point) {
-  return (
-    left.offset === right.offset &&
-    left.path.length === right.path.length &&
-    left.path.every((segment, index) => segment === right.path[index])
-  );
-}
-
-function sameCursors(
-  left: RemoteCursorDecoration[],
-  right: RemoteCursorDecoration[]
-) {
+function samePeers(left: RemotePeer[], right: RemotePeer[]) {
   return (
     left.length === right.length &&
-    left.every((cursor, index) => {
+    left.every((peer, index) => {
       const other = right[index];
       return (
         !!other &&
-        cursor.remoteCursorColor === other.remoteCursorColor &&
-        cursor.remoteCursorName === other.remoteCursorName &&
-        samePoint(cursor.anchor, other.anchor) &&
-        samePoint(cursor.focus, other.focus)
+        peer.color === other.color &&
+        peer.name === other.name &&
+        Y.compareRelativePositions(
+          peer.selection.anchor,
+          other.selection.anchor
+        ) &&
+        Y.compareRelativePositions(peer.selection.focus, other.selection.focus)
       );
     })
   );
 }
 
-export function useRemoteCursorDecorations(
-  editor: ReturnType<typeof useEditorRef>
-) {
-  // Awareness fires for heartbeats and for this client's own cursor, and every
-  // state change here re-renders the whole editable. That is the cost this file
-  // exists to avoid — and the render also restores the DOM caret from Slate's
-  // selection, which can undo native caret movement the editor has not synced
-  // yet. So only an actually different decoration set may reach React.
-  const [cursors, setCursors] =
-    useState<RemoteCursorDecoration[]>(NO_REMOTE_CURSORS);
+export function useRemotePeers(editor: SlateEditor) {
+  // Every state change here re-renders the whole editable, and the render
+  // also restores the DOM caret from Slate's selection, which can undo native
+  // caret movement the editor has not synced yet. So only a peer whose
+  // selection or label actually changed may reach React; where its caret sits
+  // in the current document is worked out in `decorate`.
+  const [peers, setPeers] = useState<RemotePeer[]>(NO_PEERS);
   useEffect(() => {
     if (!CursorEditor.isCursorEditor(editor)) return;
     const update = () => {
-      const next = readRemoteCursors(editor);
-      setCursors((previous) => (sameCursors(previous, next) ? previous : next));
+      const next = readRemotePeers(editor);
+      setPeers((previous) => (samePeers(previous, next) ? previous : next));
     };
     update();
     CursorEditor.on(editor, 'change', update);
     return () => CursorEditor.off(editor, 'change', update);
   }, [editor]);
 
-  return cursors;
+  return peers;
 }
 
-export function remoteCursorRangesForEntry(
-  entry: [unknown, Path],
-  decorations: Array<Record<string, unknown>>
-) {
-  const [, path] = entry;
-  const isPrefix = (prefix: Path, value: Path) =>
-    prefix.length <= value.length &&
-    prefix.every((segment, index) => segment === value[index]);
-  const compare = (left: Path, right: Path) => {
-    for (let index = 0; index < Math.min(left.length, right.length); index++) {
-      if (left[index] !== right[index]) return left[index] - right[index];
-    }
-    return left.length - right.length;
-  };
+/** slate-react renders no decorations inside a void, so a caret in an inline
+ * void (an inline equation) is drawn in the text right after it. */
+function outOfInlineVoid(editor: SlateEditor, point: Point): Point {
+  const entry = editor.api.parent<TElement>(point.path);
+  if (!entry) return point;
+  const [parent, parentPath] = entry;
+  return editor.api.isInline(parent) && editor.api.isVoid(parent)
+    ? { offset: 0, path: PathApi.next(parentPath) }
+    : point;
+}
 
-  return decorations.filter((range) => {
-    const anchor = range.anchor as { path: Path } | undefined;
-    const focus = range.focus as { path: Path } | undefined;
-    if (!(anchor && focus)) return false;
-    const start =
-      compare(anchor.path, focus.path) <= 0 ? anchor.path : focus.path;
-    const end = start === anchor.path ? focus.path : anchor.path;
-    return (
-      (compare(start, path) <= 0 && compare(path, end) <= 0) ||
-      isPrefix(path, start) ||
-      isPrefix(path, end)
-    );
-  });
+function resolvePeer(
+  editor: CollaborativeEditor,
+  peer: RemotePeer
+): RemoteCursorDecoration[] {
+  const label = {
+    [REMOTE_CURSOR_KEY]: true as const,
+    remoteCursorColor: peer.color,
+    remoteCursorName: peer.name,
+  };
+  const { anchor: relativeAnchor, focus: relativeFocus } = peer.selection;
+  const focus = relativePositionToSlatePoint(
+    editor.sharedRoot,
+    editor,
+    relativeFocus
+  );
+  if (!focus) return [];
+  const caretAt = outOfInlineVoid(editor, focus);
+  const caret = {
+    ...label,
+    anchor: caretAt,
+    focus: caretAt,
+    remoteCursorCaret: true as const,
+  };
+  if (Y.compareRelativePositions(relativeAnchor, relativeFocus)) {
+    return [caret];
+  }
+  const anchor = relativePositionToSlatePoint(
+    editor.sharedRoot,
+    editor,
+    relativeAnchor
+  );
+  return anchor ? [{ ...label, anchor, focus }, caret] : [caret];
+}
+
+const resolved = new WeakMap<
+  object,
+  { peers: RemotePeer[]; ranges: RemoteCursorDecoration[]; version: unknown }
+>();
+
+/**
+ * The peers' decorations for a `decorate` entry: each peer's selection as a
+ * tinted range (when not collapsed) and its caret at the focus. They are
+ * returned for the root entry only, since slate-react hands the root's
+ * decorations down to every node they cover; returning them for a block or
+ * text as well drew each caret once per level. Peer positions are relative,
+ * so they are resolved once per document version (local and remote edits
+ * move them) or peer change, like comment anchors.
+ */
+export function remoteCursorRangesForEntry(
+  editor: SlateEditor,
+  [, path]: [unknown, Path],
+  peers: RemotePeer[]
+): RemoteCursorDecoration[] {
+  if (path.length > 0 || peers.length === 0) return NO_REMOTE_CURSORS;
+  const cached = resolved.get(editor);
+  if (cached?.version === editor.children && cached.peers === peers) {
+    return cached.ranges;
+  }
+  const collaborative = editor as CollaborativeEditor;
+  const ranges = collaborative.sharedRoot
+    ? peers.flatMap((peer) => {
+        try {
+          return resolvePeer(collaborative, peer);
+        } catch {
+          // A position the document no longer holds draws no caret.
+          return [];
+        }
+      })
+    : NO_REMOTE_CURSORS;
+  // A local edit is in Slate before it is flushed to Yjs (on change), and
+  // positions resolved in between map Yjs offsets onto the edited text: such
+  // a result is drawn but not kept for this version.
+  if (YjsEditor.localChanges(collaborative).length === 0) {
+    resolved.set(editor, { peers, ranges, version: editor.children });
+  }
+  return ranges;
 }

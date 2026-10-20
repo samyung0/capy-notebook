@@ -8,10 +8,13 @@
 --
 -- The passwords must match OPS_DATABASE_URL and OPS_ADMIN_DATABASE_URL, which
 -- the ops service uses. The grants name every readable column: neither role can
--- read messages, file names or blob paths, job payloads, email recipients or
--- payloads, or usage_events.metadata. Ops validates its own role at startup and
--- refuses to boot when this file has not been applied, grants too much, or
--- misses a column.
+-- read message columns, file names or blob paths, job payloads, email recipients
+-- or payloads, or usage_events.metadata. The exception is the
+-- ops_assistant_turns view (migration 0014): its tool details, capped at 240
+-- characters, can carry a chat search query or a file title, as decided
+-- (human/observability-metering.md, 2026-09-13). Ops validates its own role at
+-- startup and refuses to boot when this file has not been applied, grants too
+-- much, or misses a column.
 --
 -- Column grants do not extend to columns added later. Re-run this file after a
 -- migration that adds a table or column ops reads. Setup context and the
@@ -215,7 +218,7 @@ GRANT SELECT (
   editor_model_provider_slug, editor_model_slug
 ) ON users TO capy_ops_admin;
 GRANT SELECT (
-  user_id, email_workspace_invite, email_membership, email_billing
+  user_id, email_workspace_invite, email_billing
 ) ON notification_prefs TO capy_ops_admin;
 GRANT SELECT (
   id, user_id, kind, data, href, workspace_id, workspace_invite_id,

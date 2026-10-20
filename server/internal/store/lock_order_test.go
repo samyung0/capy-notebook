@@ -72,11 +72,12 @@ func TestNoteIndexRequestLocksWorkspaceBeforeAccount(t *testing.T) {
 	}
 	note, err := s.CreateMaterial(ctx, Material{
 		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Note",
-		Content: "# Heading\n\nbody",
+		Content: materialTestContent(t, "# Heading\n\nbody"),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	staleNote(t, s, note.ID)
 	holdWorkspaceThenAccount(t, s, ws.ID, ownerID, func(ctx context.Context) error {
 		_, err := s.RequestMaterialIndex(ctx, note.ID)
 		return err

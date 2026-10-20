@@ -39,10 +39,19 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
+/// Awareness client ids one channel may hold, and a room (Epo 2026-10-19):
+/// an editor sends its document's one, a new one only when Yjs renews it.
+/// A new id past either is not kept.
+pub const MAX_CLIENTS_PER_MEMBER: usize = 4;
+pub const MAX_CLIENTS_PER_ROOM: usize = 256;
 /// Why a note room holding a block the embed catalog does not list refuses
 /// every writer (Epo 2026-10-13): the browser shows it for the
 /// `unsupported_block` code.
 pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can't edit";
+/// What a channel hears when its open waits on its user's open budget
+/// (`OPEN_SLOWED_TYPE` in src/features/collaboration/roomProvider.ts): the
+/// editor keeps loading and says so after a while, never offline.
+pub const OPEN_SLOWED_TYPE: &str = "open-slowed";
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -202,11 +211,40 @@ struct Member {
     unplaced: u32,
     /// Update and step 2 messages handled since the last ACK.
     acks: u64,
+    /// Its step 1 and awareness query waiting for its user's open budget.
+    opening: Option<Opening>,
+}
+
+/// A member's latest step 1 and awareness query while they wait on its
+/// user's open budget (Epo 2026-10-20), and its place among the waiting.
+struct Opening {
+    step1: Option<StateVector>,
+    query: bool,
+    order: u64,
+}
+
+/// A user's turn to encode a large answer (`Allowances::open_turn`): their
+/// next one waits until this one ends, charged by `bytes`. Dropped early (a
+/// panic in the encode), the turn ends anyway.
+struct OpenTurn {
+    app: Shared,
+    user: String,
+    bytes: usize,
+}
+
+impl Drop for OpenTurn {
+    fn drop(&mut self) {
+        self.app
+            .allowances
+            .end_turn(&self.user, self.bytes, Instant::now());
+    }
 }
 
 struct AwarenessEntry {
     entry: awareness::Entry,
     owner: Option<MemberKey>,
+    /// The user whose channel set it: only their channels write it.
+    user: String,
 }
 
 /// A note room's own state.
@@ -250,8 +288,13 @@ struct Note {
 struct Source {
     room: sources::SourceRoom,
     format: sources::SourceFormat,
-    /// The room's state size by applied bytes, for the cap check.
-    estimate: u64,
+    /// The room's state size by applied bytes less what deletes freed, for
+    /// the cap check.
+    estimate: sources::Estimate,
+    /// The room's state cap (`sources::state_cap`).
+    state_cap: u64,
+    /// An Office room's seed state vector (`sources::Loaded::seed`).
+    seed: Option<StateVector>,
     checkpoint: u64,
     log_bytes: i64,
     log_rows: i64,
@@ -359,6 +402,10 @@ pub struct Room {
     child_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
+    /// When waiting opens look at their users' budgets again, and the next
+    /// one's place.
+    open_at: Option<Instant>,
+    openings: u64,
 }
 
 /// Spawns a room task; its handle goes into the registry. `actor` is the
@@ -607,7 +654,9 @@ async fn load(
             let source = Source {
                 room,
                 format: loaded.format,
-                estimate: loaded.bytes,
+                estimate: sources::Estimate::new(loaded.bytes),
+                state_cap: loaded.state_cap,
+                seed: loaded.seed,
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
                 log_rows: loaded.rows as i64,
@@ -750,6 +799,8 @@ async fn run(
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
         applying: false,
+        open_at: None,
+        openings: 0,
     };
     let log_bytes = match &room.kind {
         Kindly::Note(note) => note.log_bytes,
@@ -809,7 +860,7 @@ impl Room {
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        [self.flush_at, self.store_due(), self.idle_at]
+        [self.flush_at, self.store_due(), self.idle_at, self.open_at]
             .into_iter()
             .flatten()
             .min()
@@ -847,6 +898,10 @@ impl Room {
         if self.idle_at.is_some_and(|at| at <= now) {
             self.idle_at = None;
             self.start_projection().await;
+        }
+        if self.open_at.is_some_and(|at| at <= now) {
+            self.open_at = None;
+            self.release_openings().await;
         }
     }
 
@@ -897,16 +952,11 @@ impl Room {
             }
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
-                // A joiner's step 1 is answered with up to the whole state,
-                // encoded on the blocking pool.
-                Some(since) => {
-                    let diff = self.encoded(since).await;
-                    self.send(key, Kind::Sync, &sync::encode(sync::STEP2, &diff));
-                }
+                Some(since) => self.on_step1(key, since).await,
                 None => self.on_sync(key, &payload),
             },
             RoomCmd::Awareness(key, payload) => self.on_awareness(key, &payload),
-            RoomCmd::QueryAwareness(key) => self.send_awareness_states(key),
+            RoomCmd::QueryAwareness(key) => self.on_query(key),
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
@@ -1229,6 +1279,7 @@ impl Room {
             token_id: "children-pass".into(),
             user_id: actor.to_owned(),
             viewer: false,
+            parent: None,
         };
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
@@ -1393,8 +1444,12 @@ impl Room {
         let applied = ydoc::decode(&edit.update)
             .map_err(|error| error.to_string())
             .and_then(|update| ydoc::apply(&self.doc, update).map_err(|error| error.to_string()));
-        match applied {
-            Ok(update) => self.broadcast_update(None, update),
+        let applied_bytes = match applied {
+            Ok(update) => {
+                let bytes = update.len() as u64;
+                self.broadcast_update(None, update);
+                bytes
+            }
             Err(error) => {
                 observe::capture(
                     &error,
@@ -1403,7 +1458,7 @@ impl Room {
                 );
                 return;
             }
-        }
+        };
         self.durable.union(&edit.durable);
         self.app
             .stats
@@ -1418,6 +1473,8 @@ impl Room {
                 note.log_bytes += edit.row_bytes as i64;
             }
             Kindly::Source(source) => {
+                // An agent's growth counts toward the cap as a writer's does.
+                source.estimate.applied(applied_bytes, 0);
                 source.checkpoint = source.checkpoint.max(edit.version);
                 source.log_rows += 1;
                 source.log_bytes += edit.row_bytes as i64;
@@ -1496,7 +1553,7 @@ impl Room {
         // Else the room's estimate (a source room's applied bytes, a note's
         // stored ones), not an encode of the document on the room's thread.
         let size = bytes.or(Some(match &self.kind {
-            Kindly::Source(source) => source.estimate,
+            Kindly::Source(source) => source.estimate.bytes,
             kind => stored_bytes(kind).max(0) as u64,
         }));
         let list: Vec<Incident> = if users.is_empty() {
@@ -1611,6 +1668,212 @@ impl Room {
         }
     }
 
+    /// Charges a full-document answer of `bytes` to the member's user's open
+    /// budget (`rate.rs`).
+    fn charge_open(&self, key: MemberKey, bytes: usize) {
+        if let Some(member) = self.members.get(&key) {
+            self.app
+                .allowances
+                .charge_open(&member.context.user_id, bytes, Instant::now());
+        }
+    }
+
+    /// A member's step 1, answered with up to the whole state (encoded on the
+    /// blocking pool) and charged to its user's open budget by the answer's
+    /// bytes (Epo 2026-10-19). An answer under `SMALL_ANSWER` goes at once
+    /// while the user owes less than a full budget (Epo 2026-10-20). Any
+    /// other is encoded in its user's turn, so their waiting answers are
+    /// charged one at a time, and waits while the budget is spent or another
+    /// one of theirs is being encoded: the member then keeps only its latest
+    /// step 1 and hears once that its open is slowed. A bounded walk tells a
+    /// large answer before the encode (the encode checks it after), so a
+    /// waiting step 1 costs no encode.
+    async fn on_step1(&mut self, key: MemberKey, since: StateVector) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        if let Some(opening) = &mut member.opening {
+            // One joining a wait that held no step 1 (its JOIN's awareness)
+            // hears that its open is slowed too (rate-limit review r7 S-1).
+            if opening.step1.replace(since).is_none() {
+                self.open_slowed(key);
+            }
+            return;
+        }
+        let user = member.context.user_id.clone();
+        let small = crate::rate::SMALL_ANSWER;
+        if self.app.allowances.small_skips(&user, Instant::now())
+            && !ydoc::answer_at_least(&self.doc.transact(), &since, small)
+        {
+            let diff = self.encoded(since.clone()).await;
+            if diff.len() < small {
+                self.charge_open(key, diff.len());
+                self.answer(key, &diff);
+                return;
+            }
+            match self.app.allowances.open_turn(&user, Instant::now()) {
+                Ok(()) => {
+                    let mut turn = self.turn(user);
+                    turn.bytes = self.answer(key, &diff);
+                }
+                Err(wait) => self.wait_to_open(key, Some(since), false, wait),
+            }
+            return;
+        }
+        match self.app.allowances.open_turn(&user, Instant::now()) {
+            Ok(()) => {
+                let mut turn = self.turn(user);
+                let diff = self.encoded(since).await;
+                turn.bytes = self.answer(key, &diff);
+            }
+            Err(wait) => self.wait_to_open(key, Some(since), false, wait),
+        }
+    }
+
+    fn turn(&self, user: String) -> OpenTurn {
+        OpenTurn {
+            app: self.app.clone(),
+            user,
+            bytes: 0,
+        }
+    }
+
+    /// Sends a step 1's answer; its bytes, or 0 when the member left.
+    fn answer(&self, key: MemberKey, diff: &[u8]) -> usize {
+        if !self.members.contains_key(&key) {
+            return 0;
+        }
+        self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff));
+        diff.len()
+    }
+
+    /// A member's awareness query: answered and charged at once, or kept
+    /// (the latest) while its user's open budget is spent.
+    fn on_query(&mut self, key: MemberKey) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        if let Some(opening) = &mut member.opening {
+            opening.query = true;
+            return;
+        }
+        let user = &member.context.user_id;
+        if let Some(wait) = self.app.allowances.open_wait(user, Instant::now()) {
+            self.wait_to_open(key, None, true, wait);
+            return;
+        }
+        let sent = self.send_awareness_states(key);
+        self.charge_open(key, sent);
+    }
+
+    /// The member's step 1 or query begins to wait `wait` for its user's open
+    /// budget; a step 1 tells its channel that the open is slowed.
+    fn wait_to_open(
+        &mut self,
+        key: MemberKey,
+        step1: Option<StateVector>,
+        query: bool,
+        wait: Duration,
+    ) {
+        let order = self.openings;
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        self.openings += 1;
+        let slowed = step1.is_some();
+        let opening = member.opening.get_or_insert(Opening {
+            step1: None,
+            query: false,
+            order,
+        });
+        opening.query |= query;
+        if step1.is_some() {
+            opening.step1 = step1;
+        }
+        if slowed {
+            self.open_slowed(key);
+        }
+        self.look_again(wait);
+    }
+
+    fn open_slowed(&self, key: MemberKey) {
+        let notice = json!({ "type": OPEN_SLOWED_TYPE }).to_string();
+        self.send(key, Kind::Stateless, &protocol::text(&notice));
+    }
+
+    fn look_again(&mut self, wait: Duration) {
+        let at = Instant::now() + wait;
+        self.open_at = Some(self.open_at.map_or(at, |open_at| open_at.min(at)));
+    }
+
+    /// Waiting step 1s and queries look at their users' budgets again, in
+    /// the order they began to wait: a user's large answers go one at a
+    /// time, each charged before the next is looked at, and the rest wait
+    /// on. A user in a timeout meanwhile joins again when it ends and asks
+    /// again then, so their waiting opens are dropped.
+    async fn release_openings(&mut self) {
+        let mut waiting: Vec<(u64, MemberKey)> = self
+            .members
+            .iter()
+            .filter_map(|(key, member)| {
+                member.opening.as_ref().map(|opening| (opening.order, *key))
+            })
+            .collect();
+        waiting.sort_unstable();
+        for (_, key) in waiting {
+            let Some(member) = self.members.get_mut(&key) else {
+                continue;
+            };
+            let Some(opening) = member.opening.take() else {
+                continue;
+            };
+            let user = member.context.user_id.clone();
+            if self
+                .app
+                .allowances
+                .remaining(&user, Instant::now())
+                .is_some()
+            {
+                continue;
+            }
+            if let Some(since) = opening.step1 {
+                match self.app.allowances.open_turn(&user, Instant::now()) {
+                    Ok(()) => {
+                        let mut turn = self.turn(user.clone());
+                        let diff = self.encoded(since).await;
+                        turn.bytes = self.answer(key, &diff);
+                    }
+                    Err(wait) => {
+                        let step1 = Some(since);
+                        self.keep_waiting(key, Opening { step1, ..opening }, wait);
+                        continue;
+                    }
+                }
+            }
+            if opening.query {
+                match self.app.allowances.open_wait(&user, Instant::now()) {
+                    Some(wait) => {
+                        let step1 = None;
+                        self.keep_waiting(key, Opening { step1, ..opening }, wait);
+                    }
+                    None => {
+                        let sent = self.send_awareness_states(key);
+                        self.charge_open(key, sent);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A waiting open looked again and waits on (its member handled nothing
+    /// meanwhile: the room awaits its encodes).
+    fn keep_waiting(&mut self, key: MemberKey, opening: Opening, wait: Duration) {
+        if let Some(member) = self.members.get_mut(&key) {
+            member.opening = Some(opening);
+        }
+        self.look_again(wait);
+    }
+
     fn join(
         &mut self,
         key: MemberKey,
@@ -1621,6 +1884,7 @@ impl Room {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
         }
+        let user = context.user_id.clone();
         // A writer of a document holding a block this version cannot edit
         // joins read-only and hears why.
         let unsupported = context.access == Access::Write && self.unsupported().is_some();
@@ -1651,6 +1915,7 @@ impl Room {
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
+                opening: None,
             },
         );
         if unsupported && let Some(notice) = self.unsupported() {
@@ -1660,7 +1925,19 @@ impl Room {
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
         if !(viewer || self.awareness.is_empty()) {
-            self.send_awareness_states(key);
+            // Past the small-answer floor it waits like an awareness query
+            // (Epo 2026-10-20, rate-limit review r6 S-1).
+            let now = Instant::now();
+            let allowances = &self.app.allowances;
+            match allowances.open_wait(&user, now) {
+                Some(wait) if !allowances.small_skips(&user, now) => {
+                    self.wait_to_open(key, None, true, wait);
+                }
+                _ => {
+                    let sent = self.send_awareness_states(key);
+                    self.charge_open(key, sent);
+                }
+            }
         }
         // A quiz's readers get the matching and ordering lists as they stand.
         if let Kindly::Note(note) = &self.kind
@@ -1697,9 +1974,12 @@ impl Room {
         if let Kindly::Source(_) = &self.kind {
             self.app.handoff().closed(&self.name, member.channel_id);
         }
-        // Its awareness states go, as Hocuspocus removes a closed connection's.
+        // Its awareness states go, as Hocuspocus removes a closed connection's
+        // (not one another channel of its user took over since).
         for client in member.clients {
-            if let Some(state) = self.awareness.get_mut(&client) {
+            if let Some(state) = self.awareness.get_mut(&client)
+                && state.owner == Some(key)
+            {
                 if !state.entry.removed() {
                     state.entry.clock += 1;
                     state.entry.state = "null".into();
@@ -2016,7 +2296,8 @@ impl Room {
                     &self.doc.transact(),
                     &ydoc::Incoming::new(&update),
                     bytes.len(),
-                ) || source.estimate + bytes.len() as u64 > sources::MAX_SOURCE_STATE_BYTES as u64
+                ) || source.estimate.bytes + bytes.len() as u64
+                    > sources::admission_cap(source.state_cap)
             }
         };
         let mut admit = || match &mut self.kind {
@@ -2027,7 +2308,13 @@ impl Room {
                 crate::model::Admitted::Refused(message) => Verdict::Refused(message),
             },
             Kindly::Source(source) => {
-                match sources::admit_update(&self.doc, source.format, bytes, &mut source.estimate) {
+                match sources::admit_update(
+                    &self.doc,
+                    source.format,
+                    bytes,
+                    &mut source.estimate,
+                    source.state_cap,
+                ) {
                     sources::Admission::Accept => Verdict::Accept,
                     sources::Admission::Unheld => Verdict::Unheld,
                     sources::Admission::Refuse(refusal) => Verdict::Source(refusal),
@@ -2065,7 +2352,22 @@ impl Room {
                     class: Class::Limit,
                 };
             }
-            Verdict::Refused(error) => return Outcome::refused(Class::Malformed, error),
+            // Refused on entry (Epo 2026-10-18): the room keeps its state, the
+            // writer's editor reloads it on a fresh document and channel on
+            // the same socket, and only this channel closes.
+            Verdict::Refused(error) => {
+                let payload = json!({
+                    "code": "invalid_document",
+                    "materialId": self.material_id(),
+                    "room": self.name,
+                    "type": "document-rejected",
+                });
+                return Outcome::Refused {
+                    payloads: vec![payload.to_string()],
+                    reason: error,
+                    class: Class::Malformed,
+                };
+            }
         }
         self.placed(writer, context);
         if !changes {
@@ -2078,13 +2380,23 @@ impl Room {
             applied += marker.len();
             self.broadcast_update(None, marker);
         }
+        // A source room's estimate also takes off what the update's deletes
+        // freed (Epo 2026-10-19).
+        let seed = match &self.kind {
+            Kindly::Source(source) => Some(source.seed.as_ref()),
+            Kindly::Note(_) => None,
+        };
+        let apply = || match seed {
+            Some(seed) => ydoc::apply_freeing(&self.doc, update, seed),
+            None => ydoc::apply(&self.doc, update).map(|content| (content, 0)),
+        };
         let content = if heavy {
-            tokio::task::block_in_place(|| ydoc::apply(&self.doc, update))
+            tokio::task::block_in_place(apply)
         } else {
-            ydoc::apply(&self.doc, update)
+            apply()
         };
         self.applying = false;
-        let content = match content {
+        let (content, freed) = match content {
             Ok(content) => content,
             Err(error) => {
                 return Outcome::refused(
@@ -2095,12 +2407,13 @@ impl Room {
         };
         applied += content.len();
         if let Kindly::Source(source) = &mut self.kind {
-            source.estimate += applied as u64;
+            source.estimate.applied(applied as u64, freed);
         }
         self.ack(writer);
         if !content.is_empty() {
             self.content_changed();
             self.broadcast_update(writer, content);
+            self.repair_on_entry(bytes, heavy);
             // A paste, undo or replayed draft that wrote child ids gets a
             // children pass; typing writes none and costs a decode.
             if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
@@ -2116,6 +2429,47 @@ impl Room {
             }
         }
         Outcome::Admitted
+    }
+
+    /// The cheap repairs after a writer's update went in (Epo 2026-10-19:
+    /// repaired on entry first), as a server transaction in the same flush:
+    /// keys no node carries stripped, an emptied note's paragraph, an emptied
+    /// set's blank card (`Model::repair_on_entry`). O(update), off the async
+    /// workers for an update that applied off them.
+    fn repair_on_entry(&mut self, bytes: &[u8], heavy: bool) {
+        let Kindly::Note(note) = &self.kind else {
+            return;
+        };
+        let (model, kind) = (note.model, note.kind.clone());
+        if !model.repairs() {
+            return;
+        }
+        let repair = || {
+            let update = ydoc::decode(bytes).ok()?;
+            let mut txn = self.doc.transact_mut();
+            let repaired = model.repair_on_entry(&mut txn, &update, &kind);
+            Some((repaired, ydoc::committed_update(txn)))
+        };
+        let Some((repaired, fix)) = (if heavy {
+            tokio::task::block_in_place(repair)
+        } else {
+            repair()
+        }) else {
+            return;
+        };
+        if fix.is_empty() {
+            return;
+        }
+        log(
+            Level::Info,
+            "room repaired an edit",
+            json!({ "repaired": repaired, "room": self.name }),
+        );
+        if let Kindly::Note(note) = &mut self.kind {
+            // Content the validator did not admit: its growth bound is stale.
+            note.validator.invalidate();
+        }
+        self.broadcast_update(None, fix);
     }
 
     /// The writer's update was placed: its channel's unplaceable count and
@@ -2299,8 +2653,17 @@ impl Room {
                 without_uploads(entry);
             }
         }
+        // Ids another channel of the same user held until now.
+        let mut taken_over = Vec::new();
         for entry in entries {
             let current = self.awareness.get(&entry.client);
+            // A client id is its user's: another user's channel neither
+            // writes nor removes it (Epo 2026-10-19).
+            if current
+                .is_some_and(|state| state.owner.is_some() && state.user != member.context.user_id)
+            {
+                continue;
+            }
             // y-protocols: a newer clock wins; at the same clock a removal wins.
             let take = match current {
                 None => !entry.removed(),
@@ -2314,6 +2677,20 @@ impl Room {
             if !take {
                 continue;
             }
+            let held = current.and_then(|state| state.owner);
+            // The room's cap counts every id it holds, removals not yet sent
+            // (forgotten at the next flush) included, so ids added and
+            // removed in a loop stay capped too.
+            if !entry.removed()
+                && held != Some(key)
+                && (member.clients.len() >= MAX_CLIENTS_PER_MEMBER
+                    || (current.is_none() && self.awareness.len() >= MAX_CLIENTS_PER_ROOM))
+            {
+                continue;
+            }
+            if let Some(previous) = held.filter(|previous| *previous != key) {
+                taken_over.push((previous, entry.client));
+            }
             if entry.removed() {
                 member.clients.remove(&entry.client);
             } else {
@@ -2324,18 +2701,25 @@ impl Room {
                 entry.client,
                 AwarenessEntry {
                     owner: (!entry.removed()).then_some(key),
+                    user: member.context.user_id.clone(),
                     entry,
                 },
             );
+        }
+        for (previous, client) in taken_over {
+            if let Some(member) = self.members.get_mut(&previous) {
+                member.clients.remove(&client);
+            }
         }
         if !self.changed_awareness.is_empty() {
             self.schedule_flush();
         }
     }
 
-    fn send_awareness_states(&self, key: MemberKey) {
+    /// Sends the room's awareness states to a channel; returns their bytes.
+    fn send_awareness_states(&self, key: MemberKey) -> usize {
         if self.members.get(&key).is_none_or(|member| member.viewer) {
-            return;
+            return 0;
         }
         let entries: Vec<&awareness::Entry> = self
             .awareness
@@ -2343,13 +2727,12 @@ impl Room {
             .filter(|state| !state.entry.removed())
             .map(|state| &state.entry)
             .collect();
-        if !entries.is_empty() {
-            self.send(
-                key,
-                Kind::Awareness,
-                &awareness::encode(entries.into_iter()),
-            );
+        if entries.is_empty() {
+            return 0;
         }
+        let states = awareness::encode(entries.into_iter());
+        self.send(key, Kind::Awareness, &states);
+        states.len()
     }
 
     // ------------------------------------------------------------------ stateless
@@ -2507,20 +2890,11 @@ impl Room {
         let claimed = self.receipts.clone();
         self.store.dirty = false;
         self.store.first_change = None;
+        let started = Instant::now();
+        // Checked (and repaired) first: the row holds what a repair wrote.
+        let validated = self.checked().await;
         let hidden = markers::live_items(&self.doc);
         let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
-        let started = Instant::now();
-        let Kindly::Note(note) = &self.kind else {
-            return;
-        };
-        let doc = self.doc.clone();
-        let (kind, model, doc_kind) = (note.kind.clone(), note.model, note.doc);
-        let previous = note.durable_metrics;
-        let peer = note.validator.peer();
-        let validated =
-            tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous, peer))
-                .await
-                .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())));
         let (metrics, limit_code) = match validated {
             Ok(validated) => validated,
             Err(error) => {
@@ -2534,7 +2908,7 @@ impl Room {
         let Kindly::Note(note) = &self.kind else {
             return;
         };
-        let (material_id, schema) = (note.material_id.clone(), note.schema);
+        let (material_id, schema, doc_kind) = (note.material_id.clone(), note.schema, note.doc);
         let actors: Vec<String> = {
             let mut actors: Vec<String> = contributors.iter().map(|c| c.user_id.clone()).collect();
             actors.sort();
@@ -2563,6 +2937,56 @@ impl Room {
             };
             let _ = handle.tx.send(RoomCmd::Stored(Box::new(done))).await;
         });
+    }
+
+    /// The store's check of the note room ([validate]), off the room's
+    /// thread. A document it refuses as invalid gets the canonical repairs
+    /// once (Epo 2026-10-19: repaired at save before the reset; an emptied
+    /// note or set, repeated top-level ids), as a server transaction every
+    /// editor receives, and is checked again.
+    async fn checked(
+        &mut self,
+    ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
+        let first = self.check().await;
+        let (Err(StoreError::Invalid(reason)), Kindly::Note(note)) = (&first, &self.kind) else {
+            return first;
+        };
+        let (model, kind) = (note.model, note.kind.clone());
+        // Its own scope: a transaction is not held across an await.
+        let (repaired, fix) = {
+            let mut txn = self.doc.transact_mut();
+            let repaired = model.repair(&mut txn, &kind);
+            (repaired, ydoc::committed_update(txn))
+        };
+        if fix.is_empty() {
+            return first;
+        }
+        log(
+            Level::Info,
+            "store repaired the document",
+            json!({ "reason": reason, "repaired": repaired, "room": self.name }),
+        );
+        if let Kindly::Note(note) = &mut self.kind {
+            note.validator.invalidate();
+        }
+        self.broadcast_update(None, fix);
+        self.check().await
+    }
+
+    /// [validate] of the note room as it is now.
+    async fn check(
+        &self,
+    ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
+        let Kindly::Note(note) = &self.kind else {
+            return Err(StoreError::Other("not a material room".into()));
+        };
+        let doc = self.doc.clone();
+        let (kind, model) = (note.kind.clone(), note.model);
+        let previous = note.durable_metrics;
+        let peer = note.validator.peer();
+        tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous, peer))
+            .await
+            .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())))
     }
 
     /// This room's registry handle (none once it unloaded).

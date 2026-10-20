@@ -241,13 +241,21 @@ pub struct Stats {
     pub awareness: AtomicU64,
     pub log_bytes: AtomicU64,
     /// Draft sends refused, by `drafts::Class` (its index in `Class::ALL`).
-    pub draft_refusals: [AtomicU64; 8],
+    pub draft_refusals: [AtomicU64; 9],
     /// JOINs and draft sends refused for their client protocol: material
     /// rooms, then source rooms (stale tabs left after a deploy).
     pub outdated_refusals: [AtomicU64; 2],
     /// Source room loads refused because loaded rooms' files fill the disk
     /// store (Epo 2026-10-17).
     pub source_disk_refusals: AtomicU64,
+    /// Timeouts begun: a user over their allowance or sending an update
+    /// over the cap (`rate.rs`).
+    pub timeouts: AtomicU64,
+    /// Sockets refused for their client address's cap (`seats.rs`).
+    pub seat_refusals: AtomicU64,
+    /// Channels closed as their user's oldest when a join passed the user's
+    /// cap (`seats.rs`).
+    pub oldest_closed: AtomicU64,
 }
 
 pub struct App {
@@ -261,6 +269,13 @@ pub struct App {
     pub rooms: Registry,
     pub evictions: Evictions,
     pub stats: Stats,
+    /// Every user's update allowance (`rate.rs`).
+    pub allowances: crate::rate::Allowances,
+    /// Open sockets per client address, joined channels per user and per
+    /// user and document (`seats.rs`).
+    pub address_sockets: crate::seats::Seats,
+    pub joined: crate::seats::Joined,
+    pub per_document: crate::seats::Joined,
     pub health: crate::health::Health,
     pub unplaced: crate::incidents::UnplacedOnce,
     pub projection_failures: crate::projection::Failures,

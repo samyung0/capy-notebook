@@ -573,7 +573,7 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 			}
 			if err == nil && mt.WorkspaceID == wsID && mt.ParentMaterialID == "" {
 				parsed, err := itemsOf(mt)
-				if err != nil {
+				if err != nil && !refused(err) {
 					return studyItem{}, false, err
 				}
 				for _, p := range parsed {

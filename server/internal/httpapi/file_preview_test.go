@@ -172,17 +172,113 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	if edited.Code != http.StatusOK ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"state":"AQ=="`)) ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"stateSeedSHA256":"`+seed+`"`)) ||
-		!bytes.Contains(edited.Body.Bytes(), []byte(`"pendingEffects":null`)) {
+		bytes.Contains(edited.Body.Bytes(), []byte(`pendingEffects`)) ||
+		bytes.Contains(edited.Body.Bytes(), []byte(`growthBudgetBytes`)) {
 		t.Fatalf("edited view session = %d body=%s", edited.Code, edited.Body.String())
 	}
 	// An Office editor takes its document from the room's sync: the editor
-	// read carries no state, and leaves the effects server-side.
+	// read carries no state, and leaves the effects server-side. It carries
+	// what the room may still admit: the export cap (30 MiB in the test
+	// catalog) less the 100 byte base, the 1 MiB margin, admission's 64 KiB
+	// reserve and the 1 byte saved change.
 	full := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
 	if full.Code != http.StatusOK ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"state":null`)) ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"stateSeedSHA256":null`)) ||
-		!bytes.Contains(full.Body.Bytes(), []byte(`"pendingEffects":null`)) {
+		bytes.Contains(full.Body.Bytes(), []byte(`pendingEffects`)) ||
+		!bytes.Contains(full.Body.Bytes(), []byte(`"growthBudgetBytes":30343067`)) {
 		t.Fatalf("editor session = %d body=%s", full.Code, full.Body.String())
+	}
+	// Editing that stays on an older base measures it in the bucket (9 bytes).
+	if _, err := st.Pool().Exec(ctx, `UPDATE files SET revision=revision+1 WHERE id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	older := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
+	if older.Code != http.StatusOK ||
+		!bytes.Contains(older.Body.Bytes(), []byte(`"growthBudgetBytes":30343158`)) {
+		t.Fatalf("editor session over an older base = %d body=%s", older.Code, older.Body.String())
+	}
+}
+
+// Epo 2026-10-20: a text source published over the plan file limit opens
+// view only like an Office file at its size limit, so its edit read carries
+// a growth budget too, from its base alone.
+func TestTextSourceOverThePlanLimitHasNoGrowthBudget(t *testing.T) {
+	ctx := context.Background()
+	st := openAccessTestStoreForPreview(t)
+	memory := blob.NewMemory()
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled: true,
+		E2EAuth:      true,
+		E2ESecret:    "e2e-test-secret",
+		E2EUserIDs:   []string{"u_owner"},
+	})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Text limit", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
+	file, err := uploadSource(ctx, st, workspace.ID, "u_owner", "notes.md", 100, "sources/notes.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = memory.Put("sources/notes.md", strings.NewReader("# Notes")); err != nil {
+		t.Fatal(err)
+	}
+	// Published past the 30 MiB export cap of the test catalog.
+	if _, err = st.Pool().Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, int64(40<<20)); err != nil {
+		t.Fatal(err)
+	}
+	editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
+	if editor.Code != http.StatusOK ||
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"format":"text"`)) ||
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":0`)) {
+		t.Fatalf("text editor session = %d body=%s", editor.Code, editor.Body.String())
+	}
+	// The view read says so before any Edit attempt (review r3 E1).
+	if view := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil); view.Code != http.StatusOK ||
+		!bytes.Contains(view.Body.Bytes(), []byte(`"atSizeLimit":true`)) {
+		t.Fatalf("text view session = %d body=%s", view.Code, view.Body.String())
+	}
+}
+
+// A text state is the whole text with its history: its growth over the seed
+// (seed_bytes) counts against the budget, as the room's estimate does
+// (review r3 S2).
+func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
+	ctx := context.Background()
+	st := openAccessTestStoreForPreview(t)
+	memory := blob.NewMemory()
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled: true,
+		E2EAuth:      true,
+		E2ESecret:    "e2e-test-secret",
+		E2EUserIDs:   []string{"u_owner"},
+	})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Text growth", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
+	file, err := uploadSource(ctx, st, workspace.ID, "u_owner", "notes.md", 100, "sources/notes.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = memory.Put("sources/notes.md", strings.NewReader("# Notes")); err != nil {
+		t.Fatal(err)
+	}
+	if editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil); editor.Code != http.StatusOK {
+		t.Fatalf("editor session = %d body=%s", editor.Code, editor.Body.String())
+	}
+	if _, err = st.Pool().Exec(ctx, `UPDATE source_documents SET checkpoint=checkpoint+1,state=$2,seed_bytes=100 WHERE file_id=$1`, file.ID, make([]byte, 1000)); err != nil {
+		t.Fatal(err)
+	}
+	// 30 MiB less the 100 byte base, the 1 MiB margin, the 64 KiB reserve
+	// and the 900 bytes the state grew past its seed.
+	editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
+	if editor.Code != http.StatusOK ||
+		!bytes.Contains(editor.Body.Bytes(), []byte(`"growthBudgetBytes":30342168`)) {
+		t.Fatalf("text editor session = %d body=%s", editor.Code, editor.Body.String())
 	}
 }
 

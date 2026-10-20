@@ -12,12 +12,14 @@ export interface SourceSession {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   access: SourceSessionAccess;
+  atSizeLimit?: boolean;
   baseRevision: number;
   baseSourceSHA256: string;
   checkpoint: number;
   epoch: number;
   fileId: string;
   format: SourceSessionFormat;
+  growthBudgetBytes?: number;
   imageMaxBytes?: number;
   indexedCheckpoint: number;
   netTokens: number;

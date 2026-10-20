@@ -91,7 +91,7 @@ func overQuotaFixture(t *testing.T, lapsedDays int) quotaFixture {
 	}
 	// Content that predates the lapse; what happens to it is the question.
 	material, err := st.CreateMaterial(ctx, store.Material{
-		CreatedBy: userID, WorkspaceID: ws.ID, Kind: "note", Title: "Before",
+		CreatedBy: userID, WorkspaceID: ws.ID, Kind: "note", Title: "Before", Content: noteTestContent(t, ""),
 	})
 	if err != nil {
 		t.Fatal(err)

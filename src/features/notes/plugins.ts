@@ -105,6 +105,7 @@ import {
 import { createElement } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { LIST_INDENT_MAX } from '@/features/materials/document';
 import { m } from '@/i18n';
 import { editorAiEnabled } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
@@ -209,7 +210,7 @@ function TodoListItem({
 const IndentListKit = [
   IndentPlugin.configure({
     inject: { targetPlugins: listTargets },
-    options: { offset: 24 },
+    options: { indentMax: LIST_INDENT_MAX, offset: 24 },
   }),
   ListPlugin.configure({
     inject: {

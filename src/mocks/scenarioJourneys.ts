@@ -522,6 +522,8 @@ export async function runJourney(
           !document.body.textContent.includes(m.storage_payer_full_strip()),
         "frozen owner's note shown view-only"
       );
+      // Nothing else shows: no strip, and the member's own status is fine.
+      return "The frozen owner's note opens view-only with no storage strip; what the member adds is its own.";
     }
     if (accountTitle) {
       // The header triangle carries the title as its label; the entry toast

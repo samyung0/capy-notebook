@@ -14,18 +14,18 @@ from typing import Any
 import httpx
 
 from pipeline.config import env_name_for_provider
-from pipeline.elitellm.client import RELACE_GLM_FLASH_MODEL, ZAI_GLM_FLASH_MODEL
 from pipeline.elitellm.providers import load_providers
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "pipeline" / "tests" / "model_replay_certifications.json"
 REPLAY_NODE = "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay"
 CASSETTE_DIR = Path("pipeline/tests/cassettes/replay")
-MODEL_LIST_ENDPOINTS = {
+# Z.AI documents no model list: its slug is typed (--model).
+MODEL_LIST_ENDPOINTS: dict[str, str | None] = {
     "anthropic": "https://api.anthropic.com/v1/models",
     "deepseek": "https://api.deepseek.com/models",
     "openai": "https://api.openai.com/v1/models",
-    "zai": "https://models.relace.ai/v1/models",
+    "zai": None,
 }
 
 
@@ -49,8 +49,9 @@ def two_turn_cassette_ok(path: Path) -> bool:
 def chat_provider_entries(
     catalog: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    """Providers the certifier can list models for. The embedding hop has no
-    conversational models and no entry in MODEL_LIST_ENDPOINTS."""
+    """Chat providers the certifier serves, each with its model-list endpoint
+    or None. The embedding hop has no conversational models and no entry in
+    MODEL_LIST_ENDPOINTS."""
     raw = catalog if catalog is not None else load_providers()
     providers = raw.get("providers") or {}
     if not isinstance(providers, dict):
@@ -163,12 +164,6 @@ def fetch_available_model_slugs(
     }
     if not model_ids:
         raise ModelListError(f"{provider_slug} returned no available model slugs")
-    if provider_slug == "zai":
-        if RELACE_GLM_FLASH_MODEL not in model_ids:
-            raise ModelListError(
-                f"zai model {RELACE_GLM_FLASH_MODEL} is unavailable on Relace"
-            )
-        return [ZAI_GLM_FLASH_MODEL]
     return sorted(model_ids)
 
 

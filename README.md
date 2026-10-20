@@ -84,16 +84,10 @@ Everything local, on the Clerk development instance (UAT).
  - `VITE_API_URL=http://localhost:8080`
  - `VITE_CLERK_PUBLISHABLE_KEY=pk_test_ZGlyZWN0LWdlbGRpbmctMTM1NS5jbGVyay5hY2NvdW50cy5kZXYk`
  - `CLERK_SECRET_KEY` set to the `sk_test` (UAT development instance)
- - `CLERK_WEBHOOK_SECRET` set to your endpoint's `whsec_`, or random value if you dont care about webhook events.
+ - `CLERK_WEBHOOK_SECRET` set to any value shaped as `whsec_` followed by base64; the gateway refuses to start with it blank or misshaped. Clerk webhooks are not delivered locally: your first signed-in request creates your user, and webhook handling is checked on UAT.
  - `docker compose -f deploy/docker-compose.yml up --build`
  - `pnpm dev`
  - Open `https://localhost:5173`
-
- **Clerk Webhook Events**:
-
-  - Set `CLERK_WEBHOOK_HOST=dev-<yourname>.uat.capynotebook.com` (any name is fine, as long as its not used already)
-  - Give `dev-<yourname>.uat.capynotebook.com/webhooks/clerk` to Epo, ask the big bro to add a webhook in clerk uat development instance with that url. Subscribed to `user.created`, `user.deleted`, `user.updated`.
-  - update `CLERK_WEBHOOK_SECRET` with the webhook secret
 
  **Email**:
 
@@ -123,15 +117,14 @@ docker compose -f deploy/docker-compose.yml --profile ops up --build ops
 # Ops UI only, proxies /api → :8082
 pnpm --filter @capy-notebook/ops dev
 
-# Standalone Maily editor on http://127.0.0.1:3000
-pnpm email:dev
-
-# Regenerate server/internal/mail/templates/*.gohtml and *.txt
+# Regenerate server/internal/mail/templates/*.gohtml and *.txt from the
+# hand-edited Maily JSON in emails/templates/
 pnpm email:build
 ```
 
 The Go binary and the Python worker do not auto-load `deploy/.env`. Export it
-first: `set -a; . deploy/.env; set +a`.
+first: `set -a; . deploy/.env; set +a`. The gateway refuses to start without
+`APP_ENV`; `deploy/.env.example` sets `development`.
 
 ## Developing betteroffice
 

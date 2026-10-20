@@ -8,8 +8,9 @@
 # slides of a chat deck (pipeline/retrieval/deck.py). The whole checkout at
 # deck.PPT_MASTER_COMMIT, less icons, sounds and image-model comparison sheets
 # as the playground clones it (its attribution guard refuses a partial copy),
-# with deck.PPT_MASTER_DEPS in their own virtualenv; the retrieval service runs
-# its two scripts as subprocesses. test_deck.py keeps these pins in step.
+# with deck.PPT_MASTER_DEPS in their own virtualenv, pinned and hashed in
+# pipeline/ppt-master-requirements.txt; the retrieval service runs its two
+# scripts as subprocesses. test_deck.py keeps these pins in step.
 FROM python:3.11-slim AS ppt-master
 COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /bin/
 ARG PPT_MASTER_COMMIT=44c10ed0bc3a9e1df7a25aa179ae7c26db09469b
@@ -23,9 +24,10 @@ RUN git clone --quiet --filter=blob:none --no-checkout \
         '!skills/ppt-master/references/ai-image-comparison/' \
     && git -C /opt/ppt-master checkout --quiet "$PPT_MASTER_COMMIT" \
     && rm -rf /opt/ppt-master/.git
+COPY pipeline/ppt-master-requirements.txt /tmp/ppt-master-requirements.txt
 RUN uv venv --python /usr/local/bin/python3 /opt/ppt-master/.venv \
-    && uv pip install --no-cache --python /opt/ppt-master/.venv/bin/python \
-        python-pptx lxml pillow fonttools pyyaml xlsxwriter skia-pathops uharfbuzz
+    && uv pip install --no-cache --require-hashes \
+        --python /opt/ppt-master/.venv/bin/python -r /tmp/ppt-master-requirements.txt
 
 FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
@@ -49,7 +51,8 @@ COPY server/internal/sourceupload/text_extensions.json ./server/internal/sourceu
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 COPY --from=ppt-master /opt/ppt-master /opt/ppt-master
-# Retrieval diagnostics run inside this image via `docker compose exec`.
+# Retrieval diagnostics run inside this image via `docker compose exec`. The
+# library writer (knowledge_base_library.py) stays out (.dockerignore).
 COPY bench/rag/scripts ./bench/rag/scripts
 COPY bench/rag/fixtures ./bench/rag/fixtures
 ENV PATH="/app/.venv/bin:$PATH" \

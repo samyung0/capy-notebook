@@ -271,7 +271,7 @@ func TestAnonymousNoteEmbedsAndGrading(t *testing.T) {
 	h, st, _ := openGradingAPI(t, "full")
 	ctx := context.Background()
 	standalone := gradingQuiz(t, h, "link")
-	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Embeds", Content: "# Embeds\n\nbody"})
+	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", Kind: "note", Title: "Embeds", Content: noteTestContent(t, "# Embeds\n\nbody")})
 	if err != nil {
 		t.Fatal(err)
 	}

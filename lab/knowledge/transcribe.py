@@ -2,14 +2,10 @@
 recovery by alignment and figure descriptions.
 
 Every page a chunk touches is rendered once (PyMuPDF, zoom 1.4, JPEG 82) under
-<run>/pages/ and sent as one request (the developer's page prompt, thinking
-off, temperature 0) returning `text` (the transcription) and `figures` (printed
-label plus what each figure visibly shows). Batch by default: page images go to
-the knowledge-base bucket as `pages/<sha256>/<page>.jpg`, presigned for 7 days,
-one JSONL line per page (`<book>:p<page>`) as one Alibaba Batch task; the task
-id lands in `review_tasks` and the command exits 3 while it is in flight. Pages
-without an answer after collection get one live call; `--live` sends every
-page live (four in flight, one retry pass). Each answer is saved as
+<run>/pages/ and sent inline to the live endpoint as one request (the
+developer's page prompt, thinking off, temperature 0) returning `text` (the
+transcription) and `figures` (printed label plus what each figure visibly
+shows), four in flight with one retry pass. Each answer is saved as
 <run>/pages/<page>.json.
 
 Alignment: a chunk's original words are matched against the transcription of
@@ -20,9 +16,9 @@ span's length is within 0.7x-2.5x of the original, under a `recovery` receipt
 (method align); otherwise the chunk is held for the dashboard with the reason,
 coverage, ratio and the transcription. Chunks under 12 words with no match are
 skipped as `unaligned_short`. Every run reverts and re-aligns from the saved
-transcriptions, so a rule change reaches every chunk without a new batch;
+transcriptions, so a rule change reaches every chunk without new calls;
 decided held items keep their decision. `--redo` also discards the
-transcriptions and the ledger and submits a new task.
+transcriptions and the ledger and sends every page again.
 
 Figures: each returned figure is matched to the corpus figures on its page by
 printed label, else by order; the description is written to the figure and
@@ -30,7 +26,7 @@ appended as "[Figure <label>] <description>" to the `indexed_text` of the first
 chunk of the excerpt that lists the figure (never to `text`), unless the figure
 is decorative.
 
-  python lab/knowledge/transcribe.py --run <run_dir> --book <id> [--live] [--redo]
+  python lab/knowledge/transcribe.py --run <run_dir> --book <id> [--redo]
 """
 
 from __future__ import annotations
@@ -42,23 +38,20 @@ import re
 import sys
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import batches
 import llm
+import stages
 import store
-from batches import WAITING, out
-from knowledge_base_batch import TERMINAL, PilotError, read_json, save_json
+from knowledge_base_common import read_json, save_json
+from stages import out
 
 STAGE = "transcribe"
 ZOOM = 1.4
 JPEG_QUALITY = 82
-PRESIGN_SECONDS = 7 * 24 * 3600
-UPLOAD_WORKERS = 8
 COVERAGE = 0.9
 RATIO = (0.7, 2.5)
 MIN_BLOCK = 3
@@ -157,37 +150,6 @@ def data_url(pages_dir: Path, page: int) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(
         (pages_dir / f"{page}.jpg").read_bytes()
     ).decode("ascii")
-
-
-def upload_pages(pages_dir: Path, sha256: str, pages: list[int]) -> dict[int, str]:
-    """pages/<sha256>/<page>.jpg in the knowledge-base bucket (keys the bucket
-    already holds are kept) and a 7-day GET URL per page."""
-    from pipeline.config import cfg
-    from pipeline.store import blobstore
-
-    client, bucket = blobstore.library_client(), cfg.knowledge_base_b2_bucket
-    prefix = f"pages/{sha256}/"
-    held = {
-        obj["Key"]
-        for page in client.get_paginator("list_objects_v2").paginate(
-            Bucket=bucket, Prefix=prefix
-        )
-        for obj in page.get("Contents", [])
-    }
-
-    def put(page: int) -> tuple[int, str]:
-        key = f"{prefix}{page}.jpg"
-        if key not in held:
-            client.upload_file(
-                str(pages_dir / f"{page}.jpg"),
-                bucket,
-                key,
-                ExtraArgs={"ContentType": "image/jpeg"},
-            )
-        return page, blobstore.library_presign_get(key, PRESIGN_SECONDS)
-
-    with ThreadPoolExecutor(UPLOAD_WORKERS) as pool:
-        return dict(pool.map(put, pages))
 
 
 def save_page(pages_dir: Path, page: int, record: dict) -> bool:
@@ -534,7 +496,7 @@ def apply(corpus: dict, texts: dict[int, dict], held: list[dict]) -> dict:
 # --- stage --------------------------------------------------------------------
 
 
-def run(run_dir: Path, book_id: str, *, live: bool = False, redo: bool = False) -> int:
+def run(run_dir: Path, book_id: str, *, redo: bool = False) -> int:
     started = time.time()
     manifest = read_json(run_dir / "manifest.json")
     book = next(b for b in manifest["books"] if b["id"] == book_id)
@@ -548,7 +510,7 @@ def run(run_dir: Path, book_id: str, *, live: bool = False, redo: bool = False) 
     pages = pages_of(corpus)
     book_ledger = ledger(run_dir)
     if redo:
-        batches.archive(run_dir, STAGE, int(started))
+        stages.archive(run_dir, STAGE, int(started))
         for page in pages:
             (pages_dir / f"{page}.json").unlink(missing_ok=True)
         book_ledger["held"] = []
@@ -563,56 +525,28 @@ def run(run_dir: Path, book_id: str, *, live: bool = False, redo: bool = False) 
     if (run_dir / "models").exists():
         for stale in list((run_dir / "models").iterdir()):
             if stale.is_dir() and stale.name not in (STAGE, "tag"):
-                batches.archive(run_dir, stale.name, int(started))
+                stages.archive(run_dir, stale.name, int(started))
     out({"pages": len(pages), "pages_rendered": render_pages(pdf, pages_dir, pages)})
 
     state_path = directory / "state.json"
     state = read_json(state_path) if state_path.exists() else None
-    if state and state.get("batch_id") and live:
-        raise PilotError(
-            f"{STAGE}: a batch task is open; collect it or --redo before --live"
-        )
-    live = live or bool(state and state.get("transport") == "live")
-    if live:
-        if state is None:
-            state = {
-                "transport": "live",
-                "model": llm.ALIBABA_MODEL,
-                "request_ids": [custom_id(book_id, p) for p in pages],
-                "status": "running",
-            }
-            save_json(state_path, state)
-    else:
-        if state is None or not state.get("batch_id"):
-            urls = upload_pages(pages_dir, book["sha256"], pages)
-            out({"uploaded_pages": len(urls)})
-            rows = [
-                batches.row(
-                    custom_id(book_id, p), messages(urls[p]), SCHEMA, thinking=False
-                )
-                for p in pages
-            ]
-            state = batches.submit(directory, rows, book, STAGE)
-            out({"batch": state["batch_id"], "status": state["status"]})
-            return WAITING
-        state = batches.collect(directory, book, STAGE)
-        if state["status"] not in TERMINAL:
-            out({"batch": state["batch_id"], "status": state["status"]})
-            return WAITING
-        for cid, record in batches.answers(directory).items():
-            page = page_of(cid)
-            if not (pages_dir / f"{page}.json").exists():
-                save_page(pages_dir, page, record)
+    if state is None:
+        state = {
+            "transport": "live",
+            "model": llm.ALIBABA_MODEL,
+            "request_ids": [custom_id(book_id, p) for p in pages],
+            "status": "running",
+        }
+        save_json(state_path, state)
 
-    # Pages still without a transcription get one live pass (two on the live
-    # path: the send and its retry).
+    # Pages without a transcription get two passes: the send and its retry.
     sent, live_calls = 0, 0
-    for _ in range(2 if live else 1):
+    for _ in range(2):
         pending = [p for p in pages if not (pages_dir / f"{p}.json").exists()]
         if not pending:
             break
         out({"live_pass": len(pending)})
-        for cid, record, error in batches.live(
+        for cid, record, error in stages.live(
             [
                 (custom_id(book_id, p), messages(data_url(pages_dir, p)))
                 for p in pending
@@ -637,9 +571,9 @@ def run(run_dir: Path, book_id: str, *, live: bool = False, redo: bool = False) 
 
     usage = Counter()
     for record in texts.values():
-        usage.update(batches.tokens(record["usage"]))
+        usage.update(stages.tokens(record["usage"]))
     state.update(
-        transport="live" if live else "batch",
+        transport="live",
         model=llm.ALIBABA_MODEL,
         collection={
             "success": len(texts),
@@ -655,7 +589,6 @@ def run(run_dir: Path, book_id: str, *, live: bool = False, redo: bool = False) 
     summary = {
         "at": started,
         "transport": state["transport"],
-        "batch_id": state.get("batch_id"),
         "pages": len(pages),
         "pages_transcribed": len(texts),
         "pages_sent_live": sent,
@@ -676,7 +609,7 @@ def run(run_dir: Path, book_id: str, *, live: bool = False, redo: bool = False) 
         "seconds": round(time.time() - started, 1),
     }
     save_json(
-        run_dir / f"{STAGE}-{batches.stamp(started)}.json",
+        run_dir / f"{STAGE}-{stages.stamp(started)}.json",
         {
             **summary,
             "held_items": [h["chunk_id"] for h in report["held"]],
@@ -700,18 +633,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--book", required=True)
-    parser.add_argument("--live", action="store_true", help="send every page live")
     parser.add_argument(
         "--redo",
         action="store_true",
         help="discard transcriptions, corrections and the ledger, then start over",
     )
     args = parser.parse_args()
-    batches.load_env()
+    stages.load_env()
     store.init()
     try:
-        code = run(args.run, args.book, live=args.live, redo=args.redo)
-    except (PilotError, llm.LLMError) as exc:
+        code = run(args.run, args.book, redo=args.redo)
+    except llm.LLMError as exc:
         print(str(exc), file=sys.stderr)
         code = 2
     sys.exit(code)

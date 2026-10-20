@@ -57,9 +57,9 @@ flowchart LR
   Artifact --> IngestJob[(ingest continuation)]
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
-  Worker -->|image| ImageCaption[ZAI GLM via Relace]
+  Worker -->|image| ImageCaption[Captioning-slot VLM]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
-  Worker -->|parsed document| VlmPages[Text-less pages read by ZAI GLM via Relace]
+  Worker -->|parsed document| VlmPages[Text-less pages read by the captioning-slot VLM]
   VlmPages --> Chunk[Heading-aware chunker + heading retention + confidence]
   ImageCaption --> Chunk
   DirectText --> Chunk
@@ -119,7 +119,7 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_content_summaries` | The ~50-word `descriptor` and its running `change_share`; shared by files with identical content |
+| `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and when it was written (`updated_at`, kept when a refresh reuses it); shared by files with identical content, carried forward across a note's reindexes |
 
 All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
 logical file removes its alias; a trigger removes canonical content only after
@@ -276,7 +276,7 @@ silently taking a nearby route.
 | PDF / DOCX / XLSX / PPTX with `fast` | OpenDataLoader parser service on the ingest host; text-less pages rendered there and read by the ingest worker's VLM | `content_list.json` (+ `vlm/<page>.jpg` renders) | Yes — `page_idx` + `bbox` |
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
-| supported image | Pinned ZAI GLM-5.3-Flash call through Relace | faithful searchable caption | No |
+| supported image | Captioning-slot pin call (DeepSeek V4.1 Flash 1017 through OpenRouter) | faithful searchable caption | No |
 | supported audio | Store-only (playable in the viewer) | none | No |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
@@ -355,7 +355,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v18` plus the release SHA (the donor key uses the first
+`odl-2.5.7-refined-vlm-v19` plus the release SHA (the donor key uses the first
 part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
@@ -1405,22 +1405,29 @@ parts design Q7): an empty or cut-off answer settles and takes the next of the
 three attempts, a transient error retries, and a definitive client error (400,
 401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
-Caption calls never inherit a user's chat reasoning level. The pinned catalog
-identity is `zai/glm-5.3-flash`, served from Relace as wire model
-`z-ai/glm-5.3-flash` (on the ingest host the key is the ingest account's,
-below). The caption prompt rides as the system message and the image as the
-user turn, since Relace refuses image input with no conversation context.
-Captioning always sends `reasoning_effort: low`. The catalog default is `low`
-for chat, and users may raise it to `high` or `max`.
+Caption calls never inherit a user's chat reasoning level. The captioning
+default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on DeepInfra
+with fallbacks and reasoning off (decision 2026-10-19, after GLM-5.3-Flash on
+Relace stopped reading its input; the provider pin is described in
+[Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
+Its catalog and capacity rows
+are UAT data. The caption prompt rides as the system message and the image as
+the user turn (decided 2026-10-15, when Relace, GLM's host then, refused image
+input with no conversation context).
+On the `zai/glm-5.3-flash` row (served by Z.AI), which cannot turn thinking
+off, captioning sends `reasoning_effort: low`.
 
 ### VLM page read
 
 Text-less pages (a scan, a blank page, a slide that is one picture) reach the
 ingest worker as `vlm/<page>.jpg` renders in the parse bundle. After extracting
 the bundle, `_read_vlm_pages` (stage `vlm_pages`) reads each with the captioning
-slot's pinned model, GLM-5.3-Flash on Relace, through `models.read_page`:
-`VLM_PAGE_PROMPT` (`pipeline/prompts/captioning.py`, the developer's wording)
-as the system message and the image as the user turn, reasoning `low`, at most
+slot's pinned model through `models.read_page`:
+`VLM_PAGE_PROMPT` (`pipeline/prompts/captioning.py`, the developer's wording
+plus a last sentence asking for the page's content alone, since DeepSeek
+sometimes opens with "Here is the text extracted…", which would be indexed)
+as the system message and the image as the user turn, reasoning off (`low` on
+the routed GLM row), at most
 2,000 output tokens (`VLM_PAGE_MAX_TOKENS`; a page is about 460). A page gets
 one read (decided 2026-10-15, replacing the second read of the same day's OCR
 decision): the ingest retry policy's three calls. An empty answer, one that
@@ -1435,17 +1442,14 @@ so the file ends partial rather than failing `provider_busy` (parts design
 §6). One job reads at most 10 pages
 at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
 its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
-flight (`VLM_PAGE_CAPACITY`), taken in place of the GLM `model_capacities` row,
+flight (`VLM_PAGE_CAPACITY`), taken in place of the captioning model's `model_capacities` row,
 so page reads neither need that row nor count against its ingest share.
 
-Ingest calls Relace on a second account: GitHub holds its key as
-`RELACE_INGEST_API_KEY`, and the env renderer (`scripts/env/config.py`) writes
-it into the ingest queue env as `RELACE_API_KEY`, the one name the pipeline
-reads. Chat on the app host keeps its own `RELACE_API_KEY`. Both accounts share
-Relace's server pool (a server already serving 32 requests sheds new
-sessions), so the second key adds no capacity and ingest reads stay inside
-their gate. Quality against RapidOCR, the 1,280 px render size, per-page speed
-and cost, and the load where shedding starts are in
+On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`; a
+slot pointed at GLM uses `ZAI_API_KEY`, the one Z.AI key chat also uses
+(decision 2026-10-20, replacing the second Relace account ingest had). GLM's
+quality against RapidOCR on Relace, the 1,280 px render size, per-page speed
+and cost are in
 [`bench/parsers/reports/2026-10-15-glm-ocr.md`](../bench/parsers/reports/2026-10-15-glm-ocr.md).
 
 Reads go through the caption cache keyed by the SHA-256 of `vlm-page\0` plus
@@ -1630,7 +1634,7 @@ The tokenizer also maps the typographic ligatures `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ`
 (U+FB00–U+FB06) to their letters (decision 2026-09-24). Postgres indexes them
 as written, so a PDF's `ﬁnd` or `eﬀect` never met a typed `find` or
 `effect`; on 2026-09-24, 21,168 non-reference chunks across the shared
-library's current and retained versions carried one. Only the lexical input
+library's current and then-retained versions carried one. Only the lexical input
 changes; `text`, `indexed_text`, embeddings and `pipeline_identity` stay the
 same, so quotes and citations still match the printed PDF. Rows indexed
 before the mapping are rebuilt in place by
@@ -1725,7 +1729,7 @@ exists; the local bundle is gone once the first ingest finished.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
 4. The file descriptor (~50 words, one call on the ingest pin, DeepSeek V4
-  Flash 0731 through OpenRouter held on Relace); upsert
+  Flash 0731 through OpenRouter on Reka, then DigitalOcean, then StreamLake); upsert
   `rag_content_summaries`. Like compaction's summary, the call asks for plain
   text (one dense sentence of about 50 words, no JSON, no preamble, starting
   with the subject rather than "This document…", in the source's language or
@@ -1747,7 +1751,8 @@ exists; the local bundle is gone once the first ingest finished.
   can only regenerate earlier). Its
   share of the document's estimated tokens adds to the stored `change_share`,
   and the published descriptor is kept while that sum stays under 2%
-  (`SUMMARY_REUSE_SHARE`). At 2% or more, or with no previous descriptor, the descriptor is regenerated
+  (`SUMMARY_REUSE_SHARE`), with its `updated_at` (when it was written). At 2%
+  or more, or with no previous descriptor, the descriptor is regenerated
   and the share resets to 0. The call reads `descriptor_excerpt`: the whole
   content up to `DESCRIPTOR_INPUT_TOKENS` (8,000 estimated tokens), else the
   heading outline (halved until it fits 1,200), the opening chunks up to half
@@ -2044,11 +2049,10 @@ and are a column on `library_subjects`, never a filter. Topics are derived per
 book from its table of contents by the builder's topics stage (at most 96 per
 subject), carry `subject_id`, and live library-wide: a publish upserts the
 topics its book uses under the book's subject, then drops every topic no
-tagged excerpt on a current or retained book version references, so a
-rollback never lands on excerpts whose topics are gone; `retire` runs the same
-drop after deleting the version's rows, which is when a retained version's
-topics may go, and `remove` runs it after deleting a whole book. The pilot's 32
-topics all sit under `statistics`.
+tagged excerpt references. The same publish has already deleted the previous
+version's excerpts, so a topic only that version carried goes with it; `remove`
+runs the drop after deleting a whole book. The pilot's 32 topics all sit under
+`statistics`.
 
 Topic ids are unique library-wide (decision 2026-09-23). A book may tag its
 excerpts with another subject's topic without redefining it: its owner's
@@ -2066,19 +2070,20 @@ Versions are per book, not per dataset. There is one workspace row, the
 constant `library`, and one file per book. Publishing a book loads its content
 under a new content id, records version n+1 in `library_book_versions` with the
 receipts of that publish (source run, corpus identity, parser release and
-fingerprint, chunker, `object_key`, note), marks the previous version
-`retained` and swaps `rag_file_contents` in one transaction. The book's
+fingerprint, chunker, `object_key`, note), retires the previous version and
+swaps `rag_file_contents` in one transaction. Retiring deletes that version's
+chunks, vectors, excerpts and figures and keeps its version row and model-run
+receipts (`retire_current`). No older version is kept (decision 2026-10-19,
+which also retired the 420 versions retained until then), so a bad publish is
+undone by republishing from the book's saved run. The book's
 `descriptor` (the manifest attribution line) and `summary` (its top-level
 section titles joined with " · ", clipped to 1,000 characters; no model writes
 prose here since the summary stage was dropped on 2026-09-19) are written with
-that content, so they sit on the version row too and a rollback restores them
-with the content they describe. Excerpts, figures, chunks, vectors and model
-runs are keyed by content id; subjects and topics are library-wide. Every
-read here follows `rag_file_contents` to the current
-content, exactly as workspace search does, so a retained version is invisible
-to retrieval while staying exportable in ops. UAT and production read the same
-live library; nothing is pinned. A rollback points a book back at a retained
-version, and `retire` drops a retained version's content rows. `remove` takes a
+that content, so they sit on the version row too. Excerpts, figures, chunks,
+vectors and model runs are keyed by content id; subjects and topics are
+library-wide. Every read here follows `rag_file_contents` to the current
+content, exactly as workspace search does. UAT and production read the same
+live library; nothing is pinned. `remove` takes a
 book out of the library (decision 2026-09-25, first used for Modern Philosophy,
 whose own text is CC BY-NC-SA): in one transaction it deletes every version's
 content rows and model runs, the version rows, the book's `rag_file_contents`,
@@ -2161,6 +2166,10 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
   `capture_knowledge_page`. The
   loader records the key only after a `head_object` on that bucket succeeds,
   and refuses the publish otherwise (`knowledge_base_library.py publish`).
+  An approved privacy-edited copy can be a book's capture object (decision
+  2026-10-03, Lessons in Industrial Instrumentation and the American criminal
+  justice book); its key is then the copy's hash, while `library_books.sha256`
+  keeps the source's identity and the source PDF stays in the bucket.
 - Measured motivation (`bench/rag/reports/2026-09-17-knowledge-base-retrieval.md`):
   plain search lands on the expected topic for every first hit but reaches
   an expected role 58 of 110 times; role wording in the query does not move
@@ -2187,7 +2196,9 @@ practice. Once a write lands the turn context shows the responses left under the
 stall guard. Search continuation caching is absent.
 
 The loader (`bench/rag/scripts/knowledge_base_library.py`) publishes a
-completed run. `schema` creates `LIBRARY_SCHEMA` and loads the subjects
+completed run. It runs from a developer checkout: the retrieval image carries
+the other `bench/rag/scripts` diagnostics but not the loader (`.dockerignore`,
+developer decision 6c). `schema` creates `LIBRARY_SCHEMA` and loads the subjects
 fixture; every `publish` refreshes it first (upsert by id; a subject gone from
 the fixture is deleted only when no topic references it, otherwise the publish
 refuses naming the subjects). The default manifest is `lab/knowledge/books.json`
@@ -2237,18 +2248,22 @@ title and a known subject. Missing authors are allowed at download; authorless
 books require source/PDF attribution review and a supplied attribution statement
 at admission, enforced again before publication. Titles and filenames containing
 `Free Courseware` are rejected. Page fetches request HTML explicitly and
-same-catalog `rel=next` pagination preserves crawl depth; its ingestion
+same-catalog `rel=next` pagination preserves crawl depth; the scraper follows
+redirects itself (at most five) and refuses any hop whose host resolves to a
+non-public address (the check and the connection resolve separately, so an
+answer that changes between them is not covered). The dashboard answers only its own Host
+(`127.0.0.1:<port>` or `localhost:<port>`) and refuses a mutating request
+without its `X-Capy-Builder` header. Its ingestion
 worker runs one-book manifests through parse, figures, topics (TOC-derived,
 two to three per chapter, merged with the subject's library topics, at most 96,
 never an id that equals a subject id), transcribe, tag, index and publish
-(source PDF uploaded to the knowledge-base bucket first). The transcribe stage
+(source PDF uploaded to the knowledge-base bucket first, with the builder's
+own writer key; retrieval's key only reads). The transcribe stage
 sends one request per page image (the developer's page-description prompt,
-thinking off, temperature 0, a strict schema returning `text` and `figures`) to
-Qwen3.8-Flash on Alibaba Model Studio, Batch by default (one task per book and
-stage, 24-hour window polled every ten minutes, page images presigned in the
-knowledge-base bucket for 7 days, custom ids `<book>:p<page>`, answers saved as
-`<run>/pages/<page>.json`) with the live endpoint for the pages a batch missed
-and for small books. Recovery is alignment: a chunk's original words are
+thinking off, temperature 0, the page inline, a strict schema returning `text`
+and `figures`) to Qwen3.8-Flash on Alibaba Model Studio's live endpoint (four
+in flight, one retry pass, custom ids `<book>:p<page>`, answers saved as
+`<run>/pages/<page>.json`). Recovery is alignment: a chunk's original words are
 matched against the transcription of its pages (concatenated for a
 page-spanning chunk) in blocks of three or more words, extended over shorter
 blocks within a tight gap, and the span replaces the chunk text under a
@@ -2259,21 +2274,21 @@ transcription for the dashboard (page image, original, aligned span, full
 transcription, accept or reject), publish refuses while one is undecided, and
 fragments under 12 words with nothing matched are skipped as
 `unaligned_short`. Every run re-aligns from the saved transcriptions, so
-decided items stay decided and a rule change needs no new batch. Each returned
+decided items stay decided and a rule change needs no new calls. Each returned
 figure is matched to the corpus figures on its page by printed label, else by
 order; the description lands on `library_figures.description` at publish and,
 as `[Figure <label>] <description>`, on the `indexed_text` of the first chunk
 of the excerpt that lists the figure (unless it is decorative), never on
 `text`. The tag stage then sends
 the corrected excerpts text-only, eight per request with the candidate topics
-as id, label and aliases in the system prefix, thinking capped at 4,096 tokens
-in Batch; excerpts missing from a reply are re-sent singly live; evidence must
+as id, label and aliases in the system prefix, on the live endpoint with
+thinking off; excerpts missing from a reply are re-sent singly; evidence must
 be a contiguous 5-30 word span copied from the excerpt text, and the pilot's
 `evidence_verified` (case, whitespace and ellipsis tolerant, every piece
 verbatim, on the corrected text) decides the flag; more than 2% untagged
 excerpts fails the book. GLM on Ollama serves topics and scraping only;
 TokenHub is gone from the builder. Receipts live in the builder's SQLite
-(`llm_calls`, `stage_runs`, `review_tasks` keyed by book and stage) and the
+(`llm_calls`, `stage_runs`) and the
 run directory (`topics.json`, one `transcribe-<timestamp>.json` and
 `tag-<timestamp>.json` per run, `transcribe.json` for the held ledger); model
 directories of replaced stages move to `<run>/archive/` so a version records
@@ -2309,12 +2324,8 @@ Full notes and retrieval metadata
 are retained in `reviewed-notes.json` and final tags; indexing refuses their loss.
 The heartbeat dispatches the fixed `lab/knowledge/sol-assignment.txt` template
 with a separate assignment record. Sol finishes with reusable saved text packets
-embedding the assigned source/context, full notes, tags and catalog. The developer
-may submit them to Qwen whenever needed and assign another reviewer to assess
-the response. Submission and polling are outside the Sol workflow. Qwen checks roles, notes, scope,
-topics and context links against supplied text; numerical and page inspection
-remain initial Sol work. Qwen has no material review stage, no dedicated image
-cache and no Sol correction loop. The realtime user agent is unchanged.
+embedding the assigned source/context, full notes, tags and catalog; numerical
+and page inspection remain Sol work. The realtime user agent is unchanged.
 The fixed Sol prompt references concrete examples in `lab/knowledge/sol-examples.md`
 and `lab/knowledge/examples/book-review-packet.json`; assignments freeze those
 files with the review contract. `lab/knowledge/packet.py` emits the fixed text
@@ -2337,19 +2348,10 @@ chunk text. Saved unresolved issues from earlier Sol assignments remain in a
 local repair inventory; metadata completion alone does not close them. Printed
 errors, author placeholders and unavailable content retain explicit limits.
 `packet.py --source-review` embeds the assembled repaired source across scoped
-packets and their direct context links. Qwen's optional text-only role is unchanged.
-Observed failures are included in Sol's example file. Qwen's separate
-`bench/rag/fixtures/knowledge-review-v2/system-prompt.txt` embeds its examples
-directly, including no-op fixes and immutable old notes. The optional test helper
-accepts a saved `--packet` as well as fixture cases; it never applies findings.
-The separate `lab/knowledge/qwen_batch.py` commands freeze selected text packets,
-submit one durable Alibaba job and poll every 600 seconds with `poll --watch`.
-The operator explicitly selects thinking or non-thinking mode; both retain
-strict JSON Schema and no caller token caps. Inputs, endpoint and batch ID are
-saved for resuming; results match by custom ID and retain raw responses,
-partial failures and contract warnings for later assessment. Collection never
-applies suggestions or controls Sol publication. See
-[`qwen-batch.md`](../lab/knowledge/qwen-batch.md) for commands and recovery.
+packets and their direct context links.
+Observed failures are included in Sol's example file. The optional Qwen packet
+review over Alibaba Batch was retired with Sol (2026-10-19), with the builder's
+Batch transport.
 Deferred agent-loop and duplicate-result work is tracked in
 [`todo-learning.md`](../todo-learning.md) under Later.
 Summaries are not compacted. Completed books progress through
@@ -2563,9 +2565,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    editor authorization and storage quota checks still apply.
 8. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
    encrypted reasoning items inside the current tool loop. DeepSeek,
-   Anthropic, and ZAI GLM (served from Relace,
-   `models.relace.ai/v1/chat/completions`, wire model
-   `z-ai/glm-5.3-flash`, `RELACE_API_KEY`, no fallback route) use Chat
+   Anthropic, and ZAI GLM (served by Z.AI,
+   `api.z.ai/api/paas/v4/chat/completions`, model `glm-5.3-flash`,
+   `ZAI_API_KEY`, no fallback route) use Chat
    Completions-compatible paths. The GLM
    adapter preserves `reasoning_content` on the assistant message immediately
    before the matching tool result in the next request. Raw chain-of-thought
@@ -2940,8 +2942,8 @@ build, and the knowledge library is one more source while the switch is on.
   page's Copy to quiz (`POST /api/bank/copy`, see
   [question-bank.md](question-bank.md#learner-progress-and-retraction)): Go
   reads the questions from the bank, resolves each one's sources
-  (`bank.Provenance`: library books at their historical version, openly
-  licensed web pages) and creates the quiz or appends after its last question
+  (`bank.Provenance`: library books at the version a question was written
+  from, resolved from that version's row, and openly licensed web pages) and creates the quiz or appends after its last question
   (`bankCopies`, `bankAppendCommands` in `huma_bank_progress.go`). Each copy's
   credit is kept in the quiz's provenance under its question id
   (`provenance.questions`), shown under that question (`QuestionCreditNote`),
@@ -3143,7 +3145,7 @@ build, and the knowledge library is one more source while the switch is on.
 | Tool | Side effects | Notes |
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
-| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
+| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
 | `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
@@ -3781,19 +3783,34 @@ Workspace notes (`materials.kind='note'` with a workspace) are indexed into
 the same canonical content files use. `rag_material_contents` aliases a note
 to a ready `rag_contents` row exactly as `rag_file_contents` does for files,
 so chunks, vectors, summaries, orphan cleanup and clone copying are shared.
-Standalone notes have no workspace and are never indexed; embedded quiz and
-flashcard rows are separate materials and stay out of note text.
+Standalone notes have no workspace and are never indexed. Embedded quizzes
+and flashcard sets are not indexed on their own: their text is indexed inside
+the parent note, at their reference (Epo 2026-10-17).
 
 The trigger is the projection. `ProjectMaterialContent` (and the SQL content
 path of `UpdateMaterial`) sets `materials.index_dirty_at` when a workspace
 note's content changes, clears `index_error`, and skips unchanged writes; a
-new workspace note is dirty from creation. The collaboration server's 5 s
-timer (`schedule_note_indexes`) asks Go to admit dirty notes that have been idle
-15 s, have no running job and no parked error, in workspaces with
-`auto_process` on. `POST /internal/collaboration/materials/{id}/index`
-(`RequestMaterialIndex`) reserves ingest credits on the workspace owner,
-inserts one `ingest` job carrying `materialId`, and records it in
-`index_job_id`; 409 means not due. A refusal a retry cannot fix (another
+new workspace note is dirty from creation. A content write to an embedded
+quiz or flashcard set (its room's projection or a save) marks its parent note
+the same way (`markParentNoteDirtyTx`), so an item edit reindexes the note,
+and clears `pending_tokens`. A dirty note is due once its change since the
+last index reaches 1,000 net tokens after 60 s idle, or once it has been dirty
+for 10 minutes (Epo 2026-10-17; `NOTE_INDEX_TOKENS`, `NOTE_INDEX_IDLE` and
+`NOTE_INDEX_STALE` in `sources/src/refresh.rs`, `NoteIndexTokens` and
+`NoteIndexStale` in `store/note_index.go`). The collaboration server's 5 s
+timer (`schedule_note_indexes`) runs `NOTE_INDEX_SQL`, which lists dirty notes
+with no running job and no parked error, in workspaces with `auto_process`
+on, that are idle and not yet measured (`pending_tokens` NULL) or measured at
+the threshold, or that are stale. It asks Go to admit each.
+`POST /internal/collaboration/materials/{id}/index` (`RequestMaterialIndex`)
+measures a note that is not stale, before it takes the workspace and account
+locks: the net tokens of its changes (below) go into `pending_tokens` if the
+note's revision is unchanged by then, and a change under the threshold is not
+due (409) until the next content write clears the measure or it goes stale
+(staleness is the database clock's, as in the SQL). A stored note the rules
+refuse answers 422 `material_content_unreadable`, which parks it. A due note gets
+ingest credits reserved on the workspace owner and one `ingest` job carrying
+`materialId`, recorded in `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
 `pendingNotes` in workspace settings until the note changes again; transient
 failures retry on the next tick. Notes have no Process: with `auto_process`
@@ -3802,34 +3819,70 @@ off, dirty notes wait until it is on again.
 When the job ends, whatever ended it (the worker, the lease reaper,
 `cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
 account-deletion request), the `jobs_release_note_index` trigger (migration
-0082, its function replaced by 0083) releases the note. Admission clears the
-dirty mark, so a mark present when the job ends means an edit landed while it
-ran: whether the job finished or failed, the note is then left dirty with no
-error and is due again. A done job clears `index_job_id` and `index_error`. A
-job that failed with no edit since its admission parks the note: it stays
-dirty with `index_error` set (the job's error, or `index job failed` when it
-has none) and counts in `pendingNotes`, and nothing admits it again until its
-next edit clears the error. The one wait before that
+0082, its function replaced by 0083 and then 0098) releases the note.
+Admission clears the dirty mark, so a mark present when the job ends means an
+edit landed while it ran: whether the job finished or failed, the note is then
+left dirty with no error and is due again. A done job clears `index_job_id`
+and `index_error` and resets `index_failures`. A job that failed with no edit
+since its admission counts one in `index_failures` and leaves the note dirty
+with no error, so the scheduler admits it again: a note is retried at most
+twice (Epo 2026-10-20). The third such failure parks it: it stays dirty with
+`index_error` set (the job's error, or `index job failed` when it has none)
+and counts in `pendingNotes`, and nothing admits it again until its next edit
+clears the error and the count. The one wait inside a job
 is a busy embedding provider: like a file's job, a note job that finds it busy
 re-pends without spending an attempt (once, `PROVIDER_WAITS_MAX`, decided
 2026-10-15 in place of the five waits of 2026-10-14; Retry-After or 30 s) and
 fails only after that; otherwise there is no
-automatic re-admission or backoff. A note parked by a lifecycle cancellation
+backoff between those re-admissions. A note parked by a lifecycle cancellation
 (an account-deletion request, a suspension) stays parked after the account is
 restored or unsuspended, until an edit.
 
 The ingest worker branches on `materialId`: it fetches the note's
 markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`
-(workspace-scoped, pipeline secret)
-(`materialdoc.ExtractIndexText`: headings keep their level, list items their
-bullets, table rows their cells, code its fence; references, diagrams and
-media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
+(workspace-scoped, pipeline secret; `text`, and `blocks`, the same text per
+top-level block as `{id, text}`, which `text` joins with blank lines). A note
+whose stored content the current rules refuse answers 422
+`material_content_unreadable`, which ends the job without a retry (the worker
+retries only 5xx and 429).
+`MaterialIndexText` reads the note and, in one query, its active embedded
+items, and `materialdoc.ExtractIndexBlocks` renders each element by its embed
+catalog index rule ([embeds](embeds.md#index-text)): headings keep their
+level, list items their bullets, table rows their cells, code its fence; a
+chart gives its titles and a markdown table of its values, a plot its points
+per series, a graph its elements as stored terms, a Mermaid diagram its
+caption and whole source in a ```` ```mermaid ```` fence, an embedded quiz its
+stems, options and solutions and a flashcard set its fronts and backs, at the
+reference; media, equations and interactive HTML give nothing. The
+collaboration server's `notes::index_text` gives the same blocks from a live
+room or stored content, for note effects. The worker chunks `text` with `chunk_markdown`, hashes the chunks under a `note:` prefix
 so a note never shares a content row with a file of identical text, and
 claims a new content row without moving the alias. It reuses vectors for
 unchanged chunk text from the note's previous content row, which stays
-aliased and searchable while the job runs, and writes the content with no
-descriptor. `publish_material_content` then marks the new row ready and moves
-the alias in one transaction, and the orphan trigger drops the old row. A
+aliased and searchable while the job runs, and writes the note's summary
+before the publish (`_note_summary`, Epo 2026-10-20): a note under 200
+estimated tokens (`NOTE_SUMMARY_MIN_TOKENS`) gets none, and loses one it had;
+a note with none gets one; otherwise the change since the previous content
+(`text_change_tokens`, as a share of the note) adds to the carried
+`change_share`, and the summary is rewritten from the whole note once that
+reaches 10% (`NOTE_SUMMARY_SHARE`) and the summary is at least 24 hours old
+(`NOTE_SUMMARY_MIN_AGE_S`), else carried forward to the new content with its
+share and `updated_at`. The age bound keeps a note under active editing from
+paying for a summary per burst of typing. It is checked only when the note is
+indexed; there is no timer. The call is the file descriptor's prompt and
+excerpt without the title (`summarize_note`, purpose `note_summary`), under
+the job's ingest accounting, so the workspace owner pays. A failed call does
+not fail the job, which would abandon the new chunks: the note publishes
+without a summary (or keeps its previous one with the accumulated share), and
+its next index writes it: also a reindex whose text hash is unchanged (a
+formatting-only edit), which reuses the ready content and runs only the summary
+step when that content has none (`fill_note_summary`, Epo 2026-10-20). Notes
+indexed before summaries get none until they are edited: there is no backfill.
+`publish_material_content` then marks the new row ready and moves
+the alias in one transaction, and the orphan trigger drops the old row. The
+alias move (here, or when the claim finds ready content) also stores the
+fetched `blocks` as `materials.indexed_blocks` (migration 0098): the baseline
+the note's pending changes are measured against. A
 failed job abandons its claimed row, so the note keeps its previous index. The
 attempt records `chunks_created` and, in `details`, `chunks_embedded`. A 404
 from Go (trashed, standalone, deleted) ends the job without work. The job's
@@ -3843,12 +3896,13 @@ Search runs one pool: the `scoped_files` CTE unions files and notes with a
 passage cites `{kind: "material", materialId, fileName: title}` with no page
 or regions. The chat panel renders such a chip with the note glyph and opens
 the note in view mode. The agent's `list_sources` keeps notes as title, id
-and kind, `read_document` pages a note's chunks like a file's, and the file
+and kind, with the note's summary under its line when it has one, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
-clones copy note index rows with the file rows; a cloned note without an
+clones copy note index rows with the file rows, and a copied index keeps its
+`indexed_blocks`; a cloned note without an
 index, whose index is not current (dirty, a job rebuilding it, or a failed
-one), or whose index text the clone changed (a mention turned plain text),
-starts dirty.
+one), or whose index text the clone changed (a mention turned plain text, or
+an embedded item whose copy reads differently), starts dirty.
 
 ## Clone and teardown
 
@@ -3873,8 +3927,8 @@ limit, the dialog showing either message; a processed store-only Office file
 `reprocessTx`, and a file with nothing to process is copied unindexed. The
 pipeline's donor path reuses what it can. A note shares its index only while
 it is current (no `index_dirty_at`, `index_job_id` or `index_error`);
-otherwise, or when its copy reads differently (mentions turned plain), it is
-marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
+otherwise, or when its copy reads differently (mentions turned plain, or its
+embedded items' copies do), it is marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
 of bytes an export-only publication left unindexed is reprocessed like its
 source. A pipeline ingest that adds the same content to the destination after
 the snapshot conflicts on `rag_contents` and the clone retries as a
@@ -4024,14 +4078,80 @@ and carry the saved edits as the copy's own `source_documents` row
 ([office-files.md](frontend/office-files.md)).
 
 `retrieval/pending.py` captures all scoped durable changes once per answer,
-including sources with no index or search hit. Complete exact changes form a
-protected provider message outside tool-output clipping, live-history
-compaction and persisted conversation summaries. Replacements and removals
+including sources with no index or search hit. Chat passes a document's
+changes on only once the agent reads that document this turn
+(`inspect_document`, `capture_page`, `read_document`; `PendingSources.read`),
+never every turn or with search results (Epo 2026-10-20). Generation reads
+its whole scope, so it passes on every scoped change, in one message right
+after its system instructions. In chat, a read appends its document's exact
+changes to its own tool result, once per turn, after the result's clip
+(`PendingSources.for_read`): nothing earlier in the conversation changes, so
+earlier requests stay a cached prefix (providers reuse any shared prefix; a
+message near the top that grew with each read re-billed the whole history).
+An `inspect_document` result is kept in full (`retention: full`), so its
+appended changes stay in the conversation history with it; `read_document`
+and `capture_page` keep none. When the turn changes a source (an edit, a
+trash or restore), the pending changes are re-read and the turn keeps what it
+already read, passed on and omitted (`PendingSources.carry`); only the changed
+document passes its new changes on at its next read. `resolve_source_change` stays offered when any captured change has a
+placeholder (the tools are fixed for the turn) and refuses one in a document
+not read yet.
+
+Unindexed edits stay findable through a lexical match of the captured
+changes' text (`retrieval/pending_hints.py`, Epo 2026-10-20): no chunking,
+vectors or provider call. One SQL statement over `unnest` runs `to_tsvector
+@@ websearch_to_tsquery` on the texts after `tokenize_for_search` (ligature,
+sub/superscript and CJK folds), with the query from `search_query_terms`;
+each `to_tsvector` is computed once. A hint matches in its document's language
+(Epo 2026-10-20): the dominant language of the document's indexed chunks (one
+query per load), else one detection over the document's pending changes
+together. For a document under the `simple` config, which keeps every word
+(Chinese, Japanese, Korean, or a language that stays undetermined), the
+query's words on Postgres's English stopword list (`ts_lexize` on
+`english_stem`) are dropped before matching it, so "What is the formula?" no
+longer matches any edit holding "the" (Epo 2026-10-20). Only English: the
+French, German and Spanish lists dropped English content words such as "war"
+and "die". The candidates are prepared once per load of the turn's pending
+changes, the tokenizing and detection in a worker thread. A candidate is an
+added or changed text (its new text), a removed one (its old text), or a change
+without text by its label, read up to 500 characters; moves are left out, and
+at most 2,000 changes are taken round-robin across documents, so one busy file
+does not starve the rest. Documents already read this turn are skipped. Each hint
+names the document (`file_id` or `material_id`), its name and the change label
+or block quoted, and says "added", "changed" or "removed" with a snippet of at
+most 200 characters around the longest query word it holds (function words
+skipped, a CJK run probed by its bigrams, found in the original text so the
+match stays in the window). The lines are source data, in a
+`<source>` block. Two paths use it:
+
+- The user message: at most 5 hints, a block of at most 400 tokens in its own
+  message right after the query (`_kind` `pending_hints`). Only the hints that
+  fit are shown, saved and counted as hinted. A change hinted earlier in the
+  conversation (since its last checkpoint) is not hinted again. The hints are
+  saved with the answer (`toolEvidence.pendingHints`, snippets only) and
+  replayed after their user message word for word, under the one heading the
+  live message uses (worded to stay true later), so earlier requests stay a
+  cached prefix; providers reuse any shared prefix (GLM on Z.AI measured
+  2026-10-20). After a checkpoint, an edit hinted before it may be hinted
+  again. The turn's own hint message survives a turn-start checkpoint and a
+  live fold of its older exchanges. Hints stay in context until the chat is
+  condensed; condensing (a checkpoint, a live-history fold or a turn fold)
+  drops every hint, read or not, and the edits a search listed (Epo
+  2026-10-20). A read document's details stay through its read result.
+- `search_workspace`: matching edits come after the passages under their own
+  heading, not citable (no passage numbers), and stay whole when a long result
+  is clipped; with no passage, they are the result. It skips edits a message
+  of this conversation hinted and edits an earlier search of this turn
+  listed.
+
+Generation passes every scoped change, so it gets no hints. Replacements and removals
 supersede old indexed facts; the message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
 match against passages, and that a move carries no text. An image added or
 changed before publication is a typed placeholder the model opens with
-`resolve_source_change`: the gateway verifies source access and checkpoint, the
+`resolve_source_change`: the gateway checks that the actor can read the
+workspace and the file is in it before it forwards, the collaboration
+authority verifies source access and checkpoint again, the
 headless runtime extracts the exact image, the pipeline checks its hash and the
 captured published identities, and the image (oriented, flattened and shrunk
 like an uploaded image's `capture_page`) rides in the next model request the
@@ -4039,24 +4159,53 @@ way a capture does, counted in the same image budget. Nothing is captioned or
 stored: chat runs without ingest job pins, so it has no captioning model.
 The same read captures published identities for every scoped file, including
 files without an index. Before each source-dependent model request, the pipeline
-checks that those published identities still match. Publication, replacement or
-deletion during gathering returns `source_changed` and asks the user to retry.
+checks that the identities of the documents whose changes it passed on still
+match (all scoped files for generation). Publication, replacement or deletion
+of such a document during gathering returns `source_changed` and asks the user
+to retry.
 New authored edits alone leave the captured evidence valid. This check prevents
 combining an old pending delta with a newer index without retaining old indexes
 or keeping database transactions open during model calls.
 
-The full provider request reserves this pending evidence within the selected
-model's window and the 250k effective ceiling, including output and safety
-allowances. If complete pending evidence cannot fit, chat omits that evidence,
-keeps it durably and explicitly tells both the model and user; the UI offers
-Process file changes. Generation uses the same evidence and returns
-`pending_sources_too_large` with the edited file ids when it cannot include it,
-so Process file changes sends exactly the files chat would.
-Either overflow (chat dropping the pending evidence, or generation refusing)
+Notes get the same evidence from Go (Epo 2026-10-17). The same read calls
+`POST /api/internal/note-changes` (pipeline secret, bound to the workspace like
+`index-text`; generation calls it too), and `NotePendingChanges` computes, for
+each scoped note the index does not hold as it stands (dirty, being indexed or
+failed), its index blocks now (`MaterialIndexText`'s blocks from
+`materials.content`) against `indexed_blocks`, aligned by element id
+(`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
+change names its `blockId`. Text changes have Office's shape: one span with
+40 UTF-16 units of context. Reordered blocks are moves without text. An
+embed's small change is a line diff of its index text. A chart, plot, graph or
+Mermaid change whose diff exceeds 150 tokens, or a line diff past 2^18 cells
+of changed lines before by after (once unchanged first and last lines are
+trimmed; `N of M lines changed`), is a `data` placeholder labelled
+with its kind, title and a count (`chart "Rain": 40 of 104 cells changed`).
+`resolve_source_change` with `material_id` and `block_id` reads that block's
+index text before and after through `POST /api/internal/note-changes/resolve`,
+which acts as the turn's user (who must read the workspace). Index text holds
+no answer keys, so neither does any of this (2026-10-18). The read is of the
+stored content, as of the last projection; the live room comes with the Office
+live route. The notes' published index identities, read before the changes,
+are checked with the files'; a failed read keeps the turn going, with the
+outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
+omitted note change waits for its reindex.
+
+A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`, Epo 2026-10-20)
+are omitted: the read says the document's pending edits are larger than a
+read carries and can be processed (`READ_OMITTED`), the changes stay durable,
+and once the turn's set of omitted files grows the user gets a
+`pending_sources` event naming all of them, for which the UI offers Process
+file changes. Generation uses the
+same evidence for its whole scope and returns `pending_sources_too_large`
+with the edited file ids (`fileIds`, which Process file changes sends) and
+note ids (`materialIds`, which wait for their reindex) only when it cannot
+include it (Epo 2026-10-20: with auto processing off too, the error shows
+only then).
+Either overflow (a chat read omitting its changes, or generation refusing)
 also sends the workspace owner a `system` notification per affected file
 (`pending_edits_too_large`, linking to the file), best effort and off the
-request path. Chat drops all pending evidence together, so every file with
-pending edits in the turn counts. `source_documents.overflow_notified_checkpoint`
+request path. In chat, the files whose read omitted its changes count. `source_documents.overflow_notified_checkpoint`
 records the indexed checkpoint it was sent at; processing advances
 `indexed_checkpoint`, so the file notifies again only after it is processed.
 
@@ -4074,7 +4223,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `ZAI_API_KEY`, `OPENROUTER_API_KEY` | The ingest queue env carries the same `ZAI_API_KEY` as chat and the `OPENROUTER_API_KEY` of the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
@@ -4086,7 +4235,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the ZAI GLM-5.3-Flash row (served by Z.AI) captions at `reasoning_effort: low`. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |
