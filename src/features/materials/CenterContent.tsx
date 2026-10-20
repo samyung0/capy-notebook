@@ -168,6 +168,7 @@ export function CenterContent({
   requestedMode = null,
   workspaceId,
   leading,
+  trailing,
   oneColumn,
   standalone = false,
 }: {
@@ -185,6 +186,8 @@ export function CenterContent({
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file name in the header. */
   leading?: ReactNode;
+  /** Workspace chrome at the header's right end. */
+  trailing?: ReactNode;
   chapters: Chapter[];
   item: OpenItem | null;
   readOnly?: boolean;
@@ -241,6 +244,7 @@ export function CenterContent({
         onOpenSettings={onOpenSettings}
         onOpenTrackProgress={onOpenTrackProgress}
         progress={progress}
+        trailing={trailing}
         workspaceId={standalone ? '' : workspaceId}
       />
     );
@@ -294,6 +298,7 @@ export function CenterContent({
                     }
                     readOnly={readOnly}
                     standalone={standalone}
+                    trailing={trailing}
                     workspaceId={workspaceId}
                   />
                   {/* One strip at a time under the header: the newest shows. */}
@@ -864,6 +869,7 @@ function TitleAction({
  * and workspace status icons. No strip renders, since strips belong to a file. */
 function EmptyCenter({
   leading,
+  trailing,
   oneColumn,
   onAddFile,
   onOpenItem,
@@ -874,6 +880,7 @@ function EmptyCenter({
   workspaceId,
 }: {
   leading?: ReactNode;
+  trailing?: ReactNode;
   oneColumn?: OneColumnChrome;
   onAddFile?: () => void;
   onOpenItem?: (item: OpenItem) => void;
@@ -890,7 +897,11 @@ function EmptyCenter({
   return (
     <>
       <div
-        className="flex h-12 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:px-4"
+        className={cn(
+          'flex h-12 items-center gap-1 border-divider border-b sm:h-14 sm:gap-2',
+          // Workspace buttons at the edges sit as far in as a file header's.
+          leading ? 'px-1 sm:px-2' : 'pr-1 pl-2 sm:px-4'
+        )}
         data-slot="center-header"
       >
         {leading ?? (
@@ -914,16 +925,19 @@ function EmptyCenter({
             <WorkspaceStatusButton />
           </>
         )}
-        {menuItems.length > 0 && (
+        {(menuItems.length > 0 || trailing) && (
           <div className="ml-auto flex items-center">
-            <Menu
-              items={menuItems}
-              trigger={
-                <ToolbarButton label={m.a11y_open_menu()}>
-                  <Icon name="moreVertical" />
-                </ToolbarButton>
-              }
-            />
+            {menuItems.length > 0 && (
+              <Menu
+                items={menuItems}
+                trigger={
+                  <ToolbarButton label={m.a11y_open_menu()}>
+                    <Icon name="moreVertical" />
+                  </ToolbarButton>
+                }
+              />
+            )}
+            {trailing}
           </div>
         )}
       </div>

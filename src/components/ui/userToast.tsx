@@ -8,8 +8,10 @@ export function userToast({
   return sonnerToast.custom((id) => <Toast {...toast} id={id} />, {
     duration:
       toast.variant === 'error' || toast.variant === 'warning'
-        ? 7000
-        : undefined,
+        ? 12_000
+        : toast.button
+          ? 7000
+          : undefined,
     ...(toastId === undefined ? {} : { id: toastId }),
   });
 }

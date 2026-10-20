@@ -63,6 +63,22 @@ def test_a_read_passes_its_documents_changes_on_once():
     assert large.event(True)["fileIds"] == ["f_1"]
 
 
+def test_a_read_describes_the_current_text_and_search_names_unread_edits():
+    """Epo 2026-10-20: a read's changes say what the document says now, not
+    to apply them, and a search passage names its document's unread edits."""
+    sources = _sources()
+    sources.read_ids = set()
+    assert sources.unindexed_counts() == {"f_1": 1}
+    changes = sources.for_read("f_1")
+    assert "Each after is what the document says now" in changes
+    assert "do not redo or undo these edits unless the user asks" in changes
+    assert "Apply replacements" not in changes
+    # Some edits are a collaborator's or an earlier turn's (review S6).
+    assert "user has edited" not in changes and "user's own" not in changes
+    # Read this turn: its changes came with the read, so no search flag.
+    assert sources.unindexed_counts() == {}
+
+
 def test_a_reload_carries_what_the_turn_read_except_the_changed_document():
     """Review hints-r3 R3: after the turn changes a document, its other reads
     stay passed on and omitted; the changed one passes its changes on again."""

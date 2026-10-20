@@ -162,7 +162,6 @@ export function ShareDialog({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       userToast({
-        button: { label: m.action_dismiss(), onClick: () => {} },
         description: absoluteLink,
         title: m.share_copy_failed(),
       });

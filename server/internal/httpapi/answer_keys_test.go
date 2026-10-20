@@ -95,6 +95,14 @@ func TestReviewSessionChecksQuestionsOnTheServer(t *testing.T) {
 	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions/"+sessionID, "u_other", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("another user's resume → %d", rec.Code)
 	}
+	// Its result holds the graded question, key included, and no one else's.
+	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions/"+sessionID+"/result", "u_viewer", nil); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"awarded":1`) || !strings.Contains(rec.Body.String(), `"correct":true`) {
+		t.Fatalf("result → %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions/"+sessionID+"/result", "u_other", nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("another user's result → %d", rec.Code)
+	}
 	if rec := doReq(t, h, http.MethodGet, "/api/review/sessions", "u_viewer", nil); rec.Code != http.StatusOK ||
 		!strings.Contains(rec.Body.String(), `"quiz":{"correct":1,"total":1}`) {
 		t.Fatalf("past reviews → %d %s", rec.Code, rec.Body.String())

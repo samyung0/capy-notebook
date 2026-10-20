@@ -9,67 +9,35 @@
         "type": "chart",
         "kind": "bar",
         "title": "Rainfall (mm)",
-        "labels": [
-          "Jan",
-          "Feb",
-          "Mar"
-        ],
+        "labels": ["Jan", "Feb", "Mar"],
         "series": [
           {
             "name": "0",
-            "values": [
-              1,
-              2,
-              3
-            ]
+            "values": [1, 2, 3]
           },
           {
             "name": "1",
-            "values": [
-              1,
-              2,
-              3
-            ]
+            "values": [1, 2, 3]
           },
           {
             "name": "2",
-            "values": [
-              1,
-              2,
-              3
-            ]
+            "values": [1, 2, 3]
           },
           {
             "name": "3",
-            "values": [
-              1,
-              2,
-              3
-            ]
+            "values": [1, 2, 3]
           },
           {
             "name": "4",
-            "values": [
-              1,
-              2,
-              3
-            ]
+            "values": [1, 2, 3]
           },
           {
             "name": "5",
-            "values": [
-              1,
-              2,
-              3
-            ]
+            "values": [1, 2, 3]
           },
           {
             "name": "6",
-            "values": [
-              1,
-              2,
-              3
-            ]
+            "values": [1, 2, 3]
           }
         ]
       }
@@ -85,9 +53,7 @@
         ],
         "answer": {
           "type": "short",
-          "accepted": [
-            "alpha"
-          ]
+          "accepted": ["alpha"]
         },
         "marks": 1,
         "solution": [

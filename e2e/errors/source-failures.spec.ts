@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // Upload/worker responses are mocked; workspace access and cleanup use the
@@ -81,9 +82,7 @@ async function sourceResponses(
 
 async function chooseSources(page: Page, workspaceId: string, names: string[]) {
   await page.goto('/workspaces/' + workspaceId);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-add-menu]')
     .getByRole('button', { exact: true, name: m.action_add_file() })

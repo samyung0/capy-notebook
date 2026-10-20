@@ -622,6 +622,31 @@ The prod file runs `/migrate` once per deploy, starts the API with
    docker exec $(docker ps -qf name=collaboration) sh -c 'grep "open files" /proc/1/limits'
    ```
 
+   The Office engine children run sandboxed (Epo 2026-10-20; the policy in
+   [office-files](frontend/office-files.md)). The compose files give the
+   collaboration service `cap_drop: [ALL]` and
+   `security_opt: [no-new-privileges:true]`; the server runs as `nobody` and
+   needs no capability. Each engine sets its own limits (64 descriptors, no
+   core file, the data cap above), Landlock and seccomp, and keeps only
+   `CAPY_ENGINE_*`, `MALLOC_*`, `APP_ENV` and `LOG_FORMAT` from the server's
+   environment; the server makes itself non-dumpable, so processes of the
+   same uid cannot read its environment or memory. The engine sandbox
+   needs Landlock with its signal and abstract Unix-socket scoping (ABI 6,
+   Linux 6.12 or later) in the host kernel: with `APP_ENV=production` (UAT
+   included) the server exits at start with `captured error` naming Landlock
+   (stage `engine_sandbox`) instead of serving without it. Before the first
+   deploy of this to a host, check that the kernel has it:
+
+   ```bash
+   grep -o landlock /sys/kernel/security/lsm; uname -r
+   ```
+
+   It must print `landlock` and a kernel of 6.12 or later. The engine's
+   seccomp filters also refuse every x32 call, so the host's x32 setting does
+   not matter. The non-dumpable server's `/proc/1` files belong to root inside the
+   container: `docker exec … cat /proc/1/environ` as the service user fails by
+   design, while `/proc/1/limits` and `/proc/1/status` stay readable.
+
    Each WebSocket has an 8 KiB read buffer (`READ_BUFFER` in `http.rs`;
    tungstenite's default is 128 KiB). An idle connection costs about 30 KiB
    in all, measured on a local stack with 2,000 idle connections; Node used
@@ -3252,6 +3277,16 @@ variable stored as a secret, so `pnpm env:push` checks for it instead: it
 lists the target environment's secret names (never values) and refuses to run,
 naming each such key, before it changes anything. Local env files reject
 unknown keys.
+
+The deploy workflows run from `main` but render with the target revision's
+`scripts/env/config.py`. Revisions before 00724c461 read every secret from
+`CAPY_GITHUB_SECRETS`, which today's workflows no longer pass, so a deploy or
+rollback of such a revision fails at its render step. To roll back to one,
+tag the old SHA and dispatch that revision's own workflow from the tag
+(`gh workflow run deploy-uat.yml --ref <tag> -f revision=<sha>`, and likewise
+Deploy Ops and Deploy ingest). That workflow still passes `toJSON(secrets)`,
+so GitHub holds the run until someone with write access approves it on the
+run page.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
 file for the optional ops edge check. The UAT workflow and local review scripts

@@ -5,7 +5,7 @@ import { RatingTiles } from '@/features/study/RatingTiles';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { SrsRating } from '@/lib/srs';
-import { CardBack, CardFront } from './CardView';
+import { CardBackFace, CardFront } from './CardView';
 
 /* The card on its stack, shared by flashcard study (study page, shared page,
    note embed), the review session and Quick review. Compact is the note
@@ -147,13 +147,13 @@ function StudyCard({
     setFlip({ flipped, n: flip.n + 1 });
   }
   const padding = size === 'large' ? 'p-8' : size === 'compact' ? 'p-5' : 'p-4';
+  // Each face fills the card: the front centred in its padding, the back with
+  // the front's text pinned on top.
   const face = (back: boolean): ReactNode =>
     back ? (
-      <div className={cn(!compact && 'text-lg')}>
-        <CardBack card={card} />
-      </div>
+      <CardBackFace card={card} className="flex-1" size={size} />
     ) : (
-      <CardFront card={card} size={size} />
+      <CardFront card={card} className={cn('flex-1', padding)} size={size} />
     );
   return (
     <div
@@ -176,15 +176,19 @@ function StudyCard({
         }
         className={cn(
           // Inset ring: the card's overflow clips an outer one to a bar.
-          'relative flex min-h-0 w-full flex-1 flex-col items-center justify-center overflow-auto rounded-t-card-lg focus-visible:ring-inset',
-          !flipped && 'rounded-b-card-lg',
-          padding
+          'relative flex min-h-0 w-full flex-1 flex-col overflow-auto rounded-t-card-lg focus-visible:ring-inset',
+          !flipped && 'rounded-b-card-lg'
         )}
         onClick={onFlip}
         type="button"
       >
         <div
-          className={cn(flip.n > 0 && 'motion-safe:motion-card-face-in')}
+          className={cn(
+            'flex w-full flex-1 flex-col',
+            // The back scrolls its answer under the pinned front.
+            flipped && 'min-h-0',
+            flip.n > 0 && 'motion-safe:motion-card-face-in'
+          )}
           key={flip.n}
         >
           {face(flipped)}
@@ -216,14 +220,9 @@ function StudyCard({
           className="pointer-events-none absolute inset-0 flex flex-col motion-reduce:hidden"
           inert
         >
-          <div
-            className={cn(
-              'flex min-h-0 flex-1 flex-col items-center justify-center',
-              padding
-            )}
-          >
+          <div className="flex min-h-0 flex-1 flex-col">
             <div
-              className="motion-safe:motion-card-face-out"
+              className="motion-safe:motion-card-face-out flex min-h-0 w-full flex-1 flex-col"
               key={flip.n}
               onAnimationEnd={() => setLeaving(null)}
             >
