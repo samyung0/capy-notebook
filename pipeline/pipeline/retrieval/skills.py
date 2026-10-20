@@ -30,6 +30,7 @@ class Skill:
 EDITING = "editing"
 NOTE_BUILDING = "note_building"
 DECK_BUILDING = "deck_building"
+OFFICE_BUILDING = "office_building"
 SKILLS: dict[str, Skill] = {
     EDITING: Skill(
         prompts.EDITING_WHEN, lambda library: prompts.editing(library=library)
@@ -48,11 +49,16 @@ SKILLS: dict[str, Skill] = {
         ),
         builds="deck",
     ),
+    # Reading it offers the Office tools for the rest of the conversation
+    # (tools._read_skill, Epo 2026-10-20).
+    OFFICE_BUILDING: Skill(
+        prompts.OFFICE_BUILDING_WHEN, lambda _library: prompts.office_building()
+    ),
 }
 
-# The skills each write needs: editing for every write, note_building for note
+# The skills each tool needs: editing for every write, note_building for note
 # markdown (a note created, or edit_document's commands that carry it),
-# deck_building for a deck.
+# deck_building for a deck, office_building for every Office read and write.
 REQUIRES: dict[str, tuple[str, ...]] = {
     "create_material": (EDITING, NOTE_BUILDING),
     "add_questions": (EDITING,),
@@ -60,6 +66,8 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "edit_document": (EDITING, NOTE_BUILDING),
     "create_deck": (EDITING, DECK_BUILDING),
     "write_slide": (EDITING, DECK_BUILDING),
+    "inspect_office_document": (OFFICE_BUILDING,),
+    "edit_office_document": (EDITING, OFFICE_BUILDING),
 }
 FORMAT_COMMANDS = frozenset({"insert_markdown", "replace_block"})
 
@@ -129,17 +137,22 @@ def missing(
     return [n for n in needs if n not in read]
 
 
-def refusal(needs: list[str]) -> str:
-    """A write refused for the skills it lacks, not applied. It carries no
+def refusal(needs: list[str], *, write: bool) -> str:
+    """A call refused for the skills it lacks, not applied. It carries no
     skill text (Epo 2026-10-20: a refusal that carried the skill made an
     unrequested write one resend away), so a write takes a deliberate
     read_skill first, which a requested write the agent skipped pays for with
-    one extra call."""
+    one extra call. A read that needs a skill (inspect_office_document needs
+    office_building) is worded as a read."""
     one = len(needs) == 1
     names = " and ".join(needs)
     return (
-        f"Not applied: this write needs the {names} skill{'' if one else 's'}, "
-        "not read yet. Read "
+        f"Not applied: this {'write' if write else 'read'} needs the {names} "
+        f"skill{'' if one else 's'}, not read yet. Read "
         f"{'it' if one else 'them'} with read_skill only if the user wants this "
-        "file created or changed; otherwise answer without writing."
+        + (
+            "file created or changed; otherwise answer without writing."
+            if write
+            else "file read; otherwise answer without reading it."
+        )
     )

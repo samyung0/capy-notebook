@@ -148,6 +148,9 @@ type ConversationCheckpoint struct {
 type ConversationPrompt struct {
 	Checkpoint *ConversationCheckpoint `json:"checkpoint,omitempty"`
 	History    []Message               `json:"history"`
+	// OfficeTools says an earlier turn of the conversation, compacted or not,
+	// was offered the Office tools, which then stay offered (Epo 2026-10-15).
+	OfficeTools bool `json:"officeTools,omitempty"`
 }
 
 // Region locates one source block inside its page. Stored and shipped ahead of
@@ -690,7 +693,13 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 	if throughID != nil {
 		out.Checkpoint = &cp
 	}
-	return out, nil
+	// The retrieval service marks a turn's evidence officeTools once it read
+	// the office_building skill; a checkpoint drops that turn from History.
+	err = s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM messages
+		 WHERE conversation_id=$1 AND status='complete'
+		   AND metadata->'toolEvidence'->>'officeTools' = 'true')`, convID).Scan(&out.OfficeTools)
+	return out, err
 }
 
 // PersistCheckpoint writes or advances the rolling pin. A later pin wins; an

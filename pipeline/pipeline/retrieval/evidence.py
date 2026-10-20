@@ -22,6 +22,10 @@ def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
         "passages": [],
         "skills": sorted(ctx.skills_read),
     }
+    if ctx.office_tools:
+        # The gateway offers the Office tools to every later turn from this
+        # mark, a compacted one too (store.ConversationPrompt).
+        payload["officeTools"] = True
     seen: set[str] = set()
     for n in cited_order:
         if not 1 <= n <= len(ctx.citations):

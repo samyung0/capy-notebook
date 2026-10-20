@@ -880,10 +880,15 @@ $('materials').onclick = (event) => {
     ...(m.provenance?.books || []).map((b) => b.title)].join(' · ');
   $('materialContent').textContent = materialText(m);
   $('materialJson').textContent = JSON.stringify(m, null, 2);
-  $('materialDownload').hidden = !m.pptx;
-  if (m.pptx) $('materialDownload').href = `/api/${m.pptx}`;
-  $('materialPath').hidden = !m.pptx;
-  $('materialPath').textContent = m.pptx ? `${state.local}/${m.pptx}` : '';
+  // A deck's export, or an Office file the run created or edited.
+  const file = m.pptx || m.file;
+  $('materialDownload').hidden = !file;
+  if (file) {
+    $('materialDownload').href = `/api/${file}`;
+    $('materialDownload').textContent = `Download .${file.split('.').pop()}`;
+  }
+  $('materialPath').hidden = !file;
+  $('materialPath').textContent = file ? `${state.local}/${file}` : '';
   // The preview reads the saved file, so it needs the run that wrote it.
   const preview = m.run
     ? `/preview/?run=${encodeURIComponent(m.run)}&id=${encodeURIComponent(m.id)}`

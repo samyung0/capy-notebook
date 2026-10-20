@@ -118,7 +118,8 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "checkpoint answer", "complete", 1, nil, "", nil, nil, ""); err != nil {
+	// The folded turn was offered the Office tools, which stay offered.
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "checkpoint answer", "complete", 1, nil, "", nil, json.RawMessage(`{"officeTools":true}`), ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.PersistCheckpoint(ctx, conv.ID, ConversationCheckpoint{
@@ -146,6 +147,9 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	}
 	if prompt.History[0].Content != "turn-000" || prompt.History[204].Content != "turn-204" {
 		t.Fatalf("history was clipped or reordered: first=%q last=%q", prompt.History[0].Content, prompt.History[204].Content)
+	}
+	if !prompt.OfficeTools {
+		t.Fatal("the checkpoint dropped the Office tools")
 	}
 }
 

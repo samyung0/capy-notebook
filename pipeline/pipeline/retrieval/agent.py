@@ -71,6 +71,7 @@ WRITE_TOOLS = frozenset(
         "edit_document",
         "create_deck",
         "write_slide",
+        "edit_office_document",
     }
 )
 from .openui import LangRenderer
@@ -99,13 +100,14 @@ def _parse_args(raw: str | None) -> dict[str, Any]:
 
 # Tools whose rows name a workspace resource, and where its id sits.
 _TARGET_TOOLS = ("trash_file", "restore_file", "inspect_document", "edit_document")
+_FILE_TOOLS = ("read_document", "inspect_office_document", "edit_office_document")
 
 
 def _target_id(name: str, args: dict[str, Any]) -> str:
     if name in _TARGET_TOOLS:
         target = args.get("target")
         return str(target.get("id") or "") if isinstance(target, dict) else ""
-    if name == "read_document":
+    if name in _FILE_TOOLS:
         return str(args.get("file_id") or "")
     if name in ("add_questions", "add_question_media"):
         return str(args.get("quiz_id") or "")
@@ -169,6 +171,10 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
         detail = str(args.get("title") or "") or named(_target_id(name, args))
     elif name == "write_slide":
         detail = f"slide {args.get('slide')}"
+    elif name == "edit_office_document" and not args.get("file_id"):
+        # A create names the new file by its title.
+        first = (args.get("commands") or [{}])[0]
+        detail = str(first.get("title") or "") if isinstance(first, dict) else ""
     else:
         detail = named(_target_id(name, args))
     return detail[:240]
@@ -370,7 +376,7 @@ async def _run_turn(
         query=query,
         library=ctx.library,
         # A viewer is offered no write tool, and told so.
-        writes=any(s["function"]["name"] in skills.REQUIRES for s in schemas),
+        writes=any(s["function"]["name"] in WRITE_TOOLS for s in schemas),
     )
     query_msg = messages[-1]
     # Unindexed edits matching the user's words, not hinted earlier in the
@@ -848,6 +854,17 @@ async def _run_turn(
                 list(activity), evidence.pack(ctx, cited_order)
             )
             stalled = 0 if writes > writes_before else stalled + 1
+            # A read of the office_building skill offers the Office tools from
+            # the next response on, appended so the rest of the request's
+            # prefix stays cached (Epo 2026-10-20).
+            if ctx.office_tools and not any(
+                s["function"]["name"] in tools.OFFICE_TOOLS for s in schemas
+            ):
+                schemas = schemas + [
+                    s
+                    for s in tools.schemas_for(ctx)
+                    if s["function"]["name"] in tools.OFFICE_TOOLS
+                ]
             # The next response is the last with tools: say so where the model
             # reads first, under each result (Epo 2026-10-14).
             last_with_tools = (
