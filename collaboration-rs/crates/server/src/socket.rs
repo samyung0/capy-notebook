@@ -106,8 +106,9 @@ enum Channel {
 
 /// A joined channel's places (`seats.rs`), given back when it goes.
 struct Places {
-    /// Among its user's joined channels; an embed has none.
-    joined: Option<Membership>,
+    /// Among its user's joined channels (an embed has none), held for its
+    /// drop.
+    _joined: Option<Membership>,
     /// Among its user's channels to this document or embed.
     document: Membership,
 }
@@ -1189,7 +1190,10 @@ impl Connection {
                 context,
                 checked: None,
                 attempt,
-                places: Box::new(Places { joined, document }),
+                places: Box::new(Places {
+                    _joined: joined,
+                    document,
+                }),
                 parent: parent.map(|(note, _)| note),
                 embeds: VecDeque::new(),
             },
