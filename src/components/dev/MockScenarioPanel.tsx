@@ -52,6 +52,9 @@ export default function MockScenarioPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [dialog, setDialog] = useState<MockDialogId | null>(null);
   const [dialogVersion, setDialogVersion] = useState(0);
+  // Toast previews render only while the panel is open, so a closed panel
+  // never repeats a toast's text for the page's own queries.
+  const [open, setOpen] = useState(false);
   const details = useRef<HTMLDetailsElement>(null);
   const controller = useRef<AbortController | null>(null);
   const previous = useRef<Promise<void>>(Promise.resolve());
@@ -281,6 +284,7 @@ export default function MockScenarioPanel() {
         data-active-scenario={active ?? ''}
         data-scenario-status={status}
         data-testid="mock-scenario-panel"
+        onToggle={(event) => setOpen(event.currentTarget.open)}
         ref={details}
       >
         <summary className="cursor-pointer font-semibold">
@@ -366,51 +370,53 @@ export default function MockScenarioPanel() {
             </button>
           </fieldset>
           {/* Toasts spawn over the open page; no scenario runs. */}
-          <fieldset className="grid gap-1 border-line border-t pt-2">
-            <legend className="px-1 font-semibold">Toasts</legend>
-            <div className="flex gap-2">
-              <button
-                className="h-8 flex-1 rounded-button border border-line px-2"
-                onClick={() => {
-                  details.current?.removeAttribute('open');
-                  for (const option of mockToastOptions)
-                    userToast(option.toast());
-                }}
-                type="button"
-              >
-                Show all
-              </button>
-              <button
-                className="h-8 flex-1 rounded-button border border-line px-2"
-                onClick={() => toast.dismiss()}
-                type="button"
-              >
-                Dismiss all
-              </button>
-            </div>
-            {toastGroups.map((group) => (
-              <div className="grid gap-1" key={group}>
-                <p className="px-1 pt-1 text-fg-secondary">{group}</p>
-                {mockToastOptions
-                  .filter((option) => option.group === group)
-                  .map((option) => (
-                    <button
-                      className="min-h-8 rounded-button border border-line px-2 text-left"
-                      data-toast-preview={option.label}
-                      key={option.label}
-                      onClick={() => {
-                        // The panel sits over the toaster's corner.
-                        details.current?.removeAttribute('open');
-                        userToast(option.toast());
-                      }}
-                      type="button"
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+          {open && (
+            <fieldset className="grid gap-1 border-line border-t pt-2">
+              <legend className="px-1 font-semibold">Toasts</legend>
+              <div className="flex gap-2">
+                <button
+                  className="h-8 flex-1 rounded-button border border-line px-2"
+                  onClick={() => {
+                    details.current?.removeAttribute('open');
+                    for (const option of mockToastOptions)
+                      userToast(option.toast());
+                  }}
+                  type="button"
+                >
+                  Show all
+                </button>
+                <button
+                  className="h-8 flex-1 rounded-button border border-line px-2"
+                  onClick={() => toast.dismiss()}
+                  type="button"
+                >
+                  Dismiss all
+                </button>
               </div>
-            ))}
-          </fieldset>
+              {toastGroups.map((group) => (
+                <div className="grid gap-1" key={group}>
+                  <p className="px-1 pt-1 text-fg-secondary">{group}</p>
+                  {mockToastOptions
+                    .filter((option) => option.group === group)
+                    .map((option) => (
+                      <button
+                        className="min-h-8 rounded-button border border-line px-2 text-left"
+                        data-toast-preview={option.label}
+                        key={option.label}
+                        onClick={() => {
+                          // The panel sits over the toaster's corner.
+                          details.current?.removeAttribute('open');
+                          userToast(option.toast());
+                        }}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                </div>
+              ))}
+            </fieldset>
+          )}
         </div>
       </details>
     </>,

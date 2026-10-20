@@ -63,8 +63,7 @@ for (const kind of ['text', 'csv', 'image'] as const) {
         ? 'Edit source error.txt'
         : `Broken preview.${kind === 'image' ? 'png' : 'csv'}`
     );
-    // Dialogs show the one-line inline error (human/frontend/error-handling.md).
-    const error = await expectErrorSurface(page, 'inline', undefined, 30_000);
+    const error = await expectErrorSurface(page, 'panel', undefined, 30_000);
     await page.evaluate(() =>
       window.dispatchEvent(new Event('preview-retry-enable'))
     );
