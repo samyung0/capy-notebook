@@ -2835,7 +2835,9 @@ build, and the knowledge library is one more source while the switch is on.
   terminal call drops the tools, to make room. A copy not yet followed by a step is
   replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
   reaches the stored conversation. It names the open item
-  (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`), lists
+  (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`) followed
+  by the learner's workspace role (Go's `role`: "The learner owns / can edit /
+  can only view this workspace."), lists
   every workspace chapter in order with its id (`store.workspace_chapters`,
   loaded once per turn; at most 20, `MaxChaptersPerWorkspace` in Go) so "chapter
   2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: output files (a note
@@ -3158,7 +3160,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
 | `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
-| `read_skill` | none | Requires `material.create`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
+| `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
