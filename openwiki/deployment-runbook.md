@@ -1472,6 +1472,12 @@ never edits the table. The output chain's parser rule is §7.4.
 
 `pipeline/tests/test_host_hardening.py` keeps all of this in the playbooks.
 
+**Ptrace, both hosts.** Both playbooks set `kernel.yama.ptrace_scope=1` in
+`/etc/sysctl.d/60-capy-ptrace.conf`: a process can trace only its own
+descendants. On the app host the task carries the `sysctl` tag, so
+`ansible-playbook playbook.yml --tags sysctl` applies it alone; check it with
+`sysctl kernel.yama.ptrace_scope`.
+
 **Applying, lockout-safe.** Run from the playbook's directory with its ignored
 `inventory.yml` (the README lists the values). The `ssh` and `firewall` tags
 apply only these tasks. Use them on hosts that already run: a full ingest-host
