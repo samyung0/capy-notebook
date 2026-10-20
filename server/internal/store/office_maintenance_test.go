@@ -942,7 +942,7 @@ func TestDocxEngineRoundReset(t *testing.T) {
 		var epoch int64
 		var dropped bool
 		var base string
-		if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND seed_bytes=0 AND pending_effects='[]'::jsonb AND NOT rebuild_pending AND published_state IS NULL,base_blob_path FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &dropped, &base); err != nil {
+		if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND seed_bytes=0 AND log_rows=0 AND pending_effects='[]'::jsonb AND NOT rebuild_pending AND published_state IS NULL AND NOT EXISTS (SELECT 1 FROM source_document_updates u WHERE u.file_id=d.file_id),base_blob_path FROM source_documents d WHERE file_id=$1`, file).Scan(&epoch, &dropped, &base); err != nil {
 			t.Fatal(err)
 		}
 		if epoch != 2 || !dropped || (file == rebuilt) != (base == "sources/published") {
@@ -950,7 +950,8 @@ func TestDocxEngineRoundReset(t *testing.T) {
 		}
 	}
 	var kept bool
-	if err = tx.QueryRow(ctx, `SELECT epoch=1 AND state IS NOT NULL FROM source_documents WHERE file_id=$1`, deck.ID).Scan(&kept); err != nil || !kept {
+	// Its saved edits are rows over a NULL state (migration 0075).
+	if err = tx.QueryRow(ctx, `SELECT epoch=1 AND EXISTS (SELECT 1 FROM source_document_updates u WHERE u.file_id=d.file_id) FROM source_documents d WHERE file_id=$1`, deck.ID).Scan(&kept); err != nil || !kept {
 		t.Fatalf("the PPTX state stays: %v %v", kept, err)
 	}
 }
