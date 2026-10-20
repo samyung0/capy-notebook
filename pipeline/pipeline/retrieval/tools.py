@@ -2437,7 +2437,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
         )
     if result.effects:
         ctx._scope_outline = None
-        await _reload_pending(ctx)
+        changed = (result.effects[0].get("resource") or {}).get("id") or ""
+        await _reload_pending(ctx, str(changed))
     return result
 
 
