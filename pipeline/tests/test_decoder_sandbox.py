@@ -624,7 +624,9 @@ CAPTIONS = {
     "photo.jpg": "20e6050f45a76e0891cc1ad646026cb697a824ccdca95bc83e8ef1c0219237c6",
     "wide.jpg": "d65b8f3129e64f6b5fd040504a5053c5af8f60c0d0d5cb4e20a614fc024b5516",
     "spin.gif": "e0fb01381bd2fefc78f1d285af49020dc38a24b48a2a25014f158c4c6e92f515",
-    "palette.png": "92322ced792a0bc63a8431e733cc60ded9aaaa832c65ab0c1c8cecdbad01df2e",
+    # Pillow 13 quantizes this generated fixture differently (same palette,
+    # other indices); the caption path itself is unchanged.
+    "palette.png": "6c33c958ca5d39a6d730ef8c832466f57c2d6223beae22719af1a50ccd362dde",
 }
 
 
