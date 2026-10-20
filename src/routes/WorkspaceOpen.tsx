@@ -82,13 +82,14 @@ import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import { isBoolean, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 type PanelTab = 'study' | 'files' | 'chat';
-type LeftView = 'chats' | 'files';
+type LeftView = 'chats' | 'files' | 'study';
 
 // The rail is 32% of the group from 1380px up (~438px at a 1400px window).
 // Narrower, it takes three quarters of the lost width down to 400px, the
@@ -101,35 +102,53 @@ function railSize(groupWidth: number) {
   return `${Math.max(RAIL_MIN, RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth))}px`;
 }
 
-/** The right rail. In two columns it refits whenever the group's width
- * changes, which also drops a width the user dragged. */
+/** The right rail. Closed, it collapses to nothing but stays mounted, so a
+ * chat keeps its thread, draft and stream. Opening fits it to the group;
+ * with the left panel closed it refits whenever the group's width changes,
+ * which also drops a width the user dragged. Dragging it under its least
+ * width closes it. */
 function RailPanel({
   fitToWidth,
+  open,
+  onCollapse,
   children,
 }: {
   fitToWidth: boolean;
+  open: boolean;
+  onCollapse: () => void;
   children: ReactNode;
 }) {
   const panelRef = usePanelRef();
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     const group = element?.parentElement;
-    if (!(fitToWidth && group)) return;
+    if (!group) return;
     // The first callback lands after the group has registered its panels.
+    let first = true;
     const observer = new ResizeObserver(([entry]) => {
-      panelRef.current?.resize(railSize(entry.contentRect.width));
+      const panel = panelRef.current;
+      if (!open) {
+        if (panel && !panel.isCollapsed()) panel.collapse();
+      } else if (first || fitToWidth) {
+        panel?.resize(railSize(entry.contentRect.width));
+      }
+      first = false;
     });
     observer.observe(group);
     return () => observer.disconnect();
-  }, [element, fitToWidth, panelRef]);
+  }, [element, fitToWidth, open, panelRef]);
   return (
     <ResizablePanel
       className="overflow-visible!"
-      defaultSize="32%"
+      collapsible
+      defaultSize={open ? '32%' : '0%'}
       elementRef={setElement}
       id="rail"
       maxSize="50%"
       minSize={`${RAIL_MIN}px`}
+      onResize={(size) => {
+        if (open && size.inPixels === 0) onCollapse();
+      }}
       panelRef={panelRef}
     >
       {children}
@@ -160,8 +179,9 @@ export default function WorkspaceOpen() {
   const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
   const [cloneOpen, setCloneOpen] = useState(false);
 
-  // Breakpoints: one column below 1260px, the left panel only from xl up. It
-  // starts open from 2xl, where there is room; a toggle is remembered.
+  // Breakpoints: one column below 1260px, side panels from there, the left
+  // one only from xl up. The left starts open from 2xl, where there is room,
+  // the right starts closed (a chat row opens it); both toggles are remembered.
   const lg = useMediaQuery('(min-width: 1260px)');
   const xl = useMediaQuery('(min-width: 1280px)');
   const roomy = useMediaQuery('(min-width: 1536px)');
@@ -170,7 +190,13 @@ export default function WorkspaceOpen() {
     roomy,
     isBoolean
   );
-  const layout = lg ? (xl && leftOpen ? 'three' : 'two') : 'one';
+  const [rightOpen, setRightOpen] = useLocalPref(
+    PREF_KEYS.rightPanel,
+    false,
+    isBoolean
+  );
+  const oneColumnLayout = !lg;
+  const leftShown = xl && leftOpen;
   const [leftView, setLeftView] = useState<LeftView>('chats');
   const [archivedOpen, setArchivedOpen] = useState(false);
   // The left panel's chat list drives the rail's chat, which reports back
@@ -322,6 +348,7 @@ export default function WorkspaceOpen() {
   ];
   function openChat(id: string | null) {
     setTab('chat');
+    setRightOpen(true);
     setChatRequest((previous) => ({ id, seq: (previous?.seq ?? 0) + 1 }));
   }
   const leftTitle = (
@@ -331,6 +358,7 @@ export default function WorkspaceOpen() {
       views={[
         { icon: 'message', label: m.chat_chats(), value: 'chats' },
         { icon: 'filesNav', label: m.workspace_tab_files(), value: 'files' },
+        { icon: 'knowledge', label: m.workspace_tab_study(), value: 'study' },
       ]}
     />
   );
@@ -384,16 +412,30 @@ export default function WorkspaceOpen() {
       ) ?? null;
     setFilesOpen(true);
   }
-  const oneColumn: OneColumnChrome | undefined =
-    layout === 'one'
-      ? {
-          addItems,
-          filesOpen,
-          onOpenFiles: openFiles,
-          settingsItems,
-          workspaceName: ws.name,
-        }
-      : undefined;
+  // The left panel foot's menu: Invite (sharing is managed by owners and
+  // editors), then the study and settings rows.
+  const footerItems: MenuItem[] = [
+    ...(canManageWorkspaceSettings(ws)
+      ? [
+          {
+            accent: true,
+            icon: 'userAdd' as const,
+            label: m.workspace_invite_member(),
+            onClick: () => setSettingsTab('sharing'),
+          },
+        ]
+      : []),
+    ...settingsItems,
+  ];
+  const oneColumn: OneColumnChrome | undefined = oneColumnLayout
+    ? {
+        addItems,
+        filesOpen,
+        onOpenFiles: openFiles,
+        settingsItems,
+        workspaceName: ws.name,
+      }
+    : undefined;
 
   const addProps = readOnly
     ? {}
@@ -457,7 +499,7 @@ export default function WorkspaceOpen() {
       beforeReplace={confirmViewerReplacement}
       className="h-auto flex-1"
       footer={
-        <div className="flex shrink-0 flex-col border-divider border-t px-2.5 py-1.5">
+        <div className="flex shrink-0 flex-col gap-1 border-divider border-t px-2.5 pt-1.5 pb-2">
           {[
             ...addItems.slice(0, 1),
             ...settingsItems,
@@ -532,7 +574,7 @@ export default function WorkspaceOpen() {
           <ChatPanel
             canReprocess={ws.isOwner}
             color="purple"
-            historyButton={layout !== 'three'}
+            historyButton={!leftShown}
             onActiveChange={setActiveChat}
             onOpenCitation={openCitation}
             onOpenResource={openChatResource}
@@ -599,6 +641,21 @@ export default function WorkspaceOpen() {
           progress={!!search.progress}
           readOnly={readOnly}
           requestedMode={search.mode ?? null}
+          trailing={
+            lg && (
+              <ToolbarButton
+                aria-pressed={rightOpen}
+                label={
+                  rightOpen
+                    ? m.workspace_close_right_panel()
+                    : m.workspace_open_right_panel()
+                }
+                onClick={() => setRightOpen(!rightOpen)}
+              >
+                <Icon name="panelRight" />
+              </ToolbarButton>
+            )
+          }
           workspaceId={workspaceId}
         />
       </AppErrorBoundary>
@@ -614,7 +671,7 @@ export default function WorkspaceOpen() {
       {rail}
     </Panel>
   );
-  // The left panel: chats or the file tree, the account at its foot.
+  // The left panel: chats, the file tree or study, members at its foot.
   const leftPanel = (
     <Panel className="w-full" sectionClassName="h-full gap-0">
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
@@ -623,6 +680,15 @@ export default function WorkspaceOpen() {
             filesPanel((actions) => (
               <PanelTabRow actions={actions} title={leftTitle} {...addProps} />
             ))
+          ) : leftView === 'study' ? (
+            <StudyPanel
+              onOpenItem={setOpenItem}
+              onOpenProgress={openProgress}
+              renderTabRow={(actions) => (
+                <PanelTabRow actions={actions} title={leftTitle} />
+              )}
+              workspaceId={workspaceId}
+            />
           ) : (
             <>
               <PanelTabRow
@@ -645,7 +711,13 @@ export default function WorkspaceOpen() {
             </>
           )}
         </div>
-        <AccountFooter />
+        <AccountFooter
+          items={footerItems}
+          member={!!ws.role}
+          onOpenSettings={rowProps.onOpenSettings}
+          workspaceId={workspaceId}
+          workspaceName={ws.name}
+        />
       </div>
     </Panel>
   );
@@ -657,14 +729,18 @@ export default function WorkspaceOpen() {
     <>
       <div className="flex h-full min-h-0 flex-col gap-2.5">
         <ResizablePanelGroup
-          className="overflow-visible! flex min-h-0 flex-1 gap-1.5"
+          className={cn(
+            'overflow-visible! flex min-h-0 flex-1 gap-1.5',
+            // Collapsed, the rail leaves no gap behind.
+            !rightOpen && '[&>#rail]:hidden!'
+          )}
           orientation="horizontal"
         >
-          {layout === 'three' && (
+          {leftShown && (
             <>
               <ResizablePanel
                 className="overflow-visible!"
-                defaultSize="300px"
+                defaultSize="340px"
                 id="files"
                 maxSize="420px"
                 minSize="300px"
@@ -677,7 +753,7 @@ export default function WorkspaceOpen() {
           <ResizablePanel
             className="overflow-visible!"
             id="viewer"
-            minSize={layout === 'one' ? undefined : '400px'}
+            minSize={oneColumnLayout ? undefined : '400px'}
           >
             <div
               className="relative h-full"
@@ -685,13 +761,13 @@ export default function WorkspaceOpen() {
               style={{ '--office-inset': '0px' } as React.CSSProperties}
             >
               <FloatingBarContext.Provider
-                value={layout === 'one' && !officeOpen}
+                value={oneColumnLayout && !officeOpen}
               >
                 <OfficeInsetContext.Provider value={setOfficeInset}>
                   {viewer}
                 </OfficeInsetContext.Provider>
               </FloatingBarContext.Provider>
-              {layout === 'one' && (
+              {oneColumnLayout && (
                 <AppErrorBoundary resetKeys={[workspaceId]}>
                   <ChatPanel
                     canReprocess={ws.isOwner}
@@ -710,14 +786,20 @@ export default function WorkspaceOpen() {
               )}
             </div>
           </ResizablePanel>
-          {layout !== 'one' && (
+          {lg && (
             <>
-              <ResizableHandle withHandle />
-              <RailPanel fitToWidth={layout === 'two'}>{railColumn}</RailPanel>
+              {rightOpen && <ResizableHandle withHandle />}
+              <RailPanel
+                fitToWidth={!leftShown}
+                onCollapse={() => setRightOpen(false)}
+                open={rightOpen}
+              >
+                {railColumn}
+              </RailPanel>
             </>
           )}
         </ResizablePanelGroup>
-        {layout === 'one' && (
+        {oneColumnLayout && (
           <Popover modal onOpenChange={setFilesOpen} open={filesOpen}>
             <PopoverAnchor
               virtualRef={{

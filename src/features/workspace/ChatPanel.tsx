@@ -558,6 +558,7 @@ export function ChatPanel({
           'pointer-events-auto absolute inset-0 flex flex-col overflow-hidden rounded-card-xl bg-surface pb-(--keyboard-inset,0px) shadow-card',
           CHAT_DOCK_TRANSITION
         )}
+        data-keyboard-overlay
         data-workspace-chat-page
         hidden={!pageOpen}
       >
