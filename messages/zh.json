@@ -1460,6 +1460,8 @@
   "error_account_deletion_busy_body": "你的账户删除请求仍在处理中，请稍后再试。",
   "error_subscription_exists_title": "你已有订阅",
   "error_subscription_exists_body": "请在\"订阅\"标签页中管理当前方案。",
+  "error_checkout_starting_title": "结账页面仍在打开",
+  "error_checkout_starting_body": "Stripe 结账页面仍在创建中，请稍后再试。",
   "error_subscription_active_title": "请先取消订阅",
   "error_subscription_active_body": "删除账户前，请先取消订阅。",
   "error_account_state_changed_title": "你的账户已变更",

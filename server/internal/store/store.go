@@ -69,8 +69,11 @@ var (
 	// revocation is still running with Stripe.
 	ErrAccountDeletionBusy = fmt.Errorf("%w: account deletion is still being processed", ErrConflict)
 	// ErrSubscriptionExists means the user already has an entitling
-	// subscription or a checkout in progress.
+	// subscription.
 	ErrSubscriptionExists = fmt.Errorf("%w: a subscription already exists", ErrConflict)
+	// ErrCheckoutStarting means another request is still creating this user's
+	// subscription Checkout (a double click).
+	ErrCheckoutStarting = fmt.Errorf("%w: a checkout is starting", ErrConflict)
 	// ErrCloneSourceChanged means the item changed while it was being copied.
 	ErrCloneSourceChanged = fmt.Errorf("%w: the source changed while it was copied", ErrConflict)
 	// ErrProcessingStarted means a file's processing left the queue, so it

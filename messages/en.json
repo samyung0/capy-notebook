@@ -1460,6 +1460,8 @@
   "error_account_deletion_busy_body": "Your account deletion is still being processed. Try again in a minute.",
   "error_subscription_exists_title": "You already have a subscription",
   "error_subscription_exists_body": "Manage your current plan from the Subscription tab.",
+  "error_checkout_starting_title": "Checkout is still opening",
+  "error_checkout_starting_body": "Your Stripe checkout page is still being created. Try again in a moment.",
   "error_subscription_active_title": "Cancel your subscription first",
   "error_subscription_active_body": "Cancel your subscription before deleting your account.",
   "error_account_state_changed_title": "Your account changed",

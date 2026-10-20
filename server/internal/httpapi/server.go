@@ -118,6 +118,10 @@ type api struct {
 	stripeSubscription func(string) (*stripe.Subscription, error)
 	stripeEntitlements func(string) ([]*stripe.Subscription, error)
 	stripeInvoices     func(string) ([]*stripe.Invoice, error)
+	// Subscription Checkout calls, faked in tests.
+	stripeNewCheckout    func(customerID, priceID, userID, successURL, cancelURL, reservationID, key string) (billing.CheckoutSession, error)
+	stripeGetCheckout    func(sessionID string) (billing.CheckoutSession, error)
+	stripeExpireCheckout func(sessionID string) error
 	// Credit top-up and auto-reload calls, replaced by tests.
 	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
 	stripeSetupMethod   func(string) (store.PaymentMethod, error)
@@ -156,6 +160,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeSubscription: billing.RetrieveSubscription,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
 		stripeInvoices:     billing.ListInvoices,
+
+		stripeNewCheckout:    billing.CreateCheckoutSession,
+		stripeGetCheckout:    billing.GetCheckoutSession,
+		stripeExpireCheckout: billing.ExpireCheckoutSession,
 
 		stripeTopUpMethod:   billing.TopUpPaymentMethod,
 		stripeSetupMethod:   billing.SetupPaymentMethod,

@@ -445,6 +445,23 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 		successURL,
 		cancelURL,
 	)
+	var open *store.OpenCheckoutError
+	if errors.As(err, &open) {
+		url, settleErr := a.settleOpenCheckout(ctx, uid, priceID, open)
+		if settleErr != nil {
+			return nil, hErr(settleErr)
+		}
+		if url != "" {
+			return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+		}
+		reservationID, status, err = a.s.ReserveStripeCheckout(
+			ctx, uid, customerID, priceID, successURL, cancelURL,
+		)
+		if errors.As(err, &open) {
+			// Another tab opened one in between.
+			err = store.ErrCheckoutStarting
+		}
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -466,7 +483,7 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 			return nil, hErr(err)
 		}
 	}
-	session, err := billing.CreateCheckoutSession(
+	session, err := a.stripeNewCheckout(
 		customerID,
 		priceID,
 		uid,
@@ -488,7 +505,7 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 	if err != nil {
 		// The remote session exists but could not be recorded durably. Expiring it
 		// synchronously is the only safe outcome; never return an untracked URL.
-		if billing.ExpireCheckoutSession(session.ID) == nil {
+		if a.stripeExpireCheckout(session.ID) == nil {
 			_ = a.s.RecordStripeCheckoutSessionExpired(
 				ctx, reservationID, uid, customerID, session.ID,
 			)
@@ -503,6 +520,41 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 		})
 	}
 	return &urlOutput{Body: apimodel.URLResp{URL: session.URL}}, nil
+}
+
+// settleOpenCheckout handles the user's earlier subscription Checkout that is
+// still open locally (Epo 2026-10-21). While Stripe has it open, the same plan
+// gets the same page and another plan's page is expired at Stripe; a page
+// Stripe expired is recorded expired too, so a new one can start (url ""). A
+// completed one means Stripe made the subscription, which its webhook records.
+func (a *api) settleOpenCheckout(
+	ctx context.Context,
+	uid, priceID string,
+	open *store.OpenCheckoutError,
+) (string, error) {
+	remote, err := a.stripeGetCheckout(open.SessionID)
+	if err != nil {
+		return "", err
+	}
+	switch stripe.CheckoutSessionStatus(remote.Status) {
+	case stripe.CheckoutSessionStatusOpen:
+		if open.PriceID == priceID && remote.URL != "" {
+			return remote.URL, nil
+		}
+		if err := a.stripeExpireCheckout(open.SessionID); err != nil {
+			return "", err
+		}
+	case stripe.CheckoutSessionStatusComplete:
+		return "", store.ErrSubscriptionExists
+	}
+	err = a.s.RecordStripeCheckoutSessionExpired(
+		ctx, open.ReservationID, uid, open.CustomerID, open.SessionID,
+	)
+	if errors.Is(err, store.ErrConflict) {
+		// The row moved on meanwhile; the next reservation reads where to.
+		return "", nil
+	}
+	return "", err
 }
 
 // creditsCustomer returns the user's Stripe customer, creating and binding one

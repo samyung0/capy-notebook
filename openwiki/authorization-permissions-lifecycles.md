@@ -911,6 +911,15 @@ full Stripe subscription when the event carries only its expandable ID before
 projecting paid entitlement. Deletion-pending, suspended, and deleted accounts
 remain ineligible, and a raced paid Checkout is compensated instead.
 
+One subscription Checkout per user is open at a time (Epo 2026-10-21). A second
+Subscribe click while the first is still open at Stripe for the same plan
+returns the same Stripe page; an open one for another plan is expired at
+Stripe, recorded expired, and a new one starts; one Stripe already expired is
+recorded expired and replaced. `subscription_exists` answers only a real
+subscription (or a Checkout Stripe already completed, whose webhook records
+it). A click that meets the first request's Checkout still being created
+answers `409 checkout_starting` ("Checkout is still opening").
+
 `over_quota_grace` behaves exactly like an active account at 100%: the lapse
 applies Free limits, stored bytes are over them, so every storage-creating
 write fails with `storage_quota_exceeded`, while sharing and invites keep
