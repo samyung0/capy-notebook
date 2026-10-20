@@ -30,6 +30,8 @@ func TestAuthorityLimitRefusalsNameTheirReason(t *testing.T) {
 	}{
 		{http.StatusConflict, `{"code":"quota_rejected","message":"document_size_exceeded"}`, agenttools.ErrQuotaRejected, limitMessages["document_size_exceeded"]},
 		{http.StatusRequestEntityTooLarge, `{"code":"payload_too_large"}`, agenttools.ErrQuotaRejected, "the edited file would be over its size limit; make a smaller edit"},
+		{http.StatusUnprocessableEntity, `{"code":"quota_rejected","message":"update_size_exceeded"}`, agenttools.ErrQuotaRejected, limitMessages["update_size_exceeded"]},
+		{http.StatusConflict, `{"code":"quota_rejected","message":"update_size_exceeded"}`, agenttools.ErrQuotaRejected, limitMessages["update_size_exceeded"]},
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(tc.status)
@@ -115,6 +117,32 @@ func (t *sentryCount) SendEvent(*sentry.Event)               { t.events.Add(1) }
 func (t *sentryCount) Flush(time.Duration) bool              { return true }
 func (t *sentryCount) FlushWithContext(context.Context) bool { return true }
 func (t *sentryCount) Close()                                {}
+
+// A content command whose update is over the collaboration server's 8 MiB
+// cap (413) is a document limit refusal, not an unavailable authority.
+func TestOversizedContentCommandIsALimitRefusal(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	current, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Before"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	material, err := s.CreateMaterial(ctx, Material{CreatedBy: "u_owner", Kind: "quiz", Title: "Quiz", Content: current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte(`{"code":"update_too_large","message":"update_size_exceeded"}`))
+	}))
+	t.Cleanup(sidecar.Close)
+	s.ConfigureCollaboration(sidecar.URL, "command-secret")
+	desired := strings.Replace(current, "Before", "After", 1)
+	handled, err := s.applyAuthoritativeContentCommand(ctx, material.ID, "u_owner", current, desired, nil)
+	if !handled || !errors.Is(err, materialdoc.ErrLimitExceeded) || errors.Is(err, ErrAuthorityUnavailable) {
+		t.Fatalf("handled=%v err=%v", handled, err)
+	}
+}
 
 // A replace-block command refused because its room is being reset or
 // compacted (the authority's 503 unavailable_target) applied nothing: an

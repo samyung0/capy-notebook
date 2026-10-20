@@ -90,6 +90,8 @@ var limitMessages = map[string]string{
 	"document_nodes_exceeded": "the material would hold too many blocks; put the rest in a new material",
 	"document_depth_exceeded": "the material would nest lists or quotes too deeply; flatten them",
 	"undo_payload_exceeded":   "this edit is too large to undo; make it as several smaller edits",
+	// Over the collaboration server's 8 MiB update cap (Epo 2026-10-18).
+	"update_size_exceeded": "this edit is too large to apply at once; make it as several smaller edits",
 }
 
 func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path string, body any, out any) error {

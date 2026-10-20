@@ -531,6 +531,16 @@ export function setCollaborationReachable(value: boolean) {
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
+// A journey's spent open budget (Epo 2026-10-20): a note room's join waits,
+// told `onSlowed`, until the flag clears.
+const SLOWED = 'capy.mock.collaboration.slowed';
+
+export function setCollaborationSlowed(value: boolean) {
+  if (value) sessionStorage.setItem(SLOWED, 'true');
+  else sessionStorage.removeItem(SLOWED);
+  window.dispatchEvent(new Event(REACHABILITY));
+}
+
 // A note's current room schema, as the service's material_yjs_documents
 // row names it (1 until a room moves).
 const SCHEMA = 'capy.scenario.schema.';
@@ -576,6 +586,7 @@ interface MockCollaborationOptions {
   materialId: string;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
+  onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
 }
 
@@ -645,6 +656,10 @@ class MockCollaborationProvider implements UnifiedProvider {
       void queryClient.invalidateQueries({
         queryKey: ['material', this.options.materialId, 'collaboration-token'],
       });
+      return;
+    }
+    if (browser && sessionStorage.getItem(SLOWED) === 'true') {
+      this.options.onSlowed?.(true);
       return;
     }
     const room = materialRoom(this.options.name, this.options.initialValue);
@@ -1171,6 +1186,8 @@ class MockItemProvider implements ItemProvider {
   }
 
   connect() {}
+
+  wake() {}
 
   announceOutdated() {
     this.disconnect();

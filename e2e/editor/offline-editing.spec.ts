@@ -18,7 +18,7 @@ async function openNote(page: Page) {
   await expect(editor).toContainText(seed, { timeout: 30_000 });
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
-    /^(synced|saved)$/
+    'saved'
   );
   return editor;
 }

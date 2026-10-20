@@ -1394,14 +1394,14 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await page.keyboard.press('ArrowUp');
   await expect(formula).toHaveValue('67');
 
-  // Input the engine refuses: the editor reports it in the frame, and Capy
-  // shows no file error for a save nobody asked for.
+  // Input the engine refuses: the editor reports it on its line under the
+  // formula bar, and Capy shows no file error for a save nobody asked for.
   await page.mouse.click(box.x + 150, box.y + 75);
   await page.keyboard.press('9');
   await editor.fill('x'.repeat(40_000));
   await frameFocus(false);
   await chat.click();
-  await expect(frame.getByTestId('xlsx-error')).toBeVisible();
+  await expect(frame.getByTestId('xlsx-edit-refusal')).toBeVisible();
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
@@ -1804,6 +1804,11 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await expect
       .poll(() => updates.evaluate((seen) => seen.count), { timeout: 30_000 })
       .toBeGreaterThan(0);
+    // Saved means stored (Epo 2026-10-19): Syncing until the receipt.
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'syncing'
+    );
     await receipts(false);
     // Every key lands and saves before the next step counts updates: the
     // rest of "Hello" can still be in the editor's input queue here.
@@ -1974,6 +1979,8 @@ test('closing DOCX header editing gives the document the focus back', async ({
   };
   await openHeader();
   await options.click();
+  // Remove would change only this editor's copy (Epo 2026-10-20).
+  await expect(frame.getByRole('button', { name: /^Remove / })).toHaveCount(0);
   await frame.getByRole('button', { name: 'Close header editing' }).click();
   await expect(frame.getByLabel('Document input')).toBeFocused();
 
@@ -2185,6 +2192,13 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   // The vertical ruler starts at the first page's top.
   const vertical = await frame.locator('.docx-vertical-ruler').boundingBox();
   expect(vertical?.y).toBeCloseTo(firstPage?.y ?? -1, 0);
+  // The margins show but do not drag: they would change only this editor's
+  // copy (Epo 2026-10-20).
+  const margins = frame.locator('[data-ruler-margin]');
+  await expect(margins).toHaveCount(4);
+  await expect(
+    margins.and(frame.locator('[data-draggable="true"]'))
+  ).toHaveCount(0);
 
   // View mode draws no ruler and offers no toggle; edit opens with the choice.
   const mode = page.getByRole('button', { name: m.material_mode() });

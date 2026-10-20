@@ -638,6 +638,50 @@ The prod file runs `/migrate` once per deploy, starts the API with
    reuses them for later joins, so RSS stays near its peak instead of falling
    back.
 
+   Each user's SYNC, awareness and query messages, over all their sockets
+   and draft sends, have an allowance kept in the process (Epo 2026-10-18,
+   [plate-editor](frontend/plate-editor.md#connection-lifetime-and-refusals)):
+   a burst of `COLLABORATION_UPDATE_BURST` messages or
+   `COLLABORATION_UPDATE_BURST_BYTES`, then
+   `COLLABORATION_UPDATES_PER_SECOND` and
+   `COLLABORATION_UPDATE_BYTES_PER_SECOND`. They default to 10,000 messages
+   or 8 MiB, then 200 and 2 MiB a second, the same in every environment, so
+   nothing renders or sets them. The byte burst may not be set below 8 MiB,
+   the largest update a room takes (the server refuses to start). A user
+   over it is timed out (3 s to 5 minutes) and shows as
+   `capy_collaboration_timeouts_total` on `/metrics` and a `user timed out`
+   warn line naming the room, socket and user. A count from many users means
+   real editing reaches it: measure with `pnpm bench:rates` before raising a
+   value in the compose environment. Never lower one: the client paces by
+   the defaults, so every tab would time out. Each user's open budget for
+   full-document answers (`COLLABORATION_OPEN_BYTES`, 80 MiB, refilled over
+   `COLLABORATION_OPEN_REFILL_SECONDS`, 300) slows opens past it and is also
+   left unset.
+
+   A client address holds at most `COLLABORATION_SOCKETS_PER_ADDRESS` sockets
+   (500, `capy_collaboration_seat_refusals_total` counts refusals) and a user
+   at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
+   `COLLABORATION_CONNECTIONS_PER_DOCUMENT` connections to one document (4;
+   one more closes their oldest, counted in
+   `capy_collaboration_oldest_closed_total`), also left unset, as are
+   `COLLABORATION_PING_SECONDS` (30) and `COLLABORATION_SILENT_SECONDS` (60):
+   every socket is pinged and one silent that long closes, freeing its places. The address is the gateway limiter's
+   (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
+   peer's; an IPv6 one by its /64), so the cap holds only while the origin is
+   reachable through the Cloudflare tunnel alone, as it is for the gateway's
+   own limits. A school behind one address would need the address cap
+   raised.
+
+   A load test whose peers share one user or one address (the local stress
+   stack's `u_owner` from one machine, `docker-compose.stress.yml`) shares
+   one allowance and one address cap: its compose file raises
+   `COLLABORATION_UPDATE_BURST`, `COLLABORATION_UPDATES_PER_SECOND`,
+   `COLLABORATION_OPEN_BYTES`, `COLLABORATION_SOCKETS_PER_ADDRESS`,
+   `COLLABORATION_JOINED_PER_USER` and
+   `COLLABORATION_CONNECTIONS_PER_DOCUMENT`.
+   A UAT stress run from one machine needs the address cap raised on UAT
+   for the run.
+
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
    WASM toolchain and `uv sync` come from the layer cache until their lockfile

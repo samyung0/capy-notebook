@@ -115,6 +115,9 @@ pub struct Loaded {
     pub bytes: u64,
     /// The room's state cap ([`crate::state_cap`]).
     pub state_cap: u64,
+    /// An Office room's seed state vector: deleting what it holds frees
+    /// nothing in the stored change (`ydoc::apply_freeing`).
+    pub seed: Option<StateVector>,
     /// The stored base's size and the rows over it (the room's fold sizes).
     pub base_bytes: u64,
     pub rows: u64,
@@ -281,22 +284,25 @@ fn decode(bytes: &[u8]) -> Result<Update, SourceError> {
 /// Applies `updates` in one transaction (seed plus change, as a fresh
 /// document applies a whole state) and refuses a result with pending
 /// content: every item a change refers to must be in what precedes it.
+/// Returns the state vector after the first update (an Office room's seed).
 pub(crate) fn replay<'a>(
     doc: &Doc,
     updates: impl IntoIterator<Item = &'a [u8]>,
-) -> Result<(), SourceError> {
+) -> Result<StateVector, SourceError> {
     let mut txn = doc.transact_mut();
+    let mut first = None;
     for bytes in updates {
         txn.apply_update(decode(bytes)?).map_err(|error| {
             SourceError::State(format!("stored update does not apply: {error}"))
         })?;
+        first.get_or_insert_with(|| txn.state_vector());
     }
     if txn.store().pending_update().is_some() || txn.store().pending_ds().is_some() {
         return Err(SourceError::State(
             "The saved changes refer to content missing from the seed".into(),
         ));
     }
-    Ok(())
+    Ok(first.unwrap_or_default())
 }
 
 /// A document to replay stored state into (a fold, a capture, a save's
@@ -664,9 +670,10 @@ impl Sources {
         let target = doc.clone();
         let layers = Arc::new(layers);
         let applied = layers.clone();
-        tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
-            .await
-            .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
+        let seeded =
+            tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
+                .await
+                .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
         stage(&mut times.replay);
         let mut record = RoomRecord {
             generation,
@@ -698,6 +705,7 @@ impl Sources {
             checkpoint: stored.checkpoint,
             bytes: layers.iter().map(|layer| layer.len() as u64).sum(),
             state_cap,
+            seed: office(session.format).map(|_| seeded),
             base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
             rows: stored.rows.len() as u64,
             row_bytes: stored.rows.iter().map(|(_, row)| row.len() as u64).sum(),

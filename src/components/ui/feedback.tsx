@@ -19,11 +19,19 @@ export function Spinner({ className }: { className?: string }) {
 }
 
 /** The loader over a message, centred in a file or editor pane. */
-export function PaneLoading({ message }: { message: string }) {
+export function PaneLoading({
+  message,
+  detail,
+}: {
+  message: string;
+  /** A second, quieter line (why it still loads). */
+  detail?: string;
+}) {
   return (
     <div className="pane-loading">
       <Spinner />
       <p>{message}</p>
+      {detail && <p className="t-meta text-fg-muted">{detail}</p>}
     </div>
   );
 }
