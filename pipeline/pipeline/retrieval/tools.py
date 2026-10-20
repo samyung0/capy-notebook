@@ -217,6 +217,7 @@ class ToolContext:
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
+    searches_recorded: bool = False
     # capture_page records for the activity blocks, and the JPEGs (by tool
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)

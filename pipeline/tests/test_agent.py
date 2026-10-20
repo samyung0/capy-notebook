@@ -1892,6 +1892,47 @@ async def test_a_turn_without_an_answer_still_records_its_searches(monkeypatch):
     assert [event["cited"] for event in recorded] == [[False]]
 
 
+async def test_an_answer_that_fails_after_recording_does_not_record_again(
+    monkeypatch,
+):
+    stream, _seen = _script_stream([_assembled(_answer(("ok", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    calls: list[list[dict]] = []
+
+    async def _record(events):
+        calls.append(events)
+
+    def _pack(_ctx, _order):
+        raise RuntimeError("pack failed")
+
+    monkeypatch.setattr(agent.store, "record_search_events", _record)
+    monkeypatch.setattr(agent.evidence, "pack", _pack)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx.search_events.append({"chunk_ids": ["c_1"]})
+    with pytest.raises(RuntimeError, match="pack failed"):
+        await _collect("q", ctx)
+
+    assert len(calls) == 1
+
+
+async def test_a_cancelled_search_record_still_removes_the_deck_dir(
+    monkeypatch, tmp_path
+):
+    _listing_then(monkeypatch, RuntimeError("provider disconnected"))
+
+    async def _cancelled(_events):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(agent.store, "record_search_events", _cancelled)
+    ctx = ToolContext(workspace_id="ws_1", deck_dir=str(tmp_path / "deck"))
+    (tmp_path / "deck").mkdir()
+    ctx.search_events.append({"chunk_ids": ["c_1"]})
+    with pytest.raises(asyncio.CancelledError):
+        await _collect("q", ctx)
+
+    assert not (tmp_path / "deck").exists()
+
+
 async def test_a_turn_failed_mid_batch_keeps_the_calls_that_finished(monkeypatch):
     stream, _seen = _script_stream(
         [

@@ -289,7 +289,6 @@ async def run_agent(
     ``script`` is UAT's scripted turn (``scripted.py``): its steps stand in
     for the model.
     """
-    answered = False
     try:
         async for event in _run_turn(
             query=query,
@@ -303,13 +302,12 @@ async def run_agent(
         ):
             if event["type"] == "error":
                 with_turn_state(event, ctx)
-            answered = answered or event["type"] == "done"
             yield event
     finally:
-        if not answered:
-            await _record_searches(ctx, [])
+        # Before the await: a cancelled record must not leave the directory.
         if ctx.deck_dir:
             shutil.rmtree(ctx.deck_dir, ignore_errors=True)
+        await _record_searches(ctx, [])  # a no-op once the answer recorded them
 
 
 async def _run_turn(
@@ -1073,11 +1071,12 @@ def _ordered_citations(ctx: ToolContext, order: list[int]) -> list[dict[str, Any
 async def _record_searches(ctx: ToolContext, cited_order: list[int]) -> None:
     """Write the turn's search events with the hits the answer cited.
 
-    Every turn records its searches (``run_agent``); one that ends without an
-    answer cites none. Telemetry never fails the turn.
+    Every turn records its searches once (``run_agent``); one that ends without
+    an answer cites none. Telemetry never fails the turn.
     """
-    if not ctx.search_events:
+    if ctx.searches_recorded or not ctx.search_events:
         return
+    ctx.searches_recorded = True
     cited_chunks = {
         ctx.citations[n - 1].chunk_id
         for n in cited_order
