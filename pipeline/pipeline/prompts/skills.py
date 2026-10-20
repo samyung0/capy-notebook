@@ -65,7 +65,7 @@ _OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and
 
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, styles and lists, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column. The first page lists the paragraph styles by id and name.
+- DOCX: paragraphs with their target ids, styles and lists, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text, delete_paragraph and format_text; one marked content control or table cannot be an after_id. The first page lists the paragraph styles by id and name.
 - PPTX: shapes with their target ids and text, count at a time from start.
 
 Edit, one file a call; one stale expectation refuses the whole call:
@@ -75,8 +75,8 @@ Edit, one file a call; one stale expectation refuses the whole call:
 - Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
 - replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
 - insert_paragraph adds one body paragraph after after_id, or at the end without it; several inserts after one paragraph land in the order given. style is a style id from the read; list makes it bulleted or numbered.
-- delete_paragraph deletes a paragraph whose whole text is expected_text; it refuses a paragraph with pictures, fields or tracked changes, the paragraph after a table, and a story's last paragraph.
-- set_list makes paragraphs bulleted or numbered, or ends their list (none); a document has one bulleted and one numbered list, so numbering continues across them.
+- delete_paragraph deletes a paragraph whose whole text is expected_text; it refuses a locked paragraph and a story's last paragraph.
+- set_list makes paragraphs bulleted or numbered, or ends their list (none, which also ends a list the paragraph's style gives); a document has one bulleted and one numbered list, so numbering continues across them.
 - insert_table adds a table of text, at most 20 rows of 10 cells, placed like insert_paragraph and followed by an empty paragraph. delete_table names the table's id and its cells' text as rows of cells.
 - format_text formats the one occurrence of expected_text in a paragraph (bold, italic, underline, strikethrough, colour, highlight, size, font); set_alignment aligns one paragraph.
 

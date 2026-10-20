@@ -598,7 +598,7 @@ func officeCommandSchema() map[string]any {
 					"darkGreen", "darkMagenta", "darkRed", "darkYellow", "darkGray", "lightGray", "black", "white",
 				}},
 				"font_size":   map[string]any{"type": "number", "minimum": 1, "maximum": 1638, "description": "Points."},
-				"font_family": str(""),
+				"font_family": str(`A font name, like "Arial".`),
 			}, "target_id", "expected_text"),
 			variant("set_alignment", "DOCX: align one paragraph.", map[string]any{
 				"target_id": paragraph,
@@ -1100,7 +1100,8 @@ func Definitions() []Definition {
 			Description: "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
-				"whole call. Edits save directly; most can be undone from the chat. A call's commands " +
+				"whole call. Edits save directly; a call can be undone from the chat only when all its " +
+				"commands are replace_text, set_range, rename_sheet, insert_rows or insert_columns. A call's commands " +
 				"are at most 256 KB, write at most 10,000 cells and insert at most 20 paragraphs; split " +
 				"larger edits into several calls.",
 			InputSchema: obj(map[string]any{

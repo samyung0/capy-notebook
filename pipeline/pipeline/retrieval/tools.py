@@ -2311,37 +2311,61 @@ def _range_cells(text: str) -> int:
     return (abs(last - first) + 1) * (abs(end - row) + 1)
 
 
-def _render_scoped(body: dict[str, Any], scoped: dict[str, Any]) -> str:
+def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
+    """A DOCX read: the styles (first page), then its paragraphs as ``[id]
+    (style, list, table cell, content control, locked: why) text``, inside
+    the source fence, cut to the paragraphs that fit the tool output limit so
+    the next start names the first one not shown."""
+    head += (
+        "\nparagraphs as [id] (style, list, table cell, content control, "
+        "locked: why replace_text, delete_paragraph and format_text refuse it) text:"
+    )
+    lines = []
+    for paragraph in scoped.get("paragraphs") or []:
+        marks = [str(paragraph[k]) for k in ("style", "list") if paragraph.get(k)]
+        if table := paragraph.get("table"):
+            marks.append(
+                f"table {table.get('id')} row {int(table.get('row') or 0) + 1} "
+                f"column {int(table.get('column') or 0) + 1}"
+            )
+        if paragraph.get("contentControl"):
+            marks.append("content control")
+        if locked := paragraph.get("locked"):
+            marks.append(f"locked: {locked}")
+        group = f" ({', '.join(marks)})" if marks else ""
+        lines.append(f"[{paragraph.get('id')}]{group} {paragraph.get('text') or ''}")
+    styles = (
+        [
+            "paragraph styles as id (name): "
+            + ", ".join(f"{s.get('id')} ({s.get('name')})" for s in scoped["styles"])
+        ]
+        if scoped.get("styles")
+        else []
+    )
+    total = scoped.get("total")
+
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(styles + lines[:n]))
+        if n < len(lines):
+            return body, (
+                "\n(page cut at the tool output limit; "
+                f"next start = {start + n} of {total})"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, f"\n(next start = {scoped['nextStart']} of {total})"
+        return body, ""
+
+    return _fitting(page, len(lines))[1]
+
+
+def _render_scoped(body: dict[str, Any], scoped: dict[str, Any], start: int) -> str:
     """An XLSX read: its sheets as ``[id] name used-range``, or a range's
     cells as ``A1: input``, followed by ``→ shown value`` where that differs.
-    A DOCX read: its paragraphs as ``[id] (style, list) text``, a table cell's
-    marked with its table and place, then the styles on the first page."""
+    A DOCX read: a page of its paragraphs from ``start``."""
     head = f"{body.get('title') or ''} format={body.get('format')}"
     lines: list[str] = []
     if "paragraphs" in scoped:
-        head += "\nparagraphs as [id] (style, list, table cell) text:"
-        for paragraph in scoped.get("paragraphs") or []:
-            marks = [str(paragraph[k]) for k in ("style", "list") if paragraph.get(k)]
-            if table := paragraph.get("table"):
-                marks.append(
-                    f"table {table.get('id')} row {int(table.get('row') or 0) + 1} "
-                    f"column {int(table.get('column') or 0) + 1}"
-                )
-            group = f" ({', '.join(marks)})" if marks else ""
-            lines.append(
-                f"[{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
-            )
-        tail = []
-        if scoped.get("nextStart") is not None:
-            tail.append(
-                f"(next start = {scoped['nextStart']} of {scoped.get('total')})"
-            )
-        if styles := scoped.get("styles"):
-            tail.append(
-                "paragraph styles as id (name): "
-                + ", ".join(f"{s.get('id')} ({s.get('name')})" for s in styles)
-            )
-        return "\n".join([head, source_block("\n".join(lines)), *tail])
+        return _render_docx_page(head, scoped, start)
     if "sheets" in scoped:
         head += "\nsheets as [id] name used range:"
         for sheet in scoped.get("sheets") or []:
@@ -2394,7 +2418,8 @@ async def _inspect_office_document(
     ctx.pending_sources.read(rid)
     scoped = body.get("scoped")
     if isinstance(scoped, dict):
-        return _result(_render_scoped(body, scoped))
+        start = max(int(args.get("start") or 0), 0)
+        return _result(_render_scoped(body, scoped, start))
     return _result(_render_inspection(body, source=True))
 
 

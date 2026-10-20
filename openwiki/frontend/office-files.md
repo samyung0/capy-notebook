@@ -2675,7 +2675,9 @@ format without a full recalculation). Go no longer sends `set_cell`, which the
 engine keeps. The collaboration server's inspect route answers an XLSX
 `office` query with the engine's scoped read (the sheet list, or at most
 2,000 cells) and a DOCX one with a page of the body's paragraphs (id, style
-id, list, table cell, text; the first page adds the paragraph styles), and
+id, list or the style's list, table cell, content control, text without
+tracked deletions, and why the text commands refuse it as `locked`; the
+first page adds the paragraph styles), and
 `/internal/documents/create` builds a new XLSX or DOCX from the committed
 starter (`crates/office-service/starters/blank.xlsx`, or `blank.docx`,
 python-docx's default template, unchanged; MIT, `starters/NOTICE.md`); the
