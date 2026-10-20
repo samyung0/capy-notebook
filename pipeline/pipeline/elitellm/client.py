@@ -25,14 +25,19 @@ DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
 # Z.AI serves its GLM-5.3-Flash pin itself, OpenAI-compatible (decision
 # 2026-10-20, replacing Relace).
 ZAI_CHAT_URL = "https://api.z.ai/api/paas/v4/chat/completions"
-# OpenRouter pins, each held on one provider with fallbacks off, reasoning off.
-# Default routing moves between providers that differ on image input, so a slug
-# with no entry is refused, never routed. 0731 is the ingest descriptor model
-# (decision 2026-10-15); 1017 reads pages and images for captioning (decision
+# OpenRouter pins, each held on vetted providers with fallbacks off (OpenRouter
+# tries `order` in turn and nothing outside it), reasoning off. Default routing
+# moves between providers that differ on image input, so a slug with no entry is
+# refused, never routed. 0731 is the ingest descriptor model (decision
+# 2026-10-15), off Relace since its endpoint answered 429 for every summary
+# (decision 2026-10-20); 1017 reads pages and images for captioning (decision
 # 2026-10-19). OpenRouter bills each provider's listed price.
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
-    "deepseek/deepseek-v4-flash-0731": {"order": ["Relace"], "allow_fallbacks": False},
+    "deepseek/deepseek-v4-flash-0731": {
+        "order": ["Reka", "DigitalOcean", "StreamLake"],
+        "allow_fallbacks": False,
+    },
     "deepseek/deepseek-v4.1-flash-1017": {
         "order": ["DeepInfra"],
         "allow_fallbacks": False,
