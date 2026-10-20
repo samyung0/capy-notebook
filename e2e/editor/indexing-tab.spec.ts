@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 test('Indexing tab lists file changes, cancels queued work and processes waiting files', async ({
@@ -62,9 +63,7 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
   page,
 }) => {
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   const name = 'Biology notes - failed.md';
   const fileRow = page
     .locator('.group')

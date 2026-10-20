@@ -32,6 +32,7 @@ import type {
   TagInput,
   Task,
   TrashItem,
+  UpdateConversationReq,
   Workspace,
   WorkspaceMember,
 } from '@/api/types';
@@ -2377,11 +2378,54 @@ export const handlers = [
   ),
   /* ---------------- chat & generate ---------------- */
   /* ---------------- conversations ---------------- */
-  http.get('/api/workspaces/:id/conversations', async ({ params }) => {
+  // The live list: pinned first (latest pin on top), then newest activity;
+  // ?archived=true: the archived threads, latest archived first.
+  http.get('/api/workspaces/:id/conversations', async ({ params, request }) => {
+    const archived =
+      new URL(request.url).searchParams.get('archived') === 'true';
+    const time = (at?: string) => (at ? +new Date(at) : 0);
     const list = db.conversations
-      .filter((c) => c.workspaceId === params.id)
-      .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+      .filter((c) => c.workspaceId === params.id && !!c.archivedAt === archived)
+      .sort((a, b) =>
+        archived
+          ? time(b.archivedAt) - time(a.archivedAt)
+          : time(b.pinnedAt) - time(a.pinnedAt) ||
+            time(b.updatedAt) - time(a.updatedAt)
+      );
     return HttpResponse.json(list);
+  }),
+  // Archiving drops the pin, as on the server.
+  http.patch('/api/conversations/:id', async ({ params, request }) => {
+    const conv = db.conversations.find((c) => c.id === params.id);
+    if (!conv) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as UpdateConversationReq;
+    const now = new Date().toISOString();
+    if (body.title !== undefined) conv.title = body.title;
+    if (body.pinned !== undefined)
+      conv.pinnedAt = body.pinned ? (conv.pinnedAt ?? now) : undefined;
+    if (body.archived !== undefined) {
+      conv.archivedAt = body.archived ? (conv.archivedAt ?? now) : undefined;
+      if (body.archived) conv.pinnedAt = undefined;
+    }
+    return HttpResponse.json(conv);
+  }),
+  http.post('/api/workspaces/:id/conversations/unarchive', ({ params }) => {
+    for (const c of db.conversations)
+      if (c.workspaceId === params.id) c.archivedAt = undefined;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.delete('/api/workspaces/:id/conversations/archived', ({ params }) => {
+    const gone = new Set(
+      db.conversations
+        .filter((c) => c.workspaceId === params.id && c.archivedAt)
+        .map((c) => c.id)
+    );
+    for (let i = db.conversations.length - 1; i >= 0; i--)
+      if (gone.has(db.conversations[i].id)) db.conversations.splice(i, 1);
+    for (let i = db.chatMessages.length - 1; i >= 0; i--)
+      if (gone.has(db.chatMessages[i].conversationId))
+        db.chatMessages.splice(i, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
   http.post(
     '/api/workspaces/:id/conversations',

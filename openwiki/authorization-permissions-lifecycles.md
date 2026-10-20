@@ -742,7 +742,12 @@ Sources: [study routes](../server/internal/httpapi/huma_study.go) and
   by link/public privacy and share role), so link-shared and public workspaces
   let viewers and editors chat. Conversations are private to the user who
   created them, even inside the same workspace, and are never cloned.
-  Revoking privacy leaves old threads in place but unreadable. Chat and generate
+  Revoking privacy leaves old threads in place but unreadable. The owner of a
+  thread pins, renames or archives it (`PATCH /api/conversations/{id}`;
+  archiving drops the pin), lists archived threads with `?archived=true`, and
+  unarchives or deletes all of them per workspace
+  (`POST …/conversations/unarchive`, `DELETE …/conversations/archived`); none
+  of these count as activity, so `updated_at` keeps the list order. Chat and generate
   model choice is an account preference (**Settings → LLM**), snapshotted onto
   new conversations; the browser cannot pick a model per request. Editor AI
   uses the `users.editor_model_provider_slug` / `users.editor_model_slug` pair

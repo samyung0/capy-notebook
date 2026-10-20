@@ -3,6 +3,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 import type { Chapter, SourceFile, StudySummary } from '../../src/api/types';
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // Study progress is per user, so each test either works in its own workspace
@@ -161,13 +162,9 @@ test.describe('study progress', () => {
       .locator('[data-workspace-file-tree]')
       .getByRole('link', { name: fileName })
       .getByLabel(m.study_state_done(), { exact: true });
-    const filesTab = editorPage.getByRole('tab', {
-      exact: true,
-      name: m.workspace_tab_files(),
-    });
     try {
       await editorPage.goto(`/workspaces/${workspaceId}`);
-      await filesTab.click();
+      await showPanelView(editorPage, m.workspace_tab_files());
       await expect(
         editorPage
           .locator('[data-workspace-file-tree]')
@@ -193,7 +190,7 @@ test.describe('study progress', () => {
 
       // The mark is the server's record, not local state.
       await editorPage.reload();
-      await filesTab.click();
+      await showPanelView(editorPage, m.workspace_tab_files());
       await expect(doneMark).toBeVisible();
 
       await openRowMenu(editorPage, fileName);
@@ -270,9 +267,7 @@ test.describe('study progress', () => {
     await setStudyItem(ownerApi, ws.id, { materialId: skipped.id }, 'removed');
 
     await ownerPage.goto(`/workspaces/${ws.id}`);
-    await ownerPage
-      .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
-      .click();
+    await showPanelView(ownerPage, m.workspace_tab_study());
     // Up next is the row holding Continue; the Files panel lists the same
     // titles, so match inside that row only.
     const continueButton = ownerPage.getByRole('button', {
@@ -413,9 +408,7 @@ test.describe('study progress', () => {
 
     // Continue passes Week 1 and opens the quiz that was only started.
     await ownerPage.goto(`/workspaces/${ws.id}`);
-    await ownerPage
-      .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
-      .click();
+    await showPanelView(ownerPage, m.workspace_tab_study());
     const continueButton = ownerPage.getByRole('button', {
       exact: true,
       name: m.study_continue(),
@@ -559,9 +552,7 @@ test.describe('study progress', () => {
     expect(cardRating.status()).toBe(204);
 
     await ownerPage.goto(`/workspaces/${ws.id}`);
-    await ownerPage
-      .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
-      .click();
+    await showPanelView(ownerPage, m.workspace_tab_study());
     await ownerPage
       .getByRole('button', { exact: true, name: m.study_review_button() })
       .click();

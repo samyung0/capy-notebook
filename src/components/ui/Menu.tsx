@@ -53,6 +53,8 @@ const menuItemVariants = cva(
 );
 
 export interface MenuItem {
+  /** The current choice of a view switcher: a check at the row's end. */
+  checked?: boolean;
   closeOnSelect?: boolean;
   danger?: boolean;
   description?: string;
@@ -73,6 +75,8 @@ export interface MenuProps extends VariantProps<typeof menuVariants> {
   iconContainerClassName?: string;
   itemClassName?: string;
   items: MenuItem[];
+  /** Opens above the trigger, e.g. from a panel's foot. */
+  side?: 'top' | 'bottom';
   /** Custom trigger. Defaults to the unified thick vertical 3-dot button. */
   trigger?: ReactNode;
   /** Icon of the default trigger; item cards use the horizontal dots. */
@@ -85,6 +89,7 @@ export function Menu({
   trigger,
   triggerIcon = 'moreVertical',
   align = 'end',
+  side,
   variant = 'default',
   iconContainerClassName,
   alignWidthToTrigger,
@@ -188,7 +193,7 @@ export function Menu({
         data-variant={variant}
         onClick={(e) => e.stopPropagation()}
         ref={variant === 'morph' ? measureMorphContent : undefined}
-        side={variant === 'morph' ? 'top' : undefined}
+        side={variant === 'morph' ? 'top' : side}
         sideOffset={variant === 'morph' ? -44 : undefined}
       >
         <div data-slot="menu-items">
@@ -227,6 +232,9 @@ export function Menu({
                   </span>
                 )}
               </span>
+              {it.checked && (
+                <Icon className="ml-auto -translate-y-px" name="check" />
+              )}
             </DropdownMenuItem>
           ))}
         </div>

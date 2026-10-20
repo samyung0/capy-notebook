@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Locator, Page } from '@playwright/test';
 import { strFromU8, unzipSync, zipSync } from 'fflate';
+import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
 import { verify } from './evidence';
 import type { Actor, UatRun } from './runtime';
@@ -297,9 +298,7 @@ export async function upload(
 ) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-add-menu]')
     .getByRole('button', { exact: true, name: m.action_add_file() })

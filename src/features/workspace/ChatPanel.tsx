@@ -1,5 +1,12 @@
 import type React from 'react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { chatTurn, LIBRARY_DEFAULT } from '@/api/chatStream';
 import { useConversations, useMe, useMessages } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
@@ -12,7 +19,6 @@ import type {
 } from '@/api/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount } from '@/components/ui/Input';
@@ -24,7 +30,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
-import { getLocale, m } from '@/i18n';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
@@ -33,6 +39,7 @@ import {
   ChatDock,
   withViewTransition,
 } from './chat/ChatDock';
+import { ChatHistoryDialog } from './chat/ChatHistoryDialog';
 import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
 import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
@@ -43,12 +50,6 @@ import { useProcessFileChanges } from './useProcessFileChanges';
 
 /** Page label for a citation, absent for sources with no page model (txt/md
  * and anything stored without parsing). */
-function formatConversationDate(iso: string): string {
-  return new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium' }).format(
-    new Date(iso)
-  );
-}
-
 function pageLabel(c: Citation): string | null {
   if (!c.pageStart) return null;
   return c.pageEnd && c.pageEnd !== c.pageStart
@@ -163,6 +164,11 @@ export interface ChatDockOptions {
   office: boolean;
 }
 
+export interface ChatRequest {
+  id: string | null;
+  seq: number;
+}
+
 export function ChatPanel({
   workspaceId,
   color,
@@ -172,8 +178,18 @@ export function ChatPanel({
   onOpenResource,
   renderTabRow,
   dock,
+  historyButton = true,
+  request,
+  onActiveChange,
 }: {
   workspaceId: string;
+  /** The history clock; off where the left panel lists the chats. */
+  historyButton?: boolean;
+  /** Opens a thread (or, with a null id, a new chat) whenever `seq` changes:
+   * the left panel's list drives the rail's chat through it. */
+  request?: ChatRequest;
+  /** The shown thread, for the left panel to highlight. */
+  onActiveChange?: (id: string | null) => void;
   color?: UserColor;
   /** Draws the panel's tab row with this chat's own actions (history, new chat). */
   renderTabRow?: (actions: TabAction[]) => ReactNode;
@@ -233,7 +249,6 @@ export function ChatPanel({
   const { data: conversations } = useConversations(workspaceId, {
     errorBoundary: false,
   });
-  // TODO: show last-chat timestamps and rename/delete actions in chat history.
 
   const [text, setText] = useState('');
   const overLimit = textLength(text) > CHAT_CHARACTER_LIMIT;
@@ -292,6 +307,25 @@ export function ChatPanel({
     setSelectId(null);
     startNew();
   }
+  function openThread(id: string) {
+    hydratedRef.current = null;
+    setSelectId(id);
+  }
+  // An archived or deleted thread leaves the panel for a new chat.
+  function onRemoved(id: string) {
+    if (id === conversationId) openNew();
+  }
+
+  const followRequest = useEffectEvent((next: ChatRequest) => {
+    if (next.id) openThread(next.id);
+    else openNew();
+  });
+  useEffect(() => {
+    if (request) followRequest(request);
+  }, [request]);
+  useEffect(() => {
+    onActiveChange?.(conversationId);
+  }, [conversationId, onActiveChange]);
 
   // The dock always starts a new conversation (one still answering keeps
   // streaming in the background), then grows into the chat page; the keyboard
@@ -330,54 +364,15 @@ export function ChatPanel({
 
   const thread = (
     <>
-      <SimpleDialog
+      <ChatHistoryDialog
+        activeId={conversationId}
         onClose={() => setHistoryOpen(false)}
+        onNew={openNew}
+        onOpen={openThread}
+        onRemoved={onRemoved}
         open={historyOpen}
-        title={m.chat_history()}
-      >
-        <div className="flex max-h-[60dvh] -translate-x-2.5 flex-col gap-1 overflow-y-auto">
-          <div className="pr-2">
-            {conversations?.length ? (
-              conversations.map((c) => (
-                <Button
-                  aria-current={c.id === conversationId ? 'true' : undefined}
-                  className={cn(
-                    'h-auto min-h-11 w-full shrink-0 justify-start px-2.5 py-2 text-left font-normal sm:px-5',
-                    c.id === conversationId && 'bg-surface-hover-bg'
-                  )}
-                  iconLeft="message"
-                  key={c.id}
-                  onClick={() => {
-                    hydratedRef.current = null;
-                    setSelectId(c.id);
-                    setHistoryOpen(false);
-                  }}
-                  type="button"
-                  variant="ghost-hover"
-                >
-                  {/* Phones always put the date under the title; wider rows wrap it only when too narrow. */}
-                  <span className="flex min-w-0 flex-1 flex-col gap-y-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-3">
-                    <span className="wrap-anywhere min-w-0 grow whitespace-normal">
-                      {c.title || m.chat_untitled()}
-                    </span>
-                    <time
-                      className="whitespace-nowrap text-fg-muted text-xs sm:text-sm"
-                      dateTime={c.createdAt}
-                    >
-                      {formatConversationDate(c.createdAt)}
-                    </time>
-                  </span>
-                  {c.id === conversationId && <Icon name="check" size={16} />}
-                </Button>
-              ))
-            ) : (
-              <p className="text-fg-muted text-sm">
-                {m.chat_no_conversations()}
-              </p>
-            )}
-          </div>
-        </div>
-      </SimpleDialog>
+        workspaceId={workspaceId}
+      />
 
       <div
         className="scroll-fade-y flex flex-1 flex-col gap-4 self-stretch overflow-auto px-4 py-4 [--scroll-fade-bottom-padding:--spacing(4)]"
@@ -545,7 +540,9 @@ export function ChatPanel({
   if (!dock)
     return (
       <div className="flex h-full flex-col" style={colorVars}>
-        {renderTabRow?.([historyAction, newAction])}
+        {renderTabRow?.(
+          historyButton ? [historyAction, newAction] : [newAction]
+        )}
         {thread}
       </div>
     );

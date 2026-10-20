@@ -154,6 +154,7 @@ export type {
   TopUpReq,
   TransferWorkspaceReq,
   UpdateChapterReq,
+  UpdateConversationReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardSetReq,

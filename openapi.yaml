@@ -1239,10 +1239,16 @@ components:
           format: uri
           readOnly: true
           type: string
+        archivedAt:
+          format: date-time
+          type: string
         createdAt:
           format: date-time
           type: string
         id:
+          type: string
+        pinnedAt:
+          format: date-time
           type: string
         title:
           type: string
@@ -6264,6 +6270,25 @@ components:
       required:
         - contentRich
       type: object
+    UpdateConversationReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateConversationReq.json
+          format: uri
+          readOnly: true
+          type: string
+        archived:
+          description: true archives and unpins; false puts the thread back in the list
+          type: boolean
+        pinned:
+          type: boolean
+        title:
+          maxLength: 60
+          minLength: 1
+          type: string
+      type: object
     UpdateEventReq:
       additionalProperties: false
       properties:
@@ -7912,6 +7937,38 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Delete a conversation
+      tags:
+        - Chat
+    patch:
+      operationId: updateConversation
+      parameters:
+        - description: Conversation id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Conversation id
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConversationReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Rename, pin or archive a conversation
       tags:
         - Chat
   /api/conversations/{id}/messages:
@@ -11310,6 +11367,13 @@ paths:
           schema:
             description: Workspace id
             type: string
+        - description: true lists the archived threads instead of the live list
+          explode: false
+          in: query
+          name: archived
+          schema:
+            description: true lists the archived threads instead of the live list
+            type: boolean
       responses:
         "200":
           content:
@@ -11358,6 +11422,52 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Start a new chat conversation
+      tags:
+        - Chat
+  /api/workspaces/{id}/conversations/archived:
+    delete:
+      operationId: deleteArchivedConversations
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every archived conversation
+      tags:
+        - Chat
+  /api/workspaces/{id}/conversations/unarchive:
+    post:
+      operationId: unarchiveConversations
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Put every archived conversation back in the list
       tags:
         - Chat
   /api/workspaces/{id}/files:

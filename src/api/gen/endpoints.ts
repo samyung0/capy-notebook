@@ -92,6 +92,7 @@ import type {
   Label,
   LearningProgress,
   ListAttemptsParams,
+  ListConversationsParams,
   ListModelsParams,
   ListNotificationsParams,
   ListOwnedFilesParams,
@@ -176,6 +177,7 @@ import type {
   UndoEditReq,
   UpdateChapterReq,
   UpdateCommentReq,
+  UpdateConversationReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardSetReq,
@@ -1966,6 +1968,57 @@ export const deleteConversation = async (id: string, options?: RequestInit): Pro
 
   const data: deleteConversationResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as deleteConversationResponse
+}
+
+
+
+export type updateConversationResponse200 = {
+  data: Conversation
+  status: 200
+}
+
+export type updateConversationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateConversationResponseSuccess = (updateConversationResponse200) & {
+  headers: Headers;
+};
+export type updateConversationResponseError = (updateConversationResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateConversationResponse = (updateConversationResponseSuccess | updateConversationResponseError)
+
+export const getUpdateConversationUrl = (id: string,) => {
+
+
+
+
+  return `/api/conversations/${id}`
+}
+
+/**
+ * @summary Rename, pin or archive a conversation
+ */
+export const updateConversation = async (id: string,
+    updateConversationReq: NonReadonly<UpdateConversationReq>, options?: RequestInit): Promise<updateConversationResponse> => {
+
+  const res = await fetch(getUpdateConversationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateConversationReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateConversationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateConversationResponse
 }
 
 
@@ -8264,20 +8317,29 @@ export type listConversationsResponseError = (listConversationsResponseDefault) 
 
 export type listConversationsResponse = (listConversationsResponseSuccess | listConversationsResponseError)
 
-export const getListConversationsUrl = (id: string,) => {
+export const getListConversationsUrl = (id: string,
+    params?: ListConversationsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/workspaces/${id}/conversations`
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/conversations?${stringifiedParams}` : `/api/workspaces/${id}/conversations`
 }
 
 /**
  * @summary List a workspace's chat conversations
  */
-export const listConversations = async (id: string, options?: RequestInit): Promise<listConversationsResponse> => {
+export const listConversations = async (id: string,
+    params?: ListConversationsParams, options?: RequestInit): Promise<listConversationsResponse> => {
 
-  const res = await fetch(getListConversationsUrl(id),
+  const res = await fetch(getListConversationsUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -8342,6 +8404,106 @@ export const createConversation = async (id: string,
 
   const data: createConversationResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createConversationResponse
+}
+
+
+
+export type deleteArchivedConversationsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteArchivedConversationsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteArchivedConversationsResponseSuccess = (deleteArchivedConversationsResponse204) & {
+  headers: Headers;
+};
+export type deleteArchivedConversationsResponseError = (deleteArchivedConversationsResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteArchivedConversationsResponse = (deleteArchivedConversationsResponseSuccess | deleteArchivedConversationsResponseError)
+
+export const getDeleteArchivedConversationsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/conversations/archived`
+}
+
+/**
+ * @summary Delete every archived conversation
+ */
+export const deleteArchivedConversations = async (id: string, options?: RequestInit): Promise<deleteArchivedConversationsResponse> => {
+
+  const res = await fetch(getDeleteArchivedConversationsUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteArchivedConversationsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteArchivedConversationsResponse
+}
+
+
+
+export type unarchiveConversationsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type unarchiveConversationsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type unarchiveConversationsResponseSuccess = (unarchiveConversationsResponse204) & {
+  headers: Headers;
+};
+export type unarchiveConversationsResponseError = (unarchiveConversationsResponseDefault) & {
+  headers: Headers;
+};
+
+export type unarchiveConversationsResponse = (unarchiveConversationsResponseSuccess | unarchiveConversationsResponseError)
+
+export const getUnarchiveConversationsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/conversations/unarchive`
+}
+
+/**
+ * @summary Put every archived conversation back in the list
+ */
+export const unarchiveConversations = async (id: string, options?: RequestInit): Promise<unarchiveConversationsResponse> => {
+
+  const res = await fetch(getUnarchiveConversationsUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: unarchiveConversationsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as unarchiveConversationsResponse
 }
 
 

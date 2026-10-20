@@ -15,13 +15,15 @@ import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-type Trigger = 'pill' | 'avatar';
+type Trigger = 'pill' | 'avatar' | 'row';
 
 /** The account menu (Settings, Billing, Theme, Log out) behind the profile
- * pill in the top bar or the phone avatar. */
+ * pill in the top bar, the phone avatar or the workspace panel's foot row
+ * (which opens it upwards). */
 type ProfileMenuProps = {
   dot?: boolean;
-  /** Adds a Notifications item first (the phone avatar, which has no bell). */
+  /** Adds a Notifications item first (the phone avatar and the workspace
+   * panel's foot, which have no bell). */
   notifications?: boolean;
   trigger?: Trigger;
 };
@@ -50,7 +52,7 @@ function ProfileMenuInner({
   return (
     <>
       <Menu
-        align="end"
+        align={trigger === 'row' ? 'start' : 'end'}
         alignWidthToTrigger={trigger !== 'avatar'}
         items={[
           ...(notifications
@@ -85,6 +87,7 @@ function ProfileMenuInner({
             onClick: onLogout,
           },
         ]}
+        side={trigger === 'row' ? 'top' : undefined}
         trigger={
           <ProfilePillButton
             avatarUrl={me?.avatarUrl}

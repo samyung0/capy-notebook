@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { expectErrorSurface } from '../helpers/errors';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 async function openWorkspace(page: Page) {
@@ -11,9 +12,7 @@ async function openWorkspace(page: Page) {
 }
 
 async function openFile(page: Page, name: string) {
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page.getByRole('link', { exact: true, name }).click();
 }
 

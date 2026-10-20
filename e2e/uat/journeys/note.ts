@@ -10,6 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { crc32, deflateSync } from 'node:zlib';
 import type { Browser, Locator, Page } from '@playwright/test';
 import { unzipSync } from 'fflate';
+import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
 import {
   api,
@@ -200,9 +201,7 @@ export async function apiNote(run: UatRun, workspaceId: string, body: string) {
 export async function createNote(run: UatRun, workspaceId: string) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-add-menu]')
     .getByRole('button', { exact: true, name: m.action_add_file() })

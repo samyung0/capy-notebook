@@ -1187,6 +1187,35 @@ export const DeleteConversationResponse = zod.void()
 
 
 /**
+ * @summary Rename, pin or archive a conversation
+ */
+export const UpdateConversationParams = zod.object({
+  "id": zod.string().describe('Conversation id')
+})
+
+export const updateConversationBodyTitleMax = 60;
+
+
+
+export const UpdateConversationBody = zod.object({
+  "archived": zod.boolean().optional().describe('true archives and unpins; false puts the thread back in the list'),
+  "pinned": zod.boolean().optional(),
+  "title": zod.string().min(1).max(updateConversationBodyTitleMax).optional()
+})
+
+export const UpdateConversationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string()
+})
+
+
+/**
  * @summary Load a conversation's message history
  */
 export const ListMessagesParams = zod.object({
@@ -6234,10 +6263,16 @@ export const ListConversationsParams = zod.object({
   "id": zod.string().describe('Workspace id')
 })
 
+export const ListConversationsQueryParams = zod.object({
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+})
+
 export const ListConversationsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string()
@@ -6262,12 +6297,34 @@ export const CreateConversationBody = zod.object({
 
 export const CreateConversationResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string()
 })
+
+
+/**
+ * @summary Delete every archived conversation
+ */
+export const DeleteArchivedConversationsParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const DeleteArchivedConversationsResponse = zod.void()
+
+
+/**
+ * @summary Put every archived conversation back in the list
+ */
+export const UnarchiveConversationsParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const UnarchiveConversationsResponse = zod.void()
 
 
 /**
