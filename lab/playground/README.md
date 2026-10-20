@@ -78,7 +78,8 @@ store queries run. The frozen dump file is unchanged.
 Nothing in either database. The `rag_search_events` telemetry write is disabled
 for the turn. `list_sources` reads the selected workspace directly, using the
 production listing format without a signed-in user or gateway. Database sources
-and materials are read-only; materials created in the current run are editable.
+and materials are read-only; materials created in the current run are editable,
+and Office files are edited as the run's own copies ([Office files](#office-files)).
 Runs land in `local/runs/<id>/run.json` with the effective config,
 the exact system prompt and offered tool schemas, every tool call with the text the model saw, every
 provider call with token counts, captured images, citations and the answer.
@@ -349,6 +350,45 @@ the turn context's study preferences and picks which building skill
 When the agent withholds a response for carrying tool-call markup (reported as
 "Response flagged due to safety concern"), `run.json` keeps the text under that
 provider call's `flagged_text`.
+
+### Office files
+
+`inspect_office_document` and `edit_office_document` are production's
+handlers; the gateway routes they call (the Office inspect, edit and create)
+are answered in process by `scripts/office.py`. As in production, both tools
+are offered once the turn reads `office_building` (or a turn in the history
+the page sends did; one a checkpoint folded away no longer counts), and
+`inspect_document` or `edit_document` on an Office file answers with the
+gateway's pointer to that skill. Commands go through the gateway's own
+normalizer (`go run ./cmd/officecommands` in `server/`) and then the Office
+engine: one `office-service serve` child per server process, started on the
+first Office call and speaking JSON lines (`crates/office-service/src/wire.rs`
+in the fork).
+
+Build the engine once, then name it in `OFFICE_SERVICE_BIN`, in the shell that
+starts the playground or in the repository-root `.env.local`; without it the
+Office tools are refused with a sentence naming the build:
+
+```sh
+cd vendor/betteroffice
+CARGO_BUILD_JOBS=2 cargo build --release -p betteroffice-office-service --bin office-service
+# .env.local:
+# OFFICE_SERVICE_BIN=<checkout>/vendor/betteroffice/target/release/office-service.exe
+```
+
+A run keeps its Office files in memory. A workspace file starts from its
+published blob in the target's bucket (edits still in its collaboration room
+are not in it); `create` makes a file with the id `f_local_<n>` that exists
+only in that run, listed by `list_sources` and the scope checks like an
+uploaded file but never parsed. Every created or edited file is exported to
+`local/runs/<id>/materials/<file id>.xlsx` (or `.docx`, `.pptx`) and listed in
+the Materials panel, whose dialog downloads it. A follow-up turn starts again
+from the published files. Nothing is written to UAT: no gateway call, no
+database or bucket write.
+
+Unlike production, an engine failure other than a refusal is shown as the
+engine's own text instead of an unknown outcome, and a created file's name is
+not shortened to the app's file-name limit.
 
 ### Acceptance (todo-learning.md, 1.9)
 

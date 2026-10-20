@@ -145,6 +145,9 @@ func TestStreamSendsTheOpenResourceAndStudySwitch(t *testing.T) {
 		if got := string(body["openResource"]); got != want[i] {
 			t.Fatalf("turn %d openResource = %s, want %s", i, got, want[i])
 		}
+		if got := string(body["role"]); got != `"editor"` {
+			t.Fatalf("turn %d role = %s", i, got)
+		}
 		if string(body["studyProgress"]) != "true" {
 			t.Fatalf("turn %d studyProgress = %s", i, body["studyProgress"])
 		}
