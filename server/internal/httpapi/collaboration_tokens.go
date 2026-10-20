@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
 type collaborationClaims struct {
@@ -22,10 +24,20 @@ type collaborationClaims struct {
 	// Parent is the note an embedded quiz or flashcard set belongs to: its
 	// rooms join inside that note's channel, which the collaboration server
 	// checks against this claim (Epo 2026-10-20).
-	Parent    string `json:"parent,omitempty"`
+	Parent string `json:"parent,omitempty"`
+	// Who the connection is, for the room's presence and cursor labels (Epo
+	// 2026-10-20): the verified display name and avatar, and the browser and
+	// OS read from the User-Agent (deviceLabel). Each is bounded, since the
+	// collaboration server sends them to every co-editor.
 	Name      string `json:"name,omitempty"`
 	AvatarURL string `json:"avatarUrl,omitempty"`
+	Browser   string `json:"browser,omitempty"`
+	OS        string `json:"os,omitempty"`
 }
+
+// maxClaimAvatarURL bounds the avatar a token carries; a longer one (none
+// the app sets is near it) is left out, and co-editors see initials.
+const maxClaimAvatarURL = 1024
 
 func signCollaborationToken(secret string, claims collaborationClaims) (string, error) {
 	if secret == "" {
@@ -44,8 +56,12 @@ func signCollaborationToken(secret string, claims collaborationClaims) (string, 
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID string, schema int) collaborationClaims {
+func newCollaborationClaims(userID, room, access, name, avatarURL, userAgent, tokenID string, schema int) collaborationClaims {
 	now := time.Now().UTC()
+	if len(avatarURL) > maxClaimAvatarURL {
+		avatarURL = ""
+	}
+	browser, os := deviceLabel(userAgent)
 	return collaborationClaims{
 		Audience:  "capy-collaboration",
 		ExpiresAt: now.Add(5 * time.Minute).Unix(),
@@ -56,7 +72,9 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 		Room:      room,
 		Access:    access,
 		Schema:    schema,
-		Name:      name,
+		Name:      fieldlimits.Clamp(name, fieldlimits.UserName),
 		AvatarURL: avatarURL,
+		Browser:   browser,
+		OS:        os,
 	}
 }

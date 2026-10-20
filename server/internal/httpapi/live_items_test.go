@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -236,5 +238,47 @@ func TestEmbeddedItemTokensNameTheirNote(t *testing.T) {
 		if got := parent(c.material, c.body); got != c.want {
 			t.Fatalf("%s %v: parent %q, want %q", c.material, c.body, got, c.want)
 		}
+	}
+}
+
+// A room token names who the connection is for the room's presence (Epo
+// 2026-10-20): the verified name and the browser and OS the API read from the
+// request's User-Agent, never the header itself.
+func TestCollaborationTokensNameTheDevice(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	t.Cleanup(st.Close)
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
+		AuthDisabled:        true,
+		E2EAuth:             true,
+		E2ESecret:           "e2e-test-secret",
+		E2EUserIDs:          []string{"u_editor"},
+		CollaborationSecret: "collab-test-secret",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/materials/note_e2e_private/collaboration-token", nil)
+	req.Header.Set(auth.HeaderE2EUserID, "u_editor")
+	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var token struct {
+		Token string `json:"token"`
+	}
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &token) != nil {
+		t.Fatalf("token = %d body=%s", rec.Code, rec.Body.String())
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.Split(token.Token, ".")[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims["browser"] != "Safari" || claims["os"] != "macOS" || claims["name"] == "" || strings.Contains(string(payload), "Mozilla") {
+		t.Fatalf("claims = %s", payload)
 	}
 }

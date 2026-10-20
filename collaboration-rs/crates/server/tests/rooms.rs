@@ -181,9 +181,30 @@ fn embed_token(room: &str, user: &str, note: &str) -> String {
 }
 
 fn signed_token(room: &str, user: &str, access: &str, ttl: i64, parent: Option<&str>) -> String {
-    use base64::Engine;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use hmac::{Hmac, Mac};
+    let mut claims = token_claims(room, user, access, ttl);
+    if let Some(parent) = parent {
+        claims["parent"] = parent.into();
+    }
+    sign_claims(&claims)
+}
+
+/// A token naming who the connection is, as Go mints one (Epo 2026-10-20):
+/// the user's name and the browser and OS of the device.
+fn identity_token(
+    room: &str,
+    user: &str,
+    access: &str,
+    name: &str,
+    device: (&str, &str),
+) -> String {
+    let mut claims = token_claims(room, user, access, 300);
+    claims["name"] = name.into();
+    claims["browser"] = device.0.into();
+    claims["os"] = device.1.into();
+    sign_claims(&claims)
+}
+
+fn token_claims(room: &str, user: &str, access: &str, ttl: i64) -> serde_json::Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)
@@ -193,13 +214,16 @@ fn signed_token(room: &str, user: &str, access: &str, ttl: i64, parent: Option<&
         .next()
         .and_then(|n| n.parse().ok())
         .unwrap_or(1);
-    let mut claims = serde_json::json!({
+    serde_json::json!({
         "access": access, "aud": "capy-collaboration", "exp": now + ttl, "iat": now,
         "iss": "capy-api", "jti": format!("t_{now}_{user}"), "room": room, "schema": schema, "sub": user,
-    });
-    if let Some(parent) = parent {
-        claims["parent"] = parent.into();
-    }
+    })
+}
+
+fn sign_claims(claims: &serde_json::Value) -> String {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use hmac::{Hmac, Mac};
     let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
     let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
     let mut mac = Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes()).expect("key");
@@ -5110,6 +5134,146 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     assert_eq!(from_writer.unwrap()["uploads"][0], "block-a");
     let escaped_key = escaped_key.unwrap();
     assert!(escaped_key.get("uploads").is_none(), "{escaped_key}");
+}
+
+impl Client {
+    /// Reads the room's presence until it lists connections `check` accepts.
+    async fn presence(
+        &mut self,
+        check: impl Fn(&[serde_json::Value]) -> bool,
+    ) -> Vec<serde_json::Value> {
+        loop {
+            let (message, _) = self.stateless("room-presence").await;
+            let connections = message["connections"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if check(&connections) {
+                return connections;
+            }
+        }
+    }
+}
+
+/// Security regression (Epo 2026-10-20): the room's presence lists the
+/// people who can edit (an editor's reading tab too), each by its signed
+/// token (name and device) with the awareness client ids it holds, never by
+/// what its awareness says, and never a viewer; a person is a number in the
+/// room, never a user id; a member hears every connection but its own (its
+/// user's other tabs included), and a viewer hears none. Fails if viewers are
+/// listed, a viewer hears it, or a member hears its own connection.
+#[tokio::test]
+async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let viewer = user(&env).await;
+    let material = room.split(':').nth(1).expect("material").to_owned();
+    db(&env)
+        .await
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role)
+             SELECT workspace_id, $2, 'viewer' FROM materials WHERE id = $1",
+            &[&material, &viewer],
+        )
+        .await
+        .expect("viewer");
+    let mut desk = Client::open(server.port).await;
+    desk.joined(
+        &room,
+        &identity_token(&room, &owner, "write", "Olive", ("Chrome", "Windows")),
+    )
+    .await;
+    // What its awareness claims is never its label.
+    desk.send(
+        7,
+        &awareness_update(501, 1, "{\"data\":{\"name\":\"Mallory\"}}"),
+    )
+    .await;
+    let mut ed = Client::open(server.port).await;
+    ed.joined(
+        &room,
+        &identity_token(&room, &editor, "write", "Eddie", ("Firefox", "Linux")),
+    )
+    .await;
+    let mut phone = Client::open(server.port).await;
+    phone
+        .joined(
+            &room,
+            &identity_token(&room, &owner, "write", "Olive", ("Safari", "iOS")),
+        )
+        .await;
+    let mut reader = Client::open(server.port).await;
+    reader
+        .joined(
+            &room,
+            &identity_token(&room, &editor, "read", "Eddie", ("Edge", "Windows")),
+        )
+        .await;
+    let mut watcher = Client::open(server.port).await;
+    watcher
+        .joined(
+            &room,
+            &identity_token(&room, &viewer, "read", "Vic", ("Chrome", "Android")),
+        )
+        .await;
+
+    let seen = ed
+        .presence(|connections| {
+            connections.len() == 3 && connections.iter().any(|c| c["clients"][0] == 501)
+        })
+        .await;
+    let desk_entry = seen
+        .iter()
+        .find(|c| c["clients"][0] == 501)
+        .expect("the desk");
+    assert_eq!(desk_entry["name"], "Olive");
+    assert_eq!(desk_entry["browser"], "Chrome");
+    assert_eq!(desk_entry["os"], "Windows");
+    let person = |connections: &[serde_json::Value], browser: &str| {
+        connections
+            .iter()
+            .find(|c| c["browser"] == browser)
+            .map(|c| c["person"].clone())
+            .expect("listed")
+    };
+    // The desk hears the editor, the editor's reading tab and its own user's
+    // phone (one person per user), never itself.
+    let at_desk = desk.presence(|connections| connections.len() == 3).await;
+    let mut browsers: Vec<&str> = at_desk
+        .iter()
+        .filter_map(|c| c["browser"].as_str())
+        .collect();
+    browsers.sort_unstable();
+    assert_eq!(browsers, ["Edge", "Firefox", "Safari"]);
+    assert_eq!(person(&at_desk, "Edge"), person(&at_desk, "Firefox"));
+    assert_ne!(person(&at_desk, "Safari"), person(&at_desk, "Firefox"));
+    assert_eq!(person(&at_desk, "Safari"), person(&seen, "Chrome"));
+    let at_reader = reader.presence(|connections| connections.len() == 3).await;
+    assert!(
+        at_reader.iter().all(|c| c["browser"] != "Edge"),
+        "{at_reader:?}"
+    );
+    for id in [&owner, &editor] {
+        assert!(
+            !String::from_utf8_lossy(&reader.received).contains(id.as_str()),
+            "a reader learned a user id"
+        );
+    }
+    assert!(!watcher.hears(255, 1500).await);
+    assert!(
+        watcher
+            .inbox
+            .iter()
+            .all(|m| m.kind != 9 || !text_payload(&m.payload).contains("room-presence")),
+        "a viewer heard the room's presence"
+    );
+    for connections in [&seen, &at_desk, &at_reader] {
+        assert!(
+            connections.iter().all(|c| c["name"] != "Vic"),
+            "{connections:?}"
+        );
+    }
 }
 
 impl Client {

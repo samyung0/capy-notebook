@@ -194,6 +194,7 @@ async fn join_room(
     key: (u64, u64),
     out: Outbox,
     socket: String,
+    inside: bool,
 ) -> Result<RoomHandle, Refusal> {
     for _ in 0..2 {
         let room_name = name.to_string();
@@ -206,6 +207,7 @@ async fn join_room(
             context: context.clone(),
             out: out.clone(),
             socket: socket.clone(),
+            inside,
             reply,
         };
         if handle.tx.send(join).await.is_err() {
@@ -1085,6 +1087,10 @@ impl Connection {
             return;
         }
         let key = (self.id, channel);
+        let inside = matches!(
+            self.channels.get(&channel),
+            Some(Channel::Authenticating(_, _, Some(_)))
+        );
         let (app, tx, out, socket) = (
             self.app.clone(),
             self.join_tx.clone(),
@@ -1092,7 +1098,7 @@ impl Connection {
             self.socket_id.clone(),
         );
         tokio::spawn(async move {
-            let result = join_room(&app, &name, &context, key, out, socket).await;
+            let result = join_room(&app, &name, &context, key, out, socket, inside).await;
             if let Err(unsent) = tx.send((channel, attempt, name, context, result)) {
                 // The socket closed meanwhile: leave the room it joined.
                 if let (.., Ok(handle)) = unsent.0 {

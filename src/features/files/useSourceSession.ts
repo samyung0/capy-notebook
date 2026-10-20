@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { api, isAccountForbiddenError, isApiError, qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
@@ -45,6 +45,7 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
 import { officeMark } from '@/lib/officeMarks';
+import { PresenceContext } from './fileModeContext';
 import { takeSourceOpen } from './sourceOpen';
 import {
   createSourceProvider,
@@ -209,6 +210,11 @@ export function useSourceSession(
   const { data: me } = useMe({ errorBoundary: false });
   const readOnlyHandler = useRef(onReadOnly);
   readOnlyHandler.current = onReadOnly;
+  // The room's other editors go to the header's avatar group (Epo
+  // 2026-10-20).
+  const presence = useContext(PresenceContext);
+  const reportPresence = useRef(presence);
+  reportPresence.current = presence;
   const actorId = me?.id;
   const [loaded, setLoaded] = useState<{
     session: SourceSession;
@@ -786,6 +792,9 @@ export function useSourceSession(
               setStatus(everSynced ? 'reconnecting' : 'connecting');
           }
         },
+        onPresence: (connections) => {
+          if (!cancelled) reportPresence.current?.(connections);
+        },
         // Joined, the answer waiting on the open budget: reachable, so never
         // offline meanwhile (an offline episode before it ends here).
         onSlowed: (slowed) => {
@@ -1049,6 +1058,7 @@ export function useSourceSession(
       discardHandler.current = null;
       disposeReconnect();
       provider?.destroy();
+      reportPresence.current?.(null);
       doc?.destroy();
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(new SourceSessionError(m.source_edit_save_failed()));

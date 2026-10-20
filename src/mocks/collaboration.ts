@@ -18,6 +18,7 @@ import {
   type ItemProvider,
   registerMockItemProvider,
 } from '@/features/collaboration/itemRoom';
+import type { PresenceConnection } from '@/features/collaboration/presence';
 import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
 import {
   registerMockSourceProvider,
@@ -50,11 +51,36 @@ import * as db from './db';
  * into; document and awareness updates fan out to the other participants. */
 
 /** `origin` tags inbound updates the way Hocuspocus tags them with the
- * provider, so consumers can tell remote transactions from their own. */
+ * provider, so consumers can tell remote transactions from their own. A
+ * participant with an `identity` is an editor in the room's presence; one
+ * with `onPresence` hears the others', as the service sends it. */
 interface Participant {
   awareness?: Awareness;
   document: Y.Doc;
+  identity?: MockIdentity;
+  onPresence?: (connections: PresenceConnection[]) => void;
   origin: object;
+}
+
+export type MockIdentity = Omit<PresenceConnection, 'clients'>;
+
+/** The service's room presence (`send_presence`): every participant hears
+ * the other editors, never itself. */
+function announcePresence(room: Room) {
+  for (const participant of room.participants) {
+    participant.onPresence?.(
+      [...room.participants].flatMap((other) =>
+        other !== participant && other.identity
+          ? [
+              {
+                ...other.identity,
+                clients: other.awareness ? [other.awareness.clientID] : [],
+              },
+            ]
+          : []
+      )
+    );
+  }
 }
 
 export interface Room {
@@ -427,8 +453,11 @@ export function join(room: Room, participant: Participant) {
     }
   }
   room.participants.add(participant);
+  announcePresence(room);
   return () => {
     if (!room.participants.delete(participant)) return;
+    participant.onPresence?.([]);
+    announcePresence(room);
     participant.document.off('update', forward);
     if (awareness) {
       awareness.off('update', relay);
@@ -525,6 +554,16 @@ export function mockNotePeer(materialId: string) {
   };
 }
 
+/** Another editor in the open mock room of a material or file, there for
+ * the room's presence only (screenshots, e2e); returns its leave. */
+export function mockPresencePeer(targetId: string, identity: MockIdentity) {
+  const room = [...rooms.values()].find(
+    (candidate) => candidate.target.id === targetId && !candidate.retired
+  );
+  if (!room) throw new Error(`No mock room is open for ${targetId}`);
+  return join(room, { document: new Y.Doc(), identity, origin: {} });
+}
+
 export function setCollaborationReachable(value: boolean) {
   if (value) sessionStorage.removeItem(UNREACHABLE);
   else sessionStorage.setItem(UNREACHABLE, 'true');
@@ -586,6 +625,7 @@ interface MockCollaborationOptions {
   materialId: string;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
+  onPresence?: (connections: PresenceConnection[]) => void;
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
 }
@@ -668,6 +708,7 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.leave = join(room, {
       awareness: this.awareness,
       document: this.document,
+      onPresence: this.options.onPresence,
       origin: this,
     });
     this.isConnected = true;
@@ -781,7 +822,11 @@ class MockSourceProvider implements SourceProvider {
     }
     this.config = config;
     this.room = room;
-    this.leave = join(room, { document: config.document, origin: this });
+    this.leave = join(room, {
+      document: config.document,
+      onPresence: config.onPresence,
+      origin: this,
+    });
     // Counted for the e2e that checks an open at the size limit never joins.
     if (browser)
       sessionStorage.setItem(
@@ -1153,6 +1198,7 @@ class MockItemProvider implements ItemProvider {
     const room = itemRoom(config.name);
     this.leave = join(room, {
       document: config.document,
+      onPresence: config.onPresence,
       origin: this,
     });
     const quiz =

@@ -1,6 +1,7 @@
 import type * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import type { SourceSession } from '@/api/types';
+import type { PresenceConnection } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { CollabSocket } from '@/features/collaboration/socket';
 
@@ -33,6 +34,8 @@ export interface SourceProviderConfig {
   /** The room closed; on an open socket the server closed only this room. */
   onClose?: () => void;
   onDisconnect?: () => void;
+  /** The room's other editors (`RoomProvider`). */
+  onPresence?: (connections: PresenceConnection[]) => void;
   /** The room's answer waits on the user's open budget (`RoomProvider`). */
   onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;

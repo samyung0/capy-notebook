@@ -246,7 +246,7 @@ func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpoint
 	}
 	return &sourceCheckpointOutput{Body: saved}, nil
 }
-func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborationTokenInput) (*sourceTokenOutput, error) {
+func (a *api) createSourceCollaborationToken(ctx context.Context, in *sourceCollaborationTokenInput) (*sourceTokenOutput, error) {
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, hErr(err)
@@ -258,7 +258,7 @@ func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborat
 	if err != nil {
 		return nil, hErr(err)
 	}
-	claims := newCollaborationClaims(userID(ctx), session.Room, session.Access, me.Name, me.AvatarURL, randID("collab"), int(session.Epoch))
+	claims := newCollaborationClaims(userID(ctx), session.Room, session.Access, me.Name, me.AvatarURL, in.UserAgent, randID("collab"), int(session.Epoch))
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
 		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}

@@ -806,3 +806,59 @@ it('speaks the collaboration server’s client protocol', () => {
     `pub const CLIENT_PROTOCOL: u32 = ${CLIENT_PROTOCOL};`
   );
 });
+
+/** The room's presence (Epo 2026-10-20) reaches `onPresence`, never the
+ * stateless handler, and goes empty when the channel ends. */
+it('hands the room’s presence to onPresence and clears it when the channel ends', async () => {
+  const onPresence = vi.fn();
+  const { events, join, socket } = await joined({ onPresence });
+  const presence = text(
+    JSON.stringify({
+      connections: [
+        {
+          avatar: null,
+          browser: 'Chrome',
+          clients: [7],
+          name: 'Bob',
+          os: 'Windows',
+          person: 2,
+        },
+      ],
+      type: 'room-presence',
+    })
+  );
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(join.channel, MessageKind.Stateless, presence)
+  );
+  expect(onPresence).toHaveBeenCalledWith([
+    expect.objectContaining({ clients: [7], name: 'Bob', person: 2 }),
+  ]);
+  expect(events.stateless).not.toHaveBeenCalled();
+  socket.deliver(
+    message(join.channel, MessageKind.Closed, closedPayload(4401, 'expired'))
+  );
+  expect(onPresence).toHaveBeenLastCalledWith([]);
+});
+
+/** Idle 60 minutes (Epo 2026-10-20), the page closes its collaboration
+ * socket: the room's channel ends with no close or drop reported, nothing
+ * reconnects until input, and then it joins again. */
+it('ends its channel quietly when the page sleeps and joins again on wake', async () => {
+  const onDisconnect = vi.fn();
+  const { events, join, provider, socket } = await joined({ onDisconnect });
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+  const shared = CollabSocket.for(socket.url);
+  shared.sleep();
+  expect(socket.readyState).toBe(3);
+  expect(provider.isAuthenticated).toBe(false);
+  expect(events.closed).not.toHaveBeenCalled();
+  expect(onDisconnect).not.toHaveBeenCalled();
+  expect(FakeSocket.instances).toHaveLength(1);
+  shared.wake();
+  const next = FakeSocket.instances.at(-1) as FakeSocket;
+  expect(next).not.toBe(socket);
+  next.open();
+  await flush();
+  expect(next.take(MessageKind.Join)).toHaveLength(1);
+});

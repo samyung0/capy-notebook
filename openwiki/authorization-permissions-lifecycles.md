@@ -471,7 +471,9 @@ and [material editor checks](../server/internal/store/share.go#L209).
   can delete another user's comment or discussion.
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
-  awareness to or from them and sends them no comment relays (Epo 2026-10-10).
+  awareness to or from them and sends them no comment relays (Epo 2026-10-10)
+  and no room presence; the presence lists only people who can edit, by
+  their write channels (Epo 2026-10-20, [plate-editor](frontend/plate-editor.md#room-presence)).
   The app uses them for note View, flashcard sets and quizzes. Any user may ask
   for a read token (`{access: 'read'}`), and every reader room does (View, a
   study or attempt page), so an owner's or editor's reading tab writes nothing

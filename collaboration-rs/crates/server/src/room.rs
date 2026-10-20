@@ -52,6 +52,14 @@ pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can'
 /// (`OPEN_SLOWED_TYPE` in src/features/collaboration/roomProvider.ts): the
 /// editor keeps loading and says so after a while, never offline.
 pub const OPEN_SLOWED_TYPE: &str = "open-slowed";
+/// The room's presence (Epo 2026-10-20): the editors in it, for the avatar
+/// group and cursor labels (`PRESENCE_TYPE` in
+/// src/features/collaboration/presence.ts). It goes out a flush window after
+/// a change and at most once a second, listing at most `MAX_PRESENCE`
+/// connections, oldest first.
+pub const PRESENCE_TYPE: &str = "room-presence";
+pub const PRESENCE_EVERY: Duration = Duration::from_secs(1);
+pub const MAX_PRESENCE: usize = 64;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -65,6 +73,8 @@ pub enum RoomCmd {
         context: Context,
         out: Outbox,
         socket: String,
+        /// An embed's channel inside its note's (Epo 2026-10-20).
+        inside: bool,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Leave(MemberKey),
@@ -205,6 +215,8 @@ struct Member {
     held_read_only: bool,
     out: Outbox,
     socket: String,
+    /// An embed's channel inside its note's: it hears no room presence.
+    inside: bool,
     /// Awareness client ids this channel sent.
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
@@ -380,6 +392,13 @@ pub struct Room {
     members: HashMap<MemberKey, Member>,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
+    /// Presence changed since it last went out; when it may go next.
+    presence_dirty: bool,
+    presence_at: Option<Instant>,
+    /// Each person's number in the room's presence, kept while they are in
+    /// it: never their user id, which a reader may not learn (Epo 2026-10-12).
+    people: HashMap<String, u64>,
+    next_person: u64,
     /// This window's updates and who sent each (none: everyone gets it).
     window: Vec<(Option<MemberKey>, Vec<u8>)>,
     flush_at: Option<Instant>,
@@ -775,6 +794,10 @@ async fn run(
         members: HashMap::new(),
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
+        presence_dirty: false,
+        presence_at: None,
+        people: HashMap::new(),
+        next_person: 0,
         window: Vec::new(),
         flush_at: None,
         receipts: Vec::new(),
@@ -860,10 +883,17 @@ impl Room {
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        [self.flush_at, self.store_due(), self.idle_at, self.open_at]
-            .into_iter()
-            .flatten()
-            .min()
+        let presence = self.presence_at.filter(|_| self.presence_dirty);
+        [
+            self.flush_at,
+            self.store_due(),
+            self.idle_at,
+            self.open_at,
+            presence,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn store_due(&self) -> Option<Instant> {
@@ -902,6 +932,9 @@ impl Room {
         if self.open_at.is_some_and(|at| at <= now) {
             self.open_at = None;
             self.release_openings().await;
+        }
+        if self.presence_dirty && self.presence_at.is_some_and(|at| at <= now) {
+            self.send_presence(now);
         }
     }
 
@@ -946,9 +979,10 @@ impl Room {
                 context,
                 out,
                 socket,
+                inside,
                 reply,
             } => {
-                let _ = reply.send(self.join(key, context, out, socket));
+                let _ = reply.send(self.join(key, context, out, socket, inside));
             }
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
@@ -961,8 +995,16 @@ impl Room {
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
                     member.read_only = member.held_read_only || context.access == Access::Read;
+                    // A narrowed writer of a source room leaves its presence.
+                    let material = matches!(self.kind, Kindly::Note(_));
+                    let was = in_presence(member, material);
+                    let renamed = member.context.identity != context.identity;
                     member.context = context;
                     self.view_dirty = true;
+                    let now = in_presence(member, material);
+                    if was != now || (now && renamed) {
+                        self.mark_presence();
+                    }
                 }
             }
             RoomCmd::Stored(done) => self.stored(*done),
@@ -1280,6 +1322,7 @@ impl Room {
             user_id: actor.to_owned(),
             viewer: false,
             parent: None,
+            identity: Default::default(),
         };
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
@@ -1880,6 +1923,7 @@ impl Room {
         context: Context,
         out: Outbox,
         socket: String,
+        inside: bool,
     ) -> Result<(), String> {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
@@ -1912,12 +1956,20 @@ impl Room {
                 held_read_only: false,
                 out,
                 socket,
+                inside,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
                 opening: None,
             },
         );
+        if self
+            .members
+            .get(&key)
+            .is_some_and(|member| in_presence(member, matches!(self.kind, Kindly::Note(_))))
+        {
+            self.mark_presence();
+        }
         if unsupported && let Some(notice) = self.unsupported() {
             self.send(key, Kind::Stateless, &protocol::text(&notice));
         }
@@ -1971,6 +2023,9 @@ impl Room {
             return;
         };
         self.view_dirty = true;
+        if in_presence(&member, matches!(self.kind, Kindly::Note(_))) {
+            self.mark_presence();
+        }
         if let Kindly::Source(_) = &self.kind {
             self.app.handoff().closed(&self.name, member.channel_id);
         }
@@ -2655,6 +2710,8 @@ impl Room {
         }
         // Ids another channel of the same user held until now.
         let mut taken_over = Vec::new();
+        // A channel's ids name its cursors in the room's presence.
+        let mut clients_changed = false;
         for entry in entries {
             let current = self.awareness.get(&entry.client);
             // A client id is its user's: another user's channel neither
@@ -2691,11 +2748,11 @@ impl Room {
             if let Some(previous) = held.filter(|previous| *previous != key) {
                 taken_over.push((previous, entry.client));
             }
-            if entry.removed() {
-                member.clients.remove(&entry.client);
+            clients_changed |= if entry.removed() {
+                member.clients.remove(&entry.client)
             } else {
-                member.clients.insert(entry.client);
-            }
+                member.clients.insert(entry.client)
+            };
             self.changed_awareness.insert(entry.client);
             self.awareness.insert(
                 entry.client,
@@ -2708,11 +2765,77 @@ impl Room {
         }
         for (previous, client) in taken_over {
             if let Some(member) = self.members.get_mut(&previous) {
-                member.clients.remove(&client);
+                clients_changed |= member.clients.remove(&client);
             }
+        }
+        if clients_changed {
+            self.mark_presence();
         }
         if !self.changed_awareness.is_empty() {
             self.schedule_flush();
+        }
+    }
+
+    /// The room's presence changed: it goes out a flush window from now, and
+    /// at most once a second.
+    fn mark_presence(&mut self) {
+        if self.presence_dirty {
+            return;
+        }
+        self.presence_dirty = true;
+        let soonest = Instant::now() + FLUSH_WINDOW;
+        self.presence_at = Some(self.presence_at.map_or(soonest, |at| at.max(soonest)));
+    }
+
+    /// Sends each editor in the room (`in_presence`) the others: each one's
+    /// verified identity from its token and the awareness client ids it
+    /// holds, which name its cursor. Its own user's other tabs and devices
+    /// are listed too, never its own connection. An embed's channel (inside
+    /// its note's) is listed but hears none: its page's header shows the
+    /// note's.
+    fn send_presence(&mut self, now: Instant) {
+        self.presence_dirty = false;
+        self.presence_at = Some(now + PRESENCE_EVERY);
+        let material = matches!(self.kind, Kindly::Note(_));
+        let mut listed: Vec<(&MemberKey, &Member)> = self
+            .members
+            .iter()
+            .filter(|(_, member)| in_presence(member, material))
+            .collect();
+        listed.sort_by_key(|(_, member)| member.channel_id);
+        self.people.retain(|user, _| {
+            listed
+                .iter()
+                .any(|(_, member)| member.context.user_id == *user)
+        });
+        let entries: Vec<(MemberKey, String)> = listed
+            .into_iter()
+            .map(|(key, member)| {
+                let person = *self
+                    .people
+                    .entry(member.context.user_id.clone())
+                    .or_insert_with(|| {
+                        self.next_person += 1;
+                        self.next_person
+                    });
+                (*key, presence_entry(member, person).to_string())
+            })
+            .collect();
+        for (key, member) in &self.members {
+            if member.inside || !in_presence(member, material) {
+                continue;
+            }
+            let others: Vec<&str> = entries
+                .iter()
+                .filter(|(owner, _)| owner != key)
+                .take(MAX_PRESENCE)
+                .map(|(_, entry)| entry.as_str())
+                .collect();
+            let payload = format!(
+                "{{\"type\":\"{PRESENCE_TYPE}\",\"connections\":[{}]}}",
+                others.join(",")
+            );
+            self.send(*key, Kind::Stateless, &protocol::text(&payload));
         }
     }
 
@@ -3758,6 +3881,31 @@ async fn sleep_until(deadline: Option<Instant>) {
         Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
         None => std::future::pending().await,
     }
+}
+
+/// Whether a channel is in the room's presence, listed and hearing it:
+/// people who can edit, never viewers (Epo 2026-10-20). A material room knows
+/// a viewer from the material's access at join, so an editor's reading tab (a
+/// View) and a narrowed editor are in and their cursors keep their names; a
+/// source room knows only the token's access, so only its write channels are.
+fn in_presence(member: &Member, material: bool) -> bool {
+    !member.viewer && (material || member.context.access == Access::Write)
+}
+
+/// One connection in the room's presence: its person's number, the token's
+/// name, avatar and device, and the awareness client ids it holds.
+fn presence_entry(member: &Member, person: u64) -> Value {
+    let identity = &member.context.identity;
+    let mut clients: Vec<u64> = member.clients.iter().copied().collect();
+    clients.sort_unstable();
+    json!({
+        "person": person,
+        "name": identity.name,
+        "avatar": identity.avatar_url,
+        "browser": identity.browser,
+        "os": identity.os,
+        "clients": clients,
+    })
 }
 
 /// A read-only channel names no uploads in presence (REVIEW5 E2): only a
