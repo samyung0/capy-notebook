@@ -63,7 +63,8 @@ for (const kind of ['text', 'csv', 'image'] as const) {
         ? 'Edit source error.txt'
         : `Broken preview.${kind === 'image' ? 'png' : 'csv'}`
     );
-    const error = await expectErrorSurface(page, 'panel', undefined, 30_000);
+    // Dialogs show the one-line inline error (human/frontend/error-handling.md).
+    const error = await expectErrorSurface(page, 'inline', undefined, 30_000);
     await page.evaluate(() =>
       window.dispatchEvent(new Event('preview-retry-enable'))
     );
@@ -168,7 +169,7 @@ test('Office retry recovers from both session and parser failures', async ({
   ).toBe(2);
 });
 
-test('workspace statistics and indexing share a recoverable panel error', async ({
+test('workspace statistics and indexing share a recoverable inline error', async ({
   page,
 }) => {
   await openWorkspace(page);
@@ -190,7 +191,8 @@ test('workspace statistics and indexing share a recoverable panel error', async 
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_stats_title() })
     .click();
-  const error = await expectErrorSurface(page, 'panel', undefined, 30_000);
+  // Dialogs show the one-line inline error (human/frontend/error-handling.md).
+  const error = await expectErrorSurface(page, 'inline', undefined, 30_000);
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();

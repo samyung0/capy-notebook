@@ -584,6 +584,8 @@
   "chat_delete_all": "全部刪除",
   "chat_delete_all_title": "刪除 {count} 個已封存的對話？",
   "chat_delete_all_body": "刪除後無法復原。",
+  "chat_delete_title": "刪除「{title}」？",
+  "chat_delete_body": "刪除後無法復原。",
   "workspace_search_files": "搜尋檔案",
   "workspace_no_files_match": "沒有符合的檔案",
   "chat_new": "新对话",

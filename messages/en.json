@@ -584,6 +584,8 @@
   "chat_delete_all": "Delete all",
   "chat_delete_all_title": "Delete {count} archived chats?",
   "chat_delete_all_body": "They are deleted for good and can't be restored.",
+  "chat_delete_title": "Delete “{title}”?",
+  "chat_delete_body": "It is deleted for good and can't be restored.",
   "workspace_search_files": "Search files",
   "workspace_no_files_match": "No files match",
   "chat_new": "New chat",

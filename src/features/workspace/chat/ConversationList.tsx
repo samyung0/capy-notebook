@@ -7,6 +7,7 @@ import {
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
@@ -17,7 +18,7 @@ import { matchesSearch, PanelSearch } from '../PanelSearch';
 /**
  * A workspace's chats for the left panel and the Chat history dialog: New
  * chat, a title search, then Pinned and Older. Each row's ⋮ pins, renames,
- * archives or deletes it (a single delete asks nothing).
+ * archives or deletes it (after a confirm).
  */
 export function ConversationList({
   workspaceId,
@@ -45,6 +46,7 @@ export function ConversationList({
   const { mutate: remove } = useDeleteConversation(workspaceId);
   const [query, setQuery] = useState('');
   const [renaming, setRenaming] = useState<Conversation | null>(null);
+  const [deleting, setDeleting] = useState<Conversation | null>(null);
 
   const shown = conversations?.filter((c) =>
     matchesSearch(c.title || m.chat_untitled(), query)
@@ -111,10 +113,7 @@ export function ConversationList({
               danger: true,
               icon: 'trash',
               label: m.action_delete(),
-              onClick: () => {
-                remove(c.id);
-                onRemoved(c.id);
-              },
+              onClick: () => setDeleting(c),
             },
           ]}
         />
@@ -179,6 +178,20 @@ export function ConversationList({
           title={m.chat_rename()}
         />
       )}
+      <ConfirmDialog
+        body={m.chat_delete_body()}
+        confirmLabel={m.action_delete()}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => {
+          if (!deleting) return;
+          remove(deleting.id);
+          onRemoved(deleting.id);
+        }}
+        open={!!deleting}
+        title={m.chat_delete_title({
+          title: deleting?.title || m.chat_untitled(),
+        })}
+      />
     </div>
   );
 }

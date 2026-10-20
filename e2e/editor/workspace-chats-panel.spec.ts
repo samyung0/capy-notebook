@@ -44,6 +44,19 @@ test('the left panel lists chats, opens them in the right panel and archives the
   await expect(dialog.getByText(m.chat_no_archived())).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(target).toBeVisible();
+
+  // Delete asks first.
+  await target.hover();
+  await target
+    .locator('..')
+    .getByRole('button', { name: m.a11y_open_menu() })
+    .click();
+  await page.getByRole('menuitem', { name: m.action_delete() }).click();
+  const confirm = page.getByRole('dialog', {
+    name: m.chat_delete_title({ title: 'What is a cell?' }),
+  });
+  await confirm.getByRole('button', { name: m.action_delete() }).click();
+  await expect(target).toHaveCount(0);
 });
 
 test('the Files view searches the tree by name', async ({ page }) => {

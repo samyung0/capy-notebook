@@ -5,6 +5,7 @@ import {
   useDeleteConversation,
   useUpdateConversation,
 } from '@/api/hooks';
+import type { Conversation } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -12,9 +13,9 @@ import { Icon } from '@/components/ui/Icon';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 
-/** The workspace's archived chats: each row unarchives or deletes (straight
- * away); the footer does either for all, Delete all after a confirm. Phones
- * show the row buttons as icons only, so a row stays one line. */
+/** The workspace's archived chats: each row unarchives or deletes; the footer
+ * does either for all; every delete asks first. Phones show the row buttons as
+ * icons only, so a row stays one line. */
 export function ArchivedChatsDialog({
   workspaceId,
   open,
@@ -32,6 +33,7 @@ export function ArchivedChatsDialog({
   const { mutate: all, isPending } =
     useArchivedConversationsAction(workspaceId);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState<Conversation | null>(null);
 
   return (
     <>
@@ -108,7 +110,7 @@ export function ArchivedChatsDialog({
                   <Button
                     aria-label={m.action_delete()}
                     className="max-sm:px-2"
-                    onClick={() => remove(c.id)}
+                    onClick={() => setDeleting(c)}
                     size="sm"
                     type="button"
                     variant="danger-light"
@@ -122,6 +124,16 @@ export function ArchivedChatsDialog({
           </div>
         )}
       </SimpleDialog>
+      <ConfirmDialog
+        body={m.chat_delete_body()}
+        confirmLabel={m.action_delete()}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove(deleting.id)}
+        open={!!deleting}
+        title={m.chat_delete_title({
+          title: deleting?.title || m.chat_untitled(),
+        })}
+      />
       <ConfirmDialog
         body={m.chat_delete_all_body()}
         confirmLabel={m.chat_delete_all()}

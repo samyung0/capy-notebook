@@ -44,7 +44,10 @@ test('Indexing tab lists file changes, cancels queued work and processes waiting
   await row('Organelles cheatsheet.md')
     .getByRole('button', { exact: true, name: m.workspace_change_process() })
     .click();
-  await expect(page.getByText(m.files_process_started_title())).toBeVisible();
+  // Exact: the MSW scenario panel's toast previews carry a longer label.
+  await expect(
+    page.getByText(m.files_process_started_title(), { exact: true })
+  ).toBeVisible();
   await expect(row('Organelles cheatsheet.md')).toHaveAttribute(
     'data-state',
     'queued'
@@ -95,7 +98,10 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
   await dialog
     .getByRole('button', { exact: true, name: m.files_retry_processing() })
     .click();
-  await expect(page.getByText(m.files_process_started_title())).toBeVisible();
+  // Exact: the MSW scenario panel's toast previews carry a longer label.
+  await expect(
+    page.getByText(m.files_process_started_title(), { exact: true })
+  ).toBeVisible();
   // No longer failed: gone from the Indexing tab's list.
   await page.getByLabel(m.workspace_settings(), { exact: true }).click();
   await settings
