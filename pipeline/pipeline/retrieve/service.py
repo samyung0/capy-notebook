@@ -287,6 +287,8 @@ class GenerateReq(LLMPin):
     diagramType: str
     chapters: list[str] | None = None
     fileIds: list[str] | None = None
+    # The names of fileIds, for the prompt's scope line.
+    fileNames: list[str] | None = None
     locale: str | None = None
     spendSessionId: str = ""
 
@@ -493,7 +495,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         )
     else:
         raise ValueError(f"unsupported generate kind {req.kind!r}")
-    scope = workflows.scope_label(chapters, [])
+    scope = workflows.scope_label(chapters, req.fileNames or [])
     context, _passages, changes = await workflows.generation_context(
         workspace_id=req.workspaceId,
         file_ids=file_ids or None,

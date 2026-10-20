@@ -390,7 +390,7 @@ async def test_search_rejects_one_invalid_file_without_running_search(monkeypatc
     assert result.refused
     assert called["n"] == 0
     assert budget.embedding_calls == 0
-    assert "invalid or unavailable" in result.text()
+    assert 'No workspace item has the id "f_missing"' in result.text()
 
 
 async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
@@ -405,7 +405,30 @@ async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
     read = await tools._read_document({"file_id": "f_2"}, ctx)
 
     assert read.refused
-    assert read.text() == tools._INVALID_SCOPE
+    assert '"f_2" is outside the sources chosen for this chat' in read.text()
+
+
+async def test_read_document_refuses_a_quiz_in_words():
+    # A quiz is a scope item (Epo 2026-10-21) but holds no passages.
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {
+                "id": "mat_quiz",
+                "name": "Cells quiz",
+                "chapter_id": None,
+                "chunks": 0,
+                "kind": "material",
+                "material_kind": "quiz",
+            },
+        ],
+    }
+    read = await tools._read_document({"file_id": "mat_quiz"}, ctx)
+    assert read.refused
+    assert read.text() == (
+        "mat_quiz is a quiz, which has no passages to read; inspect_document reads it."
+    )
 
 
 async def test_create_material_sends_its_sources_as_written(monkeypatch):
@@ -1943,7 +1966,7 @@ async def test_restricted_scope_emptied_by_trash_stays_empty(monkeypatch):
     monkeypatch.setattr(tools, "_gateway_read", _documents)
     listed = await tools._list_sources({}, ctx)
     assert "two.pdf" not in listed.text()
-    resolved = await tools._resolve_scope(ctx, tools._MISSING)
+    resolved = await tools._resolve_scope(ctx, [])
     assert isinstance(resolved, tools.ResolvedScope) and resolved.file_ids == []
 
 

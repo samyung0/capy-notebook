@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from pipeline.config import cfg
-from pipeline.retrieval import store
+from pipeline.retrieval import store, tools, workflows
 from pipeline.retrieval.chunking import search_query_terms, tokenize_for_search
 from pipeline.retrieval.usage_extract import NormalizedUsage
 from pipeline.store import db
@@ -1518,6 +1518,60 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
     assert by_id[filed]["chapter_id"] == chapter and by_id[filed]["chunks"] == 1
     assert by_id[filed]["descriptor"] == "A short descriptor."
     assert by_id[unfiled]["chapter_id"] is None and by_id[unfiled]["chunks"] == 0
+
+
+def _material(ws, kind: str, title: str) -> str:
+    material_id = f"mat_{secrets.token_hex(6)}"
+    with ws._connect() as conn:
+        conn.execute(
+            "INSERT INTO materials (id, workspace_id, owner_user_id, created_by, kind, title) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (material_id, ws.id, ws.user_id, ws.user_id, kind, title),
+        )
+    return material_id
+
+
+async def test_any_top_level_material_is_a_scope_item(workspace):
+    """Epo 2026-10-21: a quiz is in the outline with no passages, the agent's
+    scope takes it beside a note, and generation reads only the note."""
+    note = _material(workspace, "note", "Cell notes")
+    quiz = _material(workspace, "quiz", "Cells quiz")
+    association = await store.attach_material_content(
+        workspace_id=workspace.id,
+        material_id=note,
+        content_hash="note:cells",
+        claim_job_id="job_note",
+        blocks=[],
+    )
+    await store.replace_content_chunks(
+        workspace_id=workspace.id,
+        content_id=association["content_id"],
+        rows=_rows(note, ["Mitosis has four phases."]),
+    )
+    await store.publish_material_content(
+        workspace_id=workspace.id,
+        material_id=note,
+        content_id=association["content_id"],
+        claim_job_id="job_note",
+        blocks=[],
+    )
+
+    outline = await store.workspace_outline(workspace.id)
+    by_id = {f["id"]: f for f in outline["files"]}
+    assert (by_id[quiz]["material_kind"], by_id[quiz]["chunks"]) == ("quiz", 0)
+
+    resolved = await tools._resolve_scope(
+        tools.ToolContext(workspace_id=workspace.id), [quiz, note]
+    )
+    assert resolved == tools.ResolvedScope(
+        file_ids=[quiz, note], file_names=["Cells quiz", "Cell notes"]
+    )
+
+    context, passages = await workflows.gather_context(
+        workspace_id=workspace.id, file_ids=[quiz, note]
+    )
+    assert [p.file_id for p in passages] == [note]
+    assert "Mitosis has four phases." in context
 
 
 async def test_deleting_a_chapter_does_not_break_its_files(workspace):

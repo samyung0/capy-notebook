@@ -348,7 +348,9 @@ var errAgentFailed = errors.New("the chat agent hit an internal error")
 // blank mindmap is not reported as the retrieval process being down.
 var errGenerateEmpty = errors.New("the model returned no usable material")
 
-var errScopeNoIndexedContent = errors.New("the requested scope has no indexed content")
+// errScopeNoIndexedContent: nothing in a Generate scope has text to work from.
+var errScopeNoIndexedContent = errors.New("None of the chosen sources has any text to generate from yet: " +
+	"they are still being indexed, or they are quizzes or flashcard sets, which hold no source text.")
 var errContextTooLarge = errors.New("source context exceeds the selected model's input limit")
 var errSourceChanged = errors.New("sources changed while this request was running; please try again")
 
