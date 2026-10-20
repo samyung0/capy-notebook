@@ -39,12 +39,6 @@ import {
 } from './xlsxRender';
 import './xlsx-runtime.css';
 
-/**
- * The largest update one XLSX clear may send: one piece of what Capy sends
- * the collaboration server (`PIECE_BYTES`, src/features/collaboration/pieces.ts).
- */
-const OFFICE_MESSAGE_MAX_BYTES = 2 * 1024 * 1024;
-
 export function XlsxEditorHost({
   bytes,
   collaboration,
@@ -77,7 +71,7 @@ export function XlsxEditorHost({
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onMenus: OfficeMenuReporter;
-  /** A clear too big for the room, or a copy too big to read: nothing changed. */
+  /** An edit past the engine's update cap, or a copy past its ceiling: nothing changed. */
   onNotice: (notice: OfficeNotice) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onPendingChange: (pending: boolean) => void;
@@ -202,7 +196,6 @@ export function XlsxEditorHost({
     >
       <XlsxEditor
         className="office-editor-host"
-        clearLimitBytes={OFFICE_MESSAGE_MAX_BYTES}
         collaboration={collaboration}
         file={bytes}
         fileName={fileName}
@@ -224,9 +217,7 @@ export function XlsxEditorHost({
         }}
         onSave={onSave}
         readOnly={readOnly}
-        // The pinned fork takes `sending` from editor/xlsx-pieces on; until
-        // that pin lands the editor ignores it.
-        {...{ sending }}
+        sending={sending}
         showCustomNumberFormat={false}
         showFontPicker={!narrow}
         showFontSizePicker={!narrow}

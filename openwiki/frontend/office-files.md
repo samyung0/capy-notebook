@@ -1307,14 +1307,52 @@ the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
 cell). Clear and cut act on the selection's part inside the used range
 (inputs committed but not drawn yet count) and resolve in the engine
 (`clearContents`) to edits for only the cells that hold a value or a formula,
-so their cost is bounded by the cells that hold content; a clear whose update
-could exceed the room's per-message limit (2 MiB, counted at 128 bytes per
-cleared cell) is refused with a notice and changes nothing, and a cut clears
-only after its copy reached the clipboard. Copy keeps the selection's own
-top-left corner, leading blanks included as in Excel, and trims only past the
-used range's last row and column; a copy over the engine's 100,000-cell read
-is refused with a notice, and a selection wholly past the used range sends
-nothing. A cell the keyboard reaches past the used range grows the scroll area
+so their cost is bounded by the cells that hold content. Any edit (a clear,
+cut or paste) whose update could pass the engine's 64 MiB cap
+(`MAX_COLLABORATION_BYTES`, one action's most: about 500,000 filled cells,
+counted at 160 bytes per value cell plus its input and 512 per formula plus 128
+per input byte) changes nothing and shows the `edit-too-large` notice. The
+check covers batches of cell inputs only; Undo, Redo, row and column deletes
+and resyncs are left to the server's limits, and the formula bound may
+overestimate (a paste of more than about 37,000-50,000 simple formulas is
+refused). While the tab holds back its collaboration messages (pacing, an
+update's pieces, a timeout), `XlsxEditorHost` passes `sending` to the editor:
+the grid and formula bar show a loading cursor (`aria-busy` on the grid) and
+every edit is refused as in read-only; an open cell edit or formula-bar draft
+stays open, read-only, on its cell (a press elsewhere, a sheet switch, the name
+box and the host's `selectCells` and `clearSelection` are refused while it is
+open), while an armed paint brush, a chart drag or an arrow burst is dropped;
+selection, scrolling and copy still work. A gesture that resumes after a wait
+(a cut's read, a row/column op or host clear waiting on a commit, an unmerge's
+merged-range read) does not edit if the pause began meanwhile: the cut ends as
+a copy.
+Copy keeps the selection's own top-left corner, leading blanks included as in
+Excel, and trims only past the used range's last row and column; it reads that
+area in pieces of at most 100,000 cells (the engine's read cap) without
+skipping empty cells, up to the fork's `XLSX_COPY_MAX_CELLS` ceiling (5,000,000 cells), past
+which it shows the `copy-too-large` notice, and stops with the same notice
+once its text passes 64 MiB (`XLSX_COPY_MAX_BYTES`, UTF-8 counted as the
+pieces arrive); a selection wholly past the used range sends nothing. The
+clipboard write starts in the key press, as a `ClipboardItem` whose text is
+a promise filled once the pieces are read (`writeText` after the read where
+the browser has no `ClipboardItem`), so a long read keeps the browser's
+permission; a write the browser still refuses shows the `copy-failed`
+notice. Only headless Chromium is measured; Firefox and Safari wait for a
+measurement. A cut shows the same loading cursor and refuses edits
+while it reads, then clears the range it copied; past either ceiling, or when
+the write fails, it clears nothing. Before reading, a cut asks the engine
+(`checkClearContents`, from the count of the clear's filled cells) whether
+its clear fits the 64 MiB update cap: over it nothing is read, copied or
+cleared and the `edit-too-large` notice shows. Once its read finishes a cut
+always clears its range, even when another person changed a cell inside it
+during the read (that change is lost; the read takes up to about 8 s at the
+5,000,000-cell ceiling). A copy reads, and a cut checks and clears, on its
+own sheet by id (the proxy's `inSheet`), so a sheet switch during the read
+changes nothing; a sheet removed meanwhile clears nothing, without a notice.
+A copy accepts the rare row a concurrent row insert or delete duplicates or
+skips. The latest copy or cut
+owns the clipboard: one still reading when a newer copy or cut starts stops
+reading and writes nothing, and such a cut clears nothing. A cell the keyboard reaches past the used range grows the scroll area
 to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
 Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
 200% page zoom), so cells past it are selected but not scrolled to, as in
@@ -1325,7 +1363,37 @@ cell) and Enter selects and reveals that cell, opening the other sheet when it
 names one; text that names no cell stays in the box and Escape restores the
 address. Capy's own View (`XlsxViewer`) reads the address with the fork's
 parser (`parseHyperlinkLocation` from `@betteroffice/xlsx/viewer`), switches
-the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`). An open cell edit keeps its input mounted and
+the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`).
+The pressed cell is the active cell, as in Excel and Sheets: a drag, Shift+click
+or Shift+arrows move only the selection's far end, the next bare move steps
+from the active cell, a press inside a merged block selects its top-left cell,
+Select all keeps the active cell where it was, or moves it to A1 when it lies
+outside the used range it selects, so the selection always holds it, and
+Shift+click extends from the active cell, after Select all too (the fork's
+`Selection` anchor, or its `active` cell after select all). A typed formula that leaves
+parentheses open is closed by the engine when that makes it parse
+(`=SUM(B2:B5` stores `=SUM(B2:B5)`, `=TODAY(` stores `=TODAY()`, `=SUM(B3,`
+stores `=SUM(B3,)`; `=SUM(` is not); in the cell editor and the formula bar a formula that still fails to
+parse, or text over 32,767 characters, is refused with a translated line under
+the formula bar while the draft stays open on its cell (its arrows then move the
+caret, as Excel's Edit mode). Such an edit closes only once the browser's engine
+took it: keys typed meanwhile are dropped, a press elsewhere (from the cell
+editor or the formula bar), a sheet switch, a name box Enter or a row/column op
+waits for it and does nothing after a refusal, and the grid takes the focus back only if it
+stayed in the edit; a refusal that lands after the focus left the edit leaves
+the focus there. A formula-bar draft commits to the cell it started on,
+whatever moved the selection since (the menu's Select all, a press while
+sending), and while it is open a key that reaches the grid gives the focus back
+to the formula bar and does nothing else. Paste and agent writes store such a formula as text. Point mode (v1): while a formula waits for an operand, a click or
+drag writes the cell or range reference (pointing again replaces it, typing
+ends it), arrows point from the edited cell in an edit opened by typing (Shift
+extends, F2 or a click in the edit switches to caret movement) and commit and move where no
+reference fits, merged cells are named by their top-left cell and a range
+cutting a merge grows over it, the pointed range has a dashed outline, and the
+formula bar points by mouse too. The cell editor and the text awaiting its
+frame use the active cell's own font, size, bold, italic and colour as the
+grid paints them, whatever fonts the rest of the selection uses (Calibri 11 pt
+black until the frame describes the cell), over a white fill. An open cell edit keeps its input mounted and
 focused while its cell scrolls away, so the next key that types, composition
 included, is typed into the edit and scrolls the cell back whole, as in Excel
 and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
@@ -1342,7 +1410,9 @@ file error and no failed Save, since nobody asked to save. A formula-bar draft
 stays open over an app or tab switch too. A draft whose sheet a peer removes,
 or whose sheet stops being the active one in a peer's update, is dropped, not
 committed; otherwise a draft commits to its own sheet even when a peer's update
-shifted that sheet's index. Once a draft is dropped neither the grid nor the
+shifted that sheet's index, and so does every sheet call the worker runs for
+the editor (clear and its pre-check included): it takes the active sheet's
+current index, not the one the editor last drew. Once a draft is dropped neither the grid nor the
 formula bar keeps the focus, so the keys still being typed do nothing until a
 click. Clicking a sheet
 tab gives the grid the keys. A cell wider
