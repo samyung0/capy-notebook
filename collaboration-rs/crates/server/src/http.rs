@@ -19,6 +19,7 @@ use crate::auth::{self, RoomName};
 use crate::health;
 use crate::observe::{Level, log};
 use crate::room::RoomCmd;
+use crate::seats::Peer;
 
 pub fn router(app: Shared) -> Router {
     Router::new()
@@ -111,7 +112,7 @@ fn client_address(headers: &HeaderMap, peer: Option<SocketAddr>) -> Option<Strin
 async fn fallback(
     State(app): State<Shared>,
     headers: HeaderMap,
-    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    peer: Option<Extension<ConnectInfo<Peer>>>,
     upgrade: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
 ) -> Response {
     let Ok(upgrade) = upgrade else {
@@ -128,7 +129,12 @@ async fn fallback(
     if !origin.is_some_and(|origin| app.config.allowed_origins.contains(origin)) {
         return (StatusCode::FORBIDDEN, "origin is not allowed").into_response();
     }
-    let address = client_address(&headers, peer.map(|Extension(ConnectInfo(peer))| peer));
+    // Every served connection has it (`main.rs`); a socket without it could
+    // not tell a stalled send.
+    let Some(Extension(ConnectInfo(peer))) = peer else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "no connection info").into_response();
+    };
+    let address = client_address(&headers, Some(peer.address));
     let Some(seat) = address.and_then(|address| app.address_sockets.take(&address)) else {
         app.stats.seat_refusals.fetch_add(1, Ordering::Relaxed);
         log(Level::Warn, "client address over its socket cap", json!({}));
@@ -139,7 +145,7 @@ async fn fallback(
         .read_buffer_size(READ_BUFFER)
         .max_message_size(max)
         .max_frame_size(max)
-        .on_upgrade(move |socket| crate::socket::serve(app, socket, seat))
+        .on_upgrade(move |socket| crate::socket::serve(app, socket, seat, peer.sent))
 }
 
 /// Each socket's read buffer, allocated when it opens (tungstenite's default
