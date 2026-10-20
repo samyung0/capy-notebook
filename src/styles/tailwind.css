@@ -625,6 +625,29 @@ math-field {
     box-shadow: inset 0 0 0 9999px var(--selection-bg);
   }
 
+  /* Co-editors' selections and carets (RemoteCursors.tsx). A caret is an
+     empty, zero-width leaf: its bar is a pseudo-element, so it adds no DOM to
+     the text. */
+  .note-editor [data-remote-cursor] {
+    background-color: color-mix(
+      in srgb,
+      var(--remote-cursor) 13%,
+      transparent
+    );
+  }
+  .note-editor [data-remote-caret] {
+    position: relative;
+  }
+  .note-editor [data-remote-caret]::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: -1px;
+    width: 2px;
+    background: var(--remote-cursor);
+    pointer-events: none;
+  }
+
   /* A table-of-contents jump flashes its heading: Plate's navigation feedback
      marks the target for --plate-nav-feedback-duration, and alternates
      data-nav-cycle so a second jump to it restarts the fade. Under reduced
