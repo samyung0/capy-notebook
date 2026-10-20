@@ -1994,7 +1994,17 @@ always point at document passages.
    followed physical row order, so a copied or rebuilt index returned a
    different top five for the same query.
 3. Optional `file_ids` filter is applied **in SQL** and intersected with the
-   request scope. The agent cannot widen a scope the user narrowed.
+   request scope. The agent cannot widen a scope the user narrowed. The ids
+   may name any workspace item (`tools._resolve_scope` over
+   `store.workspace_outline`, which lists every untrashed top-level material
+   beside the files, Epo 2026-10-21); only source files and notes hold
+   chunks, so a quiz or flashcard set narrows the search to nothing of its
+   own. Each refusal names the id: unknown ("No workspace item has the id
+   …: it may have been deleted or moved to trash. list_sources shows the
+   current ids."), outside the chat's narrowed scope ("… is outside the
+   sources chosen for this chat, and the chat cannot widen that choice."),
+   or a chat scope whose source is gone ("A source chosen for this chat is
+   no longer in the workspace: it was deleted or moved to trash.").
 4. `search.rerank` reorders the first 20 fused candidates
    (`RERANK_CANDIDATES`) with the `rerank` slot's default, DeepInfra
    `Qwen/Qwen3-Reranker-4B` (decision 2026-09-25). It scores each row's
@@ -2682,11 +2692,22 @@ current pending changes applied. Embedded source instructions remain untrusted.
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
 quota, retries POST, then GET. Same-id replay returns the original row. A
 confirmed 404 is a normal tool failure. An uncertain GET fails the turn
-without appending a failed tool result. Its optional `scope` contains
-`file_ids` and `chapter_ids`. Missing or empty scope means the current chat
-scope. The tool resolves and persists source provenance, cannot widen the chat
-scope, rejects the whole call if any id is invalid or unavailable, and rejects
-a valid scope with no indexed content.
+without appending a failed tool result. Its optional `sources` (also on
+`add_questions` creating a quiz and on `create_deck`) is the made-from line:
+plain strings, at most 20 of 1 to 200 characters (`fieldlimits.MaterialSources`
+and `MaterialSource`), sent as written. Go (`resolveSources` in
+`internal_materials.go`) stores each as a name in `scope_file_names`: the id or
+exact name of an untrashed file, a top-level material of any kind or a chapter
+of the same workspace becomes its current name, anything else (a lecture, a
+handout, a web address, an id from another workspace or of a trashed item)
+stays as written, trimmed, duplicates once (Epo 2026-10-21). No sources stores
+none; the chat scope is not filled in. Over the bounds (more than 20 distinct
+after trimming, or one of 0 or over 200 characters) is the only refusal
+(`invalid_input`, "sources: send at most 20 sources of 1 to 200 characters
+each."); nothing is refused for a source's kind or index state, and agent
+creates no longer return `invalid_scope` or `scope_has_no_indexed_content`.
+A deck's PPTX keeps the same names in `files.scope_file_names` (migration
+`0100`), not exposed by the API.
 
 ### How a turn's work is saved
 
@@ -2977,9 +2998,7 @@ build, and the knowledge library is one more source while the switch is on.
   is, as before (`tools._matching`, Epo 2026-10-13: on that day's runs only
   68% of the books the whole read set credited were used; this rule kept 86%
   precision and dropped 2 of 129 used books, while named excerpts were 95%
-  used). So a write that read the library always carries a book, which
-  `_material_scope` relies on to accept a library-only material in a
-  workspace with nothing indexed. Only the credited excerpts are retained for
+  used). So a write that read the library always carries a book. Only the credited excerpts are retained for
   later turns; a turn with no library reads credits nothing and needs
   nothing. An excerpt retained from an earlier turn's write counts as read but
   enters already credited, so it is credited again only when nothing new was
@@ -3225,18 +3244,18 @@ build, and the knowledge library is one more source while the switch is on.
 
 | Tool | Side effects | Notes |
 | --- | --- | --- |
-| `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
-| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
-| `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
+| `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; `file_ids` take any workspace item id, and any invalid supplied id rejects the call, naming it |
+| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
+| `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading; a material other than a note is refused ("… is a quiz, which has no passages to read; inspect_document reads it.") |
 | `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard); a material with provenance is grounded in the library and does not require indexed workspace content. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
-| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
+| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
 | `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX and PPTX page their paragraph or shape entries with target ids by `start`/`count` as `inspect_document` paged them (their scoped reads are phases 2 and 3); a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
@@ -3244,7 +3263,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
-| `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `chapter_id`) on the turn; nothing is stored yet. The material `excerpt_ids` rule ([decks.md](decks.md)) |
+| `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `chapter_id` and `sources`, the latter stored with the PPTX as `files.scope_file_names`) on the turn; nothing is stored yet. The material `excerpt_ids` rule ([decks.md](decks.md)) |
 | `write_slide` | yes | Checks one SVG slide alone with ppt-master's checker (figures only this turn's bbox captures) and keeps it; once every slide is written, adds the Sources slide, exports the PPTX and stores it as a workspace file through `/api/internal/files` ([decks.md](decks.md)) |
 
 Read tools hit Postgres directly. Every mutation goes through the gateway with
@@ -3387,8 +3406,11 @@ and removes `browse_knowledge` and section reading (`read_knowledge` takes an
 stay shuffled, and `add_questions` and the editing skill say never to refer to
 an option by its letter or position. Version 32 (2026-10-20) adds
 `inspect_office_document` and `edit_office_document` and takes `set_cell` and
-Office targets out of `edit_document`. Go and the pipeline deploy
-together. `cmd/openapi -agent-tools`
+Office targets out of `edit_document`. Version 33 (2026-10-21) gives
+`create_material`, `add_questions` (a new quiz) and `create_deck` a `sources`
+made-from line of plain strings instead of an id scope, and lets
+`search_workspace`'s `file_ids` take any workspace item. Go and the pipeline
+deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3831,10 +3853,21 @@ or evidence known only through a summary require retrieval for a new citation.
 `/generate` is **not** an agent loop. Scope is already known, the output shape
 is fixed, and the gateway must persist a parseable artifact.
 
-1. The gateway resolves file and chapter ids atomically. Omitted file and
-   chapter ids expand to every file in the workspace. One invalid id rejects
-   the request, and a valid scope with no indexed content fails before a model
-   call. `gather_context` samples chunks evenly across every document in scope (equal
+1. The gateway resolves item and chapter ids atomically (`resolveScope`
+   over `store.SourceItems`). An item id may name any untrashed file or
+   top-level material, notes, quizzes and flashcard sets included; a chapter
+   adds every item filed in it; omitted ids expand to every item in the
+   workspace (Epo 2026-10-21). One invalid id rejects the request, naming it
+   ("No workspace item has the id …: it may have been deleted or moved to
+   trash." or "No chapter has the id …: it may have been deleted."). Items
+   without indexed text contribute none, and a scope with none at all fails
+   before a model call as `scope_has_no_indexed_content`: "None of the chosen
+   sources has any text to generate from yet: they are still being indexed,
+   or they are quizzes or flashcard sets, which hold no source text." (the
+   pipeline's `GenerateNoContent` says the same). The resolved names go to
+   the pipeline as `fileNames` for the prompt's scope line and are stored in
+   `scope_file_names`. `gather_context` samples chunks evenly across every
+   document in scope that has chunks (equal
    share per file, not proportional to length). The gateway resolves the user's
    **Settings → LLM** chat preference and chat thinking (`resolveLLM` on the
    `chat` slot; migration `0044` merged the generate slot into chat) and

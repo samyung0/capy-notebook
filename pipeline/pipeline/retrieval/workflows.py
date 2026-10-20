@@ -29,11 +29,19 @@ log = logging.getLogger("capy.retrieval.workflows")
 
 
 class InvalidGenerateScope(ValueError):
-    """At least one requested file does not belong to the workspace."""
+    """At least one requested item does not belong to the workspace."""
 
 
 class GenerateNoContent(ValueError):
     """The resolved generation scope has no indexed passages."""
+
+
+# Go's errScopeNoIndexedContent says the same.
+NO_CONTENT = (
+    "None of the chosen sources has any text to generate from yet: they are "
+    "still being indexed, or they are quizzes or flashcard sets, which hold no "
+    "source text."
+)
 
 
 class PendingSourceContextTooLarge(ValueError):
@@ -86,7 +94,7 @@ async def generation_context(
         budget=remaining,
     )
     if not passages and not (changes.files or changes.notes):
-        raise GenerateNoContent("The requested scope has no source content.")
+        raise GenerateNoContent(NO_CONTENT)
     if not compact.fits_request(messages(context), model):
         # Passage estimates bound the read. Select the final prefix using the
         # same complete provider request as produce, keeping pending edits whole.
@@ -111,6 +119,8 @@ async def gather_context(
 ) -> tuple[str, list[Passage]]:
     """Even coverage of the scope, as numbered passages.
 
+    The scope may name any workspace item; one without chunks (a quiz, a
+    flashcard set, a note not indexed yet) contributes nothing.
     Documents get an equal share of the budget rather than a share proportional
     to their length: ten pages of lecture notes are as likely to be examinable
     as three hundred pages of reference text, and length is not importance.
@@ -120,8 +130,12 @@ async def gather_context(
     outline = await store.workspace_outline(workspace_id)
     known_ids = {str(file["id"]) for file in outline["files"]}
     requested = list(dict.fromkeys(file_ids or []))
-    if any(file_id not in known_ids for file_id in requested):
-        raise InvalidGenerateScope("The requested scope is invalid or unavailable.")
+    for file_id in requested:
+        if file_id not in known_ids:
+            raise InvalidGenerateScope(
+                f'No workspace item has the id "{file_id}": it may have been '
+                "deleted or moved to trash."
+            )
     files = [
         f
         for f in outline["files"]

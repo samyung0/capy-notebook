@@ -43,7 +43,7 @@ async def test_unscoped_context_resolves_to_every_workspace_file():
         ],
     }
 
-    resolved = await tools._resolve_scope(ctx, tools._MISSING)
+    resolved = await tools._resolve_scope(ctx, [])
 
     assert isinstance(resolved, tools.ResolvedScope)
     assert resolved.file_ids == ["f_1", "f_2"]
@@ -60,10 +60,14 @@ async def test_agent_cannot_widen_a_scope_the_user_narrowed():
         ],
     }
 
-    resolved = await tools._resolve_scope(ctx, {"file_ids": ["f_2", "f_99"]})
+    resolved = await tools._resolve_scope(ctx, ["f_2", "f_99"])
 
     assert isinstance(resolved, tools.ToolResult)
     assert resolved.refused
+    assert resolved.text() == (
+        '"f_99" is outside the sources chosen for this chat, and the chat cannot '
+        "widen that choice."
+    )
 
 
 async def test_fully_out_of_scope_request_is_rejected_not_widened():
@@ -76,7 +80,7 @@ async def test_fully_out_of_scope_request_is_rejected_not_widened():
         ],
     }
 
-    resolved = await tools._resolve_scope(ctx, {"file_ids": ["f_99"]})
+    resolved = await tools._resolve_scope(ctx, ["f_99"])
 
     assert isinstance(resolved, tools.ToolResult)
     assert resolved.refused
@@ -144,7 +148,7 @@ def test_restricted_empty_scope_stays_empty():
     import asyncio
 
     resolved = asyncio.get_event_loop().run_until_complete(
-        tools._resolve_scope(ctx, tools._MISSING)
+        tools._resolve_scope(ctx, [])
     )
     assert isinstance(resolved, tools.ResolvedScope)
     assert resolved.file_ids == []
