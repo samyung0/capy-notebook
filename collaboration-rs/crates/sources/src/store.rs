@@ -220,6 +220,10 @@ pub struct SourceInspection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entries: Option<Vec<office_service::Entry>>,
     pub epoch: u64,
+    /// The agent's scoped Office read (`office_service::inspect_scoped`), in
+    /// place of `entries` when the request names a query.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoped: Option<serde_json::Value>,
     pub format: SourceFormat,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -1375,11 +1379,15 @@ impl Sources {
         &self,
         file_id: &str,
         actor: &str,
+        query: Option<serde_json::Value>,
         live: F,
     ) -> Result<SourceInspection, SourceError>
     where
         F: FnOnce(String) -> BoxFuture<Option<Vec<u8>>>,
     {
+        let query: Option<office_service::InspectQuery> = query
+            .map(|query| crate::edit::parse(query, "office query"))
+            .transpose()?;
         let session = self.gateway.session(file_id, actor).await?;
         let job = Job::default();
         let (base, sha) = self.bound_base(&session, Reader::Job(&job)).await?;
@@ -1396,6 +1404,7 @@ impl Sources {
             entries: None,
             epoch: session.epoch,
             format: session.format,
+            scoped: None,
             text: None,
         };
         match office(session.format) {
@@ -1412,10 +1421,44 @@ impl Sources {
                     base_sha256: &sha,
                     room: Some(&session.room),
                 };
-                inspection.entries = Some(self.engines.inspect(on, &state).await?);
+                match &query {
+                    Some(query) => {
+                        // A refused read (a range too large) answers like a
+                        // refused edit, with its sentence.
+                        inspection.scoped = Some(
+                            self.engines
+                                .inspect_scoped(on, &state, query)
+                                .await
+                                .map_err(crate::edit::office_error)?,
+                        )
+                    }
+                    None => inspection.entries = Some(self.engines.inspect(on, &state).await?),
+                }
             }
         }
         Ok(inspection)
+    }
+
+    /// A new Office file for the agent's `create`: the format's starter with
+    /// the commands applied, exported like a publication (fixed time, seed
+    /// from the request), so a retried create gives the same bytes. Nothing
+    /// is stored here; the API stores the file.
+    pub async fn create_office(
+        &self,
+        format: serde_json::Value,
+        commands: Vec<serde_json::Value>,
+    ) -> Result<(Vec<u8>, Option<String>), SourceError> {
+        let format: office_service::Format = crate::edit::parse(format, "format")?;
+        let commands: Vec<office_service::Command> =
+            crate::edit::parse(serde_json::Value::Array(commands), "commands")?;
+        let seed = office_service::sha256_hex(
+            serde_json::to_string(&(format, &commands))
+                .map_err(|error| SourceError::Other(error.to_string()))?,
+        );
+        self.engines
+            .create(format, &commands, &seed, "2000-01-01T00:00:00.000Z")
+            .await
+            .map_err(crate::edit::office_error)
     }
 
     /// The image of a pending effect, for the API's change review.

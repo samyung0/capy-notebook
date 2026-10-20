@@ -66,7 +66,10 @@ fn edit_error(code: &str, message: impl Into<String>) -> SourceError {
     }
 }
 
-fn parse<T: serde::de::DeserializeOwned>(value: Value, what: &str) -> Result<T, SourceError> {
+pub(crate) fn parse<T: serde::de::DeserializeOwned>(
+    value: Value,
+    what: &str,
+) -> Result<T, SourceError> {
     serde_json::from_value(value)
         .map_err(|error| edit_error("invalid_input", format!("invalid {what}: {error}")))
 }
@@ -93,7 +96,7 @@ impl From<notes::edit::EditError> for SourceError {
 
 /// `officeError`: an engine refusal of an agent edit crosses the process
 /// boundary as `<code>: message`, with its details.
-fn office_error(error: EngineError) -> SourceError {
+pub(crate) fn office_error(error: EngineError) -> SourceError {
     if let EngineError::Refused(failure) = &error
         && failure.kind == FailureKind::Edit
         && let Some((code, message)) = failure.message.split_once(": ")

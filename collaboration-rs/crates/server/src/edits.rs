@@ -211,6 +211,8 @@ pub struct DocumentRequest {
     pub epoch: Option<u64>,
     pub guards: Option<Value>,
     pub inverse: Option<Value>,
+    /// An agent's scoped Office read (`inspect_office_document`).
+    pub office: Option<Value>,
     pub operation: Option<Operation>,
     pub provenance: Option<Value>,
     pub room: Option<String>,
@@ -1296,9 +1298,12 @@ pub async fn source_request(
         let rooms = app.clone();
         let inspection = app
             .sources
-            .inspect(&request.target.id, &request.actor_user_id, move |room| {
-                Box::pin(async move { live_state(&rooms, &room).await })
-            })
+            .inspect(
+                &request.target.id,
+                &request.actor_user_id,
+                request.office.clone(),
+                move |room| Box::pin(async move { live_state(&rooms, &room).await }),
+            )
             .await?;
         return Ok(serde_json::to_value(inspection).unwrap_or(Value::Null));
     }
@@ -1345,8 +1350,36 @@ pub async fn source_request(
     Ok(receipt)
 }
 
+/// `CreateRequest`: a new Office file for the agent's `create`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRequest {
+    pub format: Value,
+    #[serde(default)]
+    pub commands: Vec<Value>,
+}
+
+/// `/internal/documents/create` after the secret check: the new file's bytes
+/// (base64) and the removed-characters notice. The API stores the file.
+pub async fn create(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
+    use base64::Engine;
+    let request: CreateRequest = serde_json::from_slice(body)
+        .map_err(|_| DocumentError::Invalid("invalid create request".into()))?;
+    let (bytes, notice) = app
+        .sources
+        .create_office(request.format, request.commands)
+        .await?;
+    Ok(json!({
+        "content": base64::engine::general_purpose::STANDARD.encode(bytes),
+        "notice": notice,
+    }))
+}
+
 /// `/internal/documents/{inspect,edit,undo}` after the secret check.
 pub async fn document(app: &Shared, path: &str, body: &[u8]) -> Result<Value, DocumentError> {
+    if path.ends_with("/create") {
+        return create(app, body).await;
+    }
     let invalid = || DocumentError::Invalid("invalid document request".into());
     let request: DocumentRequest = serde_json::from_slice(body).map_err(|_| invalid())?;
     if request.target.kind != "material" && request.target.kind != "source_file" {
