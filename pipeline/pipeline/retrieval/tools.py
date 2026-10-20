@@ -158,6 +158,9 @@ class ToolContext:
     # material they have open, and their saved study preferences.
     open_resource: dict[str, Any] = field(default_factory=dict)
     study_preferences: dict[str, Any] = field(default_factory=dict)
+    # The learner's workspace role (owner, editor, viewer); the chat request
+    # always sends it, in-process contexts (tests, playground) set their own.
+    role: str = "owner"
     # The workspace's chapters in order ({id, name}), loaded at turn start so
     # "chapter 2" resolves without a tool call; at most 20 (the server's cap).
     chapters: list[dict[str, Any]] = field(default_factory=list)

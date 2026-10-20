@@ -3381,7 +3381,7 @@ async def test_a_uat_scripted_turn_runs_its_calls_through_the_tools_not_a_model(
     monkeypatch.setattr(agent.models, "stream_agent_response", forbidden)
     events = await _collect(
         query,
-        ToolContext(workspace_id="ws", operations=frozenset({"material.create"})),
+        ToolContext(workspace_id="ws", operations=frozenset({"source.read"})),
         script=scripted.parse(query),
     )
     # The calls take the model's path: list_trashed_files needs trash.read,
@@ -3693,6 +3693,21 @@ def test_the_office_tools_come_last_once_offered(monkeypatch):
     assert not set(tools.OFFICE_TOOLS) & set(before)
     ctx.office_tools = True
     assert names() == before + list(tools.OFFICE_TOOLS)
+
+
+def test_a_viewer_reads_skills_and_office_files_but_edits_nothing(monkeypatch):
+    """Every role that can chat reads skills, so a viewer gets the Office read
+    tool once office_building is read; editing still needs edit rights."""
+    _gateway(monkeypatch)
+    ctx = ToolContext(
+        workspace_id="ws",
+        user_id="u",
+        operations=frozenset({"source.read", "material.read"}),
+        office_tools=True,
+    )
+    names = {s["function"]["name"] for s in tools.schemas_for(ctx)}
+    assert {"read_skill", "inspect_office_document"} <= names
+    assert "edit_office_document" not in names
 
 
 async def test_reading_office_building_appends_the_office_tools(monkeypatch):

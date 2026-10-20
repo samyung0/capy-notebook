@@ -799,8 +799,10 @@ func Definitions() []Definition {
 			InputSchema: obj(map[string]any{
 				"name": str("A skill name listed below."),
 			}, "name"),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpMaterialCreate},
+			Concurrency: "read",
+			// Every role that can chat reads skills: a viewer reads
+			// office_building for inspect_office_document (Epo 2026-10-20).
+			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
 			Name:      "create_material",

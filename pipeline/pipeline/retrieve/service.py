@@ -260,6 +260,8 @@ class ChatStreamReq(LLMPin):
     studyProgress: bool = False
     # An earlier turn of the conversation was offered the Office tools.
     officeTools: bool = False
+    # The requester's workspace role: owner, editor or viewer.
+    role: Literal["owner", "editor", "viewer"]
 
 
 def _bind_accounting(session_id: str):
@@ -415,6 +417,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             study_preferences=dict(req.studyPreferences or {}),
             study_progress=req.studyProgress,
             office_tools=req.officeTools,
+            role=req.role,
         )
         accounting_token = accounting.bind(req.spendSessionId)
         agen = run_agent(

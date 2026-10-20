@@ -355,7 +355,7 @@
         "chat"
       ],
       "requiredOperations": [
-        "material.create"
+        "source.read"
       ],
       "retention": "none"
     },
