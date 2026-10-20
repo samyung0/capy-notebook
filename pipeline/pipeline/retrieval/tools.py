@@ -486,6 +486,12 @@ def _source_listing(
     file_ids: list[str] | None,
 ) -> ToolResult:
     sources = {item["id"]: item for item in documents if item["kind"] == "source_file"}
+    # A note's summary comes from the outline, as a file's descriptor does.
+    summaries = {
+        f["id"]: f["descriptor"]
+        for f in outline["files"]
+        if f.get("kind") == "material"
+    }
     allowed = None if file_ids is None else set(file_ids)
     lines: list[str] = []
     by_chapter: dict[str | None, list[dict[str, Any]]] = {}
@@ -508,7 +514,7 @@ def _source_listing(
             continue
         lines.append(f"\n## {chapter['name']} (chapter_id={chapter['id']})")
         lines.extend(_file_line(f, sources[f["id"]]["editable"]) for f in files)
-        lines.extend(_material_line(item) for item in filed)
+        lines.extend(_material_line(item, summaries) for item in filed)
     unfiled = [f for files in by_chapter.values() for f in files]
     if unfiled:
         lines.append("\n## Unfiled")
@@ -516,7 +522,7 @@ def _source_listing(
     loose = [item for items in materials.values() for item in items]
     if loose:
         lines.append("\n## Unfiled study materials")
-        lines.extend(_material_line(item) for item in loose)
+        lines.extend(_material_line(item, summaries) for item in loose)
     return _result(
         "\n".join(lines)
         if lines
@@ -524,7 +530,7 @@ def _source_listing(
     )
 
 
-def _material_line(item: dict[str, Any]) -> str:
+def _material_line(item: dict[str, Any], summaries: dict[str, str]) -> str:
     line = (
         f"- {item['title']} (id={item['id']}, kind=material, "
         f"material_kind={item['materialKind']}, editable={str(item['editable']).lower()})"
@@ -532,6 +538,8 @@ def _material_line(item: dict[str, Any]) -> str:
     if item["materialKind"] != "note":
         # Only notes are indexed and outlined; the other kinds read as blocks.
         line += "; inspect_document and edit_document take its id"
+    elif summaries.get(item["id"]):
+        line += f"\n  {summaries[item['id']]}"
     return line
 
 

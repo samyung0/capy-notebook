@@ -14,6 +14,7 @@ import logging
 import re
 import secrets
 import unicodedata
+from datetime import datetime
 from typing import Any
 
 from .. import elitellm
@@ -170,7 +171,7 @@ async def index_file(
     if on_progress:
         on_progress(85)
 
-    descriptor, change_share, summary_error = await _descriptor(
+    descriptor, change_share, written_at, summary_error = await _descriptor(
         file_name, chunks, published
     )
     if descriptor is not None:
@@ -180,6 +181,7 @@ async def index_file(
             fingerprint=fingerprint,
             descriptor=descriptor,
             change_share=change_share,
+            written_at=written_at,
         )
     if on_progress:
         on_progress(95)
@@ -201,7 +203,7 @@ async def fill_descriptor(
         return None
     rows = await store.load_content_chunks(content_id)
     chunks = [Chunk(text=r["text"], section_path=r["section_path"] or "") for r in rows]
-    descriptor, _, error = await _descriptor(file_name, chunks, None)
+    descriptor, _, _, error = await _descriptor(file_name, chunks, None)
     if descriptor is not None:
         await store.fill_content_summary(
             workspace_id=workspace_id, content_id=content_id, descriptor=descriptor
@@ -219,10 +221,9 @@ async def index_material(
     claim_job_id: str,
     blocks: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Write a note's chunks into canonical content and publish it. Notes get
-    no descriptor or summary: the agent lists them by title and describes them
-    from their headings. Unchanged chunks reuse the previous content's vectors,
-    which stays aliased (and searchable) until the publish."""
+    """Write a note's chunks and summary into canonical content and publish
+    it. Unchanged chunks reuse the previous content's vectors, which stays
+    aliased (and searchable) until the publish."""
     if not chunks:
         await store.replace_content_chunks(
             workspace_id=workspace_id,
@@ -238,6 +239,11 @@ async def index_material(
             blocks=blocks,
         )
         return {"chunks": 0, "embedded": 0}
+    published = (
+        await store.content_summary(previous_content_id)
+        if previous_content_id
+        else None
+    )
     indexed = [chunk.indexed_text() for chunk in chunks]
     spec = embedding_spec()
     reusable = (
@@ -277,6 +283,13 @@ async def index_material(
         content_id=content_id,
         rows=rows,
         claim_job_id=claim_job_id,
+    )
+    await _note_summary(
+        workspace_id=workspace_id,
+        material_id=material_id,
+        content_id=content_id,
+        chunks=chunks,
+        published=published,
     )
     await store.publish_material_content(
         workspace_id=workspace_id,
@@ -354,18 +367,32 @@ _DESCRIPTOR_MAX_TOKENS = 400
 # last regeneration reaches this share of the document.
 SUMMARY_REUSE_SHARE = 0.02
 
+# A note's summary (Epo 2026-10-20): none under NOTE_SUMMARY_MIN_TOKENS, and a
+# rewrite once the change reaches NOTE_SUMMARY_SHARE and the summary is at
+# least NOTE_SUMMARY_MIN_AGE_S old. Notes reindex after every burst of typing,
+# so the age bound keeps an active note from paying for a summary per session.
+NOTE_SUMMARY_MIN_TOKENS = 200
+NOTE_SUMMARY_SHARE = 0.10
+NOTE_SUMMARY_MIN_AGE_S = 24 * 3600
+
 
 async def _descriptor(
-    file_name: str, chunks: list[Chunk], published: dict[str, Any] | None
-) -> tuple[str | None, float, Exception | None]:
-    """The descriptor to store, the running change share kept next to it, and
-    the failure that left the descriptor pending (``None`` to store).
+    name: str,
+    chunks: list[Chunk],
+    published: dict[str, Any] | None,
+    *,
+    note: bool = False,
+) -> tuple[str | None, float, datetime | None, Exception | None]:
+    """The descriptor to store, the running change share kept next to it, when
+    the descriptor was written (``None``: now), and the failure that left the
+    descriptor pending (``None`` to store).
 
     Regenerates from the complete content when no published descriptor exists
-    or once the change reaches the share. A failed regeneration keeps a
-    non-blank published descriptor with the accumulated share, so the next run
-    tries again; without one the descriptor is pending. An accounting error
-    (a SettlementError among them) raises: it is no part failure.
+    or once the change reaches the share (for a note, the note share and age).
+    A failed regeneration keeps a non-blank published descriptor with the
+    accumulated share, so the next run tries again; without one the descriptor
+    is pending. An accounting error (a SettlementError among them) raises: it
+    is no part failure.
     """
     share = 0.0
     if published is not None:
@@ -373,19 +400,52 @@ async def _descriptor(
         document = estimate_tokens("\n\n".join(c.indexed_text() for c in chunks))
         changed = text_change_tokens(published["chunks"], chunks)
         share = published["change_share"] + changed / max(1, document)
-        if share < SUMMARY_REUSE_SHARE:
-            return published["descriptor"], share, None
+        if share < (NOTE_SUMMARY_SHARE if note else SUMMARY_REUSE_SHARE) or (
+            note and published["age"] < NOTE_SUMMARY_MIN_AGE_S
+        ):
+            return published["descriptor"], share, published["updated_at"], None
     try:
-        if uat.fail_summary(file_name):
+        if uat.fail_summary(name):
             raise RuntimeError(f"UAT: the file name carries {uat.FAIL_SUMMARY}")
-        return await summarize_file(file_name, chunks), 0.0, None
+        summarize = summarize_note if note else summarize_file
+        return await summarize(name, chunks), 0.0, None, None
     except accounting.AccountingError:
         raise
     except Exception as exc:  # noqa: BLE001 - any failure leaves a part missing
-        log.warning("file descriptor failed for %s: %s", file_name, exc)
+        log.warning("descriptor failed for %s: %s", name, exc)
         if published is not None and published["descriptor"]:
-            return published["descriptor"], share, None
-        return None, 0.0, exc
+            return published["descriptor"], share, published["updated_at"], None
+        return None, 0.0, None, exc
+
+
+async def _note_summary(
+    *,
+    workspace_id: str,
+    material_id: str,
+    content_id: str,
+    chunks: list[Chunk],
+    published: dict[str, Any] | None,
+) -> None:
+    """Write the note's summary row on its new content, before the publish
+    drops the previous content and its row. A failure publishes the note
+    without a summary, or with its previous one, and the next index writes it:
+    failing the job would abandon the new chunks with it."""
+    text = "\n\n".join(chunk.indexed_text() for chunk in chunks)
+    if estimate_tokens(text) < NOTE_SUMMARY_MIN_TOKENS:
+        return
+    descriptor, share, written_at, _ = await _descriptor(
+        f"note {material_id}", chunks, published, note=True
+    )
+    if descriptor is None:
+        return
+    await store.upsert_content_summary(
+        workspace_id=workspace_id,
+        content_id=content_id,
+        fingerprint="note:" + content_hash(chunks),
+        descriptor=descriptor,
+        change_share=share,
+        written_at=written_at,
+    )
 
 
 def _key(text: str) -> str:
@@ -510,18 +570,30 @@ def descriptor_excerpt(chunks: list[Chunk]) -> str:
     return "\n\n".join(parts)
 
 
-async def _summarize(body: str) -> str:
+async def _summarize(body: str, purpose: str) -> str:
     raw = await models.complete_text(
         summary_messages(body),
         model=ingest_spec(),
         max_tokens=_DESCRIPTOR_MAX_TOKENS,
         reasoning=False,
-        call_purpose="file_summary",
+        call_purpose=purpose,
     )
     descriptor = (raw or "").strip()
     if not descriptor:
-        raise RetryableError("The file summary was empty.")
+        raise RetryableError(f"The {purpose} was empty.")
     return descriptor
+
+
+async def summarize_note(name: str, chunks: list[Chunk]) -> str:
+    """A note's summary: the file prompt, without the note's title, so the
+    same text describes the same way. ``name`` is log context."""
+    try:
+        return await _summarize(descriptor_excerpt(chunks), "note_summary")
+    except (accounting.AccountingError, elitellm.ProviderBusy):
+        raise
+    except Exception as exc:
+        log.warning("note summary failed for %s", name, exc_info=True)
+        raise RetryableError(f"note summary failed: {exc}") from exc
 
 
 async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
@@ -539,7 +611,7 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
     the next busy re-pend, donor continuation, refresh or Retry processing.
     """
     try:
-        descriptor = await _summarize(descriptor_excerpt(chunks))
+        descriptor = await _summarize(descriptor_excerpt(chunks), "file_summary")
     except (accounting.AccountingError, elitellm.ProviderBusy):
         # Accounting failures (settlement among them) must not start another
         # provider call; a busy provider re-pends the job without spending its

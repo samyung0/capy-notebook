@@ -1900,8 +1900,9 @@ async def _process_ingest_job_bound(job: dict) -> None:
 async def _process_material_index_bound(job: dict) -> None:
     """Index one workspace note: fetch its text from the gateway, chunk it like
     a text file, embed the chunks that changed and publish the canonical
-    content. Notes get no parse stage, no summary and no page model. A failed
-    claim is abandoned; the note keeps its previous index."""
+    content with the note's summary (indexing._note_summary). Notes get no
+    parse stage and no page model. A failed claim is abandoned; the note keeps
+    its previous index."""
     payload = job["payload"] or {}
     material_id = str(payload["materialId"])
     ws = str(payload["workspaceId"])
