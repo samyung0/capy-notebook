@@ -475,8 +475,8 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sen
                 }
             }
             _ = ping.tick() => {
-                let ping = WsMessage::Ping(Default::default());
-                if !send(&mut socket, ping, &sent, silent, &connection.socket_id).await {
+                let message = WsMessage::Ping(Default::default());
+                if !send(&mut socket, message, &sent, silent, &connection.socket_id).await {
                     break;
                 }
             }
