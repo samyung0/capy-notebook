@@ -61,17 +61,20 @@ REPORT.md`, harness commit 0ca23b61, read at Capy c9650685 and fork d5e297bf).
   one-sheet XLSX from the engine), built in the engine and stored as an
   ordinary upload via `/api/internal/files` (widened to .docx/.xlsx); the
   Create tab's blank tiles use the same starters. Templates later.
-- Size: commands ≤256 KB a call (pipeline check), Undo step ≤256 KB like
-  materials (`quota_rejected`); office_building states the limits in one line
-  and asks the agent to split; refusals carry the engine's sentence; beyond
-  that only the collaboration server's rate limit.
+- Size: commands ≤256 KB a call (pipeline check); office_building states the
+  limit in one line and asks the agent to split; refusals carry the engine's
+  sentence; beyond that only the collaboration server's rate limit.
+- Undo (Epo 2026-10-20, all agent edits): editor-style Yjs undo of the edit's
+  own items while the edit is live, Redo the same, no stored chain; hidden
+  when known to fail or after the room closed, a compaction or a publication.
+  Built in its own session; until it lands, Office commands return the
+  reverse the engine gives for free and skip costly ones.
 - PPTX: `add_slide` with an optional layout (default: the layout of the slide
   it follows), the engine creating the layout's placeholders; `add_text_box`
   for decks whose only layout is blank (ppt-master's).
 - Also (Epo 2026-10-20, second round): DOCX/PPTX `format_text` and
   `set_alignment`; XLSX insert/delete rows and columns and `delete_sheet`; PPTX
-  delete and move slide. Deletes name what they expect; a delete over the
-  256 KB Undo cap is refused like any large edit.
+  delete and move slide. Deletes name what they expect.
 - Formulas: one validator in office-service for agent commands only
   (rules under "Required" below); people keep Excel parity.
 
