@@ -121,6 +121,10 @@ def run(
     command, env, group = argv, policy.env, {}
     if os.name == "posix":
         group = {"process_group": 0}
+    elif "SYSTEMROOT" in os.environ:
+        # A Windows process cannot start its networking stack without it
+        # (local development only).
+        env = {**env, "SYSTEMROOT": os.environ["SYSTEMROOT"]}
     if LINUX:
         spec = {
             "parent": os.getpid(),
@@ -187,13 +191,15 @@ def _apply(
 ) -> None:
     import resource
 
+    # Loaded first: the child's Landlock rules need not cover the library.
+    libseccomp = ctypes.CDLL("libseccomp.so.2", use_errno=True)
     for name, value in limits.items():
         resource.setrlimit(getattr(resource, f"RLIMIT_{name}"), (value, value))
     if _libc().prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS)")
     if landlock:
         _landlock(read, write, sockets)
-    _seccomp(ALWAYS_BLOCKED | set(blocked))
+    _seccomp(libseccomp, ALWAYS_BLOCKED | set(blocked))
 
 
 # --------------------------------------------------------------------- seccomp
@@ -208,8 +214,7 @@ class _Cmp(ctypes.Structure):
     ]
 
 
-def _seccomp(groups: frozenset[str] | set[str]) -> None:
-    lib = ctypes.CDLL("libseccomp.so.2", use_errno=True)
+def _seccomp(lib: ctypes.CDLL, groups: frozenset[str] | set[str]) -> None:
     lib.seccomp_init.restype = ctypes.c_void_p
     lib.seccomp_init.argtypes = [ctypes.c_uint32]
     lib.seccomp_syscall_resolve_name.argtypes = [ctypes.c_char_p]

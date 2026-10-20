@@ -215,7 +215,9 @@ def test_a_child_dies_with_the_process_that_started_it(tmp_path: Path) -> None:
         sys.path.insert(0, {str(ROOT / "pipeline")!r})
         import capy_sandbox
         policy = capy_sandbox.Policy(
-            limits={{}}, blocked=frozenset(), read=capy_sandbox.python_paths(),
+            limits={{}},
+            blocked=frozenset(),
+            read=(*capy_sandbox.python_paths(), "/usr", "/lib", "/lib64", "/etc"),
             timeout_s=60,
         )
         capy_sandbox.run(
@@ -364,6 +366,7 @@ def _digest(chunks: list[dict]) -> str:
     return hashlib.sha256(json.dumps(chunks, sort_keys=True).encode()).hexdigest()
 
 
+@linux  # The worker imports fcntl.
 def test_ingest_decodes_without_mupdf_or_pillow_in_the_worker_process(
     tmp_path: Path,
 ) -> None:
