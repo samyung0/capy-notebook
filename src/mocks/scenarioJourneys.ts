@@ -127,7 +127,7 @@ export async function runJourney(
   };
   const chat = async () => {
     await go(scenarioPath);
-    await ui.click(m.workspace_tab_chat());
+    await ui.panelView(m.workspace_tab_chat());
     await ui.fill(
       `textarea[aria-label="${m.chat_placeholder()}"]`,
       'Explain the source for this scenario.'
@@ -351,10 +351,7 @@ export async function runJourney(
         })
       );
     } else if (format === 'docx') {
-      await officeUI.fill(
-        '[aria-label="Document input"]:not([readonly])',
-        scenarioMarker
-      );
+      await officeUI.fill('[aria-label="Document input"]', scenarioMarker);
     } else {
       await officeUI.element('[data-testid="pptx-slide-canvas"]');
       frame.contentWindow!.dispatchEvent(
@@ -923,7 +920,7 @@ export async function runJourney(
     case 'conversations-load':
       fail();
       await go(scenarioPath);
-      await ui.click(m.workspace_tab_chat());
+      await ui.panelView(m.workspace_tab_chat());
       await ui.click(m.chat_history());
       return 'Chat history currently suppresses its read error.';
     case 'generation-failed':

@@ -31,11 +31,19 @@ python bench/parsers/scripts/budget.py run --out OUT --inprocess   # parser venv
 python bench/parsers/scripts/budget.py compare BASE_OUT CANDIDATE_OUT
 ```
 
+On Linux, the in-process run's Office fixtures need a read-only `/tmp` and
+`/var/tmp`, as in the parser image. LibreOffice puts its IPC pipe there when
+it may write either folder, and under Landlock the decoder sandbox lets it
+create the pipe only in its job folder, so on a host with Landlock and a
+writable `/tmp` every Office fixture fails. Run those through the image (the
+service mode), or on macOS, where the sandbox keeps only the environment and
+the timeout.
+
 CI (the `Parser budget` workflow: pushes to `main` that touch the parser or the
 budget, dispatch, and Deploy ingest before every production release) builds
 the parser image of the revision, starts it with the ingest host's limits and
 the compose files' hardening (no capabilities, `no-new-privileges`, a
-read-only root with the HOME and `/tmp` tmpfs mounts and a work volume) and
+read-only root with the HOME tmpfs mount, an unwritable `/tmp` and a work volume) and
 sends each fixture through the production artifact route, sampling the
 container's cgroup. `check --machine ci-ubuntu-24.04` fails on a crash, a page
 count or OCR count off its fixture, empty output, an OOM kill, an execution past

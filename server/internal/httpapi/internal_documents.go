@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -150,6 +151,31 @@ type internalDocumentsInspectReq struct {
 	Target      agenttools.ResourceRef `json:"target"`
 	Start       int                    `json:"start"`
 	Count       int                    `json:"count"`
+	// Office is inspect_office_document's read of an Office file; without it
+	// an Office file is refused (inspect_document's call).
+	Office *officeInspectQuery `json:"office"`
+}
+
+// officeInspectQuery is inspect_office_document's arguments: an XLSX sheet
+// and range, a DOCX or PPTX page, a PPTX slide.
+type officeInspectQuery struct {
+	Sheet string `json:"sheet"`
+	Range string `json:"range"`
+	Start int    `json:"start"`
+	Count int    `json:"count"`
+	Slide int    `json:"slide"`
+}
+
+// officeToolsMessage answers an Office file sent to the general document
+// tools (Epo 2026-10-20).
+const officeToolsMessage = `Office files are read and edited with inspect_office_document and edit_office_document, offered after read_skill("office_building").`
+
+// pageCount is an inspection page's size: 60 targets unless 1 to 200 are asked.
+func pageCount(count int) int {
+	if count <= 0 || count > 200 {
+		return 60
+	}
+	return count
 }
 
 func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
@@ -161,12 +187,7 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 	if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, false) {
 		return
 	}
-	if req.Count <= 0 || req.Count > 200 {
-		req.Count = 60
-	}
-	if req.Start < 0 {
-		req.Start = 0
-	}
+	req.Start, req.Count = max(req.Start, 0), pageCount(req.Count)
 	ctx := r.Context()
 	wsID, err := a.s.ResourceWorkspaceID(ctx, req.Target.Kind, req.Target.ID, true)
 	if err != nil || wsID != req.WorkspaceID {
@@ -225,7 +246,28 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_format", "message": message})
 			return
 		}
-		inspection, err := a.s.InspectSourceDocument(ctx, req.UserID, req.Target.ID)
+		// Office files have their own tools (Epo 2026-10-20).
+		if office := format != "text"; office != (req.Office != nil) {
+			message := officeToolsMessage
+			if !office {
+				message = "inspect_office_document reads Word, Excel and PowerPoint files; read this file with inspect_document."
+			}
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_operation", "message": message})
+			return
+		}
+		var query *store.OfficeQuery
+		switch {
+		case format == "xlsx":
+			query = &store.OfficeQuery{Sheet: req.Office.Sheet, Range: req.Office.Range}
+		case format == "pptx" && req.Office.Slide > 0:
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+				"code": "unsupported_operation", "message": "Reading one slide is not available yet; read the deck's shapes with start and count.",
+			})
+			return
+		case req.Office != nil:
+			req.Start, req.Count = max(req.Office.Start, 0), pageCount(req.Office.Count)
+		}
+		inspection, err := a.s.InspectSourceDocument(ctx, req.UserID, req.Target.ID, query)
 		if err != nil {
 			a.failDocument(w, err)
 			return
@@ -234,23 +276,30 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			"format": inspection.Format, "title": file.Name,
 			"incarnation": inspection.Epoch, "access": inspection.Access,
 		}
-		if inspection.Format == "text" {
+		switch {
+		case query != nil && len(inspection.Scoped) == 0:
+			// A collaboration server without the engine's scoped reads.
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+				"code": "unsupported_operation", "message": "Reading a workbook is not available yet.",
+			})
+			return
+		case query != nil:
+			body["scoped"] = inspection.Scoped
+		case inspection.Format == "text":
 			lines := textLines(deref(inspection.Text))
 			total := len(lines)
 			end := min(req.Start+req.Count, total)
 			body["lines"] = lines[min(req.Start, total):end]
 			body["total"], body["nextStart"] = total, nextStart(end, total)
 			body["supportedOperations"] = []string{"replace_text"}
-		} else {
+		default:
+			// DOCX and PPTX read as their paragraph and shape entries until
+			// the engine's scoped reads land.
 			total := len(inspection.Entries)
 			end := min(req.Start+req.Count, total)
 			body["entries"] = inspection.Entries[min(req.Start, total):end]
 			body["total"], body["nextStart"] = total, nextStart(end, total)
-			if inspection.Format == "xlsx" {
-				body["supportedOperations"] = []string{"set_cell"}
-			} else {
-				body["supportedOperations"] = []string{"replace_text"}
-			}
+			body["supportedOperations"] = []string{"replace_text"}
 		}
 		writeJSON(w, http.StatusOK, body)
 	default:
@@ -351,6 +400,9 @@ type internalDocumentsEditReq struct {
 	// The library figures the commands' markdown or questions place, rendered
 	// by the retrieval service; each becomes an editor asset of the note or quiz.
 	Figures []agentFigure `json:"figures"`
+	// Office says the commands are edit_office_document's: only an Office
+	// file takes them, and an Office file takes no others.
+	Office bool `json:"office"`
 }
 
 func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
@@ -364,6 +416,47 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.editAgentDocument(w, r, req)
+}
+
+// operationLocks run the attempts of one agent operation id one at a time
+// (Epo 2026-10-20, review finding 3): when the retrieval service gives up on
+// an attempt and posts the same operation again, the retry waits for the
+// first attempt, which keeps running uncancelled, and then replays its
+// receipt instead of finding its own edit landed and refusing as stale. The
+// gateway runs as one process in UAT and production (deploy/), so the lock is
+// in memory; the zero value is ready.
+type operationLocks struct {
+	mu   sync.Mutex
+	held map[string]chan struct{}
+}
+
+// lock waits until no other attempt of id runs, or ctx ends, and returns the
+// release.
+func (l *operationLocks) lock(ctx context.Context, id string) (func(), error) {
+	for {
+		l.mu.Lock()
+		running, busy := l.held[id]
+		if !busy {
+			if l.held == nil {
+				l.held = map[string]chan struct{}{}
+			}
+			done := make(chan struct{})
+			l.held[id] = done
+			l.mu.Unlock()
+			return func() {
+				l.mu.Lock()
+				delete(l.held, id)
+				l.mu.Unlock()
+				close(done)
+			}, nil
+		}
+		l.mu.Unlock()
+		select {
+		case <-running:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 // editAgentDocument applies one chat edit: the internal edit route with a
@@ -384,6 +477,12 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		return
 	}
 	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
+	unlock, err := a.operations.lock(ctx, opID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer unlock()
 	hash, err := store.RequestHash(hashFigures(map[string]any{
 		"target": req.Target, "commands": req.Commands, "provenance": req.Provenance,
 	}, req.Figures))
@@ -431,6 +530,10 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	}()
 	if len(req.Figures) > 0 && req.Target.Kind != agenttools.KindMaterial {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "only a note or a quiz shows figures"})
+		return
+	}
+	if req.Office && req.Target.Kind != agenttools.KindSourceFile {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_operation", "message": officeOnlyMessage})
 		return
 	}
 	switch req.Target.Kind {
@@ -543,7 +646,20 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_format", "message": message})
 			return
 		}
-		normalized, err = normalizeSourceCommands(format, req.Commands)
+		// Office files have their own tool (Epo 2026-10-20).
+		if office := format != "text"; office != req.Office {
+			message := officeToolsMessage
+			if !office {
+				message = officeOnlyMessage
+			}
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_operation", "message": message})
+			return
+		}
+		if req.Office {
+			normalized, err = NormalizeOfficeCommands(format, req.Commands)
+		} else {
+			normalized, err = normalizeTextCommands(req.Commands)
+		}
 		if err != nil {
 			a.failDocument(w, err)
 			return
@@ -552,7 +668,9 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "unsupported target kind"})
 		return
 	}
-	receipt, err := a.s.EditDocument(ctx, req.UserID, store.DocumentTarget{Kind: req.Target.Kind, ID: req.Target.ID}, normalized, provenance, store.DocumentOperation{
+	// Uncancelled: an attempt the retrieval service gave up on still finishes
+	// under the operation's lock, so its retry replays the receipt.
+	receipt, err := a.s.EditDocument(context.WithoutCancel(ctx), req.UserID, store.DocumentTarget{Kind: req.Target.Kind, ID: req.Target.ID}, normalized, provenance, store.DocumentOperation{
 		ID: opID, RequestHash: hash, ToolVersion: 1, ConversationID: convID, MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
 	})
 	// Only the authority's refusal is final; a lost answer may have committed.
@@ -638,10 +756,6 @@ type rawCommand struct {
 	Markdown        string          `json:"markdown"`
 	AfterBlockID    *string         `json:"after_block_id"`
 	BlockID         string          `json:"block_id"`
-	Sheet           string          `json:"sheet"`
-	Cell            string          `json:"cell"`
-	ExpectedValue   string          `json:"expected_value"`
-	Value           string          `json:"value"`
 	CardID          string          `json:"card_id"`
 	Front           *string         `json:"front"`
 	Back            *string         `json:"back"`
@@ -788,8 +902,6 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			}
 			normalized = map[string]any{"type": "set_property", "nodeType": "mermaid", "property": "source",
 				"expectedValue": c.ExpectedSource, "value": c.Source}
-		case "set_cell":
-			return nil, refusal(agenttools.ErrUnsupportedOperation, "set_cell only applies to spreadsheets")
 		default:
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "unsupported command %q", c.Type)
 		}
@@ -802,31 +914,19 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 	return out, nil
 }
 
-// normalizeSourceCommands accepts replace_text for text, DOCX and PPTX and
-// set_cell for XLSX; everything else is an explicit unsupported operation.
-func normalizeSourceCommands(format string, raw []json.RawMessage) ([]json.RawMessage, error) {
+// normalizeTextCommands accepts replace_text for a text source; everything
+// else is an explicit unsupported operation.
+func normalizeTextCommands(raw []json.RawMessage) ([]json.RawMessage, error) {
 	out := make([]json.RawMessage, 0, len(raw))
 	for _, item := range raw {
 		var c rawCommand
 		if err := json.Unmarshal(item, &c); err != nil {
 			return nil, refusal(agenttools.ErrInvalidInput, "invalid command: %v", err)
 		}
-		var normalized any
-		switch {
-		case c.Type == "replace_text" && format != "xlsx":
-			if format != "text" && c.TargetID == "" {
-				return nil, refusal(agenttools.ErrInvalidInput, "replace_text on %s needs target_id", strings.ToUpper(format))
-			}
-			normalized = map[string]any{"type": "replace_text", "targetId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text}
-		case c.Type == "set_cell" && format == "xlsx":
-			normalized = map[string]any{"type": "set_cell", "sheet": c.Sheet, "cell": strings.ToUpper(strings.TrimSpace(c.Cell)),
-				"expectedValue": c.ExpectedValue, "value": c.Value}
-		case c.Type == "replace_text" || c.Type == "set_cell":
-			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s does not apply to %s sources", c.Type, strings.ToUpper(format))
-		default:
+		if c.Type != "replace_text" {
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s only applies to study materials", c.Type)
 		}
-		encoded, err := json.Marshal(normalized)
+		encoded, err := json.Marshal(map[string]any{"type": "replace_text", "targetId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text})
 		if err != nil {
 			return nil, err
 		}

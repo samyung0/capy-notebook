@@ -89,8 +89,18 @@ export function scenarioDriver(signal: AbortSignal, root: Document = document) {
     },
     element,
     async fill(selector: string, value: string) {
-      const input = await element<HTMLInputElement | HTMLTextAreaElement>(
-        selector
+      // Only a field a person could type into: the XLSX formula bar is
+      // disabled until its sheet loads, and an edit sent before then is lost.
+      const input = await wait(
+        () =>
+          [
+            ...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+              selector
+            ),
+          ].find(
+            (node) => visible(node) && !node.matches(':disabled, [readonly]')
+          ),
+        `${selector} editable`
       );
       signal.throwIfAborted();
       const prototype =
@@ -104,6 +114,20 @@ export function scenarioDriver(signal: AbortSignal, root: Document = document) {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
       return input;
+    },
+    /** Shows a view of the workspace's right panel (Files, Chat, Study)
+     * through its title menu, as e2e/helpers/panelView.ts does. */
+    async panelView(name: string) {
+      const title = await wait(
+        () =>
+          [...root.querySelectorAll<HTMLElement>('[data-panel-title]')]
+            .filter(visible)
+            .at(-1),
+        'panel title'
+      );
+      if (title.textContent?.trim() === name) return;
+      activate(title);
+      activate(await button(name, '[role="menuitem"]'));
     },
     async submit(selector = 'form') {
       const form = await element<HTMLFormElement>(selector);

@@ -46,6 +46,8 @@ describe('toolIcon', () => {
     expect(toolIcon('capture_page')).toBe('look');
     expect(toolIcon('list_trashed_files')).toBe('list');
     expect(toolIcon('write_slide')).toBe('edit');
+    expect(toolIcon('inspect_office_document')).toBe('read');
+    expect(toolIcon('edit_office_document')).toBe('edit');
     expect(toolIcon('trash_file')).toBe('trash');
     expect(toolIcon('restore_file')).toBe('restore');
     expect(toolIcon('read_study_progress')).toBe('bouncy');
@@ -66,6 +68,29 @@ describe('stepTitle', () => {
     expect(stepTitle(read, 'stopped').text).toBe(
       'Stopped while reading Cell transport.pdf'
     );
+  });
+  it('words the Office tools as the document tools', () => {
+    const file = { detail: 'grades.xlsx' };
+    expect(
+      stepTitle(tool('i', 'inspect_office_document', undefined, file), 'done')
+        .text
+    ).toBe('Inspected grades.xlsx');
+    expect(
+      stepTitle(tool('e', 'edit_office_document', undefined, file), 'running')
+        .text
+    ).toBe('Editing grades.xlsx');
+  });
+  it('titles an Office create as create_material titles its file', () => {
+    const created = tool('e', 'edit_office_document', undefined, {
+      detail: 'Grades.xlsx',
+      effects: [
+        {
+          operation: 'created',
+          resource: { id: 'f_1', kind: 'source_file', title: 'Grades.xlsx' },
+        },
+      ],
+    });
+    expect(stepTitle(created, 'done').text).toBe('Created Grades.xlsx');
   });
   it('quotes a search query and labels a capture by its page', () => {
     const search = tool('s', 'search_workspace', undefined, {

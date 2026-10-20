@@ -1,3 +1,4 @@
+import { Icon } from '@/components/ui/Icon';
 import { answerLabels } from '@/features/questions/editorFields';
 import { QUESTION_TYPES, type QuestionType } from '@/features/questions/types';
 import { m } from '@/i18n';
@@ -39,13 +40,18 @@ const squareLabel = (outcome: Outcome, number: number) =>
     wrong: m.quiz_question_wrong,
   })[outcome]({ number });
 
-/** "34 / 47" large, then "marks" and the percentage small. */
+/** "34 / 47" large, then "marks" small and either the percentage (a topic
+ * summary) or a quiz attempt's minutes with a clock (Epo 2026-10-19). */
 export function ResultScore({
   awarded,
   max,
+  minutes,
+  percent,
 }: {
   awarded: number;
   max: number;
+  minutes?: string;
+  percent?: boolean;
 }) {
   return (
     <p className="flex flex-wrap items-baseline gap-x-2.5">
@@ -55,9 +61,20 @@ export function ResultScore({
       <span className="font-semibold text-fg-secondary">
         {m.result_marks()}
       </span>
-      <span className="ml-1 font-semibold text-fg-secondary">
-        {max > 0 ? Math.round((awarded / max) * 100) : 0}%
-      </span>
+      {percent && (
+        <span className="ml-1 font-semibold text-fg-secondary">
+          {max > 0 ? Math.round((awarded / max) * 100) : 0}%
+        </span>
+      )}
+      {minutes && (
+        // Phones: its own line, nudged a pixel so the clock lines up with the
+        // score; from sm beside "marks". Baseline aligned through the text: a
+        // centred icon gives the row no baseline, so it would float.
+        <span className="mt-3 inline-flex basis-full -translate-x-px items-baseline gap-1.5 font-semibold text-fg-secondary sm:mt-0 sm:ml-1 sm:basis-auto sm:translate-x-0">
+          <Icon className="self-center" name="clock" strokeWidth={2.2} />
+          {minutes}
+        </span>
+      )}
     </p>
   );
 }

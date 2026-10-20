@@ -271,6 +271,20 @@ def _with_marker(marker: str) -> list[int]:
     return found
 
 
+def test_a_work_folder_too_long_for_the_pipe_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Where LibreOffice may write neither /tmp nor /var/tmp (the image), its
+    pipe goes in the job folder, so a work folder too long for a Unix socket
+    path is refused; with a writable /tmp the length does not matter."""
+    monkeypatch.setattr(document.os, "access", lambda _path, _mode: False)
+    document.check_pipe_path(Path("/run/capy-parser/work/slot-15"))
+    with pytest.raises(RuntimeError, match="bytes too long"):
+        document.check_pipe_path(Path("/run/capy-parser/a-longer-work-volume/slot-0"))
+    monkeypatch.setattr(document.os, "access", lambda path, _mode: path == "/tmp")
+    document.check_pipe_path(Path("/run/capy-parser/a-longer-work-volume/slot-0"))
+
+
 @needs_linux
 def test_timeout_kills_the_whole_process_group(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

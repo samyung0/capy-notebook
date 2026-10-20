@@ -179,7 +179,6 @@ function FileViewerContent({
   const {
     errorUpdatedAt: annotationsErrorUpdatedAt,
     isError: annotationsFailed,
-    refetch: refetchAnnotations,
   } = useQuery({
     ...pdfAnnotationsQuery(file?.id ?? ''),
     enabled: isPdf,
@@ -187,10 +186,6 @@ function FileViewerContent({
   useEffect(() => {
     if (!isPdf || !annotationsFailed || !annotationsErrorUpdatedAt) return;
     const id = userToast({
-      button: {
-        label: m.error_action_retry(),
-        onClick: () => void refetchAnnotations(),
-      },
       id: `pdf-annotations:${file?.id}`,
       title: m.pdf_annotations_failed(),
       variant: 'error',
@@ -198,13 +193,7 @@ function FileViewerContent({
     return () => {
       toast.dismiss(id);
     };
-  }, [
-    annotationsErrorUpdatedAt,
-    annotationsFailed,
-    file?.id,
-    isPdf,
-    refetchAnnotations,
-  ]);
+  }, [annotationsErrorUpdatedAt, annotationsFailed, file?.id, isPdf]);
   if (!file) {
     // TODO: shouldnt this throw errors?
     return (

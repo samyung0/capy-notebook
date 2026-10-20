@@ -241,6 +241,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	// library.read is granted per turn with the Library switch, to any role
 	// that can chat; writing from it still needs the role's write operations.
 	operations := agenttools.OperationsForRole(string(access.role))
+	turn.role = string(access.role)
 	if access.readOnly || access.full {
 		// A frozen actor or owner keeps reading and deleting, not creating,
 		// editing or restoring. An owner at its storage limit loses creating
@@ -371,7 +372,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 // title), whether study progress is on for the requester here, and their
 // study preferences.
 type chatTurn struct {
-	library          bool
+	library bool
+	// The requester's workspace role, said on the turn context's open line.
+	role             string
 	openResource     map[string]string
 	studyProgress    bool
 	studyPreferences store.StudyPreferences
@@ -458,8 +461,10 @@ func (a *api) relayChat(
 		"locale":             a.userLocale(ctx, userID),
 		"library":            turn.library,
 		"openResource":       turn.openResource,
+		"role":               turn.role,
 		"studyProgress":      turn.studyProgress,
 		"studyPreferences":   turn.studyPreferences,
+		"officeTools":        prompt.OfficeTools,
 	}
 	if prompt.Checkpoint != nil {
 		body["checkpoint"] = prompt.Checkpoint

@@ -80,6 +80,17 @@
     # gateway are published on the WireGuard address only, for the ingest host
     # (GitHub runners reach the database by SSH through the ingest host); the
     # ports published on the public interface are dropped in DOCKER-USER below.
+    # Containers run as their own users on one kernel; with scope 1 a process
+    # can trace only its own descendants, as on the ingest host.
+    - name: Restrict ptrace to descendants
+      ansible.posix.sysctl:
+        name: kernel.yama.ptrace_scope
+        value: "1"
+        sysctl_file: /etc/sysctl.d/60-capy-ptrace.conf
+        state: present
+        reload: true
+      tags: [sysctl]
+
     - name: Install ufw
       ansible.builtin.apt:
         name: ufw

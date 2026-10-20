@@ -1,6 +1,7 @@
 import { expect, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { officeEditMenu } from '../helpers/office';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
@@ -59,9 +60,7 @@ test('an XLSX grid is busy and takes no Delete while the tab holds back', async 
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
     .click();

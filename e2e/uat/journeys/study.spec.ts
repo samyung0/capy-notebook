@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
 import {
   api,
@@ -178,9 +179,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
 
   // The file read from its Files panel row.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   const row = page
     .locator('[data-workspace-file-tree]')
     .getByRole('link', { name: /^lesson\.docx/ });
@@ -225,9 +224,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   // The tab first paints the last visit's progress (the persisted query
   // cache) while it refetches, so wait for the row to name that quiz.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
-    .click();
+  await showPanelView(page, m.workspace_tab_study());
   const continueButton = page.getByRole('button', {
     exact: true,
     name: m.study_continue(),
@@ -240,9 +237,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
 
   // A review session from the Study tab over the card and the question.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
-    .click();
+  await showPanelView(page, m.workspace_tab_study());
   await page
     .getByRole('button', { exact: true, name: m.study_review_button() })
     .click();
@@ -280,10 +275,12 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
       .getByRole('button', { exact: true, name: m.action_next() })
       .click();
   }
-  // The summary: both items reviewed, each a right square.
-  await expect(
-    page.getByText(m.review_legend_full({ count: 2 }), { exact: true })
-  ).toBeVisible();
+  // The result: the question right, the card rated Good.
+  const rows = page.getByRole('button', { expanded: false });
+  await expect(rows.filter({ hasText: m.review_result_right() })).toHaveCount(
+    1
+  );
+  await expect(page.getByText(m.srs_good(), { exact: true })).toHaveCount(1);
 
   // The deployed database holds each record.
   const materials = [finishedQuiz, set, nextQuiz];
