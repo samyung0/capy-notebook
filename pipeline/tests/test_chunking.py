@@ -543,6 +543,19 @@ def test_query_terms_carry_no_websearch_negation_or_phrase():
 
     assert terms.any_of == "What or is or 5 or + or x? or the or cell or wall"
     assert '"' not in terms.all_of and " -" not in terms.all_of
+    # Websearch skips ( ) ! & | < before an operand, so a "-" anywhere but
+    # inside a word is NOT too (review hints-round S1); a hyphenated word stays.
+    for query, word in [
+        ("(-5)", "(5)"),
+        ("f(-x)", "f(x)"),
+        ("2*(-5)", "2*(5)"),
+        ("x^(-1)", "x^(1)"),
+        ("(-ve)", "(ve)"),
+        ("&-5", "&5"),
+        ("5-", "5"),
+        ("cost-push", "cost-push"),
+    ]:
+        assert search_query_terms(query).any_of == word, query
 
 
 def test_query_terms_count_a_cjk_run_once_and_keep_latin_apart():

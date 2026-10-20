@@ -1628,9 +1628,12 @@ character whenever the chunk held any CJK, so one OCR'd table dash read as
 tokenizer must run on queries (`search_query_terms`), or the lexical half of
 hybrid search silently returns nothing for Chinese/Japanese/Korean. The
 query's words go to `websearch_to_tsquery` OR-joined with websearch syntax
-taken out: a leading `-` or `!` and every `"` are stripped, since `-5` was a
-NOT that matched every passage without a 5, and a quote opened a phrase that
-swallowed the `or` joiners (hints eval 2026-10-20). Changing
+taken out (`_WEBSEARCH_SYNTAX`): every `-` not between two word characters,
+every `!` and every `"` are stripped, so no word yields a NOT or a phrase
+wherever it sits. The parser skips `( ) ! & | <` before an operand, so `-5`,
+`(-5)`, `f(-x)` and `&-5` were each a NOT that matched every passage without
+the term, and a quote opened a phrase that swallowed the `or` joiners (hints
+eval and its review, 2026-10-20). A hyphenated word ("cost-push") stays. Changing
 a configuration or the detector is a `CHUNKER_VERSION` bump: rows indexed
 under another config do not match stemmed queries.
 
@@ -4135,7 +4138,12 @@ most 200 characters around the longest query word it holds (function words
 skipped, a CJK run probed by its bigrams, found in the original text so the
 match stays in the window). A candidate matches on its document's name and
 its text together, and a hint needs at least two distinct message words to
-match it, or every content word of a message with fewer (`MIN_MATCHED_WORDS`;
+match it, or every content word of a message with fewer (`MIN_MATCHED_WORDS`).
+Words are counted as distinct lexemes under the document's config, so "Cell"
+and "cell," (and under english "derivative" and "derivatives") are one word.
+The query and each message word's lexemes are parsed once per config, not per
+candidate: a stopword sends the client a notice per parse, which per
+candidate was thousands of notices a match (`MIN_MATCHED_WORDS`;
 Epo 2026-10-20 after the hints eval: a hint matching one word was relevant 5%
 of the time, two or more 73%; noise fell from 1.00 to 0.16 hints a message at
 the same recall). The name gives "my calculus note" its second word. The
@@ -4168,13 +4176,19 @@ lines are source data, in a `<source>` block. Two paths use it:
   exception to effects reaching the agent only on read). A document read this
   turn is not flagged: its changes came with the read. The line is written
   once into the tool result and never changes, so earlier context stays a
-  cached prefix. In the hints eval it took both models to 26/26 edit
+  cached prefix. A cited passage replayed in a later turn keeps its line as
+  first written: the count is saved with the answer
+  (`toolEvidence.passages[].unindexed`, from `ToolContext.passage_flags`), and
+  the replay says that edits made since then come with a read of the
+  document. In the hints eval it took both models to 26/26 edit
   questions, including spreadsheet cells no hint finds.
 
 Generation passes every scoped change, so it gets no hints. The changes
-describe the document's current text (Epo 2026-10-20): each after is what it
-says now and each before what the index still shows, and the edits are the
-user's own, not to be redone or undone unless the user asks (the earlier
+describe the document's current text (Epo 2026-10-20): edits made since the
+last index, without saying who made them (the user, a collaborator or an
+earlier turn of the agent), each after what the document says now and each
+before what the index still shows, not to be redone or undone unless the user
+asks (the earlier
 "Apply replacements and removals" wording preceded unrequested edits in the
 hints eval). The message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to

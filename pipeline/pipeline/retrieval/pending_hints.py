@@ -226,20 +226,36 @@ async def match(
                 FROM unnest(string_to_array(%(any)s, ' or ')) AS w),
             plain AS (
                 SELECT coalesce(string_agg(w, ' or '), '') AS q FROM words WHERE content),
+            c AS (
+                SELECT * FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(simple)s::boolean[])
+                    WITH ORDINALITY AS c(t, cfg, simple, ord)),
+            -- Once per message and config, not per candidate: the query, and
+            -- each message word's lexemes (a stopword there has none and sends
+            -- the client a notice, so it is parsed once). A config whose query
+            -- is all stopwords matches nothing.
+            q AS MATERIALIZED (
+                SELECT k.cfg, k.simple, k.q FROM (
+                    SELECT cfgs.cfg, cfgs.simple, websearch_to_tsquery(
+                        cfgs.cfg, CASE WHEN cfgs.simple THEN plain.q ELSE %(any)s END) AS q
+                    FROM (SELECT DISTINCT cfg, simple FROM c) cfgs CROSS JOIN plain) k
+                WHERE numnode(k.q) > 0),
+            lex AS MATERIALIZED (
+                SELECT q.cfg, q.simple, t.tsq::text AS key, t.tsq
+                FROM q JOIN words ON NOT q.simple OR words.content
+                CROSS JOIN LATERAL (SELECT websearch_to_tsquery(q.cfg, words.w) AS tsq) t
+                WHERE numnode(t.tsq) > 0),
             m AS MATERIALIZED (
-                SELECT c.ord, c.cfg, c.simple, to_tsvector(c.cfg, c.t) AS v,
-                    websearch_to_tsquery(c.cfg, CASE WHEN c.simple THEN plain.q ELSE %(any)s END) AS q
-                FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(simple)s::boolean[])
-                    WITH ORDINALITY AS c(t, cfg, simple, ord)
-                CROSS JOIN plain),
+                SELECT c.ord, c.cfg, c.simple, to_tsvector(c.cfg, c.t) AS v, q.q
+                FROM c JOIN q ON q.cfg = c.cfg AND q.simple = c.simple),
             hit AS (
-                -- Per matching candidate: the message words it matches, and
-                -- those its config keeps (a stopword there is no word).
+                -- Per matching candidate: the distinct message lexemes it
+                -- matches, and those its config keeps, so "Cell" and "cell,"
+                -- (or "derivative" and "derivatives" under english) are one word.
                 SELECT m.ord,
-                    count(*) FILTER (WHERE m.v @@ websearch_to_tsquery(m.cfg, words.w)) AS matched,
-                    count(*) AS usable
-                FROM m JOIN words ON NOT m.simple OR words.content
-                WHERE m.v @@ m.q AND numnode(websearch_to_tsquery(m.cfg, words.w)) > 0
+                    count(DISTINCT lex.key) FILTER (WHERE m.v @@ lex.tsq) AS matched,
+                    count(DISTINCT lex.key) AS usable
+                FROM m JOIN lex ON lex.cfg = m.cfg AND lex.simple = m.simple
+                WHERE m.v @@ m.q
                 GROUP BY m.ord)
             SELECT m.ord FROM m JOIN hit USING (ord)
             WHERE hit.matched >= least(%(min_words)s, hit.usable)

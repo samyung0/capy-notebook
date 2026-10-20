@@ -68,7 +68,7 @@ class ToolResult:
     error: str | None = None
     error_code: str | None = None
     # What the model reads after the error, kept out of the error the chat
-    # stores and shows: a missed target as it is now, carried skills or excerpts.
+    # stores and shows: a missed target as it is now, or carried excerpts.
     detail: str = ""
     refused: bool = False
     failed: bool = False
@@ -199,6 +199,9 @@ class ToolContext:
     citations: list[Passage] = field(default_factory=list)
     evidence_notes: list[dict[str, Any]] = field(default_factory=list)
     evidence_passage_ids: set[str] = field(default_factory=set)
+    # Each searched passage's unindexed-edit count as its line first showed it,
+    # saved with the answer so a replay repeats it word for word.
+    passage_flags: dict[str, int] = field(default_factory=dict)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
     pending_sources: pending.PendingSources = field(
@@ -430,11 +433,15 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         return _result(
             "No passages matched. Try different wording, or list_sources first."
         )
+    unindexed = ctx.pending_sources.unindexed_counts()
+    for passage in passages:
+        if passage.file_id in unindexed:
+            ctx.passage_flags.setdefault(passage.chunk_id, unindexed[passage.file_id])
     return ToolResult(
         passages=passages,
         text_parts=[_overlap_footer(overlap, len(passages))],
         tail=edits,
-        unindexed=ctx.pending_sources.unindexed_counts(),
+        unindexed=unindexed,
     )
 
 

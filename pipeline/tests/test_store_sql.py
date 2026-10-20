@@ -1089,7 +1089,7 @@ async def test_a_minus_sign_in_the_query_matches_nothing_lexically(workspace):
     rows = await store.hybrid_search(
         workspace_id=workspace.id,
         vector=_unit_vector(999),
-        terms=search_query_terms("What is -5 + 3?"),
+        terms=search_query_terms("What is -5 + 3? (-5) f(-x)"),
         file_ids=None,
         candidates=10,
     )

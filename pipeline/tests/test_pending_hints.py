@@ -417,6 +417,7 @@ async def test_a_minus_sign_or_quotes_in_the_message_do_not_match_every_edit(
                 _change("add", after="Plant cell walls hold cellulose.", cid="wall"),
                 _change("add", after="Mitochondria make energy.", cid="mito"),
                 _change("add", after="Ribosomes build proteins.", cid="ribo"),
+                _change("add", after="Add or take plus or minus one.", cid="pm"),
             )
         ]
     )
@@ -426,6 +427,8 @@ async def test_a_minus_sign_or_quotes_in_the_message_do_not_match_every_edit(
         return {hint.change_id for hint in await pending_hints.match(query, pool)}
 
     assert await ids("What is -5 + 3?") == set()
+    # A NOT inside parentheses no longer counts as a matched word (S1).
+    assert await ids("What is (-5) plus 3?") == set()
     assert await ids('what is the "cell wall"?') == {"wall"}
 
 
@@ -469,6 +472,9 @@ async def test_a_hint_needs_two_message_words_and_a_message_three_hints(workspac
     assert await ids("When did the Berlin Wall come down?") == ["b"]
     # The name gives the calculus note its second word.
     assert await ids("What is in my calculus note on differentiation?") == ["d"]
+    # One word repeated capitalised, with punctuation or inflected is still
+    # one word (review hints-round S2): "wall" alone hints neither edit.
+    assert await ids("Wall: is a wall, and walls, thick?") == []
     # Five edits match "reading list"; a message carries three.
     assert (
         len(await ids("What is on my reading list?")) == pending_hints.HINT_LIMIT == 3

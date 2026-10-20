@@ -70,9 +70,11 @@ def test_a_read_describes_the_current_text_and_search_names_unread_edits():
     sources.read_ids = set()
     assert sources.unindexed_counts() == {"f_1": 1}
     changes = sources.for_read("f_1")
-    assert "each after is what the document says now" in changes
-    assert "do not redo or undo them unless the user asks" in changes
+    assert "Each after is what the document says now" in changes
+    assert "do not redo or undo these edits unless the user asks" in changes
     assert "Apply replacements" not in changes
+    # Some edits are a collaborator's or an earlier turn's (review S6).
+    assert "user has edited" not in changes and "user's own" not in changes
     # Read this turn: its changes came with the read, so no search flag.
     assert sources.unindexed_counts() == {}
 

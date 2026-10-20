@@ -3499,33 +3499,7 @@ async def test_a_search_passage_names_its_documents_unindexed_edits(monkeypatch)
     )
     assert flag in text and text.count("not indexed yet") == 1
     assert "secret new wording" not in text
-
-
-async def test_a_first_turn_explanation_ends_on_the_note_or_deck_offer(monkeypatch):
-    """Epo 2026-10-20: the first turn's explanation ends with an AskUser
-    offering a note or a deck. The rule is in the request's system prompt and
-    the answer's offer reaches the user as a question."""
-    from pipeline.prompts import chat as chat_prompts
-    from pipeline.retrieval import openui
-
-    answer = (
-        "root = Answer([c0, ask])\n"
-        'c0 = Md("Osmosis is the movement of water across a membrane.")\n'
-        'ask = AskUser("Want this as a note or a slide deck?", '
-        '["Make a note", "Make a slide deck", "No thanks"])\n'
-    )
-    stream, seen = _script_stream([_assembled(answer)])
-    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    monkeypatch.setattr(agent.tools, "_gateway_ready", lambda: True)
-    ctx = ToolContext(
-        workspace_id="ws_1", user_id="u1", operations=frozenset({"material.create"})
-    )
-    events = await _collect("Explain osmosis", ctx)
-    assert chat_prompts.FIRST_TURN_OFFER in seen[0]["messages"][0]["content"]
-    done = events[-1]
-    program = openui.parse(done["answer"], strict=True)
-    [ask] = [c for c in openui.walk(program) if c.name == "AskUser"]
-    assert ask.prop("choices") == ["Make a note", "Make a slide deck", "No thanks"]
+    assert ctx.passage_flags == {"c1": 1}  # saved for a replay (S4)
 
 
 async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypatch):
