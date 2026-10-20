@@ -1,8 +1,8 @@
 # Chat agent: editing and creating Office files
 
-Status 2026-10-18: the tool shape is decided (recorded in
-`human/agentic-retrieval.md`, 2026-10-15). The command set waits on the open
-decisions below. Nothing built. Engine survey: the Rust harness session's
+Status 2026-10-20: every open decision is answered (recorded in
+`human/agentic-retrieval.md`, 2026-10-15 and 2026-10-20). Building on the PC
+in the order XLSX, DOCX, PPTX. Engine survey: the Rust harness session's
 report in the private harness (`2026-10-06-rust-round/office-agent-commands/
 REPORT.md`, harness commit 0ca23b61, read at Capy c9650685 and fork d5e297bf).
 
@@ -44,21 +44,41 @@ REPORT.md`, harness commit 0ca23b61, read at Capy c9650685 and fork d5e297bf).
 - `inspect_document`'s description says Office files are edited with
   `edit_office_document`, offered after an inspect.
 
-## Open decisions (recommendation in brackets)
+## Decided (Epo 2026-10-20)
 
-1. Starter files for `create`: a committed starter DOCX/XLSX with our styles,
-   or a minimal engine-written blank [starter files; the Create tab's blank
-   Office tiles need the same answer].
-2. How `create` stores the file [built in the engine, stored as an upload].
-3. First format and commands [XLSX: set range, format cells, add/rename sheet,
-   create; DOCX next, then PPTX].
-4. Skill for edits [only `editing`; `office_building` only for `create`].
-5. Undo for big ranges [per-cell expected values, at most 500 cells a call].
-6. Cap source Undo steps at 256 KB [yes].
-7. PPTX add slide from a layout [after the engine places layout placeholders;
-   check it against the deck structure decision of 2026-10-05].
-8. The `HYPERLINK` formula [refuse].
-9. Visual check of an edit [later; needs a render of the live room].
+- Reads move out of `inspect_document`: a separate `inspect_office_document`
+  (sheet list, capped range, DOCX paragraph window with styles, PPTX slides
+  with layouts and shapes) is offered with `edit_office_document` once
+  `read_skill("office_building")` is in the retained history. `inspect_document`
+  keeps its definition and answers an Office source by pointing to the skill.
+  On Z.AI adding a tool misses the whole cached prompt (4/4 on 2026-10-20;
+  Z.AI caching is implicit only), accepted once per chat.
+- `office_building` is required for every Office read, edit and create;
+  `editing` drops its Office lines and says the agent sees most recent
+  changes after a read (hints for unindexed edits are being built by the
+  effects session; word them as "may").
+- `create`: committed starters (DOCX from python-docx's default template,
+  one-sheet XLSX from the engine), built in the engine and stored as an
+  ordinary upload via `/api/internal/files` (widened to .docx/.xlsx); the
+  Create tab's blank tiles use the same starters. Templates later.
+- Size: commands ≤256 KB a call (pipeline check), Undo step ≤256 KB like
+  materials (`quota_rejected`); office_building states the limits in one line
+  and asks the agent to split; refusals carry the engine's sentence; beyond
+  that only the collaboration server's rate limit.
+- PPTX: `add_slide` with an optional layout (default: the layout of the slide
+  it follows), the engine creating the layout's placeholders; `add_text_box`
+  for decks whose only layout is blank (ppt-master's).
+- Formulas: one validator in office-service for agent commands only
+  (rules under "Required" below); people keep Excel parity.
+
+## Later
+
+- Visual check of an edit: `capture_page` renders the last published blob
+  (publication: ≥3,000 net changed tokens or 7 days, 60 s idle), so it cannot
+  see an edit just made. A live check would export the room through
+  office-service and send it to the parser's capture route. Needs testing;
+  decks do fine without it so far.
+- Office templates and quick starts beside the blank tiles.
 
 ## Engine survey per format
 
@@ -94,8 +114,7 @@ REPORT.md`, harness commit 0ca23b61, read at Capy c9650685 and fork d5e297bf).
 
 ## Owners
 
-- Engine work after Epo's answers (style-only formatting, PPTX placeholders,
-  list restart, scoped reads) and the existing path's refusal mapping: the
-  Rust harness session.
-- Tool, schema, history-derived tool list, skill, pipeline refusal wording,
-  docs and tests: the agent-tools side (Mac).
+- The "Office agent tool" session on the PC builds all of it (fork branches
+  from origin/capy-ci, Capy branch); the Editor session ("Rust harness
+  optimizations and security review") approves pushes, merges capy-ci and
+  bumps the pin.
