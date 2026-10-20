@@ -495,7 +495,9 @@ type SpawnRequest = (Command, oneshot::Sender<std::io::Result<Child>>);
 /// Starts engine processes on one thread that outlives them: an engine's
 /// parent-death signal ([`sandbox`]) fires when the thread that started it
 /// exits, and tokio's worker threads come and go (`block_in_place`). The
-/// thread ends with the last supervisor, after its engines.
+/// thread ends with the last supervisor, after its engines; a panic on it
+/// aborts the process, which restarts with a new one (no engine could start
+/// again without it).
 #[derive(Clone)]
 struct Spawner(std::sync::mpsc::Sender<SpawnRequest>);
 
@@ -508,8 +510,15 @@ impl Spawner {
             .name("engine-spawner".into())
             .spawn(move || {
                 let _runtime = runtime.enter();
-                for (mut command, reply) in received {
-                    let _ = reply.send(command.spawn());
+                let served = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    for (mut command, reply) in received {
+                        if !reply.is_closed() {
+                            let _ = reply.send(command.spawn());
+                        }
+                    }
+                }));
+                if served.is_err() {
+                    std::process::abort();
                 }
             })
             .expect("the engine spawner thread starts");

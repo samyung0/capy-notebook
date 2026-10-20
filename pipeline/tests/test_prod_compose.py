@@ -1,9 +1,11 @@
-"""The UAT and production compose file's collaboration service."""
+"""The collaboration service in the UAT and production compose file (and, for
+its sandbox flags, the local and e2e ones)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 COMPOSE = Path(__file__).resolve().parents[2] / "deploy" / "docker-compose.prod.yml"
@@ -41,11 +43,20 @@ def test_collaboration_keeps_source_files_on_a_disk_volume() -> None:
     )
 
 
-def test_collaboration_runs_without_capabilities_or_privilege_gain() -> None:
+@pytest.mark.parametrize(
+    "compose",
+    ["docker-compose.prod.yml", "docker-compose.yml", "docker-compose.e2e.yml"],
+)
+def test_collaboration_runs_without_capabilities_or_privilege_gain(
+    compose: str,
+) -> None:
     """Its Office engine children read uploaded files (Epo 2026-10-20): no
-    capabilities and no privilege gain (security regression: the Office
-    engine sandbox)."""
-    service = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]["collaboration"]
+    capabilities and no privilege gain, deployed, local and in CI's e2e stack
+    (security regression: the Office engine sandbox)."""
+    path = COMPOSE.parent / compose
+    service = yaml.safe_load(path.read_text(encoding="utf-8"))["services"][
+        "collaboration"
+    ]
 
     assert service["cap_drop"] == ["ALL"]
     assert "no-new-privileges:true" in service["security_opt"]

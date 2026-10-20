@@ -301,9 +301,10 @@ async fn refusals_and_glue_panics_answer_and_keep_the_process() {
 
 /// Security regression (the Office engine sandbox, Epo 2026-10-20): an
 /// engine keeps none of the server's environment, opens no network socket,
-/// starts no process, execs nothing and cannot change its process group
-/// while its threads still start, runs with no_new_privs, seccomp, its limits
-/// and its own process group, reads no file outside its own /proc entries,
+/// starts no process, execs nothing and cannot change its process group,
+/// parent-death signal or dumpability while its threads still start, runs
+/// with no_new_privs, seccomp, its limits and its own process group, holds
+/// no descriptor it inherited, reads no file outside its own /proc entries,
 /// and signals nothing and reaches no abstract Unix socket outside its
 /// sandbox.
 #[cfg(target_os = "linux")]
@@ -319,6 +320,8 @@ async fn an_engine_runs_inside_its_sandbox() {
         &std::os::unix::net::SocketAddr::from_abstract_name(&name).unwrap(),
     )
     .unwrap();
+    // A descriptor without close-on-exec, which the engine inherits.
+    let inherited = nix::unistd::dup(std::fs::File::open(&outside).unwrap()).unwrap();
     let mut config = config(1, 1);
     config.memory_limit_bytes = Some(3 << 30);
     let pool = EnginePool::new(config);
@@ -329,6 +332,7 @@ async fn an_engine_runs_inside_its_sandbox() {
             request("test.reach", json!({ "path": outside, "abstract": name })),
         )
         .await;
+    drop(inherited);
     std::fs::remove_file(&outside).unwrap();
     let reach = reply.unwrap().value;
 
@@ -353,19 +357,21 @@ async fn an_engine_runs_inside_its_sandbox() {
     assert_eq!(reach["thread"], json!(7), "{reach}");
     assert_eq!(reach["no_new_privs"], json!("1"), "{reach}");
     assert_eq!(reach["seccomp"], json!("2"), "{reach}");
-    // Its three filters on top of what it inherited from this process.
+    // Its filters (three, and the x32 one on x86_64) on top of what it
+    // inherited from this process.
     let filters = |status: &str| {
         status
             .lines()
             .find_map(|line| line.strip_prefix("Seccomp_filters:"))
             .and_then(|count| count.trim().parse::<u64>().ok())
     };
-    let inherited = filters(&std::fs::read_to_string("/proc/self/status").unwrap()).unwrap();
+    let inherited_filters =
+        filters(&std::fs::read_to_string("/proc/self/status").unwrap()).unwrap();
     assert_eq!(
         reach["seccomp_filters"]
             .as_str()
             .and_then(|count| count.parse::<u64>().ok()),
-        Some(inherited + 3),
+        Some(inherited_filters + if cfg!(target_arch = "x86_64") { 4 } else { 3 }),
         "{reach}"
     );
     assert_eq!(reach["nofile"], json!([64, 64]), "{reach}");
@@ -379,14 +385,21 @@ async fn an_engine_runs_inside_its_sandbox() {
     );
     assert_eq!(reach["own_group"], json!(true), "{reach}");
     assert_eq!(reach["setpgid"], json!(EPERM), "{reach}");
+    assert_eq!(reach["prctl_pdeathsig"], json!(EPERM), "{reach}");
+    assert_eq!(reach["prctl_dumpable"], json!(EPERM), "{reach}");
+    assert_eq!(reach["fds"], json!([]), "{reach}");
     assert_eq!(reach["file"], json!(EACCES), "{reach}");
     assert_ne!(reach["parent_environ"], json!("ok"), "{reach}");
-    // Landlock's scoping (ABI 6): checked where the kernel has it, as on the
-    // deployed hosts (a production server refuses to start without it).
-    if sources::engine::sandbox::check_host() == Ok(None) {
-        assert_eq!(reach["signal_parent"], json!(EPERM), "{reach}");
-        assert_eq!(reach["abstract_unix"], json!(EPERM), "{reach}");
+    // Landlock's scoping (ABI 6), which a production server requires: CI's
+    // kernel must have it; elsewhere a kernel without it skips, loudly.
+    if std::env::var("CI").is_ok_and(|ci| ci == "true") {
+        assert_eq!(sources::engine::sandbox::check_host(), Ok(None));
+    } else if let gap @ (Ok(Some(_)) | Err(_)) = sources::engine::sandbox::check_host() {
+        eprintln!("SKIPPED the Landlock scoping checks on this kernel: {gap:?}");
+        return;
     }
+    assert_eq!(reach["signal_parent"], json!(EPERM), "{reach}");
+    assert_eq!(reach["abstract_unix"], json!(EPERM), "{reach}");
 }
 
 /// Security regression (the Office engine sandbox, Epo 2026-10-20): an
@@ -422,6 +435,34 @@ fn an_engine_dies_with_its_server_even_mid_call() {
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(!running(), "engine {engine} outlived its server");
+}
+
+/// Security regression (the Office engine sandbox, Epo 2026-10-20): an
+/// engine outlives the tokio worker that asked for it. A worker that hands
+/// its core away (`block_in_place`) later retires; an engine started on it
+/// would get its parent-death signal then, so engines start on the pool's
+/// own spawner thread.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_engine_outlives_the_worker_thread_that_started_its_call() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_keep_alive(Duration::from_millis(50))
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let pool = EnginePool::new(config(1, 1));
+        let first = pid(&pool, Lane::Save, None).await;
+        // The only worker (it ran the supervisor) gives its core away.
+        tokio::spawn(async {
+            tokio::task::block_in_place(|| std::thread::sleep(Duration::from_millis(20)));
+        })
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_eq!(pid(&pool, Lane::Save, None).await, first);
+    });
 }
 
 /// Security regression (the Office engine sandbox, Epo 2026-10-20): the

@@ -2628,17 +2628,21 @@ engine starts with an empty environment plus `CAPY_ENGINE_*`, `MALLOC_*`,
 Sentry in the engine), in its own process group, from a pool thread that
 outlives it so its parent-death signal kills it when the pool goes; the
 server that runs the pool is not dumpable, so an engine of the same uid
-cannot read the server's environment or memory through `/proc`. Before its
-engine thread starts, an engine keeps 64 descriptors and no core file (no
-file-size cap: its stderr may be a file), sets no_new_privs, takes Landlock
+cannot read the server's environment or memory through `/proc`; a panic on
+that spawner thread aborts the server, which restarts. Before its engine
+thread starts, an engine closes any descriptor it inherited above stderr,
+keeps 64 descriptors and no core file (no file-size cap: its stderr may be
+a file), sets no_new_privs, takes Landlock
 (reads only under its own `/proc/self`, no TCP, and with its signal and
 abstract Unix-socket scoping no signal or abstract socket reaches outside
 its own sandbox) and seccomp filters that
 refuse non-Unix sockets and exec (EACCES), cross-process calls
-(`ptrace`, `process_vm_*`, `pidfd_getfd` and the like), `setsid`/`setpgid`
-and new processes (EPERM), and io_uring and `clone3` (ENOSYS, so glibc starts
-threads with `clone`, which the filter lets through only with
-`CLONE_THREAD`). An engine that cannot take its sandbox does not serve. A
+(`ptrace`, `process_vm_*`, `pidfd_getfd` and the like), `setsid`/`setpgid`,
+new processes and `prctl` changes to its parent-death signal or dumpability
+(EPERM), io_uring and `clone3` (ENOSYS, so glibc starts threads with
+`clone`, which the filter lets through only with `CLONE_THREAD`), and on
+x86_64 every x32 call (EPERM; the other filters match x86_64 numbers only).
+An engine that cannot take its sandbox does not serve. A
 production server (`APP_ENV=production`, UAT included) on a host without
 Landlock's scoping (ABI 6, Linux 6.12) does not start; elsewhere it logs the
 gap once (`office engine sandbox incomplete`) and engines run with seccomp,

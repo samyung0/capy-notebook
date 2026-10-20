@@ -96,6 +96,9 @@ fn reach(args: &Value) -> Value {
         "fsize": limit(rlimit::Resource::FSIZE),
         "own_group": nix::unistd::getpgrp() == nix::unistd::getpid(),
         "setpgid": errno(nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0)).map_err(std::io::Error::from)),
+        "prctl_pdeathsig": errno(nix::sys::prctl::set_pdeathsig(None).map_err(std::io::Error::from)),
+        "prctl_dumpable": errno(nix::sys::prctl::set_dumpable(true).map_err(std::io::Error::from)),
+        "fds": inherited_fds(),
         "file": errno(std::fs::read(args["path"].as_str().unwrap_or(missing))),
         "signal_parent": errno(nix::sys::signal::kill(nix::unistd::getppid(), None).map_err(std::io::Error::from)),
         "abstract_unix": errno(
@@ -104,6 +107,22 @@ fn reach(args: &Value) -> Value {
         ),
         "parent_environ": errno(std::fs::read(format!("/proc/{}/environ", nix::unistd::getppid()))),
     })
+}
+
+/// Its descriptors above stderr, as `fd -> target`, besides the listing's own.
+#[cfg(target_os = "linux")]
+fn inherited_fds() -> Vec<String> {
+    let listing = std::path::PathBuf::from(format!("/proc/{}/fd", std::process::id()));
+    std::fs::read_dir("/proc/self/fd")
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let fd: i32 = entry.file_name().to_str()?.parse().ok()?;
+            let target = std::fs::read_link(entry.path()).unwrap_or_default();
+            (fd > 2 && target != listing).then(|| format!("{fd} -> {}", target.display()))
+        })
+        .collect()
 }
 
 fn main() -> std::io::Result<()> {

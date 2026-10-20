@@ -67,8 +67,9 @@ fn main() {
             std::process::exit(2);
         }
     }
-    // Before any connection is accepted, so a startup failure is reported.
-    let _sentry = observe::init();
+    // Before any connection is accepted, so a startup failure is reported;
+    // each failure below drops the guard first, which flushes its event.
+    let sentry = observe::init();
     observe::install_for_sources();
     // The Office engine sandbox: production does not start without Landlock.
     match sources::engine::sandbox::check_host() {
@@ -80,6 +81,7 @@ fn main() {
         ),
         Err(error) => {
             observe::capture(&error, None, &[("stage", "engine_sandbox")]);
+            drop(sentry);
             std::process::exit(1);
         }
     }
@@ -87,6 +89,7 @@ fn main() {
         Ok(config) => config,
         Err(error) => {
             observe::capture(&error.to_string(), None, &[("stage", "config")]);
+            drop(sentry);
             std::process::exit(1);
         }
     };
@@ -95,6 +98,7 @@ fn main() {
         Ok(limit) => log(Level::Info, "open_files_limit", json!({ "soft": limit })),
         Err(error) => {
             observe::capture(&error, None, &[("stage", "open_files_limit")]);
+            drop(sentry);
             std::process::exit(1);
         }
     }
@@ -105,6 +109,7 @@ fn main() {
         .expect("the tokio runtime starts");
     if let Err(error) = runtime.block_on(serve(config)) {
         observe::capture(&error, None, &[("stage", "startup")]);
+        drop(sentry);
         std::process::exit(1);
     }
 }
