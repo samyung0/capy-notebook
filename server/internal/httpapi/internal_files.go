@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
@@ -26,6 +27,10 @@ type internalFileReq struct {
 	Provenance         *store.Provenance `json:"provenance"`
 }
 
+// agentFileExtensions are the files the chat agent stores: decks and the
+// Office files edit_office_document creates (Epo 2026-10-20).
+var agentFileExtensions = []string{".docx", ".pptx", ".xlsx"}
+
 // internalCreateFile stores an agent's file the way an upload lands: the
 // editor check an upload makes, the workspace owner's quota on the bytes, the
 // blob, the files row with its library provenance, and the ingest job that
@@ -35,10 +40,6 @@ type internalFileReq struct {
 func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	if !a.pipelineSecretOK(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
-		return
-	}
-	if a.blob == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "blob store not configured"})
 		return
 	}
 	ceiling, err := a.s.MaxSourceFileBytes()
@@ -60,9 +61,9 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(req.Name)
-	if !strings.EqualFold(sourceupload.Extension(name), ".pptx") || len(req.Content) == 0 {
+	if !slices.Contains(agentFileExtensions, sourceupload.Extension(name)) || len(req.Content) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "invalid_input", "message": "an agent file is a non-empty .pptx",
+			"code": "invalid_input", "message": "an agent file is a non-empty .docx, .pptx or .xlsx",
 		})
 		return
 	}
@@ -78,75 +79,108 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !a.internalDocumentsActor(w, r, req.UserID, req.WorkspaceID, true) {
-		return
-	}
-	ctx := r.Context()
-	convUser, convWS, convID, err := a.s.AssistantMessageContext(ctx, req.AssistantMessageID)
-	if err != nil || convUser != req.UserID || convWS != req.WorkspaceID {
-		a.fail(w, store.ErrNotFound)
-		return
-	}
-
-	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
 	sum := sha256.Sum256(req.Content)
-	hash, err := store.RequestHash(map[string]any{
+	op, ok := a.agentFileOperation(w, r, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
 		"name": name, "chapterId": req.ChapterID, "provenance": req.Provenance,
 		"contentSha256": hex.EncodeToString(sum[:]),
 	})
+	if !ok {
+		return
+	}
+	receipt, ok := a.storeAgentFile(w, r.Context(), agentFile{
+		name: name, chapterID: req.ChapterID, content: req.Content, provenance: req.Provenance, op: op,
+	})
+	if ok {
+		writeJSON(w, http.StatusOK, receipt)
+	}
+}
+
+// agentFileOperation checks a chat file write's actor (an editor, on the
+// assistant message's own workspace) and returns the operation its receipt is
+// stored under. A replayed receipt or a refusal is written to w and ok is
+// false.
+func (a *api) agentFileOperation(w http.ResponseWriter, r *http.Request, userID, workspaceID, messageID, callID string, request map[string]any) (store.AgentOperation, bool) {
+	if !a.internalDocumentsActor(w, r, userID, workspaceID, true) {
+		return store.AgentOperation{}, false
+	}
+	ctx := r.Context()
+	convUser, convWS, convID, err := a.s.AssistantMessageContext(ctx, messageID)
+	if err != nil || convUser != userID || convWS != workspaceID {
+		a.fail(w, store.ErrNotFound)
+		return store.AgentOperation{}, false
+	}
+	opID := store.ChatOperationID(messageID, callID)
+	hash, err := store.RequestHash(request)
 	if err != nil {
 		a.fail(w, err)
-		return
+		return store.AgentOperation{}, false
 	}
 	if existing, err := a.s.ReplayAgentOperation(ctx, opID, hash); err == nil {
 		writeJSON(w, http.StatusOK, existing)
-		return
+		return store.AgentOperation{}, false
 	} else if !errors.Is(err, store.ErrNotFound) {
 		a.fail(w, err)
-		return
+		return store.AgentOperation{}, false
 	}
+	return store.AgentOperation{
+		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: userID,
+		WorkspaceID: workspaceID, ConversationID: convID, MessageID: messageID, CallID: callID,
+	}, true
+}
 
+// agentFile is a file the chat agent made, ready to store under op.
+type agentFile struct {
+	name, chapterID string
+	content         []byte
+	provenance      *store.Provenance
+	op              store.AgentOperation
+}
+
+// storeAgentFile lands an agent's file like an upload (the chapter, the
+// upload's size check, the blob, the files row, the parse job) with its
+// receipt, whose Undo trashes it. A refusal is written to w and ok is false.
+func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agentFile) (store.AgentOperation, bool) {
+	if a.blob == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "blob store not configured"})
+		return store.AgentOperation{}, false
+	}
 	var chapterID *string
-	if req.ChapterID != "" {
-		ok, err := a.s.ChapterInWorkspace(ctx, req.ChapterID, req.WorkspaceID)
+	if f.chapterID != "" {
+		ok, err := a.s.ChapterInWorkspace(ctx, f.chapterID, f.op.WorkspaceID)
 		if err != nil {
 			a.fail(w, err)
-			return
+			return store.AgentOperation{}, false
 		}
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
 				"code": "invalid_input", "message": "chapterId is not a chapter of this workspace",
 			})
-			return
+			return store.AgentOperation{}, false
 		}
-		chapterID = &req.ChapterID
+		chapterID = &f.chapterID
 	}
-	kind := kindFromName(name)
-	parseMode := sourceupload.DefaultParseMode(name, kind)
-	maxBytes, err := a.sourceMaxBytes(ctx, req.UserID)
+	kind := kindFromName(f.name)
+	parseMode := sourceupload.DefaultParseMode(f.name, kind)
+	maxBytes, err := a.sourceMaxBytes(ctx, f.op.ActorUserID)
 	if err != nil {
 		a.fail(w, err)
-		return
+		return store.AgentOperation{}, false
 	}
-	if err := sourceupload.Validate(name, kind, parseMode, int64(len(req.Content)), maxBytes); err != nil {
+	if err := sourceupload.Validate(f.name, kind, parseMode, int64(len(f.content)), maxBytes); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})
-		return
+		return store.AgentOperation{}, false
 	}
 
-	blobPath, size, err := a.blob.Put(sourceObjectKey(store.ObjectKeyID("blob")), bytes.NewReader(req.Content))
+	blobPath, size, err := a.blob.Put(sourceObjectKey(store.ObjectKeyID("blob")), bytes.NewReader(f.content))
 	if err != nil {
 		a.fail(w, err)
-		return
+		return store.AgentOperation{}, false
 	}
 	op, created, err := a.s.CreateAgentFileOperation(ctx, store.AgentFileDraft{
-		WorkspaceID: req.WorkspaceID, ActorUserID: req.UserID, Name: name, Kind: kind,
+		WorkspaceID: f.op.WorkspaceID, ActorUserID: f.op.ActorUserID, Name: f.name, Kind: kind,
 		ChapterID: chapterID, SizeBytes: size, BlobPath: blobPath, Parser: a.parser,
-		ParseMode: parseMode, Provenance: req.Provenance,
-	}, store.AgentOperation{
-		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
-		WorkspaceID: req.WorkspaceID, ConversationID: convID,
-		MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
-	})
+		ParseMode: parseMode, Provenance: f.provenance,
+	}, f.op)
 	// Uncancelled: a pipeline timeout or disconnect that failed the insert
 	// must not also cancel the delete, or the object stays with no row.
 	if err != nil || !created {
@@ -154,7 +188,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		a.fail(w, err)
-		return
+		return store.AgentOperation{}, false
 	}
-	writeJSON(w, http.StatusOK, op)
+	return op, true
 }
