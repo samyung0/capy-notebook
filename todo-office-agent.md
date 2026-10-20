@@ -78,6 +78,13 @@ REPORT.md`, harness commit 0ca23b61, read at Capy c9650685 and fork d5e297bf).
 - Formulas: one validator in office-service for agent commands only
   (rules under "Required" below); people keep Excel parity.
 
+## Open
+
+- The Create tab's blank Word and Excel tiles use the committed starters (Epo
+  2026-10-20); not built yet: the tiles show but cannot create
+  (`src/features/workspace/CreateFilePanel.tsx`). The XLSX starter is in the
+  fork (`office_service::starter`); DOCX has none until phase 2.
+
 ## Later
 
 - Visual check of an edit: `capture_page` renders the last published blob

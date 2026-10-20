@@ -2810,8 +2810,8 @@ build, and the knowledge library is one more source while the switch is on.
   read before reading, editing or creating a Word, Excel or PowerPoint file:
   how to read each format, each command's purpose, expected values exactly as
   the read shows them, formulas only with functions the workbook supports and
-  only its own sheets, `create` first for a new file (decks stay
-  `create_deck`), and one limits line (a call's commands up to 256 KB; split
+  only its own sheets, `create` first for a new Excel file (Word files
+  cannot be created yet; decks stay `create_deck`), and one limits line (a call's commands up to 256 KB; split
   larger edits). Reading it offers the Office tools (Office tools, above).
   `editing` carries no Office instructions and says that after reading a
   document the agent sees its most recent changes, recent edits not yet in
@@ -3169,8 +3169,8 @@ build, and the knowledge library is one more source while the switch is on.
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX and PPTX read their paragraph or shape entries with target ids, paged by `start`/`count` as `inspect_document` paged them, until the engine's scoped DOCX and PPTX reads land; a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size and asking for several calls). Receipts, Undo and refusals as `edit_document`'s for a source |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX and PPTX page their paragraph or shape entries with target ids by `start`/`count` as `inspect_document` paged them (their scoped reads are phases 2 and 3); a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX made by a first `create` command without `file_id` (Office tools, below; DOCX create is phase 2). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size and asking for several calls). Receipts and refusals as `edit_document`'s for a source; a call holding a command the engine returns no inverse for has no Undo, and its result offers none |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3647,18 +3647,31 @@ object with `wrap` as `textWrapping` `wrap` or `overflow`, `number_format`'s
 names into `NumberFormatMutation` tags and any other text into a custom
 pattern; borders are not offered yet). A `create` goes to
 `/api/internal/documents/office/create` with the call's other commands: Go
-checks the actor and replays a receipt as `/api/internal/files` does, asks the
-collaboration server's `/internal/documents/create` for the file's bytes, and
-stores them as the agent's deck is stored (`storeAgentFile`: the upload's
-size check, the blob, the files row, the parse job and a receipt whose Undo
-trashes the file); the file is named from the title (path separators and
-control characters dropped) plus `.xlsx` or `.docx`. The collaboration
-server's scoped inspect and create routes and the engine commands other than
-`replace_text` are pending (the collaboration and engine sessions); until
-they land, an XLSX read is refused as not available yet (Go, when the answer
-holds no `scoped`) and the new commands fail in the collaboration server. A source edit whose checkpoint carries no inverse commands keeps no
-Undo (no step row, no Undo ref): agent Undo moves to the live room (Epo
-2026-10-20).
+checks the actor, replays a receipt as `/api/internal/files` does and checks
+`chapterId`, then asks the collaboration server's `/internal/documents/create`
+for the file's bytes and stores them as the agent's deck is stored
+(`storeAgentFile`: the upload's size check, the blob, the files row, the parse
+job and a receipt whose Undo trashes the file); the file is named from the
+title (path separators and control characters dropped) plus `.xlsx`. Only
+XLSX is created: the schema and Go take `xlsx` alone, and the engine refuses a
+format without a starter as `unsupported_operation` (DOCX create is phase 2).
+
+The collaboration server runs both on the engine's Background lane: its
+inspect route answers an `office` query with the engine's scoped read
+(`inspect_scoped`, XLSX; a range over 2,000 cells is refused like an edit,
+with its sentence), and `/internal/documents/create` seeds the committed XLSX
+starter (`crates/office-service/starters/blank.xlsx` in the fork), applies the
+commands and exports at a fixed time with a seed from the request, so a
+retried create gives the same bytes. The engine has every XLSX command above
+(`crates/office-service/src/xlsx.rs`); DOCX and PPTX scoped reads and their new
+commands are phases 2 and 3.
+
+Undo (Epo 2026-10-20): until the live-room Undo lands, an Office command
+returns only the inverse the engine gives cheaply (`set_range` with values and
+expected swapped, `rename_sheet` back, a row or column insert as its delete,
+`replace_text` the paragraph); `format_cells`, `add_sheet`, `delete_sheet` and
+row and column deletes return none, and a call holding one keeps no Undo (no
+step row, no Undo ref on its receipt, no Undo line in its tool result).
 
 A block's text, as `inspect_document` shows it and as every expected text
 (`replace_text`, `remove_block`, `replace_block`, their Undo) matches it, is its
