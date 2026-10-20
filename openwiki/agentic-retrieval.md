@@ -4078,12 +4078,69 @@ including sources with no index or search hit. Chat passes a document's
 changes on only once the agent reads that document this turn
 (`inspect_document`, `capture_page`, `read_document`; `PendingSources.read`),
 never every turn or with search results (Epo 2026-10-20). Generation reads
-its whole scope, so it passes on every scoped change. Passed-on exact changes
-form a protected provider message outside tool-output clipping, live-history
-compaction and persisted conversation summaries, recomputed for each model
-request. `resolve_source_change` stays offered when any captured change has a
+its whole scope, so it passes on every scoped change, in one message right
+after its system instructions. In chat, a read appends its document's exact
+changes to its own tool result, once per turn, after the result's clip
+(`PendingSources.for_read`): nothing earlier in the conversation changes, so
+earlier requests stay a cached prefix (providers reuse any shared prefix; a
+message near the top that grew with each read re-billed the whole history).
+An `inspect_document` result is kept in full (`retention: full`), so its
+appended changes stay in the conversation history with it; `read_document`
+and `capture_page` keep none. When the turn changes a source (an edit, a
+trash or restore), the pending changes are re-read and the turn keeps what it
+already read, passed on and omitted (`PendingSources.carry`); only the changed
+document passes its new changes on at its next read. `resolve_source_change` stays offered when any captured change has a
 placeholder (the tools are fixed for the turn) and refuses one in a document
-not read yet. Replacements and removals
+not read yet.
+
+Unindexed edits stay findable through a lexical match of the captured
+changes' text (`retrieval/pending_hints.py`, Epo 2026-10-20): no chunking,
+vectors or provider call. One SQL statement over `unnest` runs `to_tsvector
+@@ websearch_to_tsquery` on the texts after `tokenize_for_search` (ligature,
+sub/superscript and CJK folds), with the query from `search_query_terms`;
+each `to_tsvector` is computed once. A hint matches in its document's language
+(Epo 2026-10-20): the dominant language of the document's indexed chunks (one
+query per load), else one detection over the document's pending changes
+together. For a document under the `simple` config, which keeps every word
+(Chinese, Japanese, Korean, or a language that stays undetermined), the
+query's words on Postgres's English stopword list (`ts_lexize` on
+`english_stem`) are dropped before matching it, so "What is the formula?" no
+longer matches any edit holding "the" (Epo 2026-10-20). Only English: the
+French, German and Spanish lists dropped English content words such as "war"
+and "die". The candidates are prepared once per load of the turn's pending
+changes, the tokenizing and detection in a worker thread. A candidate is an
+added or changed text (its new text), a removed one (its old text), or a change
+without text by its label, read up to 500 characters; moves are left out, and
+at most 2,000 changes are taken round-robin across documents, so one busy file
+does not starve the rest. Documents already read this turn are skipped. Each hint
+names the document (`file_id` or `material_id`), its name and the change label
+or block quoted, and says "added", "changed" or "removed" with a snippet of at
+most 200 characters around the longest query word it holds (function words
+skipped, a CJK run probed by its bigrams, found in the original text so the
+match stays in the window). The lines are source data, in a
+`<source>` block. Two paths use it:
+
+- The user message: at most 5 hints, a block of at most 400 tokens in its own
+  message right after the query (`_kind` `pending_hints`). Only the hints that
+  fit are shown, saved and counted as hinted. A change hinted earlier in the
+  conversation (since its last checkpoint) is not hinted again. The hints are
+  saved with the answer (`toolEvidence.pendingHints`, snippets only) and
+  replayed after their user message word for word, under the one heading the
+  live message uses (worded to stay true later), so earlier requests stay a
+  cached prefix; providers reuse any shared prefix (GLM on Z.AI measured
+  2026-10-20). After a checkpoint, an edit hinted before it may be hinted
+  again. The turn's own hint message survives a turn-start checkpoint and a
+  live fold of its older exchanges. Hints stay in context until the chat is
+  condensed; condensing (a checkpoint, a live-history fold or a turn fold)
+  drops every hint, read or not, and the edits a search listed (Epo
+  2026-10-20). A read document's details stay through its read result.
+- `search_workspace`: matching edits come after the passages under their own
+  heading, not citable (no passage numbers), and stay whole when a long result
+  is clipped; with no passage, they are the result. It skips edits a message
+  of this conversation hinted and edits an earlier search of this turn
+  listed.
+
+Generation passes every scoped change, so it gets no hints. Replacements and removals
 supersede old indexed facts; the message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
 match against passages, and that a move carries no text. An image added or
@@ -4130,21 +4187,21 @@ are checked with the files'; a failed read keeps the turn going, with the
 outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
 omitted note change waits for its reindex.
 
-The full provider request reserves this pending evidence within the selected
-model's window and the 250k effective ceiling, including output and safety
-allowances. If complete passed-on evidence cannot fit, chat omits that
-evidence, keeps it durably and explicitly tells both the model and user; the UI
-offers Process file changes for the read files it names. Generation uses the
+A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`, Epo 2026-10-20)
+are omitted: the read says the document's pending edits are larger than a
+read carries and can be processed (`READ_OMITTED`), the changes stay durable,
+and once the turn's set of omitted files grows the user gets a
+`pending_sources` event naming all of them, for which the UI offers Process
+file changes. Generation uses the
 same evidence for its whole scope and returns `pending_sources_too_large`
 with the edited file ids (`fileIds`, which Process file changes sends) and
 note ids (`materialIds`, which wait for their reindex) only when it cannot
 include it (Epo 2026-10-20: with auto processing off too, the error shows
 only then).
-Either overflow (chat dropping the pending evidence, or generation refusing)
+Either overflow (a chat read omitting its changes, or generation refusing)
 also sends the workspace owner a `system` notification per affected file
 (`pending_edits_too_large`, linking to the file), best effort and off the
-request path. Chat drops all passed-on evidence together, so every read file
-with pending edits in the turn counts. `source_documents.overflow_notified_checkpoint`
+request path. In chat, the files whose read omitted its changes count. `source_documents.overflow_notified_checkpoint`
 records the indexed checkpoint it was sent at; processing advances
 `indexed_checkpoint`, so the file notifies again only after it is processed.
 

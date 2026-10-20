@@ -50,43 +50,33 @@ def budget(monkeypatch):
     )
 
 
-async def test_exact_pending_evidence_survives_history_compaction_without_entering_summary(
-    budget, monkeypatch
-):
+def test_a_read_passes_its_documents_changes_on_once():
     sources = _sources()
-    messages = [
-        {"role": "system", "content": "system"},
-        {"role": "assistant", "content": "old history " * 400},
-        {"role": "user", "content": "question", "_kind": "query"},
-    ]
-    summarized = []
-
-    async def summarize(**kwargs):
-        summarized.extend(kwargs["turns"])
-        return "Earlier history"
-
-    monkeypatch.setattr(compact, "summarize_checkpoint", summarize)
-    block, extra, omitted = pending.reserve(messages, sources, budget, None)
-    compacted = await compact.compact_messages(messages, budget, extra=extra)
-    request = pending.inject(compacted, block)
-    assert not omitted
-    assert "latest exact source" in json.dumps(request)
-    assert "latest exact source" not in json.dumps(summarized)
-    assert request[-1]["content"] == "question"
-    assert all(message.get("_kind") != "pending_sources" for message in compacted)
+    sources.read_ids = set()
+    assert "latest exact source" in sources.for_read("f_1")
+    assert sources.read_ids == {"f_1"}
+    assert sources.for_read("f_1") == ""  # once per turn
+    assert sources.for_read("f_2") == ""  # no changes there
+    large = _sources("exact" * 20_000)
+    large.read_ids = set()
+    assert large.for_read("f_1") == pending.READ_OMITTED
+    assert large.event(True)["fileIds"] == ["f_1"]
 
 
-def test_oversized_changes_are_omitted_explicitly_without_mutating_durable_evidence(
-    budget,
-):
-    sources = _sources("exact" * 2000)
-    original = json.dumps(sources.files)
-    block, _extra, omitted = pending.reserve(
-        [{"role": "user", "content": "q", "_kind": "query"}], sources, budget, None
-    )
-    assert omitted and "omitted" in block["content"]
-    assert sources.event(omitted)["fileIds"] == ["f_1"]
-    assert json.dumps(sources.files) == original
+def test_a_reload_carries_what_the_turn_read_except_the_changed_document():
+    """Review hints-r3 R3: after the turn changes a document, its other reads
+    stay passed on and omitted; the changed one passes its changes on again."""
+    previous = _sources()
+    previous.read_ids = set()
+    previous.for_read("f_1")
+    previous.omitted_ids.add("f_big")
+    reloaded = _sources()
+    reloaded.carry(previous, "f_9")
+    assert reloaded.for_read("f_1") == ""
+    assert reloaded.omitted_ids == {"f_big"} and reloaded.read_ids == {"f_1"}
+    again = _sources()
+    again.carry(previous, "f_1")
+    assert "latest exact source" in again.for_read("f_1")
 
 
 async def test_generation_accepts_pending_only_sources_and_refuses_oversized_evidence(
@@ -463,7 +453,6 @@ async def test_only_documents_read_are_validated_and_resolvable(monkeypatch):
     sources.read("f_1")
     await sources.validate()
     assert "latest exact source" in sources.message()["content"]
-    assert sources.event(False)["fileIds"] == ["f_1"]
     sources.read("f_2")  # read, but no changes passed on: not checked
     await sources.validate()
     published["f_1"] = "rgc_b"

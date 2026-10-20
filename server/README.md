@@ -21,6 +21,10 @@ go mod tidy                        # resolve deps + write go.sum (first run)
 go run ./cmd/api
 ```
 
+The gateway refuses to start without `APP_ENV` (`development` here; the e2e and
+prod compose files set `e2e` and `production`), so local-only behaviour
+(`AUTH_DISABLED`, API docs, the demo seed) never comes from a missing value.
+
 ## Test
 
 From the repository root:

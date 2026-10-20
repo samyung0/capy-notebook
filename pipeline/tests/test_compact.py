@@ -102,28 +102,6 @@ def test_admission_reserves_the_same_anthropic_output_as_the_request(thinking, o
         registry.bind_request_llm()
 
 
-def test_high_reasoning_pending_overflow_is_explicit_before_the_provider_call():
-    from pipeline.retrieval import pending
-
-    spec = _spec(
-        provider_slug="anthropic",
-        context_window_tokens=200_000,
-        thinking_levels=("high",),
-        default_thinking="high",
-    )
-    messages = [
-        {"role": "system", "content": "system"},
-        {"role": "user", "content": "question", "_kind": "query"},
-    ]
-    sources = pending.PendingSources(
-        [{"fileId": "f", "changes": [{"after": "x" * 561_000}]}]
-    )
-    block, _, omitted = pending.reserve(messages, sources, spec, None)
-    assert omitted
-    assert "omitted" in block["content"]
-    assert compact.fits_request(pending.inject(messages, block), spec)
-
-
 @pytest.mark.asyncio
 async def test_checkpoint_prompt_uses_current_message_only_to_resolve_references(
     monkeypatch,
