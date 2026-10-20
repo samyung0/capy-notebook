@@ -1447,6 +1447,19 @@ async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     let Some(kept) = kept else {
         return Err(undo_unavailable("nothing of this edit is left to undo"));
     };
+    // The read model follows at once, as it did the edit (`edit_material`
+    // projects); otherwise a diagram or mindmap, which no read projects on
+    // demand, waits for its room's idle projection.
+    for room in rooms.iter().filter(|room| room.starts_with("material:")) {
+        if let Some(handle) = app.rooms.get(room) {
+            tokio::spawn(async move {
+                let (reply, answer) = oneshot::channel();
+                if handle.tx.send(RoomCmd::Project(reply)).await.is_ok() {
+                    let _ = answer.await;
+                }
+            });
+        }
+    }
     Ok(json!({ "operationId": kept }))
 }
 

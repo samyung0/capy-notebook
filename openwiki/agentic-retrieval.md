@@ -3625,7 +3625,10 @@ contributor marker (the store rechecks the actor's access); the room stores
 at once and answers when that store ends (an Undo arriving during a store
 answers when it ends, its revert storing next). A store that fails and
 retries still answers done, the revert staying in the room; a store the room
-gives up on (a discard) answers the error. A note whose reverted state the
+gives up on (a discard) answers the error. Once the rooms answer, a
+material's room projects at once (`RoomCmd::Project`), as the edit it reverts
+projected, so `materials.content` follows without the idle projection (a
+diagram or mindmap has no on-read projection). A note whose reverted state the
 store would refuse (`validate`) is put back at once and the Undo answers
 `invalid_input` or `quota_rejected`; a source counts the bytes toward its cap
 estimate. A room under a publication handoff or a forced unload refuses it
