@@ -3685,10 +3685,15 @@ async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
         ],
     }
     await _collect("What changed?", ctx)
-    first, second = (json.dumps(call["messages"], ensure_ascii=False) for call in seen)
-    assert "file edit" not in first and "note edit" not in first
-    assert "read file edit" in second
-    assert "unread file edit" not in second and "unread note edit" not in second
+    first, second = (call["messages"] for call in seen)
+    text = json.dumps(second, ensure_ascii=False)
+    assert "file edit" not in json.dumps(first, ensure_ascii=False)
+    assert "unread file edit" not in text and "unread note edit" not in text
+    # The read's own tool result carries its changes; every earlier message
+    # is byte-identical, so the first request stays a cached prefix.
+    [result] = [m for m in second if m.get("role") == "tool"]
+    assert "read file edit" in result["content"]
+    assert second[: len(first) - 1] == first[:-1]  # all but the turn context
 
 
 def _hinted_sources():
@@ -3804,3 +3809,65 @@ async def test_a_turn_start_checkpoint_keeps_the_turns_hint(monkeypatch):
         query_msg=query,
     )
     assert messages[-2:] == [query, hint]
+
+
+async def test_a_reads_changes_too_large_to_pass_on_are_omitted(monkeypatch):
+    """The read gets the notice instead, and the read file is offered Process."""
+
+    async def load(*_args, **_kwargs):
+        return pending.PendingSources(
+            [
+                {
+                    "fileId": "f_1",
+                    "name": "bio.pdf",
+                    "epoch": 1,
+                    "checkpoint": 2,
+                    "indexedCheckpoint": 1,
+                    "changes": [
+                        {
+                            "id": "c",
+                            "kind": "text",
+                            "operation": "replace",
+                            "before": "old",
+                            "after": "huge " * 20_000,
+                        }
+                    ],
+                },
+            ]
+        )
+
+    async def read_range(**_kwargs):
+        return [
+            {
+                "id": "c1",
+                "file_id": "f_1",
+                "file_name": "bio.pdf",
+                "chunk_idx": 0,
+                "text": "x",
+            }
+        ]
+
+    async def no_match(*_args, **_kwargs):
+        return []
+
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
+            _assembled(_answer(("done", []))),
+        ]
+    )
+    monkeypatch.setattr(pending, "load", load)
+    monkeypatch.setattr(agent.pending_hints, "match", no_match)
+    monkeypatch.setattr(agent.pending_hints, "_indexed_langs", _no_langs)
+    monkeypatch.setattr(tools.store, "read_file_range", read_range)
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 3}],
+    }
+    events = await _collect("What changed?", ctx)
+    [result] = [m for m in seen[1]["messages"] if m.get("role") == "tool"]
+    assert "omitted" in result["content"] and "huge" not in result["content"]
+    [event] = [e for e in events if e["type"] == "pending_sources"]
+    assert event["omitted"] and event["fileIds"] == ["f_1"]

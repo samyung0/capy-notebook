@@ -4063,10 +4063,12 @@ including sources with no index or search hit. Chat passes a document's
 changes on only once the agent reads that document this turn
 (`inspect_document`, `capture_page`, `read_document`; `PendingSources.read`),
 never every turn or with search results (Epo 2026-10-20). Generation reads
-its whole scope, so it passes on every scoped change. Passed-on exact changes
-form a protected provider message outside tool-output clipping, live-history
-compaction and persisted conversation summaries, recomputed for each model
-request. `resolve_source_change` stays offered when any captured change has a
+its whole scope, so it passes on every scoped change, in one message right
+after its system instructions. In chat, a read appends its document's exact
+changes to its own tool result, once per turn, after the result's clip
+(`PendingSources.for_read`): nothing earlier in the conversation changes, so
+earlier requests stay a cached prefix (providers reuse any shared prefix; a
+message near the top that grew with each read re-billed the whole history). `resolve_source_change` stays offered when any captured change has a
 placeholder (the tools are fixed for the turn) and refuses one in a document
 not read yet.
 
@@ -4162,21 +4164,19 @@ are checked with the files'; a failed read keeps the turn going, with the
 outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
 omitted note change waits for its reindex.
 
-The full provider request reserves this pending evidence within the selected
-model's window and the 250k effective ceiling, including output and safety
-allowances. If complete passed-on evidence cannot fit, chat omits that
-evidence, keeps it durably and explicitly tells both the model and user; the UI
-offers Process file changes for the read files it names. Generation uses the
+A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`) are omitted: the
+read gets the outdated notice saying exact edits were omitted, the changes
+stay durable, and the user gets a `pending_sources` event naming the read file,
+for which the UI offers Process file changes. Generation uses the
 same evidence for its whole scope and returns `pending_sources_too_large`
 with the edited file ids (`fileIds`, which Process file changes sends) and
 note ids (`materialIds`, which wait for their reindex) only when it cannot
 include it (Epo 2026-10-20: with auto processing off too, the error shows
 only then).
-Either overflow (chat dropping the pending evidence, or generation refusing)
+Either overflow (a chat read omitting its changes, or generation refusing)
 also sends the workspace owner a `system` notification per affected file
 (`pending_edits_too_large`, linking to the file), best effort and off the
-request path. Chat drops all passed-on evidence together, so every read file
-with pending edits in the turn counts. `source_documents.overflow_notified_checkpoint`
+request path. In chat, the files whose read omitted its changes count. `source_documents.overflow_notified_checkpoint`
 records the indexed checkpoint it was sent at; processing advances
 `indexed_checkpoint`, so the file notifies again only after it is processed.
 

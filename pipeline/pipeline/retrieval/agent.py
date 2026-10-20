@@ -376,11 +376,9 @@ async def _run_turn(
         ctx.pending_hints = hint_message["_hints"]
     ctx.hinted = earlier | {hint.key for hint, _ in ctx.pending_hints}
 
-    _, pending_reserve, pending_omitted = pending.reserve(
-        messages, ctx.pending_sources, spec, schemas
-    )
-    if ctx.pending_sources.pending:
-        yield ctx.pending_sources.event(pending_omitted)
+    # Pending changes reach the agent in the tool result of a read of their
+    # document (pending.PendingSources.for_read); none are sent up front.
+    reported_omitted = 0
     try:
         await ctx.pending_sources.validate()
         messages, replacement = await _admit_checkpoint(
@@ -391,7 +389,6 @@ async def _run_turn(
             schemas=schemas,
             budget=budget,
             query_msg=query_msg,
-            extra=pending_reserve,
         )
     except pending.SourceChanged as exc:
         yield _with_usage(events.error(str(exc), exc.code))
@@ -514,12 +511,10 @@ async def _run_turn(
                 )
             )
             outside = image_tokens + context_tokens
-            pending_message, pending_reserve, omitted = pending.reserve(
-                messages, ctx.pending_sources, spec, active_schemas, extra=outside
-            )
-            if omitted != pending_omitted:
-                pending_omitted = omitted
-                yield ctx.pending_sources.event(omitted)
+            if len(ctx.pending_sources.omitted_ids) != reported_omitted:
+                # A read's changes were too large to pass on: offer Process.
+                reported_omitted = len(ctx.pending_sources.omitted_ids)
+                yield ctx.pending_sources.event(True)
             await ctx.pending_sources.validate()
             messages = await compact.compact_messages(
                 messages,
@@ -527,7 +522,7 @@ async def _run_turn(
                 schemas=active_schemas,
                 protect_live_chain=True,
                 on_compact=_count,
-                extra=pending_reserve + outside,
+                extra=outside,
                 allow_summary=not terminal_call,
             )
             state = accounting.current()
@@ -546,7 +541,7 @@ async def _run_turn(
                     schemas=active_schemas,
                     protect_live_chain=True,
                     allow_summary=False,
-                    extra=pending_reserve + outside,
+                    extra=outside,
                 )
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
@@ -562,7 +557,7 @@ async def _run_turn(
                 ),
             )
             request_messages = capture.inject_images(
-                pending.inject(messages, pending_message),
+                messages,
                 ctx.pending_images,
                 spec.provider_slug,
             )
@@ -1241,6 +1236,8 @@ async def _run_tools(
         text = tools.limit_tool_result(
             tools.render_result(result, numbered), tail=result.tail
         )
+        if result.pending:
+            text += "\n\n" + result.pending
         if ctx.library:
             args = _parse_args(call.arguments)
             ctx.library_evidence.observe(

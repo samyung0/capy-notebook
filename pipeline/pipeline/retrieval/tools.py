@@ -75,6 +75,9 @@ class ToolResult:
     paged: bool = False
     # Rendered after the result and kept whole when it is clipped.
     tail: str = ""
+    # A read document's pending changes, appended after the clipped result
+    # (pending.PendingSources.for_read).
+    pending: str = ""
 
     @property
     def outcome(self) -> str:
@@ -606,14 +609,17 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start=start,
         count=count,
     )
-    ctx.pending_sources.read(resolved.file_ids[0])
+    changes = ctx.pending_sources.for_read(resolved.file_ids[0])
     if not rows:
-        return _result("No passages at that position.")
+        result = _result("No passages at that position.")
+        result.pending = changes
+        return result
     passages = [Passage.from_row(row) for row in rows]
     return ToolResult(
         text_parts=[f"(next start = {rows[-1]['chunk_idx'] + 1})"],
         passages=passages,
         paged=True,
+        pending=changes,
     )
 
 
@@ -661,7 +667,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_page: {exc}")
-    ctx.pending_sources.read(file_id)
+    changes = ctx.pending_sources.for_read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
     label = f"{resolved.file_names[0]} page {page}" + (
@@ -683,11 +689,13 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         capture.data_url(jpeg),
     )
     numbers = "".join(f"[{i}]" for i in existing)
-    return _result(
+    result = _result(
         f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
         f"{numbers}; cite those numbers for what the capture shows."
     )
+    result.pending = changes
+    return result
 
 
 # ------------------------------------------------ knowledge library tools
@@ -2015,14 +2023,16 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
-    ctx.pending_sources.read(rid)
+    changes = ctx.pending_sources.for_read(rid)
     shown = None
     if kind == "material":
         seen = ctx.seen_blocks.setdefault(rid, {})
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
         shown = ctx.shown_quizzes.setdefault(rid, {})
-    return _result(_render_inspection(body, shown, source=kind == "source_file"))
+    result = _result(_render_inspection(body, shown, source=kind == "source_file"))
+    result.pending = changes
+    return result
 
 
 # How much of a missed block's current text a refused edit shows.
