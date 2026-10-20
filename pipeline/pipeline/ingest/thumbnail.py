@@ -7,7 +7,9 @@ file's conversion), as the bundle's extraction wrote it: the worker never
 renders or converts a document itself. Without that image (a reused donor or
 identical indexed bytes, which build or extract no bundle, an older parser, a
 failed render) the file shares the key of a file with the same bytes in the
-same workspace only, if one has a thumbnail. Uploaded images go through Pillow. The 200 px wide WebP
+same workspace only, if one has a thumbnail. Uploaded images go through
+Pillow in the sandboxed decode helper (ingest/decode.py), as does the
+bundle's page image. The 200 px wide WebP
 is stored content-addressed at ``thumbs/{file id}/{sha256}.webp`` and
 ``files.thumbnail_key`` points at it; the blob triggers release the key it
 replaces. Text sources store their first 600 characters in ``files.preview``
@@ -24,25 +26,19 @@ openwiki/thumbnails.md.
 from __future__ import annotations
 
 import hashlib
-import io
 import logging
 import time
-import warnings
 from pathlib import Path
 
 from ..config import cfg
 from ..store import blobstore, db
+from . import decode
 from . import plan as ingest_plan
 
 log = logging.getLogger("capy.thumbnail")
 
-WIDTH = 200
-WEBP_QUALITY = 60
 TEXT_PREVIEW_CHARS = 600
 CACHE_CONTROL = "public, max-age=31536000, immutable"
-# Cards crop pages from the top; a page taller than this is cut there (the
-# parser's page1.png follows the same rule, parser/odl/capture.py).
-_MAX_HEIGHT = 2 * WIDTH
 
 
 def capture_source(
@@ -100,61 +96,12 @@ def render(
     delimited text), a parse without a page image, or an image format this
     Pillow cannot decode."""
     if plan.route == ingest_plan.DOCUMENT_PARSE:
-        return None if page_image is None else bundled_page(page_image)
+        return None if page_image is None else decode.page_webp(page_image)
     if plan.route == ingest_plan.IMAGE_CAPTION:
-        return render_image(source, plan.format)
+        return decode.thumbnail_webp(
+            source, plan.format, max_pixels=cfg.image_max_pixels
+        )
     return None
-
-
-def bundled_page(png: bytes) -> bytes:
-    """The parser's page image as the stored WebP. Its header is checked
-    before any pixel is decoded: a PNG within the thumbnail's own size."""
-    from PIL import Image
-
-    with Image.open(io.BytesIO(png)) as image:
-        if image.format != "PNG" or image.width > WIDTH or image.height > _MAX_HEIGHT:
-            raise ValueError(f"bundled page image is {image.format} {image.size}")
-        return _webp(image.convert("RGB"))
-
-
-def render_image(source: Path, format_name: str) -> bytes | None:
-    """The first frame, oriented, shrunk, then flattened on white like
-    captioning does."""
-    from PIL import Image, ImageOps
-
-    # SVG has no rasterizer here, and HEIC only with a Pillow plugin.
-    if f".{format_name}" not in Image.registered_extensions():
-        return None
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", Image.DecompressionBombWarning)
-        with Image.open(source) as opened:
-            width, height = opened.size
-            if width * height <= 0 or width * height > cfg.image_max_pixels:
-                raise ValueError("image exceeds the decoded-pixel limit")
-            # JPEG decodes at a reduced scale straight away.
-            opened.draft("RGB", (2 * WIDTH, 2 * WIDTH))
-            frame = ImageOps.exif_transpose(opened)
-    # Shrink first, so the colour conversion and flattening work on the
-    # thumbnail rather than the full image.
-    frame.thumbnail((WIDTH, frame.height), Image.Resampling.LANCZOS)
-    frame = frame.crop((0, 0, frame.width, min(frame.height, _MAX_HEIGHT)))
-    rgba = frame.convert("RGBA")
-    flat = Image.new("RGB", rgba.size, "white")
-    flat.paste(rgba, mask=rgba.getchannel("A"))
-    return _webp(flat)
-
-
-def _webp(image) -> bytes:
-    from PIL import Image
-
-    if image.width > WIDTH:
-        height = max(1, round(image.height * WIDTH / image.width))
-        image = image.resize((WIDTH, height), Image.Resampling.LANCZOS)
-    if image.height > _MAX_HEIGHT:
-        image = image.crop((0, 0, image.width, _MAX_HEIGHT))
-    buffer = io.BytesIO()
-    image.save(buffer, "WEBP", quality=WEBP_QUALITY)
-    return buffer.getvalue()
 
 
 def key_for(file_id: str, data: bytes) -> str:

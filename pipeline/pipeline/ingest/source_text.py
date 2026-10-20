@@ -10,18 +10,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import csv
-import io
-import math
 import mimetypes
 import re
-import warnings
 from collections.abc import Iterator
 from pathlib import Path
 
 from ..config import cfg
-from ..jobs import InputLimitError, RetryableError, TerminalError
+from ..jobs import InputLimitError, RetryableError
 from ..prompts.captioning import IMAGE_PROMPT
 from ..retrieval.chunking import estimate_tokens
+from . import decode
 
 # csv.reader streams rows, but it builds a whole row before its width can be
 # read: one 30 MiB row of short fields peaks above 500 MiB, and the widest row
@@ -66,82 +64,23 @@ def _raw_data_url(path: Path, name: str) -> str:
     return f"data:{_mime_type(name)};base64,{encoded}"
 
 
-def _frame_indices(frame_count: int, maximum: int = 9) -> list[int]:
-    if frame_count <= maximum:
-        return list(range(frame_count))
-    return sorted(
-        {
-            min(frame_count - 1, round(index * (frame_count - 1) / (maximum - 1)))
-            for index in range(maximum)
-        }
-    )
-
-
 def _encode_image(path: Path, name: str) -> str:
-    """Normalize supported raster images; retain SVG as its original payload."""
+    """Normalize supported raster images (decoded by the sandboxed helper,
+    ingest/decode.py); retain SVG as its original payload."""
     if extension(name) == "svg":
         return _raw_data_url(path, name)
-
-    from PIL import Image, ImageOps, UnidentifiedImageError
-
     try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(path) as source:
-                frame_count = int(getattr(source, "n_frames", 1) or 1)
-                frames = []
-                total_pixels = 0
-                for index in _frame_indices(frame_count):
-                    source.seek(index)
-                    width, height = source.size
-                    pixels = width * height
-                    if pixels <= 0 or pixels > cfg.image_max_pixels:
-                        raise InputLimitError(
-                            "image_pixel_limit", "image exceeds the decoded-pixel limit"
-                        )
-                    total_pixels += pixels
-                    if total_pixels > cfg.image_max_pixels:
-                        raise InputLimitError(
-                            "image_pixel_limit",
-                            "animated image exceeds the decoded-pixel limit",
-                        )
-                    frame = ImageOps.exif_transpose(source.copy()).convert("RGBA")
-                    frame.thumbnail(
-                        (cfg.caption_max_edge, cfg.caption_max_edge),
-                        Image.Resampling.LANCZOS,
-                    )
-                    flattened = Image.new("RGB", frame.size, "white")
-                    flattened.paste(frame, mask=frame.getchannel("A"))
-                    frames.append(flattened)
-    except TerminalError:
-        raise
-    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
-        raise InputLimitError(
-            "image_pixel_limit", "image exceeds the decoded-pixel limit"
-        ) from exc
-    except (OSError, UnidentifiedImageError, ValueError):
+        jpeg = decode.caption_jpeg(
+            path, max_edge=cfg.caption_max_edge, max_pixels=cfg.image_max_pixels
+        )
+    except decode.PixelLimit as exc:
+        raise InputLimitError("image_pixel_limit", str(exc)) from exc
+    if jpeg is None:
         # Some provider-supported formats may not be compiled into the local
         # Pillow build. Sending their original MIME payload preserves support
         # without routing the source through the Go gateway.
         return _raw_data_url(path, name)
-
-    if len(frames) == 1:
-        output = frames[0]
-    else:
-        columns = min(3, len(frames))
-        rows = math.ceil(len(frames) / columns)
-        cell_width = max(frame.width for frame in frames)
-        cell_height = max(frame.height for frame in frames)
-        output = Image.new("RGB", (cell_width * columns, cell_height * rows), "white")
-        for index, frame in enumerate(frames):
-            x = (index % columns) * cell_width + (cell_width - frame.width) // 2
-            y = (index // columns) * cell_height + (cell_height - frame.height) // 2
-            output.paste(frame, (x, y))
-
-    buffer = io.BytesIO()
-    output.save(buffer, format="JPEG", quality=85, optimize=True)
-    encoded = base64.b64encode(buffer.getvalue()).decode()
-    return f"data:image/jpeg;base64,{encoded}"
+    return f"data:image/jpeg;base64,{base64.b64encode(jpeg).decode()}"
 
 
 async def caption_image_source(

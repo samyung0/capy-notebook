@@ -48,13 +48,24 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY pipeline ./pipeline
 COPY server/internal/models/elitellm_providers.json ./server/internal/models/elitellm_providers.json
 COPY server/internal/sourceupload/text_extensions.json ./server/internal/sourceupload/text_extensions.json
+# The ingest host clones the build context under umask 077, and the ingest
+# services run as capy-ingest (below), so the sources must be readable.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+    chmod -R a+rX /app/pipeline /app/server \
+    && uv sync --frozen --no-dev --no-editable
+# The ingest services' user (the ingest compose files set it): not root, in
+# the parse spool's group (the parser's gid). Its decoders run as children
+# with this uid under pipeline/capy_sandbox.py.
+RUN groupadd --gid 10001 capy-spool \
+    && useradd --uid 10002 --gid 10001 --no-create-home --home-dir /nonexistent \
+        --shell /usr/sbin/nologin capy-ingest
 COPY --from=ppt-master /opt/ppt-master /opt/ppt-master
 # Retrieval diagnostics run inside this image via `docker compose exec`. The
 # library writer (knowledge_base_library.py) stays out (.dockerignore).
-COPY bench/rag/scripts ./bench/rag/scripts
-COPY bench/rag/fixtures ./bench/rag/fixtures
+# Readable by the ingest user too: the host clones under umask 077.
+COPY --chmod=644 bench/rag/scripts ./bench/rag/scripts
+COPY --chmod=644 bench/rag/fixtures ./bench/rag/fixtures
+RUN find /app/bench -type d -exec chmod 755 {} +
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/pipeline"
 

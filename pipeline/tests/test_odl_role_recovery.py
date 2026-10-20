@@ -10,9 +10,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "parser"))
 from odl.headings import correct_roles, insert_outline_headings, promote_capitals
 
+from pipeline.ingest import decode
 from pipeline.retrieval.chunking import chunk_content_list
-from pipeline.retrieval.headings import retain_headings
+from pipeline.retrieval.headings import retain_headings as _retain_verified
 from pipeline.retrieval.packing import pack_blocks
+
+
+def retain_headings(blocks, pdf, chunks):
+    evidence = decode.page_evidence(pdf, blocks)
+    return _retain_verified(blocks, chunks, verified=set(evidence["visible_headings"]))
 
 
 @pytest.mark.parametrize("prefix", ["II", "iv.", "A.", "B)", "1)", "(2)", "(iii)"])
