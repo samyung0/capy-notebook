@@ -861,10 +861,10 @@ token.
 Same values whether Coolify, bare compose, or A records. Coolify domain fields
 are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `deploy/.env.example` (Clerk, Stripe, Sentry DSNs, provider keys).
-`APP_ENV` is required: the gateway refuses to start without it (Epo
-2026-10-20). `deploy/docker-compose.prod.yml` sets `production` (UAT included),
-`deploy/docker-compose.e2e.yml` sets `e2e`, and local setup sets `development`
-(`deploy/docker-compose.yml`, `deploy/.env.example`).
+`APP_ENV` is required: the gateway and Ops refuse to start without it (Epo
+2026-10-20). `deploy/docker-compose.prod.yml` and `deploy/docker-compose.ops.yml`
+set `production` (UAT included), `deploy/docker-compose.e2e.yml` sets `e2e`, and
+local setup sets `development` (`deploy/docker-compose.yml`, `deploy/.env.example`).
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
 120/minute editor class are not env-overridable. Configure model capacity in the
 Ops model catalog before allowing platform model calls. Each environment stores
