@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import {
   type CSSProperties,
+  Fragment,
   type ReactNode,
   useCallback,
   useState,
@@ -12,6 +13,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from './DropdownMenu';
 import { Icon, type IconName } from './Icon';
@@ -41,6 +44,8 @@ const menuItemVariants = cva(
     },
     variants: {
       tone: {
+        accent:
+          'text-tint-accent-1-fg hover:bg-overlay-hover data-[highlighted]:bg-overlay-hover',
         danger:
           'text-tint-error-fg hover:bg-tint-error data-[highlighted]:bg-tint-error',
         default:
@@ -53,6 +58,8 @@ const menuItemVariants = cva(
 );
 
 export interface MenuItem {
+  /** The item a menu leads with, in the accent colour (Invite member). */
+  accent?: boolean;
   /** The current choice of a view switcher: a check at the row's end. */
   checked?: boolean;
   closeOnSelect?: boolean;
@@ -61,9 +68,13 @@ export interface MenuItem {
   disabled?: boolean;
   /** An unread dot on the icon, like IconButton's. */
   dot?: boolean;
+  /** Starts a titled section: a small muted label above the item. */
+  heading?: string;
   icon?: IconName;
   label: string;
   onClick?: () => void;
+  /** A line above the item, between two groups. */
+  separated?: boolean;
   /** Something needs the user's attention, short of danger. */
   warning?: boolean;
 }
@@ -198,44 +209,53 @@ export function Menu({
       >
         <div data-slot="menu-items">
           {items.map((it, i) => (
-            <DropdownMenuItem
-              className={cn(
-                menuItemVariants({
-                  tone: it.danger
-                    ? 'danger'
-                    : it.warning
-                      ? 'warning'
-                      : 'default',
-                }),
-                itemClassName
+            <Fragment key={i}>
+              {it.separated && (
+                <DropdownMenuSeparator className="mx-1.5 my-1.5 bg-overlay-line" />
               )}
-              disabled={it.disabled}
-              key={i}
-              onSelect={(event) => {
-                if (it.closeOnSelect === false) event.preventDefault();
-                it.onClick?.();
-              }}
-            >
-              {it.icon && (
-                <span className="relative inline-flex shrink-0 -translate-y-px">
-                  <Icon name={it.icon} />
-                  {it.dot && (
-                    <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-overlay" />
-                  )}
-                </span>
+              {it.heading && (
+                <DropdownMenuLabel>{it.heading}</DropdownMenuLabel>
               )}
-              <span className="flex flex-col items-start">
-                <span>{it.label}</span>
-                {it.description && (
-                  <span className="font-normal text-fg-muted text-xs">
-                    {it.description}
+              <DropdownMenuItem
+                className={cn(
+                  menuItemVariants({
+                    tone: it.danger
+                      ? 'danger'
+                      : it.warning
+                        ? 'warning'
+                        : it.accent
+                          ? 'accent'
+                          : 'default',
+                  }),
+                  itemClassName
+                )}
+                disabled={it.disabled}
+                onSelect={(event) => {
+                  if (it.closeOnSelect === false) event.preventDefault();
+                  it.onClick?.();
+                }}
+              >
+                {it.icon && (
+                  <span className="relative inline-flex shrink-0 -translate-y-px">
+                    <Icon name={it.icon} />
+                    {it.dot && (
+                      <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-overlay" />
+                    )}
                   </span>
                 )}
-              </span>
-              {it.checked && (
-                <Icon className="ml-auto -translate-y-px" name="check" />
-              )}
-            </DropdownMenuItem>
+                <span className="flex flex-col items-start">
+                  <span>{it.label}</span>
+                  {it.description && (
+                    <span className="font-normal text-fg-muted text-xs">
+                      {it.description}
+                    </span>
+                  )}
+                </span>
+                {it.checked && (
+                  <Icon className="ml-auto -translate-y-px" name="check" />
+                )}
+              </DropdownMenuItem>
+            </Fragment>
           ))}
         </div>
       </DropdownMenuContent>

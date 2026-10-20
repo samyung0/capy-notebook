@@ -13,6 +13,7 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { ChatBubbleIcon } from './ChatBubbleIcon';
 
 /** The chat dock and the chat page share this name, so a view transition
  * grows one into the other. */
@@ -36,10 +37,11 @@ const BUTTON = 52;
 const SETTLE_MS = 600;
 
 /**
- * Chat on the file page below lg. Phones, and Office files at any width,
- * show a round button that morphs into a one-line field (the Files panel
- * plus's morph); wider screens show the field itself. Focusing the field
- * leaves the page as it is; sending is the caller's (it opens the chat page).
+ * Chat on the file page below lg. Below md, and on Office files at any width,
+ * a round button morphs into a one-line field (the Files panel plus's
+ * morph); from md the field shows itself. Focusing the field leaves the page
+ * as it is (the keyboard overlays it, see useKeyboardHeight); sending is the
+ * caller's (it opens the chat page).
  */
 export function ChatDock({
   text,
@@ -63,8 +65,8 @@ export function ChatDock({
   /** Opens the chat page with its history. */
   onOpenHistory: () => void;
 }) {
-  const sm = useMediaQuery('(min-width: 640px)');
-  const fieldOnly = sm && !office;
+  const md = useMediaQuery('(min-width: 768px)');
+  const fieldOnly = md && !office;
   const [expanded, setExpanded] = useState(false);
   const open = fieldOnly || expanded;
   const draft = text.trim().length > 0;
@@ -157,11 +159,15 @@ export function ChatDock({
 
   return (
     <div
-      className="motion-chat-dock-row pointer-events-none absolute inset-x-4 bottom-[calc(--spacing(4)+var(--keyboard-inset,0px))] data-[office=true]:bottom-[calc(var(--office-inset)+8px)]"
+      className="motion-chat-dock-row pointer-events-none absolute inset-x-4 bottom-4 data-[office=true]:bottom-[calc(var(--office-inset)+8px)] data-[open=true]:bottom-[calc(--spacing(4)+var(--keyboard-inset,0px))]"
       // The open field keeps the button's gap from the screen's edge on every
       // file, lifted above the keyboard that covers the page; only the button
-      // rises above an Office file's bottom chrome.
+      // rises above an Office file's bottom chrome. Folding drops the lift at
+      // once rather than when the closing keyboard reports its height, so the
+      // dock moves down while it narrows, not after.
+      data-keyboard-overlay
       data-office={office && !open}
+      data-open={open}
       data-workspace-chat-dock
     >
       <div
@@ -202,7 +208,7 @@ export function ChatDock({
         )}
         <div
           className={cn(
-            'motion-chat-dock pointer-events-auto absolute right-0 bottom-0 h-full overflow-hidden bg-overlay shadow-pop ring-1 ring-overlay-line focus-within:ring-action-accent',
+            'motion-chat-dock pointer-events-auto absolute right-0 bottom-0 h-full overflow-hidden shadow-pop ring-1 ring-overlay-line focus-within:ring-action-accent',
             CHAT_DOCK_TRANSITION
           )}
           data-open={open}
@@ -219,16 +225,18 @@ export function ChatDock({
           {!fieldOnly && (
             <button
               aria-label={m.workspace_tab_chat()}
-              className="absolute right-0 bottom-0 grid size-13 place-items-center text-solid-accent-1"
+              // The purple circle is the surface's own (motion-chat-dock), so it
+              // turns into the field instead of fading over it.
+              className="absolute right-0 bottom-0 grid size-13 place-items-center rounded-full"
               data-chat-dock-trigger
               data-workspace-chat-button
               inert={open}
               onClick={expand}
               type="button"
             >
-              <Icon name="message" size={22} />
+              <ChatBubbleIcon />
               {draft && (
-                <span className="absolute top-3 right-3 size-2.5 rounded-full bg-solid-accent-1 ring-2 ring-overlay" />
+                <span className="absolute top-2.5 right-2.5 size-2.5 rounded-full bg-white ring-2 ring-[#3f3188]" />
               )}
             </button>
           )}
@@ -239,7 +247,7 @@ export function ChatDock({
             ref={fieldBox}
           >
             <IconButton
-              className="p-2.5 text-fg-muted"
+              className="-translate-y-px p-2.5 text-fg-muted"
               icon="clock"
               label={m.chat_history()}
               onClick={onOpenHistory}

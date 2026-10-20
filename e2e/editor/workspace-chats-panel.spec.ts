@@ -9,6 +9,53 @@ async function openWorkspace(page: Page, width: number) {
   await page.goto('/workspaces/ws_bio');
 }
 
+test.describe('with the default layout', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('the right panel starts closed; a chat row and the header toggle open it', async ({
+    page,
+  }) => {
+    await openWorkspace(page, 1600);
+    const left = leftPanel(page);
+    await expect(left.getByText(m.chat_group_pinned())).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.locator('#rail')).toBeHidden();
+
+    await left.getByRole('button', { name: 'What is a cell?' }).click();
+    await expect(page.locator('[data-panel-title]').last()).toHaveText(
+      m.workspace_tab_chat()
+    );
+    await expect(page.getByText('A cell is the basic')).toBeVisible();
+
+    await page
+      .getByRole('button', { name: m.workspace_close_right_panel() })
+      .click();
+    await expect(page.locator('#rail')).toBeHidden();
+    await page.reload();
+    await expect(
+      page.getByRole('button', { name: m.workspace_open_right_panel() })
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('#rail')).toBeHidden();
+  });
+
+  test('the members menu invites from the Sharing tab', async ({ page }) => {
+    await openWorkspace(page, 1600);
+    await leftPanel(page)
+      .getByRole('button', { name: m.workspace_account_menu() })
+      .click({ timeout: 60_000 });
+    await page
+      .getByRole('menuitem', { name: m.workspace_invite_member() })
+      .click();
+    await expect(page).toHaveURL(/settings=sharing/);
+    await expect(
+      page
+        .getByRole('dialog', { name: m.workspace_settings() })
+        .getByRole('tab', { name: m.workspace_sharing(), selected: true })
+    ).toBeVisible();
+  });
+});
+
 test('the left panel lists chats, opens them in the right panel and archives them', async ({
   page,
 }) => {
@@ -20,7 +67,6 @@ test('the left panel lists chats, opens them in the right panel and archives the
   await expect(
     left.getByRole('button', { name: 'Exam plan for the cell unit' })
   ).toBeVisible();
-  await expect(left.getByRole('button', { name: /Kate Malone/ })).toBeVisible();
 
   await left.getByRole('button', { name: 'What is a cell?' }).click();
   await expect(page.locator('[data-panel-title]').last()).toHaveText(
