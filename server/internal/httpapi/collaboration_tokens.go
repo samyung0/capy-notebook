@@ -77,15 +77,16 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 }
 
 // claimName is the name co-editors see on an avatar and a cursor label,
-// without bidi controls or zero-width characters, which could make one name
-// read as another's.
+// without bidi controls or the zero-width space, word joiner and BOM, which
+// could make one name read as another's. The zero-width joiner and non-joiner
+// stay: Persian names and emoji sequences need them.
 func claimName(name string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.Is(unicode.Bidi_Control, r) {
 			return -1
 		}
 		switch r {
-		case '\u200b', '\u200c', '\u200d', '\u2060', '\ufeff':
+		case '\u200b', '\u2060', '\ufeff':
 			return -1
 		}
 		return r

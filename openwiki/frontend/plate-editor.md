@@ -242,8 +242,9 @@ Developer Epo decided the avatar group and verified cursor labels on
 2026-10-20, and for privacy the same day that the group has no tooltip and
 nothing about a device reaches anyone. The collaboration token names who a
 connection is by the user's display name and avatar alone
-(`collaboration_tokens.go`): the name without bidi controls or zero-width
-characters (`claimName`) and cut to the 60-character user name limit, the
+(`collaboration_tokens.go`): the name without bidi controls, the zero-width
+space, word joiner or BOM (`claimName`; the joiner and non-joiner stay, for
+Persian names and emoji sequences) and cut to the 60-character user name limit, the
 avatar left out past 1,024 bytes (co-editors then see initials). The server
 keeps them in each channel's `Context` (`auth::Identity`).
 
