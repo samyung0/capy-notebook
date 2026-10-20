@@ -38,11 +38,13 @@ class GenerateNoContent(ValueError):
 
 class PendingSourceContextTooLarge(ValueError):
     """Generation cannot include the complete current source evidence. Carries
-    the edited files, so the owner can process exactly those."""
+    the edited files, so the owner can process exactly those, and the edited
+    notes, which wait for their reindex."""
 
-    def __init__(self, file_ids: list[str]):
+    def __init__(self, file_ids: list[str], material_ids: list[str]):
         super().__init__(pending.NOTICE)
         self.file_ids = file_ids
+        self.material_ids = material_ids
 
 
 async def generation_context(
@@ -70,9 +72,10 @@ async def generation_context(
         - compact.request_context(messages(""), model).total_tokens
     )
     if remaining < 0:
-        if changes.files:
+        if changes.pending:
             raise PendingSourceContextTooLarge(
-                [str(file["fileId"]) for file in changes.files]
+                [str(file["fileId"]) for file in changes.files],
+                [str(note["materialId"]) for note in changes.notes],
             )
         raise compact.ContextTooLarge(
             "Generation instructions exceed the selected model's input limit."
@@ -82,7 +85,7 @@ async def generation_context(
         file_ids=file_ids,
         budget=remaining,
     )
-    if not passages and not changes.files:
+    if not passages and not (changes.files or changes.notes):
         raise GenerateNoContent("The requested scope has no source content.")
     if not compact.fits_request(messages(context), model):
         # Passage estimates bound the read. Select the final prefix using the
@@ -96,7 +99,7 @@ async def generation_context(
             else:
                 high = middle - 1
         context, passages = "\n\n".join(pieces[:low]), passages[:low]
-        if not passages and not changes.files:
+        if not passages and not (changes.files or changes.notes):
             raise compact.ContextTooLarge(
                 "Source passages exceed the selected model's input limit."
             )

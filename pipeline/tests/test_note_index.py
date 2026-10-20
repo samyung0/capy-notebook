@@ -37,6 +37,14 @@ def _text(**changed: str) -> str:
     return "\n\n".join(f"# {name}\n\n{body}" for name, body in sections.items())
 
 
+def _blocks(text: str) -> list[dict]:
+    """Go's MaterialIndexText.Blocks for a text: one block per paragraph."""
+    return [
+        {"id": f"p{i}", "text": part, "kind": "p"}
+        for i, part in enumerate(text.split("\n\n"))
+    ]
+
+
 def _rows(workspace, sql: str, params: tuple = ()) -> list[tuple]:
     with workspace._connect() as conn:
         return conn.execute(sql, params).fetchall()
@@ -167,7 +175,9 @@ def provider(workspace, monkeypatch):
 
     monkeypatch.setattr(elitellm, "embed_batch", embed_batch)
     monkeypatch.setattr(
-        worker, "_fetch_material_text", lambda *_a: {"text": state["text"]}
+        worker,
+        "_fetch_material_text",
+        lambda *_a: {"text": state["text"], "blocks": _blocks(state["text"])},
     )
     yield state
     if added:
@@ -187,10 +197,17 @@ def _alias(workspace, material_id: str) -> tuple[str, str] | None:
     return rows[0] if rows else None
 
 
+def _baseline(workspace, material_id: str) -> list[dict] | None:
+    return _rows(
+        workspace, "SELECT indexed_blocks FROM materials WHERE id=%s", (material_id,)
+    )[0][0]
+
+
 def _note_state(workspace, material_id: str) -> tuple:
     return _rows(
         workspace,
-        "SELECT index_job_id, index_error, index_dirty_at IS NOT NULL FROM materials WHERE id=%s",
+        "SELECT index_job_id, index_error, index_dirty_at IS NOT NULL, index_failures "
+        "FROM materials WHERE id=%s",
         (material_id,),
     )[0]
 
@@ -244,7 +261,7 @@ async def test_a_note_job_indexes_through_the_real_boundaries(workspace, provide
     assert _rows(
         workspace, "SELECT status FROM provider_sessions WHERE id=%s", (reservation,)
     ) == [("settled",)]
-    assert _note_state(workspace, material_id) == (None, None, False)
+    assert _note_state(workspace, material_id) == (None, None, False, 0)
 
 
 async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
@@ -253,6 +270,7 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
     material_id = _note(workspace)
     await _run(workspace, _admit(workspace, material_id))
     first, _ = _alias(workspace, material_id)
+    assert _baseline(workspace, material_id) == _blocks(_text())
     provider["inputs"].clear()
 
     # Edit one section. Until the new content is ready the old one still
@@ -262,11 +280,14 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
 
     async def during():
         seen_during.append(_alias(workspace, material_id))
+        seen_during.append(_baseline(workspace, material_id))
 
     provider["during"] = during
     job = await _run(workspace, _admit(workspace, material_id))
 
-    assert seen_during == [(first, "ready")]
+    # The baseline Go diffs pending note changes against moves with the alias.
+    assert seen_during == [(first, "ready"), _blocks(_text())]
+    assert _baseline(workspace, material_id) == _blocks(provider["text"])
     assert len(provider["inputs"]) == 1 and "Xylem" in provider["inputs"][0]
     second, status = _alias(workspace, material_id)
     assert second != first and status == "ready"
@@ -279,7 +300,8 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
         (job["attemptId"],),
     ) == [(3, "1")]
 
-    # A failed job keeps the published index and parks the note until an edit.
+    # A failed job keeps the published index and leaves the note due: it is
+    # retried at most twice before it is parked (Epo 2026-10-20).
     provider["text"] = _text(Light="Chlorophyll reflects green light.")
 
     async def refuse():
@@ -293,17 +315,25 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
         ("failed",)
     ]
     assert _alias(workspace, material_id) == (second, "ready")
+    assert _baseline(workspace, material_id) == _blocks(
+        _text(Transport="Xylem carries water up from the roots.")
+    )
     assert _rows(
         workspace,
         "SELECT count(*) FROM rag_contents WHERE workspace_id=%s AND status='processing'",
         (workspace.id,),
     ) == [(0,)]
-    assert _note_state(workspace, material_id) == (None, "embedding refused", True)
+    assert _note_state(workspace, material_id) == (None, None, True, 1)
 
 
 def test_the_lease_reaper_parks_a_note_whose_worker_died(workspace):
+    """The third failed job parks the note until its next edit."""
     material_id = _note(workspace)
     job_id = _admit(workspace, material_id)
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE materials SET index_failures=2 WHERE id=%s", (material_id,)
+        )
     _claim(workspace, job_id)
     with workspace._connect() as conn:
         conn.execute(
@@ -319,7 +349,7 @@ def test_the_lease_reaper_parks_a_note_whose_worker_died(workspace):
     assert _rows(workspace, "SELECT status FROM jobs WHERE id=%s", (job_id,)) == [
         ("failed",)
     ]
-    assert _note_state(workspace, material_id) == (None, "lease expired", True)
+    assert _note_state(workspace, material_id) == (None, "lease expired", True, 3)
 
 
 def test_a_note_job_stops_while_the_notes_payer_is_deleting(workspace):

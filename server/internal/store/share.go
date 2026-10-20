@@ -1573,6 +1573,18 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, dstID string, fi
 			return nil, err
 		}
 	}
+	// A copied note index keeps the blocks it was chunked from: the baseline
+	// the note's pending changes are measured against.
+	if len(oldMaterials) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE materials m SET indexed_blocks=src.indexed_blocks
+			FROM unnest($1::text[], $2::text[]) AS h(old_id, new_id)
+			JOIN materials src ON src.id = h.old_id
+			WHERE m.id = h.new_id
+			  AND EXISTS (SELECT 1 FROM rag_material_contents mc WHERE mc.material_id = m.id)`,
+			oldMaterials, newMaterials); err != nil {
+			return nil, err
+		}
+	}
 	return indexed, nil
 }
 

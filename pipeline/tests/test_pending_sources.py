@@ -319,3 +319,153 @@ async def test_a_source_image_with_another_hash_or_no_render_is_refused(monkeypa
         assert result.refused and result.error_code == code
         assert reason in result.text()
         assert not ctx.pending_images and not ctx.captures
+
+
+def _note_change(kind="text", block="p2"):
+    change = {"id": "n_1", "kind": kind, "operation": "replace", "blockId": block}
+    if kind == "data":
+        change["label"] = 'chart "Rain": 40 of 104 cells changed'
+    else:
+        change.update(label="", before="cells", after="nuclei")
+    return {"materialId": "m_1", "title": "Lecture", "revision": 4, "changes": [change]}
+
+
+@pytest.fixture
+def gateway(monkeypatch):
+    """Go's note-changes endpoint and the notes' published index identities."""
+    state = {"notes": [_note_change()], "posts": [], "identities": [("m_1", "rgc_a")]}
+
+    class Response:
+        def __init__(self, body):
+            self.headers = {}
+            self.body = body
+
+        def raise_for_status(self):
+            if isinstance(self.body, Exception):
+                raise self.body
+
+        def json(self):
+            return self.body
+
+    def post(url, **kwargs):
+        state["posts"].append((url, kwargs["json"]))
+        if url.endswith("/note-changes"):
+            return Response(state["notes"])
+        return Response({"before": "| r1 | 1 |", "after": "| r1 | 9 |"})
+
+    async def snapshot(*_args, **_kwargs):
+        return []
+
+    async def identities(_workspace_id, ids):
+        rows = state["identities"]
+        return [row for row in rows if ids is None or row[0] in ids]
+
+    monkeypatch.setattr(pending.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(pending.cfg, "pipeline_secret", "test")
+    monkeypatch.setattr(pending.requests, "post", post)
+    monkeypatch.setattr(pending, "_snapshot", snapshot)
+    monkeypatch.setattr(pending, "_note_identities", identities)
+    return state
+
+
+async def test_note_changes_ride_with_the_turn_and_a_new_note_index_invalidates_them(
+    gateway,
+):
+    gateway["notes"] = {"notes": [_note_change()]}
+    sources = await pending.load("ws", ["m_1"])
+    assert gateway["posts"] == [
+        (
+            "http://gateway/api/internal/note-changes",
+            {"workspaceId": "ws", "materialIds": ["m_1"]},
+        )
+    ]
+    message = sources.message()
+    assert sources.pending and '"blockId":"p2"' in message["content"]
+    assert "nuclei" in message["content"] and pending.NOTICE not in message["content"]
+    await sources.validate()
+    gateway["identities"] = [("m_1", "rgc_b")]
+    with pytest.raises(pending.SourceChanged):
+        await sources.validate()
+
+
+async def test_an_unreadable_note_change_says_sources_may_be_outdated(gateway):
+    gateway["notes"] = pending.requests.HTTPError("502")
+    sources = await pending.load("ws")
+    assert sources.notes_unread and not sources.notes
+    assert sources.message()["content"] == pending.NOTICE
+
+
+async def test_a_note_data_placeholder_resolves_to_its_block_text(gateway, monkeypatch):
+    from pipeline.retrieval import tools
+
+    gateway["notes"] = {"notes": [_note_change("data", "ch")]}
+    sources = await pending.load("ws")
+    ctx = tools.ToolContext(
+        workspace_id="ws",
+        user_id="reader",
+        pending_sources=sources,
+        operations=frozenset({"source.read", "material.read"}),
+    )
+    monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
+    assert tools._offered(tools.REGISTRY["resolve_source_change"], ctx)
+
+    refused = await tools._resolve_source_change(
+        {"material_id": "m_1", "block_id": "p9"}, ctx
+    )
+    assert refused.refused and len(gateway["posts"]) == 1
+    result = await tools._resolve_source_change(
+        {"material_id": "m_1", "block_id": "ch"}, ctx
+    )
+    assert not result.refused and "| r1 | 9 |" in result.text()
+    assert gateway["posts"][-1] == (
+        "http://gateway/api/internal/note-changes/resolve",
+        {"workspaceId": "ws", "userId": "reader", "materialId": "m_1", "blockId": "ch"},
+    )
+
+
+async def test_only_documents_read_are_validated_and_resolvable(monkeypatch):
+    """Epo 2026-10-20: changes pass on only for documents read this turn, so
+    only those must still pair with their published index."""
+    published = {"f_1": "rgc_a", "f_2": "rgc_a"}
+
+    async def snapshot(_workspace_id, file_ids, *, evidence=True):
+        assert not evidence
+        return [
+            {
+                "fileId": f,
+                "revision": 1,
+                "content_id": published[f],
+                "epoch": 1,
+                "indexedCheckpoint": 1,
+            }
+            for f in sorted(published)
+            if file_ids is None or f in file_ids
+        ]
+
+    monkeypatch.setattr(pending, "_snapshot", snapshot)
+    sources = _sources()
+    sources._workspace_id = "ws"
+    sources._baseline = pending._identities(await snapshot("ws", None, evidence=False))
+    sources.notes = [_note_change("data", "ch")]
+    sources.read_ids = set()
+    assert sources.message() is None and not sources.pending
+
+    published["f_2"] = "rgc_b"  # never read: not checked
+    await sources.validate()
+    with pytest.raises(ValueError, match="unavailable"):
+        await pending.resolve_note(
+            sources=sources,
+            workspace_id="ws",
+            user_id="u",
+            material_id="m_1",
+            block_id="ch",
+        )
+    sources.read("f_1")
+    await sources.validate()
+    assert "latest exact source" in sources.message()["content"]
+    assert sources.event(False)["fileIds"] == ["f_1"]
+    sources.read("f_2")  # read, but no changes passed on: not checked
+    await sources.validate()
+    published["f_1"] = "rgc_b"
+    with pytest.raises(pending.SourceChanged):
+        await sources.validate()
