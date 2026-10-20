@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -276,6 +277,72 @@ def test_a_child_past_its_output_cap_is_killed_and_refused() -> None:
     assert completed.returncode == 0
     assert len(completed.stderr) == capy_sandbox.STDERR_TAIL
     assert completed.stderr.endswith(b"END")
+
+
+def test_output_just_past_the_cap_is_refused_however_late_it_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """(security regression: S2 decode answers) A child that writes just past
+    the cap and exits at once, before the parent has read its pipe, is still
+    refused: the cap is checked once its output is all in."""
+    read = os.read
+    readers: set[int] = set()
+
+    def late(descriptor: int, size: int) -> bytes:
+        # Each reader thread's first read comes well after the child exited.
+        if threading.current_thread() is not threading.main_thread():
+            if threading.get_ident() not in readers:
+                readers.add(threading.get_ident())
+                time.sleep(1.5)
+        return read(descriptor, size)
+
+    monkeypatch.setattr(capy_sandbox.os, "read", late)
+    with pytest.raises(capy_sandbox.OutputLimit):
+        capy_sandbox.run(
+            [sys.executable, "-c", "import sys; sys.stdout.buffer.write(bytes(1025))"],
+            _plain(20),
+            max_output=1024,
+        )
+
+
+class _NoThreads:
+    """capy_sandbox's threading, with threads that cannot start."""
+
+    Event = threading.Event
+
+    class Thread(threading.Thread):
+        def start(self) -> None:
+            raise RuntimeError("can't start new thread")
+
+
+@linux
+def test_a_child_is_killed_when_its_readers_cannot_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the parent cannot start the threads that read a child (its own
+    memory limit, say), it kills the child's group rather than wait on it."""
+    marker = f"capy-nothreads-{uuid.uuid4().hex}"
+    monkeypatch.setattr(capy_sandbox, "threading", _NoThreads)
+    outcome = []
+
+    def call() -> None:
+        try:
+            capy_sandbox.run(
+                [sys.executable, "-c", "import time; time.sleep(60)", marker],
+                _plain(60),
+                max_output=1024,
+            )
+        except RuntimeError as exc:
+            outcome.append(exc)
+
+    caller = threading.Thread(target=call, daemon=True)
+    try:
+        caller.start()
+        caller.join(10)
+        assert not caller.is_alive(), "waited on a child nothing reads"
+        assert outcome and "can't start" in str(outcome[0])
+    finally:
+        _kill(_running(marker))
 
 
 @linux
@@ -622,6 +689,7 @@ def test_a_decode_answer_past_its_cap_is_a_failed_decode(
         ("evidence", b'{"page_texts": [], "visible_headings": [true]}'),
         ("evidence", b'{"page_texts": [], "visible_headings": [], "more": 1}'),
         ("caption", b'{"raw": false}'),
+        ("caption", b'{"limit": "forged\\nlog line"}'),
         ("caption", b'{"jpeg": "not base64!"}'),
         ("thumbnail", b'{"webp": 7}'),
         ("page", b"[]"),
@@ -648,6 +716,36 @@ def test_a_decode_answer_off_its_modes_shape_is_a_failed_decode(
     }
     with pytest.raises(decode.DecodeFailed):
         calls[call]()
+
+
+def test_a_pixel_limit_carries_the_workers_own_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """(security regression: S2 decode answers) The caption helper names only
+    which limit applied; the error carries the worker's fixed message."""
+    for limit, message in decode._PIXEL_LIMITS.items():
+        answer = json.dumps({"limit": limit}).encode()
+        monkeypatch.setattr(
+            decode.capy_sandbox,
+            "run",
+            lambda argv, _policy, answer=answer, **_kwargs: subprocess.CompletedProcess(
+                argv, 0, answer, b""
+            ),
+        )
+        with pytest.raises(decode.PixelLimit) as caught:
+            decode.caption_jpeg(Path("image.png"), max_edge=8, max_pixels=64)
+        assert str(caught.value) == message
+
+
+@linux
+def test_the_caption_helper_answers_the_pixel_limit(tmp_path: Path) -> None:
+    from PIL import Image
+
+    path = tmp_path / "wide.png"
+    Image.new("RGB", (100, 100), "white").save(path)
+
+    with pytest.raises(decode.PixelLimit, match="exceeds the decoded-pixel limit"):
+        decode.caption_jpeg(path, max_edge=8, max_pixels=99)
 
 
 def _blank_png(path: Path, width: int, height: int) -> None:

@@ -939,6 +939,28 @@ async def test_a_deployed_parser_refuses_to_start_without_landlock(
         )
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="prctl is Linux")
+@pytest.mark.asyncio
+async def test_a_parser_whose_work_folder_cannot_hold_the_pipe_refuses_to_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CAPY_PARSE_WORK_DIR too long for LibreOffice's pipe path stops the
+    parser at startup, not at its first Office document."""
+    import ctypes
+
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    monkeypatch.setattr(parser_app, "WORK_DIR", Path("/run/" + "w" * 40))
+    monkeypatch.setattr(parser_app.office.os, "access", lambda _path, _mode: False)
+    try:
+        with pytest.raises(RuntimeError, match="CAPY_PARSE_WORK_DIR"):
+            async with parser_app.lifespan(parser_app.app):
+                pass
+    finally:
+        ctypes.CDLL("libc.so.6").prctl(
+            parser_app.capy_sandbox.PR_SET_DUMPABLE, 1, 0, 0, 0
+        )
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Landlock and seccomp are Linux")
 @pytest.mark.asyncio
 async def test_a_parse_child_reads_only_its_slot_and_holds_no_token(

@@ -90,10 +90,22 @@ def _true(value: object) -> bool:
     return value is True
 
 
+# The limits the caption helper may answer, and the worker's own message for
+# each: the helper's text never reaches an error or a log.
+_PIXEL_LIMITS = {
+    "image": "image exceeds the decoded-pixel limit",
+    "animation": "animated image exceeds the decoded-pixel limit",
+}
+
+
+def _pixel_limit(value: object) -> bool:
+    return type(value) is str and value in _PIXEL_LIMITS
+
+
 # Each mode's possible answers: their keys and what each key holds.
 _ANSWERS = {
     "evidence": ({"page_texts": _texts, "visible_headings": _indices},),
-    "caption": ({"limit": _string}, {"raw": _true}, {"jpeg": _string}),
+    "caption": ({"limit": _pixel_limit}, {"raw": _true}, {"jpeg": _string}),
     "thumbnail": ({"none": _true}, {"webp": _string}),
     "page": ({"webp": _string},),
 }
@@ -153,7 +165,7 @@ def caption_jpeg(path: Path, *, max_edge: int, max_pixels: int) -> bytes | None:
     decode it (the caller sends the original bytes)."""
     answer = _decode("caption", path, max_edge, max_pixels, source=path)
     if "limit" in answer:
-        raise PixelLimit(answer["limit"])
+        raise PixelLimit(_PIXEL_LIMITS[answer["limit"]])
     return None if "raw" in answer else _bytes(answer, "jpeg")
 
 
@@ -287,12 +299,10 @@ def _caption(path: str, max_edge: int, max_pixels: int) -> dict:
                     width, height = source.size
                     pixels = width * height
                     if pixels <= 0 or pixels > max_pixels:
-                        return {"limit": "image exceeds the decoded-pixel limit"}
+                        return {"limit": "image"}
                     total_pixels += pixels
                     if total_pixels > max_pixels:
-                        return {
-                            "limit": "animated image exceeds the decoded-pixel limit"
-                        }
+                        return {"limit": "animation"}
                     frame = ImageOps.exif_transpose(_decoded(source, max_edge))
                     frame = frame.convert("RGBA")
                     frame.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
@@ -300,7 +310,7 @@ def _caption(path: str, max_edge: int, max_pixels: int) -> dict:
                     flattened.paste(frame, mask=frame.getchannel("A"))
                     frames.append(flattened)
     except (Image.DecompressionBombError, Image.DecompressionBombWarning):
-        return {"limit": "image exceeds the decoded-pixel limit"}
+        return {"limit": "image"}
     except (OSError, UnidentifiedImageError, ValueError):
         return {"raw": True}
 

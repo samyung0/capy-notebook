@@ -77,6 +77,8 @@ def test_java_sizes_its_threads_by_the_containers_cpu_quota(
     monkeypatch.setattr(java, "_CPU_MAX", cpu_max)
     if hasattr(os, "sched_getaffinity"):
         available = len(os.sched_getaffinity(0))
+        # No cpu.max (cgroup v1, no CPU controller): the CPUs it may run on.
+        assert java._container_cpus() == available
         cpu_max.write_text("150000 100000\n")
         assert java._container_cpus() == min(2, available)
         cpu_max.write_text("max 100000\n")

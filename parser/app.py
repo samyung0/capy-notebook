@@ -1011,6 +1011,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # A deployed host without Landlock ABI 6 refuses here; local runs say so.
     if not capy_sandbox.landlock_available():
         print("Landlock unavailable: parse children run without it", flush=True)
+    office.check_pipe_path(_slot_dir(PARSE_WORKERS - 1))
     (SHARED_DIR / "sources").mkdir(parents=True, exist_ok=True)
     (SHARED_DIR / "artifacts").mkdir(parents=True, exist_ok=True)
     (SHARED_DIR / "quarantine").mkdir(parents=True, exist_ok=True)
