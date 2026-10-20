@@ -52,6 +52,10 @@ const signIn = {
     signIn.status = result.status ?? 'complete';
     return result;
   },
+  reset: async () => {
+    signIn.status = 'complete';
+    return { error: null };
+  },
   resetPasswordEmailCode: {
     sendCode: action('send-code'),
     submitPassword: action('new-password'),

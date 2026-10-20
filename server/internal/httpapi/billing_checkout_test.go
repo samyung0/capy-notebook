@@ -133,6 +133,34 @@ func TestSubscribeToAnotherPlanExpiresTheOpenCheckout(t *testing.T) {
 	}
 }
 
+// A Checkout that completes between the read and the expire is not recorded
+// expired, and no Checkout for the other plan opens.
+func TestSubscribeToAnotherPlanWhileTheOpenCheckoutCompletes(t *testing.T) {
+	a, f, ctx := checkoutTestAPI(t)
+	if _, err := subscribe(a, ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Stripe expires only an open session; this one completed first.
+	a.stripeExpireCheckout = func(id string) error {
+		s := f.sessions[id]
+		s.Status = "complete"
+		f.sessions[id] = s
+		return nil
+	}
+	a.cfg.StripePricePro = "price_pro_2"
+	if _, err := subscribe(a, ctx); conflictCode(err) != "subscription_exists" {
+		t.Fatalf("subscribe while the open Checkout completes: %v (%s), want subscription_exists", err, conflictCode(err))
+	}
+	var open int
+	if err := a.s.Pool().QueryRow(ctx, `SELECT count(*) FROM stripe_checkout_sessions
+		WHERE user_id=$1 AND status='open'`, auth.UserID(ctx)).Scan(&open); err != nil {
+		t.Fatal(err)
+	}
+	if f.created != 1 || open != 1 {
+		t.Fatalf("created=%d open rows=%d, want the one completed Checkout still open locally", f.created, open)
+	}
+}
+
 // subscription_exists answers only a real subscription.
 func TestSubscribeWithASubscriptionAnswersSubscriptionExists(t *testing.T) {
 	a, f, ctx := checkoutTestAPI(t)

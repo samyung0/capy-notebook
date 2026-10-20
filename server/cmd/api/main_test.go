@@ -53,28 +53,35 @@ func TestValidateAuthConfiguration(t *testing.T) {
 // Security regression (human deployment-runbook and authorization,
 // 2026-10-21): outside development and e2e the gateway refuses to boot without
 // a CORS allowlist, or with Clerk on and no origins for its session tokens'
-// azp (an empty list would accept every azp).
-func TestValidateOriginConfiguration(t *testing.T) {
-	origins := []string{"https://app.test"}
+// azp (an empty list would accept every azp). The azp list is
+// COLLABORATION_ALLOWED_ORIGINS.
+func TestOriginConfiguration(t *testing.T) {
+	const cors, azps = "https://app.test", "https://app.test, https://local.app.test"
 	for _, test := range []struct {
-		name       string
-		appEnv     string
-		clerkOn    bool
-		cors, azps []string
-		wantErr    bool
+		name             string
+		appEnv           string
+		clerkOn          bool
+		corsEnv, azpsEnv string
+		wantErr          bool
 	}{
-		{name: "production configured", appEnv: "production", clerkOn: true, cors: origins, azps: origins},
-		{name: "production without Clerk", appEnv: "production", cors: origins},
+		{name: "production configured", appEnv: "production", clerkOn: true, corsEnv: cors, azpsEnv: azps},
+		{name: "production without Clerk", appEnv: "production", corsEnv: cors},
 		{name: "development without lists", appEnv: "development", clerkOn: true},
 		{name: "e2e without lists", appEnv: "e2e"},
-		{name: "production without CORS", appEnv: "production", clerkOn: true, azps: origins, wantErr: true},
-		{name: "uat without CORS", appEnv: "uat", azps: origins, wantErr: true},
-		{name: "production Clerk without azp origins", appEnv: "production", clerkOn: true, cors: origins, wantErr: true},
+		{name: "production without CORS", appEnv: "production", clerkOn: true, azpsEnv: azps, wantErr: true},
+		{name: "uat without CORS", appEnv: "uat", azpsEnv: azps, wantErr: true},
+		{name: "production Clerk without azp origins", appEnv: "production", clerkOn: true, corsEnv: cors, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateOriginConfiguration(test.appEnv, test.clerkOn, test.cors, test.azps)
+			t.Setenv("CORS_ALLOWED_ORIGINS", test.corsEnv)
+			t.Setenv("COLLABORATION_ALLOWED_ORIGINS", test.azpsEnv)
+			_, parties, err := originConfiguration(test.appEnv, test.clerkOn)
 			if (err != nil) != test.wantErr {
-				t.Fatalf("validateOriginConfiguration() error = %v, wantErr %t", err, test.wantErr)
+				t.Fatalf("originConfiguration() error = %v, wantErr %t", err, test.wantErr)
+			}
+			if test.azpsEnv != "" && !test.wantErr &&
+				strings.Join(parties, ",") != "https://app.test,https://local.app.test" {
+				t.Fatalf("azp origins = %q, want COLLABORATION_ALLOWED_ORIGINS", parties)
 			}
 		})
 	}

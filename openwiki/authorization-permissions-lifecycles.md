@@ -392,7 +392,11 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   and the email; any other row is inert: nothing is sent and it can never be
   accepted. When an account accepts through one address, its other pending rows
   in that workspace stay listed but go inert, since a vanishing row would tell
-  the inviter both addresses are one account.
+  the inviter both addresses are one account. Purging an invitee's account
+  detaches its pending rows the same way: they stay listed, inert, until their
+  own expiry or Cancel. Migration 0100 cleared the pending invites stored
+  before it, since they held the resolved account email rather than the typed
+  address.
 - The emailed invite link's token is minted when the email is sent
   (`MintInviteLink`), so no raw token is ever stored: the outbox payload holds
   only the invite id and the current token hash, and each send rotates the
@@ -934,7 +938,8 @@ returns the same Stripe page; an open one for another plan is expired at
 Stripe, recorded expired, and a new one starts; one Stripe already expired is
 recorded expired and replaced. `subscription_exists` answers only a real
 subscription (or a Checkout Stripe already completed, whose webhook records
-it). A click that meets the first request's Checkout still being created
+it); the open session is read again after the expire, so one that completed in
+between answers `subscription_exists` instead of opening a second Checkout. A click that meets the first request's Checkout still being created
 answers `409 checkout_starting` ("Checkout is still opening").
 
 `over_quota_grace` behaves exactly like an active account at 100%: the lapse
@@ -1086,7 +1091,8 @@ forgot-password reset (which sends the user back to `/sign-in`), and on
 (`secondFactorUrl`). The step is one code field: the authenticator (TOTP) code,
 with a "Use a backup code" switch when backup codes exist; a phone or email
 code only when Clerk reports no authenticator for the user, sent as the step
-opens. Everyone else signs in exactly as before. Enrolment is not built yet:
+opens. "Back to Log In" resets the waiting attempt and returns to the form, so
+a lost device, another account or a stale attempt never strands the user. Everyone else signs in exactly as before. Enrolment is not built yet:
 Clerk's prebuilt profile page is not mounted, so turning MFA on waits for a
 Capy settings UI.
 

@@ -219,8 +219,10 @@ type SecondFactor = 'totp' | 'phone_code' | 'email_code' | 'backup_code';
  * only when Clerk reports no authenticator for them, sent as the step opens. */
 function SecondFactorCard({
   finish,
+  onBack,
 }: {
   finish: () => Promise<string | null>;
+  onBack: () => void;
 }) {
   const { signIn } = useSignIn();
   const supported = signIn.supportedSecondFactors.map(
@@ -312,8 +314,19 @@ function SecondFactorCard({
         <SubmitButton busy={isSubmitting}>{m.auth_mfa_submit()}</SubmitButton>
         <FormAlert message={formError} />
       </form>
-      {backup && primary !== 'backup_code' && (
-        <div className="mt-6 flex text-sm">
+      <div className="mt-6 flex justify-between gap-4 text-sm">
+        {/* Lost device, another account, or a stale attempt: start over. */}
+        <button
+          className={cn(
+            BASE_BUTTON_STYLE,
+            'font-semibold text-link hover:text-link-hover'
+          )}
+          onClick={onBack}
+          type="button"
+        >
+          {m.auth_back_to_signin()}
+        </button>
+        {backup && primary !== 'backup_code' && (
           <button
             className={cn(
               BASE_BUTTON_STYLE,
@@ -330,8 +343,8 @@ function SecondFactorCard({
               ? m.auth_mfa_use_code()
               : m.auth_mfa_use_backup()}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </AuthCard>
   );
 }
@@ -362,7 +375,17 @@ function SignInCard() {
     return error ? clerkMessage(error) : null;
   };
 
-  if (step === 'secondFactor') return <SecondFactorCard finish={finish} />;
+  if (step === 'secondFactor')
+    return (
+      <SecondFactorCard
+        finish={finish}
+        onBack={() => {
+          // Drops the waiting attempt so /sign-in opens on the form again.
+          void signIn.reset();
+          setStep('form');
+        }}
+      />
+    );
 
   if (step === 'newPassword') {
     return (

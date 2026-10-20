@@ -296,7 +296,9 @@ invalid link or unavailable workspace. Network and server failures keep the
 invitation panel visible with inline error copy and a retry action. The mutation
 does not also emit a global toast. On the owner's side, sending an invite and
 cancelling a pending one render their failures inline under the form and the
-pending list (`FormAlert`) instead of the global toast.
+pending list (`FormAlert`) instead of the global toast, and a pending list
+that fails to load shows an inline error with Retry in its section rather than
+reading as "nothing pending".
 
 A few routes answer 404 rather than a false success (Epo 2026-10-21): deleting
 a label, event or task that is missing or someone else's, and marking a

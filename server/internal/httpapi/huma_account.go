@@ -544,6 +544,14 @@ func (a *api) settleOpenCheckout(
 		if err := a.stripeExpireCheckout(open.SessionID); err != nil {
 			return "", err
 		}
+		// Expiring does nothing to a session that completed after the read
+		// above; that subscription exists, so no second Checkout starts.
+		if remote, err = a.stripeGetCheckout(open.SessionID); err != nil {
+			return "", err
+		}
+		if stripe.CheckoutSessionStatus(remote.Status) == stripe.CheckoutSessionStatusComplete {
+			return "", store.ErrSubscriptionExists
+		}
 	case stripe.CheckoutSessionStatusComplete:
 		return "", store.ErrSubscriptionExists
 	}

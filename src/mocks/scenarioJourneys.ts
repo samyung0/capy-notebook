@@ -663,6 +663,10 @@ export async function runJourney(
       fail();
       await ui.click(m.members_invite());
       return;
+    case 'invites-load':
+      fail();
+      await share();
+      return;
     case 'invite-cancel':
       await share();
       await ui.fill('input[name="identifier"]', 'morgan@example.com');

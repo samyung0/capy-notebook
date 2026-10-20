@@ -77,9 +77,11 @@ export function WorkspaceMemberManager({
   } = useWorkspaceMembers(workspaceId, true, {
     errorBoundary: false,
   });
-  const { data: invitesData } = useWorkspaceInvites(workspaceId, {
-    errorBoundary: false,
-  });
+  const {
+    data: invitesData,
+    error: invitesError,
+    refetch: refetchInvites,
+  } = useWorkspaceInvites(workspaceId, { errorBoundary: false });
   const { mutateAsync: createInvite } = useCreateWorkspaceInvite(workspaceId);
   const { mutateAsync: cancelInvite } = useCancelWorkspaceInvite(workspaceId);
   const [inviteError, setInviteError] = useState<FormError | null>(null);
@@ -235,10 +237,19 @@ export function WorkspaceMemberManager({
 
       {/* Every typed address, as typed and always as sent: whether one has
           an account never shows here. */}
-      {!!invitesData?.length && (
+      {(!!invitesData?.length || (!invitesData && invitesError)) && (
         <div className="mt-4 flex flex-col gap-1.5">
           <p className="t-label text-fg-muted">{m.members_pending_title()}</p>
-          {invitesData.map((pending) => (
+          {/* A failed load is not "nothing pending". */}
+          {!invitesData && invitesError && (
+            <InlineErrorState
+              className="py-6"
+              errorId={unexpectedErrorId(invitesError)}
+              message={describeError(invitesError).title}
+              onRetry={() => void refetchInvites()}
+            />
+          )}
+          {invitesData?.map((pending) => (
             <div className="flex items-center gap-2 py-1" key={pending.id}>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-fg text-sm">

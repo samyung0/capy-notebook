@@ -142,21 +142,25 @@ func validateAuthConfiguration(
 	return nil
 }
 
-// validateOriginConfiguration refuses a deployed gateway without a CORS
-// allowlist, or with Clerk on and no origins its session tokens may come from
-// (human deployment-runbook and authorization, 2026-10-21). Development and
-// e2e reach the API through a same-origin proxy, so they may run without.
-func validateOriginConfiguration(appEnv string, clerkOn bool, corsOrigins, authorizedParties []string) error {
+// originConfiguration reads the CORS allowlist and the origins whose Clerk
+// session tokens are accepted (their azp: COLLABORATION_ALLOWED_ORIGINS). A
+// deployed gateway refuses to boot without the first, or with Clerk on and
+// without the second (human deployment-runbook and authorization, 2026-10-21).
+// Development and e2e reach the API through a same-origin proxy, so they may
+// run without.
+func originConfiguration(appEnv string, clerkOn bool) (corsOrigins, authorizedParties []string, err error) {
+	corsOrigins = envList("CORS_ALLOWED_ORIGINS")
+	authorizedParties = envList("COLLABORATION_ALLOWED_ORIGINS")
 	if appEnv == "development" || appEnv == "e2e" {
-		return nil
+		return corsOrigins, authorizedParties, nil
 	}
 	if len(corsOrigins) == 0 {
-		return errors.New("CORS_ALLOWED_ORIGINS is required outside development and e2e")
+		return nil, nil, errors.New("CORS_ALLOWED_ORIGINS is required outside development and e2e")
 	}
 	if clerkOn && len(authorizedParties) == 0 {
-		return errors.New("COLLABORATION_ALLOWED_ORIGINS is required with Clerk outside development and e2e")
+		return nil, nil, errors.New("COLLABORATION_ALLOWED_ORIGINS is required with Clerk outside development and e2e")
 	}
-	return nil
+	return corsOrigins, authorizedParties, nil
 }
 
 func validateStripeConfiguration(secretKey, webhookSecret, pricePro string) error {
@@ -273,11 +277,10 @@ func main() {
 	); err != nil {
 		log.Fatal(err)
 	}
-	corsOrigins := envList("CORS_ALLOWED_ORIGINS")
-	authorizedParties := envList("COLLABORATION_ALLOWED_ORIGINS")
-	if err := validateOriginConfiguration(
-		appEnv, strings.TrimSpace(clerkSecret) != "" && !authDisabled, corsOrigins, authorizedParties,
-	); err != nil {
+	corsOrigins, authorizedParties, err := originConfiguration(
+		appEnv, strings.TrimSpace(clerkSecret) != "" && !authDisabled,
+	)
+	if err != nil {
 		log.Fatal(err)
 	}
 	parseMaxPages, err := requiredPageCap("CAPY_PARSE_MAX_PAGES")
