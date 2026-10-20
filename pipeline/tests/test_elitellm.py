@@ -245,14 +245,14 @@ async def test_zai_complete_posts_to_z_ai_with_its_key(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("model_slug", "provider"),
+    ("model_slug", "providers"),
     [
-        ("deepseek/deepseek-v4-flash-0731", "Relace"),
-        ("deepseek/deepseek-v4.1-flash-1017", "DeepInfra"),
+        ("deepseek/deepseek-v4-flash-0731", ["Reka", "DigitalOcean", "StreamLake"]),
+        ("deepseek/deepseek-v4.1-flash-1017", ["DeepInfra"]),
     ],
 )
-async def test_openrouter_pins_send_their_slug_held_on_one_provider(
-    monkeypatch: pytest.MonkeyPatch, model_slug: str, provider: str
+async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
+    monkeypatch: pytest.MonkeyPatch, model_slug: str, providers: list[str]
 ):
     spec = _spec(
         provider_slug="openrouter",
@@ -281,7 +281,7 @@ async def test_openrouter_pins_send_their_slug_held_on_one_provider(
     assert seen["url"] == OPENROUTER_CHAT_URL
     assert seen["headers"]["authorization"] == "Bearer sk-or"
     assert seen["body"]["model"] == model_slug
-    assert seen["body"]["provider"] == {"order": [provider], "allow_fallbacks": False}
+    assert seen["body"]["provider"] == {"order": providers, "allow_fallbacks": False}
     assert seen["body"]["reasoning"] == {"enabled": False}
     assert seen["body"]["max_tokens"] == 400
     # Every slug an operator may register has a provider pin.
