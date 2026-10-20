@@ -2135,6 +2135,42 @@ async fn a_join_that_closes_an_embed_still_closes_the_users_oldest_document() {
     assert!(closes.is_empty(), "{closes:?}");
 }
 
+/// Security regression (Epo 2026-10-20, rate-limit review r7): a socket
+/// whose send moves no bytes for the silent window (here 2 s) closes, freeing
+/// its places, though a send has no total time limit (`seats.rs` tests a slow
+/// peer). With two connections to a 1.5 MB note allowed, a socket that asks
+/// for the whole state 20 times and reads none of it (far more than the
+/// buffers between them hold) is closed, so a third connection closes
+/// nothing. Fails if a stalled send holds the socket open.
+#[tokio::test]
+async fn a_socket_whose_send_moves_no_bytes_closes_and_frees_its_place() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_PING_SECONDS", "1"),
+            ("COLLABORATION_SILENT_SECONDS", "2"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+            ("COLLABORATION_OPEN_BYTES", "500000000"),
+        ],
+    )
+    .await;
+    let (user, room, mut reader) = writer(&env, server.port, &"w".repeat(1_500_000)).await;
+    let write = token(&room, &user, "write");
+    let mut stopped = Client::open(server.port).await;
+    stopped.joined(&room, &write).await;
+    stopped.ask_whole_state(20).await;
+    assert!(
+        reader.still_open(Duration::from_secs(5)).await,
+        "the reading socket stays open"
+    );
+    let mut third = Client::open(server.port).await;
+    third.joined(&room, &write).await;
+    let closes = reader.closes_within(Duration::from_millis(500)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+}
+
 /// Security regression (Epo 2026-10-19): a JOIN costs one message of its
 /// user's allowance, so a join loop runs into a timeout like any other flood
 /// (a JOIN on a joined channel leaves and joins again, reloading what the
@@ -2738,13 +2774,13 @@ impl Client {
         }
     }
 
-    /// Every CLOSED heard in the next `window`, as (channel, payload).
+    /// Every CLOSED heard in the next `window`, as (channel, payload)
+    /// (answering pings meanwhile).
     async fn closes_within(&mut self, window: Duration) -> Vec<(u64, String)> {
         let deadline = tokio::time::Instant::now() + window;
         let mut closes = Vec::new();
-        while let Ok(Some(Ok(Ws::Binary(bytes)))) =
-            tokio::time::timeout_at(deadline, self.ws.next()).await
-        {
+        while let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, self.ws.next()).await {
+            let Ws::Binary(bytes) = message else { continue };
             let mut at = 0;
             while at < bytes.len() {
                 let channel = read_var(&bytes, &mut at);
