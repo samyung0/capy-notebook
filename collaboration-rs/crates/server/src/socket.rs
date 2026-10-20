@@ -907,11 +907,26 @@ impl Connection {
         let _ = room.tx.send(RoomCmd::Leave((self.id, embed))).await;
     }
 
-    /// An embed channel joined inside its note's: past [EMBEDS_PER_NOTE] the
-    /// note's oldest embed channel closes.
+    /// An embed channel joined inside its note's. An earlier channel of the
+    /// same room under that note closes (rate-limit review r5 S-a: a note
+    /// channel never takes one room's updates twice), and past
+    /// [EMBEDS_PER_NOTE] the note's oldest embed channel closes.
     async fn add_embed(&mut self, note: u64, embed: u64) {
+        let Some(Channel::Joined { name, .. }) = self.channels.get(&embed) else {
+            return;
+        };
+        let twin = match self.channels.get(&note) {
+            Some(Channel::Joined { embeds, .. }) => embeds.iter().copied().find(|other| {
+                matches!(
+                    self.channels.get(other),
+                    Some(Channel::Joined { name: joined, .. }) if joined == name
+                )
+            }),
+            _ => None,
+        };
         let oldest = match self.channels.get_mut(&note) {
             Some(Channel::Joined { embeds, .. }) => {
+                embeds.retain(|other| Some(*other) != twin);
                 embeds.push_back(embed);
                 if embeds.len() > EMBEDS_PER_NOTE {
                     embeds.pop_front()
@@ -921,8 +936,8 @@ impl Connection {
             }
             _ => None,
         };
-        if let Some(oldest) = oldest {
-            self.close_embed(oldest, EMBED_CLOSED_REASON).await;
+        for closed in [twin, oldest].into_iter().flatten() {
+            self.close_embed(closed, EMBED_CLOSED_REASON).await;
         }
     }
 

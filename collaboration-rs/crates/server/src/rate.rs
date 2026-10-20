@@ -9,9 +9,12 @@
 //! awareness sent on JOIN) are charged to it by their bytes once encoded. It
 //! refills continuously, full again over [OPEN_REFILL] from empty; spent, the
 //! user's next step 1 answer of at least [SMALL_ANSWER] or query waits in its
-//! room until it is back above zero (`room.rs`), slowed, never refused. Such
-//! an answer is encoded during its user's turn ([Allowances::open_turn]), one
-//! at a time, so the budget is charged before the next one is looked at.
+//! room until it is back above zero (`room.rs`), slowed, never refused. A
+//! smaller answer is charged too and skips the wait only while the budget is
+//! above a full budget of debt ([Allowances::small_skips], Epo 2026-10-20).
+//! A waiting answer is encoded during its user's turn
+//! ([Allowances::open_turn]), one at a time, so the budget is charged before
+//! the next one is looked at.
 //!
 //! A user over it, or sending an update over `ydoc::MAX_UPDATE_BYTES`, is in
 //! a timeout (Epo 2026-10-18): nothing of theirs that could change a document
@@ -47,8 +50,9 @@ pub const OPEN_BYTES: u64 = 80 << 20;
 /// The open budget refills to full over 5 minutes from empty (Epo
 /// 2026-10-19), about 0.27 MiB a second.
 pub const OPEN_REFILL: Duration = Duration::from_secs(300);
-/// A step 1 answer smaller than this never waits on the open budget (Epo
-/// 2026-10-20): a returning member's resync.
+/// A step 1 answer smaller than this (a returning member's resync) skips the
+/// open budget's wait while the user owes less than a full budget (Epo
+/// 2026-10-20).
 pub const SMALL_ANSWER: usize = 256 << 10;
 /// How soon a large answer waiting behind its user's turn looks again.
 const TURN_RETRY: Duration = Duration::from_millis(100);
@@ -285,6 +289,17 @@ impl Allowances {
             allowance.refill(&self.limits, now);
             allowance.open -= bytes as f64;
         });
+    }
+
+    /// Whether `user`'s next step 1 answer under [SMALL_ANSWER] skips the
+    /// wait: while their open budget is above a full budget of debt (80 MiB
+    /// by default, Epo 2026-10-20). Past it, small answers wait like large
+    /// ones, so a burst of them cannot fetch a document past the budget.
+    pub fn small_skips(&self, user: &str, now: Instant) -> bool {
+        self.with(user, now, |allowance| {
+            allowance.refill(&self.limits, now);
+            allowance.open > -(self.limits.open_bytes as f64)
+        })
     }
 
     /// How long `user`'s next query or large step 1 answer waits: until

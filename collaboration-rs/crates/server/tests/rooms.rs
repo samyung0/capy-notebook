@@ -1792,12 +1792,12 @@ async fn a_burst_of_step_1s_gets_one_answer_while_the_open_budget_is_spent() {
 }
 
 /// Security regression (Epo 2026-10-20): a step 1 whose answer is under
-/// 256 KiB (a returning member's resync) never waits on the open budget,
-/// while a whole-state one waits. Fails if small answers wait too (the
-/// resync would wait about 150 s) or a spent budget lets the whole state
-/// through.
+/// 256 KiB (a returning member's resync) skips the wait on a spent open
+/// budget while its user owes less than a full budget, while a whole-state
+/// one waits. Fails if small answers wait too (the resync would wait about
+/// 150 s) or a spent budget lets the whole state through.
 #[tokio::test]
-async fn a_small_answer_never_waits_on_a_spent_open_budget() {
+async fn a_resync_skips_the_wait_within_a_full_budget_of_debt() {
     let Some(env) = env() else { return };
     let server = start_configured(
         &env,
@@ -1817,6 +1817,48 @@ async fn a_small_answer_never_waits_on_a_spent_open_budget() {
     assert_eq!(
         asker.whole_state_within(Duration::from_secs(2)).await,
         Answer::Silent
+    );
+}
+
+/// Security regression (rate-limit review r5 B-1, Epo 2026-10-20): answers
+/// under 256 KiB are charged and skip the wait only while their user owes
+/// less than a full budget. With 0.5 MB of a 1 MB budget owed, six resyncs
+/// each answered by the note's last 200 KB get three answers (the third
+/// takes the debt past 1 MB) and the rest wait, slowed. Fails if small
+/// answers never wait.
+#[tokio::test]
+async fn a_burst_of_small_answers_waits_past_a_full_budget_of_debt() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "1000000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "300"),
+        ],
+    )
+    .await;
+    // The join's answer spent the budget: 0.5 MB below zero.
+    let (_, _, mut asker) = writer(&env, server.port, &"w".repeat(1_500_000)).await;
+    let held = asker.doc.transact().state_vector();
+    let (author, clock) = held
+        .iter()
+        .map(|(client, clock)| (*client, *clock))
+        .max_by_key(|(_, clock)| *clock)
+        .expect("the note's text");
+    let since: StateVector = held
+        .iter()
+        .map(|(client, at)| (*client, if *client == author { clock - 200_000 } else { *at }))
+        .collect();
+    let step1 = sync(0, &since.encode_v1());
+    for _ in 0..6 {
+        asker.send(5, &step1).await;
+    }
+    let (arrivals, notices) = asker.step2_arrivals(Duration::from_secs(3)).await;
+    assert_eq!(arrivals.len(), 3, "{arrivals:?}");
+    assert!(
+        notices.iter().any(|notice| notice.contains("open-slowed")),
+        "{notices:?}"
     );
 }
 
@@ -2450,6 +2492,47 @@ async fn an_embed_whose_note_leaves_while_its_room_loads_is_refused() {
     };
     let refusal = refusal.expect("the embed is refused once its room loaded");
     assert!(refusal.contains("collaboration-note-closed"), "{refusal}");
+}
+
+/// Security regression (rate-limit review r5 S-a): a note channel holds an
+/// embed's room once. Joining the same set again under it closes the earlier
+/// channel (`collaboration-embed-closed`, the client joins it again when near
+/// the screen), so one note channel cannot take a room's updates many times
+/// over. Fails if both channels stay joined.
+#[tokio::test]
+async fn joining_an_embed_again_under_its_note_closes_the_earlier_channel() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut client) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let embed = embed_token(&set, &user, &note);
+    assert_eq!(client.join_embed(2, &set, &embed).await.0, 1);
+    let mut payload = join_payload(&set, &embed, Some(client_protocol()));
+    var(&mut payload, 1);
+    client.send_on(3, 0, &payload).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut closes = Vec::new();
+    'joined: loop {
+        for (heard, kind, payload) in client.raw_until(deadline).await {
+            if kind == 4 {
+                closes.push((heard, String::from_utf8_lossy(&payload).into_owned()));
+            }
+            if heard == 3 && kind == 1 {
+                break 'joined;
+            }
+        }
+    }
+    closes.extend(client.closes_within(Duration::from_millis(500)).await);
+    assert_eq!(closes.len(), 1, "{closes:?}");
+    assert_eq!(closes[0].0, 2);
+    assert!(
+        closes[0].1.contains("collaboration-embed-closed"),
+        "{closes:?}"
+    );
 }
 
 /// Security regression (Epo 2026-10-20): a note channel holds at most 64

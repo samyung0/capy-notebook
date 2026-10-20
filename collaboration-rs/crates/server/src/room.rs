@@ -1681,12 +1681,13 @@ impl Room {
     /// A member's step 1, answered with up to the whole state (encoded on the
     /// blocking pool) and charged to its user's open budget by the answer's
     /// bytes (Epo 2026-10-19). An answer under `SMALL_ANSWER` goes at once
-    /// (Epo 2026-10-20). A larger one is encoded in its user's turn, so their
-    /// large answers are charged one at a time, and waits while the budget is
-    /// spent or another one of theirs is being encoded: the member then keeps
-    /// only its latest step 1 and hears once that its open is slowed. A
-    /// bounded walk tells a large answer before the encode (the encode checks
-    /// it after), so a waiting step 1 costs no encode.
+    /// while the user owes less than a full budget (Epo 2026-10-20). Any
+    /// other is encoded in its user's turn, so their waiting answers are
+    /// charged one at a time, and waits while the budget is spent or another
+    /// one of theirs is being encoded: the member then keeps only its latest
+    /// step 1 and hears once that its open is slowed. A bounded walk tells a
+    /// large answer before the encode (the encode checks it after), so a
+    /// waiting step 1 costs no encode.
     async fn on_step1(&mut self, key: MemberKey, since: StateVector) {
         let Some(member) = self.members.get_mut(&key) else {
             return;
@@ -1697,7 +1698,9 @@ impl Room {
         }
         let user = member.context.user_id.clone();
         let small = crate::rate::SMALL_ANSWER;
-        if !ydoc::answer_at_least(&self.doc.transact(), &since, small) {
+        if self.app.allowances.small_skips(&user, Instant::now())
+            && !ydoc::answer_at_least(&self.doc.transact(), &since, small)
+        {
             let diff = self.encoded(since.clone()).await;
             if diff.len() < small {
                 self.charge_open(key, diff.len());

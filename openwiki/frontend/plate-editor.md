@@ -950,9 +950,11 @@ continuously back to full over 5 minutes from empty (`OPEN_REFILL`,
 charges a step 1's answer (up to the whole state), an awareness query's and
 the awareness it sends on JOIN by their bytes once encoded, so the budget may
 go below zero. A step 1 answer under 256 KiB (`SMALL_ANSWER`, a returning
-member's resync) never waits (Epo 2026-10-20). A larger one waits in its room
-while the budget is spent, slowed, never refused, and so does an awareness
-query: the room checks the budget when it takes the step 1 off its queue,
+member's resync) is charged too and skips the wait while the user owes less
+than a full budget (80 MiB of debt, `Allowances::small_skips`, Epo
+2026-10-20); past that it waits like a larger one. A larger one waits in its
+room while the budget is spent, slowed, never refused, and so does an
+awareness query: the room checks the budget when it takes the step 1 off its queue,
 where the answer is charged, so a burst read before the first charge lands
 gets one answer, and each channel keeps only its latest step 1 and query
 while it waits (`room.rs` `on_step1`, `release_openings`). Whether an answer
@@ -962,10 +964,13 @@ encode; the encode checks it again. A user's large answers are encoded one at
 a time (`Allowances::open_turn`): one waits while another is encoded, so
 answers waiting as the budget refills are released one by one, each charged
 before the next is looked at. A user in a timeout meanwhile asks again when it
-ends, so their waiting opens are dropped. Nothing else waits, and the edit
-allowance is untouched. The budget is the user's across rooms and sockets (in
-each server process), so rejoining spends it too; opening many large files
-gains nothing, and our bandwidth stays below the host's limits.
+ends, so their waiting opens are dropped. The awareness sent on JOIN is
+charged but never waits (each JOIN costs a message of the edit allowance);
+nothing else waits, and the edit allowance is untouched. The budget is the
+user's across rooms and sockets (in each server process), so rejoining spends
+it too: a user's step 1 answers and queries fetch at most about two budgets
+(160 MiB) at once and then the refill rate, per process, however many files
+they open or however they slice their asks.
 
 A step 1 that begins to wait tells its channel once (a stateless
 `{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers). The editor
@@ -1106,8 +1111,10 @@ note's embed is refused `collaboration-forbidden`; a channel that is not a
 joined note `collaboration-note-closed`). An embed channel takes no place
 among the user's 22 joined documents; a note channel holds at most 64
 (`EMBEDS_PER_NOTE`), and one more closes its oldest
-(`collaboration-embed-closed`): that room waits, as one closed as the user's
-oldest does, and joins again when its block comes near the screen again
+(`collaboration-embed-closed`). It holds a room once: joining the same room
+again under it closes the earlier channel the same way (a quiz embedded twice
+keeps the copy that joined last; rate-limit review r5 S-a). A closed embed's
+room waits, as one closed as the user's oldest does, and joins again when its block comes near the screen again
 (`useNearScreen().entered`, `RoomProvider.wake`), its tab shows again or an
 edit is made in it. When the note's channel goes (left, closed, expired,
 joining again after a timeout) the server closes its embed channels
