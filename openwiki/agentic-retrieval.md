@@ -2794,15 +2794,17 @@ build, and the knowledge library is one more source while the switch is on.
   it needs are in the request (`skills.REQUIRES`, checked in `tools.run`):
   every write needs `editing`; `create_material` of a note and an
   `edit_document` with an `insert_markdown` or `replace_block` command also
-  need `note_building`. The refusal carries the missing
-  skills: a short error (`Not applied: this write needs the … skills, which
-  follow and now count as read`, the text the chat stores) and, for the model
-  only (`ToolResult.detail`), each skill's text under its `# Skill:` header.
-  The write is not applied; the model checks it against the skills and sends
-  it again without a `read_skill`. The agent recomputes `ctx.skills_read` from
-  the message list before every call (`skills.retained`, which counts every
-  header in a `read_skill` result, a replayed skill or such a refusal), so a
-  turn note that folded the text away refuses the next write again. A later turn does not read a skill again: `evidence.pack` stores the
+  need `note_building`. The refusal names the missing skills and carries no
+  skill text (`skills.refusal`, Epo 2026-10-20): the write is not applied, and
+  the model is told to read them with `read_skill` only if the user wants that
+  file created or changed, otherwise to answer without writing. A refusal
+  that carried the skill made an unrequested write one resend away (the hints
+  eval saw GLM attempt unrequested edits in 4 of 352 turns); a requested write
+  whose skill the agent skipped now costs one extra `read_skill` call. The
+  agent recomputes `ctx.skills_read` from the message list before every call
+  (`skills.retained`, which counts every header in a `read_skill` result or a
+  replayed skill), so a turn note that folded the text away refuses the next
+  write again. A later turn does not read a skill again: `evidence.pack` stores the
   names in the turn's `toolEvidence.skills`, and `evidence.history_turns`
   replays each one with its current text as a `_kind: "skill"` message where it
   was first read, which `skills.retained` counts. A checkpoint that folds the
@@ -3738,7 +3740,13 @@ the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run
 inline); tables and charts put their sources under the block, and the
 message's sources are neutral badges under the model name.
-The prompt reserves `AskUser` for required user input and excludes simple follow-up questions.
+The prompt reserves `AskUser` for required user input and excludes simple follow-up questions,
+with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
+write): on the first message of a chat, an explanation or summary request is
+answered and ends with an `AskUser` offering to turn it into a note or a slide
+deck, since users may not know the agent can; not when the user already asked
+for a material, not for small talk, not later. The rule is in the system
+prompt every turn, so the prompt stays a cached prefix.
 GLM sometimes calls `AskUser` as a tool instead of writing it in the answer
 (6 of 156 playground runs on 2026-10-14, against 3 written correctly). The
 agent loop (`agent.ask_user_answer`) runs nothing then and ends the turn on
@@ -4125,10 +4133,15 @@ names the document (`file_id` or `material_id`), its name and the change label
 or block quoted, and says "added", "changed" or "removed" with a snippet of at
 most 200 characters around the longest query word it holds (function words
 skipped, a CJK run probed by its bigrams, found in the original text so the
-match stays in the window). The lines are source data, in a
-`<source>` block. Two paths use it:
+match stays in the window). A candidate matches on its document's name and
+its text together, and a hint needs at least two distinct message words to
+match it, or every content word of a message with fewer (`MIN_MATCHED_WORDS`;
+Epo 2026-10-20 after the hints eval: a hint matching one word was relevant 5%
+of the time, two or more 73%; noise fell from 1.00 to 0.16 hints a message at
+the same recall). The name gives "my calculus note" its second word. The
+lines are source data, in a `<source>` block. Two paths use it:
 
-- The user message: at most 5 hints, a block of at most 400 tokens in its own
+- The user message: at most 3 hints (`HINT_LIMIT`), a block of at most 400 tokens in its own
   message right after the query (`_kind` `pending_hints`). Only the hints that
   fit are shown, saved and counted as hinted. A change hinted earlier in the
   conversation (since its last checkpoint) is not hinted again. The hints are
@@ -4146,10 +4159,24 @@ match stays in the window). The lines are source data, in a
   heading, not citable (no passage numbers), and stay whole when a long result
   is clipped; with no passage, they are the result. It skips edits a message
   of this conversation hinted and edits an earlier search of this turn
-  listed.
+  listed. The same two-word rule and limit apply.
+- A search passage whose document has unindexed edits carries one line just
+  above its `<source>` block, naming the document and its edit count, with no
+  edit text: "[n] "name" has N edits not indexed yet, so this passage may be
+  out of date: read the document for its current text"
+  (`PendingSources.unindexed_counts`, `Passage.as_context`; Epo 2026-10-20, an
+  exception to effects reaching the agent only on read). A document read this
+  turn is not flagged: its changes came with the read. The line is written
+  once into the tool result and never changes, so earlier context stays a
+  cached prefix. In the hints eval it took both models to 26/26 edit
+  questions, including spreadsheet cells no hint finds.
 
-Generation passes every scoped change, so it gets no hints. Replacements and removals
-supersede old indexed facts; the message tells the model that each before and
+Generation passes every scoped change, so it gets no hints. The changes
+describe the document's current text (Epo 2026-10-20): each after is what it
+says now and each before what the index still shows, and the edits are the
+user's own, not to be redone or undone unless the user asks (the earlier
+"Apply replacements and removals" wording preceded unrequested edits in the
+hints eval). The message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
 match against passages, and that a move carries no text. An image added or
 changed before publication is a typed placeholder the model opens with

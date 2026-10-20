@@ -78,6 +78,8 @@ class ToolResult:
     # A read document's pending changes, appended after the clipped result
     # (pending.PendingSources.for_read).
     pending: str = ""
+    # A search's documents with unindexed edits, by id: their passages say so.
+    unindexed: dict[str, int] = field(default_factory=dict)
 
     @property
     def outcome(self) -> str:
@@ -432,6 +434,7 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         passages=passages,
         text_parts=[_overlap_footer(overlap, len(passages))],
         tail=edits,
+        unindexed=ctx.pending_sources.unindexed_counts(),
     )
 
 
@@ -2768,10 +2771,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(problem)
     needs = skills.missing(name, args, ctx.skills_read)
     if needs:
-        return _refused(
-            skills.refusal(needs),
-            detail=skills.carried(needs, lambda n: skills.SKILLS[n].text(ctx.library)),
-        )
+        return _refused(skills.refusal(needs))
     try:
         result = await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):
@@ -2823,7 +2823,12 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
         parts.extend([body, result.text_parts[0]])
     else:
         if numbered:
-            parts.append("\n\n".join(passage.as_context(n) for n, passage in numbered))
+            parts.append(
+                "\n\n".join(
+                    passage.as_context(n, result.unindexed.get(passage.file_id, 0))
+                    for n, passage in numbered
+                )
+            )
         parts.extend(part for part in result.text_parts if part)
     text = "\n\n".join(parts) if parts else result.text()
     if numbered:

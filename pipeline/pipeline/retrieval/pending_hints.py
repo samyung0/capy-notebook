@@ -27,10 +27,15 @@ from .chunking import (
 )
 from .lang import FUNCTION_WORDS, TS_CONFIG, UND, detect_lang, is_cjk
 
-# Bounds (the Editor, 2026-10-20): a handful of snippets of about 200
-# characters, about 400 tokens a message; candidates are capped because a
-# workspace with auto processing off keeps every edit pending.
-HINT_LIMIT = 5
+# Bounds (the Editor, 2026-10-20): at most 3 snippets of about 200
+# characters (Epo, after the hints eval), about 400 tokens a message;
+# candidates are capped because a workspace with auto processing off keeps
+# every edit pending.
+HINT_LIMIT = 3
+# A hint needs this many of the message's words matching its document's name
+# or change text (Epo 2026-10-20: a one-word match was relevant 5% of the
+# time, two or more 73%), or every content word of a shorter message.
+MIN_MATCHED_WORDS = 2
 HINT_CHARS = 200
 HINT_TOKENS = 400
 CANDIDATES_MAX = 2000
@@ -67,7 +72,7 @@ class Hint:
 @dataclass(frozen=True)
 class _Prepared:
     hint: Hint
-    tokens: str  # the text through the search tokenizer
+    tokens: str  # the document's name and the text, through the search tokenizer
     config: str  # its document's language's text search config
     simple: bool  # its config is simple (CJK or undetermined): keeps every word
 
@@ -153,7 +158,8 @@ def _prepare(hints: list[Hint], indexed: dict[str, str]) -> list[_Prepared]:
     return [
         _Prepared(
             hint,
-            tokenize_for_search(hint.text),
+            # The name gives "my calculus note" its second word.
+            tokenize_for_search(f"{hint.name}\n{hint.text}"),
             TS_CONFIG[langs[hint.doc_id]],
             TS_CONFIG[langs[hint.doc_id]] == "simple",
         )
@@ -199,9 +205,10 @@ async def prepared(sources: Any) -> list[_Prepared]:
 async def match(
     query: str, pool: list[_Prepared], limit: int = HINT_LIMIT
 ) -> list[Hint]:
-    """The best lexical matches of ``query`` among ``pool``: the search
-    tokenizer (ligature, sub/superscript and CJK folds) on both sides and each
-    document's language's text search config. For a document under the
+    """The best lexical matches of ``query`` among ``pool`` that match at
+    least MIN_MATCHED_WORDS distinct words of it (every content word when it
+    has fewer): the search tokenizer (ligature, sub/superscript and CJK folds)
+    on both sides and each document's language's text search config. For a document under the
     ``simple`` config (Chinese, Japanese, Korean or undetermined) the query's
     words on Postgres's English stopword list are dropped first (Epo
     2026-10-20): ``simple`` keeps every word, so "the" would match almost
@@ -213,23 +220,36 @@ async def match(
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            """WITH plain AS (
-                SELECT coalesce(string_agg(w, ' or '), '') AS q
-                FROM unnest(string_to_array(%(any)s, ' or ')) AS w
-                WHERE ts_lexize('english_stem'::regdictionary, lower(w))
-                    IS DISTINCT FROM '{}'::text[]),
+            """WITH words AS (
+                SELECT DISTINCT w, ts_lexize('english_stem'::regdictionary, lower(w))
+                    IS DISTINCT FROM '{}'::text[] AS content
+                FROM unnest(string_to_array(%(any)s, ' or ')) AS w),
+            plain AS (
+                SELECT coalesce(string_agg(w, ' or '), '') AS q FROM words WHERE content),
             m AS MATERIALIZED (
-                SELECT c.ord, to_tsvector(c.cfg, c.t) AS v,
+                SELECT c.ord, c.cfg, c.simple, to_tsvector(c.cfg, c.t) AS v,
                     websearch_to_tsquery(c.cfg, CASE WHEN c.simple THEN plain.q ELSE %(any)s END) AS q
                 FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(simple)s::boolean[])
                     WITH ORDINALITY AS c(t, cfg, simple, ord)
-                CROSS JOIN plain)
-            SELECT ord FROM m WHERE v @@ q ORDER BY ts_rank(v, q) DESC, ord LIMIT %(limit)s""",
+                CROSS JOIN plain),
+            hit AS (
+                -- Per matching candidate: the message words it matches, and
+                -- those its config keeps (a stopword there is no word).
+                SELECT m.ord,
+                    count(*) FILTER (WHERE m.v @@ websearch_to_tsquery(m.cfg, words.w)) AS matched,
+                    count(*) AS usable
+                FROM m JOIN words ON NOT m.simple OR words.content
+                WHERE m.v @@ m.q AND numnode(websearch_to_tsquery(m.cfg, words.w)) > 0
+                GROUP BY m.ord)
+            SELECT m.ord FROM m JOIN hit USING (ord)
+            WHERE hit.matched >= least(%(min_words)s, hit.usable)
+            ORDER BY ts_rank(m.v, m.q) DESC, m.ord LIMIT %(limit)s""",
             {
                 "any": any_of,
                 "texts": [p.tokens for p in pool],
                 "cfgs": [p.config for p in pool],
                 "simple": [p.simple for p in pool],
+                "min_words": MIN_MATCHED_WORDS,
                 "limit": limit,
             },
         )

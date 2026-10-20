@@ -55,15 +55,12 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
 
     refused = await tools.run("create_material", {"kind": "note", "content": "x"}, ctx)
     assert refused.refused
-    # The refusal carries both skills, which count as read once it is in the
-    # request; only the short refusal is the error the chat stores.
+    # The refusal carries no skill text and reads nothing (Epo 2026-10-20): a
+    # write takes a deliberate read_skill, and only if the user wants it.
     assert refused.error == skills.refusal(["editing", "note_building"])
-    building = skills.render(
-        "note_building", skills.SKILLS["note_building"].text(False)
-    )
-    assert refused.text().endswith(building)
-    carried = [{"role": "tool", "tool_call_id": "c0", "content": refused.text()}]
-    assert skills.retained(carried) == {"editing", "note_building"}
+    assert refused.text() == refused.error and "read_skill only if" in refused.text()
+    refusal = [{"role": "tool", "tool_call_id": "c0", "content": refused.text()}]
+    assert skills.retained(refusal) == set()
 
     read = skills.render("editing", "instructions")
     messages = [{"role": "tool", "tool_call_id": "c1", "content": read}]

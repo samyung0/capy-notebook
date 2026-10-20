@@ -397,8 +397,9 @@ async def test_simple_config_documents_drop_only_english_stopwords(workspace):
         return {hint.change_id for hint in await pending_hints.match(query, pool)}
 
     assert "zh" not in await ids("what is the derivative")
-    assert await ids("the war of 1812") == {"war"}
-    assert await ids("how does a cell die") == {"die"}
+    # One content word each, so the message needs only that one.
+    assert await ids("what was the war?") == {"war"}
+    assert await ids("how does it die?") == {"die"}
 
 
 @pytest.mark.integration
@@ -426,6 +427,52 @@ async def test_a_minus_sign_or_quotes_in_the_message_do_not_match_every_edit(
 
     assert await ids("What is -5 + 3?") == set()
     assert await ids('what is the "cell wall"?') == {"wall"}
+
+
+@pytest.mark.integration
+async def test_a_hint_needs_two_message_words_and_a_message_three_hints(workspace):
+    """Epo 2026-10-20 (hints eval): one shared word is noise; the document's
+    name counts as a word; at most 3 hints."""
+    sources = pending.PendingSources(
+        [
+            _file(
+                "f_h",
+                _change("add", after="The Berlin Wall fell in November", cid="b"),
+                name="history.md",
+            ),
+            _file(
+                "f_p",
+                _change("add", after="a ball hitting a wall bounces", cid="p"),
+                name="physics.md",
+            ),
+            _file(
+                "f_c",
+                _change("add", after="Differentiation rules", cid="d"),
+                name="Calculus",
+            ),
+            _file(
+                "f_r",
+                *(
+                    _change("add", after=f"Strachan reading {i}", cid=f"r{i}")
+                    for i in range(5)
+                ),
+                name="reading list",
+            ),
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return [hint.change_id for hint in await pending_hints.match(query, pool)]
+
+    # "wall" alone is not enough for the physics note.
+    assert await ids("When did the Berlin Wall come down?") == ["b"]
+    # The name gives the calculus note its second word.
+    assert await ids("What is in my calculus note on differentiation?") == ["d"]
+    # Five edits match "reading list"; a message carries three.
+    assert (
+        len(await ids("What is on my reading list?")) == pending_hints.HINT_LIMIT == 3
+    )
 
 
 def test_a_snippet_is_placed_by_the_longest_query_word():

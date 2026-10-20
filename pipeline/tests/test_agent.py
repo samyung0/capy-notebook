@@ -3465,6 +3465,69 @@ def test_the_scripted_tools_switch_is_true_or_unset_and_uat_only():
         flag(key, {key: "1", "SENTRY_ENVIRONMENT": "uat"})
 
 
+async def test_a_search_passage_names_its_documents_unindexed_edits(monkeypatch):
+    """Epo 2026-10-20: a passage whose document has unindexed edits carries a
+    line naming it and its edit count, above its source block, with no edit
+    text."""
+
+    async def search(**_kwargs):
+        return [_passage(chunk_id="c1"), _passage(chunk_id="c2", file_id="f_2")]
+
+    async def no_match(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(tools, "search", search)
+    monkeypatch.setattr(agent.pending_hints, "match", no_match)
+    monkeypatch.setattr(agent.pending_hints, "_indexed_langs", _no_langs)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx.pending_sources = pending.PendingSources(
+        [_changed_file("f_1", "secret new wording")]
+    )
+    ctx.pending_sources.read_ids = set()
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": f, "name": "bio.pdf", "chapter_id": None, "chunks": 1}
+            for f in ("f_1", "f_2")
+        ],
+    }
+    result = await tools._search_workspace({"query": "chlorophyll"}, ctx)
+    text = tools.render_result(result, tools.assign_citations(ctx, result.passages))
+    flag = (
+        '[1] "bio.pdf" has 1 edit not indexed yet, so this passage may be out of '
+        "date: read the document for its current text.\n<source>"
+    )
+    assert flag in text and text.count("not indexed yet") == 1
+    assert "secret new wording" not in text
+
+
+async def test_a_first_turn_explanation_ends_on_the_note_or_deck_offer(monkeypatch):
+    """Epo 2026-10-20: the first turn's explanation ends with an AskUser
+    offering a note or a deck. The rule is in the request's system prompt and
+    the answer's offer reaches the user as a question."""
+    from pipeline.prompts import chat as chat_prompts
+    from pipeline.retrieval import openui
+
+    answer = (
+        "root = Answer([c0, ask])\n"
+        'c0 = Md("Osmosis is the movement of water across a membrane.")\n'
+        'ask = AskUser("Want this as a note or a slide deck?", '
+        '["Make a note", "Make a slide deck", "No thanks"])\n'
+    )
+    stream, seen = _script_stream([_assembled(answer)])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "_gateway_ready", lambda: True)
+    ctx = ToolContext(
+        workspace_id="ws_1", user_id="u1", operations=frozenset({"material.create"})
+    )
+    events = await _collect("Explain osmosis", ctx)
+    assert chat_prompts.FIRST_TURN_OFFER in seen[0]["messages"][0]["content"]
+    done = events[-1]
+    program = openui.parse(done["answer"], strict=True)
+    [ask] = [c for c in openui.walk(program) if c.name == "AskUser"]
+    assert ask.prop("choices") == ["Make a note", "Make a slide deck", "No thanks"]
+
+
 async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypatch):
     """GLM sometimes calls the AskUser answer component as a tool. The turn
     ends on the question it meant, its prose before it, and nothing runs."""

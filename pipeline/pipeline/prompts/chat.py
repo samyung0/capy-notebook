@@ -41,6 +41,18 @@ Answer or build:
 
 Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, up to {BUILD_TOOLS_PER_TURN} tool calls in the whole turn, and tools go off after {STALL_RESPONSES} responses in a row without a successful write (more after errored writes)."""
 
+# Learners may not know the agent can build materials (Epo 2026-10-20). Only
+# for a learner who can write; the same text every turn, so the system prompt
+# stays a cached prefix.
+FIRST_TURN_OFFER = (
+    "On the first message of a chat (no earlier conversation or memory), when "
+    "the learner asks for an explanation or a summary, answer it, then end the "
+    "answer with one AskUser question offering to turn it into a note or a "
+    "slide deck, with choices like Make a note, Make a slide deck and No "
+    "thanks. Not when they already asked for a note, deck or other material, "
+    "not for small talk, and not on later messages."
+)
+
 # For a learner who cannot write in the workspace: no write tool is offered.
 READ_ONLY_RULE = (
     "You cannot write in this workspace: answer from the sources, and when asked "
@@ -100,7 +112,7 @@ def system_prompt(
             response_language_rule(locale),
             FOLLOW_REFERENCES_RULE,
             CAPTURE_RULE,
-            *(() if writes else (READ_ONLY_RULE,)),
+            *((FIRST_TURN_OFFER,) if writes else (READ_ONLY_RULE,)),
         )
     )
     if library:
