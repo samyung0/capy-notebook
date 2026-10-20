@@ -127,15 +127,30 @@ const blocks = async (api: APIRequestContext, id: string) =>
   (await inspect<{ blocks: Block[] }>(api, { id, kind: 'material' })).blocks;
 type Sheet = { id: string; name: string; usedRange: string };
 type Cell = { address: string; input: string; value: string };
-/** An Office source as the agent reads it: DOCX paragraphs and PPTX shapes,
- * or the cells of an XLSX's first sheet (by address, their input as value). */
+type Paragraph = { id: string; text: string };
+/** An Office source as the agent reads it: DOCX paragraphs (their text as
+ * value) and PPTX shapes, or the cells of an XLSX's first sheet (by address,
+ * their input as value). */
 async function entries(
   api: APIRequestContext,
   id: string,
   format: OfficeFormat
 ): Promise<Entry[]> {
   const target = { id, kind: 'source_file' } as const;
-  if (format !== 'xlsx')
+  if (format === 'docx') {
+    const read = await inspect<{ scoped: { paragraphs: Paragraph[] } }>(
+      api,
+      target,
+      { count: 200 }
+    );
+    return read.scoped.paragraphs.map((paragraph) => ({
+      id: paragraph.id,
+      label: '',
+      position: '',
+      value: paragraph.text,
+    }));
+  }
+  if (format === 'pptx')
     return (await inspect<{ entries: Entry[] }>(api, target, { count: 200 }))
       .entries;
   const listed = await inspect<{ scoped: { sheets: Sheet[] } }>(
