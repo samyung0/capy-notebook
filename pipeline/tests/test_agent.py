@@ -408,8 +408,13 @@ async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
     assert '"f_2" is outside the sources chosen for this chat' in read.text()
 
 
-async def test_read_document_refuses_a_quiz_in_words():
+async def test_read_document_refuses_a_quiz_in_words(monkeypatch):
     # A quiz is a scope item (Epo 2026-10-21) but holds no passages.
+    async def no_rows(**_kwargs):
+        return []
+
+    # Without the guard the read reaches this stub, not a database.
+    monkeypatch.setattr(tools.store, "read_file_range", no_rows)
     ctx = ToolContext(workspace_id="ws_1")
     ctx._scope_outline = {
         "chapters": [],

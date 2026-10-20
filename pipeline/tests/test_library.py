@@ -23,6 +23,8 @@ from pipeline.config import cfg
 from pipeline.retrieval import library, store
 from pipeline.retrieval.chunking import tokenize_for_search
 
+pytestmark = pytest.mark.integration
+
 CURRENT = "ahss_v2"
 OLDER = "ahss_v1"
 PIN = ("deepinfra", "Qwen/Qwen3-Embedding-4B", 1, 2560)
