@@ -17,8 +17,9 @@ import secrets
 import psycopg
 import pytest
 
-from pipeline import registry
+from pipeline import elitellm, registry
 from pipeline.config import cfg
+from pipeline.ingest import uat
 from pipeline.retrieval import indexing, store
 from pipeline.retrieval.chunking import Chunk, chunk_markdown, search_query_terms
 
@@ -267,7 +268,9 @@ def _note(ws) -> str:
     return material_id
 
 
-async def _index_note(ws, material_id: str, lines: list[str]) -> tuple | None:
+async def _index_note(
+    ws, material_id: str, lines: list[str], title: str = "Topics"
+) -> tuple | None:
     """The note job's attach, index and publish; the published summary's
     descriptor and change share, or None without one."""
     chunks = chunk_markdown("\n\n".join(lines))
@@ -283,6 +286,7 @@ async def _index_note(ws, material_id: str, lines: list[str]) -> tuple | None:
         await indexing.index_material(
             workspace_id=ws.id,
             material_id=material_id,
+            title=title,
             content_id=association["content_id"],
             previous_content_id=association["previous_content_id"],
             chunks=chunks,
@@ -321,6 +325,11 @@ async def test_a_note_gets_a_summary_only_from_200_tokens(workspace, fake_models
     summary = await _index_note(workspace, note, _TOPICS)
     assert summary == ("Photosynthesis in two stages.", 0)
     assert len(fake_models["summarized"]) == 1
+    # list_sources reads it from the outline (review note-summaries S2).
+    outline = await store.workspace_outline(workspace.id)
+    descriptors = {f["id"]: f["descriptor"] for f in outline["files"]}
+    assert descriptors[note] == "Photosynthesis in two stages."
+    assert descriptors[short] == ""
 
     # Shrunk below 200 tokens, the note loses its summary.
     assert await _index_note(workspace, note, _TOPICS[20:30]) is None
@@ -351,18 +360,57 @@ async def test_a_note_summary_is_rewritten_at_10_percent_and_24_hours(
         == written
     )
 
-    # Past 10% but under 24 h: kept, and the share keeps growing.
-    lines[10:16] = [f"Rewritten passage {i} says something new." for i in range(6)]
-    _, share = await _index_note(workspace, note, lines)
-    assert share >= indexing.NOTE_SUMMARY_SHARE
+    # A day old, the summary still stays while the change is under 10%
+    # (review note-summaries S1: between the file share and the note share).
+    _backdate_note_summary(workspace, note, 25)
+    lines[8] = "Rewritten passage says something quite new here."
+    _, kept = await _index_note(workspace, note, lines)
+    assert indexing.SUMMARY_REUSE_SHARE < kept < indexing.NOTE_SUMMARY_SHARE
+    assert kept > share
     assert len(fake_models["summarized"]) == 1
 
-    # A day later the next small edit rewrites it from the whole note.
-    _backdate_note_summary(workspace, note, 25)
-    lines[20] = lines[20].replace("plain", "simple")
+    # Past 10% and a day old: rewritten from the whole note.
+    lines[10:16] = [f"Rewritten passage {i} says something new." for i in range(6)]
     assert (await _index_note(workspace, note, lines))[1] == 0
     assert len(fake_models["summarized"]) == 2
     assert "Rewritten passage 5" in fake_models["summarized"][-1][-1]["content"]
+
+    # Past 10% again, but the summary is new: kept, the share growing.
+    lines[20:26] = [f"Another passage {i} replaces the old one." for i in range(6)]
+    _, share = await _index_note(workspace, note, lines)
+    assert share >= indexing.NOTE_SUMMARY_SHARE
+    assert len(fake_models["summarized"]) == 2
+
+
+async def test_the_uat_failure_marker_in_a_note_title_fails_its_summary(
+    workspace, fake_models, monkeypatch
+):
+    """Review note-summaries N2: a UAT journey forces the note summary failure
+    through the title, without a provider call."""
+    monkeypatch.setattr(uat.cfg, "uat_fail_parts", True)
+    note = _note(workspace)
+    title = f"Topics {uat.FAIL_SUMMARY}"
+    assert await _index_note(workspace, note, _TOPICS, title=title) is None
+    assert fake_models["summarized"] == []
+
+
+async def test_a_busy_provider_publishes_the_note_without_a_summary(
+    workspace, fake_models, monkeypatch
+):
+    """Review note-summaries N5: a busy provider is no summary this time, not
+    a failed job (which would abandon the chunks)."""
+
+    async def busy(*_args, **_kwargs):
+        raise elitellm.ProviderBusy("busy", status_code=429)
+
+    monkeypatch.setattr(indexing.models, "complete_text", busy)
+    note = _note(workspace)
+    assert await _index_note(workspace, note, _TOPICS) is None
+    assert workspace.scalar(
+        "SELECT count(*) FROM rag_material_contents mc JOIN rag_chunks c "
+        "ON c.content_id = mc.content_id WHERE mc.material_id = %s",
+        (note,),
+    ) == len(chunk_markdown("\n\n".join(_TOPICS)))
 
 
 def _pages(pages: list[int]) -> list[Chunk]:

@@ -1483,8 +1483,7 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
             SELECT m.id, m.title AS name, m.chapter_id, 'ready' AS status,
                    coalesce(cs.descriptor, '') AS descriptor, 'material' AS kind,
                    (SELECT count(*) FROM rag_chunks c
-                    JOIN rag_material_contents mc ON mc.content_id = c.content_id
-                    WHERE mc.material_id = m.id) AS chunks
+                    WHERE c.content_id = mc.content_id) AS chunks
             FROM materials m
                  LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
                  LEFT JOIN rag_content_summaries cs ON cs.content_id = mc.content_id

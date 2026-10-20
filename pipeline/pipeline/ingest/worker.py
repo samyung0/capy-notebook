@@ -1950,6 +1950,7 @@ async def _process_material_index_bound(job: dict) -> None:
                 result = await indexing.index_material(
                     workspace_id=ws,
                     material_id=material_id,
+                    title=str(note.get("title") or ""),
                     content_id=association["content_id"],
                     previous_content_id=association["previous_content_id"],
                     chunks=chunks,

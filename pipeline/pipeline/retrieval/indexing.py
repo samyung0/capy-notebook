@@ -215,6 +215,7 @@ async def index_material(
     *,
     workspace_id: str,
     material_id: str,
+    title: str,
     content_id: str,
     previous_content_id: str | None,
     chunks: list[Chunk],
@@ -286,7 +287,7 @@ async def index_material(
     )
     await _note_summary(
         workspace_id=workspace_id,
-        material_id=material_id,
+        name=f"{title} ({material_id})",
         content_id=content_id,
         chunks=chunks,
         published=published,
@@ -421,20 +422,21 @@ async def _descriptor(
 async def _note_summary(
     *,
     workspace_id: str,
-    material_id: str,
+    name: str,
     content_id: str,
     chunks: list[Chunk],
     published: dict[str, Any] | None,
 ) -> None:
     """Write the note's summary row on its new content, before the publish
-    drops the previous content and its row. A failure publishes the note
+    drops the previous content and its row. ``name`` (title and id) is log
+    and UAT context, never prompt input. A failure publishes the note
     without a summary, or with its previous one, and the next index writes it:
     failing the job would abandon the new chunks with it."""
     text = "\n\n".join(chunk.indexed_text() for chunk in chunks)
     if estimate_tokens(text) < NOTE_SUMMARY_MIN_TOKENS:
         return
     descriptor, share, written_at, _ = await _descriptor(
-        f"note {material_id}", chunks, published, note=True
+        name, chunks, published, note=True
     )
     if descriptor is None:
         return
