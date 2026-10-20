@@ -1247,8 +1247,8 @@ Sources: [deletion outbox and reference re-check](../server/internal/store/blobs
 `files` and `materials` carry `trashed_at`, `trashed_by`, `trash_episode_id` and
 `purge_after` (30 days). Every active-resource query filters
 `trashed_at IS NULL` explicitly; maintenance, quota, refcount and trash paths
-read trashed rows on purpose. Trashing cancels the file's pipeline jobs, evicts
-its collaboration rooms and releases outstanding chat Undo entries; the row
+read trashed rows on purpose. Trashing cancels the file's pipeline jobs and
+evicts its collaboration rooms, which ends their chat Undo steps; the row
 keeps its bytes and stays charged to the owner until purge. Restore bumps the
 source epoch or the material `room_schema` so stale clients cannot resume.
 `GET /api/trash`, `POST /api/trash/{kind}/{id}/restore` and

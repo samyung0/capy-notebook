@@ -2541,8 +2541,7 @@ the style of the character before it). An absent one is refused as
 as `invalid_input`. Each refusal carries the paragraph as it reads now in
 `details.block` (`id`, `type: "paragraph"`, `text`), which crosses the engine
 process (`Failure.details`) and reaches the agent as a note block's does
-([agentic retrieval](../agentic-retrieval.md)). The Undo's inverse names the
-whole paragraph. The rule is `check_replacement` in the fork's
+([agentic retrieval](../agentic-retrieval.md)). The rule is `check_replacement` in the fork's
 `crates/office-service/src/common.rs` (`shared/office-checkpoint.ts`
 `checkReplacement` mirrors it). XLSX `set_cell` still compares the whole cell
 (its input or its shown value); refused as `stale_target`, it carries the cell

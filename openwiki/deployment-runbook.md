@@ -3695,8 +3695,7 @@ Steps on UAT (`docker exec` on the UAT host; find the container names with
     <> COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id = u.id), 0)
        + COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id = u.id), 0)
        + COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id = u.id AND status = 'ready'), 0)
-       + COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id = u.id), 0)
-       + COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE owner_user_id = u.id), 0);
+       + COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id = u.id), 0);
    ```
 
 7. Back up the database (nothing writes it now):

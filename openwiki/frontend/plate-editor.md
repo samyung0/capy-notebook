@@ -1488,7 +1488,7 @@ clean), and a clean room's retry never moves it.
 Tokens, outbox events and commands already resolve the current schema, and
 `load`/`store` refuse a stale one, so a stale client sees another room before
 it syncs anything and opens copy-only recovery; item identities do not change,
-so comment anchors and AI Undo guards stay valid. A co-editor still connected
+so comment anchors stay valid. A co-editor still connected
 during such a discard, with a few seconds of unsaved typing, lands in recovery
 too (Epo, 2026-10-04).
 
