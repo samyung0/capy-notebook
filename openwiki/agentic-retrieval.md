@@ -4138,9 +4138,15 @@ most 200 characters around the longest query word it holds (function words
 skipped, a CJK run probed by its bigrams, found in the original text so the
 match stays in the window). A candidate matches on its document's name and
 its text together, and a hint needs at least two distinct message words to
-match it, or every content word of a message with fewer (`MIN_MATCHED_WORDS`).
+match it, or every content word of a message with fewer (`MIN_MATCHED_WORDS`;
+Epo 2026-10-20 after the hints eval: a hint matching one word was relevant 5%
+of the time, two or more 73%; noise fell from 1.00 to 0.16 hints a message at
+the same recall). The name gives "my calculus note" its second word.
 Words are counted as distinct lexemes under the document's config, so "Cell"
 and "cell," (and under english "derivative" and "derivatives") are one word.
+The query and each message word's lexemes are parsed once per config, not per
+candidate: a stopword sends the client a notice per parse, which per
+candidate was thousands of notices a match.
 A CJK message is not counted by its overlapping two-character pieces, which
 let 什么是光合作用 hint notes sharing only 什么+么是 or 合作+作用 (Epo
 2026-10-20, review S3; `message_units`). A Chinese run is split by longest
@@ -4149,20 +4155,17 @@ same level (`retrieval/hsk_words.tsv`, MIT, from complete-hsk-vocabulary;
 HSK itself is Simplified), the level-1 words (什么, 是, 好) are dropped, each
 other list word ends a word and characters the list lacks join the next list
 word; each word matches by all its pairs, so 什么是光合作用 counts one word,
-光合作. A Japanese or Korean message (any kana or hangul) has no list here:
+光合作. An unlisted character just before a level-1 word is dropped with
+it, so a term the list splits into a level-1 word loses its word (什么是电子
+and 水的沸点 count none; re-review R1, open with Epo). A Japanese or Korean
+message (any kana or hangul) has no list here:
 each run counts once and matches by any of its pairs. Punctuation is not a
 word. On 18 Chinese messages (`bench/rag/fixtures/hints-eval/chinese.json`)
 the list rule found all 11 edit questions at precision 0.61 (0.89 counting
 edits on the question's subject) with 0.11 noise hints a message; the
 fallback, each run once by any pair, also found 11 but at 0.30 with 1.06
 noise, and the old pairs 0.48 with 0.28 noise.
-The query and each message word's lexemes are parsed once per config, not per
-candidate: a stopword sends the client a notice per parse, which per
-candidate was thousands of notices a match (`MIN_MATCHED_WORDS`;
-Epo 2026-10-20 after the hints eval: a hint matching one word was relevant 5%
-of the time, two or more 73%; noise fell from 1.00 to 0.16 hints a message at
-the same recall). The name gives "my calculus note" its second word. The
-lines are source data, in a `<source>` block. Two paths use it:
+The lines are source data, in a `<source>` block. Two paths use it:
 
 - The user message: at most 3 hints (`HINT_LIMIT`), a block of at most 400 tokens in its own
   message right after the query (`_kind` `pending_hints`). Only the hints that

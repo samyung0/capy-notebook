@@ -68,6 +68,8 @@ async def test_history_reuses_current_passages_and_preserves_tool_notes(monkeypa
     assert "changed in file f is no longer available" in content
     assert "Changed source fact." not in content
     assert [p.chunk_id for p in ctx.citations] == ["other", "current"]
+    # Cited again this turn, it is saved with the same count (re-review N3).
+    assert evidence.pack(ctx, [2])["passages"][0]["unindexed"] == 2
     messages = chat.chat_messages(
         locale="en", checkpoint=None, history=history, query="Explain it"
     )
