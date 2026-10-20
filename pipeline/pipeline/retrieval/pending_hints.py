@@ -215,7 +215,8 @@ async def prepared(sources: Any) -> list[_Prepared]:
 
 @cache
 def _hsk_words() -> tuple[dict[str, int], int]:
-    """HSK 3.0 words by level (hsk_words.tsv, MIT) and the longest's length."""
+    """HSK 3.0 words and their Traditional forms by level (hsk_words.tsv, MIT)
+    and the longest's length."""
     text = resources.files("pipeline.retrieval").joinpath("hsk_words.tsv")
     levels = {}
     for line in text.read_text("utf-8").splitlines():

@@ -4144,8 +4144,9 @@ and "cell," (and under english "derivative" and "derivatives") are one word.
 A CJK message is not counted by its overlapping two-character pieces, which
 let 什么是光合作用 hint notes sharing only 什么+么是 or 合作+作用 (Epo
 2026-10-20, review S3; `message_units`). A Chinese run is split by longest
-match over the HSK 3.0 word list (`retrieval/hsk_words.tsv`, MIT, from
-complete-hsk-vocabulary), the level-1 words (什么, 是, 好) are dropped, each
+match over the HSK 3.0 word list with each word's Traditional forms at the
+same level (`retrieval/hsk_words.tsv`, MIT, from complete-hsk-vocabulary;
+HSK itself is Simplified), the level-1 words (什么, 是, 好) are dropped, each
 other list word ends a word and characters the list lacks join the next list
 word; each word matches by all its pairs, so 什么是光合作用 counts one word,
 光合作. A Japanese or Korean message (any kana or hangul) has no list here:

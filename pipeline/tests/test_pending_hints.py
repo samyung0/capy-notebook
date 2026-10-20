@@ -495,6 +495,9 @@ def test_a_cjk_message_counts_words_not_overlapping_pairs():
         "染色 色体",
     ]
     assert units("谢谢！") == []
+    # The list holds Traditional forms too (HSK itself is Simplified).
+    assert units("什麼是光合作用？") == ["光合 合作"]
+    assert units("謝謝！") == []
     assert units("光合成とは何ですか？") == [
         "光合 or 合成 or 成と or とは or は何 or 何で or です or すか"
     ]
