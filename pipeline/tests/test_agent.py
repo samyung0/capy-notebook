@@ -2115,6 +2115,15 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
                     "chunks": 0,
                     "status": "pending",
                 },
+                {
+                    "id": "mat_1",
+                    "name": "Notes",
+                    "chapter_id": None,
+                    "chunks": 2,
+                    "status": "ready",
+                    "kind": "material",
+                    "descriptor": "Mitosis phases",
+                },
             ],
         }
 
@@ -2133,7 +2142,11 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
         assert "[pending]" in text
     else:
         assert "f_2" not in text and "two.txt" not in text
-    assert "Notes (id=mat_1, kind=material, material_kind=note, editable=true)" in text
+    # A note's summary sits under its line, as a file's descriptor does.
+    assert (
+        "Notes (id=mat_1, kind=material, material_kind=note, editable=true)"
+        "\n  Mitosis phases"
+    ) in text
     # A material sits under the chapter it is filed in; the rest are unfiled.
     biology = text.split("## Biology (chapter_id=ch_1)")[1].split("\n## ")[0]
     assert "Cells quiz (id=mat_2" in biology

@@ -1,4 +1,5 @@
-"""Ingest-slot prompts: the descriptor written for each file.
+"""Ingest-slot prompts: the descriptor written for each file and each note
+of 200 tokens or more.
 
 The prompt stays English whatever the uploader's locale; the descriptor itself
 is written in the source's language, because it describes the content and is

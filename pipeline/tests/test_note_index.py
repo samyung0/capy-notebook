@@ -394,3 +394,104 @@ def test_a_note_job_stops_while_the_notes_payer_is_deleting(workspace):
         with workspace._connect() as conn:
             conn.execute("DELETE FROM materials WHERE id=%s", (material_id,))
             conn.execute("DELETE FROM users WHERE id=%s", (payer,))
+
+
+_LONG = "\n\n".join(
+    f"# Topic {i}\n\nTopic {i} covers its own idea about photosynthesis in plain words."
+    for i in range(25)
+)
+
+
+def _summary(workspace, material_id: str) -> list[tuple]:
+    return _rows(
+        workspace,
+        "SELECT cs.descriptor FROM rag_material_contents mc "
+        "JOIN rag_content_summaries cs ON cs.content_id = mc.content_id "
+        "WHERE mc.material_id=%s",
+        (material_id,),
+    )
+
+
+async def test_a_failed_note_summary_publishes_the_chunks_and_the_next_index_writes_it(
+    workspace, provider, monkeypatch
+):
+    """A summary failure must not fail the job, which would abandon the new
+    chunks; the note publishes without one and its next index writes it, paid
+    from that job's owner reservation (Editor 2026-10-20), also when that
+    index has the same text hash, as after a formatting-only edit (Epo
+    2026-10-20), and a note that has one makes no call."""
+    spec = registry.current_job_pins().ingest
+    with workspace._connect() as conn:
+        added = conn.execute(
+            "INSERT INTO model_capacities VALUES (%s, %s, 4, 1) ON CONFLICT DO NOTHING",
+            (spec.provider_slug, spec.model_slug),
+        ).rowcount
+
+    async def fail(*_args, **_kwargs):
+        raise RuntimeError("summary provider down")
+
+    summarize = worker.indexing.summarize_note
+    monkeypatch.setattr(worker.indexing, "summarize_note", fail)
+    provider["text"] = _LONG
+    material_id = _note(workspace)
+    first = _admit(workspace, material_id)
+    await _run(workspace, first)
+
+    assert _rows(workspace, "SELECT status FROM jobs WHERE id=%s", (first,)) == [
+        ("done",)
+    ]
+    content_id, status = _alias(workspace, material_id)
+    assert status == "ready"
+    assert _rows(
+        workspace,
+        "SELECT count(*) > 0 FROM rag_chunks WHERE content_id=%s",
+        (content_id,),
+    ) == [(True,)]
+    assert _summary(workspace, material_id) == []
+
+    async def complete(*_args, **_kwargs):
+        return elitellm.chat_response(
+            {"role": "assistant", "content": "Photosynthesis topics."},
+            finish_reason="stop",
+            usage={"prompt_tokens": 100, "completion_tokens": 10},
+        )
+
+    monkeypatch.setattr(worker.indexing, "summarize_note", summarize)
+    monkeypatch.setattr(elitellm, "complete", complete)
+
+    def summary_calls(job_id: str) -> list[tuple]:
+        reservation = json.loads(
+            _rows(workspace, "SELECT payload::text FROM jobs WHERE id=%s", (job_id,))[
+                0
+            ][0]
+        )["reservationId"]
+        return _rows(
+            workspace,
+            "SELECT status FROM provider_calls WHERE reservation_id=%s "
+            "AND purpose='note_summary'",
+            (reservation,),
+        )
+
+    # The same text: the content is reused, and only the summary is written.
+    provider["inputs"].clear()
+    second = _admit(workspace, material_id)
+    await _run(workspace, second)
+    try:
+        assert _alias(workspace, material_id) == (content_id, "ready")
+        assert provider["inputs"] == []  # nothing re-embedded
+        assert _summary(workspace, material_id) == [("Photosynthesis topics.",)]
+        assert summary_calls(second) == [("applied",)]
+        # With a summary, the same text makes no call.
+        third = _admit(workspace, material_id)
+        await _run(workspace, third)
+        assert summary_calls(third) == []
+        assert _rows(workspace, "SELECT status FROM jobs WHERE id=%s", (third,)) == [
+            ("done",)
+        ]
+    finally:
+        if added:
+            with workspace._connect() as conn:
+                conn.execute(
+                    "DELETE FROM model_capacities WHERE provider=%s AND model=%s",
+                    (spec.provider_slug, spec.model_slug),
+                )

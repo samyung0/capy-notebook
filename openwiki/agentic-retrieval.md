@@ -119,7 +119,7 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_content_summaries` | The ~50-word `descriptor` and its running `change_share`; shared by files with identical content |
+| `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and when it was written (`updated_at`, kept when a refresh reuses it); shared by files with identical content, carried forward across a note's reindexes |
 
 All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
 logical file removes its alias; a trigger removes canonical content only after
@@ -1751,7 +1751,8 @@ exists; the local bundle is gone once the first ingest finished.
   can only regenerate earlier). Its
   share of the document's estimated tokens adds to the stored `change_share`,
   and the published descriptor is kept while that sum stays under 2%
-  (`SUMMARY_REUSE_SHARE`). At 2% or more, or with no previous descriptor, the descriptor is regenerated
+  (`SUMMARY_REUSE_SHARE`), with its `updated_at` (when it was written). At 2%
+  or more, or with no previous descriptor, the descriptor is regenerated
   and the share resets to 0. The call reads `descriptor_excerpt`: the whole
   content up to `DESCRIPTOR_INPUT_TOKENS` (8,000 estimated tokens), else the
   heading outline (halved until it fits 1,200), the opening chunks up to half
@@ -3144,7 +3145,7 @@ build, and the knowledge library is one more source while the switch is on.
 | Tool | Side effects | Notes |
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
-| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
+| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
 | `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
@@ -3858,8 +3859,26 @@ room or stored content, for note effects. The worker chunks `text` with `chunk_m
 so a note never shares a content row with a file of identical text, and
 claims a new content row without moving the alias. It reuses vectors for
 unchanged chunk text from the note's previous content row, which stays
-aliased and searchable while the job runs, and writes the content with no
-descriptor. `publish_material_content` then marks the new row ready and moves
+aliased and searchable while the job runs, and writes the note's summary
+before the publish (`_note_summary`, Epo 2026-10-20): a note under 200
+estimated tokens (`NOTE_SUMMARY_MIN_TOKENS`) gets none, and loses one it had;
+a note with none gets one; otherwise the change since the previous content
+(`text_change_tokens`, as a share of the note) adds to the carried
+`change_share`, and the summary is rewritten from the whole note once that
+reaches 10% (`NOTE_SUMMARY_SHARE`) and the summary is at least 24 hours old
+(`NOTE_SUMMARY_MIN_AGE_S`), else carried forward to the new content with its
+share and `updated_at`. The age bound keeps a note under active editing from
+paying for a summary per burst of typing. It is checked only when the note is
+indexed; there is no timer. The call is the file descriptor's prompt and
+excerpt without the title (`summarize_note`, purpose `note_summary`), under
+the job's ingest accounting, so the workspace owner pays. A failed call does
+not fail the job, which would abandon the new chunks: the note publishes
+without a summary (or keeps its previous one with the accumulated share), and
+its next index writes it: also a reindex whose text hash is unchanged (a
+formatting-only edit), which reuses the ready content and runs only the summary
+step when that content has none (`fill_note_summary`, Epo 2026-10-20). Notes
+indexed before summaries get none until they are edited: there is no backfill.
+`publish_material_content` then marks the new row ready and moves
 the alias in one transaction, and the orphan trigger drops the old row. The
 alias move (here, or when the claim finds ready content) also stores the
 fetched `blocks` as `materials.indexed_blocks` (migration 0098): the baseline
@@ -3877,7 +3896,7 @@ Search runs one pool: the `scoped_files` CTE unions files and notes with a
 passage cites `{kind: "material", materialId, fileName: title}` with no page
 or regions. The chat panel renders such a chip with the note glyph and opens
 the note in view mode. The agent's `list_sources` keeps notes as title, id
-and kind, `read_document` pages a note's chunks like a file's, and the file
+and kind, with the note's summary under its line when it has one, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows, and a copied index keeps its
 `indexed_blocks`; a cloned note without an
