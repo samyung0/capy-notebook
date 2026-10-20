@@ -61,7 +61,7 @@ func TestPendingInvitesListEveryTypedAddress(t *testing.T) {
 			addresses = append(addresses, address)
 		}
 		slices.Sort(addresses)
-		slices.Sort(want)
+		want = slices.Sorted(slices.Values(want))
 		if !slices.Equal(addresses, want) {
 			t.Fatalf("pending list = %q, want %q", addresses, want)
 		}
