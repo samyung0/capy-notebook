@@ -3170,7 +3170,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
 | `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX and PPTX page their paragraph or shape entries with target ids by `start`/`count` as `inspect_document` paged them (their scoped reads are phases 2 and 3); a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX made by a first `create` command without `file_id` (Office tools, below; DOCX create is phase 2). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size and asking for several calls). Receipts and refusals as `edit_document`'s for a source; a call holding a command the engine returns no inverse for has no Undo, and its result offers none |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX made by a first `create` command without `file_id` (Office tools, below; DOCX create is phase 2). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON, or whose `set_range` and `format_cells` ranges cover over 10,000 cells, is refused before it leaves (`invalid_input`, naming its size or cell count and asking for several calls); the engine refuses a call writing over 10,000 cells across all its commands. Receipts and refusals as `edit_document`'s for a source; a call holding a command the engine returns no inverse for has no Undo, and its result offers none |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3652,9 +3652,22 @@ checks the actor, replays a receipt as `/api/internal/files` does and checks
 for the file's bytes and stores them as the agent's deck is stored
 (`storeAgentFile`: the upload's size check, the blob, the files row, the parse
 job and a receipt whose Undo trashes the file); the file is named from the
-title (path separators and control characters dropped) plus `.xlsx`. Only
-XLSX is created: the schema and Go take `xlsx` alone, and the engine refuses a
-format without a starter as `unsupported_operation` (DOCX create is phase 2).
+title (path separators and control characters dropped) plus `.xlsx`.
+`/api/internal/files` itself stays `.pptx`-only for decks (review finding 9).
+Only XLSX is created: the schema and Go take `xlsx` alone, and the engine
+refuses a format without a starter as `unsupported_operation` (DOCX create is
+phase 2).
+
+Retries (Epo 2026-10-20, review finding 3): the retrieval service posts an
+Office edit again under the same operation id when its 10 s timeout passes
+(`_post_operation`), and the create after 60 s. Go runs one attempt of an
+operation id at a time (`operationLocks` in `internal_documents.go`, an
+in-memory lock: the gateway is one process in UAT and production) across the
+receipt replay and the collaboration call, and that call runs uncancelled
+(`context.WithoutCancel`), so the attempt the retrieval service gave up on
+still finishes; the retry waits for it and replays its receipt, or applies
+again after a refusal. The create route holds the same lock across its replay,
+build and store.
 
 The collaboration server runs both on the engine's Background lane: its
 inspect route answers an `office` query with the engine's scoped read
@@ -3664,7 +3677,19 @@ starter (`crates/office-service/starters/blank.xlsx` in the fork), applies the
 commands and exports at a fixed time with a seed from the request, so a
 retried create gives the same bytes. The engine has every XLSX command above
 (`crates/office-service/src/xlsx.rs`); DOCX and PPTX scoped reads and their new
-commands are phases 2 and 3.
+commands are phases 2 and 3. A row or column delete names its band's inputs
+as rows of cells like `set_range`'s `expected` (a row's cells from column A;
+for columns, rows from row 1 holding the deleted columns' cells), trailing
+empty cells and rows left out, so `[]` expects an empty band and cells holding
+tabs or line breaks match exactly (review finding 6); Go refuses an `expected`
+that is not such a grid. A stale band's refusal carries `details.block.grid`,
+the exact grid to copy, cut after 2,000 cells (an empty row counting as one)
+with `gridCut`, beside its TSV `text`. One call writes at most 10,000 cells
+across its commands (review finding 3): the engine's XLSX session counts a
+range's area for `set_range` and `format_cells` and a delete's stored cells,
+inserts and sheet changes counting none, and `apply_commands` and `create`
+refuse past it as `invalid_input` naming the count so far; the retrieval
+service refuses earlier from the `set_range` and `format_cells` areas alone.
 
 Undo (Epo 2026-10-20): until the live-room Undo lands, an Office command
 returns only the inverse the engine gives cheaply (`set_range` with values and
@@ -3709,7 +3734,9 @@ with text carries the paragraph in `details.block` (`type: "paragraph"`, its
 text as `inspect_office_document` shows it) (Epo 2026-10-14, the fork's
 `office-service`, see [Office files](frontend/office-files.md)). An
 `edit_office_document` refusal names its target by the block's type
-(`_missed_target(office=True)`): `Range <id> now holds, as TSV:`, `Cell`,
+(`_missed_target(office=True)`): `Range <id> now holds, as TSV:` (a delete's
+band `as rows of cells:` with its grid as compact JSON, saying when it was
+cut), `Cell`,
 `Sheet`, `Paragraph` or `Shape <id> now reads:`, and a `details.blocks`
 listing of sheets as `The workbook's sheets now:` with `[id] name` lines. The pipeline keeps what this turn last inspected or wrote of each
 block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
