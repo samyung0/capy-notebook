@@ -91,10 +91,7 @@ import { registerLiveNote } from './liveNoteHandover';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
-import {
-  remoteCursorRangesForEntry,
-  useRemoteCursorDecorations,
-} from './RemoteCursors';
+import { remoteCursorRangesForEntry, useRemotePeers } from './RemoteCursors';
 import {
   type RoomReconnector,
   refusalDropsDrafts,
@@ -346,11 +343,11 @@ const NoteEditorContent = memo(function NoteEditorContent({
       current.api.isElementStateEmpty(firstNode)
     );
   }, []);
-  const remoteCursors = useRemoteCursorDecorations(editor);
+  const remotePeers = useRemotePeers(editor);
   // Read through refs so `decorate` keeps one identity: Plate treats a new
   // decorate function as new editable props and re-renders the whole document.
-  const latest = useRef({ discussions, remoteCursors });
-  latest.current = { discussions, remoteCursors };
+  const latest = useRef({ discussions, remotePeers });
+  latest.current = { discussions, remotePeers };
   // Comment anchors resolve to Slate ranges that shift with the document, so
   // they are recomputed once per document version rather than once per node.
   const anchors = useRef<{
@@ -361,7 +358,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
 
   const decorate = useCallback(
     ({ entry }: { entry: [unknown, Path] }) => {
-      const { discussions: current, remoteCursors: cursors } = latest.current;
+      const { discussions: current, remotePeers: peers } = latest.current;
       if (
         anchors.current?.version !== editor.children ||
         anchors.current.discussions !== current
@@ -377,7 +374,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
       }
       return [
         ...commentDecorationRangesForEntry(entry, anchors.current.ranges),
-        ...remoteCursorRangesForEntry(entry, cursors),
+        ...remoteCursorRangesForEntry(editor, entry, peers),
       ] as never;
     },
     [editor]

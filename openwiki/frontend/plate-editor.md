@@ -202,6 +202,26 @@ actions use 32px/16px.
 identity, and calls Yjs `init` with the canonical room and `value: null`.
 Cleanup destroys providers and disconnects the Yjs editor.
 
+Co-editors' selections arrive through awareness as Yjs relative positions
+(`RemoteCursors.tsx`). `useRemotePeers` puts them in React state only when a
+peer's selection or label changes, so heartbeats re-render nothing, and
+`decorate` resolves them against the document once per document version (or
+peer change), so an edit before an idle peer's caret moves it, as comment
+anchors do. They are returned for the root entry only: slate-react hands the
+root's decorations down to every node they cover, and returning them per block
+and text drew each caret three times. A selection is a tinted range
+(`data-remote-cursor`); every peer also gets a caret at its focus, a collapsed
+decoration that renders as an empty, zero-width leaf with `data-remote-caret`.
+Both carry the peer's colour as `--remote-cursor`, and the `.note-editor`
+stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
+colours, which a hex alpha suffix made invalid) and the caret's 2 px bar as a
+`::before`, so the caret adds no DOM node to the text and leaves Slate's
+DOM-to-point mapping and native caret movement alone. slate-react renders no
+decorations inside a void, so a caret on an inline equation is drawn right
+after it; a caret on a block void (a block equation, an image, an embed) is not
+drawn. Positions beside an inline element resolve through the slate-yjs patch
+(Mermaid source below).
+
 The Plate editor initially has a query-cache value so the React tree has a valid
 shape before connection, but that value is never supplied as Yjs initialization
 data. After sync, Slate-Yjs replaces editor children from the shared root.
@@ -605,7 +625,10 @@ a string. `@slate-yjs/core` 1.0.2 is patched for it
 (`patches/@slate-yjs__core@1.0.2.patch`, registered in `pnpm-workspace.yaml`):
 Slate reads the attribute as its string, a remote edit of the text becomes one
 `set_node` of `source`, a local `set_node` of `source` edits the text with the
-fewest changes, and an insert or a clone (a move) creates the text. The
+fewest changes, and an insert or a clone (a move) creates the text. The patch
+also resolves a position that falls on an inline element (the empty text before
+or after an inline equation or a link), which stock 1.0.2 returns as no point,
+to the text beside it, so a co-editor's caret there is drawn. The
 editors bind CodeMirror to the text itself (`yTextCodeMirror.ts`: local
 changes go in under the binding's origin, remote ones come back as one
 CodeMirror transaction kept out of its history); the note block's dialog finds
@@ -2150,9 +2173,9 @@ validation and are not rendered.
   (`getSelectionInformation`). Drops land where the pointer is and dragging
   auto-scrolls blocks into range, so the handle shows on hover and drag and
   drop work as before (`e2e/editor/block-interactions.spec.ts`).
-- Remote cursor and comment decorations must match Slate paths structurally
-  (`Path.compare`, not dot-joined path strings, which put block 10 before
-  block 3). Shared-link editors may be absent from the
+- Comment decorations must match Slate paths structurally (`Path.compare`,
+  not dot-joined path strings, which put block 10 before block 3); remote
+  cursors are returned at the root only. Shared-link editors may be absent from the
   workspace member directory, so cursor labels fall back to the authenticated
   user's name. Because decorations split text leaves, editor end navigation
   should use the Plate document API.

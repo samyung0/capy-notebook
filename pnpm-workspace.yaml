@@ -31,6 +31,8 @@ patchedDependencies:
   # Capy patch (live-items, Epo 2026-10-10): a `mermaid` element's `source` is
   # a nested Y.Text, read as its string in Slate (Mermaid shape A); a chart's,
   # plot's or graph's `block` is a Y.Map edited entry by entry (Epo 2026-10-17).
+  # A position that falls on an inline element (an inline equation, a link)
+  # resolves to the text beside it, so a co-editor's caret there is drawn.
   "@slate-yjs/core@1.0.2": patches/@slate-yjs__core@1.0.2.patch
   # Capy patch: Yjs has no option to skip its after-transaction formatting
   # cleanup; a doc built with `meta: { formattingCleanup: false }` skips it.
