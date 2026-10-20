@@ -46,6 +46,8 @@ HINT_LIMIT = 3
 # time, two or more 73%), or every content word of a shorter message.
 MIN_MATCHED_WORDS = 2
 HINT_CHARS = 200
+# The words a message counts, as search's query terms (search_query_terms).
+MESSAGE_UNITS_MAX = 40
 HINT_TOKENS = 400
 CANDIDATES_MAX = 2000
 CANDIDATE_CHARS = 500  # read per change for matching (Epo 2026-10-20)
@@ -220,7 +222,7 @@ def message_units(query: str) -> list[str]:
     (hangul) as a word matched by two of its pairs, a run of a message with
     kana as one Japanese word matched by any pair not only hiragana, and
     otherwise as Chinese words each matched by all of its pairs.
-    Punctuation is not a word."""
+    Punctuation is not a word; at most MESSAGE_UNITS_MAX words count."""
     words = [
         w for w in search_query_terms(query).any_of.split(" or ") if _WORD.search(w)
     ]
@@ -235,11 +237,8 @@ def message_units(query: str) -> list[str]:
         elif japanese:
             units.append(hint_words.japanese_unit(run))
         else:
-            units += [
-                " ".join(tokenize_for_search(piece).split())
-                for piece in hint_words.chinese_pieces(run)
-            ]
-    return [unit for unit in units if unit]
+            units += hint_words.chinese_units(run)
+    return list(dict.fromkeys(unit for unit in units if unit))[:MESSAGE_UNITS_MAX]
 
 
 async def match(
@@ -255,9 +254,11 @@ async def match(
     2026-10-20): ``simple`` keeps every word, so "the" would match almost
     anything. Only English: the French, German and Spanish lists dropped
     English content words such as "war" and "die"."""
+    if not pool:
+        return []
     any_of = search_query_terms(query).any_of
     units = message_units(query)
-    if not pool or not any_of or not units:
+    if not any_of or not units:
         return []
     return await match_units(units, any_of, pool, limit)
 

@@ -4161,18 +4161,24 @@ measured necessary):
   and characters between them join the next; each word matches by all its
   pairs, so 什么是光合作用 counts 光合作 and 为什么会下雨 counts 下雨. A
   character left alone takes a one-character measure word, locative, 对 or 能
-  next to it, so 对数, 动能 and 中子 stay terms.
+  next to it, so 对数, 动能 and 中子 stay terms, and a few terms the lists
+  would cut (向量, 内能, 中和) are added to the split.
 - Japanese (a message with kana): a run counts once and matches by any of its
   pairs not made only of hiragana, so です and とは match nothing.
 - Korean (a run with hangul): a word loses one ending (광합성이란 → 광합성),
   question words and set phrases (무엇, 어떻게, 역할, 이건) count none, and a
-  word matches by two of its pairs.
+  word of up to 8 characters matches by two of its pairs; a longer run (Korean
+  pasted without spaces) by any pair.
 
-Punctuation is not a word. On 36 Chinese messages
+Punctuation is not a word. A word matches by at most 24 pairs and a message
+counts at most 40 words (`PAIRS_MAX`, `MESSAGE_UNITS_MAX`), so any message the
+chat accepts builds its query in milliseconds: two of every pair of a
+1,000-character Korean run overflowed Postgres's tsquery and failed the turn
+(final look B1). On 39 Chinese messages
 (`bench/rag/fixtures/hints-eval/chinese.json` and `cjk-terms.json`) the rule
-found 25 of 26 edit questions with 0.17 noise hints a message; the old pairs
-found 21 with 0.25, dropping every HSK level-1 word 16 with 0.17, each run once
-by any pair 26 with 1.00. Japanese found 5 of 5 and Korean 4 of 4 with no
+found 28 of 29 edit questions with 0.15 noise hints a message; the old pairs
+found 22 with 0.23, dropping every HSK level-1 word 18 with 0.18, each run once
+by any pair 29 with 1.05. Japanese found 5 of 5 and Korean 4 of 4 with no
 noise (any pair: 1.29 and 0.14 noise, Korean 2 of 4).
 The lines are source data, in a `<source>` block. Two paths use it:
 

@@ -9,7 +9,14 @@ import pytest
 
 from pipeline.prompts import chat as chat_prompts
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import compact, evidence, pending, pending_hints, tools
+from pipeline.retrieval import (
+    compact,
+    evidence,
+    hint_words,
+    pending,
+    pending_hints,
+    tools,
+)
 
 
 def _change(operation, *, before=None, after=None, cid="c", **extra):
@@ -508,6 +515,42 @@ def test_a_cjk_message_counts_words_not_overlapping_pairs():
     assert units("광합성이란 무엇인가요?") == ["광합 합성"]
     assert units("광합성 에너지?") == ["광합 합성", "에너 너지"]
     assert units("이건 무엇인가요?") == []
+    # A Korean word of three or more pairs matches by any two of them.
+    assert units("세포분열은?") == [
+        "세포 포분 or 세포 분열 or 포분 분열",
+    ]
+    # Longer than KOREAN_WORD_MAX, a run is not one word: any pair.
+    assert units("광합성세포분열에너지") == [
+        "광합 or 합성 or 성세 or 세포 or 포분 or 분열 or 열에 or 에너 or 너지"
+    ]
+    # Hand-picked terms the dropped and joinable words would cut (r3 S1).
+    assert units("什么是向量？") == ["向量"]
+    assert units("什么是内能？") == ["内能"]
+    assert units("什么是中和反应？") == ["中和", "反应"]
+
+
+def _long_messages() -> dict[str, str]:
+    """5,000-character messages: Korean pasted without spaces, Chinese, and
+    mixed scripts (review hints-round r3 B1)."""
+    korean = "광합성세포분열미토콘드리아에너지포도당" * 250
+    chinese = "光合作用细胞分裂向量内能沸点电子中子对数为什么" * 220
+    return {
+        "korean": korean[:5000],
+        "chinese": chinese[:5000],
+        "mixed": f"photosynthesis {chinese[:2000]} 세포{korean[:2000]} "
+        + "mitochondria " * 70,
+    }
+
+
+def test_a_long_message_counts_a_bounded_query():
+    """Two of every pair of a long Korean run grew quadratically: 1,000
+    characters overflowed Postgres's tsquery (review hints-round r3 B1)."""
+    for text in _long_messages().values():
+        units = pending_hints.message_units(text)
+        assert 0 < len(units) <= pending_hints.MESSAGE_UNITS_MAX
+        assert sum(map(len, units)) < 8000
+    [korean] = pending_hints.message_units(_long_messages()["korean"])
+    assert korean.count(" or ") < hint_words.PAIRS_MAX
 
 
 @pytest.mark.integration
@@ -554,6 +597,57 @@ async def test_what_is_x_in_chinese_hints_only_notes_on_x(workspace):
     # matches nothing (re-review R3).
     assert await ids("光合成とは何ですか？") == {"ja", "energy"}
     assert await ids("何をすればいいですか？") == set()
+
+
+@pytest.mark.integration
+async def test_a_korean_word_matches_by_two_of_its_pairs(workspace):
+    """Re-review R3: a Korean word loses its ending, question words count
+    none, and a particle pair (이란, 인가) alone does not hint."""
+    korean = workspace.add_file("korean.pdf")
+    _index_as(workspace, korean, "ko")
+    sources = pending.PendingSources(
+        [
+            _file(
+                korean,
+                _change(
+                    "add",
+                    after="광합성은 빛 에너지를 이용해 포도당을 만든다.",
+                    cid="photo",
+                ),
+                _change(
+                    "add", after="미토콘드리아는 세포의 에너지를 만든다.", cid="mito"
+                ),
+                _change("add", after="이것은 무엇인가요? 이란 나라.", cid="decoy"),
+                name="메모",
+            )
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return {hint.change_id for hint in await pending_hints.match(query, pool)}
+
+    assert await ids("광합성이란 무엇인가요?") == {"photo"}
+    assert await ids("미토콘드리아의 역할은?") == {"mito"}
+    assert await ids("이건 무엇인가요?") == set()
+
+
+@pytest.mark.integration
+async def test_a_long_message_matches_without_error(workspace):
+    """Review hints-round r3 B1: a 1,000-character Korean run without spaces
+    raised "value is too big in tsquery" and failed the turn."""
+    sources = pending.PendingSources(
+        [
+            _file(
+                "f_m",
+                _change("add", after="광합성은 빛 에너지를 이용한다.", cid="ko"),
+                _change("add", after="光合作用把光变成能量。", cid="zh"),
+            )
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+    for text in _long_messages().values():
+        assert len(await pending_hints.match(text, pool)) <= pending_hints.HINT_LIMIT
 
 
 def test_a_snippet_is_placed_by_the_longest_query_word():

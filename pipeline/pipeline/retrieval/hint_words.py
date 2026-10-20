@@ -9,7 +9,8 @@ necessary (bench/rag/reports/2026-10-20-hints-cjk-rule.md):
 - Chinese: split by longest match over the HSK 3.0 words (hsk_words.tsv, MIT)
   and the lists below. Function words, question words, request verbs,
   measure words and locatives are dropped; other list words end a word and
-  characters between them join the next. A character left alone takes a
+  characters between them join the next; a few terms the lists would cut
+  (向量, 内能, 中和) are added. A character left alone takes a
   one-character measure word, locative, 对 or 能 next to it, so 对数,
   动能 and 中子 stay terms.
 - Japanese: pairs made only of hiragana do not count (です, とは).
@@ -23,6 +24,14 @@ from functools import cache
 from importlib import resources
 
 from .chunking import tokenize_for_search
+
+# A word matches by at most PAIRS_MAX pairs, and a Korean word by two of its
+# pairs only up to KOREAN_WORD_MAX characters, so a long run (a pasted
+# paragraph without spaces) keeps the query small and linear (review
+# hints-round r3 B1: two of every pair of a 1,000-character run overflowed
+# Postgres's tsquery).
+PAIRS_MAX = 24
+KOREAN_WORD_MAX = 8
 
 # Dropped and never part of a term. Simplified, then Traditional forms.
 _CHINESE_STOP = """
@@ -44,6 +53,17 @@ _CHINESE_STOP = """
 為 爲 為了 並 纔 已經 一點 有點 之間 裡面 中間 旁邊 以後 之後
 """.split()  # noqa: SIM905 - grouped lines keep the hand-picked list reviewable
 # Dropped too, but a character left alone next to one keeps it: 对数, 动能, 中子.
+# Terms the lists would cut (向 and 说明 are dropped, 内, 中 and 位 joinable).
+_CHINESE_TERMS = [
+    "向量",
+    "内能",
+    "中和",
+    "位能",
+    "向心力",
+    "说明文",
+    "內能",
+    "說明文",
+]
 _CHINESE_JOINABLE = """
 对 能 个 种 次 位 本 张 条 件 颗 只 块 段 篇 道 类 几 里 上 下 中 内 外
 前 后 间
@@ -82,6 +102,7 @@ def _chinese_words() -> tuple[dict[str, int], frozenset[str], frozenset[str], in
     joinable = frozenset(_CHINESE_JOINABLE)
     stop = frozenset(_CHINESE_STOP) | joinable
     words = {**levels, **dict.fromkeys(stop - levels.keys(), 0)}
+    words.update(dict.fromkeys(_CHINESE_TERMS, 0))
     return words, stop, joinable, max(map(len, words))
 
 
@@ -132,7 +153,13 @@ def chinese_pieces(run: str) -> list[str]:
 
 
 def _pairs(text: str) -> list[str]:
-    return tokenize_for_search(text).split()
+    """The text's distinct search pairs, in order."""
+    return list(dict.fromkeys(tokenize_for_search(text).split()))
+
+
+def chinese_units(run: str) -> list[str]:
+    """A Chinese run's words, each matched by all of its pairs."""
+    return [" ".join(_pairs(piece)[:PAIRS_MAX]) for piece in chinese_pieces(run)]
 
 
 def _is_hiragana(ch: str) -> bool:
@@ -143,12 +170,13 @@ def japanese_unit(run: str) -> str:
     """A Japanese run once, matched by any of its pairs not made only of
     hiragana."""
     pairs = [p for p in _pairs(run) if not all(map(_is_hiragana, p))]
-    return " or ".join(pairs) if len(run) > 1 else ""
+    return " or ".join(pairs[:PAIRS_MAX]) if len(run) > 1 else ""
 
 
 def korean_unit(run: str) -> str:
     """A Korean word without its ending, matched by two of its pairs (or its
-    one pair); a question word or set phrase counts none."""
+    one pair); a question word or set phrase counts none. A longer run is
+    not one word (Korean pasted without its spaces) and matches by any pair."""
     if run in _KOREAN_STOP:
         return ""
     stem = next(
@@ -162,6 +190,8 @@ def korean_unit(run: str) -> str:
     if stem in _KOREAN_STOP or len(stem) < 2:
         return ""
     pairs = _pairs(stem)
+    if len(stem) > KOREAN_WORD_MAX:
+        return " or ".join(pairs[:PAIRS_MAX])
     if len(pairs) < 2:
         return " ".join(pairs)
     return " or ".join(f"{a} {b}" for i, a in enumerate(pairs) for b in pairs[i + 1 :])
