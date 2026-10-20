@@ -73,6 +73,8 @@ class ToolResult:
     refused: bool = False
     failed: bool = False
     paged: bool = False
+    # Rendered after the result and kept whole when it is clipped.
+    tail: str = ""
 
     @property
     def outcome(self) -> str:
@@ -197,8 +199,10 @@ class ToolContext:
     pending_sources: pending.PendingSources = field(
         default_factory=pending.PendingSources
     )
-    # The unindexed edits this turn's user message was hinted (pending_hints).
+    # The unindexed edits this turn's user message was hinted (pending_hints),
+    # and every edit already shown this conversation, which search skips.
     pending_hints: list[tuple[pending_hints.Hint, str]] = field(default_factory=list)
+    hinted: set[tuple[str, str]] = field(default_factory=set)
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
@@ -421,25 +425,31 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     return ToolResult(
         passages=passages,
-        text_parts=[_overlap_footer(overlap, len(passages)), edits],
+        text_parts=[_overlap_footer(overlap, len(passages))],
+        tail=edits,
     )
 
 
 async def _unindexed_edits(query: str, ctx: ToolContext, ids: list[str]) -> str:
     """Edits not in the index yet that match the search (Epo 2026-10-20): not
     citable, they name the document to read. Documents already read this turn
-    pass their changes on in full instead."""
+    pass their changes on in full, and edits already shown are skipped."""
     sources = ctx.pending_sources
+    read = sources.read_ids or set()
     pool = [
-        hint
-        for hint in pending_hints.candidates(sources, exclude=sources.read_ids or set())
-        if not ids or hint.doc_id in ids
+        p
+        for p in await pending_hints.prepared(sources)
+        if p.hint.doc_id not in read
+        and p.hint.key not in ctx.hinted
+        and (not ids or p.hint.doc_id in ids)
     ]
     matched = await pending_hints.match(query, pool)
-    return pending_hints.render(
+    block, shown = pending_hints.render(
         [(hint, pending_hints.snippet(hint, query)) for hint in matched],
         pending_hints.SEARCH_HEADING,
     )
+    ctx.hinted |= {hint.key for hint, _ in shown}
+    return block
 
 
 def _search_event(
@@ -2807,15 +2817,18 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
 TOOL_RESULT_MAX_TOKENS = 8192
 
 
-def limit_tool_result(text: str) -> str:
+def limit_tool_result(text: str, tail: str = "") -> str:
     """Bound stored tool output while making truncation visible to the model.
-    A clip inside a source block closes the block, so the notice stays outside."""
-    if estimate_tokens(text) <= TOOL_RESULT_MAX_TOKENS:
-        return text
+    A clip inside a source block closes the block, so the notice stays outside.
+    ``tail`` (a search's unindexed edits) is kept whole after the clip."""
+    tail = "\n\n" + tail if tail else ""
+    budget = TOOL_RESULT_MAX_TOKENS - estimate_tokens(tail)
+    if estimate_tokens(text) <= budget:
+        return text + tail
     marker = "\n\n[Tool output truncated. Narrow the request or continue reading.]"
     close = "\n</source>"
-    room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(close + marker))
+    room = max(0, budget - estimate_tokens(close + marker))
     clipped = clip_to_tokens(text, room)
     if clipped.rfind("<source>") > clipped.rfind("</source>"):
         clipped += close
-    return clipped + marker
+    return clipped + marker + tail

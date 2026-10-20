@@ -43,6 +43,8 @@ class PendingSources:
     # read_document), never with search results.
     read_ids: set[str] | None = None
     _note_ids: set[str] = field(default_factory=set, repr=False)
+    # The candidates pending_hints prepared for matching, once per load.
+    hint_pool: list[Any] | None = field(default=None, repr=False)
     _workspace_id: str | None = field(default=None, repr=False)
     _file_ids: list[str] | None = field(default=None, repr=False)
     _baseline: list[tuple] = field(default_factory=list, repr=False)

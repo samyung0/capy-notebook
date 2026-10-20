@@ -3690,50 +3690,127 @@ async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
     assert "unread file edit" not in second and "unread note edit" not in second
 
 
+def _hinted_sources():
+    return pending.PendingSources(
+        [
+            {
+                "fileId": "f_1",
+                "name": "bio.pdf",
+                "epoch": 1,
+                "checkpoint": 2,
+                "indexedCheckpoint": 1,
+                "changes": [
+                    {
+                        "id": "c1",
+                        "kind": "text",
+                        "operation": "replace",
+                        "label": "",
+                        "before": "old",
+                        "after": "mitosis has four phases",
+                    }
+                ],
+            },
+        ]
+    )
+
+
+async def _match_all(_query, pool, limit=5):
+    return [p.hint for p in pool[:limit]]
+
+
 async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeypatch):
-    """Epo 2026-10-20: matching edits ride with the user message as short
-    hints, saved with the answer so later turns replay and skip them."""
+    """Epo 2026-10-20: matching edits follow the user message as short hints
+    in a source block, saved with the answer so later turns skip them."""
 
     async def load(*_args, **_kwargs):
-        return pending.PendingSources(
-            [
-                {
-                    "fileId": "f_1",
-                    "name": "bio.pdf",
-                    "epoch": 1,
-                    "checkpoint": 2,
-                    "indexedCheckpoint": 1,
-                    "changes": [
-                        {
-                            "id": "c1",
-                            "kind": "text",
-                            "operation": "replace",
-                            "label": "",
-                            "before": "old",
-                            "after": "mitosis has four phases",
-                        }
-                    ],
-                },
-            ]
-        )
-
-    async def match(_query, pool, limit=5):
-        return pool[:limit]
+        return _hinted_sources()
 
     stream, seen = _script_stream([_assembled(_answer(("done", [])))])
     monkeypatch.setattr(pending, "load", load)
-    monkeypatch.setattr(agent.pending_hints, "match", match)
+    monkeypatch.setattr(agent.pending_hints, "match", _match_all)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     events = await _collect(
         "How many phases does mitosis have?", ToolContext(workspace_id="ws_1")
     )
-    query = next(m for m in seen[0]["messages"] if m.get("_kind") == "query")
-    assert query["content"].startswith("How many phases does mitosis have?\n\n")
+    messages = seen[0]["messages"]
+    query = next(i for i, m in enumerate(messages) if m.get("_kind") == "query")
+    assert messages[query]["content"] == "How many phases does mitosis have?"
+    hint = messages[query + 1]
+    assert hint["_kind"] == agent.pending_hints.KIND
     assert (
-        '- bio.pdf (file_id=f_1): changed: "mitosis has four phases"'
-        in query["content"]
+        '"bio.pdf", file_id=f_1: changed "mitosis has four phases"' in hint["content"]
     )
+    assert "<source>" in hint["content"]
     # The full change is not passed on before a read.
-    assert not any(m.get("_kind") == "pending_sources" for m in seen[0]["messages"])
+    assert not any(m.get("_kind") == "pending_sources" for m in messages)
     done = next(e for e in events if e["type"] == "done")
-    assert [h["changeId"] for h in done["toolEvidence"]["pendingHints"]] == ["c1"]
+    saved = done["toolEvidence"]["pendingHints"]
+    assert [h["changeId"] for h in saved] == ["c1"]
+
+    # The next turn replays the hint and does not hint the same edit again
+    # (review S6: fails with the cross-turn skip reverted).
+    stream, seen = _script_stream([_assembled(_answer(("done", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    history = [
+        {"id": "u1", "role": "user", "content": "How many phases does mitosis have?"},
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": "Four.",
+            "toolEvidence": done["toolEvidence"],
+        },
+    ]
+    events = [
+        e
+        async for e in agent.run_agent(
+            query="And mitosis again?",
+            ctx=ToolContext(workspace_id="ws_1"),
+            history=history,
+            model=_model(),
+        )
+    ]
+    kinds = [m.get("_kind") for m in seen[0]["messages"]]
+    assert kinds.count(agent.pending_hints.KIND) == 1  # the replayed one only
+    assert kinds.index(agent.pending_hints.KIND) < kinds.index("query")
+    done = next(e for e in events if e["type"] == "done")
+    assert "pendingHints" not in done["toolEvidence"]
+
+
+async def test_a_turn_saves_the_documents_it_read(monkeypatch):
+    """Review S6: readDocuments is what lets a later fold keep a hint."""
+
+    async def load(*_args, **_kwargs):
+        return _hinted_sources()
+
+    async def read_range(**_kwargs):
+        return [
+            {
+                "id": "c1",
+                "file_id": "f_1",
+                "file_name": "bio.pdf",
+                "chunk_idx": 0,
+                "text": "x",
+            }
+        ]
+
+    async def no_match(*_args, **_kwargs):
+        return []
+
+    stream, _seen = _script_stream(
+        [
+            _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
+            _assembled(_answer(("done", []))),
+        ]
+    )
+    monkeypatch.setattr(pending, "load", load)
+    monkeypatch.setattr(agent.pending_hints, "match", no_match)
+    monkeypatch.setattr(tools.store, "read_file_range", read_range)
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 3}],
+    }
+    events = await _collect("What changed?", ctx)
+    done = next(e for e in events if e["type"] == "done")
+    assert done["toolEvidence"]["readDocuments"] == ["f_1"]

@@ -172,7 +172,11 @@ async def summarize_checkpoint(
 ) -> str:
     """Fold all supplied turns, using chronological batches when necessary.
     Hints whose document was never read are not folded (pending_hints)."""
-    turns = [pending_hints.for_summary(turn) for turn in turns]
+    turns = [
+        folded
+        for folded in (pending_hints.for_summary(turn) for turn in turns)
+        if folded is not None
+    ]
     memory = str(prior_summary or "").strip()
     batch: list[dict[str, Any]] = []
     for turn in turns:

@@ -77,15 +77,22 @@ async def history_turns(
             continue
         saved = turn.get("toolEvidence") or {}
         if content:
-            message = {"id": turn.get("id") or "", "role": role, "content": content}
-            # A user message's hints are saved with the answer that follows it.
+            out.append({"id": turn.get("id") or "", "role": role, "content": content})
+            # A user message's hints are saved with the answer that follows it,
+            # and replayed after it while their document is still pending here.
             answer = turns[i + 1] if i + 1 < len(turns) else {}
             if role == "user" and answer.get("role") == "assistant":
-                hints = (answer.get("toolEvidence") or {}).get("pendingHints") or []
-                pending_hints.attach(
-                    message, pending_hints.unpack(hints), read_from[i + 1]
+                saved_hints = pending_hints.unpack(
+                    (answer.get("toolEvidence") or {}).get("pendingHints") or []
                 )
-            out.append(message)
+                hint_message = pending_hints.message(
+                    pending_hints.replayed(saved_hints, ctx.pending_sources),
+                    heading=pending_hints.REPLAY_HEADING,
+                    read=read_from[i + 1],
+                    message_id=turn.get("id") or "",
+                )
+                if hint_message is not None:
+                    out.append(hint_message)
         parts = list(library_parts.get(i, []))
         for result in saved.get("tools", []):
             parts.append(

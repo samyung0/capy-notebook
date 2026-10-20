@@ -256,7 +256,9 @@ async def _admit_checkpoint(
         "modelVersion": spec.version,
         "estimatedTokens": estimate_tokens(folded),
     }
-    rebuilt = [messages[0], chat_prompts.memory_message(folded), query_msg]
+    # The query and what follows it (its hint message) stay as they are.
+    after = messages[compact._current_query_index(messages) + 1 :]
+    rebuilt = [messages[0], chat_prompts.memory_message(folded), query_msg, *after]
     budget.checkpoint_rewrites += 1
     return rebuilt, replacement
 
@@ -359,12 +361,20 @@ async def _run_turn(
     )
     query_msg = messages[-1]
     # Unindexed edits matching the user's words, not hinted earlier in the
-    # conversation, ride with the message (Epo 2026-10-20).
-    hinted = {hint.key for message in prior for hint, _ in message.get("_hints") or []}
-    ctx.pending_hints = await pending_hints.for_message(
-        query, ctx.pending_sources, hinted=hinted
+    # conversation, follow the message as source data (Epo 2026-10-20).
+    earlier = {
+        hint.key
+        for message in prior
+        if message.get("_kind") == pending_hints.KIND
+        for hint, _ in message["_hints"]
+    }
+    hint_message = pending_hints.message(
+        await pending_hints.for_message(query, ctx.pending_sources, skip=earlier)
     )
-    pending_hints.attach(query_msg, ctx.pending_hints)
+    if hint_message is not None:
+        messages.append(hint_message)
+        ctx.pending_hints = hint_message["_hints"]
+    ctx.hinted = earlier | {hint.key for hint, _ in ctx.pending_hints}
 
     _, pending_reserve, pending_omitted = pending.reserve(
         messages, ctx.pending_sources, spec, schemas
@@ -511,6 +521,7 @@ async def _run_turn(
                 pending_omitted = omitted
                 yield ctx.pending_sources.event(omitted)
             await ctx.pending_sources.validate()
+            pending_hints.mark_read(messages, ctx.pending_sources.read_ids)
             messages = await compact.compact_messages(
                 messages,
                 spec,
@@ -1228,7 +1239,9 @@ async def _run_tools(
     # list is sent with the answer, renumbered, as its markers appear.
     for call, result in ordered:
         numbered = tools.assign_citations(ctx, result.passages)
-        text = tools.limit_tool_result(tools.render_result(result, numbered))
+        text = tools.limit_tool_result(
+            tools.render_result(result, numbered), tail=result.tail
+        )
         if ctx.library:
             args = _parse_args(call.arguments)
             ctx.library_evidence.observe(

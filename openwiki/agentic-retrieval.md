@@ -4075,24 +4075,34 @@ changes' text (`retrieval/pending_hints.py`, Epo 2026-10-20): no chunking,
 vectors or provider call. One SQL statement over `unnest` runs `to_tsvector
 @@ websearch_to_tsquery` on the texts after `tokenize_for_search` (ligature,
 sub/superscript and CJK folds), each in its own language's config, with the
-query from `search_query_terms`. A candidate is an added or changed text
-(its new text), a removed one (its old text), or a placeholder's label;
-moves and documents already read this turn are left out, and at most 2,000
-changes are considered. Each hint names the document (`file_id` or
-`material_id`), the change label or block, and says "added", "changed" or
-"removed" with a snippet of at most 200 characters around the first query
-word. Two paths use it:
+query from `search_query_terms`; each `to_tsvector` is computed once. The
+candidates are prepared once per load of the turn's pending changes, in a
+worker thread (tokenizing and detecting 2,000 long texts takes seconds). A
+candidate is an added or changed text (its new text), a removed one (its old
+text), or a change without text by its label; moves are left out, and at most
+2,000 changes are taken round-robin across documents, so one busy file does
+not starve the rest. Documents already read this turn are skipped. Each hint
+names the document (`file_id` or `material_id`), its name and the change label
+or block quoted, and says "added", "changed" or "removed" with a snippet of at
+most 200 characters around the first query word (found in the original text,
+so a CJK match stays in the window). The lines are source data, in a
+`<source>` block. Two paths use it:
 
-- The user message: at most 5 hints, a block of at most 400 tokens appended
-  to the query message after the user's words. A change hinted earlier in the
+- The user message: at most 5 hints, a block of at most 400 tokens in its own
+  message right after the query (`_kind` `pending_hints`). Only the hints that
+  fit are shown, saved and counted as hinted. A change hinted earlier in the
   conversation is not hinted again. The hints are saved with the answer
-  (`toolEvidence.pendingHints`, with `readDocuments`, the documents the turn
-  read) and replayed onto their user message. Compaction (a checkpoint or
-  live-history fold) keeps a hint only once its document was read in that
-  turn or a later one; it drops the rest.
-- `search_workspace`: matching edits come after the passages under their own
-  heading, not citable (no passage numbers); with no passage, they are the
-  result.
+  (`toolEvidence.pendingHints`, snippets only, with `readDocuments`, the
+  documents the turn read) and replayed after their user message under a
+  past-tense heading, only while their document still has pending changes in
+  the turn's scope (not trashed, processed or out of scope). A checkpoint or
+  live-history fold keeps a hint only once its document was read, in that
+  turn, a later one or the current one, and tags it as untrusted source data
+  for the summarizer; it drops the rest.
+- `search_workspace`: matching edits not yet shown this conversation come
+  after the passages under their own heading, not citable (no passage
+  numbers), and stay whole when a long result is clipped; with no passage,
+  they are the result.
 
 Generation passes every scoped change, so it gets no hints. Replacements and removals
 supersede old indexed facts; the message tells the model that each before and
