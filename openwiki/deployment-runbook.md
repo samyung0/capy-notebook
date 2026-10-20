@@ -2445,6 +2445,7 @@ Embedding rows are the ones the database will actually reject a delete of.
 | Check                                                                        | Expected                                         |
 | ---------------------------------------------------------------------------- | ------------------------------------------------ |
 | `curl -sI https://api.capynotebook.com/healthz`                                      | `x-request-id` header present                    |
+| `curl -sI https://api.capynotebook.com/docs` (and `/openapi.json`)                   | `404`: API docs exist only in local development  |
 | Send a chat turn, then `SELECT * FROM usage_events ORDER BY id DESC LIMIT 5` | rows with non-zero `output_tokens`               |
 | Same `trace_id` searched in Sentry and in gateway logs                       | both return the request                          |
 | `SELECT * FROM provider_sessions WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running)        |
@@ -2461,6 +2462,17 @@ Embedding rows are the ones the database will actually reject a delete of.
 If `usage_events` stays empty while chat works, the usual cause is a streamed
 completion without `stream_options={"include_usage": True}` — the request
 succeeds and reports nothing.
+
+**API docs are local only** (Epo 2026-10-19). The gateway registers Huma's
+`/docs`, `/openapi.*` and `/schemas/*` routes, and the `$schema` link and
+`Link: rel="describedBy"` header on its bodies, only with `APP_ENV=development`
+(`Config.APIDocs`; `humaConfig` in `server/internal/httpapi/huma_register.go`).
+Deployed environments, UAT included, run `APP_ENV=production` and the e2e stack
+`APP_ENV=e2e`, so those paths answer 404 there and error bodies carry no
+`$schema`. The contract is the checked-in `openapi.yaml`: `pnpm gen:openapi`
+builds it offline (`server/cmd/openapi`, with the local-development config, so
+its schemas keep the optional read-only `$schema` field) and `pnpm api:docs`
+serves it locally.
 
 ---
 

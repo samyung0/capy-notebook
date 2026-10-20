@@ -47,7 +47,7 @@ func TestSentryHumaResponseOwnership(t *testing.T) {
 			transport.events = nil
 			r := chi.NewRouter()
 			r.Use(obs.Middleware, middleware.Recoverer, obs.SentryMiddleware)
-			api := humachi.New(r, humaConfig())
+			api := humachi.New(r, humaConfig(false))
 			reg(api, http.MethodPost, "/test", "test", "test", "test", 201, func(ctx context.Context, _ *struct{}) (*Empty, error) { return nil, hErr(tc.err) })
 			response := httptest.NewRecorder()
 			r.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/test", nil))
@@ -84,7 +84,7 @@ func TestDocumentRoutesReportOnlyUnexpectedAuthorityFailures(t *testing.T) {
 			transport.events = nil
 			r := chi.NewRouter()
 			r.Use(obs.Middleware, middleware.Recoverer, obs.SentryMiddleware)
-			api := humachi.New(r, humaConfig())
+			api := humachi.New(r, humaConfig(false))
 			reg(api, http.MethodPost, "/test", "test", "test", "test", 200, func(context.Context, *struct{}) (*Empty, error) { return nil, documentHTTPError(tc.err) })
 			response := httptest.NewRecorder()
 			r.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/test", nil))
@@ -112,7 +112,7 @@ func TestSentryRetryRequiresServiceAuthentication(t *testing.T) {
 	app := &api{cfg: Config{CollaborationSecret: "service-secret"}}
 	r := chi.NewRouter()
 	r.Use(obs.Middleware, middleware.Recoverer, obs.SentryMiddleware)
-	h := humachi.New(r, humaConfig())
+	h := humachi.New(r, humaConfig(false))
 	type retryInput struct {
 		Secret string `header:"X-Collaboration-Secret"`
 	}

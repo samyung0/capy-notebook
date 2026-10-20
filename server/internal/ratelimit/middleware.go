@@ -66,8 +66,6 @@ var exemptPrefixes = []string{
 	// Collaboration has no Clerk identity; all rooms share its service IP.
 	// The gateway checks X-Collaboration-Secret before reading the body.
 	"/internal/collaboration/",
-	"/openapi.yaml",
-	"/docs",
 }
 
 func classify(path string) class {

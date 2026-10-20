@@ -17,17 +17,28 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// humaConfig builds the OpenAPI document metadata. huma serves the spec at
-// /openapi.yaml, /openapi.json (+ 3.0 variants) and docs at /docs.
-func humaConfig() huma.Config {
-	return huma.DefaultConfig("Capy Notebook API", "0.1.0")
+// humaConfig builds the OpenAPI document metadata. With apiDocs (local
+// development only) huma serves the spec at /openapi.yaml, /openapi.json
+// (+ 3.0 variants), docs at /docs and schemas at /schemas/*, and links each
+// body to its schema with `$schema`. Without it none of those routes exist and
+// bodies carry no `$schema` link.
+func humaConfig(apiDocs bool) huma.Config {
+	config := huma.DefaultConfig("Capy Notebook API", "0.1.0")
+	if !apiDocs {
+		config.OpenAPIPath, config.DocsPath, config.SchemasPath = "", "", ""
+		// DefaultConfig's only create hook adds the `$schema` link transformer.
+		config.CreateHooks = nil
+	}
+	return config
 }
 
 // SpecYAML renders the OpenAPI 3.0.3 spec (safest for orval) without a live DB;
-// handlers are registered but never executed during spec generation.
+// handlers are registered but never executed during spec generation. It keeps
+// the local-development config, so schemas list the optional, read-only
+// `$schema` field that deployed bodies leave out.
 func SpecYAML() ([]byte, error) {
 	r := chi.NewRouter()
-	api := humachi.New(r, humaConfig())
+	api := humachi.New(r, humaConfig(true))
 	registerRoutes(api, &api2{})
 	return api.OpenAPI().DowngradeYAML()
 }

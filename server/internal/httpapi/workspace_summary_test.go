@@ -60,7 +60,6 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &keys); err != nil {
 		t.Fatal(err)
 	}
-	delete(keys, "$schema") // Huma adds its standard schema link.
 	if summary.IconID != "waves-03" {
 		t.Fatalf("summary icon = %q", summary.IconID)
 	}
