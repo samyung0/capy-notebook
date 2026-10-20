@@ -11,6 +11,7 @@ import io
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import textwrap
@@ -78,6 +79,8 @@ PROBE = textwrap.dedent(
     attempt("unix_socket", lambda: socket.socket(socket.AF_UNIX).close())
     attempt("io_uring", lambda: syscall(425, 1, params))
     attempt("process_vm_readv", read_own_memory)
+    attempt("pidfd_getfd", lambda: syscall(438, -1, 0, 0))
+    attempt("process_madvise", lambda: syscall(440, -1, 0, 0, 0, 0))
     attempt("fork", fork)
     attempt("setpgid", lambda: os.setpgid(0, 0))
     attempt("read_outside", lambda: open(sys.argv[1], "rb").close())
@@ -95,7 +98,9 @@ PROBE = textwrap.dedent(
 
 def _probe(policy: capy_sandbox.Policy, outside: Path, inside: Path) -> dict:
     completed = capy_sandbox.run(
-        [sys.executable, "-c", PROBE, str(outside), str(inside)], policy
+        [sys.executable, "-c", PROBE, str(outside), str(inside)],
+        policy,
+        max_output=1 << 16,
     )
     assert completed.returncode == 0, completed.stderr.decode()
     return json.loads(completed.stdout)
@@ -161,6 +166,8 @@ def test_the_decode_helper_runs_with_only_its_python_path_and_its_limits(
     assert report["unix_socket"] == "ok"
     assert report["io_uring"] == errno.ENOSYS
     assert report["process_vm_readv"] == errno.EPERM
+    assert report["pidfd_getfd"] == errno.EPERM
+    assert report["process_madvise"] == errno.EPERM
     assert report["fork"] == errno.EPERM
     assert report["setpgid"] == errno.EPERM
     assert report["read_input"] == "ok"
@@ -198,7 +205,9 @@ def test_a_converter_calling_setsid_is_still_killed_at_the_timeout() -> None:
     )
     try:
         with pytest.raises(subprocess.TimeoutExpired):
-            capy_sandbox.run([sys.executable, "-c", FORKER, marker], policy)
+            capy_sandbox.run(
+                [sys.executable, "-c", FORKER, marker], policy, max_output=None
+            )
         assert _gone(marker)
     finally:
         _kill(_running(marker))
@@ -221,7 +230,9 @@ def test_a_child_dies_with_the_process_that_started_it(tmp_path: Path) -> None:
             timeout_s=60,
         )
         capy_sandbox.run(
-            [sys.executable, "-c", "import time; time.sleep(60)", {marker!r}], policy
+            [sys.executable, "-c", "import time; time.sleep(60)", {marker!r}],
+            policy,
+            max_output=None,
         )
         """
     )
@@ -239,17 +250,152 @@ def test_a_child_dies_with_the_process_that_started_it(tmp_path: Path) -> None:
         _kill(_running(marker))
 
 
-def test_a_deployed_host_without_landlock_refuses_to_run_decoders(
+def _plain(timeout_s: float) -> capy_sandbox.Policy:
+    return capy_sandbox.Policy(
+        limits={},
+        blocked=frozenset(),
+        read=(*capy_sandbox.python_paths(), "/usr", "/lib", "/lib64", "/etc"),
+        timeout_s=timeout_s,
+    )
+
+
+def test_a_child_past_its_output_cap_is_killed_and_refused() -> None:
+    """(security regression: S2 decode answers) The parent reads a child's
+    stdout only up to the cap its caller sets: past it the group is killed at
+    once, long before the timeout, and only stderr's tail is kept."""
+    flood = "import sys, time\nsys.stdout.buffer.write(bytes(8 << 20))\ntime.sleep(60)"
+    started = time.monotonic()
+    with pytest.raises(capy_sandbox.OutputLimit):
+        capy_sandbox.run([sys.executable, "-c", flood], _plain(20), max_output=1 << 20)
+    assert time.monotonic() - started < 10
+
+    noisy = "import sys\nsys.stderr.write('x' * (1 << 20) + 'END')"
+    completed = capy_sandbox.run(
+        [sys.executable, "-c", noisy], _plain(60), max_output=1024
+    )
+    assert completed.returncode == 0
+    assert len(completed.stderr) == capy_sandbox.STDERR_TAIL
+    assert completed.stderr.endswith(b"END")
+
+
+@linux
+def test_the_group_is_killed_before_the_child_is_reaped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The exited child still holds its process group id when the group is
+    killed, so no other process can have been given it."""
+    states = []
+    killpg = os.killpg
+
+    def recording(group: int, sig: int) -> None:
+        try:
+            stat = Path(f"/proc/{group}/stat").read_text()
+            states.append(stat.rsplit(")", 1)[1].split()[0])
+        except FileNotFoundError:
+            states.append("reaped")
+        killpg(group, sig)
+
+    monkeypatch.setattr(capy_sandbox.os, "killpg", recording)
+    capy_sandbox.run([sys.executable, "-c", "pass"], _plain(60), max_output=1024)
+
+    assert states == ["Z"]
+
+
+@pytest.mark.parametrize("abi", [0, 5])
+def test_a_deployed_host_without_landlock_abi_6_refuses_to_run_decoders(
+    monkeypatch: pytest.MonkeyPatch, abi: int
+) -> None:
     """(security regression: S0 Landlock requirement) APP_ENV production (UAT
-    and production render it) refuses; local and e2e run without it."""
-    monkeypatch.setattr(capy_sandbox, "landlock_abi", lambda: 0)
+    and production render it) refuses without Landlock or without ABI 6's
+    signal and socket scoping; local and e2e run with what they have."""
+    monkeypatch.setattr(capy_sandbox, "landlock_abi", lambda: abi)
     monkeypatch.setenv("APP_ENV", "production")
     with pytest.raises(RuntimeError, match="Landlock"):
         capy_sandbox.landlock_available()
     monkeypatch.setenv("APP_ENV", "development")
-    assert capy_sandbox.landlock_available() is False
+    assert capy_sandbox.landlock_available() is (abi >= 1)
+    monkeypatch.setattr(capy_sandbox, "landlock_abi", lambda: 6)
+    monkeypatch.setenv("APP_ENV", "production")
+    assert capy_sandbox.landlock_available() is True
+
+
+@linux
+def test_every_decoder_ruleset_scopes_signals_and_abstract_sockets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """(security regression: S2 Landlock scoping) From ABI 6 the ruleset every
+    decoder gets scopes signals and abstract Unix sockets to its own domain:
+    no decoder signals the parser, the worker or another job's process."""
+    calls = []
+
+    class Libc:
+        def syscall(self, number, *args):
+            calls.append((number, args))
+            return os.open(os.devnull, os.O_RDONLY) if number == 444 else 0
+
+    monkeypatch.setattr(capy_sandbox, "_libc", Libc)
+    monkeypatch.setattr(capy_sandbox, "landlock_abi", lambda: 6)
+    capy_sandbox._landlock(("/usr",), ())
+
+    number, (attr, size, flags) = calls[0]
+    assert number == 444 and size.value == 24 and flags.value == 0
+    # LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL
+    assert attr._obj.scoped == 0b11
+    assert [call[0] for call in calls] == [444, 445, 446]
+
+
+SCOPED_PROBE = textwrap.dedent(
+    """
+    import json, os, socket, sys
+
+    out = {}
+    try:
+        os.kill(int(sys.argv[1]), 0)
+        out["signal"] = "ok"
+    except OSError as exc:
+        out["signal"] = exc.errno
+    client = socket.socket(socket.AF_UNIX)
+    try:
+        client.connect("\\0" + sys.argv[2])
+        out["abstract_socket"] = "ok"
+    except OSError as exc:
+        out["abstract_socket"] = exc.errno
+    print(json.dumps(out))
+    """
+)
+
+
+@linux
+@pytest.mark.skipif(
+    capy_sandbox.landlock_abi() < capy_sandbox.SCOPED_ABI,
+    reason="needs Landlock ABI 6 (the deployed hosts have it)",
+)
+def test_a_decoder_cannot_signal_or_reach_a_process_outside_it(
+    tmp_path: Path,
+) -> None:
+    """(security regression: S2 Landlock scoping) On a kernel with ABI 6 a
+    decoder cannot signal the process that started it or connect to an
+    abstract Unix socket another process listens on."""
+    name = f"capy-scope-{uuid.uuid4().hex}"
+    listener = socket.socket(socket.AF_UNIX)
+    listener.bind("\0" + name)
+    listener.listen(1)
+    source = tmp_path / "upload.png"
+    source.write_bytes(b"this job's file")
+    try:
+        completed = capy_sandbox.run(
+            [sys.executable, "-c", SCOPED_PROBE, str(os.getpid()), name],
+            decode._policy(source),
+            max_output=1 << 16,
+        )
+    finally:
+        listener.close()
+
+    assert completed.returncode == 0, completed.stderr.decode()
+    assert json.loads(completed.stdout) == {
+        "signal": errno.EPERM,
+        "abstract_socket": errno.EPERM,
+    }
 
 
 @linux
@@ -456,6 +602,86 @@ def test_a_large_image_shrinks_while_it_decodes(monkeypatch) -> None:
     monkeypatch.setattr(Image.Image, "copy", lambda self: copies.append(self))
     assert decode._decoded(big, 1280).size == (2000, 1334)
     assert copies == []
+
+
+def test_a_decode_answer_past_its_cap_is_a_failed_decode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """(security regression: S2 decode answers) The worker reads at most
+    ``_MAX_ANSWER`` bytes of the helper's answer."""
+    monkeypatch.setattr(decode, "_MAX_ANSWER", 1024)
+    with pytest.raises(decode.DecodeFailed, match="over 1024 bytes"):
+        decode.page_evidence(FIXTURES / "odl-ccl-feedback-p1" / "source.pdf", [])
+
+
+@pytest.mark.parametrize(
+    ("call", "answer"),
+    [
+        ("evidence", b"not json"),
+        ("evidence", b'{"page_texts": "text", "visible_headings": []}'),
+        ("evidence", b'{"page_texts": [], "visible_headings": [true]}'),
+        ("evidence", b'{"page_texts": [], "visible_headings": [], "more": 1}'),
+        ("caption", b'{"raw": false}'),
+        ("caption", b'{"jpeg": "not base64!"}'),
+        ("thumbnail", b'{"webp": 7}'),
+        ("page", b"[]"),
+    ],
+)
+def test_a_decode_answer_off_its_modes_shape_is_a_failed_decode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, call: str, answer: bytes
+) -> None:
+    """(security regression: S2 decode answers) Only the shapes a mode
+    answers pass; any other answer from the helper fails the decode."""
+    monkeypatch.setattr(
+        decode.capy_sandbox,
+        "run",
+        lambda argv, _policy, **_kwargs: subprocess.CompletedProcess(
+            argv, 0, answer, b""
+        ),
+    )
+    source = tmp_path / "upload.png"
+    calls = {
+        "evidence": lambda: decode.page_evidence(source, []),
+        "caption": lambda: decode.caption_jpeg(source, max_edge=8, max_pixels=64),
+        "thumbnail": lambda: decode.thumbnail_webp(source, "png", max_pixels=64),
+        "page": lambda: decode.page_webp(b""),
+    }
+    with pytest.raises(decode.DecodeFailed):
+        calls[call]()
+
+
+def _blank_png(path: Path, width: int, height: int) -> None:
+    """A transparent RGBA PNG written row by row, never held as pixels."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        size = struct.pack(">I", len(data))
+        return size + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    compressor = zlib.compressobj()
+    row = bytes(1 + 4 * width)
+    data = b"".join(compressor.compress(row) for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", data + compressor.flush())
+        + chunk(b"IEND", b"")
+    )
+
+
+@linux
+def test_a_thumbnail_near_the_pixel_limit_fits_the_helper(tmp_path: Path) -> None:
+    """A non-JPEG image near the largest Pillow opens (89 Mpx) shrinks while
+    it decodes, so its thumbnail fits the helper's 768 MiB (measured: 694 MiB
+    for this 88 Mpx RGBA PNG, over 1 GiB when decoded at full size first)."""
+    path = tmp_path / "large.png"
+    _blank_png(path, 9_400, 9_400)
+
+    webp = decode.thumbnail_webp(path, "png", max_pixels=100_000_000)
+
+    assert webp[8:12] == b"WEBP"
 
 
 def test_page_chunks_bundle_evidence_matches_the_helper(tmp_path: Path) -> None:

@@ -412,7 +412,6 @@ def _sandbox_parse_child(work_dir: str) -> None:
                 str(java.ENTRY_JAR),
             ),
             write=(work_dir, "/dev/null"),
-            sockets=office.SOCKETS,
         )
     )
 
@@ -496,13 +495,16 @@ def _slot_dir(slot: int) -> Path:
     return WORK_DIR / f"slot-{slot}"
 
 
-def _temporary_file(directory: Path, suffix: str) -> Path:
+def _temporary_file(directory: Path, suffix: str) -> tuple[BinaryIO, Path]:
+    """A new transfer file in a slot folder, open for writing. The parse
+    child may write that folder, so the API writes only through this handle
+    (made by mkstemp, never through a link) and reads the child's results
+    with ``_open_spool_file``."""
     directory.mkdir(parents=True, exist_ok=True)
     descriptor, name = tempfile.mkstemp(
         prefix="transfer-", suffix=suffix, dir=directory
     )
-    os.close(descriptor)
-    return Path(name)
+    return os.fdopen(descriptor, "wb"), Path(name)
 
 
 class _Child:
@@ -626,9 +628,10 @@ class _ParseWorkerProcess(_Child):
         """Parse into ``result_path``."""
         if not self.alive:
             raise ParserRuntimeFailure(f"{self._name} is not running")
-        source_path = _temporary_file(self.work_dir, ".source")  # sync: see _run_slot
+        source, source_path = _temporary_file(self.work_dir, ".source")  # see _run_slot
         try:
-            await asyncio.to_thread(source_path.write_bytes, document.data)
+            with source:
+                await asyncio.to_thread(source.write, document.data)
             await self.send(
                 (
                     str(source_path),
@@ -674,8 +677,8 @@ def _write_worker_result(path: Path, result: dict[str, Any]) -> None:
 
 
 def _read_worker_result(path: Path) -> dict[str, Any]:
-    with path.open("rb") as result_file:
-        left = os.fstat(result_file.fileno()).st_size
+    result_file, left = _open_spool_file(path)
+    with result_file:
         # A larger result could not become a bundle anyway.
         if left > MAX_ARTIFACT_EXPANDED_BYTES:
             raise ValueError("parser child returned an oversized result file")
@@ -850,7 +853,8 @@ class ParserRuntime:
             # Made before taking a document, so documents start in FIFO order.
             # Synchronous on purpose: a cancel landing on a to_thread await
             # would leave the thread's file behind with no path to unlink.
-            result_path = _temporary_file(_slot_dir(slot.index), ".result")
+            handle, result_path = _temporary_file(_slot_dir(slot.index), ".result")
+            handle.close()
             try:
                 work = await self._next()
                 while work.future.done():
@@ -1004,7 +1008,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if not PARSER_TOKEN:
         raise RuntimeError("PARSER_TOKEN must be set")
     capy_sandbox.make_undumpable()
-    # A deployed host without Landlock refuses here; local runs say so.
+    # A deployed host without Landlock ABI 6 refuses here; local runs say so.
     if not capy_sandbox.landlock_available():
         print("Landlock unavailable: parse children run without it", flush=True)
     (SHARED_DIR / "sources").mkdir(parents=True, exist_ok=True)
@@ -1020,8 +1024,10 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
 
 def _authorized(request: Request) -> bool:
     supplied = request.headers.get("authorization", "")
-    return supplied.startswith("Bearer ") and hmac.compare_digest(
-        supplied[7:], PARSER_TOKEN
+    return (
+        bool(PARSER_TOKEN)
+        and supplied.startswith("Bearer ")
+        and hmac.compare_digest(supplied[7:], PARSER_TOKEN)
     )
 
 
@@ -1044,9 +1050,9 @@ def _shared_path(key: str, expected_dir: str) -> Path:
 
 
 def _open_spool_file(path: Path) -> tuple[BinaryIO, int]:
-    """Open a spool file as a child may have left it: never through a link,
-    never waiting on a FIFO, only a regular file. Returns it and its size;
-    the caller bounds the size."""
+    """Open a spool or transfer file as a child may have left it: never
+    through a link, never waiting on a FIFO, only a regular file. Returns it
+    and its size; the caller bounds the size."""
     descriptor = os.open(
         path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     )

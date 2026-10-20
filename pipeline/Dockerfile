@@ -62,8 +62,10 @@ RUN groupadd --gid 10001 capy-spool \
 COPY --from=ppt-master /opt/ppt-master /opt/ppt-master
 # Retrieval diagnostics run inside this image via `docker compose exec`. The
 # library writer (knowledge_base_library.py) stays out (.dockerignore).
-COPY bench/rag/scripts ./bench/rag/scripts
-COPY bench/rag/fixtures ./bench/rag/fixtures
+# Readable by the ingest user too: the host clones under umask 077.
+COPY --chmod=644 bench/rag/scripts ./bench/rag/scripts
+COPY --chmod=644 bench/rag/fixtures ./bench/rag/fixtures
+RUN find /app/bench -type d -exec chmod 755 {} +
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONPATH="/app/pipeline"
 

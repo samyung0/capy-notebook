@@ -3,7 +3,8 @@
 Every such child gets an empty environment plus an allowlist, rlimits,
 no_new_privs, a seccomp filter (no non-Unix sockets, io_uring or cross-process
 calls; setsid, setpgid and process creation where the child never needs them),
-a Landlock ruleset limited to its own files and job folder, its own process
+a Landlock ruleset limited to its own files and job folder (and, from ABI 6,
+no signal to or abstract Unix socket of a process outside it), its own process
 group, death with its parent, and a wall-clock timeout that kills the group.
 Children keep the parent's non-root uid, so a parent holding secrets makes
 itself non-dumpable (``make_undumpable``).
@@ -15,7 +16,7 @@ applies the same policy to the calling process (the parser's persistent parse
 child). The parser and pipeline images both carry this file, copied from
 ``pipeline/capy_sandbox.py``. Linux only: elsewhere (local development) ``run``
 keeps only the environment and the timeout, and a deployed host (APP_ENV
-production) without Landlock refuses to start.
+production) without Landlock ABI 6 refuses to start.
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ import os
 import signal
 import subprocess
 import sys
+import threading
+import time
 from dataclasses import dataclass, field
 from functools import cache
 
@@ -34,6 +37,9 @@ LINUX = sys.platform == "linux"
 PR_SET_PDEATHSIG = 1
 PR_SET_DUMPABLE = 4
 PR_SET_NO_NEW_PRIVS = 38
+# The Landlock ABI that scopes signals and abstract Unix sockets: a deployed
+# host needs it.
+SCOPED_ABI = 6
 # Blocked for every child; ``Policy.blocked`` adds the others.
 ALWAYS_BLOCKED = frozenset({"net", "peers"})
 _PEERS = (
@@ -41,6 +47,8 @@ _PEERS = (
     "process_vm_readv",
     "process_vm_writev",
     "kcmp",
+    "pidfd_getfd",
+    "process_madvise",
     "perf_event_open",
     "bpf",
     "userfaultfd",
@@ -48,6 +56,12 @@ _PEERS = (
     "add_key",
     "request_key",
 )
+# Bytes of a child's stderr kept: its last lines.
+STDERR_TAIL = 64 << 10
+
+
+class OutputLimit(RuntimeError):
+    """The child wrote more to stdout than its caller reads."""
 
 
 @dataclass(frozen=True)
@@ -55,15 +69,12 @@ class Policy:
     """One child's limits. ``limits`` maps an rlimit name (``"DATA"``) to the
     value set as both soft and hard limit (``resource.RLIM_INFINITY`` lifts
     it); ``blocked`` adds seccomp groups (``setsid``, ``setpgid``, ``fork``);
-    ``read`` and ``write`` are Landlock paths, files or directories; in a
-    ``sockets`` directory the child may only create and remove Unix sockets
-    (LibreOffice's IPC pipe goes to /tmp whatever TMPDIR says)."""
+    ``read`` and ``write`` are Landlock paths, files or directories."""
 
     limits: dict[str, int]
     blocked: frozenset[str]
     read: tuple[str, ...]
     write: tuple[str, ...] = ()
-    sockets: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
     timeout_s: float | None = None
 
@@ -97,14 +108,16 @@ def landlock_abi() -> int:
 
 
 def landlock_available() -> bool:
-    """Whether children get the Landlock layer. Without it a deployed host
-    (APP_ENV production) refuses to run decoders; local and e2e run them
-    without it."""
-    if landlock_abi() >= 1:
-        return True
-    if os.environ.get("APP_ENV") == "production":
-        raise RuntimeError("this host has no Landlock: decoders cannot be confined")
-    return False
+    """Whether children get the Landlock layer. A deployed host (APP_ENV
+    production) without ABI 6 refuses to run decoders; local and e2e run
+    them with what the kernel has, or without Landlock."""
+    abi = landlock_abi()
+    if abi < SCOPED_ABI and os.environ.get("APP_ENV") == "production":
+        raise RuntimeError(
+            f"this host's Landlock ABI is {max(abi, 0)}, below {SCOPED_ABI}: "
+            "decoders cannot be confined"
+        )
+    return abi >= 1
 
 
 def run(
@@ -113,9 +126,14 @@ def run(
     *,
     input: bytes | None = None,
     stderr: int = subprocess.PIPE,
+    max_output: int | None,
 ) -> subprocess.CompletedProcess[bytes]:
     """Run ``argv`` under ``policy`` and return its output. At the timeout the
-    whole process group is killed and ``subprocess.TimeoutExpired`` raised."""
+    whole process group is killed and ``subprocess.TimeoutExpired`` raised.
+    Past ``max_output`` bytes of stdout the group is killed too and
+    ``OutputLimit`` raised; None reads all of it, for a child whose output
+    can only hurt its own job. Only stderr's last ``STDERR_TAIL`` bytes are
+    kept."""
     if not policy.timeout_s:
         raise ValueError("a per-job child needs a timeout")
     command, env, group = argv, policy.env, {}
@@ -133,7 +151,6 @@ def run(
             "blocked": sorted(policy.blocked),
             "read": policy.read,
             "write": policy.write,
-            "sockets": policy.sockets,
             "landlock": landlock_available(),
         }
         command = [sys.executable, "-I", "-S", __file__, json.dumps(spec), *argv]
@@ -147,13 +164,81 @@ def run(
         **group,
     )
     try:
-        stdout, err = process.communicate(input, timeout=policy.timeout_s)
-    except BaseException:
-        _kill_group(process)
-        process.communicate()
-        raise
-    _kill_group(process)  # Whatever the child left in its group.
+        stdout, err = _collect(process, input, policy.timeout_s, max_output)
+    finally:
+        process.wait()
     return subprocess.CompletedProcess(argv, process.returncode, stdout, err)
+
+
+def _collect(
+    process: subprocess.Popen[bytes],
+    input: bytes | None,
+    timeout_s: float,
+    max_output: int | None,
+) -> tuple[bytes, bytes]:
+    """The child's stdout and stderr tail once it exits. Its group is killed
+    then (whatever it left behind), before the child is reaped: until then
+    the group id is still its own."""
+    deadline = time.monotonic() + timeout_s
+    done, over = threading.Event(), threading.Event()
+    out, err = bytearray(), bytearray()
+
+    def drain(pipe, sink: bytearray, limit: int | None, tail: bool) -> None:
+        with pipe:
+            while chunk := os.read(pipe.fileno(), 1 << 16):
+                sink += chunk
+                if tail:
+                    del sink[:-limit]
+                elif limit is not None and len(sink) > limit:
+                    over.set()
+                    done.set()
+                    return
+
+    def wait() -> None:
+        try:
+            if os.name == "posix":
+                os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+            else:
+                process.wait()
+        except ChildProcessError:
+            pass  # Reaped after a timeout already.
+        done.set()
+
+    def feed() -> None:
+        try:
+            with process.stdin:
+                process.stdin.write(input)
+        except OSError:
+            pass  # The child stopped reading; its answer tells why.
+
+    readers = [
+        threading.Thread(target=drain, args=(process.stdout, out, max_output, False))
+    ]
+    if process.stderr is not None:
+        readers.append(
+            threading.Thread(
+                target=drain, args=(process.stderr, err, STDERR_TAIL, True)
+            )
+        )
+    threads = [*readers, threading.Thread(target=wait)]
+    if input is not None:
+        threads.append(threading.Thread(target=feed))
+    for thread in threads:
+        thread.daemon = True
+        thread.start()
+    try:
+        finished = done.wait(timeout_s)
+    finally:
+        _kill_group(process)
+    if not finished:
+        raise subprocess.TimeoutExpired(process.args, timeout_s)
+    if over.is_set():
+        raise OutputLimit(f"the child wrote more than {max_output} bytes")
+    for reader in readers:
+        reader.join(max(0.0, deadline - time.monotonic()))
+        if reader.is_alive():
+            raise subprocess.TimeoutExpired(process.args, timeout_s)
+    return bytes(out), bytes(err)
 
 
 def _kill_group(process: subprocess.Popen[bytes]) -> None:
@@ -176,7 +261,6 @@ def confine(policy: Policy) -> None:
             policy.blocked,
             policy.read,
             policy.write,
-            policy.sockets,
             landlock_available(),
         )
 
@@ -186,7 +270,6 @@ def _apply(
     blocked: frozenset[str] | list[str],
     read: tuple[str, ...] | list[str],
     write: tuple[str, ...] | list[str],
-    sockets: tuple[str, ...] | list[str],
     landlock: bool,
 ) -> None:
     import resource
@@ -198,7 +281,7 @@ def _apply(
     if _libc().prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS)")
     if landlock:
-        _landlock(read, write, sockets)
+        _landlock(read, write)
     _seccomp(libseccomp, ALWAYS_BLOCKED | set(blocked))
 
 
@@ -275,13 +358,16 @@ def _seccomp(lib: ctypes.CDLL, groups: frozenset[str] | set[str]) -> None:
 # -------------------------------------------------------------------- landlock
 
 _READ = (1 << 0) | (1 << 2) | (1 << 3)  # execute, read file, read directory
-_SOCKETS = (1 << 5) | (1 << 9)  # remove file, make socket
 # The rights a rule on a file (not a directory) may carry.
 _FILE = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 14) | (1 << 15)
 
 
 class _RulesetAttr(ctypes.Structure):
-    _fields_ = [("fs", ctypes.c_uint64), ("net", ctypes.c_uint64)]
+    _fields_ = [
+        ("fs", ctypes.c_uint64),
+        ("net", ctypes.c_uint64),
+        ("scoped", ctypes.c_uint64),
+    ]
 
 
 class _PathBeneath(ctypes.Structure):
@@ -292,26 +378,25 @@ class _PathBeneath(ctypes.Structure):
 def _landlock(
     read: tuple[str, ...] | list[str],
     write: tuple[str, ...] | list[str],
-    sockets: tuple[str, ...] | list[str],
 ) -> None:
     abi = landlock_abi()
     handled = (1 << 13) - 1
     for version, right in ((2, 1 << 13), (3, 1 << 14), (5, 1 << 15)):
         if abi >= version:
             handled |= right
-    # ABI 4 handles TCP bind and connect too, with no rule allowing either.
-    attr = _RulesetAttr(handled, 0b11 if abi >= 4 else 0)
+    # ABI 4 handles TCP bind and connect too, with no rule allowing either;
+    # ABI 6 scopes signals and abstract Unix sockets to this domain and the
+    # ones nested in it.
+    attr = _RulesetAttr(handled, 0b11 if abi >= 4 else 0, 0b11 if abi >= 6 else 0)
+    size = 24 if abi >= 6 else 16 if abi >= 4 else 8
     libc = _libc()
     ruleset = libc.syscall(
-        444,
-        ctypes.byref(attr),
-        ctypes.c_size_t(16 if abi >= 4 else 8),
-        ctypes.c_uint32(0),
+        444, ctypes.byref(attr), ctypes.c_size_t(size), ctypes.c_uint32(0)
     )
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), "landlock_create_ruleset")
     try:
-        for paths, rights in ((read, _READ), (write, handled), (sockets, _SOCKETS)):
+        for paths, rights in ((read, _READ), (write, handled)):
             for path in paths:
                 if not os.path.exists(path):
                     continue  # Nothing there to allow (/lib64 on some systems).
@@ -353,7 +438,6 @@ def _trampoline(spec: dict, argv: list[str]) -> None:
         spec["blocked"],
         spec["read"],
         spec["write"],
-        spec["sockets"],
         spec["landlock"],
     )
     os.execve(argv[0], argv, spec["env"])

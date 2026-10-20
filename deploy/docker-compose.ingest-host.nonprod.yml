@@ -111,16 +111,17 @@ services:
     network_mode: host
     # No `init: true`: the image's own PID 1 (tini, execute-only) reaps.
     # The parser reads untrusted documents: no capabilities, no privilege gain,
-    # Docker's default seccomp profile and a read-only root. HOME and /tmp are
-    # small RAM tmpfs mounts; sources, conversions and temporary files use the
-    # disk-backed parser_work volume (the image sets TMPDIR to it).
+    # Docker's default seccomp profile and a read-only root. HOME is a small
+    # RAM tmpfs mount and /tmp stays the image's, which the parser user cannot
+    # write (LibreOffice's IPC pipe then goes to each conversion's folder);
+    # sources, conversions and temporary files use the disk-backed parser_work
+    # volume (the image sets TMPDIR to it).
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
       - /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
-      - /tmp:noexec,nosuid,nodev,size=64m
     environment:
       <<: *parser-env
       APP_ENV: production

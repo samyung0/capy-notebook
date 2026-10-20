@@ -5,7 +5,9 @@ it never imports MuPDF or Pillow: each decode runs this module as a child
 through capy_sandbox (human/deployment-runbook.md, 2026-10-20 S0) with only
 its Python path in its environment, its input file the one file it reads
 beyond its own code, no network and no new processes, 768 MiB of data, 120 s
-of CPU and a 120 s deadline. It answers one JSON object on stdout.
+of CPU and a 120 s deadline. It answers one JSON object on stdout, which the
+worker reads up to ``_MAX_ANSWER`` bytes and checks against the mode's shape:
+anything else is a failed decode.
 
 - ``evidence``: a PDF's page texts and the candidate headings its glyphs
   prove visible, for retrieval/headings.py and confidence.py (the parser
@@ -18,6 +20,7 @@ of CPU and a 120 s deadline. It answers one JSON object on stdout.
 from __future__ import annotations
 
 import base64
+import binascii
 import io
 import json
 import math
@@ -33,6 +36,10 @@ import capy_sandbox
 
 _LIMITS = {"DATA": 768 << 20, "CPU": 120, "NOFILE": 64, "FSIZE": 0, "CORE": 0}
 _TIMEOUT_S = 120
+# The largest answer is a PDF's page texts. Measured: 4 MiB of JSON for the
+# largest real document (1,475 pages) and 22 KiB for the densest page
+# (Korean), so 32 MiB holds that page density over 1,400 pages.
+_MAX_ANSWER = 32 << 20
 _SYSTEM = ("/usr", "/lib", "/lib64", "/etc/ld.so.cache")
 # The card thumbnail: 200 px wide, cropped from the top at twice that (the
 # parser's page1.png follows the same rule, parser/odl/capture.py).
@@ -67,18 +74,64 @@ def _policy(source: Path | None) -> capy_sandbox.Policy:
     )
 
 
+def _texts(value: object) -> bool:
+    return type(value) is list and all(type(item) is str for item in value)
+
+
+def _indices(value: object) -> bool:
+    return type(value) is list and all(type(item) is int for item in value)
+
+
+def _string(value: object) -> bool:
+    return type(value) is str
+
+
+def _true(value: object) -> bool:
+    return value is True
+
+
+# Each mode's possible answers: their keys and what each key holds.
+_ANSWERS = {
+    "evidence": ({"page_texts": _texts, "visible_headings": _indices},),
+    "caption": ({"limit": _string}, {"raw": _true}, {"jpeg": _string}),
+    "thumbnail": ({"none": _true}, {"webp": _string}),
+    "page": ({"webp": _string},),
+}
+
+
 def _decode(
     mode: str, *args: object, source: Path | None = None, data: bytes | None = None
 ) -> dict:
     argv = [sys.executable, "-m", __name__, mode, *map(str, args)]
     try:
-        completed = capy_sandbox.run(argv, _policy(source), input=data)
+        completed = capy_sandbox.run(
+            argv, _policy(source), input=data, max_output=_MAX_ANSWER
+        )
     except subprocess.TimeoutExpired:
         raise DecodeFailed(f"{mode} decode exceeded {_TIMEOUT_S} seconds") from None
+    except capy_sandbox.OutputLimit:
+        raise DecodeFailed(f"{mode} decode answered over {_MAX_ANSWER} bytes") from None
     if completed.returncode != 0:
         detail = completed.stderr.decode(errors="replace").strip()[-500:]
         raise DecodeFailed(f"{mode} decode exited {completed.returncode}: {detail}")
-    return json.loads(completed.stdout)
+    try:
+        answer = json.loads(completed.stdout)
+    except ValueError:
+        raise DecodeFailed(f"{mode} decode answered no JSON") from None
+    if type(answer) is not dict or not any(
+        answer.keys() == shape.keys()
+        and all(check(answer[key]) for key, check in shape.items())
+        for shape in _ANSWERS[mode]
+    ):
+        raise DecodeFailed(f"{mode} decode answered an unexpected shape")
+    return answer
+
+
+def _bytes(answer: dict, key: str) -> bytes:
+    try:
+        return base64.b64decode(answer[key], validate=True)
+    except binascii.Error:
+        raise DecodeFailed(f"the decode's {key} is not base64") from None
 
 
 def page_evidence(pdf: Path, blocks: list[dict]) -> dict:
@@ -101,18 +154,18 @@ def caption_jpeg(path: Path, *, max_edge: int, max_pixels: int) -> bytes | None:
     answer = _decode("caption", path, max_edge, max_pixels, source=path)
     if "limit" in answer:
         raise PixelLimit(answer["limit"])
-    return None if answer.get("raw") else base64.b64decode(answer["jpeg"])
+    return None if "raw" in answer else _bytes(answer, "jpeg")
 
 
 def thumbnail_webp(path: Path, format_name: str, *, max_pixels: int) -> bytes | None:
     """The image's card WebP, or None for a format this Pillow cannot read."""
     answer = _decode("thumbnail", path, format_name, max_pixels, source=path)
-    return None if answer.get("none") else base64.b64decode(answer["webp"])
+    return None if "none" in answer else _bytes(answer, "webp")
 
 
 def page_webp(png: bytes) -> bytes:
     """The parser's page-1 PNG as the card WebP."""
-    return base64.b64decode(_decode("page", data=png)["webp"])
+    return _bytes(_decode("page", data=png), "webp")
 
 
 # ------------------------------------------------------------ helper side
@@ -296,9 +349,9 @@ def _thumbnail(path: str, format_name: str, max_pixels: int) -> dict:
             width, height = opened.size
             if width * height <= 0 or width * height > max_pixels:
                 raise ValueError("image exceeds the decoded-pixel limit")
-            # JPEG decodes at a reduced scale straight away.
-            opened.draft("RGB", (2 * THUMBNAIL_WIDTH, 2 * THUMBNAIL_WIDTH))
-            frame = ImageOps.exif_transpose(opened)
+            # Shrunk while it decodes; the full-size frame goes when the file
+            # closes, before anything else is made from it.
+            frame = ImageOps.exif_transpose(_decoded(opened, 2 * THUMBNAIL_WIDTH))
     # Shrink first, so the colour conversion and flattening work on the
     # thumbnail rather than the full image.
     frame.thumbnail((THUMBNAIL_WIDTH, frame.height), Image.Resampling.LANCZOS)

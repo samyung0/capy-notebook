@@ -253,7 +253,7 @@ def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
     # LibreOffice's temporary files and output share the job directory in the
     # work dir, which goes with the job.
     job = Path(tmpdir)
-    assert job.parent == work and job.name.startswith("capy_office_")
+    assert job.parent == work and job.name.startswith("lo-")
     assert argv[argv.index("--outdir") + 1] == tmpdir
     assert not job.exists()
 
@@ -332,6 +332,18 @@ attempt("fork", fork)
 attempt("setpgid", lambda: os.setpgid(0, 0))
 attempt("read_outside", lambda: (job.parent / "other-job.docx").read_bytes())
 attempt("read_source", lambda: next(job.glob("source.*")).read_bytes())
+
+def bind(path):
+    listener = socket.socket(socket.AF_UNIX)
+    try:
+        listener.bind(str(path))
+    finally:
+        listener.close()
+    os.unlink(path)
+
+attempt("tmp_socket", lambda: bind("/tmp/probe-" + str(os.getpid())))
+attempt("job_socket", lambda: bind(job / "probe"))
+out["argv"] = sys.argv
 out["no_new_privs"] = libc.prctl(39, 0, 0, 0, 0)
 out["seccomp"] = libc.prctl(21, 0, 0, 0, 0)
 out["limits"] = {{
@@ -348,8 +360,9 @@ def test_libreoffice_runs_sandboxed_with_only_its_allowlisted_env(
 ) -> None:
     """(security regression: S1 LibreOffice) soffice.bin starts through the
     sandbox: an explicit environment (no parser secret), its limits, no
-    network, no new processes or groups, and no file outside its job folder.
-    A fresh profile's exit 81 runs the conversion again."""
+    network, no new processes or groups, and no file outside its job folder;
+    its IPC pipe goes in that folder, never /tmp. A fresh profile's exit 81
+    runs the conversion again."""
     monkeypatch.setenv("PARSER_TOKEN", "parser-secret")
     monkeypatch.setenv("CAPY_CANARY_SECRET", "canary")
     fake = tmp_path / "soffice.bin"
@@ -384,6 +397,9 @@ def test_libreoffice_runs_sandboxed_with_only_its_allowlisted_env(
     assert report["setpgid"] == errno.EPERM
     assert report["read_source"] == "ok"
     assert report["read_outside"] == errno.EACCES
+    assert f"-env:OSL_SOCKET_PATH={job}" in report["argv"]
+    assert report["job_socket"] == "ok"
+    assert report["tmp_socket"] == errno.EACCES
 
 
 def test_unreadable_pdfs_are_refused_and_owner_locked_ones_open() -> None:

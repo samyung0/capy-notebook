@@ -912,6 +912,7 @@ async def test_the_parser_holds_its_token_out_of_every_childs_reach(
     assert not parser_app._authorized(Request(""))
     assert not parser_app._authorized(Request("Bearer wrong"))
     monkeypatch.setattr(parser_app, "PARSER_TOKEN", "")
+    assert not parser_app._authorized(Request("Bearer "))
     with pytest.raises(RuntimeError, match="PARSER_TOKEN"):
         async with parser_app.lifespan(parser_app.app):
             pass
@@ -1417,6 +1418,73 @@ def test_a_fifo_or_link_in_the_spool_is_refused_promptly(
     assert _finishes(parser_app._artifact_descriptor, "artifacts/fp.zip", "fp") is None
     assert not os.path.lexists(bundle) and kept.exists()
     assert _finishes(parser_app._quarantine, "fp") is None
+
+
+def _read_result(path: Path) -> object:
+    try:
+        return parser_app._read_worker_result(path)
+    except OSError as exc:
+        return exc
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="FIFOs and links: Linux")
+@pytest.mark.parametrize("kind", ["fifo", "link"])
+def test_a_result_file_the_child_swapped_is_refused_promptly(
+    tmp_path: Path, kind: str
+) -> None:
+    """(security regression: S1 transfer files) A parse child may write its
+    slot folder, so the API reads a result there only as a regular file: a
+    FIFO does not block the slot, a link is not followed."""
+    elsewhere = tmp_path / "another-slot.result"
+    parser_app._write_worker_result(elsewhere, {"content_list": []})
+    result = tmp_path / "transfer.result"
+    if kind == "fifo":
+        os.mkfifo(result)
+    else:
+        result.symlink_to(elsewhere)
+
+    assert isinstance(_finishes(_read_result, result), OSError)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="links: Linux")
+@pytest.mark.asyncio
+async def test_the_api_writes_a_source_only_through_the_file_it_made(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(security regression: S1 transfer files) A link the parse child puts
+    in place of the next source file is never written through: the API writes
+    the document only through the descriptor it created."""
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"kept")
+    mkstemp = parser_app.tempfile.mkstemp
+
+    def swapped(*args, **kwargs):
+        descriptor, name = mkstemp(*args, **kwargs)
+        os.unlink(name)
+        os.symlink(victim, name)
+        return descriptor, name
+
+    async def send(_message) -> None:
+        pass
+
+    async def recv() -> list:
+        return ["ok", None]
+
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path / "work")
+    monkeypatch.setattr(parser_app.tempfile, "mkstemp", swapped)
+    monkeypatch.setattr(
+        parser_app._ParseWorkerProcess, "alive", property(lambda _self: True)
+    )
+    child = parser_app._ParseWorkerProcess(0)
+    monkeypatch.setattr(child, "send", send)
+    monkeypatch.setattr(child, "recv", recv)
+
+    await child.run(
+        parser_app.Document(b"%PDF-1.7 the next user's upload", "a.pdf"),
+        tmp_path / "transfer.result",
+    )
+
+    assert victim.read_bytes() == b"kept"
 
 
 @pytest.mark.asyncio

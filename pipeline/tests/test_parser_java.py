@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import errno
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -65,6 +66,27 @@ def test_java_keeps_its_temporary_files_in_the_output_dir(tmp_path, monkeypatch,
     with pytest.raises(RuntimeError):
         java.run(tmp_path / "document.pdf", out_dir, timeout_s=60)
     assert f"-Djava.io.tmpdir={out_dir}" in commands[0]
+
+
+def test_java_sizes_its_threads_by_the_containers_cpu_quota(
+    tmp_path, monkeypatch, jars
+):
+    """The sandboxed JVM cannot read its cgroup, so the parser passes the
+    quota (rounded up, at most the CPUs it may run on) as its CPU count."""
+    cpu_max = tmp_path / "cpu.max"
+    monkeypatch.setattr(java, "_CPU_MAX", cpu_max)
+    if hasattr(os, "sched_getaffinity"):
+        available = len(os.sched_getaffinity(0))
+        cpu_max.write_text("150000 100000\n")
+        assert java._container_cpus() == min(2, available)
+        cpu_max.write_text("max 100000\n")
+        assert java._container_cpus() == available
+
+    run, commands = _fake_run((1, b"failed"))
+    monkeypatch.setattr(java.capy_sandbox, "run", run)
+    with pytest.raises(RuntimeError):
+        java.run(tmp_path / "document.pdf", tmp_path, timeout_s=60)
+    assert f"-XX:ActiveProcessorCount={java.CPUS}" in commands[0]
 
 
 # A fake JVM: it leaves, as the native JSON ODL would write, what it could

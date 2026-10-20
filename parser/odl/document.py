@@ -38,8 +38,7 @@ SOFFICE = "/usr/lib/libreoffice/program/soffice.bin"
 # is fresh); its launcher would start it again, so the conversion runs again.
 _PROFILE_CREATED_EXIT = 81
 # What LibreOffice reads besides its job folder: libraries, configuration,
-# fonts and the random device. Its IPC pipe goes to /tmp whatever TMPDIR says,
-# so there it may create and remove a socket.
+# fonts and the random device.
 READ = (
     "/usr",
     "/lib",
@@ -49,7 +48,6 @@ READ = (
     "/dev/urandom",
     "/dev/random",
 )
-SOCKETS = ("/tmp",)
 # Per conversion (bench/parsers S0 measurements: at most 47.5 s of CPU and 21
 # descriptors per process); the address space is the parse child's soft
 # 2 GiB, inherited.
@@ -126,9 +124,12 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             detail += " (password-protected files can't be read)"
         raise OfficeFormatMismatch(detail)
 
-    # The profile and LibreOffice's own temporary files live in the job
-    # directory, so they go with the job.
-    with tempfile.TemporaryDirectory(prefix="capy_office_", dir=work_dir) as tmp_name:
+    # The profile, LibreOffice's own temporary files and its IPC pipe live in
+    # the job directory, so they go with the job. LibreOffice puts the pipe in
+    # /tmp or /var/tmp when it may write there (the image lets it write
+    # neither), else in OSL_SOCKET_PATH. A socket path holds 107 bytes and the
+    # pipe's name about 64, hence the short folder name.
+    with tempfile.TemporaryDirectory(prefix="lo-", dir=work_dir) as tmp_name:
         tmp = Path(tmp_name)
         source = tmp / f"source{suffix}"
         source.write_bytes(data)
@@ -140,6 +141,7 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
         command = [
             SOFFICE,
             f"-env:UserInstallation={profile.as_uri()}",
+            f"-env:OSL_SOCKET_PATH={tmp}",
             "--headless",
             "--nologo",
             "--nodefault",
@@ -201,7 +203,6 @@ def _convert(
         blocked=frozenset({"setsid", "setpgid", "fork"}),
         read=(*READ, SOFFICE),
         write=(str(job), "/dev/null"),
-        sockets=SOCKETS,
         # Two malloc arenas: LibreOffice then fits the parse child's
         # address-space limit (2.18 GiB of address space for a 224k-cell
         # workbook, 0.52 GiB with two).
@@ -213,7 +214,7 @@ def _convert(
         },
         timeout_s=timeout_s,
     )
-    return capy_sandbox.run(command, policy)
+    return capy_sandbox.run(command, policy, max_output=None)
 
 
 def pdf_page_count(data: bytes) -> int:

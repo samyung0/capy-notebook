@@ -3005,7 +3005,7 @@ def main(job_type: str = "ingest") -> None:
     require_parse_timeouts()
     # Decoders run as children with this uid (ingest/decode.py): none may read
     # this process's memory or environment. A deployed host without Landlock
-    # refuses here.
+    # ABI 6 refuses here.
     capy_sandbox.make_undumpable()
     if not capy_sandbox.landlock_available():
         log.warning("Landlock unavailable: decoders run without it")

@@ -8,6 +8,7 @@ options and JSON as ODL's CLI, plus the facts the JSON leaves out.
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import signal
@@ -33,6 +34,28 @@ ODL_FLAGS = (
     "--include-header-footer",
 )
 JVM_MAX_HEAP = os.environ.get("CAPY_PARSER_JVM_MAX_HEAP", "1g")
+_CPU_MAX = Path("/sys/fs/cgroup/cpu.max")
+
+
+def _container_cpus() -> int:
+    """CPUs the container may use: its cgroup CPU quota rounded up, at most
+    the CPUs it may run on. The sandboxed JVM reads neither /sys nor /proc to
+    find its quota, so it is told (-XX:ActiveProcessorCount) and sizes its GC
+    and compiler threads by it. Read at import, before a parse child confines
+    itself."""
+    if not hasattr(os, "sched_getaffinity"):  # Not Linux: local development.
+        return os.cpu_count() or 1
+    available = len(os.sched_getaffinity(0))
+    try:
+        quota, period = _CPU_MAX.read_text().split()
+    except FileNotFoundError:  # No cgroup v2 CPU controller: no quota.
+        return available
+    if quota == "max":
+        return available
+    return max(1, min(available, math.ceil(int(quota) / int(period))))
+
+
+CPUS = _container_cpus()
 ENTRY_JAR = Path(
     os.environ.get("CAPY_ODL_ENTRY_JAR")
     or Path(__file__).resolve().parents[1] / "java" / "build" / "capy-odl.jar"
@@ -101,6 +124,7 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
     command = [
         executable,
         f"-Xmx{JVM_MAX_HEAP}",
+        f"-XX:ActiveProcessorCount={CPUS}",
         "-Djava.awt.headless=true",
         # The JVM ignores TMPDIR: keep its temporary files on the work volume,
         # not the small RAM-backed /tmp.
@@ -126,7 +150,9 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         timeout_s=timeout_s,
     )
     try:
-        completed = capy_sandbox.run(command, policy, stderr=subprocess.STDOUT)
+        completed = capy_sandbox.run(
+            command, policy, stderr=subprocess.STDOUT, max_output=None
+        )
     except subprocess.TimeoutExpired as exc:
         raise JavaTimeout(f"OpenDataLoader exceeded {timeout_s:.0f} seconds") from exc
     output = completed.stdout.decode(errors="replace")
