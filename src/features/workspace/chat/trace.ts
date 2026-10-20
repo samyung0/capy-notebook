@@ -228,9 +228,19 @@ const OTHER: Copy = {
 
 const SEARCHES = new Set(['search_workspace', 'search_knowledge']);
 
+/** A tool's copy; an edit that created its file (edit_office_document's
+ * create) reads as create_material's does. */
+function copyOf(tool: ToolBlock): Copy {
+  const copy = COPY[tool.name] ?? OTHER;
+  return copy === edit &&
+    tool.effects?.some((effect) => isCreated(tool, effect))
+    ? create
+    : copy;
+}
+
 /** The human label a row emphasises: the query (quoted), file or page. */
 export function stepLabel(tool: ToolBlock): string {
-  const copy = COPY[tool.name] ?? OTHER;
+  const copy = copyOf(tool);
   if (tool.capture) return m.chat_step_page({ page: tool.capture.page });
   if (!tool.detail) return copy.fallback?.() ?? '';
   return SEARCHES.has(tool.name) ? `“${tool.detail}”` : tool.detail;
@@ -241,7 +251,7 @@ export function stepTitle(
   tool: ToolBlock,
   state: StepState
 ): { text: string; label: string } {
-  const copy = COPY[tool.name] ?? OTHER;
+  const copy = copyOf(tool);
   const label = stepLabel(tool);
   const running = copy.run(label);
   switch (state) {

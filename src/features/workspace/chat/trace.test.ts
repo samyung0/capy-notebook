@@ -80,6 +80,18 @@ describe('stepTitle', () => {
         .text
     ).toBe('Editing grades.xlsx');
   });
+  it('titles an Office create as create_material titles its file', () => {
+    const created = tool('e', 'edit_office_document', undefined, {
+      detail: 'Grades.xlsx',
+      effects: [
+        {
+          operation: 'created',
+          resource: { id: 'f_1', kind: 'source_file', title: 'Grades.xlsx' },
+        },
+      ],
+    });
+    expect(stepTitle(created, 'done').text).toBe('Created Grades.xlsx');
+  });
   it('quotes a search query and labels a capture by its page', () => {
     const search = tool('s', 'search_workspace', undefined, {
       detail: 'osmosis',
