@@ -88,15 +88,21 @@ enum Channel {
         checked: Option<Instant>,
         /// The JOIN attempt it joined with.
         attempt: u64,
-        /// Its place among the user's joined channels; an embed has none.
-        membership: Option<Membership>,
-        /// Its place among the user's channels to this document or embed.
-        document: Membership,
+        /// Its places among its user's channels.
+        places: Box<Places>,
         /// An embed's note channel.
         parent: Option<u64>,
         /// A note channel's embed channels, oldest first.
         embeds: VecDeque<u64>,
     },
+}
+
+/// A joined channel's places (`seats.rs`), given back when it goes.
+struct Places {
+    /// Among its user's joined channels; an embed has none.
+    joined: Option<Membership>,
+    /// Among its user's channels to this document or embed.
+    document: Membership,
 }
 
 pub struct Refusal {
@@ -813,15 +819,10 @@ impl Connection {
     /// when they joined it once past [crate::seats::CONNECTIONS_PER_DOCUMENT]
     /// (Epo 2026-10-20): it closes, unless it joined again since.
     async fn close_oldest(&mut self, channel: u64, id: u64) {
-        let Some(Channel::Joined {
-            membership,
-            document,
-            ..
-        }) = self.channels.get(&channel)
-        else {
+        let Some(Channel::Joined { places, .. }) = self.channels.get(&channel) else {
             return;
         };
-        if membership.as_ref().map(|membership| membership.id) != Some(id) && document.id != id {
+        if places.joined.as_ref().map(|joined| joined.id) != Some(id) && places.document.id != id {
             return;
         }
         self.app.stats.oldest_closed.fetch_add(1, Ordering::Relaxed);
@@ -1105,7 +1106,7 @@ impl Connection {
         self.arm_token(channel, &context);
         // Only a note's (or any other document's) channel takes a place among
         // the user's joined channels, never an embed's.
-        let membership = parent.is_none().then(|| {
+        let joined = parent.is_none().then(|| {
             self.app
                 .joined
                 .join(&context.user_id, channel, &self.closing_tx)
@@ -1130,8 +1131,7 @@ impl Connection {
                 context,
                 checked: None,
                 attempt,
-                membership,
-                document,
+                places: Box::new(Places { joined, document }),
                 parent: parent.map(|(note, _)| note),
                 embeds: VecDeque::new(),
             },

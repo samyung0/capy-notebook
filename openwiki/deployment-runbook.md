@@ -660,9 +660,10 @@ The prod file runs `/migrate` once per deploy, starts the API with
 
    A client address holds at most `COLLABORATION_SOCKETS_PER_ADDRESS` sockets
    (500, `capy_collaboration_seat_refusals_total` counts refusals) and a user
-   at most `COLLABORATION_JOINED_PER_USER` joined documents (22; one more
-   closes their oldest, counted in `capy_collaboration_oldest_closed_total`),
-   also left unset. The address is the gateway limiter's
+   at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
+   `COLLABORATION_CONNECTIONS_PER_DOCUMENT` connections to one document (4;
+   one more closes their oldest, counted in
+   `capy_collaboration_oldest_closed_total`), also left unset. The address is the gateway limiter's
    (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
    peer's; an IPv6 one by its /64), so the cap holds only while the origin is
    reachable through the Cloudflare tunnel alone, as it is for the gateway's
@@ -673,8 +674,9 @@ The prod file runs `/migrate` once per deploy, starts the API with
    stack's `u_owner` from one machine, `docker-compose.stress.yml`) shares
    one allowance and one address cap: its compose file raises
    `COLLABORATION_UPDATE_BURST`, `COLLABORATION_UPDATES_PER_SECOND`,
-   `COLLABORATION_OPEN_BYTES`, `COLLABORATION_SOCKETS_PER_ADDRESS` and
-   `COLLABORATION_JOINED_PER_USER`.
+   `COLLABORATION_OPEN_BYTES`, `COLLABORATION_SOCKETS_PER_ADDRESS`,
+   `COLLABORATION_JOINED_PER_USER` and
+   `COLLABORATION_CONNECTIONS_PER_DOCUMENT`.
    A UAT stress run from one machine needs the address cap raised on UAT
    for the run.
 

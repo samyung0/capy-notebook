@@ -64,10 +64,11 @@ pub struct Config {
     /// time out (the client paces by the defaults, `allowance.ts`).
     pub update_limits: crate::rate::Limits,
     /// Sockets one client address may hold, and channels one user may have
-    /// joined before a join closes their oldest (`seats.rs`): stress stacks
-    /// with one address and one user raise them.
+    /// joined, in all and to one document, before a join closes their oldest
+    /// (`seats.rs`): stress stacks with one address and one user raise them.
     pub sockets_per_address: u64,
     pub joined_per_user: u64,
+    pub connections_per_document: u64,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -227,6 +228,11 @@ impl Config {
                 "COLLABORATION_JOINED_PER_USER",
                 crate::seats::JOINED_PER_USER,
             )?,
+            connections_per_document: positive(
+                env,
+                "COLLABORATION_CONNECTIONS_PER_DOCUMENT",
+                crate::seats::CONNECTIONS_PER_DOCUMENT,
+            )?,
         })
     }
 
@@ -283,6 +289,7 @@ mod tests {
         );
         assert_eq!(config.sockets_per_address, 500);
         assert_eq!(config.joined_per_user, 22);
+        assert_eq!(config.connections_per_document, 4);
     }
 
     #[test]

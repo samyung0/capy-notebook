@@ -624,6 +624,7 @@ pub(crate) mod tests {
         );
         let limits = config.update_limits;
         let (sockets, joined) = (config.sockets_per_address, config.joined_per_user);
+        let per_document = config.connections_per_document;
         std::sync::Arc::new(crate::app::App {
             instance_id: "test".into(),
             config,
@@ -637,7 +638,7 @@ pub(crate) mod tests {
             allowances: crate::rate::Allowances::new(limits, std::time::Instant::now()),
             address_sockets: crate::seats::Seats::new(sockets),
             joined: crate::seats::Joined::new(joined),
-            per_document: crate::seats::Joined::new(crate::seats::CONNECTIONS_PER_DOCUMENT),
+            per_document: crate::seats::Joined::new(per_document),
             health: Default::default(),
             unplaced: Default::default(),
             projection_failures: Default::default(),

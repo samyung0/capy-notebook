@@ -188,6 +188,7 @@ async fn serve(config: Config) -> Result<(), String> {
     let allowances = crate::rate::Allowances::new(config.update_limits, std::time::Instant::now());
     let address_sockets = crate::seats::Seats::new(config.sockets_per_address);
     let joined = crate::seats::Joined::new(config.joined_per_user);
+    let per_document = crate::seats::Joined::new(config.connections_per_document);
     let app = Arc::new(App {
         instance_id: format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()),
         config,
@@ -201,7 +202,7 @@ async fn serve(config: Config) -> Result<(), String> {
         allowances,
         address_sockets,
         joined,
-        per_document: crate::seats::Joined::new(crate::seats::CONNECTIONS_PER_DOCUMENT),
+        per_document,
         health: Default::default(),
         unplaced: Default::default(),
         projection_failures: Default::default(),

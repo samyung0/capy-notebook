@@ -2092,11 +2092,15 @@ async fn a_member_writes_only_its_own_awareness_client_ids_up_to_a_cap() {
 #[tokio::test]
 async fn a_room_keeps_at_most_256_awareness_client_ids() {
     let Some(env) = env() else { return };
-    // One user's 66 channels, past the 22 joined documents a user holds.
+    // One user's 66 channels, past the 22 joined documents a user holds and
+    // the 4 connections to one document.
     let server = start_configured(
         &env,
         env.api.as_deref(),
-        &[("COLLABORATION_JOINED_PER_USER", "100")],
+        &[
+            ("COLLABORATION_JOINED_PER_USER", "100"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "100"),
+        ],
     )
     .await;
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
@@ -2269,7 +2273,10 @@ async fn embed_channels_count_toward_their_own_rooms_four_connections() {
     assert!(closes.is_empty(), "{closes:?}");
     let mut fifth = Client::open(server.port).await;
     fifth
-        .send(0, &join_payload(&set, &token(&set, &user, "write"), Some(client_protocol())))
+        .send(
+            0,
+            &join_payload(&set, &token(&set, &user, "write"), Some(client_protocol())),
+        )
         .await;
     assert!(fifth.until(1).await.is_some(), "the fifth connection joins");
     let closes = first.closes_within(Duration::from_secs(1)).await;

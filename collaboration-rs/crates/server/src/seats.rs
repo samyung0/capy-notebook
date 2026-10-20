@@ -17,7 +17,8 @@ pub const SOCKETS_PER_ADDRESS: u64 = 500;
 /// 7 per device on 3 devices (Epo 2026-10-19, `COLLABORATION_JOINED_PER_USER`).
 pub const JOINED_PER_USER: u64 = 22;
 /// Channels one user may have joined to any one document or embed at once
-/// over all their sockets (Epo 2026-10-20).
+/// over all their sockets (Epo 2026-10-20,
+/// `COLLABORATION_CONNECTIONS_PER_DOCUMENT`).
 pub const CONNECTIONS_PER_DOCUMENT: u64 = 4;
 /// Membership ids, unique over every [Joined], so a channel's places in two
 /// of them are told apart.
