@@ -1955,7 +1955,7 @@ async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
 /// Security regression (Epo 2026-10-20, rate-limit review r6 S-1): the
 /// awareness a JOIN sends counts against the open budget and, past the
 /// small-answer floor, waits like an awareness query. Two re-JOINs of a room
-/// holding about 480 KB of presence (two channels of four ids) take a 300 KB
+/// holding about 480 KB of presence (two sockets of four ids) take a 300 KB
 /// budget 360 KB past its floor (300 KB owed); the next re-JOIN joins but
 /// hears no awareness until the budget refills (100 KB a second). Fails if
 /// the JOIN's awareness never waits.
@@ -1974,16 +1974,23 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
     let write = token(&room, &user, "write");
     let join = join_payload(&room, &write, Some(client_protocol()));
-    // A second presence channel, joined while the room holds none.
-    client.send_on(3, 0, &join).await;
-    assert!(client.heard_within(3, 1, Duration::from_secs(5)).await);
+    // A second presence socket, synced (so its channel serves) while the room
+    // holds none.
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &write).await;
+    assert!(other.settle(|c| c.block_text() == "crowd").await);
     let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
     for id in 1..=4 {
         client.send(7, &awareness_update(id, 1, &state)).await;
-        client
-            .send_on(3, 7, &awareness_update(id + 4, 1, &state))
-            .await;
     }
+    // The other socket's four in one frame: once the first reaches this
+    // client, the room holds all eight.
+    let mut batch = Vec::new();
+    for id in 5..=8 {
+        batch.extend(frame(1, 7, &awareness_update(id, 1, &state)));
+    }
+    other.ws.send(Ws::Binary(batch.into())).await.expect("send");
+    assert!(client.heard_within(1, 7, Duration::from_secs(5)).await);
     for round in 0..2 {
         client.send_on(2, 0, &join).await;
         assert!(
