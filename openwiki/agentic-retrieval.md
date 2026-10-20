@@ -1626,7 +1626,11 @@ through as whole segments: an earlier version emitted it character by
 character whenever the chunk held any CJK, so one OCR'd table dash read as
 `一` removed every English word of that chunk from the lexical index. The same
 tokenizer must run on queries (`search_query_terms`), or the lexical half of
-hybrid search silently returns nothing for Chinese/Japanese/Korean. Changing
+hybrid search silently returns nothing for Chinese/Japanese/Korean. The
+query's words go to `websearch_to_tsquery` OR-joined with websearch syntax
+taken out: a leading `-` or `!` and every `"` are stripped, since `-5` was a
+NOT that matched every passage without a 5, and a quote opened a phrase that
+swallowed the `or` joiners (hints eval 2026-10-20). Changing
 a configuration or the detector is a `CHUNKER_VERSION` bump: rows indexed
 under another config do not match stemmed queries.
 

@@ -401,6 +401,33 @@ async def test_simple_config_documents_drop_only_english_stopwords(workspace):
     assert await ids("how does a cell die") == {"die"}
 
 
+@pytest.mark.integration
+async def test_a_minus_sign_or_quotes_in_the_message_do_not_match_every_edit(
+    workspace,
+):
+    """Hints eval 2026-10-20: "What is -5 + 3?" matched 37 of 40 candidates
+    (websearch NOT), and a quoted phrase swallowed the joiners."""
+    english = workspace.add_file("english.pdf")
+    _index_as(workspace, english, "en")
+    sources = pending.PendingSources(
+        [
+            _file(
+                english,
+                _change("add", after="Plant cell walls hold cellulose.", cid="wall"),
+                _change("add", after="Mitochondria make energy.", cid="mito"),
+                _change("add", after="Ribosomes build proteins.", cid="ribo"),
+            )
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return {hint.change_id for hint in await pending_hints.match(query, pool)}
+
+    assert await ids("What is -5 + 3?") == set()
+    assert await ids('what is the "cell wall"?') == {"wall"}
+
+
 def test_a_snippet_is_placed_by_the_longest_query_word():
     # Review hints-r2 H3: function words and two-letter prefixes put the
     # window at the start of almost any text.

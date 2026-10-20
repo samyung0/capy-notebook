@@ -1078,6 +1078,25 @@ async def test_lexical_half_matches_without_a_useful_vector(workspace):
     assert rows[0]["file_name"] == "bio.txt"
 
 
+async def test_a_minus_sign_in_the_query_matches_nothing_lexically(workspace):
+    """Hints eval 2026-10-20: "-5" was websearch NOT, so the lexical leg
+    matched every passage without a 5."""
+    file_id = workspace.add_file("bio.txt")
+    await _write(
+        workspace, file_id, ["Chlorophyll absorbs red light", "Unrelated text"]
+    )
+
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=_unit_vector(999),
+        terms=search_query_terms("What is -5 + 3?"),
+        file_ids=None,
+        candidates=10,
+    )
+
+    assert rows and all(row["lex_rank"] is None for row in rows)
+
+
 async def test_lexical_half_stems_and_ignores_stopwords(workspace):
     """A question's function words must not decide the lexical ranking, and an
     inflected query word must still reach the passage that uses another form."""

@@ -320,9 +320,14 @@ class QueryTerms:
 
 
 def search_query_terms(query: str) -> QueryTerms:
-    """Build `websearch_to_tsquery`-safe strings matching the index tokens."""
+    """Build `websearch_to_tsquery`-safe strings matching the index tokens.
+
+    websearch syntax is taken from the words: a leading "-" or "!" would make
+    a word NOT (so "-5" matched every passage without a 5), and a quote would
+    open a phrase that swallows the " or " joiners."""
     tokenized = tokenize_for_search(query)
-    words = [w for w in re.split(r"\s+", tokenized) if w and w not in "&|!():*"]
+    words = [w.lstrip("-!").replace('"', "") for w in re.split(r"\s+", tokenized)]
+    words = [w for w in words if w and w not in "&|!():*"]
     words = words[:40]
     latin = [w for w in words if not CJK_RUN_RE.search(w)]
     cjk_runs = len(CJK_RUN_RE.findall(query))
