@@ -39,7 +39,7 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     editing = (await tools._read_skill({"name": "editing"}, ctx)).text()
     assert "Budget:" in editing and "excerpt_ids are" not in editing
     assert "add_questions" in editing and "Flashcards:" in editing
-    assert "recent edits not yet in search may show up as hints" in editing
+    assert "Edits not yet in search show up as hints" in editing
     office = (await tools._read_skill({"name": "office_building"}, ctx)).text()
     assert (
         "a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits"

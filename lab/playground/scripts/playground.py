@@ -1465,7 +1465,9 @@ class Turn:
             text = saved["render"](result, numbered)
             record = state["_result_call"].get(id(result))
             if record is not None:
-                shown = tools.limit_tool_result(text)
+                shown = tools.limit_tool_result(text, tail=result.tail)
+                if result.pending:
+                    shown += "\n\n" + result.pending
                 record.update(text_sent_to_model=shown, truncated=shown != text)
                 state["extra"].append(
                     {

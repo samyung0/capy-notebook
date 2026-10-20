@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { m } from '@/i18n';
 import {
+  frameCanEdit,
   keepsFocus,
   officeNotices,
   openRequestedPresenter,
@@ -111,19 +112,38 @@ describe('the notices a frame shows', () => {
     ]);
   });
 
-  it('toasts every refused spreadsheet clear and copy', () => {
+  it('toasts every refused spreadsheet clear, copy and cut', () => {
     const toast = vi.fn();
     const notices = officeNotices(toast);
-    for (let key = 0; key < 2; key += 1) {
-      notices.show('clear-too-large', 2_097_152);
-      notices.show('copy-too-large', 2_097_152);
-    }
-    expect(toast.mock.calls).toEqual([
-      [m.files_office_clear_too_large()],
-      [m.files_office_copy_too_large()],
-      [m.files_office_clear_too_large()],
-      [m.files_office_copy_too_large()],
-    ]);
+    const kinds = ['edit-too-large', 'copy-too-large', 'copy-failed'] as const;
+    for (let key = 0; key < 2; key += 1)
+      for (const kind of kinds) notices.show(kind, 2_097_152);
+    const titles = [
+      m.files_office_edit_too_large(),
+      m.files_office_copy_too_large(),
+      m.files_office_copy_failed(),
+    ];
+    expect(toast.mock.calls).toEqual(
+      [...titles, ...titles].map((title) => [title])
+    );
+  });
+});
+
+// Security regression (rate-limit review r3 S7): while the tab holds back its
+// collaboration messages a DOCX or PPTX editor pauses; XLSX takes `sending`.
+describe('the frame editing while the tab holds back', () => {
+  const frame = { current: true, editable: true, sending: true };
+
+  it('pauses a DOCX or PPTX editor', () => {
+    expect(frameCanEdit({ ...frame, format: 'docx' })).toBe(false);
+    expect(frameCanEdit({ ...frame, format: 'pptx' })).toBe(false);
+    expect(frameCanEdit({ ...frame, format: 'docx', sending: false })).toBe(
+      true
+    );
+  });
+
+  it('leaves the XLSX editor to its own sending state', () => {
+    expect(frameCanEdit({ ...frame, format: 'xlsx' })).toBe(true);
   });
 });
 

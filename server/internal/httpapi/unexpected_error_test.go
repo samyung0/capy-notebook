@@ -32,7 +32,7 @@ func (failingBody) Read([]byte) (int, error) { return 0, errors.New(leakedSecret
 func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 	r := chi.NewRouter()
 	r.Use(obs.Middleware)
-	h := humachi.New(r, humaConfig())
+	h := humachi.New(r, humaConfig(false))
 	fail := func(err error) func(context.Context, *struct{}) (*Empty, error) {
 		return func(context.Context, *struct{}) (*Empty, error) { return nil, err }
 	}
@@ -137,7 +137,7 @@ func TestUnexpectedErrorsKeepTheirCause(t *testing.T) {
 	}
 	r := chi.NewRouter()
 	r.Use(obs.Middleware, obs.AccessLog, recoverer, obs.SentryMiddleware)
-	h := humachi.New(r, humaConfig())
+	h := humachi.New(r, humaConfig(false))
 	type bodyInput struct {
 		Body struct {
 			Name string `json:"name"`

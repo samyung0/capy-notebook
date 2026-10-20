@@ -11,6 +11,7 @@ import json
 import logging
 import secrets
 import time
+from datetime import datetime
 from typing import Any
 
 from psycopg.rows import dict_row
@@ -992,7 +993,10 @@ async def upsert_content_summary(
     fingerprint: str,
     descriptor: str,
     change_share: float,
+    written_at: datetime | None = None,
 ) -> None:
+    """``updated_at`` is when the descriptor was written: ``written_at`` for a
+    reused one, else now."""
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
@@ -1000,13 +1004,13 @@ async def upsert_content_summary(
             INSERT INTO rag_content_summaries
                 (content_id, workspace_id, fingerprint, descriptor, change_share,
                  updated_at)
-            VALUES (%s, %s, %s, %s, %s, now())
+            VALUES (%s, %s, %s, %s, %s, coalesce(%s, now()))
             ON CONFLICT (content_id) DO UPDATE SET
                 workspace_id    = EXCLUDED.workspace_id,
                 fingerprint     = EXCLUDED.fingerprint,
                 descriptor      = EXCLUDED.descriptor,
                 change_share    = EXCLUDED.change_share,
-                updated_at      = now()
+                updated_at      = EXCLUDED.updated_at
             """,
             (
                 content_id,
@@ -1014,6 +1018,7 @@ async def upsert_content_summary(
                 fingerprint,
                 descriptor,
                 change_share,
+                written_at,
             ),
         )
 
@@ -1027,26 +1032,48 @@ async def published_summary(
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT cs.content_id, cs.descriptor, cs.change_share
+            SELECT fc.content_id
             FROM rag_file_contents fc
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
-            JOIN rag_content_summaries cs ON cs.content_id = rc.id
             WHERE fc.file_id = %s AND fc.workspace_id = %s
             """,
             (file_id, workspace_id),
         )
         row = await cur.fetchone()
-        if row is None:
-            return None
-        cur = await conn.execute(
-            "SELECT text, section_path FROM rag_chunks WHERE content_id = %s "
-            "ORDER BY chunk_idx",
-            (row["content_id"],),
-        )
-        chunks = [
-            Chunk(text=chunk["text"], section_path=chunk["section_path"] or "")
-            for chunk in await cur.fetchall()
-        ]
+        return await _summary_row(conn, row["content_id"]) if row else None
+
+
+async def content_summary(content_id: str) -> dict[str, Any] | None:
+    """A content's descriptor row with the chunks it describes, for a note's
+    summary gate; None when it has none."""
+    db = await pool()
+    async with db.connection() as conn:
+        return await _summary_row(conn, content_id)
+
+
+async def _summary_row(conn, content_id: str) -> dict[str, Any] | None:
+    """The descriptor, its change share, when it was written and its age in
+    seconds, and the chunks it describes."""
+    cur = await conn.execute(
+        """
+        SELECT descriptor, change_share, updated_at,
+               extract(epoch FROM now() - updated_at)::float AS age
+        FROM rag_content_summaries WHERE content_id = %s
+        """,
+        (content_id,),
+    )
+    row = await cur.fetchone()
+    if row is None:
+        return None
+    cur = await conn.execute(
+        "SELECT text, section_path FROM rag_chunks WHERE content_id = %s "
+        "ORDER BY chunk_idx",
+        (content_id,),
+    )
+    chunks = [
+        Chunk(text=chunk["text"], section_path=chunk["section_path"] or "")
+        for chunk in await cur.fetchall()
+    ]
     return {**dict(row), "chunks": chunks}
 
 
@@ -1454,11 +1481,12 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         cur = await conn.execute(
             """
             SELECT m.id, m.title AS name, m.chapter_id, 'ready' AS status,
-                   '' AS descriptor, 'material' AS kind,
+                   coalesce(cs.descriptor, '') AS descriptor, 'material' AS kind,
                    (SELECT count(*) FROM rag_chunks c
-                    JOIN rag_material_contents mc ON mc.content_id = c.content_id
-                    WHERE mc.material_id = m.id) AS chunks
+                    WHERE c.content_id = mc.content_id) AS chunks
             FROM materials m
+                 LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
+                 LEFT JOIN rag_content_summaries cs ON cs.content_id = mc.content_id
             WHERE m.workspace_id = %s AND m.kind = 'note' AND m.trashed_at IS NULL
               AND m.parent_material_id IS NULL
             ORDER BY m.position, m.created_at

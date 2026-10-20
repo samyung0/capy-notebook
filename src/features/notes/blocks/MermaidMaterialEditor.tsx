@@ -8,6 +8,7 @@ import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import {
   itemEditingStopped,
   useItemRoom,
@@ -138,17 +139,21 @@ export default function MermaidMaterialEditor({
   if (isOutdatedBanner(snapshot.offline) && !snapshot.synced)
     return <SaveBanner state="outdated" />;
   if (!(room && snapshot.synced && live))
-    return <FileLoading message={m.editor_connecting()} />;
+    return (
+      <FileLoading message={m.editor_connecting()} slowed={snapshot.slowed} />
+    );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
-      <LiveDiagram
-        history={room.history}
-        live={live}
-        provenance={provenance}
-        readOnly={itemEditingStopped(snapshot.offline)}
-        title={title}
-      />
+      <CollaborationHold className="flex min-h-0 flex-1 flex-col">
+        <LiveDiagram
+          history={room.history}
+          live={live}
+          provenance={provenance}
+          readOnly={itemEditingStopped(snapshot.offline)}
+          title={title}
+        />
+      </CollaborationHold>
     </div>
   );
 }

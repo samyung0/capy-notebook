@@ -93,10 +93,6 @@ REPORT.md`, harness commit 0ca23b61, read at Capy c9650685 and fork d5e297bf).
   office-service and send it to the parser's capture route. Needs testing;
   decks do fine without it so far.
 - Office templates and quick starts beside the blank tiles.
-- When the effects session's per-message hints and search hits for unindexed
-  edits land on main, update the `editing` skill's line on recent changes
-  (Epo 2026-10-20): drop the "may" and say they show up with the message and
-  in search.
 
 ## Engine survey per format
 

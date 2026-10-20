@@ -8,6 +8,7 @@ import {
   type ItemRoomStatus,
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
+import type { InNote } from '@/features/collaboration/noteSeat';
 import { pairedUndo, type UndoTarget } from '@/features/collaboration/undo';
 import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { Question } from '@/features/questions/types';
@@ -20,7 +21,7 @@ function combined(a: ItemRoomStatus, b: ItemRoomStatus): ItemRoomStatus {
     'offline',
     'connecting',
     'syncing',
-    'synced',
+    'saved',
   ];
   return rank[Math.min(rank.indexOf(a), rank.indexOf(b))];
 }
@@ -43,6 +44,8 @@ export interface QuizRooms {
     keys: ItemRecovery | null;
     reload: () => void;
   } | null;
+  /** An open waits on the user's open budget (either room's). */
+  slowed: boolean;
   status: ItemRoomStatus;
   undo: UndoTarget | null;
 }
@@ -64,15 +67,29 @@ const OFFLINE: ItemRoomSnapshot['offline'][] = [
  */
 export function useQuizRooms(
   quizId: string | null,
-  { edit, enabled = true }: { edit: boolean; enabled?: boolean }
+  {
+    edit,
+    enabled = true,
+    inside,
+    wake,
+  }: { edit: boolean; enabled?: boolean } & InNote
 ): QuizRooms {
   const { data: me } = useMe();
   const actorId = edit ? (me?.id ?? null) : null;
   const contentEnabled = enabled && (!edit || !!actorId);
-  const content = useItemRoom(quizId, contentEnabled, { actorId });
+  const content = useItemRoom(quizId, contentEnabled, {
+    actorId,
+    inside,
+    wake,
+  });
   const wantKeys =
     contentEnabled && edit && content.snapshot.access === 'write';
-  const keys = useItemRoom(quizId, wantKeys, { actorId, document: 'keys' });
+  const keys = useItemRoom(quizId, wantKeys, {
+    actorId,
+    document: 'keys',
+    inside,
+    wake,
+  });
   const contentUndo = content.room?.undo;
   const keysUndo = keys.room?.undo;
   const undo = useMemo(
@@ -114,6 +131,7 @@ export function useQuizRooms(
     readOnlyCode: content.snapshot.readOnlyCode,
     ready,
     recovery,
+    slowed: content.snapshot.slowed || (wantKeys && keys.snapshot.slowed),
     status: wantKeys
       ? combined(content.snapshot.status, keys.snapshot.status)
       : content.snapshot.status,

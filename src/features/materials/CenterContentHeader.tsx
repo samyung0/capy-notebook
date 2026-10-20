@@ -24,6 +24,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
+import { useSlowedLine } from '@/features/collaboration/SlowedOpen';
 import {
   clampImageZoom,
   fileCanClone,
@@ -146,6 +147,10 @@ export function EditorSaveStatus({
     return store.subscribe((state) => setEditorStatus(state.status));
   }, [store]);
   const online = useOnlineStatus();
+  // A note on screen whose reconnect is slowed says why under the indicator,
+  // its tooltip held open after 5 s (Epo 2026-10-20).
+  const slowedLine = useSlowedLine(!!editorStatus?.slowed);
+  const [hovered, setHovered] = useState(false);
   const statusLabel = noteEditorStatusLabel(editorStatus);
   if (!(online && editorStatus && statusLabel)) return null;
   const failed =
@@ -169,7 +174,7 @@ export function EditorSaveStatus({
       </span>
     );
   return (
-    <Tooltip>
+    <Tooltip onOpenChange={setHovered} open={hovered || slowedLine}>
       <TooltipTrigger
         className={cn(
           'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-action',
@@ -185,8 +190,13 @@ export function EditorSaveStatus({
           name={STATUS_ICON[editorStatus.saveState]}
         />
         <span className="sr-only">{statusLabel}</span>
+        {slowedLine && (
+          <span className="sr-only">{m.editor_open_slowed()}</span>
+        )}
       </TooltipTrigger>
-      <TooltipContent side="bottom">{statusLabel}</TooltipContent>
+      <TooltipContent side="bottom">
+        {slowedLine ? m.editor_open_slowed() : statusLabel}
+      </TooltipContent>
     </Tooltip>
   );
 }

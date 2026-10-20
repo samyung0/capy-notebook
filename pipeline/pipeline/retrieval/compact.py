@@ -20,7 +20,7 @@ from ..prompts.chat import (
     turn_note_messages,
 )
 from ..registry import ModelConfig
-from . import accounting, models
+from . import accounting, models, pending_hints
 
 EFFECTIVE_INPUT_LIMIT_TOKENS = 250_000
 PROTOCOL_SAFETY_MARGIN_TOKENS = 512
@@ -170,7 +170,13 @@ async def summarize_checkpoint(
     purpose: str = accounting.PURPOSE_CHECKPOINT,
     build: Callable[..., list[dict[str, str]]] = checkpoint_messages,
 ) -> str:
-    """Fold all supplied turns, using chronological batches when necessary."""
+    """Fold all supplied turns, using chronological batches when necessary.
+    Hints are not folded: condensing drops them (pending_hints)."""
+    turns = [
+        folded
+        for folded in (pending_hints.for_summary(turn) for turn in turns)
+        if folded is not None
+    ]
     memory = str(prior_summary or "").strip()
     batch: list[dict[str, Any]] = []
     for turn in turns:
@@ -257,8 +263,14 @@ async def _fold_turn(
         if message.get("_kind") == "turn_note" and message.get("_note")
     ).strip()
     # Earlier turn contexts are stale snapshots; the next call sends a current one.
+    # This turn's hint message stays with its query (pending_hints).
+    hints = [m for m in turn if m.get("_kind") == pending_hints.KIND]
     groups = _exchanges(
-        [m for m in turn if m.get("_kind") not in ("turn_note", "turn_context")]
+        [
+            m
+            for m in turn
+            if m.get("_kind") not in ("turn_note", "turn_context", pending_hints.KIND)
+        ]
     )
     fold = [m for group in groups[:-TURN_KEEP_EXCHANGES] for m in group]
     keep = [m for group in groups[-TURN_KEEP_EXCHANGES:] for m in group]
@@ -273,7 +285,7 @@ async def _fold_turn(
         purpose=accounting.PURPOSE_LIVE_COMPACTION,
         build=turn_note_messages,
     )
-    return [*messages[:query_index], query, turn_note_message(note), *keep]
+    return [*messages[:query_index], query, *hints, turn_note_message(note), *keep]
 
 
 async def compact_messages(

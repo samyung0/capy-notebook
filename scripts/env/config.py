@@ -79,32 +79,29 @@ def read_file(path):
 
 
 def github_values():
-    missing = [
-        name
-        for name in ("CAPY_GITHUB_VARS", "CAPY_GITHUB_SECRETS")
-        if name not in os.environ
-    ]
-    if missing:
+    """Variables come from the whole `vars` context; each secret comes from its
+    own `CAPY_SECRET_<KEY>` step variable. The render steps name exactly the
+    secrets their render reads (test_config.py checks the wiring): a step given
+    `toJSON(secrets)` makes GitHub hold the run for approval."""
+    if "CAPY_GITHUB_VARS" not in os.environ:
         fail(
-            ", ".join(missing)
-            + " unset; outside the deploy workflows pass --file with a local env file"
+            "CAPY_GITHUB_VARS unset; outside the deploy workflows pass --file with a local env file"
         )
     variables = json.loads(os.environ["CAPY_GITHUB_VARS"])
-    secrets = json.loads(os.environ["CAPY_GITHUB_SECRETS"])
-    # GitHub contexts also contain unrelated repository and organization settings.
+    # The vars context also holds unrelated repository and organization settings.
     result = {}
     for key, spec in MANIFEST.items():
         if spec["targets"] == ["local"]:
             continue
-        source, other = (
-            (secrets, variables) if spec["kind"] == "secret" else (variables, secrets)
-        )
-        if key in other:
-            fail(
-                f"{key} is stored in the wrong GitHub namespace; expected {spec['kind']}"
-            )
-        if key in source:
-            result[key] = source[key]
+        if spec["kind"] == "variable":
+            if key in variables:
+                result[key] = variables[key]
+            continue
+        if key in variables:
+            fail(f"{key} is stored in the wrong GitHub namespace; expected secret")
+        # GitHub expands an unset secret to blank; both stay absent.
+        if os.environ.get("CAPY_SECRET_" + key):
+            result[key] = os.environ["CAPY_SECRET_" + key]
     return result
 
 
@@ -269,6 +266,21 @@ def run_gh(args, value=None):
 
 def push(values, environment, repo):
     classify(values)
+    common = ["--env", environment, "--repo", repo]
+    # Deploys read only the secrets their render steps name, so they cannot see
+    # a manifest variable stored as a secret; refuse before changing anything.
+    stored = json.loads(run_gh(["secret", "list", *common, "--json", "name"]))
+    misplaced = sorted(
+        row["name"]
+        for row in stored
+        if MANIFEST.get(row["name"], {}).get("kind") == "variable"
+    )
+    if misplaced:
+        fail(
+            f"manifest variables stored as GitHub secrets in {environment}: "
+            + ", ".join(misplaced)
+            + "; delete those secrets first"
+        )
     # Empty optional values delete GitHub entries; rendering always supplies blank.
     for key, value in values.items():
         spec = MANIFEST[key]
@@ -277,7 +289,6 @@ def push(values, environment, repo):
         ):
             continue
         kind = "secret" if spec["kind"] == "secret" else "variable"
-        common = ["--env", environment, "--repo", repo]
         if value:
             run_gh([kind, "set", key, *common], value)
         else:

@@ -4,11 +4,13 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
+import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
@@ -81,15 +83,17 @@ export function QuizEditor({
         ) : rooms.content && rooms.keys ? (
           <div className="grid gap-6">
             {rooms.offline && <SaveBanner state={rooms.offline} />}
-            <QuizForm
-              content={rooms.content.doc}
-              keys={rooms.keys.doc}
-              name={title}
-              questions={questions}
-              quizId={quizId}
-              status={rooms.status}
-              undo={rooms.undo}
-            />
+            <CollaborationHold>
+              <QuizForm
+                content={rooms.content.doc}
+                keys={rooms.keys.doc}
+                name={title}
+                questions={questions}
+                quizId={quizId}
+                status={rooms.status}
+                undo={rooms.undo}
+              />
+            </CollaborationHold>
           </div>
         ) : (
           <Skeleton className="h-64 w-full" />
@@ -101,7 +105,10 @@ export function QuizEditor({
         // Opened offline (or the server failed): it joins once back.
         <QueryPausedState />
       ) : (
-        <Skeleton className="h-64 w-full" />
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-64 w-full" />
+          <SlowedOpenLine slowed={rooms.slowed} />
+        </div>
       )}
     </div>
   );

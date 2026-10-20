@@ -55,6 +55,10 @@ type Config struct {
 	DevUserID          string
 	// BYOKEnabled turns on saving and removing provider keys (off by default).
 	BYOKEnabled bool
+	// APIDocs serves /docs, /openapi.* and /schemas/* and links bodies to their
+	// schemas: local development only (APP_ENV=development). Deployed
+	// environments, UAT included, leave it off.
+	APIDocs bool
 	// E2EAuth enables X-E2E-User-Id identity headers (disposable E2E only).
 	E2EAuth                bool
 	E2ESecret              string
@@ -132,8 +136,8 @@ type api struct {
 	operations operationLocks
 }
 
-// New builds the full HTTP handler. huma owns every JSON operation (and the
-// live OpenAPI spec at /openapi.yaml + docs at /docs); a handful of endpoints
+// New builds the full HTTP handler. huma owns every JSON operation (and, in
+// local development only, the live OpenAPI spec and docs); a handful of endpoints
 // huma can't model — streaming SSE, blob download redirects,
 // webhooks, and the pipeline chat passthrough — stay on raw chi and are
 // intentionally absent from the spec. /api/internal/* stays off Huma so Orval
@@ -234,7 +238,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 
 	// Mount huma on the chi router. Doc/spec routes register at construction, so
 	// this must come after all r.Use(...) calls.
-	humaAPI := humachi.New(r, humaConfig())
+	humaAPI := humachi.New(r, humaConfig(cfg.APIDocs))
 	registerRoutes(humaAPI, a)
 
 	// Raw (OpenAPI-excluded) routes.

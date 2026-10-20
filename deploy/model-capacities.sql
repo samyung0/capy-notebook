@@ -12,11 +12,14 @@
 -- GLM-5.3-Flash is served by Z.AI itself (2026-10-20), which holds about 50
 -- calls in flight per key (measured 2026-10-20: past that, connections hang and
 -- fail), so its gate is 48 in flight with 40 kept for interactive calls
--- (decision 2026-10-20; migration 0097 copies an existing Relace row the same way).
--- OpenRouter DeepSeek V4 Flash 0731 (held on Relace) serves only the ingest
--- descriptor, so it has no interactive reserve. Measured 2026-10-15: no 429 at
--- up to 96 calls in flight; 32 in flight held ~600 requests/min (p95 5.5 s),
--- while 96 queued (p95 25 s), so the gate stops at 32.
+-- (decision 2026-10-20; migration 0097 copies an existing GLM limit under that cap).
+-- Each environment uses its own key, so each applies 48/40.
+-- OpenRouter DeepSeek V4 Flash 0731 (Reka, then DigitalOcean, then StreamLake
+-- since 2026-10-20) serves only the ingest descriptor, so it has no interactive
+-- reserve. Measured on Relace 2026-10-15: no 429 at up to 96 calls in flight;
+-- 32 in flight held ~600 requests/min (p95 5.5 s), while 96 queued (p95 25 s),
+-- so the gate stops at 32. Each current provider held 32 in flight without a
+-- 429 on 2026-10-20.
 -- OpenRouter DeepSeek V4.1 Flash 1017 (held on DeepInfra) reads pages and
 -- images for captioning, so it has no interactive reserve either. It copies the
 -- 0731 gate unmeasured. Page reads lease the fixed vlm_page gate of 20 instead

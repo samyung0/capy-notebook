@@ -161,6 +161,10 @@ export function DocxEditorHost({
         // The note toolbar's palette, as PPTX and the notes pick colours.
         colorPalette={DOCUMENT_COLORS}
         documentBuffer={bytes}
+        // The final section's settings are outside the shared state Capy
+        // saves: the rulers' margins do not drag and a header or footer has no
+        // Remove until they save (Epo 2026-10-20).
+        finalSectionEditable={false}
         i18n={docxStrings(locale)}
         icons={docxIcons}
         initialZoom={initialZoom}

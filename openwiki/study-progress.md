@@ -167,11 +167,15 @@ ascending (ties keep material position, then document order). Unrated items
 never enter it. It feeds `reviewable`, Quick review, the session and
 Learning's count. It reads only materials the user has rated, states included,
 in one query, and parses a document only when the cache misses its revision.
-A rated quiz or set whose stored content the current rules refuse fails the
-read that parses it with 422 `material_content_unreadable` (the error names
-the material): the Study tab, its attempts, a new or resumed review session,
-Learning's Review tab, rating a card and checking a question (Epo 2026-10-20).
-Learning's Progress tab parses no content and still answers.
+A quiz or set whose stored content the current rules refuse (`refused` in
+`study.go`) is left out of the pool, the attempts list (`itemCounts`) and a
+resumed session (its served items read as gone), so the Study tab, Learning's
+Review tab and review sessions show everything else (Epo 2026-10-20). Rating a
+card or checking a question of it still answers 422
+`material_content_unreadable`, and opening it shows the center file error,
+which names the quiz or flashcard set by the kind its list gave (the workspace
+list, or a cached Files page list for a standalone one). Its
+progress row (done, removed) is a mark, not content, and stays in the summary.
 
 ## Suggested reviews
 

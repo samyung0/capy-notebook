@@ -353,7 +353,30 @@ unavailable. A steady count means the cap is too small for the
 rooms open at once. Next to it, the gauge
 `capy_collaboration_source_disk_held_bytes` is the bytes of the files loaded
 rooms hold, which is what a refusal compares with the cap (idle files go
-first and are not in it). Sentry holds failures
+first and are not in it). A user put in a timeout for going past their
+update allowance or sending an update over 8 MiB (the update allowance in
+[plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals))
+is logged at warn as `user timed out` with the room, the socket and the user
+id (never content) when a socket's message starts it, counted once per
+timeout in `capy_collaboration_timeouts_total`, and never captured; a draft
+send that starts one is counted there too (one over 8 MiB answers
+`too_large`, `class="too_large"`), and every draft send refused during one
+answers `too_fast`, logged as `draft send refused` and counted in
+`capy_collaboration_draft_refusals_total{class="too_fast"}`. Capy's tab
+paces its own messages under the allowance and splits updates into 2 MiB
+pieces, so a count that keeps growing means a runaway or hostile client (or
+one user's several busy tabs), and the warn lines name it. A JOIN costs one
+message of the allowance, so a join loop is a timeout too. A socket refused
+for its client address's socket cap is logged at warn (`client address over
+its socket cap`) and counted in
+`capy_collaboration_seat_refusals_total{seat="address"}`; a channel closed as
+its user's oldest when they joined one past their 22, or one past their 4 to
+one document, is counted in
+`capy_collaboration_oldest_closed_total`; a socket closed for joining no room
+within 10 s is logged at warn as `socket closed before any join`, and one
+that missed timeout announcements (too many at once) as `timeout
+announcements missed`. Full-document answers slowed by a spent open budget
+are not counted: they wait, nothing is refused. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal
@@ -533,18 +556,23 @@ named provider directly. These exact routing exceptions are allowed:
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` and the slug's
-  provider pin from `OPENROUTER_ROUTING` in `pipeline/elitellm/client.py`, always
-  `allow_fallbacks: false`, so a busy provider answers 429 rather than the call
-  moving to another host. `deepseek/deepseek-v4-flash-0731`, the ingest
-  descriptor pin, is held on Relace; `deepseek/deepseek-v4.1-flash-1017`, the
-  captioning pin for page reads and image captions (decision 2026-10-19), on
-  DeepInfra. Default routing is never used: providers behind one slug differ
-  on images (one drops them silently, others take none), so a slug with no pin
-  fails when its request is built, naming the slug. The allowlist in
+  provider list from `OPENROUTER_ROUTING` in `pipeline/elitellm/client.py`: an
+  ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
+  providers in turn and never a host outside the list, and the call answers 429
+  only when every listed provider is busy. `deepseek/deepseek-v4-flash-0731`,
+  the ingest descriptor pin, goes to Reka, then DigitalOcean, then StreamLake
+  (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
+  each held 32 summary calls in flight without a 429 when probed that day);
+  `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
+  image captions (decision 2026-10-19), DeepInfra only. Default routing is
+  never used: providers behind one slug differ on images (one drops them
+  silently, others take none), so a slug with no pin fails when its request is
+  built, naming the slug. The allowlist in
   `elitellm_providers.json` lists the same slugs. OpenRouter bills the
-  provider's listed price; for 0731 that is
-  Relace's, below Relace's own account rate: response `usage.cost`,
-  the Logs page and the key's usage agreed on 2026-10-15. Accounting still
+  listed price of the provider that served the call (response `usage.cost`,
+  the Logs page and the key's usage agreed on 2026-10-15); for 0731 Reka lists
+  $0.021 / $0.0056 / $0.528 per million input / cached / output tokens, and the
+  two fallbacks list more. Accounting still
   prices tokens from the catalog row. Its nested `cached_tokens` is inclusive
   of `prompt_tokens` (1,024 of 1,208 observed).
 
@@ -691,8 +719,8 @@ cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, OpenRouter DeepSeek V4 Flash
-0731 32 / 32 / 1280 (OpenRouter's Relace price, cached reads at the input
-price), embedding 40, reranker 50.
+0731 42 / 12 / 1056 (Reka's list price, its first route, decision 2026-10-20),
+embedding 40, reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -1391,6 +1419,16 @@ Three layers, each doing what the ones below it cannot:
 | Cloudflare | IP, path | volumetric floods, before origin bandwidth is spent |
 | Go middleware | Clerk identity, plan, route class | per-user semantic limits |
 | Credits ledger | measured cost | spend, in money rather than requests |
+
+The collaboration server limits its own writers apart: each user's SYNC,
+awareness and query messages, over every socket and draft send, take from an
+update allowance (a burst, then a rate, in messages and bytes; the step 1
+and query answers the room encodes for them are charged by their bytes), a
+user over it or sending an update over 8 MiB is in a timeout instead of
+disconnected, and sockets per client address, joined channels per user and
+awareness client ids per channel and room are capped
+([plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals),
+metrics above).
 
 The edge cannot express "200 AI requests an hour for this Clerk user" because
 it never sees the identity. `server/internal/ratelimit` uses Redis GCRA so

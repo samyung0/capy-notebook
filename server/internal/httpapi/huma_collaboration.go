@@ -312,7 +312,12 @@ func (a *api) createMaterialCollaborationToken(
 			schema = parsed
 		}
 	}
+	parent, err := a.s.MaterialParentID(ctx, in.ID)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
 	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"), schema)
+	claims.Parent = parent
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
 		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}
@@ -356,8 +361,8 @@ func (a *api) projectMaterialYjsDocument(
 // 400 for what does not decode as JSON at all (malformed, a number out of
 // float64 range), 422 for a missing, null, unknown or mistyped field or a
 // yjsVersion below 1. Field names match regardless of case and the
-// documented `$schema` link is ignored, as with Huma; `value` may be null, as
-// its schema allows. materialdoc then checks the document itself (400).
+// `$schema` link the spec documents is ignored; `value` may be null, as its
+// schema allows. materialdoc then checks the document itself (400).
 func decodeProjectionBody(raw []byte) (projectMaterialReq, error) {
 	invalid := func(message string) (projectMaterialReq, error) {
 		return projectMaterialReq{}, huma.Error422UnprocessableEntity(message)

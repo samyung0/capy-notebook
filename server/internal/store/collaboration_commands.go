@@ -151,6 +151,10 @@ func (s *Store) applyAuthoritativeContentCommand(
 		return true, nil
 	case http.StatusConflict:
 		return true, ErrConflict
+	case http.StatusRequestEntityTooLarge:
+		// The change's update is over the collaboration server's 8 MiB cap
+		// (Epo 2026-10-18): refused before anything applied.
+		return true, fmt.Errorf("%w: the change is over the 8 MiB update cap", materialdoc.ErrLimitExceeded)
 	default:
 		message := string(responseBody)
 		if message == "" {

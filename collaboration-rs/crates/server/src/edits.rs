@@ -62,6 +62,22 @@ pub enum DocumentError {
 pub const ROOM_RESET: &str = "collaboration room is being reset";
 /// An edit's refusal while its room is under the eviction lease.
 pub const ROOM_COMPACTING: &str = "collaboration room is being compacted";
+/// A write whose update is over `ydoc::MAX_UPDATE_BYTES` (Epo 2026-10-18),
+/// refused before anything commits: the agent's `quota_rejected` reason, the
+/// replace-block command's 413.
+pub const UPDATE_TOO_LARGE: &str = "update_size_exceeded";
+
+/// Whether any of an edit's writes, as stored or as sent to the live room,
+/// is over the update cap.
+fn over_update_cap(writes: &[Write]) -> bool {
+    writes.iter().any(|write| {
+        write.row.len() > ydoc::MAX_UPDATE_BYTES
+            || write
+                .live_update
+                .as_ref()
+                .is_some_and(|update| update.len() > ydoc::MAX_UPDATE_BYTES)
+    })
+}
 
 impl DocumentError {
     pub fn status_and_body(&self) -> (u16, Value) {
@@ -844,6 +860,9 @@ pub async fn edit_material(
     })
     .await
     .map_err(|error| DocumentError::Unknown(error.to_string()))??;
+    if over_update_cap(&computed.writes) {
+        return Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()));
+    }
     let mut version = stored;
     let mut versions = Vec::new();
     for write in &computed.writes {
@@ -1166,6 +1185,9 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         tx.commit().await.map_err(|error| error.to_string())?;
         return Ok(());
     };
+    if over_update_cap(&computed.writes) {
+        return Err(UPDATE_TOO_LARGE.into());
+    }
     let mut version = stored;
     let mut versions = Vec::new();
     for write in &computed.writes {
@@ -1420,7 +1442,24 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{DocumentError, Model, Scratch, compute, compute_quiz};
+    use super::{DocumentError, Model, Scratch, Write, compute, compute_quiz, over_update_cap};
+
+    /// An agent edit or content-API write whose update, stored or sent live,
+    /// is over the cap is refused before it commits; one at the cap goes (Epo
+    /// 2026-10-18).
+    #[test]
+    fn writes_over_the_update_cap_are_refused() {
+        let write = |row: usize, live: Option<usize>| Write {
+            doc: crate::note_store::Doc::Content,
+            row: vec![0; row],
+            durable: Default::default(),
+            live_update: live.map(|bytes| vec![0; bytes]),
+        };
+        let cap = ydoc::MAX_UPDATE_BYTES;
+        assert!(!over_update_cap(&[write(cap, Some(cap))]));
+        assert!(over_update_cap(&[write(10, None), write(cap + 1, None)]));
+        assert!(over_update_cap(&[write(10, Some(cap + 1))]));
+    }
 
     /// A text source's ambiguous span keeps the lines it occurs in on its way
     /// to the gateway: the notes refusal, the sources error, the body.
