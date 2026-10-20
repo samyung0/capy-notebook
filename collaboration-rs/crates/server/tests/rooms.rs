@@ -2211,6 +2211,76 @@ async fn a_client_address_holds_a_capped_number_of_sockets() {
     assert!(reopened.is_some(), "a closed socket frees its place");
 }
 
+/// Security regression (Epo 2026-10-20, rate-limit review r5 S-a): a user
+/// holds at most four connections to one document over all their sockets; a
+/// fifth closes their oldest one to it (`collaboration-oldest-closed`) and
+/// the other four stay. Fails without the per-document cap.
+#[tokio::test]
+async fn a_fifth_connection_to_one_note_closes_the_users_oldest_to_it() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut oldest) = writer(&env, server.port, "connections").await;
+    let write = token(&room, &user, "write");
+    let mut others = Vec::new();
+    for _ in 0..4 {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &write).await;
+        others.push(client);
+    }
+    let closed = oldest.until(4).await.expect("the oldest closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("collaboration-oldest-closed"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    for client in &mut others {
+        let closes = client.closes_within(Duration::from_millis(300)).await;
+        assert!(closes.is_empty(), "{closes:?}");
+    }
+}
+
+/// Security regression (Epo 2026-10-20): embed channels count toward their
+/// own room's four connections, apart from their note's. Four sockets each
+/// holding the note and its set inside it keep all eight channels; a fifth
+/// connection to the set (a token naming no note, joined on its own) closes
+/// the user's oldest embed channel of it, not that socket's note channel.
+/// Fails if embed channels are not counted.
+#[tokio::test]
+async fn embed_channels_count_toward_their_own_rooms_four_connections() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut first) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let write = token(&room, &user, "write");
+    let embed = embed_token(&set, &user, &note);
+    assert_eq!(first.join_embed(2, &set, &embed).await.0, 1);
+    let mut others = Vec::new();
+    for _ in 0..3 {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &write).await;
+        assert_eq!(client.join_embed(2, &set, &embed).await.0, 1);
+        others.push(client);
+    }
+    let closes = first.closes_within(Duration::from_millis(300)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+    let mut fifth = Client::open(server.port).await;
+    fifth
+        .send(0, &join_payload(&set, &token(&set, &user, "write"), Some(client_protocol())))
+        .await;
+    assert!(fifth.until(1).await.is_some(), "the fifth connection joins");
+    let closes = first.closes_within(Duration::from_secs(1)).await;
+    assert_eq!(closes.len(), 1, "{closes:?}");
+    assert_eq!(closes[0].0, 2);
+    assert!(
+        closes[0].1.contains("collaboration-oldest-closed"),
+        "{closes:?}"
+    );
+}
+
 /// Security regression (Epo 2026-10-19): a user holds a capped number of
 /// joined documents over all their sockets (22); one more join closes their
 /// oldest joined channel instead of being refused, and a channel left frees

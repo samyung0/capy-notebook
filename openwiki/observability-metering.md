@@ -370,7 +370,8 @@ message of the allowance, so a join loop is a timeout too. A socket refused
 for its client address's socket cap is logged at warn (`client address over
 its socket cap`) and counted in
 `capy_collaboration_seat_refusals_total{seat="address"}`; a channel closed as
-its user's oldest when they joined one past their 22 is counted in
+its user's oldest when they joined one past their 22, or one past their 4 to
+one document, is counted in
 `capy_collaboration_oldest_closed_total`; a socket closed for joining no room
 within 10 s is logged at warn as `socket closed before any join`, and one
 that missed timeout announcements (too many at once) as `timeout

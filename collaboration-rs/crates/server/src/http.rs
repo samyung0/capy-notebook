@@ -637,6 +637,7 @@ pub(crate) mod tests {
             allowances: crate::rate::Allowances::new(limits, std::time::Instant::now()),
             address_sockets: crate::seats::Seats::new(sockets),
             joined: crate::seats::Joined::new(joined),
+            per_document: crate::seats::Joined::new(crate::seats::CONNECTIONS_PER_DOCUMENT),
             health: Default::default(),
             unplaced: Default::default(),
             projection_failures: Default::default(),

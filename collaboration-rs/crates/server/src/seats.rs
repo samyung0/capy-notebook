@@ -1,10 +1,12 @@
 //! What one key may hold at once (Epo 2026-10-19, per-tenant fairness):
 //! sockets per client address (`http.rs`), refused past the cap, and joined
-//! channels per user (`socket.rs`), where a join past the cap closes the
-//! user's oldest joined channel instead. A [Seat] or [Membership] is held
-//! while its socket or channel lives and gives its place back when dropped.
+//! channels per user and per user and document (`socket.rs`), where a join
+//! past the cap closes the key's oldest joined channel instead. A [Seat] or
+//! [Membership] is held while its socket or channel lives and gives its
+//! place back when dropped.
 
 use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::mpsc;
@@ -14,6 +16,12 @@ pub const SOCKETS_PER_ADDRESS: u64 = 500;
 /// Documents one user may have joined at once over all their sockets, about
 /// 7 per device on 3 devices (Epo 2026-10-19, `COLLABORATION_JOINED_PER_USER`).
 pub const JOINED_PER_USER: u64 = 22;
+/// Channels one user may have joined to any one document or embed at once
+/// over all their sockets (Epo 2026-10-20).
+pub const CONNECTIONS_PER_DOCUMENT: u64 = 4;
+/// Membership ids, unique over every [Joined], so a channel's places in two
+/// of them are told apart.
+static NEXT_MEMBERSHIP: AtomicU64 = AtomicU64::new(1);
 
 type Held = Arc<Mutex<HashMap<String, u64>>>;
 
@@ -80,11 +88,11 @@ struct Joiner {
 
 #[derive(Debug, Default)]
 struct Users {
-    next: u64,
     by_user: HashMap<String, VecDeque<Joiner>>,
 }
 
-/// Each user's joined channels, oldest first, up to `cap`.
+/// Each key's joined channels (a user's, or a user's in one document),
+/// oldest first, up to `cap`.
 #[derive(Debug)]
 pub struct Joined {
     cap: usize,
@@ -116,8 +124,7 @@ impl Joined {
         socket: &mpsc::UnboundedSender<Closing>,
     ) -> Membership {
         let mut users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
-        users.next += 1;
-        let id = users.next;
+        let id = NEXT_MEMBERSHIP.fetch_add(1, Ordering::Relaxed);
         let joined = users.by_user.entry(user.to_owned()).or_default();
         joined.push_back(Joiner {
             id,

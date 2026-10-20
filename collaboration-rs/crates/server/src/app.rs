@@ -271,9 +271,11 @@ pub struct App {
     pub stats: Stats,
     /// Every user's update allowance (`rate.rs`).
     pub allowances: crate::rate::Allowances,
-    /// Open sockets per client address, joined channels per user (`seats.rs`).
+    /// Open sockets per client address, joined channels per user and per
+    /// user and document (`seats.rs`).
     pub address_sockets: crate::seats::Seats,
     pub joined: crate::seats::Joined,
+    pub per_document: crate::seats::Joined,
     pub health: crate::health::Health,
     pub unplaced: crate::incidents::UnplacedOnce,
     pub projection_failures: crate::projection::Failures,

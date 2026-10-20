@@ -90,6 +90,8 @@ enum Channel {
         attempt: u64,
         /// Its place among the user's joined channels; an embed has none.
         membership: Option<Membership>,
+        /// Its place among the user's channels to this document or embed.
+        document: Membership,
         /// An embed's note channel.
         parent: Option<u64>,
         /// A note channel's embed channels, oldest first.
@@ -807,13 +809,19 @@ impl Connection {
     }
 
     /// One of this socket's channels was its user's oldest when they joined
-    /// one past their cap (Epo 2026-10-19): it closes, unless it joined again
-    /// since.
+    /// one past their cap (Epo 2026-10-19), or their oldest to its document
+    /// when they joined it once past [crate::seats::CONNECTIONS_PER_DOCUMENT]
+    /// (Epo 2026-10-20): it closes, unless it joined again since.
     async fn close_oldest(&mut self, channel: u64, id: u64) {
-        let Some(Channel::Joined { membership, .. }) = self.channels.get(&channel) else {
+        let Some(Channel::Joined {
+            membership,
+            document,
+            ..
+        }) = self.channels.get(&channel)
+        else {
             return;
         };
-        if membership.as_ref().map(|membership| membership.id) != Some(id) {
+        if membership.as_ref().map(|membership| membership.id) != Some(id) && document.id != id {
             return;
         }
         self.app.stats.oldest_closed.fetch_add(1, Ordering::Relaxed);
@@ -1102,6 +1110,13 @@ impl Connection {
                 .joined
                 .join(&context.user_id, channel, &self.closing_tx)
         });
+        // Every channel, an embed's too, takes a place among the user's to
+        // its document: a fifth closes their oldest one (Epo 2026-10-20).
+        let document = self.app.per_document.join(
+            &format!("{} {name}", context.user_id),
+            channel,
+            &self.closing_tx,
+        );
         // A user in a timeout hears it on each channel they join.
         let timeout = self
             .app
@@ -1116,6 +1131,7 @@ impl Connection {
                 checked: None,
                 attempt,
                 membership,
+                document,
                 parent: parent.map(|(note, _)| note),
                 embeds: VecDeque::new(),
             },

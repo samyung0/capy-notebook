@@ -1095,7 +1095,10 @@ joined documents over all their sockets (`JOINED_PER_USER`,
 `COLLABORATION_JOINED_PER_USER`, about 7 per device on 3 devices): one more
 JOIN closes that user's oldest joined channel (`collaboration-oldest-closed`,
 counted in `capy_collaboration_oldest_closed_total`) instead of being
-refused. The closed room waits, not synced, and joins again once the user
+refused. A user also holds at most 4 connections to any one document or
+embed over all their sockets (`CONNECTIONS_PER_DOCUMENT`, Epo 2026-10-20;
+an embed channel counts toward its own room, not its note's): a fifth closes
+their oldest connection to it the same way. The closed room waits, not synced, and joins again once the user
 comes back to it: its tab shows again, or an edit is made in it (a local
 transaction; an applied update such as a restored draft is none); joining at
 once would close the user's next oldest.

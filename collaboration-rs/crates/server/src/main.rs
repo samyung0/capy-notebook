@@ -201,6 +201,7 @@ async fn serve(config: Config) -> Result<(), String> {
         allowances,
         address_sockets,
         joined,
+        per_document: crate::seats::Joined::new(crate::seats::CONNECTIONS_PER_DOCUMENT),
         health: Default::default(),
         unplaced: Default::default(),
         projection_failures: Default::default(),
