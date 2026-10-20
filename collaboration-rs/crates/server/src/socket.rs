@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 
 use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
 use bytes::Bytes;
+use futures::FutureExt;
 use serde_json::json;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{mpsc, oneshot};
@@ -466,14 +467,8 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
         tokio::select! {
             incoming = socket.recv() => {
                 heard = Instant::now();
-                match incoming {
-                    Some(Ok(WsMessage::Binary(frame))) => {
-                        if !connection.on_frame(frame).await {
-                            break;
-                        }
-                    }
-                    Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => break,
-                    Some(Ok(_)) => {}
+                if !connection.received(incoming).await {
+                    break;
                 }
             }
             _ = ping.tick() => {
@@ -482,6 +477,15 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
                 }
             }
             () = tokio::time::sleep_until((heard + silent).into()) => {
+                // A frame that arrived while this task was busy in another
+                // arm counts (rate-limit review r7 N-1).
+                if let Some(incoming) = socket.recv().now_or_never() {
+                    heard = Instant::now();
+                    if !connection.received(incoming).await {
+                        break;
+                    }
+                    continue;
+                }
                 log(Level::Info, "silent socket closed", json!({ "socket_id": connection.socket_id }));
                 let close = CloseFrame { code: 1001, reason: "silent".into() };
                 let _ = socket.send(WsMessage::Close(Some(close))).await;
@@ -579,6 +583,15 @@ impl Connection {
         }
         self.timers
             .retain(|(_, timer_channel), _| *timer_channel != channel);
+    }
+
+    /// What the socket received: false when it must close.
+    async fn received(&mut self, incoming: Option<Result<WsMessage, axum::Error>>) -> bool {
+        match incoming {
+            Some(Ok(WsMessage::Binary(frame))) => self.on_frame(frame).await,
+            Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => false,
+            Some(Ok(_)) => true,
+        }
     }
 
     /// Returns false when the socket must close.
@@ -846,7 +859,8 @@ impl Connection {
         let Some(Channel::Joined { places, .. }) = self.channels.get(&channel) else {
             return;
         };
-        if places.joined.as_ref().map(|joined| joined.id) != Some(id) && places.document.id != id {
+        // Both places share the channel's membership id.
+        if places.document.id != id {
             return;
         }
         self.app.stats.oldest_closed.fetch_add(1, Ordering::Relaxed);
@@ -1142,20 +1156,24 @@ impl Connection {
         }
         // Every channel, an embed's too, takes a place among the user's to
         // its document: a fifth closes their oldest one (Epo 2026-10-20).
+        let id = crate::seats::membership_id();
         let (document, freed) = self.app.per_document.join(
             &format!("{} {name}", context.user_id),
+            id,
             channel,
             &self.closing_tx,
-            true,
+            None,
         );
         // Only a note's (or any other document's) channel takes a place among
-        // the user's joined channels, never an embed's; one the per-document
-        // close above already frees closes nothing more (r6 S-3).
+        // the user's joined channels, never an embed's. When the per-document
+        // close above ends a channel holding one, its place is this join's;
+        // otherwise (an embed's, which holds none) the oldest closes (rate-
+        // limit review r6 S-3, r7 B-1).
         let joined = parent.is_none().then(|| {
             let user = &context.user_id;
             self.app
                 .joined
-                .join(user, channel, &self.closing_tx, !freed)
+                .join(user, id, channel, &self.closing_tx, freed)
                 .0
         });
         // A user in a timeout hears it on each channel they join.

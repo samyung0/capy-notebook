@@ -1693,7 +1693,11 @@ impl Room {
             return;
         };
         if let Some(opening) = &mut member.opening {
-            opening.step1 = Some(since);
+            // One joining a wait that held no step 1 (its JOIN's awareness)
+            // hears that its open is slowed too (rate-limit review r7 S-1).
+            if opening.step1.replace(since).is_none() {
+                self.open_slowed(key);
+            }
             return;
         }
         let user = member.context.user_id.clone();
@@ -1787,10 +1791,14 @@ impl Room {
             opening.step1 = step1;
         }
         if slowed {
-            let notice = json!({ "type": OPEN_SLOWED_TYPE }).to_string();
-            self.send(key, Kind::Stateless, &protocol::text(&notice));
+            self.open_slowed(key);
         }
         self.look_again(wait);
+    }
+
+    fn open_slowed(&self, key: MemberKey) {
+        let notice = json!({ "type": OPEN_SLOWED_TYPE }).to_string();
+        self.send(key, Kind::Stateless, &protocol::text(&notice));
     }
 
     fn look_again(&mut self, wait: Duration) {

@@ -644,6 +644,9 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 /// open-slowed notice must reload) or above it (a rollback) is refused as
 /// `collaboration-outdated` before any lookup, in material and source rooms
 /// alike; a refused draft send stores nothing and is counted by family.
+/// The `client_protocol() - 1` rows hold both minimums at `CLIENT_PROTOCOL`:
+/// a later bump that breaks one family only (the other keeps its minimum)
+/// drops the other family's row and its count from the metrics below.
 #[tokio::test]
 async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let Some(env) = env() else { return };
@@ -1963,8 +1966,10 @@ async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
 /// small-answer floor, waits like an awareness query. Two re-JOINs of a room
 /// holding about 480 KB of presence (two sockets of four ids) take a 300 KB
 /// budget 360 KB past its floor (300 KB owed); the next re-JOIN joins but
-/// hears no awareness until the budget refills (100 KB a second). Fails if
-/// the JOIN's awareness never waits.
+/// hears no awareness until the budget refills (100 KB a second), and its
+/// step 1, waiting with it, hears that the open is slowed (review r7 S-1).
+/// Fails if the JOIN's awareness never waits, or its wait keeps the notice
+/// from the step 1.
 #[tokio::test]
 async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
     let Some(env) = env() else { return };
@@ -2000,14 +2005,23 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
     for round in 0..2 {
         client.send_on(2, 0, &join).await;
         assert!(
-            client.awareness_after_join(2, Duration::from_secs(2)).await,
+            client
+                .awareness_after_join(2, Duration::from_secs(2))
+                .await
+                .0,
             "re-JOIN {round} hears the presence"
         );
     }
     client.send_on(2, 0, &join).await;
+    // A client's step 1 follows its JOIN.
+    client
+        .send_on(2, 5, &sync(0, &StateVector::default().encode_v1()))
+        .await;
+    let (heard, notices) = client.awareness_after_join(2, Duration::from_secs(2)).await;
+    assert!(!heard, "past the floor the JOIN's awareness waits");
     assert!(
-        !client.awareness_after_join(2, Duration::from_secs(2)).await,
-        "past the floor the JOIN's awareness waits"
+        notices.iter().any(|notice| notice.contains("open-slowed")),
+        "{notices:?}"
     );
     assert!(
         client.heard_within(2, 7, Duration::from_secs(12)).await,
@@ -2053,6 +2067,48 @@ async fn a_silent_socket_closes_and_frees_its_places_while_an_answering_one_stay
         !silent.still_open(Duration::from_secs(2)).await,
         "the silent socket was closed"
     );
+}
+
+/// Security regression (rate-limit review r7 B-1): a join the per-document
+/// cap makes room for by closing an embed's channel, which holds no place
+/// among the user's joined documents, still closes their oldest joined
+/// document. With two of each allowed, a user holding note N with set S in
+/// it (S's oldest connection) and S on its own opens S on its own again: the
+/// embed closes, and so does N. Fails if any per-document close skips the
+/// joined cap's (a user could then hold any number of documents).
+#[tokio::test]
+async fn a_join_that_closes_an_embed_still_closes_the_users_oldest_document() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_JOINED_PER_USER", "2"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+        ],
+    )
+    .await;
+    let (user, room, mut note) = writer(&env, server.port, "a note").await;
+    let material = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &material, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let embed = embed_token(&set, &user, &material);
+    assert_eq!(note.join_embed(2, &set, &embed).await.0, 1);
+    let alone = join_payload(&set, &token(&set, &user, "write"), Some(client_protocol()));
+    let mut first = Client::open(server.port).await;
+    first.send(0, &alone).await;
+    assert!(first.until(1).await.is_some(), "joined on its own");
+    let mut second = Client::open(server.port).await;
+    second.send(0, &alone).await;
+    assert!(second.until(1).await.is_some(), "joined on its own again");
+    let closes = note.closes_within(Duration::from_secs(1)).await;
+    let closed: Vec<u64> = closes.iter().map(|(channel, _)| *channel).collect();
+    assert!(closed.contains(&2), "the embed closes: {closes:?}");
+    assert!(closed.contains(&1), "and the oldest document: {closes:?}");
+    let closes = first.closes_within(Duration::from_millis(300)).await;
+    assert!(closes.is_empty(), "{closes:?}");
 }
 
 /// Security regression (Epo 2026-10-19): a JOIN costs one message of its
@@ -2606,16 +2662,21 @@ impl Client {
     }
 
     /// After a JOIN on `channel`: whether awareness reaches it within `window`
-    /// of its JOINED; what came before the JOINED (an earlier join's) is
-    /// skipped.
-    async fn awareness_after_join(&mut self, channel: u64, window: Duration) -> bool {
+    /// of its JOINED, and the stateless notices it heard after the JOINED
+    /// meanwhile; what came before the JOINED (an earlier join's) is skipped.
+    async fn awareness_after_join(
+        &mut self,
+        channel: u64,
+        window: Duration,
+    ) -> (bool, Vec<String>) {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         let mut joined: Option<tokio::time::Instant> = None;
+        let mut notices = Vec::new();
         loop {
             let limit = joined.map_or(deadline, |at| at + window);
             let Ok(Some(Ok(message))) = tokio::time::timeout_at(limit, self.ws.next()).await else {
                 assert!(joined.is_some(), "channel {channel} joined");
-                return false;
+                return (false, notices);
             };
             let Ws::Binary(bytes) = message else { continue };
             let mut at = 0;
@@ -2624,6 +2685,7 @@ impl Client {
                 let kind = bytes[at];
                 at += 1;
                 let len = read_var(&bytes, &mut at) as usize;
+                let payload = &bytes[at..at + len];
                 at += len;
                 if heard != channel {
                     continue;
@@ -2631,7 +2693,9 @@ impl Client {
                 if kind == 1 {
                     joined = Some(tokio::time::Instant::now());
                 } else if kind == 7 && joined.is_some() {
-                    return true;
+                    return (true, notices);
+                } else if kind == 9 && joined.is_some() {
+                    notices.push(text_payload(payload));
                 }
             }
         }

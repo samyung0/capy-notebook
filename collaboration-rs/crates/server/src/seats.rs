@@ -20,9 +20,13 @@ pub const JOINED_PER_USER: u64 = 22;
 /// over all their sockets (Epo 2026-10-20,
 /// `COLLABORATION_CONNECTIONS_PER_DOCUMENT`).
 pub const CONNECTIONS_PER_DOCUMENT: u64 = 4;
-/// Membership ids, unique over every [Joined], so a channel's places in two
-/// of them are told apart.
+/// Membership ids: a channel's places in every [Joined] share one.
 static NEXT_MEMBERSHIP: AtomicU64 = AtomicU64::new(1);
+
+/// A new channel's membership id, for its places in every [Joined].
+pub fn membership_id() -> u64 {
+    NEXT_MEMBERSHIP.fetch_add(1, Ordering::Relaxed)
+}
 
 type Held = Arc<Mutex<HashMap<String, u64>>>;
 
@@ -116,29 +120,34 @@ impl Joined {
         }
     }
 
-    /// `user` (a key) joined `channel` on the socket that hears `socket`:
-    /// past the cap, when `evict`, their oldest joined channel's socket hears
-    /// that it closes. Also says whether one closed.
+    /// `user` (a key) joined `channel` as membership `id` on the socket that
+    /// hears `socket`. `freed`, a membership another cap's close already
+    /// ends, leaves the key's list if it is on it; past the cap their oldest
+    /// joined channel's socket hears that it closes. Also gives the id of the
+    /// one that left.
     pub fn join(
         &self,
         user: &str,
+        id: u64,
         channel: u64,
         socket: &mpsc::UnboundedSender<Closing>,
-        evict: bool,
-    ) -> (Membership, bool) {
+        freed: Option<u64>,
+    ) -> (Membership, Option<u64>) {
         let mut users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
-        let id = NEXT_MEMBERSHIP.fetch_add(1, Ordering::Relaxed);
         let joined = users.by_user.entry(user.to_owned()).or_default();
         joined.push_back(Joiner {
             id,
             channel,
             socket: socket.clone(),
         });
-        let mut evicted = false;
-        while evict && joined.len() > self.cap {
+        let mut left = None;
+        if let Some(at) = freed.and_then(|freed| joined.iter().position(|j| j.id == freed)) {
+            left = joined.remove(at).map(|joiner| joiner.id);
+        }
+        while joined.len() > self.cap {
             if let Some(oldest) = joined.pop_front() {
                 let _ = oldest.socket.send((oldest.channel, oldest.id));
-                evicted = true;
+                left = Some(oldest.id);
             }
         }
         let membership = Membership {
@@ -146,7 +155,7 @@ impl Joined {
             user: user.to_owned(),
             users: self.users.clone(),
         };
-        (membership, evicted)
+        (membership, left)
     }
 }
 
@@ -181,22 +190,30 @@ mod tests {
     fn a_join_past_the_cap_closes_the_users_oldest_channel() {
         let joined = Joined::new(2);
         let (socket, mut heard) = mpsc::unbounded_channel();
-        let (first, _) = joined.join("a", 1, &socket, true);
-        let (second, _) = joined.join("a", 2, &socket, true);
-        let _other = joined.join("b", 9, &socket, true);
+        let join = |user: &str, channel: u64, freed: Option<u64>| {
+            joined.join(user, membership_id(), channel, &socket, freed)
+        };
+        let (first, _) = join("a", 1, None);
+        let (second, _) = join("a", 2, None);
+        let _other = join("b", 9, None);
         assert!(heard.try_recv().is_err());
-        let (_third, evicted) = joined.join("a", 3, &socket, true);
-        assert!(evicted);
+        let (third, left) = join("a", 3, None);
+        assert_eq!(left, Some(first.id));
         assert_eq!(heard.try_recv().ok(), Some((1, first.id)));
         // A channel that left gives its place back.
         drop(second);
-        let (_fourth, evicted) = joined.join("a", 4, &socket, true);
-        assert!(!evicted);
+        let (fourth, left) = join("a", 4, None);
+        assert_eq!(left, None);
         assert!(heard.try_recv().is_err());
-        // A join whose place another cap's close already frees closes
-        // nothing here (rate-limit review r6 S-3).
-        let (_fifth, evicted) = joined.join("a", 5, &socket, false);
-        assert!(!evicted);
+        // A place another cap's close already frees leaves instead of the
+        // oldest (rate-limit review r6 S-3) ...
+        let (_fifth, left) = join("a", 5, Some(fourth.id));
+        assert_eq!(left, Some(fourth.id));
         assert!(heard.try_recv().is_err());
+        // ... but a membership off the list frees nothing: an embed's, or
+        // one closed already (review r7 B-1).
+        let (_sixth, left) = join("a", 6, Some(first.id));
+        assert_eq!(left, Some(third.id));
+        assert_eq!(heard.try_recv().ok(), Some((3, third.id)));
     }
 }

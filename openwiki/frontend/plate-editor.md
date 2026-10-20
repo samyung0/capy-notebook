@@ -999,7 +999,8 @@ and then the refill rate, per process, however many files they open or
 however they slice their asks.
 
 A step 1 that begins to wait tells its channel once (a stateless
-`{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers). The editor
+`{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers), also when it
+joins the wait of its JOIN's awareness (rate-limit review r7 S-1). The editor
 keeps its normal loading state, and after 5 s it adds the line "Opening is
 slowed because many large files were opened recently." (`SlowedOpenLine`,
 `useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
@@ -1131,9 +1132,11 @@ transaction; an applied update such as a restored draft is none); joining at
 once would close the user's next oldest. The server pings every socket every
 30 s and closes one that sends nothing for 60 s (`PING_EVERY`, `SILENT_CLOSE`,
 `COLLABORATION_PING_SECONDS`, `COLLABORATION_SILENT_SECONDS`; any frame counts,
-the browser's automatic pong too; Epo 2026-10-20), so a dead connection (a
-laptop that changed networks) frees its places through the normal close; the
-client takes that close (1001) like any drop and reconnects.
+the browser's automatic pong too, a frame that waited while the socket was
+busy elsewhere as well; Epo 2026-10-20), so a dead connection (a laptop that
+changed networks) frees its places through the normal close; the client takes
+that close (1001) like any drop and reconnects. The server refuses to start when the silent window
+is not longer than the pings.
 
 **Embeds in their note's seat** (Epo 2026-10-20). An embedded quiz's or
 flashcard set's room (content, and a writer's quiz keys) joins inside its
@@ -1151,8 +1154,12 @@ again under it closes the earlier channel the same way (rate-limit review r5
 S-a), so the client shares one item room per material and document among a
 note's copies of it (`NoteSeat.hold`, `openItemRoom`; r6 S-2): a quiz embedded
 twice joins once and both copies are live. That close comes before the new
-channel takes its places, and a join whose per-document close frees a place
-closes nothing among the user's 22 (r6 S-3). A closed embed's
+channel takes its places, and a join whose per-document close ends a channel
+holding one of the user's 22 places takes that place and closes nothing more
+there (r6 S-3); one that ends an embed's channel, which holds none, still
+closes the user's oldest joined document (r7 B-1). A channel's places share one
+membership id (`seats::membership_id`), so a place another close already gave
+back is not given twice. A closed embed's
 room waits, as one closed as the user's oldest does, and joins again when its block comes near the screen again
 (`useNearScreen().entered`, `RoomProvider.wake`), its tab shows again or an
 edit is made in it. When the note's channel goes (left, closed, expired,

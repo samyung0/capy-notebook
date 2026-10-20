@@ -166,6 +166,20 @@ impl Config {
                 crate::rate::OPEN_REFILL.as_secs(),
             )?,
         };
+        let ping_every = seconds(env, "COLLABORATION_PING_SECONDS", crate::socket::PING_EVERY)?;
+        let silent_close = seconds(
+            env,
+            "COLLABORATION_SILENT_SECONDS",
+            crate::socket::SILENT_CLOSE,
+        )?;
+        // A silent window no longer than the pings would close quiet sockets
+        // that answer every ping.
+        if silent_close <= ping_every {
+            return Err(ConfigError(
+                "COLLABORATION_SILENT_SECONDS must be greater than COLLABORATION_PING_SECONDS"
+                    .into(),
+            ));
+        }
         // A smaller burst would refuse an update the rooms take, every time.
         if update_limits.burst_bytes < ydoc::MAX_UPDATE_BYTES as u64 {
             return Err(ConfigError(format!(
@@ -245,12 +259,8 @@ impl Config {
                 "COLLABORATION_CONNECTIONS_PER_DOCUMENT",
                 crate::seats::CONNECTIONS_PER_DOCUMENT,
             )?,
-            ping_every: seconds(env, "COLLABORATION_PING_SECONDS", crate::socket::PING_EVERY)?,
-            silent_close: seconds(
-                env,
-                "COLLABORATION_SILENT_SECONDS",
-                crate::socket::SILENT_CLOSE,
-            )?,
+            ping_every,
+            silent_close,
         })
     }
 
@@ -407,6 +417,12 @@ mod tests {
                 .unwrap_err()
                 .to_string(),
             "COLLABORATION_UPDATE_BURST_BYTES must be at least 8388608"
+        );
+        assert_eq!(
+            Config::load(&env(&[("COLLABORATION_PING_SECONDS", "60")]))
+                .unwrap_err()
+                .to_string(),
+            "COLLABORATION_SILENT_SECONDS must be greater than COLLABORATION_PING_SECONDS"
         );
     }
 }
