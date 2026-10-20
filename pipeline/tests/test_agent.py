@@ -14,6 +14,7 @@ import pytest
 from PIL import Image
 
 from pipeline import config, obs
+from pipeline.prompts.sources import source_block
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import (
     accounting,
@@ -2145,7 +2146,7 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
     ) in text
 
 
-async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypatch):
+async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
     ctx = _owner_ctx()
     bodies = iter(
         [
@@ -2184,15 +2185,6 @@ async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypa
                     },
                 ],
             },
-            {
-                "format": "xlsx",
-                "title": "book.xlsx",
-                "revision": 1,
-                "supportedOperations": ["set_cell"],
-                "entries": [{"id": "s1:[1,1]", "label": "Sheet1!A1", "value": "42"}],
-                "total": 80,
-                "nextStart": 60,
-            },
         ]
     )
 
@@ -2211,15 +2203,6 @@ async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypa
     assert "source: graph TD" in text
     assert "embedded quiz material id=mat_q: inspect it as kind material" in text
     assert "embedded flashcards reference, not yet created" in text
-    office = await tools.run(
-        "inspect_document",
-        {"target": {"kind": "source_file", "id": "f_1"}, "_tool_call_id": "c2"},
-        ctx,
-    )
-    text = office.text()
-    assert "supported: set_cell" in text
-    assert "[s1:[1,1]] Sheet1!A1: 42" in text
-    assert "(next start = 60 of 80)" in text
 
 
 async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypatch):
@@ -2243,14 +2226,7 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
     _gateway(monkeypatch, post=_post)
     monkeypatch.setattr(tools.pending, "load", _load)
     ctx.skills_read = {"editing"}
-    commands = [
-        {
-            "type": "replace_text",
-            "target_id": "body:paragraph:p1",
-            "expected_text": "old",
-            "text": "new",
-        }
-    ]
+    commands = [{"type": "replace_text", "expected_text": "old", "text": "new"}]
     result = await tools.run(
         "edit_document",
         {
@@ -3683,3 +3659,258 @@ async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
     assert "file edit" not in first and "note edit" not in first
     assert "read file edit" in second
     assert "unread file edit" not in second and "unread note edit" not in second
+
+
+# ------------------------------------------------------------- Office tools
+
+
+def _office_ctx(monkeypatch, post=None) -> ToolContext:
+    _gateway(monkeypatch, post=post)
+    ctx = _owner_ctx()
+    ctx.office_tools = True
+    ctx.skills_read = {skills.EDITING, skills.OFFICE_BUILDING}
+    outline = ctx._scope_outline
+
+    async def _outline(*_args):
+        return outline
+
+    # A landed edit drops the turn's cached outline.
+    monkeypatch.setattr(tools.store, "workspace_outline", _outline)
+    return ctx
+
+
+def test_the_office_tools_come_last_once_offered(monkeypatch):
+    """Offered only once office_building is read, or once an earlier turn of
+    the conversation was offered them (the gateway's officeTools), and then
+    after every other tool (Epo 2026-10-20)."""
+    _gateway(monkeypatch)
+    ctx = _owner_ctx()
+
+    def names() -> list[str]:
+        return [s["function"]["name"] for s in tools.schemas_for(ctx)]
+
+    before = names()
+    assert not set(tools.OFFICE_TOOLS) & set(before)
+    ctx.office_tools = True
+    assert names() == before + list(tools.OFFICE_TOOLS)
+
+
+async def test_reading_office_building_appends_the_office_tools(monkeypatch):
+    """The response after the skill read sends the same tools plus the two
+    Office tools at the end, and the turn marks its evidence so later turns
+    keep them."""
+    _gateway(monkeypatch)
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("read_skill", '{"name": "office_building"}')]),
+            _assembled(_answer(("Read it.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    events = await _collect("Fix my spreadsheet", _owner_ctx())
+    first, second = ([t["function"]["name"] for t in s["tools"]] for s in seen)
+    assert second == first + list(tools.OFFICE_TOOLS)
+    assert events[-1]["toolEvidence"]["officeTools"] is True
+
+
+async def test_office_tools_need_the_office_building_skill(monkeypatch):
+    ctx = _office_ctx(monkeypatch)
+    ctx.skills_read = {skills.EDITING}
+    read = await tools.run(
+        "inspect_office_document", {"file_id": "f_1", "_tool_call_id": "c1"}, ctx
+    )
+    edit = await tools.run(
+        "edit_office_document",
+        {
+            "file_id": "f_1",
+            "commands": [
+                {
+                    "type": "replace_text",
+                    "target_id": "p1",
+                    "expected_text": "a",
+                    "text": "b",
+                }
+            ],
+            "_tool_call_id": "c2",
+        },
+        ctx,
+    )
+    assert read.error == edit.error == skills.refusal([skills.OFFICE_BUILDING])
+
+
+async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
+    monkeypatch,
+):
+    bodies = iter(
+        [
+            {
+                "format": "xlsx",
+                "title": "grades.xlsx",
+                "scoped": {
+                    "sheets": [
+                        {"id": "0", "name": "Grades", "usedRange": "A1:H2001"},
+                        {"id": "1", "name": "Notes", "usedRange": None},
+                    ]
+                },
+            },
+            {
+                "format": "xlsx",
+                "title": "grades.xlsx",
+                "scoped": {
+                    "sheet": "0",
+                    "name": "Grades",
+                    "range": "A1:B2",
+                    "cells": [
+                        {"address": "A1", "input": "Name", "value": "Name"},
+                        {"address": "B2", "input": "=SUM(B3:B9)", "value": "512"},
+                    ],
+                },
+            },
+            {
+                "format": "docx",
+                "title": "essay.docx",
+                "supportedOperations": ["replace_text"],
+                "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
+                "total": 80,
+                "nextStart": 60,
+            },
+        ]
+    )
+    sent: list[dict] = []
+
+    def _post(url, **kwargs):
+        sent.append(json.loads(kwargs["data"]))
+        return _JsonResp(next(bodies))
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    ctx.pending_sources.read_ids = set()
+
+    def inspect(**args):
+        return tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", **args, "_tool_call_id": "c"},
+            ctx,
+        )
+
+    sheets = await inspect()
+    assert sheets.text() == (
+        "grades.xlsx format=xlsx\nsheets as [id] name used range:\n"
+        + source_block("[0] Grades A1:H2001\n[1] Notes empty")
+    )
+    assert sent[0]["office"] == {} and sent[0]["target"] == {
+        "kind": "source_file",
+        "id": "f_1",
+    }
+    # Reading a file delivers its pending changes (Epo 2026-10-20).
+    assert ctx.pending_sources.read_ids == {"f_1"}
+    cells = await inspect(sheet="Grades", range="A1:B2")
+    assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
+    assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
+    paragraphs = (await inspect(start=0, count=60)).text()
+    assert (
+        "[p1] Paragraph 1: Intro" in paragraphs
+        and "(next start = 60 of 80)" in paragraphs
+    )
+
+
+async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatch):
+    posts: list[str] = []
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: posts.append(url))
+    grid = [["x" * 1000] * 10] * 30
+    command = {
+        "type": "set_range",
+        "sheet": "Grades",
+        "range": "A1:J30",
+        "expected": [[""] * 10] * 30,
+        "values": grid,
+    }
+    size = len(json.dumps([command], separators=(",", ":")))
+    result = await tools.run(
+        "edit_office_document",
+        {"file_id": "f_1", "commands": [command], "_tool_call_id": "c1"},
+        ctx,
+    )
+    assert result.error_code == "invalid_input" and posts == []
+    assert result.error == (
+        f"The commands are {-(-size // 1024)} KB, over the 256 KB one call may send; "
+        "split the edit into several calls."
+    )
+
+
+async def test_office_edits_and_creates_reach_their_routes(monkeypatch):
+    """An edit goes to the edit route marked office, a stale range comes back as
+    its TSV, and a create sends the call's other commands to the create route."""
+    answers = iter(
+        [
+            _JsonResp(_receipt("edited", "source_file", "f_1")),
+            _JsonResp(
+                {
+                    "code": "stale_target",
+                    "message": "the range changed",
+                    "details": {
+                        "block": {
+                            "id": "Grades!A1:B2",
+                            "type": "range",
+                            "text": "Ann\t91\nBo\t78",
+                        }
+                    },
+                },
+                status=409,
+            ),
+            _JsonResp(
+                {
+                    "operationId": "op_c",
+                    "outcome": "succeeded",
+                    "effect": {
+                        "operation": "created",
+                        "resource": {
+                            "kind": "source_file",
+                            "id": "f_new",
+                            "title": "Grades.xlsx",
+                        },
+                    },
+                }
+            ),
+        ]
+    )
+    sent: list[tuple[str, dict]] = []
+
+    def _post(url, **kwargs):
+        sent.append((url, json.loads(kwargs["data"])))
+        return next(answers)
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    write = {
+        "type": "set_range",
+        "sheet": "Grades",
+        "range": "A1:B2",
+        "expected": [["Ann", "91"], ["Bo", "78"]],
+        "values": [["Ann", "93"], ["Bo", "78"]],
+    }
+
+    def edit(call, **args):
+        return tools.run("edit_office_document", {**args, "_tool_call_id": call}, ctx)
+
+    assert (await edit("c1", file_id="f_1", commands=[write])).outcome == "succeeded"
+    url, body = sent[0]
+    assert url.endswith("/api/internal/documents/edit") and body["office"] is True
+    assert body["target"] == {"kind": "source_file", "id": "f_1"} and body[
+        "commands"
+    ] == [write]
+
+    stale = await edit("c2", file_id="f_1", commands=[write])
+    assert stale.error_code == "stale_target"
+    assert stale.text().endswith(
+        source_block("Range Grades!A1:B2 now holds, as TSV:\nAnn\t91\nBo\t78")
+    )
+
+    create = {"type": "create", "format": "xlsx", "title": "Grades"}
+    created = await edit("c3", commands=[create, write])
+    url, body = sent[2]
+    assert url.endswith("/api/internal/documents/office/create")
+    assert (body["format"], body["title"], body["commands"]) == (
+        "xlsx",
+        "Grades",
+        [write],
+    )
+    assert "Created file 'Grades.xlsx' (id f_new)." in created.text()

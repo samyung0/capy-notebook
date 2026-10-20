@@ -460,6 +460,7 @@ func (a *api) relayChat(
 		"openResource":       turn.openResource,
 		"studyProgress":      turn.studyProgress,
 		"studyPreferences":   turn.studyPreferences,
+		"officeTools":        prompt.OfficeTools,
 	}
 	if prompt.Checkpoint != nil {
 		body["checkpoint"] = prompt.Checkpoint

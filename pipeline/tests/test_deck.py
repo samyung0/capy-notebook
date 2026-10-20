@@ -187,7 +187,7 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
 
     # The stored PPTX is the document now.
     again = await _write(ctx, rid, 1, _slide(), call="c_again")
-    assert again.refused and "replace_text" in again.text()
+    assert again.refused and "edit_office_document" in again.text()
     assert len(posts) == 1
 
 

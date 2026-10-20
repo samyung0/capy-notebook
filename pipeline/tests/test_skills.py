@@ -25,6 +25,7 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     # other is for a request that asks for its format (Epo 2026-10-14).
     listed = described()
     assert f"- editing: {skills.SKILLS['editing'].when}." in listed
+    assert f"- office_building: {skills.SKILLS['office_building'].when}." in listed
     assert "main explainers are notes." in listed
     assert "PowerPoint deck (create_deck, write_slide), only when the request" in listed
     ctx.study_preferences = {"mainFormat": "deck"}
@@ -38,6 +39,9 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     editing = (await tools._read_skill({"name": "editing"}, ctx)).text()
     assert "Budget:" in editing and "excerpt_ids are" not in editing
     assert "add_questions" in editing and "Flashcards:" in editing
+    assert "recent edits not yet in search may show up as hints" in editing
+    office = (await tools._read_skill({"name": "office_building"}, ctx)).text()
+    assert "a call's commands up to 256 KB; split larger edits" in office
     ctx.library = True
     assert (
         "Practice from the library"

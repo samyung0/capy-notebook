@@ -58,7 +58,9 @@ const ICONS: Record<string, ActivityIconKind> = {
   create_deck: 'edit',
   create_material: 'edit',
   edit_document: 'edit',
+  edit_office_document: 'edit',
   inspect_document: 'read',
+  inspect_office_document: 'read',
   list_sources: 'list',
   list_trashed_files: 'list',
   read_document: 'read',
@@ -106,6 +108,20 @@ const create: Copy = {
   group: (count) => m.chat_step_create_group({ count }),
   run: (label) => m.chat_step_create_run({ label }),
 };
+const edit: Copy = {
+  done: (label) => m.chat_step_edit_done({ label }),
+  fail: (label) => m.chat_step_edit_fail({ label }),
+  fallback: m.chat_step_fallback_file,
+  group: (count) => m.chat_step_edit_group({ count }),
+  run: (label) => m.chat_step_edit_run({ label }),
+};
+const inspect: Copy = {
+  done: (label) => m.chat_step_inspect_done({ label }),
+  fail: (label) => m.chat_step_inspect_fail({ label }),
+  fallback: m.chat_step_fallback_file,
+  group: (count) => m.chat_step_inspect_group({ count }),
+  run: (label) => m.chat_step_inspect_run({ label }),
+};
 
 const COPY: Record<string, Copy> = {
   add_question_media: {
@@ -126,20 +142,11 @@ const COPY: Record<string, Copy> = {
   capture_page: look,
   create_deck: create,
   create_material: create,
-  edit_document: {
-    done: (label) => m.chat_step_edit_done({ label }),
-    fail: (label) => m.chat_step_edit_fail({ label }),
-    fallback: m.chat_step_fallback_file,
-    group: (count) => m.chat_step_edit_group({ count }),
-    run: (label) => m.chat_step_edit_run({ label }),
-  },
-  inspect_document: {
-    done: (label) => m.chat_step_inspect_done({ label }),
-    fail: (label) => m.chat_step_inspect_fail({ label }),
-    fallback: m.chat_step_fallback_file,
-    group: (count) => m.chat_step_inspect_group({ count }),
-    run: (label) => m.chat_step_inspect_run({ label }),
-  },
+  edit_document: edit,
+  // The Office tools read and write as the document tools do (Epo 2026-10-20).
+  edit_office_document: edit,
+  inspect_document: inspect,
+  inspect_office_document: inspect,
   list_sources: {
     done: () => m.chat_step_list_sources_done(),
     fail: () => m.chat_step_list_sources_fail(),

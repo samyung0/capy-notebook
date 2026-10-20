@@ -30,6 +30,7 @@ class Skill:
 EDITING = "editing"
 NOTE_BUILDING = "note_building"
 DECK_BUILDING = "deck_building"
+OFFICE_BUILDING = "office_building"
 SKILLS: dict[str, Skill] = {
     EDITING: Skill(
         prompts.EDITING_WHEN, lambda library: prompts.editing(library=library)
@@ -48,11 +49,16 @@ SKILLS: dict[str, Skill] = {
         ),
         builds="deck",
     ),
+    # Reading it offers the Office tools for the rest of the conversation
+    # (tools._read_skill, Epo 2026-10-20).
+    OFFICE_BUILDING: Skill(
+        prompts.OFFICE_BUILDING_WHEN, lambda _library: prompts.office_building()
+    ),
 }
 
-# The skills each write needs: editing for every write, note_building for note
+# The skills each tool needs: editing for every write, note_building for note
 # markdown (a note created, or edit_document's commands that carry it),
-# deck_building for a deck.
+# deck_building for a deck, office_building for every Office read and write.
 REQUIRES: dict[str, tuple[str, ...]] = {
     "create_material": (EDITING, NOTE_BUILDING),
     "add_questions": (EDITING,),
@@ -60,13 +66,15 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "edit_document": (EDITING, NOTE_BUILDING),
     "create_deck": (EDITING, DECK_BUILDING),
     "write_slide": (EDITING, DECK_BUILDING),
+    "inspect_office_document": (OFFICE_BUILDING,),
+    "edit_office_document": (EDITING, OFFICE_BUILDING),
 }
 FORMAT_COMMANDS = frozenset({"insert_markdown", "replace_block"})
 
 _HEADER = "# Skill: "
 _HEADER_LINE = re.compile(r"^# Skill: (\S+)$", re.MULTILINE)
 # How a write refused for unread skills starts; the skills follow it.
-_CARRIED = "Not applied: this write needs the "
+_CARRIED = "Not applied: this call needs the "
 
 
 def catalog(main_format: str, names: Iterable[str] = SKILLS) -> str:
@@ -139,7 +147,7 @@ def refusal(needs: list[str]) -> str:
     return (
         f"{_CARRIED}{' and '.join(needs)} skill{'' if one else 's'}, which "
         f"follow{'s' if one else ''} and now count{'s' if one else ''} as read. "
-        f"Check the write against {'it' if one else 'them'} and send it again."
+        f"Check the call against {'it' if one else 'them'} and send it again."
     )
 
 
