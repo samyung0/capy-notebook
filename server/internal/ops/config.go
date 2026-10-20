@@ -58,7 +58,7 @@ func (c Config) ClerkFrontendAPI() string {
 
 func ConfigFromEnv() Config {
 	return Config{
-		AppEnv:                 envOr("APP_ENV", "development"),
+		AppEnv:                 strings.TrimSpace(os.Getenv("APP_ENV")),
 		UnsafeDevelopment:      envEnabled("OPS_UNSAFE_DEVELOPMENT"),
 		AccessDisabled:         envEnabled("OPS_ACCESS_DISABLED"),
 		AuthDisabled:           envEnabled("OPS_AUTH_DISABLED"),
@@ -109,6 +109,11 @@ func (c Config) AccessConfig() AccessConfig {
 }
 
 func (c Config) Validate() error {
+	// Every start names its environment, so OPS_UNSAFE_DEVELOPMENT never
+	// unlocks from a missing value.
+	if strings.TrimSpace(c.AppEnv) == "" {
+		return errors.New("APP_ENV must be set: development locally, production when deployed")
+	}
 	if c.UnsafeDevelopment && !c.development() {
 		return errors.New("OPS_UNSAFE_DEVELOPMENT is only allowed when APP_ENV=development")
 	}

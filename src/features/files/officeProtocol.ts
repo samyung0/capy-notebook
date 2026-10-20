@@ -6,7 +6,7 @@ import {
   type OfficeMenu,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 11 as const;
+export const OFFICE_PROTOCOL_VERSION = 12 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -108,6 +108,19 @@ export type OfficeHostMessage =
    * in the sheet would end it.
    */
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'focus-left' }
+  /**
+   * The tab holds back its collaboration messages (Epo 2026-10-18): frames
+   * wait for the update allowance, an update's pieces (over 2 MiB,
+   * `splitUpdate`) wait for the room's acknowledgement, or the user is in a
+   * timeout. A DOCX or PPTX editor pauses meanwhile (`set-capabilities`
+   * with canEdit false); the XLSX editor stays editable there and takes this
+   * flag instead, refusing edits with a busy cursor.
+   */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'sending';
+      pending: boolean;
+    }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'set-capabilities';
@@ -170,17 +183,18 @@ export interface OfficeReadyTimings {
 /**
  * Refusals the runtime reports for the host to show, not errors: typing into
  * a PPTX equation, an inserted image over the payer's plan cap or of a type
- * the browser cannot decode (nothing is inserted), an XLSX clear too big for
- * the room or a copy (or cut) of more cells than the engine reads at once
- * (nothing changes).
+ * the browser cannot decode (nothing is inserted), an XLSX edit past the
+ * engine's 64 MiB update cap or a copy (or cut) past the copied-area or text
+ * ceiling (nothing changes), or an XLSX clipboard write the browser refused.
  */
 export const OFFICE_NOTICES = [
   'equation-text',
   'image-budget',
   'image-too-large',
   'image-type',
-  'clear-too-large',
+  'edit-too-large',
   'copy-too-large',
+  'copy-failed',
 ] as const;
 export type OfficeNotice = (typeof OFFICE_NOTICES)[number];
 
@@ -343,6 +357,8 @@ export function isOfficeHostMessage(
     return isCount(candidate.epoch) && typeof candidate.id === 'string';
   if (candidate.type === 'export') return typeof candidate.id === 'string';
   if (candidate.type === 'focus-left') return true;
+  if (candidate.type === 'sending')
+    return typeof candidate.pending === 'boolean';
   if (candidate.type === 'set-appearance')
     return (
       STYLES.some((style) => style.value === candidate.style) &&

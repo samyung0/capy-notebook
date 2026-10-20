@@ -16,13 +16,14 @@ function mountTimeout(): number {
  * budget covers that transform; the default expect timeout does not once
  * several workers open the editor at once.
  *
- * Synced, Syncing and Saved all mean the editor is live. Pending checkpoints
- * do not block editing; tests of durability must wait specifically for Saved.
+ * Syncing and Saved both mean the editor is live (it joined with nothing to
+ * store as Saved). Pending checkpoints do not block editing; tests of
+ * durability must wait for Saved after their edit's Syncing.
  */
 export async function expectEditorLive(page: Page): Promise<void> {
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
-    /^(synced|syncing|saved)$/,
+    /^(syncing|saved)$/,
     { timeout: mountTimeout() }
   );
 }

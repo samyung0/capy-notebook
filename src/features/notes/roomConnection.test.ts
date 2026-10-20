@@ -145,6 +145,16 @@ describe('roomReconnector', () => {
     expect(onStuck).not.toHaveBeenCalled();
   });
 
+  // Epo 2026-10-20: the room joined and its answer waits on the open
+  // budget, so it is reachable however long that takes.
+  it('never reports a slowed open as stuck', () => {
+    const { onStuck, reconnector } = setup();
+    reconnector.disconnected();
+    reconnector.slowed();
+    vi.advanceTimersByTime(RECONNECT_GRACE_MS * 3);
+    expect(onStuck).not.toHaveBeenCalled();
+  });
+
   it('forgets a loss that recovered in time', () => {
     const { onStuck, reconnector } = setup();
     reconnector.disconnected();

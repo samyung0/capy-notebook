@@ -19,6 +19,10 @@ type collaborationClaims struct {
 	Room      string `json:"room"`
 	Access    string `json:"access"`
 	Schema    int    `json:"schema"`
+	// Parent is the note an embedded quiz or flashcard set belongs to: its
+	// rooms join inside that note's channel, which the collaboration server
+	// checks against this claim (Epo 2026-10-20).
+	Parent    string `json:"parent,omitempty"`
 	Name      string `json:"name,omitempty"`
 	AvatarURL string `json:"avatarUrl,omitempty"`
 }
