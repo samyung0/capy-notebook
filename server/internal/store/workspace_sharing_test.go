@@ -1,13 +1,11 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -229,31 +227,35 @@ func workspaceInviteToken(t *testing.T, s *Store, ctx context.Context, wsID, ide
 	if err := s.CreateWorkspaceInvite(ctx, wsID, identifier, role, "u_owner"); err != nil {
 		t.Fatal(err)
 	}
-	var inviteID, href, invitePath string
-	var notificationData []byte
-	if err := s.pool.QueryRow(ctx, `SELECT wi.id, n.href, n.data, o.payload->>'invitePath'
+	var inviteID, href string
+	if err := s.pool.QueryRow(ctx, `SELECT wi.id, n.href
 		FROM workspace_invites wi
 		JOIN notifications n ON n.workspace_invite_id=wi.id
-		JOIN email_outbox o ON o.template='workspace-invite'
-			AND o.payload->>'inviteId'=wi.id
 		WHERE wi.workspace_id=$1 AND wi.invited_user_id=$2
 			AND wi.accepted_at IS NULL`, wsID, userID).
-		Scan(&inviteID, &href, &notificationData, &invitePath); err != nil {
+		Scan(&inviteID, &href); err != nil {
 		t.Fatal(err)
 	}
 	if href != "/workspace-invites/"+inviteID {
 		t.Fatalf("notification has unsafe invitation href %q", href)
 	}
-	const invitePathPrefix = "/workspace-invites/"
-	if len(invitePath) <= len(invitePathPrefix) ||
-		invitePath[:len(invitePathPrefix)] != invitePathPrefix {
-		t.Fatalf("outbox has invalid invitation path %q", invitePath)
+	return inviteID, knownInviteToken(t, s, inviteID)
+}
+
+// knownInviteToken gives an invite a token the test knows, as the email
+// dispatcher does at send time (MintInviteLink).
+func knownInviteToken(t *testing.T, s *Store, inviteID string) string {
+	t.Helper()
+	token, err := inviteToken()
+	if err != nil {
+		t.Fatal(err)
 	}
-	token := invitePath[len(invitePathPrefix):]
-	if bytes.Contains(notificationData, []byte(token)) {
-		t.Fatal("notification payload contains the plaintext invitation token")
+	hash := inviteTokenHash(token)
+	if _, err := s.pool.Exec(context.Background(),
+		`UPDATE workspace_invites SET token_hash=$2 WHERE id=$1`, inviteID, hash[:]); err != nil {
+		t.Fatal(err)
 	}
-	return inviteID, token
+	return token
 }
 
 func TestWorkspaceInviteAcceptanceGrantsRoleCapabilities(t *testing.T) {
@@ -359,16 +361,13 @@ func TestReciprocalWorkspaceInviteAcceptanceUsesCanonicalAccountLockOrder(t *tes
 		t.Fatal(err)
 	}
 	inviteTokenFor := func(workspaceID, invitedUserID string) string {
-		var path string
-		if err := s.pool.QueryRow(ctx, `SELECT o.payload->>'invitePath'
-			FROM workspace_invites wi
-			JOIN email_outbox o ON o.template='workspace-invite'
-			 AND o.payload->>'inviteId'=wi.id
-			WHERE wi.workspace_id=$1 AND wi.invited_user_id=$2`,
-			workspaceID, invitedUserID).Scan(&path); err != nil {
+		var inviteID string
+		if err := s.pool.QueryRow(ctx, `SELECT id FROM workspace_invites
+			WHERE workspace_id=$1 AND invited_user_id=$2`,
+			workspaceID, invitedUserID).Scan(&inviteID); err != nil {
 			t.Fatal(err)
 		}
-		return strings.TrimPrefix(path, "/workspace-invites/")
+		return knownInviteToken(t, s, inviteID)
 	}
 	firstToken := inviteTokenFor(firstWorkspace.ID, secondUserID)
 	secondToken := inviteTokenFor(secondWorkspace.ID, firstUserID)
@@ -605,8 +604,8 @@ func TestWorkspaceInvitePrivacyAndAutomaticExpiry(t *testing.T) {
 		t.Fatalf("invite lifetime = %d seconds, want 7 days", lifetimeSeconds)
 	}
 
-	if _, err := s.AcceptWorkspaceInvite(ctx, token, "u_viewer"); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("mismatched user accepted bound invite: %v", err)
+	if _, err := s.AcceptWorkspaceInvite(ctx, token, "u_viewer"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("mismatched user accepted bound invite: %v, want not found", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspace_invites
 		SET expires_at=now()-interval '1 second' WHERE id=$1`, inviteID); err != nil {
@@ -666,15 +665,16 @@ func TestQueuedInviteEmailMaySendButDeletingWorkspaceOwnerMakesLinkUnavailable(t
 	if err := s.CreateWorkspaceInvite(ctx, ws.ID, "u_other", RoleViewer, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	var inviteID, invitePath, mailID string
-	if err := s.pool.QueryRow(ctx, `SELECT wi.id, o.payload->>'invitePath', o.id
+	var inviteID, mailID string
+	if err := s.pool.QueryRow(ctx, `SELECT wi.id, o.id
 		FROM workspace_invites wi
 		JOIN email_outbox o ON o.template='workspace-invite'
 			AND o.payload->>'inviteId'=wi.id
 		WHERE wi.workspace_id=$1 AND wi.invited_user_id='u_other'`, ws.ID).
-		Scan(&inviteID, &invitePath, &mailID); err != nil {
+		Scan(&inviteID, &mailID); err != nil {
 		t.Fatal(err)
 	}
+	token := knownInviteToken(t, s, inviteID)
 	if _, err := s.RequestAccountDeletion(ctx, ownerID, false); err != nil {
 		t.Fatal(err)
 	}
@@ -700,10 +700,6 @@ func TestQueuedInviteEmailMaySendButDeletingWorkspaceOwnerMakesLinkUnavailable(t
 	if err := s.CancelEmailClaim(ctx, items[0]); err != nil {
 		t.Fatal(err)
 	}
-	token := strings.TrimPrefix(invitePath, "/workspace-invites/")
-	if token == invitePath || token == "" {
-		t.Fatalf("invalid invite path %q for %s", invitePath, inviteID)
-	}
 	if _, err := s.AcceptWorkspaceInvite(ctx, token, "u_other"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deletion-pending owner invite acceptance=%v, want not found", err)
 	}
@@ -724,15 +720,16 @@ func TestQueuedInviteEmailMaySendAfterWorkspaceDeletion(t *testing.T) {
 	if err := s.CreateWorkspaceInvite(ctx, ws.ID, "u_other", RoleViewer, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	var inviteID, invitePath, mailID string
-	if err := s.pool.QueryRow(ctx, `SELECT wi.id, o.payload->>'invitePath', o.id
+	var inviteID, mailID string
+	if err := s.pool.QueryRow(ctx, `SELECT wi.id, o.id
 		FROM workspace_invites wi
 		JOIN email_outbox o ON o.template='workspace-invite'
 			AND o.payload->>'inviteId'=wi.id
 		WHERE wi.workspace_id=$1 AND wi.invited_user_id='u_other'`, ws.ID).
-		Scan(&inviteID, &invitePath, &mailID); err != nil {
+		Scan(&inviteID, &mailID); err != nil {
 		t.Fatal(err)
 	}
+	token := knownInviteToken(t, s, inviteID)
 	if err := s.DeleteWorkspace(ctx, ownerID, ws.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -757,10 +754,6 @@ func TestQueuedInviteEmailMaySendAfterWorkspaceDeletion(t *testing.T) {
 	}
 	if err := s.CancelEmailClaim(ctx, items[0]); err != nil {
 		t.Fatal(err)
-	}
-	token := strings.TrimPrefix(invitePath, "/workspace-invites/")
-	if token == invitePath || token == "" {
-		t.Fatalf("invalid invite path %q for %s", invitePath, inviteID)
 	}
 	if _, err := s.AcceptWorkspaceInvite(ctx, token, "u_other"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted workspace invite acceptance=%v, want not found", err)
@@ -820,15 +813,13 @@ func TestOwnerLifecycleBlocksAcceptanceOfPreviouslyIssuedInvite(t *testing.T) {
 			if err := s.CreateWorkspaceInvite(ctx, ws.ID, inviteeID, RoleViewer, ownerID); err != nil {
 				t.Fatal(err)
 			}
-			var invitePath string
-			if err := s.pool.QueryRow(ctx, `SELECT o.payload->>'invitePath'
-				FROM workspace_invites wi
-				JOIN email_outbox o ON o.template='workspace-invite'
-				 AND o.payload->>'inviteId'=wi.id
-				WHERE wi.workspace_id=$1 AND wi.invited_user_id=$2`, ws.ID, inviteeID).
-				Scan(&invitePath); err != nil {
+			var inviteID string
+			if err := s.pool.QueryRow(ctx, `SELECT id FROM workspace_invites
+				WHERE workspace_id=$1 AND invited_user_id=$2`, ws.ID, inviteeID).
+				Scan(&inviteID); err != nil {
 				t.Fatal(err)
 			}
+			token := knownInviteToken(t, s, inviteID)
 			switch lifecycle {
 			case "frozen":
 				pushFrozen(t, s, ownerID, ws.ID)
@@ -838,7 +829,6 @@ func TestOwnerLifecycleBlocksAcceptanceOfPreviouslyIssuedInvite(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			token := strings.TrimPrefix(invitePath, "/workspace-invites/")
 			if _, err := s.AcceptWorkspaceInvite(ctx, token, inviteeID); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("%s owner invite acceptance=%v, want not found", lifecycle, err)
 			}

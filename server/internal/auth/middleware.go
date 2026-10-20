@@ -36,6 +36,11 @@ type Config struct {
 	E2EAuth    bool
 	E2ESecret  string
 	E2EUserIDs []string
+	// AuthorizedParties are the browser origins whose Clerk session tokens are
+	// accepted (the token's azp claim). A token minted for another origin is
+	// refused; a token without azp (Backend API) and an empty list are not
+	// checked.
+	AuthorizedParties []string
 }
 
 // UserStore lazily provisions users on first authenticated request and reports
@@ -147,7 +152,9 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 
 	var clerkMW func(http.Handler) http.Handler
 	if cfg.SecretKey != "" && !cfg.Disabled {
-		clerkMW = clerkhttp.WithHeaderAuthorization()
+		clerkMW = clerkhttp.WithHeaderAuthorization(
+			clerkhttp.AuthorizedPartyMatches(cfg.AuthorizedParties...),
+		)
 	}
 
 	return func(next http.Handler) http.Handler {

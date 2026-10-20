@@ -77,7 +77,8 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, actorID, w
 	if err != nil {
 		return nil, false, err
 	}
-	if actorID != "" && ownerID != actorID {
+	// An empty actor is refused, never read as the owner.
+	if ownerID != actorID {
 		return nil, false, ErrForbidden
 	}
 
@@ -168,7 +169,8 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	if err != nil {
 		return nil, false, err
 	}
-	if actorID != "" && ownerID != actorID {
+	// An empty actor is refused, never read as the owner.
+	if ownerID != actorID {
 		return nil, false, ErrForbidden
 	}
 
@@ -225,13 +227,15 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 	if identifier == "" || (role != RoleEditor && role != RoleViewer) {
 		return nil, false, ErrForbidden
 	}
-	token, err := inviteToken()
+	// This token is never shown: the email dispatcher replaces it with the one
+	// it puts in the link (MintInviteLink), so no raw token is ever stored.
+	placeholder, err := inviteToken()
 	if err != nil {
 		return nil, false, err
 	}
 	now := time.Now().UTC()
 	expiresAt := now.Add(7 * 24 * time.Hour)
-	tokenHash := inviteTokenHash(token)
+	tokenHash := inviteTokenHash(placeholder)
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -349,7 +353,6 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 		"inviterName":   inviterName,
 		"role":          role,
 		"inviteId":      inviteID,
-		"invitePath":    "/workspace-invites/" + token,
 		"tokenHash":     hex.EncodeToString(tokenHash[:]),
 	})
 	if err != nil {
@@ -383,6 +386,51 @@ func inviteToken() (string, error) {
 
 func inviteTokenHash(token string) [sha256.Size]byte {
 	return sha256.Sum256([]byte(token))
+}
+
+// MintInviteLink gives a claimed workspace-invite email the token for its
+// link, at send time, so the raw token lives only in the sent email and never
+// in email_outbox.payload. The invite's hash is rotated only while the invite
+// is pending and still holds this email's hash; the new hash is written back to
+// the payload so a retried send can mint again. ok is false when the invite was
+// accepted, cancelled, expired or re-sent since: the caller cancels the email
+// rather than sending a dead link. The writes commit with the send guard.
+func (g *EmailSendGuard) MintInviteLink(ctx context.Context) (path string, ok bool, err error) {
+	if g == nil || g.done {
+		return "", false, ErrEmailLeaseLost
+	}
+	var payload struct {
+		InviteID  string `json:"inviteId"`
+		TokenHash string `json:"tokenHash"`
+	}
+	if err := json.Unmarshal(g.item.Payload, &payload); err != nil {
+		return "", false, err
+	}
+	current, err := hex.DecodeString(payload.TokenHash)
+	if err != nil || len(current) != sha256.Size || payload.InviteID == "" {
+		return "", false, errors.New("workspace invite email payload has no invite reference")
+	}
+	token, err := inviteToken()
+	if err != nil {
+		return "", false, err
+	}
+	next := inviteTokenHash(token)
+	tag, err := g.tx.Exec(ctx, `UPDATE workspace_invites SET token_hash=$3
+		WHERE id=$1 AND token_hash=$2
+			AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now()`,
+		payload.InviteID, current, next[:])
+	if err != nil {
+		return "", false, err
+	}
+	if tag.RowsAffected() == 0 {
+		return "", false, nil
+	}
+	if _, err := g.tx.Exec(ctx, `UPDATE email_outbox
+		SET payload=jsonb_set(payload, '{tokenHash}', to_jsonb($2::text))
+		WHERE id=$1`, g.item.ID, hex.EncodeToString(next[:])); err != nil {
+		return "", false, err
+	}
+	return "/workspace-invites/" + token, true, nil
 }
 
 // ExpireWorkspaceInvites removes unaccepted invitations after their deadline.
@@ -542,8 +590,10 @@ func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID str
 	if invite.AcceptedAt != nil || invite.RevokedAt != nil || time.Now().UTC().After(invite.ExpiresAt) {
 		return WorkspaceMember{}, "", nil, ErrNotFound
 	}
+	// Someone else's invite answers like a missing one, so neither an invite id
+	// nor a token tells a caller which invites exist.
 	if invite.InvitedUserID == "" || invite.InvitedUserID != userID {
-		return WorkspaceMember{}, "", nil, ErrForbidden
+		return WorkspaceMember{}, "", nil, ErrNotFound
 	}
 	// Accepting is an edit a frozen recipient does not keep; the refusal is
 	// theirs to hear about, so it stays account_over_quota.
