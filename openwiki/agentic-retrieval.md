@@ -4090,8 +4090,9 @@ at most 2,000 changes are taken round-robin across documents, so one busy file
 does not starve the rest. Documents already read this turn are skipped. Each hint
 names the document (`file_id` or `material_id`), its name and the change label
 or block quoted, and says "added", "changed" or "removed" with a snippet of at
-most 200 characters around the first query word (found in the original text,
-so a CJK match stays in the window). The lines are source data, in a
+most 200 characters around the longest query word it holds (function words
+skipped, a CJK run probed by its bigrams, found in the original text so the
+match stays in the window). The lines are source data, in a
 `<source>` block. Two paths use it:
 
 - The user message: at most 5 hints, a block of at most 400 tokens in its own
@@ -4099,15 +4100,20 @@ so a CJK match stays in the window). The lines are source data, in a
   fit are shown, saved and counted as hinted. A change hinted earlier in the
   conversation (since its last checkpoint) is not hinted again. The hints are
   saved with the answer (`toolEvidence.pendingHints`, snippets only) and
-  replayed after their user message as shown, under a past-tense heading, so
-  earlier requests stay a cached prefix. Hints stay in context until the chat
-  is condensed; condensing (a checkpoint or a live-history fold) drops every
-  hint, read or not (Epo 2026-10-20). A read document's details stay through
-  its read result.
-- `search_workspace`: matching edits not yet shown this conversation come
-  after the passages under their own heading, not citable (no passage
-  numbers), and stay whole when a long result is clipped; with no passage,
-  they are the result.
+  replayed after their user message word for word, under the one heading the
+  live message uses (worded to stay true later), so earlier requests stay a
+  cached prefix; providers reuse any shared prefix (GLM on Z.AI measured
+  2026-10-20). After a checkpoint, an edit hinted before it may be hinted
+  again. The turn's own hint message survives a turn-start checkpoint and a
+  live fold of its older exchanges. Hints stay in context until the chat is
+  condensed; condensing (a checkpoint, a live-history fold or a turn fold)
+  drops every hint, read or not, and the edits a search listed (Epo
+  2026-10-20). A read document's details stay through its read result.
+- `search_workspace`: matching edits come after the passages under their own
+  heading, not citable (no passage numbers), and stay whole when a long result
+  is clipped; with no passage, they are the result. It skips edits a message
+  of this conversation hinted and edits an earlier search of this turn
+  listed.
 
 Generation passes every scoped change, so it gets no hints. Replacements and removals
 supersede old indexed facts; the message tells the model that each before and

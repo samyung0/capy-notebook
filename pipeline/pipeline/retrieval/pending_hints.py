@@ -25,7 +25,7 @@ from .chunking import (
     search_query_terms,
     tokenize_for_search,
 )
-from .lang import TS_CONFIG, UND, detect_lang
+from .lang import FUNCTION_WORDS, TS_CONFIG, UND, detect_lang, is_cjk
 
 # Bounds (the Editor, 2026-10-20): a handful of snippets of about 200
 # characters, about 400 tokens a message; candidates are capped because a
@@ -248,18 +248,33 @@ def _folded(text: str) -> tuple[str, list[int]]:
     return "".join(out), origin
 
 
+def _probes(query: str) -> list[str]:
+    """What locates a query in a hint's text, longest first: whole Latin
+    words that are not function words, and each CJK run's bigrams."""
+    folded, _ = _folded(query)
+    probes: list[str] = []
+    for token in re.findall(r"\w+", folded):
+        if any(is_cjk(ch) for ch in token):
+            probes.extend(token[i : i + 2] for i in range(max(1, len(token) - 1)))
+        elif len(token) > 1 and token not in FUNCTION_WORDS:
+            probes.append(token)
+    return sorted(dict.fromkeys(probes), key=len, reverse=True)
+
+
 def snippet(hint: Hint, query: str) -> str:
-    """At most HINT_CHARS of the hint's text, around its first query word,
-    found in the original text (a CJK run, or its first two characters)."""
+    """At most HINT_CHARS of the hint's text, around the longest query word
+    it holds (the earliest among equals), found in the original text."""
     text = re.sub(r"\s+", " ", hint.text)
     if len(text) <= HINT_CHARS:
         return text
     folded, origin = _folded(text)
-    q, _ = _folded(query)
-    words = [w for w in re.findall(r"\w+", q) if len(w) > 1]
-    probes = words + [w[:2] for w in words if len(w) > 2]
-    hits = [i for i in (folded.find(w) for w in probes) if i >= 0]
-    found = origin[min(hits)] if hits else 0
+    found = 0
+    probes = _probes(query)
+    for size in sorted({len(p) for p in probes}, reverse=True):
+        hits = [i for p in probes if len(p) == size for i in [folded.find(p)] if i >= 0]
+        if hits:
+            found = origin[min(hits)]
+            break
     start = max(0, min(found - HINT_CHARS // 4, len(text) - HINT_CHARS))
     cut = text[start : start + HINT_CHARS - 2]
     return ("…" if start else "") + cut + ("…" if start + len(cut) < len(text) else "")
@@ -279,11 +294,9 @@ def render(
     return "", []
 
 
+# One heading for the live message and its replay, true at both times, so a
+# replayed request repeats the earlier one word for word (a cached prefix).
 MESSAGE_HEADING = (
-    "Unindexed edits matching the user's message above, not in search yet. "
-    "Read the document to see them."
-)
-REPLAY_HEADING = (
     "Unindexed edits that matched the user's message above when it was sent "
     "(not in search then). Read the document to see what they say now."
 )
@@ -308,14 +321,11 @@ async def for_message(
 
 
 def message(
-    hints: list[tuple[Hint, str]],
-    *,
-    heading: str = MESSAGE_HEADING,
-    message_id: str = "",
+    hints: list[tuple[Hint, str]], *, message_id: str = ""
 ) -> dict[str, Any] | None:
     """The hint message that follows a user message (None: nothing fits),
     with the hints it shows."""
-    block, kept = render(hints, heading)
+    block, kept = render(hints, MESSAGE_HEADING)
     if not kept:
         return None
     return {
@@ -329,9 +339,18 @@ def message(
 
 def for_summary(item: dict[str, Any]) -> dict[str, Any] | None:
     """A message as condensing folds it: hints stay in context until the chat
-    is condensed, which drops every one (Epo 2026-10-20); a read document's
-    details stay through its read result."""
-    return None if item.get("_kind") == KIND else item
+    is condensed, which drops every one, a search's listed edits included
+    (Epo 2026-10-20); a read document's details stay through its read result."""
+    if item.get("_kind") == KIND:
+        return None
+    tail = item.get("_hint_tail")
+    if tail:
+        # A search result's unindexed edits (tools.limit_tool_result's tail).
+        content = str(item.get("content") or "").removesuffix("\n\n" + tail)
+        return {k: v for k, v in item.items() if k != "_hint_tail"} | {
+            "content": content
+        }
+    return item
 
 
 _SAVED = {"doc_id": "docId", "change_id": "changeId"}

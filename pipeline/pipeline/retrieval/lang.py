@@ -169,6 +169,8 @@ _STOPWORD_LANG: dict[str, list[str]] = {}
 for _lang, _words in _STOPWORDS.items():
     for _word in _words:
         _STOPWORD_LANG.setdefault(_word, []).append(_lang)
+# Every language's function words: what locates a query in a text skips them.
+FUNCTION_WORDS = frozenset(_STOPWORD_LANG)
 
 
 def is_cjk(ch: str) -> bool:

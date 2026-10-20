@@ -79,7 +79,6 @@ async def history_turns(
                 )
                 hint_message = pending_hints.message(
                     pending_hints.replayed(saved_hints),
-                    heading=pending_hints.REPLAY_HEADING,
                     message_id=turn.get("id") or "",
                 )
                 if hint_message is not None:

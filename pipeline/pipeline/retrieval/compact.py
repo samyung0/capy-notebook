@@ -263,8 +263,14 @@ async def _fold_turn(
         if message.get("_kind") == "turn_note" and message.get("_note")
     ).strip()
     # Earlier turn contexts are stale snapshots; the next call sends a current one.
+    # This turn's hint message stays with its query (pending_hints).
+    hints = [m for m in turn if m.get("_kind") == pending_hints.KIND]
     groups = _exchanges(
-        [m for m in turn if m.get("_kind") not in ("turn_note", "turn_context")]
+        [
+            m
+            for m in turn
+            if m.get("_kind") not in ("turn_note", "turn_context", pending_hints.KIND)
+        ]
     )
     fold = [m for group in groups[:-TURN_KEEP_EXCHANGES] for m in group]
     keep = [m for group in groups[-TURN_KEEP_EXCHANGES:] for m in group]
@@ -279,7 +285,7 @@ async def _fold_turn(
         purpose=accounting.PURPOSE_LIVE_COMPACTION,
         build=turn_note_messages,
     )
-    return [*messages[:query_index], query, turn_note_message(note), *keep]
+    return [*messages[:query_index], query, *hints, turn_note_message(note), *keep]
 
 
 async def compact_messages(

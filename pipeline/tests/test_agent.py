@@ -3735,9 +3735,10 @@ async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeyp
     monkeypatch.setattr(agent.pending_hints, "match", _match_all)
     monkeypatch.setattr(agent.pending_hints, "_indexed_langs", _no_langs)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    events = await _collect(
-        "How many phases does mitosis have?", ToolContext(workspace_id="ws_1")
-    )
+    ctx = ToolContext(workspace_id="ws_1")
+    events = await _collect("How many phases does mitosis have?", ctx)
+    # Search skips what the message already hinted (review hints-r2 T1).
+    assert ctx.hinted == {("f_1", "c1")}
     messages = seen[0]["messages"]
     query = next(i for i, m in enumerate(messages) if m.get("_kind") == "query")
     assert messages[query]["content"] == "How many phases does mitosis have?"
@@ -3780,3 +3781,26 @@ async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeyp
     assert kinds.index(agent.pending_hints.KIND) < kinds.index("query")
     done = next(e for e in events if e["type"] == "done")
     assert "pendingHints" not in done["toolEvidence"]
+
+
+async def test_a_turn_start_checkpoint_keeps_the_turns_hint(monkeypatch):
+    """Review hints-r2 T1: the hint message after the query survives the
+    checkpoint rebuild."""
+
+    async def fold(**_kwargs):
+        return "memory"
+
+    monkeypatch.setattr(agent.compact, "needs_compact", lambda *_a, **_k: True)
+    monkeypatch.setattr(agent.compact, "summarize_checkpoint", fold)
+    query = {"role": "user", "content": "q", "_kind": "query"}
+    hint = {"role": "user", "content": "hints", "_kind": agent.pending_hints.KIND}
+    messages, _ = await agent._admit_checkpoint(
+        messages=[{"role": "system", "content": "sys"}, query, hint],
+        history=[{"id": "u1", "role": "user", "content": "old"}],
+        checkpoint=None,
+        spec=_model(),
+        schemas=[],
+        budget=agent.TurnBudget(),
+        query_msg=query,
+    )
+    assert messages[-2:] == [query, hint]

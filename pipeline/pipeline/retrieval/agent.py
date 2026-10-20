@@ -1259,7 +1259,11 @@ async def _run_tools(
                 }
             )
         result.text_parts = [text]
-        messages.append({"role": "tool", "tool_call_id": call.id, "content": text})
+        message = {"role": "tool", "tool_call_id": call.id, "content": text}
+        if result.tail:
+            # A search's unindexed edits are hints: condensing drops them.
+            message["_hint_tail"] = result.tail
+        messages.append(message)
 
 
 def _limit_for(

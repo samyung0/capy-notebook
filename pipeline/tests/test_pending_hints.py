@@ -211,7 +211,9 @@ async def test_replay_keeps_hints_as_shown_and_reads_as_past():
     ]
     [hinted] = [m for m in replayed if m.get("_kind") == pending_hints.KIND]
     assert replayed.index(hinted) == 1  # right after its user message
-    assert hinted["content"].startswith(pending_hints.REPLAY_HEADING)
+    # Replayed word for word as the live message showed it (review hints-r2 H1).
+    live = pending_hints.message(pending_hints.unpack(_packed(sources)))
+    assert hinted["content"] == live["content"]
     assert {h.key for h, _ in hinted["_hints"]} == {("f_1", "a"), ("m_1", "n")}
 
     # The same block whatever this turn's pending changes are.
@@ -365,3 +367,75 @@ async def test_matching_folds_like_search_in_each_documents_language(workspace):
     # f_1's language is undetermined: the query's stopwords are dropped, so
     # "the" no longer matches "Added the enzyme diagram" (Epo 2026-10-20).
     assert await ids("What is the formula?") == set()
+
+
+def test_a_snippet_is_placed_by_the_longest_query_word():
+    # Review hints-r2 H3: function words and two-letter prefixes put the
+    # window at the start of almost any text.
+    latin = (
+        "When the cells in this enormous tissue sample were examined, "
+        + "the others " * 25
+        + "enzyme kinetics were measured. "
+        + "filler " * 20
+    )
+    [hint] = pending_hints.candidates(_sources(_change("add", after=latin)))
+    assert "enzyme kinetics" in pending_hints.snippet(hint, "enzyme kinetics")
+    cjk = "无关的文字" * 60 + "细胞分裂的过程" + "其他内容" * 40
+    [hint] = pending_hints.candidates(_sources(_change("add", after=cjk)))
+    for query in ("请解释细胞分裂", "什么是细胞分裂"):
+        assert "细胞分裂" in pending_hints.snippet(hint, query)
+
+
+async def test_a_turn_fold_with_only_the_hint_older_leaves_the_turn(monkeypatch):
+    """Review hints-r2 H4: the turn's own hint message is not an exchange, so
+    a fold with nothing older to summarize leaves the turn as it is."""
+    sources = _sources(_change("add", after="mitosis text", cid="a"))
+    hint = pending_hints.message(pending_hints.unpack(_packed(sources)))
+    turn = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "q", "_kind": "query"},
+        hint,
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "1"}]},
+        {"role": "tool", "tool_call_id": "1", "content": "r1"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "2"}]},
+        {"role": "tool", "tool_call_id": "2", "content": "r2"},
+    ]
+
+    async def summarize(**_kwargs):
+        raise AssertionError("nothing older to fold")
+
+    monkeypatch.setattr(compact, "summarize_checkpoint", summarize)
+    assert await compact._fold_turn(turn, 1, _spec(), None) is turn
+
+
+async def test_condensing_drops_a_searchs_listed_edits(monkeypatch):
+    """Review hints-r2 H2: edits a search listed are hints too; the turn
+    fold summarizes the search result without them."""
+    tail = (
+        pending_hints.SEARCH_HEADING + "\n<source>\n- never-read note edit\n</source>"
+    )
+    turn = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "q", "_kind": "query"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "1"}]},
+        {
+            "role": "tool",
+            "tool_call_id": "1",
+            "content": "passages\n\n" + tail,
+            "_hint_tail": tail,
+        },
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "2"}]},
+        {"role": "tool", "tool_call_id": "2", "content": "r2"},
+        {"role": "assistant", "content": "", "tool_calls": [{"id": "3"}]},
+        {"role": "tool", "tool_call_id": "3", "content": "r3"},
+    ]
+    folded: list = []
+
+    async def summarize(**kwargs):
+        folded.extend(kwargs["turns"])
+        return "note"
+
+    monkeypatch.setattr(compact, "_summarize_batch", summarize)
+    await compact._fold_turn(turn, 1, _spec(), None)
+    text = " ".join(str(m.get("content")) for m in folded)
+    assert "passages" in text and "never-read note edit" not in text
