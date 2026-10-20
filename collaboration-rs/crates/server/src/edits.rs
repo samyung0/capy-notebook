@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
 use yrs::updates::decoder::Decode;
-use yrs::{ReadTxn, StateVector, Transact};
+use yrs::{ReadTxn, Snapshot, StateVector, Transact};
 
 use crate::access::{self, AccessError};
 use crate::app::Shared;
@@ -455,7 +455,9 @@ struct Scratch {
     doc: yrs::Doc,
     durable: ydoc::Durable,
     live: Option<StateVector>,
-    before: StateVector,
+    /// Inserts and deletions both: an edit that only removes moves no state
+    /// vector.
+    before: Snapshot,
 }
 
 impl Scratch {
@@ -487,7 +489,7 @@ impl Scratch {
             }
             None => None,
         };
-        let before = doc.transact().state_vector();
+        let before = doc.transact().snapshot();
         Ok(Scratch {
             doc,
             durable,
@@ -496,9 +498,14 @@ impl Scratch {
         })
     }
 
+    /// Whether the edit inserted or deleted anything.
+    fn changed(&self) -> bool {
+        self.doc.transact().snapshot() != self.before
+    }
+
     /// The document's write, or none when the edit left it as it was.
     fn write(&self, doc: note_store::Doc) -> Option<Write> {
-        if self.doc.transact().state_vector() == self.before {
+        if !self.changed() {
             return None;
         }
         let hidden = markers::live_items(&self.doc);
@@ -1266,7 +1273,6 @@ fn replace_on(
         return Ok((!computed.writes.is_empty()).then_some(computed));
     }
     let doc = &scratch.doc;
-    let before = scratch.before.clone();
     let model = Model::of(&kind);
     let previous = notes::limits::measure_value(&model.document_value(&doc.transact())?);
     match model {
@@ -1282,7 +1288,7 @@ fn replace_on(
             item.replace_block(&mut txn, &command.replacement_block)?;
         }
     }
-    if doc.transact().state_vector() == before {
+    if !scratch.changed() {
         return Ok(None);
     }
     if let Model::Item(item) = model {
@@ -1545,5 +1551,45 @@ mod tests {
             Err(DocumentError::Edit { code, .. }) if code == "unsupported_operation"
         ));
         assert!(rebuilt(json!([{ "type": "text", "text": "Stem" }])).is_ok());
+    }
+
+    /// A quiz edit that only removes a question writes both documents, though
+    /// a deletion moves neither state vector.
+    #[test]
+    fn a_removal_only_quiz_edit_writes_both_documents() {
+        let question = |id: &str| {
+            json!({
+                "type": "quiz_question", "id": id, "children": [{ "text": "" }],
+                "question": {
+                    "id": id, "labels": "letters", "layout": "paper", "stem": [],
+                    "parts": [{
+                        "id": format!("{id}-p"), "marks": 1, "solution": [],
+                        "blocks": [{ "type": "text", "text": "True?" }],
+                        "answer": { "type": "boolean", "correct": true },
+                    }],
+                },
+            })
+        };
+        let value =
+            [json!({ "type": "quiz", "id": "quiz", "children": [question("q1"), question("q2")] })];
+        let (content, keys) = items::quiz::states_from_value(&value, 0);
+        let content = Scratch::new(&content, &[], None).unwrap();
+        let keys = Scratch::new(&keys, &[], None).unwrap();
+        let remove = notes::edit::DocumentCommand::RemoveChild {
+            parent_type: "quiz".into(),
+            node_id: "q2".into(),
+        };
+        let computed = compute_quiz(&content, &keys, |content, keys| {
+            Ok(items::quiz::apply_commands(content, keys, &[remove])?)
+        })
+        .unwrap();
+        let docs: Vec<_> = computed.writes.iter().map(|write| write.doc).collect();
+        assert_eq!(
+            docs,
+            [
+                crate::note_store::Doc::Content,
+                crate::note_store::Doc::Keys
+            ]
+        );
     }
 }
