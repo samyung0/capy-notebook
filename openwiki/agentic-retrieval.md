@@ -984,12 +984,23 @@ only that process, so a cancelled blocking thread cannot overlap a later job.
 
 The API process owns the FIFO and the parse deadlines. Each
 persistent spawned parse child owns LibreOffice, Java and the repairs for one
-document at a time, in its own session (`setsid`; LibreOffice runs in its own
-process group inside it) with Linux `oom_score_adj` 1000 and a work directory
+document at a time, in its own session (`setsid`; LibreOffice and Java each run
+in their own process group inside it) with Linux `oom_score_adj` 1000 and a work directory
 `slot-N` under `CAPY_PARSE_WORK_DIR` that is wiped when the child is respawned.
+Right after its `setsid` the child confines itself with the decoder sandbox
+(`pipeline/capy_sandbox.py`, deployment-runbook §7.5): it reads its own code
+and what LibreOffice and Java load, writes only its slot folder (its temporary
+files, the API's source and result transfers and every job folder are there),
+opens no network socket, cannot leave its session, and has 256 descriptors,
+512 MiB files and no core dumps. LibreOffice (`soffice.bin` itself, with
+process creation denied; a fresh profile's first run exits 81 and the
+conversion runs again) and Java start through the same sandbox with explicit
+environments, so no child holds `PARSER_TOKEN`, which the API keeps in a
+constant and refuses to start without.
 The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
-`PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java lifts it to the hard
-limit when it starts, its heap bounded by `-Xmx` (decision 2026-10-15). The
+`PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java starts with it lifted,
+its heap bounded by `-Xmx` (decision 2026-10-15) and the rest by a 2 GiB data
+cap. The
 container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice with
 it too, so the multithreaded LibreOffice and JVM reserve far less address
 space: LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to
@@ -1252,7 +1263,15 @@ performs the planned work:
 - images are normalized under a decoded-pixel cap, with bounded representative
   frames for animated images, then captioned with the pinned vision model. The
   prompt asks for every visible label, table cell, number, unit, formula,
-  diagram relationship, and uncertainty rather than a short visual summary;
+  diagram relationship, and uncertainty rather than a short visual summary.
+  The worker process imports no image decoder: Pillow runs in the sandboxed
+  decode helper (`pipeline/ingest/decode.py`, deployment-runbook §7.5), which
+  answers the JPEG the model reads. A frame at least twice
+  `CAPY_CAPTION_MAX_EDGE` both ways shrinks while it decodes (a JPEG at a
+  reduced DCT scale, any other image by a whole factor before a full-size
+  copy), so the helper fits its 768 MiB; smaller images decode exactly as
+  before. A format the helper's Pillow cannot read goes to the model as its
+  original bytes, as before;
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
   row text with explicit field names (`Row N: Header=value | …`), one paragraph
   per row, so the chunker packs whole rows and never splits a table-sized
@@ -1585,9 +1604,13 @@ is retained separately as historical evidence):
   describe appearance and do not infer that a highlighted value is best.
 
 Two post-passes then run in the ingest worker. Native PDF sources use the repaired
-`parsed.pdf` when present, otherwise the spooled upload. Office sources use the
-page text and visible-heading proofs frozen in `refinement.json`, so cache hits
-need no PDF or repeated conversion:
+`parsed.pdf` when present, otherwise the spooled upload, read only by the
+worker's sandboxed decode helper (`pipeline/ingest/decode.py`): it answers each
+page's text and which heading blocks the glyphs prove visible, the same
+evidence the parser freezes for Office files (`parser/odl/evidence.py`). Office
+sources use that evidence from `refinement.json`, so cache hits need no PDF or
+repeated conversion. The worker process itself imports neither MuPDF nor
+Pillow:
 
 - **Heading retention** (`retrieval/headings.py`): a `text_level` block only
   survives as the section path of the body after it, so a heading with no body

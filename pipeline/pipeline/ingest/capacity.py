@@ -44,8 +44,11 @@ def try_acquire(job_type: str) -> CapacityLease | None:
     if not root.is_dir():
         raise RuntimeError(f"shared capacity lock directory does not exist: {root}")
 
-    descriptor = os.open(root / f"{job_type}.lock", os.O_CREAT | os.O_RDWR, 0o660)
-    handle = os.fdopen(descriptor, "a+b", buffering=0)
+    # Read-only: flock needs no write access, so a lock file another uid
+    # created (the spool's init gives every file to the parser's uid, group
+    # read) still opens for the pipeline user.
+    descriptor = os.open(root / f"{job_type}.lock", os.O_CREAT | os.O_RDONLY, 0o660)
+    handle = os.fdopen(descriptor, "rb", buffering=0)
     try:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:

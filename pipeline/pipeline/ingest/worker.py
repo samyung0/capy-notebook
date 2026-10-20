@@ -33,6 +33,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import capy_sandbox
 import requests
 
 from .. import (
@@ -65,7 +66,7 @@ from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
-from . import capacity, import_stage, source_text, telemetry, thumbnail, uat
+from . import capacity, decode, import_stage, source_text, telemetry, thumbnail, uat
 from . import plan as ingest_plan
 
 log = logging.getLogger("capy.worker")
@@ -1749,7 +1750,9 @@ async def _read_vlm_pages(
 def _page_chunks(
     content_list: list[dict], raw_dir: Path, source_pdf: Path
 ) -> list[Chunk]:
-    """Pack blocks using frozen Office page evidence or the exact source PDF."""
+    """Pack blocks, then keep the headings and score the chunks against the
+    frozen Office page evidence or, for a PDF, the evidence the decode helper
+    reads from the exact PDF the parse used."""
     refinement_path = raw_dir / "refinement.json"
     if not refinement_path.is_file():
         raise TerminalError("parse artifact has no refinement.json")
@@ -1761,23 +1764,16 @@ def _page_chunks(
         raise TerminalError("parse artifact refinement.json has no furniture list")
     chunks = pack_blocks(content_list, frozenset(furniture))
     evidence = refinement.get("page_evidence")
-    if evidence is not None:
-        chunks = retain_headings(
-            content_list, source_pdf, chunks, verified=set(evidence["visible_headings"])
-        )
-        score_chunks(
-            chunks,
-            source_pdf,
-            vlm=vlm_pages(content_list),
-            page_texts=evidence["page_texts"],
-        )
-        return chunks
-    repaired = raw_dir / "parsed.pdf"
-    page_pdf = repaired if repaired.is_file() else source_pdf
-    if not page_pdf.is_file():
-        raise RetryableError("page-model PDF for the parsed document is missing")
-    chunks = retain_headings(content_list, page_pdf, chunks)
-    score_chunks(chunks, page_pdf, vlm=vlm_pages(content_list))
+    if evidence is None:
+        repaired = raw_dir / "parsed.pdf"
+        page_pdf = repaired if repaired.is_file() else source_pdf
+        if not page_pdf.is_file():
+            raise RetryableError("page-model PDF for the parsed document is missing")
+        evidence = decode.page_evidence(page_pdf, content_list)
+    chunks = retain_headings(
+        content_list, chunks, verified=set(evidence["visible_headings"])
+    )
+    score_chunks(chunks, vlm=vlm_pages(content_list), page_texts=evidence["page_texts"])
     return chunks
 
 
@@ -3007,6 +3003,12 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
 
 def main(job_type: str = "ingest") -> None:
     require_parse_timeouts()
+    # Decoders run as children with this uid (ingest/decode.py): none may read
+    # this process's memory or environment. A deployed host without Landlock
+    # ABI 6 refuses here.
+    capy_sandbox.make_undumpable()
+    if not capy_sandbox.landlock_available():
+        log.warning("Landlock unavailable: decoders run without it")
     use_compatible_event_loop()
     asyncio.run(main_async(job_type))
 
