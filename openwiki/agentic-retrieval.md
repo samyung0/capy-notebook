@@ -2767,11 +2767,7 @@ build, and the knowledge library is one more source while the switch is on.
 - **Prompt** (`prompts/chat.py`). `system_prompt(locale, library=..., writes=...)` is one
   prompt for every turn and stays lean: grounding rules; answer or build (a
   question gets an answer with citations, a request to learn, make, expand or
-  practise gets materials without asking whether to create them; the agent
-  asks first only when the request lacks the learning scope or the learner's
-  level, as "I want to learn physics" lacks both, offering a default, and
-  otherwise builds directly following the study preferences (Epo 2026-10-14,
-  in place of proposing a plan before building more than one item); a write
+  practise gets materials without asking whether to create them; a write
   starts by reading its skills); and the budget every turn shares (tool calls
   per response; the planning cap until the first successful write, then up to
   the build budget's tool calls in the whole turn and the stall guard, more
@@ -2803,8 +2799,11 @@ build, and the knowledge library is one more source while the switch is on.
   asked), with Library on the `excerpt_ids` rule (name excerpts read this turn
   or retained in full, or omit them and the write credits the reads since the
   last write; Write guard, below). Since 2026-10-14 `editing` is the general
-  guideline for every write: it also holds the plan (survey, search where the
-  need is), the output rules (one main explainer per chapter, a note or a deck
+  guideline for every write: it also holds the plan (ask first only when the
+  request lacks the learning scope or the learner's level, as "I want to learn
+  physics" lacks both, offering a default, otherwise build directly following
+  the study preferences: Epo 2026-10-14, moved here from the prompt
+  2026-10-21; survey; search where the need is), the output rules (one main explainer per chapter, a note or a deck
   as the output-files preference says; quizzes and flashcards standalone in
   the chapter they practise; other materials as the study preferences and the
   chapter's teaching need say), an example the sources lack labelled as

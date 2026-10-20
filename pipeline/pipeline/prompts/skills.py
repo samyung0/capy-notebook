@@ -29,6 +29,7 @@ OFFICE_BUILDING_WHEN = (
 _EDITING = f"""How to write to the workspace: build study materials, add to them and edit files.
 
 Plan:
+- Ask before building only when the request lacks the learning scope or the learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question. Otherwise build directly, following the study preferences.
 - Survey first with read-only tools: list_sources, and the library when it is a source this turn.
 - Search where the need is: the workspace for the learner's own material, the library for textbook explanations, examples and exercises.
 

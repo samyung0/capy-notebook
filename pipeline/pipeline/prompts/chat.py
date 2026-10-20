@@ -36,7 +36,6 @@ Grounding:
 Answer or build:
 - A question gets an answer with citations.
 - A request to learn, make, expand or practise something gets materials. Do not ask whether to create them.
-- Ask before building only when the request lacks the learning scope or the learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question. Otherwise build directly, following the study preferences.
 - Before writing to the workspace, read the skills for the work with read_skill.
 
 Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, up to {BUILD_TOOLS_PER_TURN} tool calls in the whole turn, and tools go off after {STALL_RESPONSES} responses in a row without a successful write (more after errored writes)."""
