@@ -170,3 +170,17 @@ def test_the_ingest_host_bounds_the_docker_build_cache() -> None:
     daemon = json.loads(task["ansible.builtin.copy"]["content"])
 
     assert daemon["builder"]["gc"] == {"enabled": True, "defaultKeepStorage": "20GB"}
+
+
+@pytest.mark.parametrize("host", HOSTS)
+def test_ptrace_is_limited_to_descendants(host: str) -> None:
+    # Human decision (Epo 2026-10-20): both hosts set scope 1.
+    (task,) = [
+        task["ansible.posix.sysctl"]
+        for task in _tasks(_play(host), "ansible.posix.sysctl")
+        if task["ansible.posix.sysctl"]["name"] == "kernel.yama.ptrace_scope"
+    ]
+
+    assert task["value"] == "1"
+    assert task["sysctl_file"] == "/etc/sysctl.d/60-capy-ptrace.conf"
+    assert task["state"] == "present"
