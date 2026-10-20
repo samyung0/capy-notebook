@@ -3539,10 +3539,14 @@ applies the edit keeping the items it deleted from garbage collection
 (`ydoc::undo::apply_kept`) and holds the edit's own Yjs items, read from the
 edit's transaction (`ydoc::undo::Captured`), as an undo step under the edit's
 operation id (`Room.agent_changes`, indexed by `app.agent_steps`). The
-receipt's effect then carries `undo: {operationId, status: "available"}`. An
-edit of a file or material no room has loaded gets no Undo: nothing opens or
-holds a room for it, and its receipt shows none. A room that loaded after the
-edit committed already holds its items and takes no step either. An edit may
+receipt commits without an Undo ref; once every room the edit wrote answers
+that it took the step (`ServiceEdit.taken`), the server stores
+`undo: {operationId, status: "available"}` on it and returns it so
+(`offer_undo` in `edits.rs`; a source's receipt is Go's checkpoint receipt,
+which never sets the ref). An edit of a file or material no room has loaded
+gets no Undo: nothing opens or holds a room for it, and its receipt shows
+none. A room that loaded after the edit committed already holds its items and
+takes no step either. An edit may
 not remove or replace a block holding media.
 `inspect_document` reads what the editors see (Epo 2026-10-13): the
 stored state with this replica's live room merged in, a quiz's keys room
@@ -3566,24 +3570,51 @@ people's later typing stays, in the edited block too. XLSX needs nothing
 more: Yjs holds cell inputs and every engine recalculates values from them.
 The revert goes out like a writer's update under the chat actor's
 contributor marker (the store rechecks the actor's access); the room stores
-at once and answers once the store is durable. A note whose reverted state
-the store would refuse (`validate`) is put back at once and the Undo answers
+at once and answers when that store ends (an Undo arriving during a store
+answers when it ends, its revert storing next). A store that fails and
+retries still answers done, the revert staying in the room; a store the room
+gives up on (a discard) answers the error. A note whose reverted state the
+store would refuse (`validate`) is put back at once and the Undo answers
 `invalid_input` or `quota_rejected`; a source counts the bytes toward its cap
-estimate. The redo item the revert leaves is kept as the next step under the
-Undo's own operation id, so the same endpoint called with that id is Redo, for
-any number of steps. Go records each Undo's receipt (`agent_operations`, kind
-`undo_edit`) after the room answers, with `undo_of` naming the step it
-reversed (unique, so a step is reversed once; migration 0100 dropped
-`agent_edit_inverses`). The effect alternates: an edit is `edited`, its Undo
-`edit_undone`, the Undo of that `edited` again, each carrying its next step's
-ref. A step ends with its room: any unload (the last editor leaving, an epoch
-change or publication handoff, a discard, lineage compaction's eviction), a
-restart or an Office reset, so trash, rebase and compaction need no
-invalidation of their own. A step no room holds, or one with nothing of the
-edit left, answers 409 `undo_unavailable` ("this edit can no longer be
-undone"). The Office maintenance pause refuses an Office Undo
-(`office_editing_paused`), in Go and in the room. One collaboration server
-runs per environment, so the rooms holding steps are the only copy.
+estimate. A room under a publication handoff or a forced unload refuses it
+(`unavailable_target`), keeping the step. The redo item the revert leaves is
+kept as the next step under the Undo's own operation id, so the same endpoint
+called with that id is Redo, for any number of steps. Go names the step's
+document (`target`) and the room cross-checks that every room holding the
+step is that document's. Go records each Undo's receipt (`agent_operations`,
+kind `undo_edit`) with `undo_of` naming the step it reversed (unique, so a
+step is reversed once; migration 0100 dropped `agent_edit_inverses`). The
+effect alternates: an edit is `edited`, its Undo `edit_undone`, the Undo of
+that `edited` again, each carrying its next step's ref. A step ends with its
+room: any unload (the last editor leaving, an epoch change or publication
+handoff, a discard, lineage compaction's eviction), a restart or an Office
+reset, so trash, rebase and compaction need no invalidation of their own. A
+step no room holds, or one with nothing of the edit left, answers 409
+`undo_unavailable` ("this edit can no longer be undone"). The Office
+maintenance pause refuses an Office Undo (`office_editing_paused`), in Go and
+in the room. One collaboration server runs per environment, so the rooms
+holding steps are the only copy.
+
+A lost answer cannot strand a step (review H1). The room remembers each step
+it reverted (`Room.agent_reverted`; the server finds those rooms by
+`AgentSteps::reverted`) and answers a later request for it done again, with
+the id it kept the reverse under; Go records the receipt under that id. The API runs the requests for one step one at a time
+(`operationLocks`, in memory: one gateway process per environment) and, once
+one starts, runs it to its end whatever happens to the client
+(`context.WithoutCancel`); before asking the room it answers with the step's
+receipt when one exists (`UndoReceipt`, by `undo_of`), so a retry or a second
+click gets the first one's receipt. A quiz step reverts in its content room,
+then its keys room; when the second fails (or does not answer within 8 s), the
+first is put back (its revert reverted, the step under its old id), so both
+documents stay as they were and the step stays (review M2). In the chat a
+refused Undo (a 4xx) hides the button for the session; an unknown outcome (no
+answer, a 5xx) keeps it for a retry, and a second click while a request is out
+sends nothing.
+
+The Undo of an earlier edit after a later one (the agent's or a person's)
+rewrote the same span keeps both, as the editor's undo does: the earlier
+edit's own text is gone already, and the text it deleted comes back beside the
+later text (`undo_of_an_earlier_edit_keeps_a_later_edit_of_its_span`).
 
 A file the chat creates (`create_material`, `add_questions` creating a quiz,
 a deck's PPTX) carries an Undo ref on its own receipt (`markFileUndoTx`): its

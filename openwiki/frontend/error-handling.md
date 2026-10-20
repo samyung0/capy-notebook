@@ -468,9 +468,12 @@ for mutations, `effects` with the touched resource. Failures carry a stable
 error code that `toolErrorMessage` localizes; an unknown code falls back to the
 generic tool failure copy. `invalidateForEffects` refreshes the affected
 queries (files, materials, trash) when a receipt lands. A refused Undo or
-Redo (`stale_target`, `unavailable_target`, `undo_unavailable`) shows an error
-toast with its localized message and disables that button for the session; no
-text is added under the receipt.
+Redo (a 4xx: `undo_unavailable`, `unavailable_target`, `invalid_input`,
+`quota_rejected`, `office_editing_paused`) shows an error toast with its
+localized message and disables that button for the session; no text is added
+under the receipt. An unknown outcome (no answer, a 5xx) shows the toast and
+keeps the button: the server answers a retry with the step's receipt when the
+first request landed. A second click while a request is out sends nothing.
 
 ## Development scenario panel
 
