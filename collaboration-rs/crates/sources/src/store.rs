@@ -1805,7 +1805,14 @@ impl Sources {
     pub async fn schedule_note_indexes(&self) -> Result<(), SourceError> {
         let client = self.db.get().await.map_err(db_error)?;
         let eligible = client
-            .query(crate::refresh::NOTE_INDEX_SQL, &[])
+            .query(
+                crate::refresh::NOTE_INDEX_SQL,
+                &[
+                    &crate::refresh::NOTE_INDEX_TOKENS,
+                    &crate::refresh::NOTE_INDEX_IDLE,
+                    &crate::refresh::NOTE_INDEX_STALE,
+                ],
+            )
             .await
             .map_err(db_error)?;
         for row in eligible {

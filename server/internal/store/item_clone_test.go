@@ -420,7 +420,8 @@ func TestNoteCloneLeavesAStaleIndexBehind(t *testing.T) {
 	}{
 		{`INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'note-hash','ready')`, []any{contentID, source.ID}},
 		{`INSERT INTO rag_material_contents(material_id,workspace_id,content_id) VALUES($1,$2,$3)`, []any{note.ID, source.ID, contentID}},
-		{`UPDATE materials SET index_dirty_at=NULL, index_job_id=NULL, index_error=NULL WHERE id=$1`, []any{note.ID}},
+		{`UPDATE materials SET index_dirty_at=NULL, index_job_id=NULL, index_error=NULL,
+			indexed_blocks='[{"id":"p1","text":"body","kind":"p"}]' WHERE id=$1`, []any{note.ID}},
 	} {
 		if _, err := s.pool.Exec(ctx, statement.sql, statement.args...); err != nil {
 			t.Fatal(err)
@@ -441,6 +442,15 @@ func TestNoteCloneLeavesAStaleIndexBehind(t *testing.T) {
 	}
 	if content, dirty := index(current.ID); content != contentID || dirty {
 		t.Fatalf("current index: copy has %q dirty=%v, want the shared %s", content, dirty, contentID)
+	}
+	// The copied index keeps its baseline for note effects.
+	var baseline *string
+	if err := s.pool.QueryRow(ctx, `SELECT indexed_blocks::text FROM materials WHERE id=$1`, current.ID).
+		Scan(&baseline); err != nil {
+		t.Fatal(err)
+	}
+	if baseline == nil || *baseline != `[{"id": "p1", "kind": "p", "text": "body"}]` {
+		t.Fatalf("current index baseline = %v", baseline)
 	}
 
 	// Edited within the scheduler's idle window: the index still holds the old text.

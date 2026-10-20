@@ -217,6 +217,7 @@ async def index_material(
     previous_content_id: str | None,
     chunks: list[Chunk],
     claim_job_id: str,
+    blocks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Write a note's chunks into canonical content and publish it. Notes get
     no descriptor or summary: the agent lists them by title and describes them
@@ -234,6 +235,7 @@ async def index_material(
             material_id=material_id,
             content_id=content_id,
             claim_job_id=claim_job_id,
+            blocks=blocks,
         )
         return {"chunks": 0, "embedded": 0}
     indexed = [chunk.indexed_text() for chunk in chunks]
@@ -281,6 +283,7 @@ async def index_material(
         material_id=material_id,
         content_id=content_id,
         claim_job_id=claim_job_id,
+        blocks=blocks,
     )
     return {"chunks": len(rows), "embedded": len(missing)}
 

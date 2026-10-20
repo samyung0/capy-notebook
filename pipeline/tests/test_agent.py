@@ -3599,3 +3599,87 @@ def test_results_teach_the_rows_their_names():
         agent._describe("trash_file", {"target": {"id": "m_9"}}, ctx) == "Forces quiz"
     )
     assert agent._describe("create_deck", {"title": "x" * 300}, ctx) == "x" * 240
+
+
+async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
+    monkeypatch,
+):
+    """Epo 2026-10-20: a file's or note's pending changes go into the request
+    only after the agent reads that document, never every turn."""
+
+    def change(after):
+        return [
+            {
+                "id": after,
+                "kind": "text",
+                "operation": "replace",
+                "before": "old",
+                "after": after,
+            }
+        ]
+
+    async def load(*_args, **_kwargs):
+        return pending.PendingSources(
+            [
+                {
+                    "fileId": "f_1",
+                    "name": "bio.pdf",
+                    "epoch": 1,
+                    "checkpoint": 2,
+                    "indexedCheckpoint": 1,
+                    "changes": change("read file edit"),
+                },
+                {
+                    "fileId": "f_2",
+                    "name": "chem.pdf",
+                    "epoch": 1,
+                    "checkpoint": 2,
+                    "indexedCheckpoint": 1,
+                    "changes": change("unread file edit"),
+                },
+            ],
+            notes=[
+                {
+                    "materialId": "m_1",
+                    "title": "Lecture",
+                    "revision": 3,
+                    "changes": [
+                        {**change("unread note edit")[0], "blockId": "p1", "label": ""}
+                    ],
+                }
+            ],
+        )
+
+    async def read_range(**_kwargs):
+        return [
+            {
+                "id": "c1",
+                "file_id": "f_1",
+                "file_name": "bio.pdf",
+                "chunk_idx": 0,
+                "text": "Chlorophyll.",
+            }
+        ]
+
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
+            _assembled(_answer(("done", []))),
+        ]
+    )
+    monkeypatch.setattr(pending, "load", load)
+    monkeypatch.setattr(tools.store, "read_file_range", read_range)
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 3},
+            {"id": "f_2", "name": "chem.pdf", "chapter_id": None, "chunks": 3},
+        ],
+    }
+    await _collect("What changed?", ctx)
+    first, second = (json.dumps(call["messages"], ensure_ascii=False) for call in seen)
+    assert "file edit" not in first and "note edit" not in first
+    assert "read file edit" in second
+    assert "unread file edit" not in second and "unread note edit" not in second

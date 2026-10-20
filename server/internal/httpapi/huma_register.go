@@ -248,7 +248,7 @@ func mapHTTPError(err error) error {
 			Detail: pendingTooLarge.Error(),
 			Errors: []*huma.ErrorDetail{{
 				Message: "pending_sources_too_large",
-				Value:   map[string]any{"fileIds": pendingTooLarge.FileIDs},
+				Value:   map[string]any{"fileIds": pendingTooLarge.FileIDs, "materialIds": pendingTooLarge.MaterialIDs},
 			}},
 		}
 	}

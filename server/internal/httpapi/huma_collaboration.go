@@ -240,7 +240,8 @@ func (a *api) requestMaterialIndex(ctx context.Context, in *materialIndexInput) 
 	}
 	jobID, err := a.s.RequestMaterialIndex(ctx, in.ID)
 	if err != nil {
-		return nil, hErr(err)
+		// A refused stored note is a 422, which the scheduler parks.
+		return nil, storedContentError(ctx, in.ID, err)
 	}
 	out := &materialIndexOutput{}
 	out.Body.JobID = jobID
