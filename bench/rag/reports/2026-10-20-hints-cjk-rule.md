@@ -22,19 +22,24 @@ that lands being the best measured on the Chinese, Japanese and Korean sets.
   the single characters above level 1, which split the same as unlisted ones
   (15,599 words, 149 KB).
 - **Hand-picked lists** (production, `pipeline/retrieval/hint_words.py`):
-  - Chinese: 222 dropped words counting their Traditional forms (function words, pronouns, question words,
-    request verbs such as 请问, 解释 and 复习, modal and light verbs, measure
-    words, locatives), and 43 one-character measure words, locatives, 对 and 能
-    that a lone character keeps.
+  - Chinese:
+    - 222 dropped words, counting their Traditional forms: function words,
+      pronouns, question words, request verbs such as 请问, 解释 and 复习,
+      modal and light verbs, measure words and locatives;
+    - 43 one-character measure words, locatives, 对 and 能, which a lone
+      character keeps;
+    - 8 terms the lists would cut (向量, 内能, 中和, 位能, 向心力, 说明文, with
+      their Traditional forms).
   - Korean: 28 question words and set phrases, and 33 endings.
 - **Messages:**
   - `fixtures/hints-eval/chinese.json`: 18 Chinese messages over three notes.
     11 are about an edit (7 by its words, 1 什么是X, 3 by a synonym), 2 about
     indexed text and 5 small talk, with the review's three notes.
   - `fixtures/hints-eval/cjk-terms.json`:
-    - 18 Chinese messages: the re-review's R1/R2 cases (什么是电子, 水的沸点是多少,
-      电流和电压, 什么是对数, 太阳系有几个行星, 为什么会下雨, 牛顿第一定律 …) over
-      16 edits holding those terms, the decoys 为什么要复习 and 这个成语的意思,
+    - 21 Chinese messages: the re-review's R1/R2 cases (什么是电子, 水的沸点是多少,
+      电流和电压, 什么是对数, 太阳系有几个行星, 为什么会下雨, 牛顿第一定律 …) and
+      the final look's 什么是向量, 什么是内能 and 什么是中和反应, over 20 edits
+      holding those terms plus a 化学反应 decoy, the decoys 为什么要复习 and 这个成语的意思,
       and 3 small-talk messages;
     - 7 Japanese and 7 Korean messages with kana and particle decoys
       (今日は晴れです, 이것은 무엇인가요? 이란 나라).
@@ -46,27 +51,32 @@ that lands being the best measured on the Chinese, Japanese and Korean sets.
 
 ## Results
 
-### Chinese, 36 messages (26 edit questions)
+### Chinese, 39 messages (29 edit questions)
 
 | Rule | Hints / msg | Precision (with topical) | Recall | Edit questions found | Noise / msg | Messages with noise |
 |---|---|---|---|---|---|---|
-| pairs (before the CJK rule) | 1.03 | 0.57 (0.76) | 0.81 | 21/26 | 0.25 | 9/36 |
-| runs-any (Epo's fallback) | 1.92 | 0.38 (0.48) | 1.00 | 26/26 | 1.00 | 23/36 |
-| runs-all | 0.17 | 1.00 (1.00) | 0.23 | 6/26 | 0.00 | 0/36 |
-| hsk1-all | 0.67 | 0.46 (0.62) | 0.42 | 11/26 | 0.25 | 4/36 |
-| hsk1-any | 0.89 | 0.50 (0.62) | 0.62 | 16/26 | 0.33 | 7/36 |
-| hsk1-merge (first list rule) | 0.75 | 0.59 (0.78) | 0.62 | 16/26 | 0.17 | 5/36 |
-| seg-words | 0.75 | 0.48 (0.63) | 0.50 | 13/26 | 0.28 | 9/36 |
-| **hand (production)** | 1.00 | **0.69 (0.83)** | **0.96** | **25/26** | **0.17** | **4/36** |
+| pairs (before the CJK rule) | 0.97 | 0.58 (0.76) | 0.76 | 22/29 | 0.23 | 9/39 |
+| runs-any (Epo's fallback) | 1.97 | 0.38 (0.47) | 1.00 | 29/29 | 1.05 | 26/39 |
+| runs-all | 0.15 | 1.00 (1.00) | 0.21 | 6/29 | 0.00 | 0/39 |
+| hsk1-all | 0.69 | 0.48 (0.63) | 0.45 | 13/29 | 0.26 | 5/39 |
+| hsk1-any | 0.90 | 0.51 (0.63) | 0.62 | 18/29 | 0.33 | 8/39 |
+| hsk1-merge (first list rule) | 0.77 | 0.60 (0.77) | 0.62 | 18/29 | 0.18 | 6/39 |
+| seg-words | 0.74 | 0.48 (0.62) | 0.48 | 14/29 | 0.28 | 10/39 |
+| **hand (production)** | 1.00 | **0.72 (0.85)** | **0.97** | **28/29** | **0.15** | **4/39** |
 
 Per set:
 
-| Rule | chinese.json (11 edit questions) | cjk-terms zh (15) |
+| Rule | chinese.json (11 edit questions) | cjk-terms zh (18) |
 |---|---|---|
-| pairs | 11/11, noise 0.28 | 10/15, noise 0.22 |
-| runs-any | 11/11, noise 1.06 | 15/15, noise 0.94 |
-| hsk1-merge | 11/11, noise 0.11 | 5/15, noise 0.22 |
-| hand | 10/11, noise 0.33 | 15/15, noise 0.00 |
+| pairs | 11/11, noise 0.28 | 11/18, noise 0.19 |
+| runs-any | 11/11, noise 1.06 | 18/18, noise 1.05 |
+| hsk1-merge | 11/11, noise 0.11 | 7/18, noise 0.24 |
+| hand | 10/11, noise 0.33 | 18/18, noise 0.00 |
+
+The final look added 什么是向量, 什么是内能 and 什么是中和反应 (with a 化学反应 decoy
+edit) to cjk-terms; the hand rule's added terms (向量, 内能, 中和, 位能, 向心力,
+说明文) took it from 15/15 to 18/18 there with no noise. Before them, on the 36
+messages without these three, it found 25/26 at 0.17 noise.
 
 An intermediate variant took its stopwords from the HSK source's
 part-of-speech tags (944 words with a pronoun, particle, conjunction,
@@ -122,3 +132,8 @@ broke 行星 and 叶绿体. The hand-picked list replaced it.
   Traditional messages give the same words as their Simplified forms.
 - **Mixed scripts:** a Japanese message is detected by any kana in it, so a
   kanji-only Japanese message is read as Chinese.
+- **Long messages:** a word matches by at most 24 pairs, a Korean word by two
+  of its pairs only up to 8 characters (a longer run, such as Korean pasted
+  without spaces, by any pair), and a message counts at most 40 words. Two of
+  every pair of a long Korean run grew quadratically and overflowed
+  Postgres's tsquery at 1,000 characters (final look B1).

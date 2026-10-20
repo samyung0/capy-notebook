@@ -313,14 +313,26 @@ Busy pool:
 - **A ts_rank floor does not transfer.** The rank of an OR query falls with message length: one match among 15 words ranks 0.006, one among 3 ranks 0.03.
 - **Top 3 alone, and word lists, barely help.** Most noisy messages have only one or two matches.
 
-## Open questions (for the Editor and Epo)
+## Further findings
 
-1. **Rec. 1** puts a one-line pointer (document name and edit count, no edit text) under search results. Does that fit the 2026-10-20 line "pending effects reach the agent only when it reads that document … never … with search results"? It carries no effects, but it is in the search result.
-2. **Rec. 3** changes `search_query_terms`, which search's lexical leg shares. Should that land with the hints, or go to the search owner? It also fixes search's NOT and phrase behaviour.
-3. **Rec. 5** (header context in spreadsheet cell effects) is a fork change. Is it worth it once rec. 1 exists?
-4. **Unrequested edits (rec. 4).** Should the write guard refuse document edits in a turn where the user asked a question, or is a wording change in the read evidence enough? The guard's "now counts as read, send it again" makes a refused edit easy to retry.
-5. **DeepSeek's placeholder notes** in Q&A turns (also without hints) and its full survey on "plan my revision" (14.7k output tokens with 10 hints shown): worth separate looks?
-6. **DeepSeek's own endpoint** (`deepseek-flash`, max thinking per the 2026-10-19 line) was not tested. Results are for V4.1 Flash on DeepInfra at high thinking. Rerunning with a key is `hints_eval_agent.py launch --workers deepseek=4` after pointing `MODELS["deepseek"]` at the production route.
+- **Rec. 1 and the read-only route.** The pointer carries no edit text, but it
+  sits in the search result, while the 2026-10-20 line routes pending effects
+  to the agent through reads only.
+- **Rec. 3 touches search.** It changes `search_query_terms`, which search's
+  lexical leg shares, and fixes search's NOT and phrase behaviour with it.
+- **Rec. 5** (header context in spreadsheet cell effects) is a fork change;
+  rec. 1 covers much of its value.
+- **Unrequested edits (rec. 4).** A write guard could refuse document edits
+  in a turn where the user asked a question, or the read evidence's wording
+  could change; the guard's "now counts as read, send it again" makes a
+  refused edit easy to retry.
+- **DeepSeek** created placeholder notes in Q&A turns (also without hints)
+  and wrote a full survey for "plan my revision" (14.7k output tokens with
+  10 hints shown); both are worth their own look.
+- **DeepSeek's own endpoint** (`deepseek-flash`, max thinking per the
+  2026-10-19 line) was not tested. Results are for V4.1 Flash on DeepInfra at
+  high thinking. Rerunning with a key is `hints_eval_agent.py launch --workers
+  deepseek=4` after pointing `MODELS["deepseek"]` at the production route.
 
 ## Deviations and limits
 

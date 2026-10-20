@@ -180,7 +180,7 @@ async def load(dsn: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dsn", required=True)
-    parser.add_argument("--env-file", type=Path, default=Path("C:/WEB/capy-notebook/.env.local"))
+    parser.add_argument("--env-file", type=Path, default=REPO / ".env.local")
     args = parser.parse_args()
     os.environ["DATABASE_URL"] = args.dsn
     os.environ.setdefault("EMBEDDING_DIM", "2560")

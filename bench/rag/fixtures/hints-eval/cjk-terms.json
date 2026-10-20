@@ -1,5 +1,5 @@
 {
-  "about": "CJK hint word rules beyond chinese.json (the hints-round re-review, 2026-10-20): Chinese subject terms the HSK list splits into a level-1 word (R1) and level-2+ question words (R2), and Japanese and Korean messages with kana and particle decoys (R3). Same labels as chinese.json: relevant, topical, everything else noise.",
+  "about": "CJK hint word rules beyond chinese.json (the hints-round re-review, 2026-10-20): Chinese subject terms the HSK list splits into a level-1 word (R1, and the final look's 向量, 内能 and 中和反应 against a 反应 decoy) and level-2+ question words (R2), and Japanese and Korean messages with kana and particle decoys (R3). Same labels as chinese.json: relevant, topical, everything else noise.",
   "sets": [
     {
       "lang": "zh",
@@ -12,7 +12,11 @@
             {"id": "e-neutron", "text": "中子不带电，和质子一起组成原子核。"},
             {"id": "e-circuit", "text": "电流和电压的关系由欧姆定律描述。"},
             {"id": "e-newton", "text": "牛顿第一定律：物体在不受外力时保持静止或匀速直线运动。"},
-            {"id": "e-kinetic", "text": "动能等于二分之一乘以质量乘以速度的平方。"}
+            {"id": "e-kinetic", "text": "动能等于二分之一乘以质量乘以速度的平方。"},
+            {"id": "e-vector", "text": "向量既有大小又有方向，可以用箭头表示。"},
+            {"id": "e-internal", "text": "内能与物体的温度有关，温度越高内能越大。"},
+            {"id": "e-neutral", "text": "酸和碱发生中和反应，生成盐和水。"},
+            {"id": "e-rate", "text": "化学反应的速率受浓度影响。"}
           ]
         },
         {
@@ -57,7 +61,10 @@
         {"id": "T15", "kind": "edit", "text": "牛顿第一定律", "relevant": ["e-newton"], "topical": []},
         {"id": "T16", "kind": "smalltalk", "text": "请问这个是什么意思？", "relevant": [], "topical": []},
         {"id": "T17", "kind": "smalltalk", "text": "为什么要学物理？", "relevant": [], "topical": []},
-        {"id": "T18", "kind": "smalltalk", "text": "可以帮我复习一下吗？", "relevant": [], "topical": []}
+        {"id": "T18", "kind": "smalltalk", "text": "可以帮我复习一下吗？", "relevant": [], "topical": []},
+        {"id": "T19", "kind": "edit", "text": "什么是向量？", "relevant": ["e-vector"], "topical": []},
+        {"id": "T20", "kind": "edit", "text": "什么是内能？", "relevant": ["e-internal"], "topical": []},
+        {"id": "T21", "kind": "edit", "text": "什么是中和反应？", "relevant": ["e-neutral"], "topical": []}
       ]
     },
     {

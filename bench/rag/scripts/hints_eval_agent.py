@@ -712,7 +712,7 @@ def main() -> None:
         p = sub.add_parser(name)
         p.add_argument("--out", type=Path, required=True)
         p.add_argument("--dsn", default="postgres://capy:capy@127.0.0.1:55991/capy")
-        p.add_argument("--env-file", type=Path, default=Path("C:/WEB/capy-notebook/.env.local"))
+        p.add_argument("--env-file", type=Path, default=REPO / ".env.local")
         p.add_argument("--spend-cap", type=float, default=9.0)
         if name == "plan":
             p.add_argument("--repeats", type=int, default=2)

@@ -244,9 +244,10 @@ edits:
   hand-picked lists) on 36 Chinese, 7 Japanese and 7 Korean messages; findings in
   [`rag/reports/2026-10-20-hints-cjk-rule.md`](rag/reports/2026-10-20-hints-cjk-rule.md).
 
-Both run against a scratch `pgvector/pgvector:pg16` container that
-`hints_eval_db.py` migrates and loads with real embeddings. Keys are read in
-memory from `.env.local`.
+The matcher and agent evals run against a scratch `pgvector/pgvector:pg16`
+container that `hints_eval_db.py` migrates and loads with real embeddings;
+`hints_eval_cjk.py` needs only an empty Postgres 16. Keys are read in memory
+from the repository's `.env.local`.
 
 `rag/scripts/rag_eval.py` is a live retrieval diagnostic that
 runs the production `search()` against a real workspace inside the pipeline
