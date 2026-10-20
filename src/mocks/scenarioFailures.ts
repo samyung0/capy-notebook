@@ -179,6 +179,13 @@ export const failureScenarios = [
     status: 500,
   },
   {
+    id: 'invite-cancel',
+    label: 'Invite cancel 500',
+    method: 'delete',
+    paths: ['/api/workspaces/:id/invites/:inviteId'],
+    status: 500,
+  },
+  {
     id: 'invite-unavailable',
     label: 'Invitation unavailable 404',
     method: 'post',

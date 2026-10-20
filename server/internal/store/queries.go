@@ -2314,8 +2314,13 @@ func (s *Store) DeleteLabel(ctx context.Context, userID, id string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM labels WHERE id=$1 AND user_id=$2`, id, userID); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM labels WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
 		return err
+	}
+	// A missing id and someone else's answer alike.
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return tx.Commit(ctx)
 }
@@ -2440,8 +2445,13 @@ func (s *Store) DeleteEvent(ctx context.Context, userID, id string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM events WHERE id=$1 AND user_id=$2`, id, userID); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM events WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
 		return err
+	}
+	// A missing id and someone else's answer alike.
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return tx.Commit(ctx)
 }
@@ -2501,8 +2511,13 @@ func (s *Store) DeleteTask(ctx context.Context, userID, id string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM tasks WHERE id=$1 AND user_id=$2`, id, userID); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM tasks WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
 		return err
+	}
+	// A missing id and someone else's answer alike.
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return tx.Commit(ctx)
 }

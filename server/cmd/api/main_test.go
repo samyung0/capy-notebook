@@ -50,6 +50,36 @@ func TestValidateAuthConfiguration(t *testing.T) {
 	}
 }
 
+// Security regression (human deployment-runbook and authorization,
+// 2026-10-21): outside development and e2e the gateway refuses to boot without
+// a CORS allowlist, or with Clerk on and no origins for its session tokens'
+// azp (an empty list would accept every azp).
+func TestValidateOriginConfiguration(t *testing.T) {
+	origins := []string{"https://app.test"}
+	for _, test := range []struct {
+		name       string
+		appEnv     string
+		clerkOn    bool
+		cors, azps []string
+		wantErr    bool
+	}{
+		{name: "production configured", appEnv: "production", clerkOn: true, cors: origins, azps: origins},
+		{name: "production without Clerk", appEnv: "production", cors: origins},
+		{name: "development without lists", appEnv: "development", clerkOn: true},
+		{name: "e2e without lists", appEnv: "e2e"},
+		{name: "production without CORS", appEnv: "production", clerkOn: true, azps: origins, wantErr: true},
+		{name: "uat without CORS", appEnv: "uat", azps: origins, wantErr: true},
+		{name: "production Clerk without azp origins", appEnv: "production", clerkOn: true, cors: origins, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateOriginConfiguration(test.appEnv, test.clerkOn, test.cors, test.azps)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateOriginConfiguration() error = %v, wantErr %t", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateStripeConfiguration(t *testing.T) {
 	for _, test := range []struct {
 		name          string

@@ -214,9 +214,12 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, actorID, ws
 	return &notification, true, nil
 }
 
-// CreateWorkspaceInvite resolves an exact user ID or email without revealing
-// whether an eligible account exists. A nil result can therefore mean either a
-// created invitation or an intentional no-op.
+// CreateWorkspaceInvite stores a pending row for the address exactly as typed,
+// whether or not it reaches an account, so the owner's list never tells which
+// addresses have one (human authorization, 2026-10-21). Only a row that
+// resolves an exact user ID or email to one eligible account (live, not the
+// owner, not a member) gets a notification and an email; otherwise it is inert
+// and can never be accepted. Typing the address again refreshes its row.
 func (s *Store) CreateWorkspaceInvite(ctx context.Context, wsID, identifier string, role WorkspaceRole, invitedBy string) error {
 	_, _, err := s.CreateWorkspaceInviteWithResult(ctx, wsID, identifier, role, invitedBy)
 	return err
@@ -276,35 +279,43 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 		),
 		target AS (
 			SELECT min(id) AS id FROM candidates HAVING count(*)=1
+		),
+		eligible AS (
+			SELECT u.id FROM target
+			JOIN users u ON u.id=target.id
+			JOIN workspaces w ON w.id=$1
+			WHERE u.id<>w.user_id
+				AND NOT EXISTS (
+					SELECT 1 FROM workspace_members wm
+					WHERE wm.workspace_id=$1 AND wm.user_id=u.id
+				)
 		)
 		INSERT INTO workspace_invites
 			(id, workspace_id, invited_user_id, email, role, token_hash, invited_by, expires_at, created_at)
-		SELECT $3,$1,u.id,COALESCE(u.email,''),$4,$5,$6,$7,$8
-		FROM target
-		JOIN users u ON u.id=target.id
-		JOIN workspaces w ON w.id=$1
-		WHERE u.id<>w.user_id
-			AND NOT EXISTS (
-				SELECT 1 FROM workspace_members wm
-				WHERE wm.workspace_id=$1 AND wm.user_id=u.id
-			)
-		ON CONFLICT (workspace_id, invited_user_id)
-			WHERE accepted_at IS NULL AND revoked_at IS NULL AND invited_user_id IS NOT NULL
-		DO UPDATE SET email=EXCLUDED.email, role=EXCLUDED.role, token_hash=EXCLUDED.token_hash,
+		VALUES ($3,$1,(SELECT id FROM eligible),$2,$4,$5,$6,$7,$8)
+		ON CONFLICT (workspace_id, lower(email))
+			WHERE accepted_at IS NULL AND revoked_at IS NULL
+		DO UPDATE SET invited_user_id=EXCLUDED.invited_user_id, email=EXCLUDED.email,
+			role=EXCLUDED.role, token_hash=EXCLUDED.token_hash,
 			invited_by=EXCLUDED.invited_by, expires_at=EXCLUDED.expires_at,
 			created_at=EXCLUDED.created_at
-		RETURNING id, invited_user_id,
+		RETURNING id, COALESCE(invited_user_id,''),
 			(SELECT name FROM workspaces WHERE id=$1),
-			(SELECT COALESCE(email,'') FROM users WHERE id=workspace_invites.invited_user_id),
-			(SELECT locale FROM users WHERE id=workspace_invites.invited_user_id),
+			COALESCE((SELECT email FROM users WHERE id=workspace_invites.invited_user_id),''),
+			COALESCE((SELECT locale FROM users WHERE id=workspace_invites.invited_user_id),''),
 			(SELECT name FROM users WHERE id=$6)`,
 		wsID, identifier, uid("inv"), role, tokenHash[:], invitedBy, expiresAt, now).
 		Scan(&inviteID, &invitedUserID, &workspaceName, &inviteEmail, &locale, &inviterName)
-	if isNoRows(err) {
-		return nil, false, nil
-	}
 	if err != nil {
 		return nil, false, err
+	}
+	if invitedUserID == "" {
+		// Inert: a notification from when this row reached an account goes, and
+		// its queued email finds the token rotated and is cancelled.
+		if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE workspace_invite_id=$1`, inviteID); err != nil {
+			return nil, false, err
+		}
+		return nil, false, tx.Commit(ctx)
 	}
 
 	data, err := json.Marshal(map[string]any{
@@ -376,6 +387,60 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 	return &notification, true, nil
 }
 
+// PendingWorkspaceInvite is one row of the owner's pending list: the address as typed,
+// never whether it reaches an account.
+type PendingWorkspaceInvite struct {
+	ID        string    `json:"id"`
+	Address   string    `json:"address"`
+	SentAt    time.Time `json:"sentAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// ListWorkspaceInvites lists the workspace's pending invites, newest first,
+// inert rows included and indistinguishable. The caller checks ownership.
+func (s *Store) ListWorkspaceInvites(ctx context.Context, wsID string) ([]PendingWorkspaceInvite, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, email, created_at, expires_at
+		FROM workspace_invites
+		WHERE workspace_id=$1 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now()
+		ORDER BY created_at DESC, id`, wsID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (PendingWorkspaceInvite, error) {
+		var invite PendingWorkspaceInvite
+		err := row.Scan(&invite.ID, &invite.Address, &invite.SentAt, &invite.ExpiresAt)
+		return invite, err
+	})
+}
+
+// CancelWorkspaceInvite revokes one pending invite. Owner-only; an invite that
+// is not pending answers ErrNotFound. The recipient's bell already hides a
+// revoked invite and its queued email is cancelled at send.
+func (s *Store) CancelWorkspaceInvite(ctx context.Context, actorID, wsID, inviteID string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, wsID, actorID)
+	if err != nil {
+		return err
+	}
+	if ownerID != actorID {
+		return ErrForbidden
+	}
+	tag, err := tx.Exec(ctx, `UPDATE workspace_invites SET revoked_at=now()
+		WHERE id=$1 AND workspace_id=$2
+			AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now()`, inviteID, wsID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
 func inviteToken() (string, error) {
 	buf := make([]byte, 24)
 	if _, err := rand.Read(buf); err != nil {
@@ -393,8 +458,8 @@ func inviteTokenHash(token string) [sha256.Size]byte {
 // in email_outbox.payload. The invite's hash is rotated only while the invite
 // is pending and still holds this email's hash; the new hash is written back to
 // the payload so a retried send can mint again. ok is false when the invite was
-// accepted, cancelled, expired or re-sent since: the caller cancels the email
-// rather than sending a dead link. The writes commit with the send guard.
+// accepted, cancelled, expired, re-sent or went inert since: the caller
+// cancels the email rather than sending a dead link. The writes commit with the send guard.
 func (g *EmailSendGuard) MintInviteLink(ctx context.Context) (path string, ok bool, err error) {
 	if g == nil || g.done {
 		return "", false, ErrEmailLeaseLost
@@ -416,7 +481,7 @@ func (g *EmailSendGuard) MintInviteLink(ctx context.Context) (path string, ok bo
 	}
 	next := inviteTokenHash(token)
 	tag, err := g.tx.Exec(ctx, `UPDATE workspace_invites SET token_hash=$3
-		WHERE id=$1 AND token_hash=$2
+		WHERE id=$1 AND token_hash=$2 AND invited_user_id IS NOT NULL
 			AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at>now()`,
 		payload.InviteID, current, next[:])
 	if err != nil {
@@ -488,26 +553,26 @@ func (s *Store) AcceptWorkspaceInvite(ctx context.Context, reference, userID str
 }
 
 // AcceptedInvite reports an acceptance: the new member, the recipient's invite
-// notification it removed, and the notification it created for the inviter.
+// notifications it removed, and the notification it created for the inviter.
 type AcceptedInvite struct {
-	Member                WorkspaceMember
-	RemovedNotificationID string
-	InviterNotification   *Notification
+	Member                 WorkspaceMember
+	RemovedNotificationIDs []string
+	InviterNotification    *Notification
 }
 
 func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, userID string) (AcceptedInvite, error) {
-	member, removedID, inviterNotification, err := s.acceptWorkspaceInvite(ctx, reference, userID)
+	member, removedIDs, inviterNotification, err := s.acceptWorkspaceInvite(ctx, reference, userID)
 	return AcceptedInvite{
-		Member:                member,
-		RemovedNotificationID: removedID,
-		InviterNotification:   inviterNotification,
+		Member:                 member,
+		RemovedNotificationIDs: removedIDs,
+		InviterNotification:    inviterNotification,
 	}, err
 }
 
-func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID string) (WorkspaceMember, string, *Notification, error) {
+func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID string) (WorkspaceMember, []string, *Notification, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	defer tx.Rollback(ctx)
 	var invite WorkspaceInvite
@@ -562,10 +627,10 @@ func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID str
 		}
 	}
 	if isNoRows(err) {
-		return WorkspaceMember{}, "", nil, ErrNotFound
+		return WorkspaceMember{}, nil, nil, ErrNotFound
 	}
 	if err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	// The workspace lock makes ownership immutable while the owner and recipient
 	// account rows are acquired in canonical ID order. Taking both accounts here
@@ -574,35 +639,35 @@ func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID str
 	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, userID); err != nil {
 		var locked *AccountLockedError
 		if errors.As(err, &locked) && locked.UserID == ownerID {
-			return WorkspaceMember{}, "", nil, ErrNotFound
+			return WorkspaceMember{}, nil, nil, ErrNotFound
 		}
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	ownerStatus, err := s.accountAccess(ctx, tx, ownerID)
 	if err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	if ownerStatus.Err() != nil {
 		// Invitation links use the same unavailable surface for an invalid token,
 		// a closed workspace, and an owner whose lifecycle cannot widen access.
-		return WorkspaceMember{}, "", nil, ErrNotFound
+		return WorkspaceMember{}, nil, nil, ErrNotFound
 	}
 	if invite.AcceptedAt != nil || invite.RevokedAt != nil || time.Now().UTC().After(invite.ExpiresAt) {
-		return WorkspaceMember{}, "", nil, ErrNotFound
+		return WorkspaceMember{}, nil, nil, ErrNotFound
 	}
 	// Someone else's invite answers like a missing one, so neither an invite id
 	// nor a token tells a caller which invites exist.
 	if invite.InvitedUserID == "" || invite.InvitedUserID != userID {
-		return WorkspaceMember{}, "", nil, ErrNotFound
+		return WorkspaceMember{}, nil, nil, ErrNotFound
 	}
 	// Accepting is an edit a frozen recipient does not keep; the refusal is
 	// theirs to hear about, so it stays account_over_quota.
 	recipientStatus, err := s.accountAccess(ctx, tx, userID)
 	if err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	if err := recipientStatus.Err(); err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
 		VALUES ($1,$2,$3) ON CONFLICT (workspace_id,user_id)
@@ -610,19 +675,31 @@ func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID str
 			WHEN workspace_members.role='owner' THEN workspace_members.role
 			ELSE EXCLUDED.role
 		END, updated_at=now()`, invite.WorkspaceID, userID, invite.Role); err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE workspace_invites SET accepted_by=$2, accepted_at=now() WHERE id=$1`,
 		invite.ID, userID); err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
-	var notificationID string
-	err = tx.QueryRow(ctx, `SELECT id FROM notifications WHERE workspace_invite_id=$1`, invite.ID).Scan(&notificationID)
-	if err != nil && !isNoRows(err) {
-		return WorkspaceMember{}, "", nil, err
+	// The account's other pending rows here (another address that reaches it)
+	// stay listed for the owner as sent but go inert: a vanishing row would
+	// tell the inviter both addresses are one account, and a second accept
+	// could change the role (human authorization, 2026-10-21).
+	rows, err := tx.Query(ctx, `WITH inert AS (
+			UPDATE workspace_invites SET invited_user_id=NULL
+			WHERE workspace_id=$1 AND invited_user_id=$2
+				AND accepted_at IS NULL AND revoked_at IS NULL
+			RETURNING id
+		)
+		DELETE FROM notifications
+		WHERE workspace_invite_id=$3 OR workspace_invite_id IN (SELECT id FROM inert)
+		RETURNING id`, invite.WorkspaceID, userID, invite.ID)
+	if err != nil {
+		return WorkspaceMember{}, nil, nil, err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE workspace_invite_id=$1`, invite.ID); err != nil {
-		return WorkspaceMember{}, "", nil, err
+	removedIDs, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return WorkspaceMember{}, nil, nil, err
 	}
 	var inviterNotification *Notification
 	// Invites come from the owner; after a transfer the old owner no longer
@@ -630,23 +707,23 @@ func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID str
 	if invite.InvitedBy == ownerID {
 		n, err := notifyInviteAcceptedTx(ctx, tx, invite, userID)
 		if err != nil {
-			return WorkspaceMember{}, "", nil, err
+			return WorkspaceMember{}, nil, nil, err
 		}
 		inviterNotification = &n
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	members, err := s.ListWorkspaceMembers(ctx, invite.WorkspaceID)
 	if err != nil {
-		return WorkspaceMember{}, "", nil, err
+		return WorkspaceMember{}, nil, nil, err
 	}
 	for _, member := range members {
 		if member.UserID == userID {
-			return member, notificationID, inviterNotification, nil
+			return member, removedIDs, inviterNotification, nil
 		}
 	}
-	return WorkspaceMember{}, "", nil, ErrNotFound
+	return WorkspaceMember{}, nil, nil, ErrNotFound
 }
 
 // notifyInviteAcceptedTx tells the inviter, in-app and by email, that the

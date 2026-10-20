@@ -294,7 +294,17 @@ interception cannot intercept the server's summary fetch.
 Workspace invitation acceptance uses the same non-disclosing surface for an
 invalid link or unavailable workspace. Network and server failures keep the
 invitation panel visible with inline error copy and a retry action. The mutation
-does not also emit a global toast.
+does not also emit a global toast. On the owner's side, sending an invite and
+cancelling a pending one render their failures inline under the form and the
+pending list (`FormAlert`) instead of the global toast.
+
+A few routes answer 404 rather than a false success (Epo 2026-10-21): deleting
+a label, event or task that is missing or someone else's, and marking a
+notification read that is not the caller's (re-reading one's own read
+notification stays a 204). `useDeleteLabel` treats the 404 as already deleted:
+no toast, and the label list refreshes. Creating a quiz whose questions fail
+validation answers 400 with the reason; generated content failing validation
+stays a 500.
 
 ## Offline and paused work
 

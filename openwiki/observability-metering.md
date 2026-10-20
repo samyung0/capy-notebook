@@ -1770,7 +1770,8 @@ the likelihood grew every time the registry was reconfigured.
 | `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` | SPA | empty disables |
 | `LOG_FORMAT` | all | `json` \| `text` |
 | `LOG_LEVEL` | all | default `info` |
-| `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
+| `CORS_ALLOWED_ORIGINS` | gateway | comma separated; never `*`: empty answers no cross-origin request, and outside development and e2e the gateway refuses to boot without it |
+| `COLLABORATION_ALLOWED_ORIGINS` | gateway, collaboration | the gateway accepts a Clerk session token only when its `azp` is one of these; with Clerk on outside development and e2e it refuses to boot when the list is empty |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
 | `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls; default 15 |

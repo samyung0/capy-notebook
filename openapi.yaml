@@ -3723,6 +3723,25 @@ components:
       required:
         - type
       type: object
+    PendingWorkspaceInvite:
+      additionalProperties: false
+      properties:
+        address:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        sentAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - address
+        - sentAt
+        - expiresAt
+      type: object
     PlanTier:
       enum:
         - free
@@ -11728,6 +11747,32 @@ paths:
       tags:
         - Generate
   /api/workspaces/{id}/invites:
+    get:
+      operationId: listWorkspaceInvites
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/PendingWorkspaceInvite"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List pending workspace invites
+      tags:
+        - Workspace collaboration
     post:
       operationId: createWorkspaceInvite
       parameters:
@@ -11752,6 +11797,32 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Privately invite a workspace member
+      tags:
+        - Workspace collaboration
+  /api/workspaces/{id}/invites/{inviteId}:
+    delete:
+      operationId: cancelWorkspaceInvite
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: inviteId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Cancel a pending workspace invite
       tags:
         - Workspace collaboration
   /api/workspaces/{id}/materials:

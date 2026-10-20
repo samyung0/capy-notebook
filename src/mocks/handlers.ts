@@ -162,16 +162,24 @@ const ownerMaterialAccess = {
   },
   role: 'owner' as const,
 };
+/** One typed address, as on the server: `invitedUserId` is empty while the
+ * row reaches no eligible account (inert, never acceptable). */
 interface MockWorkspaceInvite {
   acceptedAt?: string;
   email: string;
   expiresAt: string;
   id: string;
   invitedUserId: string;
+  revokedAt?: string;
   role: Exclude<WorkspaceMember['role'], 'owner'>;
+  sentAt: string;
   token: string;
   workspaceId: string;
 }
+const pendingInvite = (invite: MockWorkspaceInvite) =>
+  !invite.acceptedAt &&
+  !invite.revokedAt &&
+  new Date(invite.expiresAt).getTime() > Date.now();
 function copyText(
   locale: string,
   key: 'new_flashcards' | 'untitled_note' | 'untitled_quiz'
@@ -1341,34 +1349,29 @@ export const handlers = [
             member.workspaceId === workspaceId && member.userId === candidate.id
         )
       : false;
-    if (!candidate || alreadyMember)
-      return new HttpResponse(null, { status: 202 });
-
+    const typed = body.identifier.trim();
     const now = new Date();
+    const fields = {
+      email: typed,
+      expiresAt: new Date(
+        now.getTime() + 7 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      invitedUserId: candidate && !alreadyMember ? candidate.id : '',
+      role: body.role,
+      sentAt: now.toISOString(),
+      token: uid('invite-token'),
+    };
+    // Every typed address keeps one pending row; typing it again refreshes it.
     let invite = mockWorkspaceInvites.find(
       (item) =>
         item.workspaceId === workspaceId &&
-        item.invitedUserId === candidate.id &&
-        !item.acceptedAt
+        item.email.toLowerCase() === identifier &&
+        !item.acceptedAt &&
+        !item.revokedAt
     );
-    if (invite) {
-      invite.role = body.role;
-      invite.token = uid('invite-token');
-      invite.expiresAt = new Date(
-        now.getTime() + 7 * 24 * 60 * 60 * 1000
-      ).toISOString();
-    } else {
-      invite = {
-        email: candidate.email,
-        expiresAt: new Date(
-          now.getTime() + 7 * 24 * 60 * 60 * 1000
-        ).toISOString(),
-        id: uid('inv'),
-        invitedUserId: candidate.id,
-        role: body.role,
-        token: uid('invite-token'),
-        workspaceId,
-      };
+    if (invite) Object.assign(invite, fields);
+    else {
+      invite = { ...fields, id: uid('inv'), workspaceId };
       mockWorkspaceInvites.push(invite);
     }
     if (invite.invitedUserId === db.user.id) {
@@ -1400,6 +1403,30 @@ export const handlers = [
       }
     }
     return new HttpResponse(null, { status: 202 });
+  }),
+  http.get('/api/workspaces/:id/invites', ({ params }) =>
+    HttpResponse.json(
+      mockWorkspaceInvites
+        .filter((item) => item.workspaceId === params.id && pendingInvite(item))
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+        .map((item) => ({
+          address: item.email,
+          expiresAt: item.expiresAt,
+          id: item.id,
+          sentAt: item.sentAt,
+        }))
+    )
+  ),
+  http.delete('/api/workspaces/:id/invites/:inviteId', ({ params }) => {
+    const invite = mockWorkspaceInvites.find(
+      (item) =>
+        item.id === params.inviteId &&
+        item.workspaceId === params.id &&
+        pendingInvite(item)
+    );
+    if (!invite) return new HttpResponse(null, { status: 404 });
+    invite.revokedAt = new Date().toISOString();
+    return new HttpResponse(null, { status: 204 });
   }),
   http.patch(
     '/api/workspaces/:id/members/:memberId',
@@ -1493,13 +1520,14 @@ export const handlers = [
     const invite = mockWorkspaceInvites.find(
       (item) =>
         (item.id === params.token || item.token === params.token) &&
-        !item.acceptedAt
+        pendingInvite(item)
     );
     if (!invite) return new HttpResponse(null, { status: 404 });
     if (!db.workspaces.some((workspace) => workspace.id === invite.workspaceId))
       return new HttpResponse(null, { status: 404 });
+    // Someone else's invite answers like a missing one, as on the server.
     if (invite.invitedUserId !== db.user.id) {
-      return new HttpResponse(null, { status: 403 });
+      return new HttpResponse(null, { status: 404 });
     }
     invite.acceptedAt = new Date().toISOString();
     const candidate = mockInviteCandidates.find(

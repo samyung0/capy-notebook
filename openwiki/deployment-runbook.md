@@ -2969,8 +2969,9 @@ production instance's subdomain sessions. Set these in `deploy/.env`:
 `pk_live` in `VITE_CLERK_PUBLISHABLE_KEY`. `pnpm dev:uat` rejects other values.
 Add `https://local.uat.capynotebook.com` to both
 `COLLABORATION_ALLOWED_ORIGINS` and `OFFICE_ALLOWED_PARENT_ORIGINS` in GitHub UAT
-and the ignored UAT file. Deploy the collaboration service and Office Worker to
-apply those settings. `deploy/b2-cors.uat.json` already covers this origin with
+and the ignored UAT file. Deploy the gateway, the collaboration service and the
+Office Worker to apply those settings: the gateway accepts Clerk session tokens
+only from `COLLABORATION_ALLOWED_ORIGINS` (their `azp`). `deploy/b2-cors.uat.json` already covers this origin with
 `https://*.uat.capynotebook.com`. Clerk needs an additional allowlist entry only
 if its optional subdomain allowlist is enabled.
 

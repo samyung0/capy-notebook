@@ -39,6 +39,14 @@ const signIn = {
     if (!result.error) window.location.replace(redirectAfterAuth());
     return result;
   },
+  mfa: {
+    sendEmailCode: action('send-code'),
+    sendPhoneCode: action('send-code'),
+    verifyBackupCode: action('verify-code'),
+    verifyEmailCode: action('verify-code'),
+    verifyPhoneCode: action('verify-code'),
+    verifyTOTP: action('verify-code'),
+  },
   password: async () => {
     const result = await mockAuthAction('sign-in');
     signIn.status = result.status ?? 'complete';
@@ -57,6 +65,7 @@ const signIn = {
     return result;
   },
   status: 'complete',
+  supportedSecondFactors: [{ strategy: 'totp' }, { strategy: 'backup_code' }],
 };
 
 const signUp = {

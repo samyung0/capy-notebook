@@ -333,13 +333,27 @@ func profileFromSession(ctx context.Context, userID string) (name, email, avatar
 	if u.Username != nil && name == "" {
 		name = *u.Username
 	}
-	if len(u.EmailAddresses) > 0 && u.EmailAddresses[0] != nil {
-		email = u.EmailAddresses[0].EmailAddress
-	}
+	email = PrimaryVerifiedEmail(u.PrimaryEmailAddressID, u.EmailAddresses)
 	if u.HasImage && u.ImageURL != nil {
 		avatar = *u.ImageURL
 	}
 	return name, email, avatar, nil
+}
+
+// PrimaryVerifiedEmail is the account's primary address when Clerk has
+// verified it, otherwise "" (human authorization, 2026-10-19 10a): an
+// unconfirmed address, even one listed first, never becomes users.email.
+func PrimaryVerifiedEmail(primaryID *string, addresses []*clerk.EmailAddress) string {
+	if primaryID == nil {
+		return ""
+	}
+	for _, address := range addresses {
+		if address != nil && address.ID == *primaryID &&
+			address.Verification != nil && address.Verification.Status == "verified" {
+			return address.EmailAddress
+		}
+	}
+	return ""
 }
 
 func writeUnauthorized(w http.ResponseWriter) {

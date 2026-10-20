@@ -375,12 +375,29 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   `workspace_limit_exceeded` and the browser toasts "Workspace limit reached".
   Workspaces already over the cap (after a downgrade) are kept.
 - An over-quota owner (grace or frozen) may still transfer because giving away
-  bytes is a recovery action; the recipient must be able to edit.
+  bytes is a recovery action; the recipient must be able to edit. A transfer
+  cancels every pending invite (`revoked_at`), so the new owner starts with
+  none.
+- Invites are by exact email or user ID, and every typed address gets a
+  pending row (one per workspace and lowercased address; typing it again
+  refreshes the role, sent date and expiry). The owner's pending list
+  (`GET /api/workspaces/{id}/invites`, owner only) shows each address exactly as
+  typed, with its sent date, its 7-day expiry and a Cancel button
+  (`DELETE /api/workspaces/{id}/invites/{inviteId}`, 404 once it is no longer
+  pending), always as sent until that invite is accepted, cancelled or expires,
+  so the inviter never learns whether an address has an account (Epo
+  2026-10-21). The create response and its toast are the same for every
+  address. Only a row that resolves to one eligible account (live, not the
+  owner, not already a member) sets `invited_user_id` and gets the notification
+  and the email; any other row is inert: nothing is sent and it can never be
+  accepted. When an account accepts through one address, its other pending rows
+  in that workspace stay listed but go inert, since a vanishing row would tell
+  the inviter both addresses are one account.
 - The emailed invite link's token is minted when the email is sent
   (`MintInviteLink`), so no raw token is ever stored: the outbox payload holds
   only the invite id and the current token hash, and each send rotates the
   invite's hash. A queued email whose invite was accepted, cancelled, expired,
-  re-sent or deleted with its workspace is cancelled at send instead of
+  re-sent, went inert or was deleted with its workspace is cancelled at send instead of
   carrying a dead link; acceptance stays the authority.
   A live account without a nonblank email still receives the in-app invite
   notification, but no email-outbox row is created. Role changes and removals
@@ -982,9 +999,12 @@ close after the state changes. Suspension is currently database/operator-only;
 the Ops dashboard suspend/unsuspend workflow is a separate roadmap item.
 Clerk profile synchronization leaves suspended, deletion-pending, and deleted
 rows untouched, so a stale identity token cannot refresh PII before the
-middleware rejects the session. An empty email-address list means the refresh
-did not supply an email; it preserves the stored address instead of clearing
-it. Clerk identity events are claimed before
+middleware rejects the session. `users.email` is Clerk's primary address only
+when Clerk has verified it (`primary_email_address_id` whose `verification.status`
+is `verified`), in the request-time sync and the `user.created`/`user.updated`
+webhook alike; otherwise the account has no email, and a refresh without a
+verified primary clears the stored address. An unconfirmed address never becomes
+`users.email`, even when Clerk lists it first. Clerk identity events are claimed before
 profile provisioning without assigning an unknown user foreign key. A
 successful create/update is associated after the local user upsert. A deletion
 for an identity that never had a local account is terminally acknowledged with
@@ -999,6 +1019,12 @@ webhook, whichever runs first. Every later sync, including `user.updated`,
 refreshes email and avatar only. `PATCH /api/me` stores the name the user
 typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
 are created with that same name because no separate legal name is stored.
+
+A Clerk session token is accepted only when its `azp` (the origin that minted
+it) is one of `COLLABORATION_ALLOWED_ORIGINS` (Epo 2026-10-21); a token without
+`azp` (Backend API) is not checked. With Clerk on outside development and e2e
+the gateway refuses to boot when that list is empty, since an empty list would
+accept every origin.
 
 Every Clerk-authenticated request reads the account once
 (`ClerkSession` in `store/account_state.go`): the lifecycle verdict, whether
@@ -1051,6 +1077,18 @@ redirect to the destination; `finalize` does not navigate. Links between auth
 pages use SPA navigation and preserve search parameters. Sign-up and new-password
 forms require 12 characters with a digit and a symbol; sign-in only checks
 non-empty. OAuth accounts are never asked for a password.
+
+MFA is optional (Epo 2026-10-21). Sign-in asks for a second factor only when
+Clerk answers `needs_second_factor`, which happens only for a user who turned
+MFA on: after the password, after a breached-password reset, after the
+forgot-password reset (which sends the user back to `/sign-in`), and on
+`/sign-in` itself, where an SSO callback lands such a sign-in
+(`secondFactorUrl`). The step is one code field: the authenticator (TOTP) code,
+with a "Use a backup code" switch when backup codes exist; a phone or email
+code only when Clerk reports no authenticator for the user, sent as the step
+opens. Everyone else signs in exactly as before. Enrolment is not built yet:
+Clerk's prebuilt profile page is not mounted, so turning MFA on waits for a
+Capy settings UI.
 
 The dashboard opens a first-run dialog when the Clerk user has no
 `unsafeMetadata.onboardedAt`. The profile chooser uses the fixed catalog in

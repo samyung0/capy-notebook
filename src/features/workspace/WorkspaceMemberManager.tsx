@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { CreateWorkspaceInviteBody } from '@/api/gen/validators';
 import {
+  useCancelWorkspaceInvite,
   useCreateWorkspaceInvite,
   useRemoveWorkspaceMember,
   useTransferWorkspace,
   useUpdateWorkspaceMember,
+  useWorkspaceInvites,
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type {
@@ -18,6 +20,7 @@ import { InlineErrorState } from '@/components/app/ErrorState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
@@ -31,9 +34,25 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { track } from '@/lib/analytics';
-import { describeError, unexpectedErrorId } from '@/lib/errors';
+import { describeError, errorCopy, unexpectedErrorId } from '@/lib/errors';
+
+type FormError = { errorId: string | null; message: string };
+
+function formError(error: unknown): FormError {
+  return {
+    errorId: unexpectedErrorId(error),
+    message: errorCopy(error, m.error_generic_body()),
+  };
+}
+
+function day(iso: string) {
+  return new Date(iso).toLocaleDateString(getLocale(), {
+    day: 'numeric',
+    month: 'short',
+  });
+}
 
 function roleOptions(): Array<{ value: AssignableRole; label: string }> {
   return [
@@ -58,7 +77,14 @@ export function WorkspaceMemberManager({
   } = useWorkspaceMembers(workspaceId, true, {
     errorBoundary: false,
   });
+  const { data: invitesData } = useWorkspaceInvites(workspaceId, {
+    errorBoundary: false,
+  });
   const { mutateAsync: createInvite } = useCreateWorkspaceInvite(workspaceId);
+  const { mutateAsync: cancelInvite } = useCancelWorkspaceInvite(workspaceId);
+  const [inviteError, setInviteError] = useState<FormError | null>(null);
+  const [cancelError, setCancelError] = useState<FormError | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const { isPending: updateMemberIsPending, mutate: updateMember } =
     useUpdateWorkspaceMember(workspaceId);
   const { mutate: removeMember } = useRemoveWorkspaceMember(workspaceId);
@@ -77,6 +103,7 @@ export function WorkspaceMemberManager({
   const inviteDisabled = !isValid || isSubmitting;
 
   async function invite(v: CreateWorkspaceInviteReq) {
+    setInviteError(null);
     try {
       await createInvite({
         identifier: v.identifier.trim(),
@@ -88,8 +115,20 @@ export function WorkspaceMemberManager({
         description: m.members_invite_sent_body(),
         title: m.members_invite_sent_title(),
       });
-    } catch {
-      // The global mutation handler shows the normalized failure.
+    } catch (error) {
+      setInviteError(formError(error));
+    }
+  }
+
+  async function cancel(inviteId: string) {
+    setCancelError(null);
+    setCancelling(inviteId);
+    try {
+      await cancelInvite(inviteId);
+    } catch (error) {
+      setCancelError(formError(error));
+    } finally {
+      setCancelling(null);
     }
   }
 
@@ -142,6 +181,10 @@ export function WorkspaceMemberManager({
           {isSubmitting ? <Spinner /> : <Icon name="send" />}
         </Button>
       </form>
+      <FormAlert
+        errorId={inviteError?.errorId}
+        message={inviteError?.message ?? null}
+      />
 
       {!membersData && membersError && (
         <InlineErrorState
@@ -189,6 +232,44 @@ export function WorkspaceMemberManager({
           </div>
         ))}
       </div>
+
+      {/* Every typed address, as typed and always as sent: whether one has
+          an account never shows here. */}
+      {!!invitesData?.length && (
+        <div className="mt-4 flex flex-col gap-1.5">
+          <p className="t-label text-fg-muted">{m.members_pending_title()}</p>
+          {invitesData.map((pending) => (
+            <div className="flex items-center gap-2 py-1" key={pending.id}>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-fg text-sm">
+                  {pending.address}
+                </p>
+                <p className="t-meta text-fg-muted">
+                  {m.members_pending_meta({
+                    expires: day(pending.expiresAt),
+                    sent: day(pending.sentAt),
+                  })}
+                </p>
+              </div>
+              <Button
+                aria-label={m.members_pending_cancel_label({
+                  address: pending.address,
+                })}
+                disabled={cancelling !== null}
+                onClick={() => void cancel(pending.id)}
+                size="sm"
+                variant="outline"
+              >
+                {cancelling === pending.id ? <Spinner /> : m.action_cancel()}
+              </Button>
+            </div>
+          ))}
+          <FormAlert
+            errorId={cancelError?.errorId}
+            message={cancelError?.message ?? null}
+          />
+        </div>
+      )}
 
       <SimpleDialog
         onClose={() => setManageTarget(null)}

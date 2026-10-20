@@ -585,13 +585,17 @@ func TestWorkspaceInvitePrivacyAndAutomaticExpiry(t *testing.T) {
 	if err := s.CreateWorkspaceInvite(ctx, ws.ID, "missing@example.com", RoleViewer, "u_owner"); err != nil {
 		t.Fatal(err)
 	}
-	var missingCount int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM workspace_invites
-		WHERE workspace_id=$1`, ws.ID).Scan(&missingCount); err != nil {
+	// An unknown address gets an inert row: listed for the owner, nothing sent.
+	var missingCount, missingNotices int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*),
+		(SELECT count(*) FROM notifications n JOIN workspace_invites wi ON wi.id=n.workspace_invite_id
+			WHERE wi.workspace_id=$1)
+		FROM workspace_invites
+		WHERE workspace_id=$1 AND invited_user_id IS NULL`, ws.ID).Scan(&missingCount, &missingNotices); err != nil {
 		t.Fatal(err)
 	}
-	if missingCount != 0 {
-		t.Fatalf("unknown identifier created %d invitation rows", missingCount)
+	if missingCount != 1 || missingNotices != 0 {
+		t.Fatalf("unknown identifier: %d inert rows, %d notifications; want 1 and 0", missingCount, missingNotices)
 	}
 
 	inviteID, token := workspaceInviteToken(t, s, ctx, ws.ID, "u_other", "u_other", RoleViewer)

@@ -433,9 +433,10 @@ func (s *Store) upsertUserFromClerk(ctx context.Context, id, name, email, avatar
 	}
 	var needsDefaultWorkspace bool
 	// name is user-owned once the row exists (PATCH /api/me); a refresh only
-	// carries email and avatar.
+	// carries email and avatar. A refresh without a verified primary address
+	// clears the stored one (human authorization, 2026-10-21).
 	err := s.pool.QueryRow(ctx, `UPDATE users SET
-			email=COALESCE(NULLIF($2,''), email),
+			email=NULLIF($2,''),
 			avatar_url=COALESCE(NULLIF($3,''), avatar_url),
             avatar_icon_id=COALESCE(avatar_icon_id, $4),
 			updated_at=now()

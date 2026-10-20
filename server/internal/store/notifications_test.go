@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// Security regression (human error-handling, 2026-10-21): marking a
+// notification that is not the caller's answers not found, while re-reading
+// one's own read notification stays a no-op.
 func TestNotificationReadIsScopedToRecipient(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -42,19 +45,20 @@ func TestNotificationReadIsScopedToRecipient(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changed, err := s.MarkNotificationRead(ctx, userB, notification.ID)
-	if err != nil {
-		t.Fatal(err)
+	for _, id := range []string{notification.ID, "ntf_missing"} {
+		if changed, err := s.MarkNotificationRead(ctx, userB, id); !errors.Is(err, ErrNotFound) || changed {
+			t.Fatalf("another user marking %s: changed=%v err=%v, want not found", id, changed, err)
+		}
 	}
-	if changed {
-		t.Fatal("a different user marked the notification read")
-	}
-	changed, err = s.MarkNotificationRead(ctx, userA, notification.ID)
+	changed, err := s.MarkNotificationRead(ctx, userA, notification.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !changed {
 		t.Fatal("recipient notification was not marked read")
+	}
+	if changed, err := s.MarkNotificationRead(ctx, userA, notification.ID); err != nil || changed {
+		t.Fatalf("re-reading a read notification: changed=%v err=%v, want a no-op", changed, err)
 	}
 }
 
