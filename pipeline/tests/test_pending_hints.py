@@ -9,7 +9,14 @@ import pytest
 
 from pipeline.prompts import chat as chat_prompts
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import compact, evidence, pending, pending_hints, tools
+from pipeline.retrieval import (
+    compact,
+    evidence,
+    hint_words,
+    pending,
+    pending_hints,
+    tools,
+)
 
 
 def _change(operation, *, before=None, after=None, cid="c", **extra):
@@ -397,8 +404,250 @@ async def test_simple_config_documents_drop_only_english_stopwords(workspace):
         return {hint.change_id for hint in await pending_hints.match(query, pool)}
 
     assert "zh" not in await ids("what is the derivative")
-    assert await ids("the war of 1812") == {"war"}
-    assert await ids("how does a cell die") == {"die"}
+    # One content word each, so the message needs only that one.
+    assert await ids("what was the war?") == {"war"}
+    assert await ids("how does it die?") == {"die"}
+
+
+@pytest.mark.integration
+async def test_a_minus_sign_or_quotes_in_the_message_do_not_match_every_edit(
+    workspace,
+):
+    """Hints eval 2026-10-20: "What is -5 + 3?" matched 37 of 40 candidates
+    (websearch NOT), and a quoted phrase swallowed the joiners."""
+    english = workspace.add_file("english.pdf")
+    _index_as(workspace, english, "en")
+    sources = pending.PendingSources(
+        [
+            _file(
+                english,
+                _change("add", after="Plant cell walls hold cellulose.", cid="wall"),
+                _change("add", after="Mitochondria make energy.", cid="mito"),
+                _change("add", after="Ribosomes build proteins.", cid="ribo"),
+                _change("add", after="Add or take plus or minus one.", cid="pm"),
+            )
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return {hint.change_id for hint in await pending_hints.match(query, pool)}
+
+    assert await ids("What is -5 + 3?") == set()
+    # A NOT inside parentheses no longer counts as a matched word (S1).
+    assert await ids("What is (-5) plus 3?") == set()
+    assert await ids('what is the "cell wall"?') == {"wall"}
+
+
+@pytest.mark.integration
+async def test_a_hint_needs_two_message_words_and_a_message_three_hints(workspace):
+    """Epo 2026-10-20 (hints eval): one shared word is noise; the document's
+    name counts as a word; at most 3 hints."""
+    sources = pending.PendingSources(
+        [
+            _file(
+                "f_h",
+                _change("add", after="The Berlin Wall fell in November", cid="b"),
+                name="history.md",
+            ),
+            _file(
+                "f_p",
+                _change("add", after="a ball hitting a wall bounces", cid="p"),
+                name="physics.md",
+            ),
+            _file(
+                "f_c",
+                _change("add", after="Differentiation rules", cid="d"),
+                name="Calculus",
+            ),
+            _file(
+                "f_r",
+                *(
+                    _change("add", after=f"Strachan reading {i}", cid=f"r{i}")
+                    for i in range(5)
+                ),
+                name="reading list",
+            ),
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return [hint.change_id for hint in await pending_hints.match(query, pool)]
+
+    # "wall" alone is not enough for the physics note.
+    assert await ids("When did the Berlin Wall come down?") == ["b"]
+    # The name gives the calculus note its second word.
+    assert await ids("What is in my calculus note on differentiation?") == ["d"]
+    # One word repeated capitalised, with punctuation or inflected is still
+    # one word (review hints-round S2): "wall" alone hints neither edit.
+    assert await ids("Wall: is a wall, and walls, thick?") == []
+    # Five edits match "reading list"; a message carries three.
+    assert (
+        len(await ids("What is on my reading list?")) == pending_hints.HINT_LIMIT == 3
+    )
+
+
+def test_a_cjk_message_counts_words_not_overlapping_pairs():
+    """Epo 2026-10-20 (review hints-round S3, re-review R1-R3): Chinese splits
+    over the HSK words and drops only hand-picked function words; Japanese
+    pairs of only hiragana do not count; a Korean word loses its ending and
+    question words count none."""
+    units = pending_hints.message_units
+    # 什么 and 是 are dropped; 光 joins 合作.
+    assert units("什么是光合作用？") == ["光合 合作"]
+    assert units("什么是细胞分裂？") == ["细胞", "分裂"]
+    # Level-1 words stay terms (R1), 为什么 and 会 are dropped (R2).
+    assert units("为什么会下雨？") == ["下雨"]
+    assert units("水的沸点是多少？") == ["沸点"]
+    # A character left alone keeps a joinable neighbour.
+    assert units("什么是对数？") == ["对数"]
+    assert units("什么是动能？") == ["动能"]
+    assert units("质子和中子") == ["质子", "中子"]
+    # A measure word is dropped: 行星, not 个行星.
+    assert units("太阳系有几个行星？") == ["太阳", "行星"]
+    assert units("谢谢！") == units("请问这个是什么意思？") == []
+    # Traditional forms are in the lists (HSK itself is Simplified).
+    assert units("什麼是光合作用？") == ["光合 合作"]
+    assert units("謝謝！") == []
+    assert units("光合成とは何ですか？") == ["光合 or 合成 or 成と or は何 or 何で"]
+    assert units("何をすればいいですか？") == ["何を"]
+    assert units("광합성이란 무엇인가요?") == ["광합 합성"]
+    assert units("광합성 에너지?") == ["광합 합성", "에너 너지"]
+    assert units("이건 무엇인가요?") == []
+    # A Korean word of three or more pairs matches by any two of them.
+    assert units("세포분열은?") == [
+        "세포 포분 or 세포 분열 or 포분 분열",
+    ]
+    # Longer than KOREAN_WORD_MAX, a run is not one word: any pair.
+    assert units("광합성세포분열에너지") == [
+        "광합 or 합성 or 성세 or 세포 or 포분 or 분열 or 열에 or 에너 or 너지"
+    ]
+    # Hand-picked terms the dropped and joinable words would cut (r3 S1).
+    assert units("什么是向量？") == ["向量"]
+    assert units("什么是内能？") == ["内能"]
+    assert units("什么是中和反应？") == ["中和", "反应"]
+
+
+def _long_messages() -> dict[str, str]:
+    """5,000-character messages: Korean pasted without spaces, Chinese, and
+    mixed scripts (review hints-round r3 B1)."""
+    korean = "광합성세포분열미토콘드리아에너지포도당" * 250
+    chinese = "光合作用细胞分裂向量内能沸点电子中子对数为什么" * 220
+    return {
+        "korean": korean[:5000],
+        "chinese": chinese[:5000],
+        "mixed": f"photosynthesis {chinese[:2000]} 세포{korean[:2000]} "
+        + "mitochondria " * 70,
+    }
+
+
+def test_a_long_message_counts_a_bounded_query():
+    """Two of every pair of a long Korean run grew quadratically: 1,000
+    characters overflowed Postgres's tsquery (review hints-round r3 B1)."""
+    for text in _long_messages().values():
+        units = pending_hints.message_units(text)
+        assert 0 < len(units) <= pending_hints.MESSAGE_UNITS_MAX
+        assert sum(map(len, units)) < 8000
+    [korean] = pending_hints.message_units(_long_messages()["korean"])
+    assert korean.count(" or ") < hint_words.PAIRS_MAX
+
+
+@pytest.mark.integration
+async def test_what_is_x_in_chinese_hints_only_notes_on_x(workspace):
+    """Review hints-round S3: overlapping pairs let 什么是光合作用 hint notes
+    sharing only 什么+么是 or 合作+作用."""
+    chinese = workspace.add_file("chinese.pdf")
+    _index_as(workspace, chinese, "zh")
+    sources = pending.PendingSources(
+        [
+            _file(
+                chinese,
+                _change(
+                    "add", after="光合作用把光变成能量，储存在葡萄糖里。", cid="energy"
+                ),
+                _change(
+                    "add",
+                    after="什么是细胞分裂：一个细胞分成两个细胞的过程。",
+                    cid="cell",
+                ),
+                _change(
+                    "add", after="合作与作用：这两个词在作文里常被用错。", cid="coop"
+                ),
+                name="生物笔记",
+            ),
+            _file(
+                "f_ja",
+                _change(
+                    "add", after="光合成は光のエネルギーを使う反応です。", cid="ja"
+                ),
+                name="ノート",
+            ),
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return {hint.change_id for hint in await pending_hints.match(query, pool)}
+
+    assert await ids("什么是光合作用？") == {"energy"}
+    assert await ids("什么是细胞分裂？") == {"cell"}
+    # A Japanese run counts once and matches by any pair not only hiragana,
+    # so the Chinese photosynthesis edit (光合) comes along, but です alone
+    # matches nothing (re-review R3).
+    assert await ids("光合成とは何ですか？") == {"ja", "energy"}
+    assert await ids("何をすればいいですか？") == set()
+
+
+@pytest.mark.integration
+async def test_a_korean_word_matches_by_two_of_its_pairs(workspace):
+    """Re-review R3: a Korean word loses its ending, question words count
+    none, and a particle pair (이란, 인가) alone does not hint."""
+    korean = workspace.add_file("korean.pdf")
+    _index_as(workspace, korean, "ko")
+    sources = pending.PendingSources(
+        [
+            _file(
+                korean,
+                _change(
+                    "add",
+                    after="광합성은 빛 에너지를 이용해 포도당을 만든다.",
+                    cid="photo",
+                ),
+                _change(
+                    "add", after="미토콘드리아는 세포의 에너지를 만든다.", cid="mito"
+                ),
+                _change("add", after="이것은 무엇인가요? 이란 나라.", cid="decoy"),
+                name="메모",
+            )
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return {hint.change_id for hint in await pending_hints.match(query, pool)}
+
+    assert await ids("광합성이란 무엇인가요?") == {"photo"}
+    assert await ids("미토콘드리아의 역할은?") == {"mito"}
+    assert await ids("이건 무엇인가요?") == set()
+
+
+@pytest.mark.integration
+async def test_a_long_message_matches_without_error(workspace):
+    """Review hints-round r3 B1: a 1,000-character Korean run without spaces
+    raised "value is too big in tsquery" and failed the turn."""
+    sources = pending.PendingSources(
+        [
+            _file(
+                "f_m",
+                _change("add", after="광합성은 빛 에너지를 이용한다.", cid="ko"),
+                _change("add", after="光合作用把光变成能量。", cid="zh"),
+            )
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+    for text in _long_messages().values():
+        assert len(await pending_hints.match(text, pool)) <= pending_hints.HINT_LIMIT
 
 
 def test_a_snippet_is_placed_by_the_longest_query_word():

@@ -984,12 +984,23 @@ only that process, so a cancelled blocking thread cannot overlap a later job.
 
 The API process owns the FIFO and the parse deadlines. Each
 persistent spawned parse child owns LibreOffice, Java and the repairs for one
-document at a time, in its own session (`setsid`; LibreOffice runs in its own
-process group inside it) with Linux `oom_score_adj` 1000 and a work directory
+document at a time, in its own session (`setsid`; LibreOffice and Java each run
+in their own process group inside it) with Linux `oom_score_adj` 1000 and a work directory
 `slot-N` under `CAPY_PARSE_WORK_DIR` that is wiped when the child is respawned.
+Right after its `setsid` the child confines itself with the decoder sandbox
+(`pipeline/capy_sandbox.py`, deployment-runbook §7.5): it reads its own code
+and what LibreOffice and Java load, writes only its slot folder (its temporary
+files, the API's source and result transfers and every job folder are there),
+opens no network socket, cannot leave its session, and has 256 descriptors,
+512 MiB files and no core dumps. LibreOffice (`soffice.bin` itself, with
+process creation denied; a fresh profile's first run exits 81 and the
+conversion runs again) and Java start through the same sandbox with explicit
+environments, so no child holds `PARSER_TOKEN`, which the API keeps in a
+constant and refuses to start without.
 The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
-`PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java lifts it to the hard
-limit when it starts, its heap bounded by `-Xmx` (decision 2026-10-15). The
+`PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java starts with it lifted,
+its heap bounded by `-Xmx` (decision 2026-10-15) and the rest by a 2 GiB data
+cap. The
 container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice with
 it too, so the multithreaded LibreOffice and JVM reserve far less address
 space: LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to
@@ -1252,7 +1263,15 @@ performs the planned work:
 - images are normalized under a decoded-pixel cap, with bounded representative
   frames for animated images, then captioned with the pinned vision model. The
   prompt asks for every visible label, table cell, number, unit, formula,
-  diagram relationship, and uncertainty rather than a short visual summary;
+  diagram relationship, and uncertainty rather than a short visual summary.
+  The worker process imports no image decoder: Pillow runs in the sandboxed
+  decode helper (`pipeline/ingest/decode.py`, deployment-runbook §7.5), which
+  answers the JPEG the model reads. A frame at least twice
+  `CAPY_CAPTION_MAX_EDGE` both ways shrinks while it decodes (a JPEG at a
+  reduced DCT scale, any other image by a whole factor before a full-size
+  copy), so the helper fits its 768 MiB; smaller images decode exactly as
+  before. A format the helper's Pillow cannot read goes to the model as its
+  original bytes, as before;
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
   row text with explicit field names (`Row N: Header=value | …`), one paragraph
   per row, so the chunker packs whole rows and never splits a table-sized
@@ -1585,9 +1604,13 @@ is retained separately as historical evidence):
   describe appearance and do not infer that a highlighted value is best.
 
 Two post-passes then run in the ingest worker. Native PDF sources use the repaired
-`parsed.pdf` when present, otherwise the spooled upload. Office sources use the
-page text and visible-heading proofs frozen in `refinement.json`, so cache hits
-need no PDF or repeated conversion:
+`parsed.pdf` when present, otherwise the spooled upload, read only by the
+worker's sandboxed decode helper (`pipeline/ingest/decode.py`): it answers each
+page's text and which heading blocks the glyphs prove visible, the same
+evidence the parser freezes for Office files (`parser/odl/evidence.py`). Office
+sources use that evidence from `refinement.json`, so cache hits need no PDF or
+repeated conversion. The worker process itself imports neither MuPDF nor
+Pillow:
 
 - **Heading retention** (`retrieval/headings.py`): a `text_level` block only
   survives as the section path of the body after it, so a heading with no body
@@ -1626,7 +1649,14 @@ through as whole segments: an earlier version emitted it character by
 character whenever the chunk held any CJK, so one OCR'd table dash read as
 `一` removed every English word of that chunk from the lexical index. The same
 tokenizer must run on queries (`search_query_terms`), or the lexical half of
-hybrid search silently returns nothing for Chinese/Japanese/Korean. Changing
+hybrid search silently returns nothing for Chinese/Japanese/Korean. The
+query's words go to `websearch_to_tsquery` OR-joined with websearch syntax
+taken out (`_WEBSEARCH_SYNTAX`): every `-` not between two word characters,
+every `!` and every `"` are stripped, so no word yields a NOT or a phrase
+wherever it sits. The parser skips `( ) ! & | <` before an operand, so `-5`,
+`(-5)`, `f(-x)` and `&-5` were each a NOT that matched every passage without
+the term, and a quote opened a phrase that swallowed the `or` joiners (hints
+eval and its review, 2026-10-20). A hyphenated word ("cost-push") stays. Changing
 a configuration or the detector is a `CHUNKER_VERSION` bump: rows indexed
 under another config do not match stemmed queries.
 
@@ -2790,16 +2820,19 @@ build, and the knowledge library is one more source while the switch is on.
   it needs are in the request (`skills.REQUIRES`, checked in `tools.run`):
   every write needs `editing`; `create_material` of a note and an
   `edit_document` with an `insert_markdown` or `replace_block` command also
-  need `note_building`; both Office tools need `office_building`. The
-  refusal carries the missing
-  skills: a short error (`Not applied: this call needs the … skills, which
-  follow and now count as read`, the text the chat stores) and, for the model
-  only (`ToolResult.detail`), each skill's text under its `# Skill:` header.
-  The write is not applied; the model checks it against the skills and sends
-  it again without a `read_skill`. The agent recomputes `ctx.skills_read` from
-  the message list before every call (`skills.retained`, which counts every
-  header in a `read_skill` result, a replayed skill or such a refusal), so a
-  turn note that folded the text away refuses the next write again. A later turn does not read a skill again: `evidence.pack` stores the
+  need `note_building`; both Office tools need `office_building`. The refusal
+  names the missing skills and carries no skill text (`skills.refusal`, Epo
+  2026-10-20): the call is not applied, and the model is told to read them
+  with `read_skill` only if the user wants that file created or changed,
+  otherwise to answer without writing (a refused read, `inspect_office_document`
+  without `office_building`, says "this read" and "wants this file read"). A refusal
+  that carried the skill made an unrequested write one resend away (the hints
+  eval saw GLM attempt unrequested edits in 4 of 352 turns); a requested write
+  whose skill the agent skipped now costs one extra `read_skill` call. The
+  agent recomputes `ctx.skills_read` from the message list before every call
+  (`skills.retained`, which counts every header in a `read_skill` result or a
+  replayed skill), so a turn note that folded the text away refuses the next
+  write again. A later turn does not read a skill again: `evidence.pack` stores the
   names in the turn's `toolEvidence.skills`, and `evidence.history_turns`
   replays each one with its current text as a `_kind: "skill"` message where it
   was first read, which `skills.retained` counts. A checkpoint that folds the
@@ -3838,7 +3871,13 @@ the message's citation list by `n` and follow the last paragraph of the text
 they back (Streamdown's root is `display: contents` so that paragraph can run
 inline); tables and charts put their sources under the block, and the
 message's sources are neutral badges under the model name.
-The prompt reserves `AskUser` for required user input and excludes simple follow-up questions.
+The prompt reserves `AskUser` for required user input and excludes simple follow-up questions,
+with one exception (`FIRST_TURN_OFFER`, Epo 2026-10-20, for a learner who can
+write): on the first message of a chat, an explanation or summary request is
+answered and ends with an `AskUser` offering to turn it into a note or a slide
+deck, since users may not know the agent can; not when the user already asked
+for a material, not for small talk, not later. The rule is in the system
+prompt every turn, so the prompt stays a cached prefix.
 GLM sometimes calls `AskUser` as a tool instead of writing it in the answer
 (6 of 156 playground runs on 2026-10-14, against 3 written correctly). The
 agent loop (`agent.ask_user_answer`) runs nothing then and ends the turn on
@@ -4225,10 +4264,53 @@ names the document (`file_id` or `material_id`), its name and the change label
 or block quoted, and says "added", "changed" or "removed" with a snippet of at
 most 200 characters around the longest query word it holds (function words
 skipped, a CJK run probed by its bigrams, found in the original text so the
-match stays in the window). The lines are source data, in a
-`<source>` block. Two paths use it:
+match stays in the window). A candidate matches on its document's name and
+its text together, and a hint needs at least two distinct message words to
+match it, or every content word of a message with fewer (`MIN_MATCHED_WORDS`;
+Epo 2026-10-20 after the hints eval: a hint matching one word was relevant 5%
+of the time, two or more 73%; noise fell from 1.00 to 0.16 hints a message at
+the same recall). The name gives "my calculus note" its second word.
+Words are counted as distinct lexemes under the document's config, so "Cell"
+and "cell," (and under english "derivative" and "derivatives") are one word.
+The query and each message word's lexemes are parsed once per config, not per
+candidate: a stopword sends the client a notice per parse, which per
+candidate was thousands of notices a match.
+A CJK message is not counted by its overlapping two-character pieces, which
+let 什么是光合作用 hint notes sharing only 什么+么是 or 合作+作用; each CJK run
+counts by its language's rule (`retrieval/hint_words.py`, `message_units`;
+Epo 2026-10-20, review S3 and re-review R1-R3, hand-picked lists where
+measured necessary):
 
-- The user message: at most 5 hints, a block of at most 400 tokens in its own
+- Chinese: the run is split by longest match over the HSK 3.0 words with
+  their Traditional forms (`retrieval/hsk_words.tsv`, MIT, from
+  complete-hsk-vocabulary; HSK itself is Simplified) and a hand-picked list
+  of function words, question words, request verbs (请问, 解释, 复习),
+  measure words and locatives, which are dropped. Other list words end a word
+  and characters between them join the next; each word matches by all its
+  pairs, so 什么是光合作用 counts 光合作 and 为什么会下雨 counts 下雨. A
+  character left alone takes a one-character measure word, locative, 对 or 能
+  next to it, so 对数, 动能 and 中子 stay terms, and a few terms the lists
+  would cut (向量, 内能, 中和) are added to the split.
+- Japanese (a message with kana): a run counts once and matches by any of its
+  pairs not made only of hiragana, so です and とは match nothing.
+- Korean (a run with hangul): a word loses one ending (광합성이란 → 광합성),
+  question words and set phrases (무엇, 어떻게, 역할, 이건) count none, and a
+  word of up to 8 characters matches by two of its pairs; a longer run (Korean
+  pasted without spaces) by any pair.
+
+Punctuation is not a word. A word matches by at most 24 pairs and a message
+counts at most 40 words (`PAIRS_MAX`, `MESSAGE_UNITS_MAX`), so any message the
+chat accepts builds its query in milliseconds: two of every pair of a
+1,000-character Korean run overflowed Postgres's tsquery and failed the turn
+(final look B1). On 39 Chinese messages
+(`bench/rag/fixtures/hints-eval/chinese.json` and `cjk-terms.json`) the rule
+found 28 of 29 edit questions with 0.15 noise hints a message; the old pairs
+found 22 with 0.23, dropping every HSK level-1 word 18 with 0.18, each run once
+by any pair 29 with 1.05. Japanese found 5 of 5 and Korean 4 of 4 with no
+noise (any pair: 1.29 and 0.14 noise, Korean 2 of 4).
+The lines are source data, in a `<source>` block. Two paths use it:
+
+- The user message: at most 3 hints (`HINT_LIMIT`), a block of at most 400 tokens in its own
   message right after the query (`_kind` `pending_hints`). Only the hints that
   fit are shown, saved and counted as hinted. A change hinted earlier in the
   conversation (since its last checkpoint) is not hinted again. The hints are
@@ -4246,10 +4328,30 @@ match stays in the window). The lines are source data, in a
   heading, not citable (no passage numbers), and stay whole when a long result
   is clipped; with no passage, they are the result. It skips edits a message
   of this conversation hinted and edits an earlier search of this turn
-  listed.
+  listed. The same two-word rule and limit apply.
+- A search passage whose document has unindexed edits carries one line just
+  above its `<source>` block, naming the document and its edit count, with no
+  edit text: "[n] "name" has N edits not indexed yet, so this passage may be
+  out of date: read the document for its current text"
+  (`PendingSources.unindexed_counts`, `Passage.as_context`; Epo 2026-10-20, an
+  exception to effects reaching the agent only on read). A document read this
+  turn is not flagged: its changes came with the read. The line is written
+  once into the tool result and never changes, so earlier context stays a
+  cached prefix. A cited passage replayed in a later turn keeps its line as
+  first written: the count is saved with the answer
+  (`toolEvidence.passages[].unindexed`, from `ToolContext.passage_flags`), and
+  the replay says that edits made since then come with a read of the
+  document. In the hints eval it took both models to 26/26 edit
+  questions, including spreadsheet cells no hint finds.
 
-Generation passes every scoped change, so it gets no hints. Replacements and removals
-supersede old indexed facts; the message tells the model that each before and
+Generation passes every scoped change, so it gets no hints. The changes
+describe the document's current text (Epo 2026-10-20): edits made since the
+last index, without saying who made them (the user, a collaborator or an
+earlier turn of the agent), each after what the document says now and each
+before what the index still shows, not to be redone or undone unless the user
+asks (the earlier
+"Apply replacements and removals" wording preceded unrequested edits in the
+hints eval). The message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
 match against passages, and that a move carries no text. An image added or
 changed before publication is a typed placeholder the model opens with

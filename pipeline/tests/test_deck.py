@@ -132,8 +132,8 @@ async def test_deck_tools_are_always_offered_and_need_the_deck_skill(monkeypatch
     unread = await tools.run(
         "create_deck", {"title": "t", "slides": [{"title": "a", "brief": "b"}]}, ctx
     )
-    assert unread.error == skills.refusal([skills.DECK_BUILDING])
-    assert "\n\n# Skill: deck_building\n" in unread.text()
+    assert unread.error == skills.refusal([skills.DECK_BUILDING], write=True)
+    assert "# Skill:" not in unread.text()
 
 
 async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(decks):

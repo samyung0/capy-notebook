@@ -1329,6 +1329,12 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
     # Without a write tool (a viewer) the model is told it cannot write.
     assert chat_prompts.READ_ONLY_RULE in chat_prompts.system_prompt("en", writes=False)
     assert chat_prompts.READ_ONLY_RULE not in off
+    # The first-turn note or deck offer is for a learner who can write
+    # (Epo 2026-10-20).
+    assert chat_prompts.FIRST_TURN_OFFER in off and chat_prompts.FIRST_TURN_OFFER in on
+    assert chat_prompts.FIRST_TURN_OFFER not in chat_prompts.system_prompt(
+        "en", writes=False
+    )
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt

@@ -14,6 +14,7 @@ import logging
 import secrets
 import threading
 import time
+from datetime import UTC
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -2485,10 +2486,10 @@ def actor_has_credits(cur, user_id: str) -> bool:
         or deletion_requested_at is not None
     ):
         return False
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     limit = _credit_limit_micros(cur, user_id)
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
     if period_start is not None and period_start < today.replace(day=1):
         # Mirrors roll_user_credits: owed credits come off the new allowance.
         used = min(max(-purchased, 0), limit)

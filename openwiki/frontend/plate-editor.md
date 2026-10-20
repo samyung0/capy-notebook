@@ -1135,8 +1135,14 @@ once would close the user's next oldest. The server pings every socket every
 the browser's automatic pong too, a frame that waited while the socket was
 busy elsewhere as well; Epo 2026-10-20), so a dead connection (a laptop that
 changed networks) frees its places through the normal close; the client takes
-that close (1001) like any drop and reconnects. The server refuses to start when the silent window
-is not longer than the pings.
+that close (1001) like any drop and reconnects. A send has no total time limit,
+since a whole-state answer is one frame that a slow link takes long to receive,
+but a send that moves no bytes for the silent window closes the socket the same
+way (logged `stalled socket closed`; Epo 2026-10-20, rate-limit review r7): the
+listener's connections record when their kernel last took bytes
+(`seats::TrackedListener`, `Sent`, `watched`), so a slow link that keeps taking
+bytes stays open however long one frame takes. The server refuses to start when
+the silent window is not longer than the pings.
 
 **Embeds in their note's seat** (Epo 2026-10-20). An embedded quiz's or
 flashcard set's room (content, and a writer's quiz keys) joins inside its
@@ -2112,7 +2118,7 @@ ordered by fractional-index keys with the card id breaking ties
 `collaboration-rs/crates/items`). The server admits only that shape (a struct
 anywhere else, a card id outside 1-128 `[A-Za-z0-9_-]`, a non-text face, rich
 text in a face or an image that is not `{assetId}` closes the writer), caps a
-front at 4,000 and a back at 2,000 characters, measures the limits on every
+front at 200 and a back at 1,000 characters, measures the limits on every
 card, blank ones included, and projects the set to its Plate envelope with blank
 cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
 workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the

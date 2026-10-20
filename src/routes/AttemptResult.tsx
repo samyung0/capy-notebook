@@ -18,7 +18,7 @@ import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type { Answer } from '@/features/quizzes/grade';
 import { QuizQuestionList, QuizScore } from '@/features/quizzes/QuizPage';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
-import { attemptMeta } from '@/features/study/attempts';
+import { attemptMeta, attemptMinutes } from '@/features/study/attempts';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { waitsForConnection } from '@/lib/online';
@@ -95,6 +95,8 @@ export default function AttemptResult() {
       header={
         <QuizPageHeader
           meta={attemptMeta(attempt)}
+          // The date and workspace match the score's minutes and stat line.
+          metaClassName="text-fg-secondary text-sm"
           onBack={() =>
             void navigate({ search: { tab: 'results' }, to: '/learning' })
           }
@@ -113,10 +115,10 @@ export default function AttemptResult() {
         />
       }
     >
-      <TabContent>
+      <TabContent wide>
         {/* In the gap under the header, flush with the content's right edge. */}
         {attempt.materialId && (
-          <div className="-mt-2 mb-3 flex justify-end sm:-mt-5">
+          <div className="-mt-2 mb-6 flex justify-end sm:-mt-5 sm:mb-3">
             <UnderlineLink accent asChild>
               {cards ? (
                 <Link
@@ -139,12 +141,17 @@ export default function AttemptResult() {
           </div>
         )}
         {cards ? (
-          <FlashcardResult cards={attempt.cards} />
+          <FlashcardResult
+            cards={attempt.cards}
+            minutes={attempt.startedAt ? attemptMinutes(attempt) : undefined}
+            previous={attempt.previous}
+          />
         ) : hasBreakdown ? (
           <>
             <QuizScore
               awarded={attempt.correct}
               max={attempt.total}
+              minutes={attempt.startedAt ? attemptMinutes(attempt) : undefined}
               questions={attempt.questions}
             />
             <div className="mt-12">

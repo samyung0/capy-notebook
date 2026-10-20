@@ -3451,6 +3451,43 @@ def test_the_scripted_tools_switch_is_true_or_unset_and_uat_only():
         flag(key, {key: "1", "SENTRY_ENVIRONMENT": "uat"})
 
 
+async def test_a_search_passage_names_its_documents_unindexed_edits(monkeypatch):
+    """Epo 2026-10-20: a passage whose document has unindexed edits carries a
+    line naming it and its edit count, above its source block, with no edit
+    text."""
+
+    async def search(**_kwargs):
+        return [_passage(chunk_id="c1"), _passage(chunk_id="c2", file_id="f_2")]
+
+    async def no_match(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(tools, "search", search)
+    monkeypatch.setattr(agent.pending_hints, "match", no_match)
+    monkeypatch.setattr(agent.pending_hints, "_indexed_langs", _no_langs)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx.pending_sources = pending.PendingSources(
+        [_changed_file("f_1", "secret new wording")]
+    )
+    ctx.pending_sources.read_ids = set()
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": f, "name": "bio.pdf", "chapter_id": None, "chunks": 1}
+            for f in ("f_1", "f_2")
+        ],
+    }
+    result = await tools._search_workspace({"query": "chlorophyll"}, ctx)
+    text = tools.render_result(result, tools.assign_citations(ctx, result.passages))
+    flag = (
+        '[1] "bio.pdf" has 1 edit not indexed yet, so this passage may be out of '
+        "date: read the document for its current text.\n<source>"
+    )
+    assert flag in text and text.count("not indexed yet") == 1
+    assert "secret new wording" not in text
+    assert ctx.passage_flags == {"c1": 1}  # saved for a replay (S4)
+
+
 async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypatch):
     """GLM sometimes calls the AskUser answer component as a tool. The turn
     ends on the question it meant, its prose before it, and nothing runs."""
@@ -4122,7 +4159,11 @@ async def test_office_tools_need_the_office_building_skill(monkeypatch):
         },
         ctx,
     )
-    assert read.error == edit.error == skills.refusal([skills.OFFICE_BUILDING])
+    assert read.error == skills.refusal([skills.OFFICE_BUILDING], write=False)
+    assert "this read needs the office_building skill" in read.error
+    assert edit.error == skills.refusal([skills.OFFICE_BUILDING], write=True)
+    # Nothing counts as read: the skill text never rides on a refusal.
+    assert skills.OFFICE_BUILDING not in ctx.skills_read
 
 
 async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(

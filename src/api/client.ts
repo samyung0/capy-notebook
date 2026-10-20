@@ -374,6 +374,9 @@ export const api = {
 
 /** Central query-key registry for TanStack Query. */
 export const qk = {
+  /** Under conversations, so invalidating the list refreshes it too. */
+  archivedConversations: (wsId: string) =>
+    ['workspace', wsId, 'conversations', 'archived'] as const,
   attempt: (id: string) => ['attempt', id] as const,
   attempts: (params?: unknown) => ['attempts', params ?? null] as const,
   attemptsRoot: ['attempts'] as const,
@@ -421,7 +424,8 @@ export const qk = {
     ['review', 'past', params ?? null] as const,
   quiz: (id: string) => ['quiz', id] as const,
   reviewOverview: ['review', 'overview'] as const,
-  /** Everything under Learning's Review and Past reviews tabs. */
+  reviewResult: (id: string) => ['review', 'result', id] as const,
+  /** Everything under Learning's Review tab, past reviews included. */
   reviewRoot: ['review'] as const,
   reviewSession: (id: string) => ['review', 'session', id] as const,
   search: (q: string) => ['search', q] as const,

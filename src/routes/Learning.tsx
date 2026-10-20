@@ -12,7 +12,6 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import { finishKey } from '@/features/questions/trailMap/finish';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import { AllResults } from '@/features/study/AllResults';
-import { PastReviews } from '@/features/study/PastReviews';
 import { RecordProgress } from '@/features/study/RecordProgress';
 import { ReviewTab } from '@/features/study/ReviewTab';
 import { PlaceholderRailMap, RailMap } from '@/features/study/railMap/RailMap';
@@ -180,9 +179,7 @@ function LeadWorkspace({
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <h2 className="t-large-card-title">
-          {next
-            ? m.learning_continue_review()
-            : m.learning_workspace_finished()}
+          {next ? m.learning_continue_study() : m.learning_workspace_finished()}
         </h2>
         {next && (
           <UnderlineLink accent onClick={() => open(next.id)}>
@@ -262,16 +259,13 @@ export default function Learning() {
         tabs={[
           { label: m.learning_tab_progress(), value: 'progress' },
           { label: m.learning_tab_review(), value: 'review' },
-          { label: m.learning_tab_past(), value: 'past' },
           { label: m.learning_tab_results(), value: 'results' },
         ]}
         value={tab}
       />
-      {/* The table tabs lay out as Files does: toolbar right under the tabs,
+      {/* All results lays out as Files does: toolbar right under the tabs,
        * then the table in the list's padding. */}
-      {tab === 'past' ? (
-        <PastReviews />
-      ) : tab === 'results' ? (
+      {tab === 'results' ? (
         <AllResults />
       ) : (
         // Without the reading width: the map runs to the panel's edges.

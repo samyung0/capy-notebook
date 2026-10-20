@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { chooseAllBlocksEntry } from '../helpers/editor';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
@@ -17,9 +18,7 @@ test.describe('formatting', () => {
     await page.keyboard.press('End');
     await page.keyboard.type(' history probe');
     // The workspace panel opens on Files; the chat box is on the Chat tab.
-    await page
-      .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
-      .click();
+    await showPanelView(page, m.workspace_tab_chat());
     const outside = page.getByRole('textbox', {
       name: m.chat_placeholder(),
     });

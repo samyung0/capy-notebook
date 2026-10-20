@@ -1402,11 +1402,7 @@ class Turn:
                 result = tools._refused(problem)
             elif needs := skills.missing(name, clean, ctx_.skills_read):
                 result = tools._refused(
-                    skills.refusal(needs),
-                    detail=skills.carried(
-                        needs,
-                        lambda n: skill_text(c, n, library=ctx_.library) or "",
-                    ),
+                    skills.refusal(needs, write=tools.mutates(name))
                 )
             elif name == "read_skill" and (
                 text := skill_text(c, clean["name"], library=ctx_.library)

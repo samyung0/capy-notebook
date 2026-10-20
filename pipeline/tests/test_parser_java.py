@@ -1,7 +1,12 @@
-"""A page-tree failure gets one isolated rewrite within the Java deadline."""
+"""The JVM's sandbox, and a page-tree failure gets one isolated rewrite within
+the Java deadline."""
 
 from __future__ import annotations
 
+import errno
+import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +16,29 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "parser"))
 from odl import java, refine
+
+# A fake JVM runs under the JVM's own sandbox, which reads only system trees:
+# a Python there, not this test's interpreter.
+SYSTEM_PYTHON = shutil.which("python3", path="/usr/local/bin:/usr/bin")
+
+
+def _fake_run(result):
+    """Stands in for capy_sandbox.run: records the command, answers ``result``."""
+    commands = []
+
+    def run(command, policy, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, *result)
+
+    return run, commands
+
+
+@pytest.fixture
+def jars(tmp_path, monkeypatch):
+    monkeypatch.setattr(java, "jar_path", lambda: tmp_path / "parser.jar")
+    (tmp_path / "capy-odl.jar").write_bytes(b"")
+    monkeypatch.setattr(java, "ENTRY_JAR", tmp_path / "capy-odl.jar")
+    monkeypatch.setattr(java.shutil, "which", lambda _name: "/usr/bin/java")
 
 
 @pytest.mark.parametrize(
@@ -22,42 +50,93 @@ from odl import java, refine
     ],
 )
 def test_java_classifies_only_the_demonstrated_reader_failure(
-    tmp_path, monkeypatch, output, expected
+    tmp_path, monkeypatch, jars, output, expected
 ):
-    monkeypatch.setattr(java, "jar_path", lambda: tmp_path / "parser.jar")
-    (tmp_path / "capy-odl.jar").write_bytes(b"")
-    monkeypatch.setattr(java, "ENTRY_JAR", tmp_path / "capy-odl.jar")
-    monkeypatch.setattr(
-        java.subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess([], 1, output),
-    )
+    run, _ = _fake_run((1, output.encode()))
+    monkeypatch.setattr(java.capy_sandbox, "run", run)
     with pytest.raises(expected) as caught:
         java.run(tmp_path / "document.pdf", tmp_path, timeout_s=60)
     assert type(caught.value) is expected
 
 
-def test_java_keeps_its_temporary_files_in_the_output_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(java, "jar_path", lambda: tmp_path / "parser.jar")
-    (tmp_path / "capy-odl.jar").write_bytes(b"")
-    monkeypatch.setattr(java, "ENTRY_JAR", tmp_path / "capy-odl.jar")
-    commands = []
-
-    def run(command, **_kwargs):
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 1, "failed")
-
-    monkeypatch.setattr(java.subprocess, "run", run)
+def test_java_keeps_its_temporary_files_in_the_output_dir(tmp_path, monkeypatch, jars):
+    run, commands = _fake_run((1, b"failed"))
+    monkeypatch.setattr(java.capy_sandbox, "run", run)
     out_dir = tmp_path / "native"
     with pytest.raises(RuntimeError):
         java.run(tmp_path / "document.pdf", out_dir, timeout_s=60)
     assert f"-Djava.io.tmpdir={out_dir}" in commands[0]
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="RLIMIT_AS is Linux")
-def test_java_runs_without_the_parse_childs_address_space_limit(tmp_path, monkeypatch):
-    """The parse child's soft limit is for MuPDF and LibreOffice; the JVM,
-    bounded by -Xmx, starts with it lifted to the hard limit."""
+def test_java_sizes_its_threads_by_the_containers_cpu_quota(
+    tmp_path, monkeypatch, jars
+):
+    """The sandboxed JVM cannot read its cgroup, so the parser passes the
+    quota (rounded up, at most the CPUs it may run on) as its CPU count."""
+    cpu_max = tmp_path / "cpu.max"
+    monkeypatch.setattr(java, "_CPU_MAX", cpu_max)
+    if hasattr(os, "sched_getaffinity"):
+        available = len(os.sched_getaffinity(0))
+        cpu_max.write_text("150000 100000\n")
+        assert java._container_cpus() == min(2, available)
+        cpu_max.write_text("max 100000\n")
+        assert java._container_cpus() == available
+
+    run, commands = _fake_run((1, b"failed"))
+    monkeypatch.setattr(java.capy_sandbox, "run", run)
+    with pytest.raises(RuntimeError):
+        java.run(tmp_path / "document.pdf", tmp_path, timeout_s=60)
+    assert f"-XX:ActiveProcessorCount={java.CPUS}" in commands[0]
+
+
+# A fake JVM: it leaves, as the native JSON ODL would write, what it could
+# and could not do.
+_PROBE = """#!{python} -I
+import ctypes, json, os, resource, socket, sys
+from pathlib import Path
+
+libc = ctypes.CDLL(None, use_errno=True)
+pdf = Path(sys.argv[sys.argv.index("capy.odl.CapyMain") + 1])
+out_dir = Path(sys.argv[sys.argv.index("--output-dir") + 1])
+out = {{"env": sorted(k for k in os.environ if k != "LC_CTYPE")}}
+
+def attempt(name, action):
+    try:
+        action()
+        out[name] = "ok"
+    except OSError as exc:
+        out[name] = exc.errno
+
+def fork():
+    pid = os.fork()
+    if pid == 0:
+        os._exit(0)
+    os.waitpid(pid, 0)
+
+attempt("inet_socket", lambda: socket.socket(socket.AF_INET).close())
+attempt("fork", fork)
+attempt("setpgid", lambda: os.setpgid(0, 0))
+attempt("read_pdf", pdf.read_bytes)
+attempt("read_outside", lambda: (out_dir.parent / "other-job.pdf").read_bytes())
+out["no_new_privs"] = libc.prctl(39, 0, 0, 0, 0)
+out["seccomp"] = libc.prctl(21, 0, 0, 0, 0)
+out["limits"] = {{
+    name: list(resource.getrlimit(getattr(resource, "RLIMIT_" + name)))
+    for name in ("AS", "DATA", "CPU", "NOFILE", "FSIZE", "CORE")
+}}
+(out_dir / (pdf.stem + ".json")).write_text(json.dumps(out))
+"""
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or SYSTEM_PYTHON is None,
+    reason="needs Linux and a python3 under /usr",
+)
+def test_java_runs_sandboxed_with_only_its_allowlisted_env(tmp_path, monkeypatch):
+    """(security regression: S1 Java) The JVM starts through the sandbox: an
+    explicit environment (no parser secret), a 2 GiB data cap with the parse
+    child's soft address-space limit lifted, no network, no new processes or
+    groups, and no file outside its PDF and output folder."""
     import os
     import resource
 
@@ -66,26 +145,44 @@ def test_java_runs_without_the_parse_childs_address_space_limit(tmp_path, monkey
     monkeypatch.setattr(java, "ENTRY_JAR", tmp_path / "capy-odl.jar")
     fake = tmp_path / "bin" / "java"
     fake.parent.mkdir()
-    fake.write_text('#!/bin/sh\ngrep "Max address space" /proc/self/limits\nexit 1\n')
+    fake.write_text(_PROBE.format(python=SYSTEM_PYTHON))
     fake.chmod(0o755)
     monkeypatch.setenv("PATH", f"{fake.parent}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("PARSER_TOKEN", "parser-secret")
+    pdf = tmp_path / "document.pdf"
+    pdf.write_bytes(b"%PDF-1.7")
+    (tmp_path / "other-job.pdf").write_bytes(b"%PDF-1.7 another user's")
+    out_dir = tmp_path / "native"
+    out_dir.mkdir()
     read, write = os.pipe()
     pid = os.fork()
     if pid == 0:  # a child with the parse child's soft limit
         try:
             _, hard = resource.getrlimit(resource.RLIMIT_AS)
             resource.setrlimit(resource.RLIMIT_AS, (2 << 30, hard))
-            java.run(tmp_path / "document.pdf", tmp_path, timeout_s=60)
-        except RuntimeError as exc:
-            os.write(write, str(exc).encode())
+            os.write(write, json.dumps(java.run(pdf, out_dir, timeout_s=60)).encode())
         finally:
             os._exit(0)
     os.close(write)
     with os.fdopen(read) as answer:
-        message = answer.read()
+        report = json.loads(answer.read())
     os.waitpid(pid, 0)
-    assert "Max address space" in message
-    assert str(2 << 30) not in message and "unlimited" in message
+
+    assert set(report["env"]) <= {"PATH", "HOME", "LANG"}
+    assert report["limits"] == {
+        "AS": [-1, -1],
+        "DATA": [2 << 30] * 2,
+        "CPU": [2400, 2400],
+        "NOFILE": [256, 256],
+        "FSIZE": [512 << 20] * 2,
+        "CORE": [0, 0],
+    }
+    assert report["no_new_privs"] == 1 and report["seccomp"] == 2
+    assert report["inet_socket"] == errno.EACCES
+    assert report["fork"] == errno.EPERM
+    assert report["setpgid"] == errno.EPERM
+    assert report["read_pdf"] == "ok"
+    assert report["read_outside"] == errno.EACCES
 
 
 @pytest.fixture

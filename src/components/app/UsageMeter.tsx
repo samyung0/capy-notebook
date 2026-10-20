@@ -13,8 +13,9 @@ export interface Segment {
 }
 
 /** Track with one coloured segment per share of the limit; a 2px surface
- * gap separates neighbours. `stripedFrom` (percent) hatches the empty track
- * from that point to the end. */
+ * gap separates neighbours. `stripedFrom` (percent) hatches the bar from that
+ * point to the end, over the segments too, so filled purchased credits still
+ * read as purchased. */
 export function UsageBar({
   segments,
   limit,
@@ -25,18 +26,7 @@ export function UsageBar({
   stripedFrom?: number;
 }) {
   return (
-    <div
-      className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-right bg-surface-hover-bg bg-no-repeat"
-      style={
-        stripedFrom === undefined
-          ? undefined
-          : {
-              backgroundImage:
-                'repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text-muted) 40%, transparent) 0 2px, transparent 2px 6px)',
-              backgroundSize: `${100 - stripedFrom}% 100%`,
-            }
-      }
-    >
+    <div className="relative mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-hover-bg">
       {limit > 0 &&
         segments
           .filter((s) => s.amount > 0)
@@ -53,6 +43,18 @@ export function UsageBar({
               }}
             />
           ))}
+      {stripedFrom !== undefined && (
+        // Muted stripes with surface-tinted gaps: the stripes show on the
+        // empty track, the gaps on a coloured fill.
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(-45deg, color-mix(in oklab, var(--text-muted) 40%, transparent) 0 2px, color-mix(in oklab, var(--color-surface) 45%, transparent) 2px 6px)',
+            width: `${100 - stripedFrom}%`,
+          }}
+        />
+      )}
     </div>
   );
 }

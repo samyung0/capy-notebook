@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import type { AttemptCard, Provenance } from '@/api/types';
+import type { AttemptCard, PreviousAttempt, Provenance } from '@/api/types';
 import { TabContent } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -11,6 +11,7 @@ import {
   NoFrame,
   QuizPageHeader,
 } from '@/features/quizzes/QuizPageHeader';
+import { attemptMinutes } from '@/features/study/attempts';
 import { StepNav } from '@/features/study/StepNav';
 import { currentStep, useSteps } from '@/features/study/steps';
 import { m } from '@/i18n';
@@ -32,7 +33,8 @@ const newAttempt = (): StudyAttempt => ({
 });
 
 /* Studying a flashcard set, shared by the app page and the public /share page.
-   It knows no router or session: callers pass the frame and where ratings go. */
+   It knows no router or session: callers pass the frame, where ratings go and,
+   for a run the server records, how its result reads the previous attempt. */
 
 /** The cards a study session holds, in set order: those with a face, and
  * any the session holds already (`held`) even while blank, so a card an
@@ -59,6 +61,7 @@ export function StudyBody({
   onFinished,
   onRate,
   provenance,
+  usePrevious,
   topBar,
   trail,
 }: {
@@ -79,6 +82,9 @@ export function StudyBody({
     attempt: StudyAttempt
   ) => void;
   provenance?: Provenance;
+  /** A recorded run's result reads the set's attempt before it (a hook: the
+   * app reads the run's attempt back; share pages pass none). */
+  usePrevious?: (attemptId: string) => PreviousAttempt | undefined;
   /** The app's top bar; public pages have their own header and pass none. */
   topBar?: ReactNode;
   trail: Crumb[];
@@ -175,7 +181,11 @@ export function StudyBody({
     return (
       <Shell header={header} key="result">
         <Body>
-          <FlashcardResult cards={rated} />
+          <RunResult
+            attempt={attempt}
+            cards={rated}
+            usePrevious={usePrevious}
+          />
           {/* Where a quiz result has Redo quiz, sized like it. */}
           <div className="mt-12 flex justify-end">
             <Button
@@ -245,5 +255,26 @@ export function StudyBody({
         </div>
       </div>
     </Shell>
+  );
+}
+
+/** A finished run's result, timed to when it finished. */
+function RunResult({
+  attempt,
+  cards,
+  usePrevious = () => undefined,
+}: {
+  attempt: StudyAttempt;
+  cards: AttemptCard[];
+  usePrevious?: (attemptId: string) => PreviousAttempt | undefined;
+}) {
+  const [takenAt] = useState(() => new Date().toISOString());
+  const previous = usePrevious(attempt.id);
+  return (
+    <FlashcardResult
+      cards={cards}
+      minutes={attemptMinutes({ startedAt: attempt.startedAt, takenAt })}
+      previous={previous}
+    />
   );
 }

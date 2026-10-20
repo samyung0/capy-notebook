@@ -1,4 +1,5 @@
-"""Per-chunk extraction confidence from the source PDF's text layer.
+"""Per-chunk extraction confidence from the source PDF's text layer (its page
+texts come from the parser's Office evidence or the ingest decode helper).
 
 Computed once per file at ingest and stored on ``rag_chunks``; passage headers
 show the score and reasons below ``CAPY_CONFIDENCE_NOTE_BELOW`` so the chat
@@ -15,9 +16,6 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import Counter
-from pathlib import Path
-
-import pymupdf
 
 from .chunking import Chunk
 
@@ -103,16 +101,9 @@ def _span(chunk: Chunk) -> range:
 
 
 def score_chunks(
-    chunks: list[Chunk],
-    pdf: Path,
-    *,
-    vlm: set[int] = frozenset(),
-    page_texts: list[str] | None = None,
+    chunks: list[Chunk], *, page_texts: list[str], vlm: set[int] = frozenset()
 ) -> None:
     """Fill ``confidence`` and ``confidence_reasons`` on every paged chunk in place."""
-    if page_texts is None:
-        with pymupdf.open(pdf) as document:
-            page_texts = [page.get_text() for page in document]
     paged = [c for c in chunks if c.page_start]
     have: dict[int, Counter] = {}
     for chunk in paged:

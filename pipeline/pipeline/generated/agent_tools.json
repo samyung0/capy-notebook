@@ -372,11 +372,11 @@
               "additionalProperties": false,
               "properties": {
                 "back": {
-                  "maxLength": 2000,
+                  "maxLength": 1000,
                   "type": "string"
                 },
                 "front": {
-                  "maxLength": 4000,
+                  "maxLength": 200,
                   "type": "string"
                 }
               },
@@ -989,7 +989,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "back": {
-                      "maxLength": 2000,
+                      "maxLength": 1000,
                       "type": "string"
                     },
                     "card_id": {
@@ -998,7 +998,7 @@
                       "type": "string"
                     },
                     "front": {
-                      "maxLength": 4000,
+                      "maxLength": 200,
                       "type": "string"
                     },
                     "type": {
@@ -1021,11 +1021,11 @@
                       ]
                     },
                     "back": {
-                      "maxLength": 2000,
+                      "maxLength": 1000,
                       "type": "string"
                     },
                     "front": {
-                      "maxLength": 4000,
+                      "maxLength": 200,
                       "type": "string"
                     },
                     "type": {
