@@ -1,6 +1,7 @@
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { cva, type VariantProps } from 'class-variance-authority';
 import type * as React from 'react';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 
 import { cn } from '@/lib/cn';
 import { Spinner } from './feedback';
@@ -115,6 +116,7 @@ function SelectContent({
    * SelectItem size="menu". */
   variant?: 'menu';
 }) {
+  const held = useEditorHeld();
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -132,6 +134,7 @@ function SelectContent({
         )}
         data-align-trigger={position === 'item-aligned'}
         data-slot="select-content"
+        inert={held}
         position={position}
         {...props}
       >

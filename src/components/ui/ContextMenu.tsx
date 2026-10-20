@@ -1,5 +1,6 @@
 import { ContextMenu as ContextMenuPrimitive } from 'radix-ui';
 import * as React from 'react';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 import {
@@ -33,6 +34,7 @@ function ContextMenuContent({
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   const open = React.useContext(MenuOpenContext);
+  const held = useEditorHeld();
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Content
@@ -43,7 +45,7 @@ function ContextMenuContent({
           className
         )}
         data-slot="context-menu-content"
-        inert={!open}
+        inert={!open || held}
         {...props}
         onClickCapture={guardMenuEvent(open, props.onClickCapture)}
         onKeyDownCapture={guardMenuEvent(open, props.onKeyDownCapture)}
@@ -145,6 +147,7 @@ function ContextMenuSubContent({
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.SubContent>) {
   const open = React.useContext(MenuOpenContext);
+  const held = useEditorHeld();
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.SubContent
@@ -154,7 +157,7 @@ function ContextMenuSubContent({
           className
         )}
         data-slot="context-menu-sub-content"
-        inert={!open}
+        inert={!open || held}
         {...props}
         onClickCapture={guardMenuEvent(open, props.onClickCapture)}
         onKeyDownCapture={guardMenuEvent(open, props.onKeyDownCapture)}

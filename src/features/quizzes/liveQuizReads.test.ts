@@ -3,20 +3,17 @@ import { expect, it, vi } from 'vitest';
 // The rooms a reader opens, recorded instead of joined.
 const opened = vi.hoisted(() => [] as { id: string; options: unknown }[]);
 vi.mock('@/features/collaboration/itemRoom', () => ({
-  ItemRoom: class {
-    doc = { on() {} };
-    lists = new Map();
-    constructor(id: string, options: unknown) {
-      opened.push({ id, options });
-    }
-    destroy() {}
-    getSnapshot() {
-      return { synced: false };
-    }
-    start() {}
-    subscribe() {
-      return () => undefined;
-    }
+  openItemRoom: (id: string, options: unknown) => {
+    opened.push({ id, options });
+    return {
+      close() {},
+      room: {
+        doc: { off() {}, on() {} },
+        getSnapshot: () => ({ synced: false }),
+        lists: new Map(),
+        subscribe: () => () => undefined,
+      },
+    };
   },
 }));
 

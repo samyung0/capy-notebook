@@ -23,7 +23,9 @@ mod observe;
 mod projection;
 mod protocol;
 mod pubsub;
+mod rate;
 mod room;
+mod seats;
 mod socket;
 mod source_rooms;
 
@@ -183,6 +185,10 @@ async fn serve(config: Config) -> Result<(), String> {
         }
     };
     let publication_hold = config.uat_publication_hold;
+    let allowances = crate::rate::Allowances::new(config.update_limits, std::time::Instant::now());
+    let address_sockets = crate::seats::Seats::new(config.sockets_per_address);
+    let joined = crate::seats::Joined::new(config.joined_per_user);
+    let per_document = crate::seats::Joined::new(config.connections_per_document);
     let app = Arc::new(App {
         instance_id: format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()),
         config,
@@ -193,6 +199,10 @@ async fn serve(config: Config) -> Result<(), String> {
         rooms: Default::default(),
         evictions: Default::default(),
         stats: Default::default(),
+        allowances,
+        address_sockets,
+        joined,
+        per_document,
         health: Default::default(),
         unplaced: Default::default(),
         projection_failures: Default::default(),
@@ -230,6 +240,7 @@ async fn serve(config: Config) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(&address)
         .await
         .map_err(|error| error.to_string())?;
+    let listener = crate::seats::TrackedListener(listener);
     log(
         Level::Info,
         "collaboration service listening",
@@ -238,7 +249,10 @@ async fn serve(config: Config) -> Result<(), String> {
     let stopping = app.clone();
     // Upgraded sockets are not waited for: every room stores first, then the
     // listener stops and the process exits (clients reconnect elsewhere).
-    axum::serve(listener, http::router(app.clone()))
+    // Each socket's client address counts toward its cap, and its connection
+    // tells when it last moved bytes out (`seats.rs`).
+    let service = http::router(app.clone()).into_make_service_with_connect_info::<seats::Peer>();
+    axum::serve(listener, service)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
             log(Level::Info, "flushing collaboration documents", json!({}));

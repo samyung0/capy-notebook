@@ -87,6 +87,7 @@ export default function PptxView({
         readOnly={runtime.readOnly}
         reloading={runtime.discarding}
         replaced={runtime.replaced}
+        slowed={runtime.slowed}
         storageFull={runtime.storageFull}
       />
       <OfficeHeader

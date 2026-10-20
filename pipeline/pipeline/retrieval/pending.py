@@ -13,11 +13,21 @@ import requests
 
 from .. import obs
 from ..config import cfg
-from . import compact, models, store
+from . import store
+from .chunking import estimate_tokens
+
+# The most a read's appended changes may weigh before they are omitted.
+READ_PENDING_TOKENS = 16_000
 
 NOTICE = (
     "Some source information may be outdated. Process file changes to include "
     "the latest edits."
+)
+
+# What a read gets in place of changes over READ_PENDING_TOKENS.
+READ_OMITTED = (
+    "This document has pending edits larger than a read carries, so they were "
+    "left out. Process file changes to include them."
 )
 
 
@@ -42,7 +52,13 @@ class PendingSources:
     # and notes the agent read this turn (inspect_document, capture_page,
     # read_document), never with search results.
     read_ids: set[str] | None = None
+    # Documents whose changes a read already passed on, or omitted as too
+    # large, this turn.
+    _delivered: set[str] = field(default_factory=set, repr=False)
+    omitted_ids: set[str] = field(default_factory=set, repr=False)
     _note_ids: set[str] = field(default_factory=set, repr=False)
+    # The candidates pending_hints prepared for matching, once per load.
+    hint_pool: list[Any] | None = field(default=None, repr=False)
     _workspace_id: str | None = field(default=None, repr=False)
     _file_ids: list[str] | None = field(default=None, repr=False)
     _baseline: list[tuple] = field(default_factory=list, repr=False)
@@ -97,17 +113,11 @@ class PendingSources:
             if await _note_identities(self._workspace_id, ids) != notes:
                 raise SourceChanged()
 
-    def message(self, *, omitted: bool = False) -> dict[str, Any] | None:
-        if not self.pending:
-            return None
-        files, notes = self.shown_files, self.shown_notes
-        if omitted or not (files or notes):
-            body = NOTICE + (
-                " Exact pending edits were omitted because they exceed the model input limit."
-                if omitted
-                else ""
-            )
-        else:
+    def _evidence(
+        self, files: list[dict[str, Any]], notes: list[dict[str, Any]], unread: bool
+    ) -> str:
+        body = ""
+        if files or notes:
             body = (
                 "Current source evidence is the indexed content plus these exact net "
                 "changes through each stated durable checkpoint. Each before and "
@@ -120,23 +130,59 @@ class PendingSources:
                 "not evidence of image contents; use resolve_source_change to inspect it.\n"
                 + json.dumps(files, ensure_ascii=False, separators=(",", ":"))
             )
-            if notes:
-                body += (
-                    "\nNotes changed since their last index, per top-level block "
-                    "(blockId), in the same form. A change of kind data is a "
-                    "placeholder for a large chart, plot, graph or diagram edit: "
-                    "use resolve_source_change with the note's material_id and "
-                    "the block_id to read that block before and after.\n"
-                    + json.dumps(notes, ensure_ascii=False, separators=(",", ":"))
-                )
-            if self._unread_shown:
-                body += "\n" + NOTICE
+        if notes:
+            body += (
+                "\nNotes changed since their last index, per top-level block "
+                "(blockId), in the same form. A change of kind data is a "
+                "placeholder for a large chart, plot, graph or diagram edit: "
+                "use resolve_source_change with the note's material_id and "
+                "the block_id to read that block before and after.\n"
+                + json.dumps(notes, ensure_ascii=False, separators=(",", ":"))
+            )
+        if unread:
+            body = (body + "\n" + NOTICE).strip()
+        return body
+
+    def message(self) -> dict[str, Any] | None:
+        """Generation's message with every scoped change: it reads its whole
+        scope."""
+        if not self.pending:
+            return None
+        body = self._evidence(self.shown_files, self.shown_notes, self._unread_shown)
         return {"role": "user", "content": body, "_kind": "pending_sources"}
 
+    def carry(self, previous: PendingSources, changed: str | None) -> None:
+        """Keep what this turn already read, passed on and omitted across a
+        reload; the document the turn just changed passes its new changes on
+        at its next read."""
+        self.read_ids = previous.read_ids
+        self._delivered = previous._delivered - {changed}
+        self.omitted_ids = set(previous.omitted_ids)
+
+    def for_read(self, document_id: str) -> str:
+        """The changes a chat read of this document appends to its own tool
+        result, once per turn (Epo 2026-10-20): nothing earlier in the
+        conversation changes, so earlier requests stay a cached prefix. Over
+        READ_PENDING_TOKENS they are omitted with the notice, and the read
+        file is offered Process file changes."""
+        self.read(document_id)
+        if document_id in self._delivered:
+            return ""
+        self._delivered.add(document_id)
+        files = [f for f in self.files if str(f["fileId"]) == document_id]
+        notes = [n for n in self.notes if str(n["materialId"]) == document_id]
+        unread = self.notes_unread and document_id in self._note_ids
+        body = self._evidence(files, notes, unread)
+        if estimate_tokens(body) > READ_PENDING_TOKENS:
+            self.omitted_ids.add(document_id)
+            return READ_OMITTED
+        return body
+
     def event(self, omitted: bool) -> dict[str, Any]:
+        files = {str(file["fileId"]) for file in self.files}
         return {
             "type": "pending_sources",
-            "fileIds": [str(file["fileId"]) for file in self.shown_files],
+            "fileIds": sorted(self.omitted_ids & files),
             "omitted": omitted,
             "message": NOTICE,
         }
@@ -258,37 +304,6 @@ def inject(
     # call and its results and never written to persisted conversation history.
     head = 1 if messages and messages[0].get("role") == "system" else 0
     return [*messages[:head], message, *messages[head:]]
-
-
-def reserve(
-    messages: list[dict[str, Any]],
-    sources: PendingSources,
-    spec: models.ModelConfig,
-    schemas: list[dict[str, Any]] | None,
-    *,
-    extra: int = 0,
-) -> tuple[dict[str, Any] | None, int, bool]:
-    """``extra`` is request weight outside ``messages`` (the turn's attached
-    page captures) that the fit check must leave room for."""
-    message = sources.message()
-    if message is None:
-        return None, 0, False
-    query = compact._current_query_index(messages)
-    head = messages[:1] if messages and messages[0].get("role") == "system" else []
-    protected = [*head, *messages[query:]]
-    omitted = not compact.fits_request(
-        inject(protected, message), spec, schemas=schemas, extra=extra
-    )
-    if omitted:
-        message = sources.message(omitted=True)
-    extra = max(
-        0,
-        compact.request_context(
-            inject(messages, message), spec, schemas=schemas
-        ).total_tokens
-        - compact.request_context(messages, spec, schemas=schemas).total_tokens,
-    )
-    return message, extra, omitted
 
 
 async def resolve(

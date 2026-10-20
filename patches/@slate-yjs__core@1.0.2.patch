@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 58cc95c5d4bce70787d260033194e60cdadf9009..8fef6e47b711dacab67ae179fe40a646c3b3ef33 100644
+index 58cc95c5d4bce70787d260033194e60cdadf9009..4598c90143550a2278bcfb9df8becf78422d7af6 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -210,10 +210,143 @@ function getProperties(node) {
@@ -207,7 +207,25 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..8fef6e47b711dacab67ae179fe40a646
    });
    clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
      sanitize: false
-@@ -783,7 +941,15 @@ function setNode(sharedRoot, slateRoot, op) {
+@@ -602,7 +760,16 @@ function absolutePositionToSlatePoint(sharedRoot, slateRoot, { type, index, asso
+   });
+   const target = parent.children[pathOffset];
+   if (!import_slate10.Text.isText(target)) {
+-    return null;
++    // Capy patch: the offset falls on an inline element (an inline
++    // equation, a link). The point is in the text Slate keeps beside it:
++    // the next text's start after the element, the previous text's end
++    // before it.
++    const beside = textOffset > 0 ? pathOffset + 1 : pathOffset - 1;
++    const text = parent.children[beside];
++    if (!import_slate10.Text.isText(text)) {
++      return null;
++    }
++    return { path: [...parentPath, beside], offset: textOffset > 0 ? 0 : text.text.length };
+   }
+   return { path: [...parentPath, pathOffset], offset: textOffset };
+ }
+@@ -783,7 +950,15 @@ function setNode(sharedRoot, slateRoot, op) {
        if (value === null) {
          return yTarget.removeAttribute(key);
        }
@@ -225,7 +243,7 @@ index 58cc95c5d4bce70787d260033194e60cdadf9009..8fef6e47b711dacab67ae179fe40a646
      return Object.entries(op.properties).forEach(([key]) => {
        if (!op.newProperties.hasOwnProperty(key)) {
 diff --git a/dist/index.js b/dist/index.js
-index c1ab93571a0668b519b00e27dfd35a39e0cabd25..3eab868246db19bbe4eda74573172d50b95d293b 100644
+index c1ab93571a0668b519b00e27dfd35a39e0cabd25..b68403d0c8e7cd9e888c5a30beeecc695fb06bf9 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -174,10 +174,143 @@ function getProperties(node) {
@@ -433,7 +451,25 @@ index c1ab93571a0668b519b00e27dfd35a39e0cabd25..3eab868246db19bbe4eda74573172d50
    });
    clone.applyDelta(cloneInsertDeltaDeep(yTextToInsertDelta(yText)), {
      sanitize: false
-@@ -747,7 +905,15 @@ function setNode(sharedRoot, slateRoot, op) {
+@@ -566,7 +724,16 @@ function absolutePositionToSlatePoint(sharedRoot, slateRoot, { type, index, asso
+   });
+   const target = parent.children[pathOffset];
+   if (!Text6.isText(target)) {
+-    return null;
++    // Capy patch: the offset falls on an inline element (an inline
++    // equation, a link). The point is in the text Slate keeps beside it:
++    // the next text's start after the element, the previous text's end
++    // before it.
++    const beside = textOffset > 0 ? pathOffset + 1 : pathOffset - 1;
++    const text = parent.children[beside];
++    if (!Text6.isText(text)) {
++      return null;
++    }
++    return { path: [...parentPath, beside], offset: textOffset > 0 ? 0 : text.text.length };
+   }
+   return { path: [...parentPath, pathOffset], offset: textOffset };
+ }
+@@ -747,7 +914,15 @@ function setNode(sharedRoot, slateRoot, op) {
        if (value === null) {
          return yTarget.removeAttribute(key);
        }

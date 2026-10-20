@@ -71,6 +71,7 @@ async def test_a_marked_file_gets_a_descriptor_failure_without_a_provider_call(
         "A descriptor.",
         0.0,
         None,
+        None,
     )
 
     async def forbidden(_name, _chunks):
@@ -78,7 +79,7 @@ async def test_a_marked_file_gets_a_descriptor_failure_without_a_provider_call(
 
     monkeypatch.setattr(indexing, "summarize_file", forbidden)
     monkeypatch.setattr(uat.cfg, "uat_fail_parts", True)
-    descriptor, share, error = await indexing._descriptor(name, chunks, None)
+    descriptor, share, _, error = await indexing._descriptor(name, chunks, None)
     assert (descriptor, share) == (None, 0.0)
     assert uat.FAIL_SUMMARY in str(error)
 
