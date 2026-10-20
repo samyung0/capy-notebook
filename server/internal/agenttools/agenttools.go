@@ -89,7 +89,11 @@ import (
 // v30: an open question's model_answer is optional (Epo 2026-10-15).
 // v31: resolve_source_change also takes a note's material_id and block_id,
 // returning that block's index text before and after (Epo 2026-10-17).
-// v32: create_material, add_questions (a new quiz) and create_deck take
+// v32: Word, Excel and PowerPoint files are read with inspect_office_document
+// and edited or created with edit_office_document, offered once the
+// office_building skill is read (Epo 2026-10-20); edit_document loses set_cell
+// and its replace_text takes notes and text sources only.
+// v32 (also): create_material, add_questions (a new quiz) and create_deck take
 // sources, a made-from line of plain strings, instead of an id scope;
 // search_workspace's file_ids take any workspace item (Epo 2026-10-21).
 const ContractVersion = 32
@@ -428,7 +432,7 @@ func editCommandSchema() map[string]any {
 	return map[string]any{
 		"oneOf": []any{
 			variant("replace_text", map[string]any{
-				"target_id":     map[string]any{"type": "string", "description": "Block, paragraph or shape target id; omit for a plain text source."},
+				"target_id":     map[string]any{"type": "string", "description": "The note block's id; omit for a plain text source."},
 				"expected_text": text("Exact text to replace as inspect_document shows it, without math; must occur once in the target."),
 				"text":          text("Plain replacement text; empty deletes the expected text."),
 			}, "expected_text", "text"),
@@ -445,12 +449,6 @@ func editCommandSchema() map[string]any {
 				"block_id":      str(""),
 				"expected_text": text("The block's current text as inspect_document shows it."),
 			}, "block_id", "expected_text"),
-			variant("set_cell", map[string]any{
-				"sheet":          str("Sheet id or name from inspect_document."),
-				"cell":           str("A1-style address."),
-				"expected_value": map[string]any{"type": "string", "description": "Current value or =formula; empty for an empty cell."},
-				"value":          map[string]any{"type": "string", "description": "New value; prefix with = for a formula; empty clears."},
-			}, "sheet", "cell", "expected_value", "value"),
 			variant("replace_card", map[string]any{
 				"card_id": str("A side left out stays as it is."),
 				"front":   cardFront(),
@@ -467,6 +465,107 @@ func editCommandSchema() map[string]any {
 				"expected_source": text("Current mermaid source."),
 				"source":          text("New mermaid source."),
 			}, "expected_source", "source"),
+		},
+	}
+}
+
+// officeCommandSchema is edit_office_document's tagged union. Each variant's
+// description starts with the formats it applies to; Go turns the model's
+// snake_case commands into the engine's (NormalizeOfficeCommands). The grid
+// bounds are schema sanity bounds only: the engine refuses a range, or a call,
+// over 10,000 cells and the retrieval service a call whose commands are over
+// 256 KB of JSON or 10,000 cells (Epo 2026-10-20).
+func officeCommandSchema() map[string]any {
+	variant := func(name, desc string, props map[string]any, required ...string) map[string]any {
+		props["type"] = map[string]any{"const": name}
+		s := obj(props, append([]string{"type"}, required...)...)
+		s["description"] = desc
+		return s
+	}
+	grid := func(desc string) map[string]any {
+		return map[string]any{
+			"type": "array", "minItems": 1, "maxItems": 10000, "description": desc,
+			"items": map[string]any{"type": "array", "minItems": 1, "maxItems": 10000, "items": map[string]any{"type": "string"}},
+		}
+	}
+	sheet := str("The sheet's id or name as inspect_office_document lists it.")
+	cellRange := str(`An A1 range on that sheet, like "B2:D9".`)
+	count := map[string]any{"type": "integer", "minimum": 1}
+	row := map[string]any{"type": "integer", "minimum": 1, "description": "The row number the first new row takes; rows from there move down."}
+	column := str(`The column letter the first new column takes, like "C"; columns from there move right.`)
+	// A delete's expected band: rows of cells like set_range's expected, with
+	// trailing empty cells and rows left out (Epo 2026-10-20, review finding 6).
+	band := func(desc string) map[string]any {
+		return map[string]any{
+			"type": "array", "description": desc,
+			"items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		}
+	}
+	return map[string]any{
+		"oneOf": []any{
+			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
+				"format":     map[string]any{"type": "string", "enum": []string{"xlsx"}},
+				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle, "description": "The file's name, without its extension."},
+				"chapter_id": str("The chapter to file it in; omit to leave it unfiled."),
+			}, "format", "title"),
+			variant("set_range", "XLSX: write a rectangle of cells.", map[string]any{
+				"sheet":    sheet,
+				"range":    cellRange,
+				"expected": grid(`The range's current inputs as inspect_office_document shows them, one row per array; "" for an empty cell.`),
+				"values":   grid(`The new inputs as typed, in the range's shape: "=..." for a formula, "" to clear.`),
+			}, "sheet", "range", "expected", "values"),
+			variant("format_cells", "XLSX: format a range; fields left out stay as they are.", map[string]any{
+				"sheet":                sheet,
+				"range":                cellRange,
+				"bold":                 map[string]any{"type": "boolean"},
+				"italic":               map[string]any{"type": "boolean"},
+				"strikethrough":        map[string]any{"type": "boolean"},
+				"font_family":          str(""),
+				"font_size":            map[string]any{"type": "number", "minimum": 1, "maximum": 409},
+				"text_color":           str(`A hex colour, like "#1F4E79".`),
+				"fill_color":           str(`A hex colour, like "#FFF2CC".`),
+				"horizontal_alignment": map[string]any{"type": "string", "enum": []string{"left", "center", "right"}},
+				"vertical_alignment":   map[string]any{"type": "string", "enum": []string{"top", "middle", "bottom"}},
+				"wrap":                 map[string]any{"type": "boolean", "description": "true wraps text inside the cell; false lets it overflow."},
+				"number_format": str(`automatic, plain_text, number, percent, scientific, currency, date, time, ` +
+					`or an Excel number format pattern like "0.0%" or "yyyy-mm-dd".`),
+			}, "sheet", "range"),
+			variant("add_sheet", "XLSX: add an empty sheet.", map[string]any{
+				"name":  str(""),
+				"after": str("The sheet it follows; omit to add it last."),
+			}, "name"),
+			variant("rename_sheet", "XLSX: rename a sheet.", map[string]any{
+				"sheet":         sheet,
+				"expected_name": str("The sheet's current name."),
+				"name":          str(""),
+			}, "sheet", "expected_name", "name"),
+			variant("insert_rows", "XLSX: insert empty rows.", map[string]any{
+				"sheet": sheet, "at": row, "count": count,
+			}, "sheet", "at", "count"),
+			variant("delete_rows", "XLSX: delete whole rows.", map[string]any{
+				"sheet":    sheet,
+				"at":       map[string]any{"type": "integer", "minimum": 1, "description": "The first row number to delete."},
+				"count":    count,
+				"expected": band(`The rows' current inputs as inspect_office_document shows them, one array per row with its cells from column A; trailing empty cells and rows may be left out, [] for empty rows.`),
+			}, "sheet", "at", "count", "expected"),
+			variant("insert_columns", "XLSX: insert empty columns.", map[string]any{
+				"sheet": sheet, "at": column, "count": count,
+			}, "sheet", "at", "count"),
+			variant("delete_columns", "XLSX: delete whole columns.", map[string]any{
+				"sheet":    sheet,
+				"at":       str(`The first column letter to delete, like "C".`),
+				"count":    count,
+				"expected": band(`The columns' current inputs as inspect_office_document shows them, one array per row from row 1 holding the deleted columns' cells; trailing empty cells and rows may be left out, [] for empty columns.`),
+			}, "sheet", "at", "count", "expected"),
+			variant("delete_sheet", "XLSX: delete a sheet.", map[string]any{
+				"sheet":         sheet,
+				"expected_name": str("The sheet's current name."),
+			}, "sheet", "expected_name"),
+			variant("replace_text", "DOCX, PPTX: replace text inside one paragraph or shape.", map[string]any{
+				"target_id":     str("The paragraph's or shape's target id from inspect_office_document."),
+				"expected_text": map[string]any{"type": "string", "description": "Exact text to replace as inspect_office_document shows it; must occur once in the target."},
+				"text":          map[string]any{"type": "string", "description": "Plain replacement text; empty deletes the expected text."},
+			}, "target_id", "expected_text", "text"),
 		},
 	}
 }
@@ -718,8 +817,10 @@ func Definitions() []Definition {
 			InputSchema: obj(map[string]any{
 				"name": str("A skill name listed below."),
 			}, "name"),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpMaterialCreate},
+			Concurrency: "read",
+			// Every role that can chat reads skills: a viewer reads
+			// office_building for inspect_office_document (Epo 2026-10-20).
+			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
 			Name:      "create_material",
@@ -933,6 +1034,50 @@ func Definitions() []Definition {
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpTrashRestore},
+		}),
+		// The Office tools come last: the retrieval service appends them to a
+		// turn's tools once the office_building skill is read, keeping the rest
+		// of the request's prefix.
+		chatTool(Definition{
+			Name:      "inspect_office_document",
+			Retention: RetainFull,
+			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
+				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
+				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
+				"cells a read. DOCX: paragraphs with their target ids and text, count from start. " +
+				"PPTX: without slide, shapes with their target ids and text, count from start; " +
+				"with slide, that slide's shapes.",
+			InputSchema: obj(map[string]any{
+				"file_id": str(""),
+				"sheet":   str("XLSX: the sheet's id or name."),
+				"range":   str(`XLSX: an A1 range on that sheet, like "A1:H40".`),
+				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX, PPTX: first target index."},
+				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX, PPTX: targets to read."},
+				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number."},
+			}, "file_id"),
+			Concurrency:        "read",
+			RequiredOperations: []Operation{OpSourceRead},
+		}),
+		chatTool(Definition{
+			Name:      "edit_office_document",
+			Retention: RetainFull,
+			Description: "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands " +
+				"of its format as the office_building skill describes. Each command names what it " +
+				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
+				"whole call. Edits save directly; most can be undone from the chat. A call's commands " +
+				"are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
+			InputSchema: obj(map[string]any{
+				"file_id": str("The file to edit; omit when the first command is create."),
+				"commands": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"maxItems": 50,
+					"items":    officeCommandSchema(),
+				},
+			}, "commands"),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpDocumentEdit},
 		}),
 	}
 }

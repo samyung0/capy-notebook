@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,6 +147,24 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	}
 	if files != 1 || fx.blobs(t) != 1 {
 		t.Fatalf("files = %d blobs = %d after a replay", files, fx.blobs(t))
+	}
+}
+
+// The route stores decks only; edit_office_document's create stores its file
+// itself (Epo 2026-10-20, review finding 9).
+func TestInternalFileTakesDecksOnly(t *testing.T) {
+	fx := openDeckFiles(t)
+	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)
+	for _, name := range []string{"Grades.xlsx", "Essay.docx"} {
+		body := fx.body(msgID, fx.editor)
+		body["name"] = name
+		rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/files", pipeSecret, body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "an agent file is a non-empty .pptx") {
+			t.Fatalf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if fx.blobs(t) != 0 {
+		t.Fatal("a refused file left a blob behind")
 	}
 }
 
