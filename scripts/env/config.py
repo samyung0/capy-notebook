@@ -266,6 +266,21 @@ def run_gh(args, value=None):
 
 def push(values, environment, repo):
     classify(values)
+    common = ["--env", environment, "--repo", repo]
+    # Deploys read only the secrets their render steps name, so they cannot see
+    # a manifest variable stored as a secret; refuse before changing anything.
+    stored = json.loads(run_gh(["secret", "list", *common, "--json", "name"]))
+    misplaced = sorted(
+        row["name"]
+        for row in stored
+        if MANIFEST.get(row["name"], {}).get("kind") == "variable"
+    )
+    if misplaced:
+        fail(
+            f"manifest variables stored as GitHub secrets in {environment}: "
+            + ", ".join(misplaced)
+            + "; delete those secrets first"
+        )
     # Empty optional values delete GitHub entries; rendering always supplies blank.
     for key, value in values.items():
         spec = MANIFEST[key]
@@ -274,7 +289,6 @@ def push(values, environment, repo):
         ):
             continue
         kind = "secret" if spec["kind"] == "secret" else "variable"
-        common = ["--env", environment, "--repo", repo]
         if value:
             run_gh([kind, "set", key, *common], value)
         else:

@@ -3085,9 +3085,11 @@ reads, because GitHub holds a run whose workflow passes `toJSON(secrets)` for
 approval. A manifest secret added without wiring fails CI
 (`scripts/env/test_config.py`); add its line to each render step the failure
 names. An unset GitHub secret arrives blank and renders as missing. A manifest
-secret stored as a variable fails the render; a variable stored as a secret
-is invisible to the renderer and renders blank, or fails its required check.
-Local env files reject unknown keys.
+secret stored as a variable fails the render. Deploys cannot see a manifest
+variable stored as a secret, so `pnpm env:push` checks for it instead: it
+lists the target environment's secret names (never values) and refuses to run,
+naming each such key, before it changes anything. Local env files reject
+unknown keys.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
 file for the optional ops edge check. The UAT workflow and local review scripts

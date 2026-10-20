@@ -573,7 +573,7 @@ class ConfigTest(unittest.TestCase):
         secret = "private-value"
         with patch.object(config.subprocess, "run") as run:
             run.return_value.returncode = 0
-            run.return_value.stdout = ""
+            run.return_value.stdout = "[]"
             with contextlib.redirect_stdout(io.StringIO()) as output:
                 config.push({"POSTGRES_PASSWORD": secret}, "uat", "owner/repo")
             self.assertEqual(run.call_args.kwargs["input"], secret)
@@ -583,6 +583,22 @@ class ConfigTest(unittest.TestCase):
             run.return_value.stderr = secret
             with self.assertRaisesRegex(ValueError, "response redacted"):
                 config.push({"POSTGRES_PASSWORD": secret}, "uat", "owner/repo")
+
+    def test_push_refuses_manifest_variables_stored_as_secrets(self):
+        """Security regression (named secrets): deploys cannot see a manifest
+        variable stored as a GitHub secret, so env:push names it and stops
+        before changing anything, reading secret names only."""
+        names = [{"name": "DEPLOYMENT_APP_URL"}, {"name": "POSTGRES_PASSWORD"}]
+        with (
+            patch.object(config, "run_gh", return_value=json.dumps(names)) as run_gh,
+            self.assertRaisesRegex(
+                ValueError, "stored as GitHub secrets in uat: DEPLOYMENT_APP_URL;"
+            ),
+        ):
+            config.push({"POSTGRES_PASSWORD": "private"}, "uat", "owner/repo")
+        run_gh.assert_called_once_with(
+            ["secret", "list", "--env", "uat", "--repo", "owner/repo", "--json", "name"]
+        )
 
 
 if __name__ == "__main__":
