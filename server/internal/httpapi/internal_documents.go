@@ -608,7 +608,7 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			return
 		}
 		if req.Office {
-			normalized, err = normalizeOfficeCommands(format, req.Commands)
+			normalized, err = NormalizeOfficeCommands(format, req.Commands)
 		} else {
 			normalized, err = normalizeTextCommands(req.Commands)
 		}

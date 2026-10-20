@@ -65,11 +65,12 @@ var xlsxCommands = []string{
 	"insert_columns", "delete_columns", "delete_sheet",
 }
 
-// normalizeOfficeCommands turns edit_office_document's commands into the
+// NormalizeOfficeCommands turns edit_office_document's commands into the
 // engine's: the type stays snake_case, the fields become camelCase, and
 // format_cells' flat style fields become its style object. Every field name
-// the engine reads is here, so a rename on its side is a one-line change.
-func normalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMessage, error) {
+// the engine reads is here, so a rename on its side is a one-line change. The
+// lab playground runs it through cmd/officecommands.
+func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMessage, error) {
 	out := make([]json.RawMessage, 0, len(raw))
 	for _, item := range raw {
 		var c officeCommand
@@ -205,7 +206,7 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	commands, err := normalizeOfficeCommands(req.Format, req.Commands)
+	commands, err := NormalizeOfficeCommands(req.Format, req.Commands)
 	if err != nil {
 		a.failDocument(w, err)
 		return

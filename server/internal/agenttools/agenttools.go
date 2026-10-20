@@ -462,7 +462,7 @@ func editCommandSchema() map[string]any {
 
 // officeCommandSchema is edit_office_document's tagged union. Each variant's
 // description starts with the formats it applies to; Go turns the model's
-// snake_case commands into the engine's (normalizeOfficeCommands). The grid
+// snake_case commands into the engine's (NormalizeOfficeCommands). The grid
 // bounds are schema sanity bounds only: the retrieval service refuses a call
 // whose commands are over 256 KB of JSON (Epo 2026-10-20).
 func officeCommandSchema() map[string]any {

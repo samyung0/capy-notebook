@@ -37,7 +37,7 @@ func TestNormalizeOfficeCommands(t *testing.T) {
 		{"pptx", `{"type":"replace_text","target_id":"slide:1:shape:2","expected_text":"old","text":""}`,
 			`{"expectedText":"old","targetId":"slide:1:shape:2","text":"","type":"replace_text"}`},
 	} {
-		out, err := normalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
+		out, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		if err != nil {
 			t.Fatalf("%s: %v", tc.model, err)
 		}
@@ -64,7 +64,7 @@ func TestNormalizeOfficeCommandsRefusesTheWrongFormat(t *testing.T) {
 		{"xlsx", `{"type":"format_cells","sheet":"0","range":"A1"}`,
 			agenttools.ErrInvalidInput, "format_cells needs at least one format to set"},
 	} {
-		_, err := normalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
+		_, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		var refused *store.EditRefusal
 		if !errors.As(err, &refused) || refused.Code != tc.code || refused.Message != tc.message {
 			t.Fatalf("%s: %v", tc.model, err)
