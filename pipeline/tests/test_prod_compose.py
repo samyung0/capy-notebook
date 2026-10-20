@@ -39,3 +39,13 @@ def test_collaboration_keeps_source_files_on_a_disk_volume() -> None:
     assert service["environment"]["COLLABORATION_SOURCE_DISK_BYTES"] == (
         "${COLLABORATION_SOURCE_DISK_BYTES:?set COLLABORATION_SOURCE_DISK_BYTES}"
     )
+
+
+def test_collaboration_runs_without_capabilities_or_privilege_gain() -> None:
+    """Its Office engine children read uploaded files (Epo 2026-10-20): no
+    capabilities and no privilege gain (security regression: the Office
+    engine sandbox)."""
+    service = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]["collaboration"]
+
+    assert service["cap_drop"] == ["ALL"]
+    assert "no-new-privileges:true" in service["security_opt"]

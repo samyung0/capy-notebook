@@ -6,18 +6,20 @@
 //! commands, locate, assets). Within a lane a room's calls go to one process
 //! (its XLSX replica stays warm there); a call without a room goes to the
 //! least busy one. Each process runs one call at a time. A call that runs past
-//! the timeout (120 s, officeRuntime's `CALL_TIMEOUT_MS`) kills its process;
+//! the timeout (120 s, officeRuntime's `CALL_TIMEOUT_MS`) kills its process
+//! (its process group on Linux);
 //! a process that dies (a crash, an abort on its memory cap) or answers
 //! garbage fails its call; both are transient (the same call may pass) and
 //! the next call starts a new process. The same call crashing again, on a
 //! process of its own, is refused (Epo 2026-10-07): it would crash every
 //! retry, so its room resets and the editor goes to recovery at once. An
 //! engine refusal or a panic the engines catch is an ordinary answer and
-//! keeps the process.
+//! keeps the process. Engines run sandboxed ([`sandbox`]).
 
 pub mod child;
 pub mod frame;
 pub mod office;
+pub mod sandbox;
 
 use std::collections::VecDeque;
 use std::ffi::OsString;
@@ -271,13 +273,22 @@ pub struct EnginePool {
 }
 
 impl EnginePool {
-    /// Starts the lanes' supervisors (processes start on their first call).
-    /// Needs a tokio runtime.
+    /// Starts the lanes' supervisors (processes start on their first call)
+    /// and makes this process non-dumpable ([`sandbox`]). Needs a tokio
+    /// runtime.
     pub fn new(config: PoolConfig) -> Self {
+        sandbox::parent();
+        let spawner = Spawner::start();
         let budget = config.replica_budget_bytes / config.save_processes.max(1) as u64;
         Self {
-            save: LaneHandle::start("save", config.save_processes, budget, &config),
-            background: LaneHandle::start("background", config.background_processes, 0, &config),
+            save: LaneHandle::start("save", config.save_processes, budget, &config, &spawner),
+            background: LaneHandle::start(
+                "background",
+                config.background_processes,
+                0,
+                &config,
+                &spawner,
+            ),
         }
     }
 
@@ -337,7 +348,13 @@ impl EnginePool {
 }
 
 impl LaneHandle {
-    fn start(name: &'static str, count: usize, replica_budget: u64, config: &PoolConfig) -> Self {
+    fn start(
+        name: &'static str,
+        count: usize,
+        replica_budget: u64,
+        config: &PoolConfig,
+        spawner: &Spawner,
+    ) -> Self {
         let count = count.max(1);
         let shared = Arc::new(LaneShared {
             interval: Mutex::new(Interval::default()),
@@ -362,6 +379,7 @@ impl LaneHandle {
                     depth: handle.depth.clone(),
                     alive: handle.alive.clone(),
                     shared: shared.clone(),
+                    spawner: spawner.clone(),
                     running: None,
                 };
                 tokio::spawn(supervisor.run(receiver));
@@ -468,7 +486,42 @@ struct Supervisor {
     depth: Arc<AtomicUsize>,
     alive: Arc<AtomicBool>,
     shared: Arc<LaneShared>,
+    spawner: Spawner,
     running: Option<Running>,
+}
+
+type SpawnRequest = (Command, oneshot::Sender<std::io::Result<Child>>);
+
+/// Starts engine processes on one thread that outlives them: an engine's
+/// parent-death signal ([`sandbox`]) fires when the thread that started it
+/// exits, and tokio's worker threads come and go (`block_in_place`). The
+/// thread ends with the last supervisor, after its engines.
+#[derive(Clone)]
+struct Spawner(std::sync::mpsc::Sender<SpawnRequest>);
+
+impl Spawner {
+    fn start() -> Self {
+        let runtime = tokio::runtime::Handle::current();
+        let (requests, received) = std::sync::mpsc::channel::<SpawnRequest>();
+        #[allow(clippy::expect_used)]
+        std::thread::Builder::new()
+            .name("engine-spawner".into())
+            .spawn(move || {
+                let _runtime = runtime.enter();
+                for (mut command, reply) in received {
+                    let _ = reply.send(command.spawn());
+                }
+            })
+            .expect("the engine spawner thread starts");
+        Self(requests)
+    }
+
+    async fn spawn(&self, command: Command) -> std::io::Result<Child> {
+        let stopped = || std::io::Error::other("the engine spawner stopped");
+        let (reply, answer) = oneshot::channel();
+        self.0.send((command, reply)).map_err(|_| stopped())?;
+        answer.await.unwrap_or_else(|_| Err(stopped()))
+    }
 }
 
 enum Outcome {
@@ -487,8 +540,9 @@ impl Supervisor {
         self.stop().await;
     }
 
-    fn spawn(&self) -> std::io::Result<Running> {
+    async fn spawn(&self) -> std::io::Result<Running> {
         let mut command = Command::new(&self.config.program);
+        sandbox::isolate(&mut command);
         command
             .args(&self.config.args)
             .env(child::ENV_REPLICA_BUDGET, self.replica_budget.to_string())
@@ -499,7 +553,7 @@ impl Supervisor {
         if let Some(limit) = self.config.memory_limit_bytes {
             command.env(child::ENV_MEMORY_LIMIT, limit.to_string());
         }
-        let mut child = command.spawn()?;
+        let mut child = self.spawner.spawn(command).await?;
         let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
             return Err(std::io::Error::other("engine process without pipes"));
         };
@@ -526,7 +580,7 @@ impl Supervisor {
             lock(&self.shared.interval).restarts += 1;
         }
         if self.running.is_none() {
-            match self.spawn() {
+            match self.spawn().await {
                 Ok(running) => {
                     self.running = Some(running);
                     self.alive.store(true, Ordering::Relaxed);
@@ -680,7 +734,7 @@ impl Supervisor {
         self.alive.store(false, Ordering::Relaxed);
         *lock(&self.shared.processes[self.index]) = ProcessState::default();
         let mut running = self.running.take()?;
-        let _ = running.child.start_kill();
+        sandbox::kill(&mut running.child);
         running
             .child
             .wait()
@@ -697,7 +751,7 @@ impl Supervisor {
                 .await
                 .is_err()
             {
-                let _ = running.child.start_kill();
+                sandbox::kill(&mut running.child);
                 let _ = running.child.wait().await;
             }
         }

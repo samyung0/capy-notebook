@@ -35,6 +35,10 @@ yrs.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rlimit = "0.10"
+# The engine sandbox (engine/sandbox.rs; Epo 2026-10-20: these two crates).
+landlock = "0.4"
+nix = { version = "0.31", default-features = false, features = ["process", "signal"] }
+seccompiler = "0.5"
 
 [dev-dependencies]
 axum.workspace = true

@@ -46,10 +46,11 @@ fn main() {
     match args.next().as_deref() {
         None => {}
         // An Office engine process of the server's pool (DESIGN.md 6.3):
-        // frames on stdin and stdout, so every line goes to stderr.
+        // frames on stdin and stdout, so every line goes to stderr. No Sentry
+        // (Epo 2026-10-20): its environment has no SENTRY_DSN, and its
+        // failures surface as the server's failed calls.
         Some("engine") => {
             observe::log_to_stderr();
-            let _sentry = observe::init();
             observe::install_for_sources();
             if let Err(error) = sources::engine::serve() {
                 observe::capture(&error.to_string(), None, &[("stage", "engine")]);
@@ -69,6 +70,19 @@ fn main() {
     // Before any connection is accepted, so a startup failure is reported.
     let _sentry = observe::init();
     observe::install_for_sources();
+    // The Office engine sandbox: production does not start without Landlock.
+    match sources::engine::sandbox::check_host() {
+        Ok(None) => {}
+        Ok(Some(gap)) => log(
+            Level::Warn,
+            "office engine sandbox incomplete",
+            json!({ "gap": gap }),
+        ),
+        Err(error) => {
+            observe::capture(&error, None, &[("stage", "engine_sandbox")]);
+            std::process::exit(1);
+        }
+    }
     let config = match Config::from_env() {
         Ok(config) => config,
         Err(error) => {

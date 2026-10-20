@@ -299,6 +299,128 @@ async fn refusals_and_glue_panics_answer_and_keep_the_process() {
     assert_eq!((save.restarts, save.crashes), (0, 0));
 }
 
+/// Security regression (the Office engine sandbox, Epo 2026-10-20): an
+/// engine keeps none of the server's environment, opens no network socket,
+/// starts no process, execs nothing and cannot change its process group
+/// while its threads still start, runs with no_new_privs, seccomp, its limits
+/// and its own process group, and reads no file outside its own /proc
+/// entries.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_engine_runs_inside_its_sandbox() {
+    const EPERM: i64 = 1;
+    const EACCES: i64 = 13;
+    let outside = std::env::temp_dir().join(format!("capy-engine-reach-{}", std::process::id()));
+    std::fs::write(&outside, b"outside the sandbox").unwrap();
+    let mut config = config(1, 1);
+    config.memory_limit_bytes = Some(3 << 30);
+    let pool = EnginePool::new(config);
+    let reply = pool
+        .call(
+            Lane::Save,
+            None,
+            request("test.reach", json!({ "path": outside })),
+        )
+        .await;
+    std::fs::remove_file(&outside).unwrap();
+    let reach = reply.unwrap().value;
+
+    // PATH is set here and absent there; every name it has is allowed.
+    assert!(std::env::var_os("PATH").is_some());
+    let env: Vec<&str> = reach["env"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap())
+        .collect();
+    assert!(
+        env.iter()
+            .all(|name| sources::engine::sandbox::passes(name)),
+        "{env:?}"
+    );
+    assert!(env.contains(&"CAPY_ENGINE_REPLICA_BUDGET"), "{env:?}");
+    // Each refusal names the rule that made it (sandbox.rs's errnos).
+    assert_eq!(reach["udp"], json!(EACCES), "{reach}");
+    assert_eq!(reach["spawn"], json!(EPERM), "{reach}");
+    assert_eq!(reach["exec"], json!(EACCES), "{reach}");
+    assert_eq!(reach["thread"], json!(7), "{reach}");
+    assert_eq!(reach["no_new_privs"], json!("1"), "{reach}");
+    assert_eq!(reach["seccomp"], json!("2"), "{reach}");
+    // Its three filters on top of what it inherited from this process.
+    let filters = |status: &str| {
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix("Seccomp_filters:"))
+            .and_then(|count| count.trim().parse::<u64>().ok())
+    };
+    let inherited = filters(&std::fs::read_to_string("/proc/self/status").unwrap()).unwrap();
+    assert_eq!(
+        reach["seccomp_filters"]
+            .as_str()
+            .and_then(|count| count.parse::<u64>().ok()),
+        Some(inherited + 3),
+        "{reach}"
+    );
+    assert_eq!(reach["nofile"], json!([64, 64]), "{reach}");
+    assert_eq!(reach["core"], json!([0, 0]), "{reach}");
+    assert_eq!(reach["data"], json!([3u64 << 30, 3u64 << 30]), "{reach}");
+    // No file-size cap of its own: an engine whose stderr is a file logs.
+    assert_eq!(
+        reach["fsize"],
+        json!(rlimit::Resource::FSIZE.get().unwrap()),
+        "{reach}"
+    );
+    assert_eq!(reach["own_group"], json!(true), "{reach}");
+    assert_eq!(reach["setpgid"], json!(EPERM), "{reach}");
+    assert_eq!(reach["file"], json!(EACCES), "{reach}");
+    assert_ne!(reach["parent_environ"], json!("ok"), "{reach}");
+}
+
+/// Security regression (the Office engine sandbox, Epo 2026-10-20): an
+/// engine dies with the process running its pool, even in the middle of a
+/// call (an idle one would also end at the end of its stdin).
+#[cfg(target_os = "linux")]
+#[test]
+fn an_engine_dies_with_its_server_even_mid_call() {
+    use std::io::BufRead;
+    let mut server = std::process::Command::new(env!("CARGO_BIN_EXE_sources-test-engine"))
+        .arg("pool")
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(server.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let engine: u32 = line.trim().parse().unwrap();
+    server.kill().unwrap();
+    server.wait().unwrap();
+    // Gone, or a zombie nobody reaped yet.
+    let running = || {
+        std::fs::read_to_string(format!("/proc/{engine}/stat")).is_ok_and(|stat| {
+            !stat
+                .rsplit(')')
+                .next()
+                .is_some_and(|rest| rest.trim_start().starts_with('Z'))
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while running() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!running(), "engine {engine} outlived its server");
+}
+
+/// Security regression (the Office engine sandbox, Epo 2026-10-20): the
+/// process that runs engines (the server) is not dumpable, so an engine of
+/// the same uid cannot read its environment or memory through /proc.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn the_server_running_engines_is_not_dumpable() {
+    let _pool = EnginePool::new(config(1, 1));
+    assert!(!nix::sys::prctl::get_dumpable().unwrap());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_stray_print_on_stdout_is_a_corrupt_pipe() {
     let pool = EnginePool::new(config(1, 1));
