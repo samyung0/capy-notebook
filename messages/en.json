@@ -924,6 +924,8 @@
   "share_unreadable_flashcards_title": "This flashcard set could not be loaded",
   "share_unreadable_body": "Its content could not be read, so it cannot be shown.",
   "material_decode_title": "This note could not be loaded",
+  "material_decode_quiz_title": "This quiz could not be loaded",
+  "material_decode_flashcards_title": "This flashcard set could not be loaded",
   "material_decode_body": "Its stored content could not be decoded, so nothing is shown rather than an empty page. Support can recover it from an earlier version.",
   "material_mode": "Material mode",
   "material_zoom_out": "Zoom out",

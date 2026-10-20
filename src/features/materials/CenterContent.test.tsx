@@ -213,17 +213,18 @@ it('credits the embeds the note holds in its footer', async () => {
 
 // A quiz or set whose stored content the rules refuse is left out of the study
 // pages; opening it shows the center file error (Epo 2026-10-20).
-it('shows the center file error for a material whose content cannot be read', async () => {
+it('shows the center file error, named by the kind it opened, for a material whose content cannot be read', async () => {
   const html = await render(
     <MaterialContent
       allowExternalAssets={false}
       centerQuiz={false}
       forceReadOnly={false}
+      kind="quiz"
       materialId="unreadable"
       mode="view"
       onEditorStatusChange={() => {}}
     />
   );
   expect(html).toContain('data-error-surface="panel"');
-  expect(html).toContain('could not be loaded');
+  expect(html).toContain('This quiz could not be loaded');
 });

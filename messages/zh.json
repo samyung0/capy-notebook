@@ -923,6 +923,8 @@
   "share_unreadable_quiz_title": "无法加载此测验",
   "share_unreadable_flashcards_title": "无法加载此闪卡集",
   "share_unreadable_body": "其内容无法读取，因此无法显示。",
+  "material_decode_quiz_title": "无法加载此测验",
+  "material_decode_flashcards_title": "无法加载此闪卡集",
   "material_decode_title": "无法加载此笔记",
   "material_decode_body": "存储的内容无法解码，因此不会显示空白页。支持可以从较早版本恢复。",
   "material_mode": "材料模式",
