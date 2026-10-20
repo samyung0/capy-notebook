@@ -3791,13 +3791,25 @@ path of `UpdateMaterial`) sets `materials.index_dirty_at` when a workspace
 note's content changes, clears `index_error`, and skips unchanged writes; a
 new workspace note is dirty from creation. A content write to an embedded
 quiz or flashcard set (its room's projection or a save) marks its parent note
-the same way (`markParentNoteDirtyTx`), so an item edit reindexes the note. The collaboration server's 5 s
-timer (`schedule_note_indexes`) asks Go to admit dirty notes that have been idle
-15 s, have no running job and no parked error, in workspaces with
-`auto_process` on. `POST /internal/collaboration/materials/{id}/index`
-(`RequestMaterialIndex`) reserves ingest credits on the workspace owner,
-inserts one `ingest` job carrying `materialId`, and records it in
-`index_job_id`; 409 means not due. A refusal a retry cannot fix (another
+the same way (`markParentNoteDirtyTx`), so an item edit reindexes the note,
+and clears `pending_tokens`. A dirty note is due once its change since the
+last index reaches 1,000 net tokens after 60 s idle, or once it has been dirty
+for 10 minutes (Epo 2026-10-17; `NOTE_INDEX_TOKENS`, `NOTE_INDEX_IDLE` and
+`NOTE_INDEX_STALE` in `sources/src/refresh.rs`, `NoteIndexTokens` and
+`NoteIndexStale` in `store/note_index.go`). The collaboration server's 5 s
+timer (`schedule_note_indexes`) runs `NOTE_INDEX_SQL`, which lists dirty notes
+with no running job and no parked error, in workspaces with `auto_process`
+on, that are idle and not yet measured (`pending_tokens` NULL) or measured at
+the threshold, or that are stale. It asks Go to admit each.
+`POST /internal/collaboration/materials/{id}/index` (`RequestMaterialIndex`)
+measures a note that is not stale, before it takes the workspace and account
+locks: the net tokens of its changes (below) go into `pending_tokens` if the
+note's revision is unchanged by then, and a change under the threshold is not
+due (409) until the next content write clears the measure or it goes stale
+(staleness is the database clock's, as in the SQL). A stored note the rules
+refuse answers 422 `material_content_unreadable`, which parks it. A due note gets
+ingest credits reserved on the workspace owner and one `ingest` job carrying
+`materialId`, recorded in `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
 `pendingNotes` in workspace settings until the note changes again; transient
 failures retry on the next tick. Notes have no Process: with `auto_process`
@@ -3806,19 +3818,22 @@ off, dirty notes wait until it is on again.
 When the job ends, whatever ended it (the worker, the lease reaper,
 `cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
 account-deletion request), the `jobs_release_note_index` trigger (migration
-0082, its function replaced by 0083) releases the note. Admission clears the
-dirty mark, so a mark present when the job ends means an edit landed while it
-ran: whether the job finished or failed, the note is then left dirty with no
-error and is due again. A done job clears `index_job_id` and `index_error`. A
-job that failed with no edit since its admission parks the note: it stays
-dirty with `index_error` set (the job's error, or `index job failed` when it
-has none) and counts in `pendingNotes`, and nothing admits it again until its
-next edit clears the error. The one wait before that
+0082, its function replaced by 0083 and then 0098) releases the note.
+Admission clears the dirty mark, so a mark present when the job ends means an
+edit landed while it ran: whether the job finished or failed, the note is then
+left dirty with no error and is due again. A done job clears `index_job_id`
+and `index_error` and resets `index_failures`. A job that failed with no edit
+since its admission counts one in `index_failures` and leaves the note dirty
+with no error, so the scheduler admits it again: a note is retried at most
+twice (Epo 2026-10-20). The third such failure parks it: it stays dirty with
+`index_error` set (the job's error, or `index job failed` when it has none)
+and counts in `pendingNotes`, and nothing admits it again until its next edit
+clears the error and the count. The one wait inside a job
 is a busy embedding provider: like a file's job, a note job that finds it busy
 re-pends without spending an attempt (once, `PROVIDER_WAITS_MAX`, decided
 2026-10-15 in place of the five waits of 2026-10-14; Retry-After or 30 s) and
 fails only after that; otherwise there is no
-automatic re-admission or backoff. A note parked by a lifecycle cancellation
+backoff between those re-admissions. A note parked by a lifecycle cancellation
 (an account-deletion request, a suspension) stays parked after the account is
 restored or unsuspended, until an edit.
 
@@ -3845,7 +3860,10 @@ claims a new content row without moving the alias. It reuses vectors for
 unchanged chunk text from the note's previous content row, which stays
 aliased and searchable while the job runs, and writes the content with no
 descriptor. `publish_material_content` then marks the new row ready and moves
-the alias in one transaction, and the orphan trigger drops the old row. A
+the alias in one transaction, and the orphan trigger drops the old row. The
+alias move (here, or when the claim finds ready content) also stores the
+fetched `blocks` as `materials.indexed_blocks` (migration 0098): the baseline
+the note's pending changes are measured against. A
 failed job abandons its claimed row, so the note keeps its previous index. The
 attempt records `chunks_created` and, in `details`, `chunks_embedded`. A 404
 from Go (trashed, standalone, deleted) ends the job without work. The job's
@@ -3861,7 +3879,8 @@ or regions. The chat panel renders such a chip with the note glyph and opens
 the note in view mode. The agent's `list_sources` keeps notes as title, id
 and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
-clones copy note index rows with the file rows; a cloned note without an
+clones copy note index rows with the file rows, and a copied index keeps its
+`indexed_blocks`; a cloned note without an
 index, whose index is not current (dirty, a job rebuilding it, or a failed
 one), or whose index text the clone changed (a mention turned plain text, or
 an embedded item whose copy reads differently), starts dirty.
@@ -4040,9 +4059,16 @@ and carry the saved edits as the copy's own `source_documents` row
 ([office-files.md](frontend/office-files.md)).
 
 `retrieval/pending.py` captures all scoped durable changes once per answer,
-including sources with no index or search hit. Complete exact changes form a
-protected provider message outside tool-output clipping, live-history
-compaction and persisted conversation summaries. Replacements and removals
+including sources with no index or search hit. Chat passes a document's
+changes on only once the agent reads that document this turn
+(`inspect_document`, `capture_page`, `read_document`; `PendingSources.read`),
+never every turn or with search results (Epo 2026-10-20). Generation reads
+its whole scope, so it passes on every scoped change. Passed-on exact changes
+form a protected provider message outside tool-output clipping, live-history
+compaction and persisted conversation summaries, recomputed for each model
+request. `resolve_source_change` stays offered when any captured change has a
+placeholder (the tools are fixed for the turn) and refuses one in a document
+not read yet. Replacements and removals
 supersede old indexed facts; the message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
 match against passages, and that a move carries no text. An image added or
@@ -4057,24 +4083,53 @@ way a capture does, counted in the same image budget. Nothing is captioned or
 stored: chat runs without ingest job pins, so it has no captioning model.
 The same read captures published identities for every scoped file, including
 files without an index. Before each source-dependent model request, the pipeline
-checks that those published identities still match. Publication, replacement or
-deletion during gathering returns `source_changed` and asks the user to retry.
+checks that the identities of the documents whose changes it passed on still
+match (all scoped files for generation). Publication, replacement or deletion
+of such a document during gathering returns `source_changed` and asks the user
+to retry.
 New authored edits alone leave the captured evidence valid. This check prevents
 combining an old pending delta with a newer index without retaining old indexes
 or keeping database transactions open during model calls.
 
+Notes get the same evidence from Go (Epo 2026-10-17). The same read calls
+`POST /api/internal/note-changes` (pipeline secret, bound to the workspace like
+`index-text`; generation calls it too), and `NotePendingChanges` computes, for
+each scoped note the index does not hold as it stands (dirty, being indexed or
+failed), its index blocks now (`MaterialIndexText`'s blocks from
+`materials.content`) against `indexed_blocks`, aligned by element id
+(`materialdoc.NoteChanges`). A never-indexed note reads as added blocks. A stored note the rules refuse gives none (logged), and the other notes still do. Each
+change names its `blockId`. Text changes have Office's shape: one span with
+40 UTF-16 units of context. Reordered blocks are moves without text. An
+embed's small change is a line diff of its index text. A chart, plot, graph or
+Mermaid change whose diff exceeds 150 tokens, or a line diff past 2^18 cells
+of changed lines before by after (once unchanged first and last lines are
+trimmed; `N of M lines changed`), is a `data` placeholder labelled
+with its kind, title and a count (`chart "Rain": 40 of 104 cells changed`).
+`resolve_source_change` with `material_id` and `block_id` reads that block's
+index text before and after through `POST /api/internal/note-changes/resolve`,
+which acts as the turn's user (who must read the workspace). Index text holds
+no answer keys, so neither does any of this (2026-10-18). The read is of the
+stored content, as of the last projection; the live room comes with the Office
+live route. The notes' published index identities, read before the changes,
+are checked with the files'; a failed read keeps the turn going, with the
+outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
+omitted note change waits for its reindex.
+
 The full provider request reserves this pending evidence within the selected
 model's window and the 250k effective ceiling, including output and safety
-allowances. If complete pending evidence cannot fit, chat omits that evidence,
-keeps it durably and explicitly tells both the model and user; the UI offers
-Process file changes. Generation uses the same evidence and returns
-`pending_sources_too_large` with the edited file ids when it cannot include it,
-so Process file changes sends exactly the files chat would.
+allowances. If complete passed-on evidence cannot fit, chat omits that
+evidence, keeps it durably and explicitly tells both the model and user; the UI
+offers Process file changes for the read files it names. Generation uses the
+same evidence for its whole scope and returns `pending_sources_too_large`
+with the edited file ids (`fileIds`, which Process file changes sends) and
+note ids (`materialIds`, which wait for their reindex) only when it cannot
+include it (Epo 2026-10-20: with auto processing off too, the error shows
+only then).
 Either overflow (chat dropping the pending evidence, or generation refusing)
 also sends the workspace owner a `system` notification per affected file
 (`pending_edits_too_large`, linking to the file), best effort and off the
-request path. Chat drops all pending evidence together, so every file with
-pending edits in the turn counts. `source_documents.overflow_notified_checkpoint`
+request path. Chat drops all passed-on evidence together, so every read file
+with pending edits in the turn counts. `source_documents.overflow_notified_checkpoint`
 records the indexed checkpoint it was sent at; processing advances
 `indexed_checkpoint`, so the file notifies again only after it is processed.
 

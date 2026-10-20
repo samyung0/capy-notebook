@@ -2059,7 +2059,9 @@ async def test_a_failed_note_index_abandons_its_content_claim(monkeypatch):
     monkeypatch.setattr(worker.registry, "pins_from_payload", lambda *_a, **_k: None)
     monkeypatch.setattr(worker.accounting, "bind_ingest", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        worker, "_fetch_material_text", lambda *_a: {"text": "# Cells\n\nbody"}
+        worker,
+        "_fetch_material_text",
+        lambda *_a: {"text": "# Cells\n\nbody", "blocks": []},
     )
     monkeypatch.setattr(worker.store, "attach_material_content", attach)
     monkeypatch.setattr(worker.indexing, "index_material", refuse)

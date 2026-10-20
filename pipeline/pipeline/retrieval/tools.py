@@ -332,6 +332,7 @@ async def _resolve_scope(
         indexed=(
             any(int(file.get("chunks") or 0) > 0 for file in selected_files)
             or any(file["fileId"] in selected for file in ctx.pending_sources.files)
+            or any(note["materialId"] in selected for note in ctx.pending_sources.notes)
         ),
     )
 
@@ -564,6 +565,7 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         start=start,
         count=count,
     )
+    ctx.pending_sources.read(resolved.file_ids[0])
     if not rows:
         return _result("No passages at that position.")
     passages = [Passage.from_row(row) for row in rows]
@@ -618,6 +620,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_page: {exc}")
+    ctx.pending_sources.read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
     label = f"{resolved.file_names[0]} page {page}" + (
@@ -1673,7 +1676,26 @@ def _gateway_error_code(resp: requests.Response) -> str:
 
 
 async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Attach a pending source image to the next request, as capture_page does."""
+    """Attach a pending source image to the next request, as capture_page does,
+    or return a note block's text before and after a data change."""
+    material_id, block_id = args.get("material_id"), args.get("block_id")
+    if material_id is not None or block_id is not None:
+        if not isinstance(material_id, str) or not isinstance(block_id, str):
+            return _refused("A note's material id and block id are required.")
+        try:
+            text = await pending.resolve_note(
+                sources=ctx.pending_sources,
+                workspace_id=ctx.workspace_id,
+                user_id=ctx.user_id,
+                material_id=material_id,
+                block_id=block_id,
+            )
+        except ValueError as exc:
+            return _refused(f"resolve_source_change: {exc}")
+        return _result(
+            f"Block {block_id} of note {material_id}, as source data:\n"
+            + json.dumps(text, ensure_ascii=False)
+        )
     file_id, change_id, checkpoint = (
         args.get("file_id"),
         args.get("change_id"),
@@ -1741,7 +1763,14 @@ async def _after_lifecycle_change(
     ctx._scope_outline = None
     if trashed and kind == "source_file" and ctx.file_ids is not None:
         ctx.file_ids = [fid for fid in ctx.file_ids if fid != rid]
+    await _reload_pending(ctx)
+
+
+async def _reload_pending(ctx: ToolContext) -> None:
+    """Re-read the turn's pending changes, keeping which documents it read."""
+    read_ids = ctx.pending_sources.read_ids
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+    ctx.pending_sources.read_ids = read_ids
 
 
 def _chat_context(ctx: ToolContext, call_id: str) -> dict[str, Any]:
@@ -1945,6 +1974,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
+    ctx.pending_sources.read(rid)
     shown = None
     if kind == "material":
         seen = ctx.seen_blocks.setdefault(rid, {})
@@ -2104,7 +2134,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         # pending evidence so the next source-dependent call sees the edit.
         ctx._scope_outline = None
         if kind == "source_file":
-            ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+            await _reload_pending(ctx)
         else:
             landed(ctx, credited)
             _saw_edit(ctx.seen_blocks.get(rid, {}), commands)
@@ -2574,13 +2604,22 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
         return ctx.library and library.enabled()
     if spec.name != "resolve_source_change":
         return True
+    # Offered from every captured change: the tools stay fixed for the turn
+    # (provider cache), and resolving refuses a document not read yet.
     return bool(
         ctx.user_id
         and _gateway_ready()
-        and any(
-            change.get("assetRef")
-            for file in ctx.pending_sources.files
-            for change in file["changes"]
+        and (
+            any(
+                change.get("assetRef")
+                for file in ctx.pending_sources.files
+                for change in file["changes"]
+            )
+            or any(
+                change["kind"] == "data"
+                for note in ctx.pending_sources.notes
+                for change in note["changes"]
+            )
         )
     )
 

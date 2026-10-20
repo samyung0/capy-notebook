@@ -77,6 +77,7 @@ func TestNoteIndexRequestLocksWorkspaceBeforeAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	staleNote(t, s, note.ID)
 	holdWorkspaceThenAccount(t, s, ws.ID, ownerID, func(ctx context.Context) error {
 		_, err := s.RequestMaterialIndex(ctx, note.ID)
 		return err

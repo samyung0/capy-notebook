@@ -184,14 +184,21 @@ async def existing_content_vectors(
 
 
 async def attach_material_content(
-    *, workspace_id: str, material_id: str, content_hash: str, claim_job_id: str
+    *,
+    workspace_id: str,
+    material_id: str,
+    content_hash: str,
+    claim_job_id: str,
+    blocks: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Claim canonical workspace content for a note, like attach_file_content
     without a source revision: the note's projection is the only version.
 
     The alias moves now only onto content that is already ready. A new claim
     is aliased by ``publish_material_content`` once it is ready, so the old
-    index keeps serving search and lends its vectors until then."""
+    index keeps serving search and lends its vectors until then. ``blocks``
+    is the per-block index text the content was chunked from (Go's
+    MaterialIndexText.Blocks); it moves with the alias."""
     content_id = f"rgc_{secrets.token_hex(8)}"
     db = await pool()
     async with db.connection() as conn, conn.transaction():
@@ -232,7 +239,9 @@ async def attach_material_content(
             created = True
         ready = row["status"] == "ready"
         if ready:
-            await _alias_material_content(conn, material_id, workspace_id, row["id"])
+            await _alias_material_content(
+                conn, material_id, workspace_id, row["id"], blocks
+            )
         return {
             "content_id": row["id"],
             "previous_content_id": previous["content_id"] if previous else None,
@@ -242,7 +251,12 @@ async def attach_material_content(
 
 
 async def publish_material_content(
-    *, workspace_id: str, material_id: str, content_id: str, claim_job_id: str
+    *,
+    workspace_id: str,
+    material_id: str,
+    content_id: str,
+    claim_job_id: str,
+    blocks: list[dict[str, Any]],
 ) -> None:
     """Mark a note's claimed content ready and move its alias in one
     transaction; the orphan trigger then drops the previous content."""
@@ -258,12 +272,25 @@ async def publish_material_content(
         )
         if not cur.rowcount:
             raise RetryableError("content claim taken over")
-        await _alias_material_content(conn, material_id, workspace_id, content_id)
+        await _alias_material_content(
+            conn, material_id, workspace_id, content_id, blocks
+        )
 
 
 async def _alias_material_content(
-    conn, material_id: str, workspace_id: str, content_id: str
+    conn,
+    material_id: str,
+    workspace_id: str,
+    content_id: str,
+    blocks: list[dict[str, Any]],
 ) -> None:
+    # The blocks become the note's indexed_blocks, the baseline Go measures
+    # its pending changes against (Epo 2026-10-17); its pending tokens are
+    # measured again.
+    await conn.execute(
+        "UPDATE materials SET indexed_blocks = %s, pending_tokens = NULL WHERE id = %s",
+        (Jsonb(blocks), material_id),
+    )
     await conn.execute(
         """
         INSERT INTO rag_material_contents (material_id, workspace_id, content_id)

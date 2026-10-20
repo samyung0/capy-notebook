@@ -298,7 +298,7 @@ func pipelineGenerateError(err error) error {
 	case "context_too_large":
 		return errContextTooLarge
 	case "pending_sources_too_large":
-		return &pendingSourcesTooLargeError{FileIDs: body.FileIDs}
+		return &pendingSourcesTooLargeError{FileIDs: body.FileIDs, MaterialIDs: body.MaterialIDs}
 	case "source_changed":
 		return errSourceChanged
 	}
@@ -306,8 +306,9 @@ func pipelineGenerateError(err error) error {
 }
 
 // pendingSourcesTooLargeError: the scope's unprocessed edits do not fit the
-// request. FileIDs names the edited files, which Process file changes sends.
-type pendingSourcesTooLargeError struct{ FileIDs []string }
+// request. FileIDs names the edited files, which Process file changes sends;
+// MaterialIDs the notes, which wait for their reindex.
+type pendingSourcesTooLargeError struct{ FileIDs, MaterialIDs []string }
 
 func (e *pendingSourcesTooLargeError) Error() string {
 	return "unprocessed file changes exceed the selected model's input limit"
