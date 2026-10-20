@@ -907,6 +907,54 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 	}
 }
 
+// The DOCX engine round's reset (migration 0100) drops every DOCX state under a
+// new epoch with no window: unpublished edits go and editing need not be
+// paused; a refresh in flight is superseded and a pending rebuild ends on the
+// published bytes. Other formats keep their state. The run rolls back.
+func TestDocxEngineRoundReset(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "docx_round_reset")
+	edited := maintenanceTestEdited(t, s, owner, "lesson.docx", false)
+	rebuilt := maintenanceTestEdited(t, s, owner, "report.docx", false)
+	_, deck := sourceTestFile(t, s, owner, "deck.pptx", "ppt")
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, deck.ID), "deck-state")
+	raw, err := os.ReadFile("../../migrations/0100_docx_engine_round_reset.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	// A deferred publication of report.docx waits for its rebuild.
+	if _, err = tx.Exec(ctx, `UPDATE files SET blob_path='sources/published',source_sha256='published' WHERE id=$1`, rebuilt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET rebuild_pending=true,published_state='captured',published_state_seed_sha256=$2 WHERE file_id=$1`, rebuilt, sourceTestStateSeed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{edited, rebuilt} {
+		var epoch int64
+		var dropped bool
+		var base string
+		if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND seed_bytes=0 AND pending_effects='[]'::jsonb AND NOT rebuild_pending AND published_state IS NULL,base_blob_path FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &dropped, &base); err != nil {
+			t.Fatal(err)
+		}
+		if epoch != 2 || !dropped || (file == rebuilt) != (base == "sources/published") {
+			t.Fatalf("reset %s: epoch=%d dropped=%v base=%s", file, epoch, dropped, base)
+		}
+	}
+	var kept bool
+	if err = tx.QueryRow(ctx, `SELECT epoch=1 AND state IS NOT NULL FROM source_documents WHERE file_id=$1`, deck.ID).Scan(&kept); err != nil || !kept {
+		t.Fatalf("the PPTX state stays: %v %v", kept, err)
+	}
+}
+
 // OfficeSeeds names each (format, base, seed hash) a stored Office change was
 // taken over once, counting its files, including a refresh candidate's copy;
 // text and complete states name none. The claim hands the copy's kind over.
