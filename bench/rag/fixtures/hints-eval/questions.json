@@ -1,0 +1,520 @@
+{
+  "about": "Part 2 questions for the pending-hints eval, each with its answer key. kind edit: the answer is only right with a pending edit (the index holds the old text); indexed: the index answers it and hints are noise; smalltalk: no key, only reads and junk quotes are scored. key: every group must match the answer (a group is a regex); stale: a regex that, matched without the key, means the answer used the indexed (old) text. gold_docs: documents a useful read targets. not_junk: changes and documents never injected as junk for that question (on its subject). markers: a regex per pending change that only an answer repeating that change would contain, for spotting a quoted junk hint. kind offer (2026-10-20): the first-turn note or deck offer. offer is whether the answer should end with an AskUser offering a note or a slide deck: yes for an explanation or summary on a chat's first message; no when the user asked for a material, for small talk, and on a later message (history holds the earlier turn). No key; writes are counted.",
+  "questions": [
+    {
+      "id": "P01",
+      "kind": "edit",
+      "text": "In my calculus note, what is the derivative of sin(3x²)?",
+      "gold_docs": [
+        "m_calc"
+      ],
+      "gold_changes": [
+        "calc-chain"
+      ],
+      "key": [
+        "6\\s*x\\s*(·|\\*|⋅)?\\s*cos"
+      ],
+      "stale": [
+        "(?<![0-9.])3\\s*x\\s*(·|\\*|⋅)?\\s*cos"
+      ],
+      "not_junk": [
+        "m_calc"
+      ]
+    },
+    {
+      "id": "P02",
+      "kind": "edit",
+      "text": "What is the thesis of my First World War essay plan now?",
+      "gold_docs": [
+        "m_wwi"
+      ],
+      "gold_changes": [
+        "wwi-thesis"
+      ],
+      "key": [
+        "militarism|arms race"
+      ],
+      "stale": [
+        "alliance system was the main cause"
+      ],
+      "not_junk": [
+        "m_wwi",
+        "f_txt"
+      ]
+    },
+    {
+      "id": "P03",
+      "kind": "edit",
+      "text": "Which historian did I add as a counter-argument in my WWI essay plan, and what does he argue?",
+      "gold_docs": [
+        "m_wwi"
+      ],
+      "gold_changes": [
+        "wwi-counter"
+      ],
+      "key": [
+        "Clark",
+        "shared|no single|all the great powers|collective|not one"
+      ],
+      "stale": [],
+      "not_junk": [
+        "m_wwi",
+        "f_txt"
+      ]
+    },
+    {
+      "id": "P04",
+      "kind": "edit",
+      "text": "When is my titration report due?",
+      "gold_docs": [
+        "m_list"
+      ],
+      "gold_changes": [
+        "list-deadline"
+      ],
+      "key": [
+        "Monday,? 3|3 November|3rd November|November 3|3 Nov"
+      ],
+      "stale": [
+        "Friday"
+      ],
+      "not_junk": [
+        "m_list",
+        "f_xlsx"
+      ]
+    },
+    {
+      "id": "P05",
+      "kind": "edit",
+      "text": "Do I still need to print the lab manual for lab week?",
+      "gold_docs": [
+        "m_list"
+      ],
+      "gold_changes": [
+        "list-manual"
+      ],
+      "key": [
+        "no longer|removed|not on|isn't on|is not on|no,|don't need|do not need|taken off|deleted|crossed off|not listed|no need"
+      ],
+      "stale": [],
+      "not_junk": [
+        "m_list"
+      ]
+    },
+    {
+      "id": "P06",
+      "kind": "edit",
+      "text": "What concentration of NaOH did I get in my titration spreadsheet?",
+      "gold_docs": [
+        "f_xlsx"
+      ],
+      "gold_changes": [
+        "xlsx-naoh"
+      ],
+      "key": [
+        "0\\.0941"
+      ],
+      "stale": [
+        "0\\.0935"
+      ],
+      "not_junk": [
+        "f_xlsx",
+        "m_list"
+      ]
+    },
+    {
+      "id": "P07",
+      "kind": "edit",
+      "text": "Which indicator am I using for the titration?",
+      "gold_docs": [
+        "f_xlsx"
+      ],
+      "gold_changes": [
+        "xlsx-indicator"
+      ],
+      "key": [
+        "methyl orange"
+      ],
+      "stale": [
+        "phenolphthalein"
+      ],
+      "not_junk": [
+        "f_xlsx",
+        "m_list"
+      ]
+    },
+    {
+      "id": "P08",
+      "kind": "edit",
+      "text": "According to my economics coursework, was UK inflation mainly demand-pull or cost-push?",
+      "gold_docs": [
+        "f_docx"
+      ],
+      "gold_changes": [
+        "docx-costpush",
+        "docx-conclusion"
+      ],
+      "key": [
+        "cost[- ]push"
+      ],
+      "stale": [
+        "(mainly|primarily|largely|mostly) demand[- ]pull"
+      ],
+      "not_junk": [
+        "f_docx"
+      ]
+    },
+    {
+      "id": "P09",
+      "kind": "edit",
+      "text": "When did the Bank of England first cut interest rates, according to my coursework?",
+      "gold_docs": [
+        "f_docx"
+      ],
+      "gold_changes": [
+        "docx-cut"
+      ],
+      "key": [
+        "August 2024"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_docx"
+      ]
+    },
+    {
+      "id": "P10",
+      "kind": "edit",
+      "text": "What does the exam tip on my cell division slides say?",
+      "gold_docs": [
+        "f_pptx"
+      ],
+      "gold_changes": [
+        "pptx-tip"
+      ],
+      "key": [
+        "four",
+        "haploid"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_pptx"
+      ]
+    },
+    {
+      "id": "P11",
+      "kind": "edit",
+      "text": "光反应在哪里进行？产生什么？",
+      "gold_docs": [
+        "m_zh"
+      ],
+      "gold_changes": [
+        "zh-light"
+      ],
+      "key": [
+        "类囊体|thylakoid",
+        "ATP|NADPH"
+      ],
+      "stale": [],
+      "not_junk": [
+        "m_zh"
+      ]
+    },
+    {
+      "id": "P12",
+      "kind": "edit",
+      "text": "In my forces note, what is the worked example for F = ma?",
+      "gold_docs": [
+        "m_phys"
+      ],
+      "gold_changes": [
+        "phys-example"
+      ],
+      "key": [
+        "5\\s*kg",
+        "10\\s*N"
+      ],
+      "stale": [
+        "2\\s*kg|\\b6\\s*N\\b"
+      ],
+      "not_junk": [
+        "m_phys"
+      ]
+    },
+    {
+      "id": "P13",
+      "kind": "edit",
+      "text": "How many words is my economics coursework now?",
+      "gold_docs": [
+        "f_docx"
+      ],
+      "gold_changes": [
+        "docx-draft"
+      ],
+      "key": [
+        "1,?980"
+      ],
+      "stale": [
+        "1,?450"
+      ],
+      "not_junk": [
+        "f_docx"
+      ]
+    },
+    {
+      "id": "P14",
+      "kind": "indexed",
+      "text": "What is the induced-fit model of enzyme action?",
+      "gold_docs": [
+        "f_enz"
+      ],
+      "gold_changes": [],
+      "key": [
+        "chang\\w* (its )?shape|mould|mold|conform|adjust"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_enz"
+      ]
+    },
+    {
+      "id": "P15",
+      "kind": "indexed",
+      "text": "What was the Truman Doctrine?",
+      "gold_docs": [
+        "f_cold"
+      ],
+      "gold_changes": [],
+      "key": [
+        "contain|Greece|Turkey"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_cold"
+      ]
+    },
+    {
+      "id": "P16",
+      "kind": "indexed",
+      "text": "How is an ester made?",
+      "gold_docs": [
+        "f_org"
+      ],
+      "gold_changes": [],
+      "key": [
+        "carboxylic acid",
+        "alcohol"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_org"
+      ]
+    },
+    {
+      "id": "P17",
+      "kind": "indexed",
+      "text": "What is a negative externality?",
+      "gold_docs": [
+        "m_econ"
+      ],
+      "gold_changes": [],
+      "key": [
+        "third[- ]part"
+      ],
+      "stale": [],
+      "not_junk": [
+        "m_econ"
+      ]
+    },
+    {
+      "id": "P18",
+      "kind": "indexed",
+      "text": "Why did Stalin blockade Berlin in 1948?",
+      "gold_docs": [
+        "f_cold"
+      ],
+      "gold_changes": [],
+      "key": [
+        "currency|Deutsch"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_cold"
+      ]
+    },
+    {
+      "id": "P19",
+      "kind": "indexed",
+      "text": "What happens during anaphase?",
+      "gold_docs": [
+        "f_pptx"
+      ],
+      "gold_changes": [],
+      "key": [
+        "chromatid|opposite poles"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_pptx"
+      ]
+    },
+    {
+      "id": "P20",
+      "kind": "indexed",
+      "text": "How does temperature affect enzyme activity?",
+      "gold_docs": [
+        "f_enz"
+      ],
+      "gold_changes": [],
+      "key": [
+        "denatur",
+        "optimum"
+      ],
+      "stale": [],
+      "not_junk": [
+        "f_enz",
+        "zh-factors"
+      ]
+    },
+    {
+      "id": "P21",
+      "kind": "smalltalk",
+      "text": "I have an exam on Monday, can you help me plan my revision?",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": []
+    },
+    {
+      "id": "P22",
+      "kind": "smalltalk",
+      "text": "Give me three tips for staying focused while studying.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": []
+    },
+    {
+      "id": "O01",
+      "kind": "offer",
+      "text": "Explain the chain rule from my calculus note.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": true
+    },
+    {
+      "id": "O02",
+      "kind": "offer",
+      "text": "Can you summarise my First World War essay plan?",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": true
+    },
+    {
+      "id": "O03",
+      "kind": "offer",
+      "text": "Explain how an ester is made.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": true
+    },
+    {
+      "id": "O04",
+      "kind": "offer",
+      "text": "Make me a note on the Truman Doctrine.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": false
+    },
+    {
+      "id": "O05",
+      "kind": "offer",
+      "text": "Hi! How are you today?",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": false
+    },
+    {
+      "id": "O06",
+      "kind": "offer",
+      "text": "Explain it again with an everyday example.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": false,
+      "history": [
+        {
+          "id": "u0",
+          "role": "user",
+          "content": "What is a negative externality?"
+        },
+        {
+          "id": "a0",
+          "role": "assistant",
+          "content": "A negative externality is a cost of a market activity that falls on a third party who is not part of the transaction."
+        }
+      ]
+    }
+  ],
+  "markers": {
+    "calc-chain": "6\\s*x\\s*(·|\\*|⋅)?\\s*cos",
+    "calc-quotient": "[Qq]uotient rule",
+    "calc-heading": "Differentiation rules",
+    "calc-mistake": "[Cc]ommon mistake|forget",
+    "calc-practice": "stationary points of y|\\(1,\\s*5\\)|\\(3,\\s*1\\)",
+    "wwi-thesis": "short offensive war|naval arms race",
+    "wwi-counter": "Sleepwalkers|Christopher Clark|Fischer",
+    "wwi-heading": "second draft",
+    "wwi-conclusion": "Vienna and Berlin",
+    "list-manual": "lab manual",
+    "list-deadline": "3 November|Monday 3",
+    "list-goggles": "goggles",
+    "list-okafor": "Okafor",
+    "list-heading": "Equipment to bring",
+    "xlsx-d5": "23\\.15",
+    "xlsx-mean": "AVERAGE\\(D4",
+    "xlsx-naoh": "0\\.0941",
+    "xlsx-note": "overshot|Trial 2 excluded",
+    "xlsx-indicator": "methyl orange",
+    "xlsx-unc-label": "[Pp]ercentage uncertainty",
+    "xlsx-unc-value": "0\\.43\\s*%",
+    "docx-draft": "1,?980",
+    "docx-costpush": "Ukraine",
+    "docx-phillips": "Phillips",
+    "docx-conclusion": "weakening demand|slower growth",
+    "docx-cut": "August 2024",
+    "pptx-title": "Mitosis vs\\.? meiosis",
+    "pptx-prophase": "spindle",
+    "pptx-tip": "four genetically different|four haploid",
+    "pptx-plant": "cell plate",
+    "pptx-subtitle": "updated 20 October|Moreno",
+    "zh-light": "类囊体|thylakoid|light-dependent",
+    "zh-calvin": "G3P|甘油醛",
+    "zh-heading": "暗反应|light-independent",
+    "zh-factors": "变性",
+    "phys-example": "5\\s*kg|trolley",
+    "phys-impulse": "bouncing|0\\.2\\s*kg|5\\s*N\\s*s",
+    "phys-heading": "Momentum and impulse",
+    "txt-strachan": "Strachan",
+    "txt-hobsbawm": "Hobsbawm"
+  }
+}

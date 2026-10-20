@@ -333,6 +333,7 @@ export function Header({
   readOnly,
   workspaceId,
   leading,
+  trailing,
   standalone = false,
   fileControls,
   fileActions,
@@ -349,6 +350,8 @@ export function Header({
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
+  /** Workspace chrome at the header's right end: the right panel toggle. */
+  trailing?: ReactNode;
   chapters: Chapter[];
   color?: UserColor;
   item: OpenItem;
@@ -425,9 +428,6 @@ export function Header({
       {!readOnly && modes && modes.length > 1 && activeMode && (
         <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
       )}
-      {!(standalone || compact) && (
-        <ReadToggle item={item} workspaceId={workspaceId} />
-      )}
       {showImageZoom && (
         <>
           <ToolbarButton
@@ -449,6 +449,15 @@ export function Header({
             <Icon name="zoomIn" />
           </ToolbarButton>
         </>
+      )}
+    </>
+  );
+  // Mark as read and the file's ⋮ follow its name, the status icons after
+  // them; phones drop the read toggle and keep ⋮ at the row's end.
+  const menu = (
+    <div className="flex items-center gap-0">
+      {!(standalone || compact) && (
+        <ReadToggle item={item} workspaceId={workspaceId} />
       )}
       <ContentActions
         beforeDelete={file ? beforeFileDelete : undefined}
@@ -506,7 +515,7 @@ export function Header({
           onClose={() => setSharing(false)}
         />
       )}
-    </>
+    </div>
   );
   // Office files: the top row carries the file, the second the runtime's menu
   // bar and the save status, both 24px under a 4px gap; the mode toggle and ⋮
@@ -515,7 +524,12 @@ export function Header({
   if (office)
     return (
       <div
-        className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[24px_24px] gap-x-2 gap-y-0.5 border-divider border-b pt-1 pr-2 pl-4"
+        className={cn(
+          'grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[24px_24px] gap-x-2 gap-y-0.5 border-divider border-b pt-1 pr-2',
+          // Workspace buttons at the left edge (24px here, the right's are
+          // full size) sit as far in as the right's.
+          leading ? 'pl-3' : 'pl-4'
+        )}
         data-layout="office"
         data-testid="content-header"
       >
@@ -529,10 +543,17 @@ export function Header({
           )}
         >
           {leading}
-          <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
+          <div
+            className={cn(
+              '-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5',
+              // Workspace buttons before it keep the buttons' narrow gaps.
+              !leading && 'lg:ml-2'
+            )}
+          >
             {name}
             {!compact && (
               <>
+                {menu}
                 <OfflineStatus />
                 <WorkspaceStatusButton />
               </>
@@ -547,16 +568,28 @@ export function Header({
         </div>
         <div className="col-start-2 row-start-1 flex items-center gap-0 sm:row-span-2 max-sm:[&_[data-slot=button]]:size-7.5 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-7.5">
           {right}
+          {compact && menu}
+          {trailing}
         </div>
       </div>
     );
   return (
     <div
-      className="flex h-12 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:pr-2 sm:pl-4"
+      className={cn(
+        'flex h-12 items-center gap-1 border-divider border-b pr-1 sm:h-14 sm:gap-2 sm:pr-2',
+        // Workspace buttons at the left edge sit as far in as the right's.
+        leading ? 'pl-1 sm:pl-2' : 'pl-2 sm:pl-4'
+      )}
       data-testid="content-header"
     >
       {leading}
-      <div className="-ml-0.5 flex min-w-0 items-center gap-1.5 sm:gap-2 lg:ml-2">
+      <div
+        className={cn(
+          '-ml-0.5 flex min-w-0 items-center gap-1.5 sm:gap-2',
+          // Workspace buttons before it keep the buttons' narrow gaps.
+          !leading && 'lg:ml-2'
+        )}
+      >
         {oneColumn ? (
           name
         ) : (
@@ -567,13 +600,18 @@ export function Header({
         )}
         {!compact && (
           <>
+            {menu}
             <OfflineStatus />
             <EditorSaveStatus layout="default" store={editorStatus} />
             <WorkspaceStatusButton />
           </>
         )}
       </div>
-      <div className="ml-auto flex items-center gap-0">{right}</div>
+      <div className="ml-auto flex items-center gap-0">
+        {right}
+        {compact && menu}
+        {trailing}
+      </div>
     </div>
   );
 }

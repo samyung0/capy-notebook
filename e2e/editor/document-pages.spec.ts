@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 /** Makes the given files and materials the newest, so they are on the first
@@ -462,9 +463,7 @@ test('workspace links remember each file and material mode independently', async
 }) => {
   test.setTimeout(90_000);
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   const origin = await page.evaluate(() => performance.timeOrigin);
   const tree = page.locator('[data-workspace-file-tree]');
   const material = tree.getByRole('link', {

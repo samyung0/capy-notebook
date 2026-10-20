@@ -1,0 +1,261 @@
+{
+  "about": "Chinese messages for the CJK word rule of the hints matcher (Epo 2026-10-20, after the hints-round review's S3). Each document is a simple-config note whose edits are the candidates; a message names the edits it is about (relevant) and those on its subject (topical); everything else it gets is noise. The review's three notes (光合作用把光变成能量, 什么是细胞分裂, 合作与作用) are in.",
+  "documents": [
+    {
+      "id": "m_zh",
+      "name": "生物笔记",
+      "edits": [
+        {
+          "id": "zh-light",
+          "text": "光反应 (light-dependent reactions) 在类囊体膜 (thylakoid membrane) 上进行，水被分解并释放氧气，同时产生 ATP 和 NADPH。"
+        },
+        {
+          "id": "zh-calvin",
+          "text": "卡尔文循环 (Calvin cycle) 在叶绿体基质中进行，利用 ATP 和 NADPH 固定二氧化碳，生成 G3P (甘油醛-3-磷酸)。"
+        },
+        {
+          "id": "zh-heading",
+          "text": "第二节 暗反应 (light-independent reactions)"
+        },
+        {
+          "id": "zh-factors",
+          "text": "影响光合作用速率的因素：光照强度、二氧化碳浓度和温度。温度过高时酶 (enzyme) 会变性，速率下降。"
+        },
+        {
+          "id": "zh-energy",
+          "text": "光合作用把光变成能量，储存在葡萄糖里。"
+        }
+      ]
+    },
+    {
+      "id": "m_cell",
+      "name": "细胞生物学",
+      "edits": [
+        {
+          "id": "cell-what",
+          "text": "什么是细胞分裂：一个细胞分成两个细胞的过程。"
+        },
+        {
+          "id": "cell-phases",
+          "text": "有丝分裂分为前期、中期、后期和末期四个阶段。"
+        },
+        {
+          "id": "cell-daughter",
+          "text": "有丝分裂 (mitosis) 产生两个遗传上相同的子细胞。"
+        },
+        {
+          "id": "cell-meiosis",
+          "text": "减数分裂产生四个配子，染色体数目减半。"
+        }
+      ]
+    },
+    {
+      "id": "m_misc",
+      "name": "语文与学习笔记",
+      "edits": [
+        {
+          "id": "misc-coop",
+          "text": "合作与作用：这两个词在作文里常被用错。"
+        },
+        {
+          "id": "misc-plan",
+          "text": "我们进行了期中复习计划的讨论，每天复习两个小时。"
+        },
+        {
+          "id": "misc-weather",
+          "text": "今天天气很好，下午去图书馆学习。"
+        },
+        {
+          "id": "misc-temp",
+          "text": "温度对很多事情都有影响，比如心情。"
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "id": "Z01",
+      "kind": "edit",
+      "how": "same words",
+      "text": "什么是光合作用？",
+      "relevant": [
+        "zh-energy"
+      ],
+      "topical": [
+        "zh-factors",
+        "zh-light"
+      ]
+    },
+    {
+      "id": "Z02",
+      "kind": "edit",
+      "how": "same words",
+      "text": "光反应在哪里进行？产生什么？",
+      "relevant": [
+        "zh-light"
+      ],
+      "topical": [
+        "zh-calvin",
+        "zh-heading"
+      ]
+    },
+    {
+      "id": "Z03",
+      "kind": "edit",
+      "how": "same words",
+      "text": "卡尔文循环生成什么？",
+      "relevant": [
+        "zh-calvin"
+      ],
+      "topical": []
+    },
+    {
+      "id": "Z04",
+      "kind": "edit",
+      "how": "same words",
+      "text": "暗反应是什么？",
+      "relevant": [
+        "zh-heading"
+      ],
+      "topical": [
+        "zh-calvin"
+      ]
+    },
+    {
+      "id": "Z05",
+      "kind": "edit",
+      "how": "same words",
+      "text": "温度太高会怎样影响光合作用？",
+      "relevant": [
+        "zh-factors"
+      ],
+      "topical": [
+        "zh-energy",
+        "zh-light"
+      ]
+    },
+    {
+      "id": "Z06",
+      "kind": "edit",
+      "how": "same words",
+      "text": "有丝分裂有哪几个阶段？",
+      "relevant": [
+        "cell-phases"
+      ],
+      "topical": [
+        "cell-daughter"
+      ]
+    },
+    {
+      "id": "Z07",
+      "kind": "edit",
+      "how": "same words",
+      "text": "有丝分裂产生几个细胞？",
+      "relevant": [
+        "cell-daughter"
+      ],
+      "topical": [
+        "cell-phases",
+        "cell-meiosis"
+      ]
+    },
+    {
+      "id": "Z08",
+      "kind": "edit",
+      "how": "what is X",
+      "text": "什么是细胞分裂？",
+      "relevant": [
+        "cell-what"
+      ],
+      "topical": [
+        "cell-phases",
+        "cell-daughter",
+        "cell-meiosis"
+      ]
+    },
+    {
+      "id": "Z09",
+      "kind": "edit",
+      "how": "synonym",
+      "text": "叶绿体里的循环反应产物是什么？",
+      "relevant": [
+        "zh-calvin"
+      ],
+      "topical": []
+    },
+    {
+      "id": "Z10",
+      "kind": "edit",
+      "how": "synonym",
+      "text": "减数分裂以后染色体有多少？",
+      "relevant": [
+        "cell-meiosis"
+      ],
+      "topical": []
+    },
+    {
+      "id": "Z11",
+      "kind": "edit",
+      "how": "synonym",
+      "text": "植物怎么把光能变成化学能？",
+      "relevant": [
+        "zh-energy"
+      ],
+      "topical": [
+        "zh-light",
+        "zh-factors"
+      ]
+    },
+    {
+      "id": "Z12",
+      "kind": "indexed",
+      "how": "what is X",
+      "text": "叶绿素主要吸收什么光？",
+      "relevant": [],
+      "topical": []
+    },
+    {
+      "id": "Z13",
+      "kind": "indexed",
+      "how": "noise bait",
+      "text": "合作学习有什么好处？",
+      "relevant": [],
+      "topical": []
+    },
+    {
+      "id": "Z14",
+      "kind": "smalltalk",
+      "text": "你好，可以帮我复习吗？",
+      "relevant": [],
+      "topical": []
+    },
+    {
+      "id": "Z15",
+      "kind": "smalltalk",
+      "text": "谢谢！",
+      "relevant": [],
+      "topical": []
+    },
+    {
+      "id": "Z16",
+      "kind": "smalltalk",
+      "text": "我们应该怎么进行复习？",
+      "relevant": [],
+      "topical": []
+    },
+    {
+      "id": "Z17",
+      "kind": "smalltalk",
+      "text": "今天天气怎么样？",
+      "relevant": [],
+      "topical": []
+    },
+    {
+      "id": "Z18",
+      "kind": "smalltalk",
+      "text": "我有点累了，不想学习。",
+      "relevant": [],
+      "topical": []
+    }
+  ]
+}

@@ -38,6 +38,7 @@ import { cn } from '@/lib/cn';
 import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
 import type { AddSourceMode } from './AddSourceDialog';
 import { addSourceMenuItems } from './addSourceMenuItems';
+import { matchesSearch, PanelSearch } from './PanelSearch';
 import type { TabAction } from './PanelTabRow';
 import {
   contentFor as sharedContentFor,
@@ -80,6 +81,7 @@ export function FilesPanel({
   footer,
   className,
   rowMenus = true,
+  searchable = false,
   onAddSource,
   onAddChapter,
 }: {
@@ -100,6 +102,8 @@ export function FilesPanel({
   className?: string;
   /** Rows' hover ⋮; the dropdown leaves them out. */
   rowMenus?: boolean;
+  /** A search above the tree that filters it by name (the side panels). */
+  searchable?: boolean;
   onAddSource?: (mode: AddSourceMode) => void;
   onAddChapter?: () => void;
 }) {
@@ -130,6 +134,8 @@ export function FilesPanel({
     key: string;
     edge: 'before' | 'after';
   } | null>(null);
+  const [query, setQuery] = useState('');
+  const searching = searchable && query.trim() !== '';
   const draggedItemRef = useRef<ContentOrderItem | null>(null);
   const draggedChapterRef = useRef<string | null>(null);
 
@@ -140,6 +146,25 @@ export function FilesPanel({
   function contentFor(chapterId: string | null): WorkspaceContentItem[] {
     return sharedContentFor(files, materials, chapterId);
   }
+  // While searching: the rows whose name matches, or a matching chapter's
+  // every row; chapters without either hide and the rest show open.
+  function shownFor(chapter: Chapter | null): WorkspaceContentItem[] {
+    const items = contentFor(chapter?.id ?? null);
+    if (!searching || (chapter && matchesSearch(chapter.name, query)))
+      return items;
+    return items.filter((item) =>
+      matchesSearch(
+        item.type === 'file' ? item.data.name : item.data.title,
+        query
+      )
+    );
+  }
+  const shownChapters = searching
+    ? chapters?.filter(
+        (ch) => matchesSearch(ch.name, query) || shownFor(ch).length > 0
+      )
+    : chapters;
+  const shownUnfiled = shownFor(null);
 
   function hasDraggedContent(e: React.DragEvent) {
     return (
@@ -449,6 +474,13 @@ export function FilesPanel({
       data-dragging={dragging || undefined}
     >
       {renderTabRow(actions)}
+      {searchable && (
+        <PanelSearch
+          label={m.workspace_search_files()}
+          onChange={setQuery}
+          value={query}
+        />
+      )}
       <div
         {...dropZone('unfiled-files', null)}
         className={cn(
@@ -463,11 +495,17 @@ export function FilesPanel({
         {!chapters && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={36} />
         )}
-        {chapters && (
+        {searching && !shownChapters?.length && !shownUnfiled.length && (
+          <p className="px-2 py-1.5 text-fg-muted text-sm">
+            {m.workspace_no_files_match()}
+          </p>
+        )}
+        {chapters && shownChapters && (
           <div className="flex flex-col gap-3">
             <div className="flex flex-col empty:hidden">
-              {chapters.map((ch, idx) => {
-                const expanded = openChapters[ch.id] ?? true;
+              {shownChapters.map((ch) => {
+                const idx = chapters.indexOf(ch);
+                const expanded = searching || (openChapters[ch.id] ?? true);
                 return (
                   <div
                     {...chapterDropZone(ch)}
@@ -561,7 +599,7 @@ export function FilesPanel({
                     </div>
                     {expanded && (
                       <div className="flex flex-col pl-7">
-                        {contentFor(ch.id).map((item) =>
+                        {shownFor(ch).map((item) =>
                           renderContentItem(item, ch.id)
                         )}
                         {contentFor(ch.id).length === 0 && (
@@ -576,9 +614,11 @@ export function FilesPanel({
               })}
             </div>
 
-            {(unfiled.length > 0 ||
-              unfiledMaterials.length > 0 ||
-              generating) && (
+            {(searching
+              ? shownUnfiled.length > 0
+              : unfiled.length > 0 ||
+                unfiledMaterials.length > 0 ||
+                generating) && (
               <div className="rounded-button">
                 {chapters.length > 0 && (
                   <div className="t-label px-1.5 py-1.5 text-fg-muted">
@@ -586,9 +626,7 @@ export function FilesPanel({
                   </div>
                 )}
                 <div>
-                  {contentFor(null).map((item) =>
-                    renderContentItem(item, null)
-                  )}
+                  {shownUnfiled.map((item) => renderContentItem(item, null))}
                   {generating && (
                     <MaterialListItem
                       active={false}

@@ -7,6 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // Conversation CRUD is plain JSON, so it lives on huma (and in the OpenAPI spec
@@ -15,6 +16,14 @@ import (
 
 type wsConversationsInput struct {
 	ID string `path:"id" doc:"Workspace id"`
+}
+type listConversationsInput struct {
+	ID       string `path:"id" doc:"Workspace id"`
+	Archived bool   `query:"archived" doc:"true lists the archived threads instead of the live list"`
+}
+type updateConversationInput struct {
+	ID   string `path:"id" doc:"Conversation id"`
+	Body apimodel.UpdateConversationReq
 }
 type createConversationInput struct {
 	ID   string `path:"id" doc:"Workspace id"`
@@ -39,11 +48,14 @@ func (a *api) registerChat(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/conversations", "listConversations", tag, "List a workspace's chat conversations", http.StatusOK, a.listConversations)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/conversations", "createConversation", tag, "Start a new chat conversation", http.StatusCreated, a.createConversation)
 	reg(api, http.MethodGet, "/api/conversations/{id}/messages", "listMessages", tag, "Load a conversation's message history", http.StatusOK, a.listMessages)
+	reg(api, http.MethodPatch, "/api/conversations/{id}", "updateConversation", tag, "Rename, pin or archive a conversation", http.StatusOK, a.updateConversation)
 	reg(api, http.MethodDelete, "/api/conversations/{id}", "deleteConversation", tag, "Delete a conversation", http.StatusNoContent, a.deleteConversation)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/conversations/unarchive", "unarchiveConversations", tag, "Put every archived conversation back in the list", http.StatusNoContent, a.unarchiveConversations)
+	reg(api, http.MethodDelete, "/api/workspaces/{id}/conversations/archived", "deleteArchivedConversations", tag, "Delete every archived conversation", http.StatusNoContent, a.deleteArchivedConversations)
 }
 
-func (a *api) listConversations(ctx context.Context, in *wsConversationsInput) (*conversationsOutput, error) {
-	res, err := a.s.ListConversations(ctx, userID(ctx), in.ID)
+func (a *api) listConversations(ctx context.Context, in *listConversationsInput) (*conversationsOutput, error) {
+	res, err := a.s.ListConversations(ctx, userID(ctx), in.ID, in.Archived)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -68,6 +80,33 @@ func (a *api) listMessages(ctx context.Context, in *conversationIDInput) (*messa
 
 func (a *api) deleteConversation(ctx context.Context, in *conversationIDInput) (*Empty, error) {
 	if err := a.s.DeleteConversation(ctx, userID(ctx), in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	return &Empty{}, nil
+}
+
+func (a *api) updateConversation(ctx context.Context, in *updateConversationInput) (*conversationOutput, error) {
+	u := store.ConversationUpdate{Pinned: in.Body.Pinned, Archived: in.Body.Archived}
+	if in.Body.Title != nil {
+		title := string(*in.Body.Title)
+		u.Title = &title
+	}
+	res, err := a.s.UpdateConversation(ctx, userID(ctx), in.ID, u)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &conversationOutput{Body: res}, nil
+}
+
+func (a *api) unarchiveConversations(ctx context.Context, in *wsConversationsInput) (*Empty, error) {
+	if err := a.s.UnarchiveConversations(ctx, userID(ctx), in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	return &Empty{}, nil
+}
+
+func (a *api) deleteArchivedConversations(ctx context.Context, in *wsConversationsInput) (*Empty, error) {
+	if err := a.s.DeleteArchivedConversations(ctx, userID(ctx), in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil

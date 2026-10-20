@@ -145,7 +145,7 @@ part of adding development tools.
   workers are not reproduced by these scenarios. Office editing does run the
   local native engine. The browser events stream is
   deliberately disabled in MSW; its reconnecting preview sets the cached status.
-- **PDF annotations:** baseline MSW handlers now persist annotation CRUD in memory. `annotations-load` shows a read-error toast with Retry; `annotations-save` shows the write warning while the PDF remains visible.
+- **PDF annotations:** baseline MSW handlers now persist annotation CRUD in memory. `annotations-load` shows a read-error toast; `annotations-save` shows the write warning while the PDF remains visible.
 - **Unreachable normal openers:** ownership transfer has no normal setter for
   its target, and `WorkspaceStatsDialog` and `TaskEditDialog` have no normal
   callers. The panel now opens them directly. Feature-flagged pages remain

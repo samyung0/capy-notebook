@@ -1,5 +1,6 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { LOCAL_EDIT } from '@/features/collaboration/yText';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { uid } from '@/lib/id';
@@ -13,8 +14,8 @@ import { keyBetween } from '@/lib/orderKey';
 
 export const CARDS_ROOT = 'cards';
 /** The server's caps (characters; maxLength counts UTF-16 units, stricter). */
-export const MAX_FRONT = 4000;
-export const MAX_BACK = 2000;
+export const MAX_FRONT = EMBED_CATALOG.limits.CARD_FRONT_MAX;
+export const MAX_BACK = EMBED_CATALOG.limits.CARD_BACK_MAX;
 
 export const setScope = (doc: Y.Doc) => doc.getMap<Y.Map<unknown>>(CARDS_ROOT);
 

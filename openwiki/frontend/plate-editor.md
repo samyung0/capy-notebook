@@ -2118,7 +2118,7 @@ ordered by fractional-index keys with the card id breaking ties
 `collaboration-rs/crates/items`). The server admits only that shape (a struct
 anywhere else, a card id outside 1-128 `[A-Za-z0-9_-]`, a non-text face, rich
 text in a face or an image that is not `{assetId}` closes the writer), caps a
-front at 4,000 and a back at 2,000 characters, measures the limits on every
+front at 200 and a back at 1,000 characters, measures the limits on every
 card, blank ones included, and projects the set to its Plate envelope with blank
 cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
 workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the

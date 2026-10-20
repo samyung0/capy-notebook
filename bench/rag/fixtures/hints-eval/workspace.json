@@ -1,0 +1,308 @@
+{
+  "about": "A student's revision workspace for the pending-hints eval (2026-10-20). Each document has its indexed blocks (what the index holds) and the edits made since its last index. bench/rag/scripts/hints_eval_fixture.py derives the current text and the pending effects from them, trimmed as Go (notes) and Rust (Office) trim them: 40 UTF-16 units of context on each side of a replacement. Edit ids are readable; production ids are hashes. Chunks group blocks as the indexer would (one heading section per chunk).",
+  "workspace": {"id": "ws_hints_eval", "name": "Year 12 revision"},
+  "chapters": [
+    {"id": "ch_bio", "name": "Biology"},
+    {"id": "ch_chem", "name": "Chemistry"},
+    {"id": "ch_maths", "name": "Maths and physics"},
+    {"id": "ch_hist", "name": "History"},
+    {"id": "ch_econ", "name": "Economics"}
+  ],
+  "documents": [
+    {
+      "id": "m_calc",
+      "kind": "material",
+      "format": "note",
+      "name": "Calculus: derivatives",
+      "chapter": "ch_maths",
+      "blocks": [
+        {"id": "b1", "type": "h2", "text": "Rules"},
+        {"id": "b2", "type": "p", "text": "The derivative of a function f at x measures its instantaneous rate of change: f'(x) = lim_{h→0} (f(x+h) − f(x))/h. Geometrically it is the gradient of the tangent to the curve at x."},
+        {"id": "b3", "type": "p", "text": "Power rule: d/dx xⁿ = n·xⁿ⁻¹. For example, d/dx x⁵ = 5x⁴ and d/dx √x = 1/(2√x)."},
+        {"id": "b4", "type": "p", "text": "Product rule: (uv)' = u'v + uv'. Example: d/dx (x² sin x) = 2x sin x + x² cos x."},
+        {"id": "b5", "type": "p", "text": "Chain rule: d/dx f(g(x)) = f'(g(x))·g'(x). Example: d/dx sin(3x²) = 3x cos(3x²)."},
+        {"id": "b6", "type": "p", "text": "Common mistake: forgetting to multiply by the derivative of the inner function."},
+        {"id": "b7", "type": "h2", "text": "Stationary points"},
+        {"id": "b8", "type": "p", "text": "At a stationary point f'(x) = 0. Use the second derivative to classify it: f''(x) > 0 gives a minimum and f''(x) < 0 a maximum."}
+      ],
+      "chunks": [["b1", "b2", "b3", "b4", "b5", "b6"], ["b7", "b8"]],
+      "edits": [
+        {"id": "calc-chain", "op": "replace", "block": "b5", "text": "Chain rule: d/dx f(g(x)) = f'(g(x))·g'(x). Example: d/dx sin(3x²) = 6x cos(3x²)."},
+        {"id": "calc-quotient", "op": "add", "after": "b4", "block": "b9", "type": "p", "text": "Quotient rule: (u/v)' = (u'v − uv')/v². Example: d/dx (x²/(x+1)) = (x² + 2x)/(x+1)²."},
+        {"id": "calc-heading", "op": "replace", "block": "b1", "text": "Differentiation rules"},
+        {"id": "calc-mistake", "op": "remove", "block": "b6"},
+        {"id": "calc-practice", "op": "add", "after": "b8", "block": "b10", "type": "p", "text": "Practice: find the stationary points of y = x³ − 6x² + 9x + 1. Answer: (1, 5) is a maximum and (3, 1) is a minimum."}
+      ]
+    },
+    {
+      "id": "m_wwi",
+      "kind": "material",
+      "format": "note",
+      "name": "Essay plan: causes of the First World War",
+      "chapter": "ch_hist",
+      "blocks": [
+        {"id": "b1", "type": "h1", "text": "Essay plan: causes of the First World War"},
+        {"id": "b2", "type": "p", "text": "Thesis: the alliance system was the main cause of the war, because it turned a regional crisis in the Balkans into a continental war within weeks."},
+        {"id": "b3", "type": "h2", "text": "Long-term causes (MAIN)"},
+        {"id": "b4", "type": "ul", "text": "Militarism: the naval arms race between Britain and Germany after 1906 (Dreadnoughts). Alliances: the Triple Entente (Britain, France, Russia) against the Triple Alliance (Germany, Austria-Hungary, Italy). Imperialism: rivalry over colonies and the Moroccan crises of 1905 and 1911. Nationalism: Pan-Slavism and Serbian nationalism in the Balkans."},
+        {"id": "b5", "type": "h2", "text": "Short-term trigger"},
+        {"id": "b6", "type": "p", "text": "The assassination of Archduke Franz Ferdinand in Sarajevo on 28 June 1914 by Gavrilo Princip led to the July Crisis: Austria-Hungary's ultimatum to Serbia, Russian mobilisation and the German declaration of war on Russia on 1 August."},
+        {"id": "b7", "type": "h2", "text": "Conclusion"},
+        {"id": "b8", "type": "p", "text": "In conclusion, while every power contributed, the alliances made escalation almost automatic."}
+      ],
+      "chunks": [["b1", "b2"], ["b3", "b4"], ["b5", "b6"], ["b7", "b8"]],
+      "edits": [
+        {"id": "wwi-thesis", "op": "replace", "block": "b2", "text": "Thesis: militarism, above all the naval arms race between Britain and Germany, was the main cause of the war, because it made every great power plan for a short offensive war."},
+        {"id": "wwi-counter", "op": "add", "after": "b6", "block": "b9", "type": "p", "text": "Counter-argument: Christopher Clark's The Sleepwalkers (2012) argues that no single power was to blame and that responsibility was shared by the decision-makers of all the great powers. Fritz Fischer, by contrast, blamed Germany's 'grab for world power'."},
+        {"id": "wwi-heading", "op": "replace", "block": "b7", "text": "Conclusion (second draft)"},
+        {"id": "wwi-conclusion", "op": "replace", "block": "b8", "text": "In conclusion, militarism created the conditions for war, but the July Crisis shows that decisions taken in Vienna and Berlin turned those conditions into a world war."}
+      ]
+    },
+    {
+      "id": "m_list",
+      "kind": "material",
+      "format": "note",
+      "name": "Lab week to-do",
+      "chapter": "ch_chem",
+      "blocks": [
+        {"id": "b1", "type": "h2", "text": "Before Monday"},
+        {"id": "b2", "type": "li", "text": "Print the lab manual (pages 12–20)"},
+        {"id": "b3", "type": "li", "text": "Revise the titration method and the indicator colour changes"},
+        {"id": "b4", "type": "li", "text": "Submit the titration report by Friday"},
+        {"id": "b5", "type": "li", "text": "Email Ms Patel about the missed practical"},
+        {"id": "b6", "type": "h2", "text": "Equipment"},
+        {"id": "b7", "type": "li", "text": "Lab coat"},
+        {"id": "b8", "type": "li", "text": "Calculator"}
+      ],
+      "chunks": [["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"]],
+      "edits": [
+        {"id": "list-manual", "op": "remove", "block": "b2"},
+        {"id": "list-deadline", "op": "replace", "block": "b4", "text": "Submit the titration report by Monday 3 November"},
+        {"id": "list-goggles", "op": "add", "after": "b8", "block": "b9", "type": "li", "text": "Safety goggles (size M)"},
+        {"id": "list-okafor", "op": "add", "after": "b5", "block": "b10", "type": "li", "text": "Book a slot with Mr Okafor for the rate of reaction practical"},
+        {"id": "list-heading", "op": "replace", "block": "b6", "text": "Equipment to bring"}
+      ]
+    },
+    {
+      "id": "f_xlsx",
+      "kind": "file",
+      "format": "xlsx",
+      "name": "Titration results.xlsx",
+      "chapter": "ch_chem",
+      "blocks": [
+        {"id": "Titration!A1", "text": "Trial"},
+        {"id": "Titration!B1", "text": "Initial reading (cm³)"},
+        {"id": "Titration!C1", "text": "Final reading (cm³)"},
+        {"id": "Titration!D1", "text": "Titre (cm³)"},
+        {"id": "Titration!A3", "text": "Rough"},
+        {"id": "Titration!D3", "text": "24.10"},
+        {"id": "Titration!A4", "text": "1"},
+        {"id": "Titration!D4", "text": "23.40"},
+        {"id": "Titration!A5", "text": "2"},
+        {"id": "Titration!D5", "text": "23.65"},
+        {"id": "Titration!A6", "text": "3"},
+        {"id": "Titration!D6", "text": "23.35"},
+        {"id": "Titration!A8", "text": "Mean titre (concordant)"},
+        {"id": "Titration!D8", "text": "23.38"},
+        {"id": "Summary!A2", "text": "Concentration of HCl (mol/dm³)"},
+        {"id": "Summary!B2", "text": "0.100"},
+        {"id": "Summary!A3", "text": "Volume of NaOH (cm³)"},
+        {"id": "Summary!B3", "text": "25.0"},
+        {"id": "Summary!A4", "text": "Concentration of NaOH (mol/dm³)"},
+        {"id": "Summary!B4", "text": "0.0935"},
+        {"id": "Summary!A5", "text": "Indicator"},
+        {"id": "Summary!B5", "text": "phenolphthalein"}
+      ],
+      "chunk_texts": [
+        "Sheet: Titration\nTrial | Initial reading (cm³) | Final reading (cm³) | Titre (cm³)\nRough | 0.00 | 24.10 | 24.10\n1 | 0.50 | 23.90 | 23.40\n2 | 0.20 | 23.85 | 23.65\n3 | 1.00 | 24.35 | 23.35\nMean titre (concordant) | | | 23.38",
+        "Sheet: Summary\nConcentration of HCl (mol/dm³) | 0.100\nVolume of NaOH (cm³) | 25.0\nConcentration of NaOH (mol/dm³) | 0.0935\nIndicator | phenolphthalein"
+      ],
+      "edits": [
+        {"id": "xlsx-d5", "op": "replace", "block": "Titration!D5", "text": "23.15"},
+        {"id": "xlsx-mean", "op": "replace", "block": "Titration!D8", "text": "=AVERAGE(D4,D6)"},
+        {"id": "xlsx-naoh", "op": "replace", "block": "Summary!B4", "text": "0.0941"},
+        {"id": "xlsx-note", "op": "add", "after": "Titration!D8", "block": "Titration!A10", "text": "Trial 2 excluded: overshot the end point"},
+        {"id": "xlsx-indicator", "op": "replace", "block": "Summary!B5", "text": "methyl orange"},
+        {"id": "xlsx-unc-label", "op": "add", "after": "Summary!B5", "block": "Summary!A7", "text": "Percentage uncertainty in titre"},
+        {"id": "xlsx-unc-value", "op": "add", "after": "Summary!A7", "block": "Summary!B7", "text": "0.43%"}
+      ]
+    },
+    {
+      "id": "f_docx",
+      "kind": "file",
+      "format": "docx",
+      "name": "Economics coursework - inflation.docx",
+      "chapter": "ch_econ",
+      "blocks": [
+        {"id": "main, paragraph 1", "text": "Inflation in the UK, 2021–2024: causes and policy response"},
+        {"id": "main, paragraph 2", "text": "Draft 1 — 1,450 words"},
+        {"id": "main, paragraph 3", "text": "Introduction. Inflation is a sustained rise in the general price level, measured in the UK by the Consumer Prices Index (CPI). CPI inflation peaked at 11.1% in October 2022, the highest rate for over forty years."},
+        {"id": "main, paragraph 4", "text": "Demand-pull inflation occurs when aggregate demand grows faster than the economy's productive capacity. After the pandemic, household savings and pent-up demand pushed spending up while supply chains were still disrupted."},
+        {"id": "main, paragraph 5", "text": "Cost-push inflation occurs when firms' costs rise, for example wages or imported raw materials, and firms pass the higher costs on as higher prices."},
+        {"id": "main, paragraph 6", "text": "The Phillips curve suggests a short-run trade-off between unemployment and inflation, although the relationship broke down in the 1970s."},
+        {"id": "main, paragraph 7", "text": "Policy response. The Bank of England's Monetary Policy Committee raised Bank Rate fourteen times in a row, from 0.1% in December 2021 to 5.25% in August 2023."},
+        {"id": "main, paragraph 8", "text": "Conclusion. Inflation was mainly demand-pull, so higher interest rates were the right response."}
+      ],
+      "chunks": [["main, paragraph 1", "main, paragraph 2", "main, paragraph 3"], ["main, paragraph 4", "main, paragraph 5", "main, paragraph 6"], ["main, paragraph 7", "main, paragraph 8"]],
+      "edits": [
+        {"id": "docx-draft", "op": "replace", "block": "main, paragraph 2", "text": "Final draft — 1,980 words"},
+        {"id": "docx-costpush", "op": "replace", "block": "main, paragraph 5", "text": "Cost-push inflation occurs when firms' costs rise, for example wages or imported raw materials, and firms pass the higher costs on as higher prices. Energy prices rose sharply after Russia's invasion of Ukraine in February 2022, so the UK's inflation was largely cost-push."},
+        {"id": "docx-phillips", "op": "remove", "block": "main, paragraph 6"},
+        {"id": "docx-conclusion", "op": "replace", "block": "main, paragraph 8", "text": "Conclusion. Inflation was mainly cost-push, driven by energy and food prices, so higher interest rates could only reduce it by weakening demand, at the cost of slower growth."},
+        {"id": "docx-cut", "op": "add", "after": "main, paragraph 7", "block": "main, paragraph 9", "text": "The Bank held Bank Rate at 5.25% until August 2024, when it made its first cut, to 5%."}
+      ]
+    },
+    {
+      "id": "f_pptx",
+      "kind": "file",
+      "format": "pptx",
+      "name": "Cell division lecture.pptx",
+      "chapter": "ch_bio",
+      "blocks": [
+        {"id": "Slide 1, Title 1", "text": "Cell division — Lecture 4"},
+        {"id": "Slide 1, Subtitle 2", "text": "Dr A. Moreno"},
+        {"id": "Slide 2, Title 1", "text": "The cell cycle"},
+        {"id": "Slide 2, Content Placeholder 2", "text": "Interphase (G1, S and G2) and the mitotic phase. DNA replicates during the S phase."},
+        {"id": "Slide 3, Title 1", "text": "Mitosis"},
+        {"id": "Slide 3, Content Placeholder 2", "text": "Produces two genetically identical diploid daughter cells. Used for growth, repair and asexual reproduction."},
+        {"id": "Slide 4, Title 1", "text": "Stages of mitosis"},
+        {"id": "Slide 4, Content Placeholder 2", "text": "Prophase: chromosomes condense."},
+        {"id": "Slide 4, Content Placeholder 3", "text": "Metaphase: chromosomes line up at the equator. Anaphase: sister chromatids are pulled to opposite poles. Telophase: nuclear envelopes re-form."},
+        {"id": "Slide 5, Title 1", "text": "Cytokinesis"},
+        {"id": "Slide 5, Content Placeholder 2", "text": "Cytokinesis happens after telophase: the cytoplasm divides. In animal cells a cleavage furrow forms."},
+        {"id": "Slide 5, Content Placeholder 3", "text": "In plant cells a cell plate forms."},
+        {"id": "Slide 6, Title 1", "text": "Meiosis"},
+        {"id": "Slide 6, Content Placeholder 2", "text": "Two divisions produce four haploid cells. Crossing over in prophase I and independent assortment create variation."},
+        {"id": "Slide 7, Title 1", "text": "Summary and questions"}
+      ],
+      "chunks": [["Slide 1, Title 1", "Slide 1, Subtitle 2", "Slide 2, Title 1", "Slide 2, Content Placeholder 2"], ["Slide 3, Title 1", "Slide 3, Content Placeholder 2", "Slide 4, Title 1", "Slide 4, Content Placeholder 2", "Slide 4, Content Placeholder 3"], ["Slide 5, Title 1", "Slide 5, Content Placeholder 2", "Slide 5, Content Placeholder 3", "Slide 6, Title 1", "Slide 6, Content Placeholder 2", "Slide 7, Title 1"]],
+      "edits": [
+        {"id": "pptx-title", "op": "replace", "block": "Slide 3, Title 1", "text": "Mitosis vs meiosis"},
+        {"id": "pptx-prophase", "op": "replace", "block": "Slide 4, Content Placeholder 2", "text": "Prophase: chromosomes condense and the spindle starts to form."},
+        {"id": "pptx-tip", "op": "add", "after": "Slide 7, Title 1", "block": "Slide 7, TextBox 5", "text": "Exam tip: meiosis gives four genetically different haploid cells; mitosis gives two identical diploid cells."},
+        {"id": "pptx-plant", "op": "remove", "block": "Slide 5, Content Placeholder 3"},
+        {"id": "pptx-subtitle", "op": "replace", "block": "Slide 1, Subtitle 2", "text": "Dr A. Moreno — updated 20 October"}
+      ]
+    },
+    {
+      "id": "m_zh",
+      "kind": "material",
+      "format": "note",
+      "name": "光合作用笔记",
+      "chapter": "ch_bio",
+      "blocks": [
+        {"id": "b1", "type": "h2", "text": "第一节 光合作用概述"},
+        {"id": "b2", "type": "p", "text": "光合作用 (photosynthesis) 是植物利用光能，把二氧化碳和水转化为葡萄糖和氧气的过程。总反应式：6CO2 + 6H2O → C6H12O6 + 6O2。"},
+        {"id": "b3", "type": "p", "text": "叶绿体 (chloroplast) 是进行光合作用的细胞器，叶绿素 (chlorophyll) 主要吸收红光和蓝光。"},
+        {"id": "b4", "type": "h2", "text": "第二节"},
+        {"id": "b5", "type": "p", "text": "卡尔文循环 (Calvin cycle) 在叶绿体基质中进行。"},
+        {"id": "b6", "type": "p", "text": "影响光合作用速率的因素：光照强度、二氧化碳浓度和温度。"}
+      ],
+      "chunks": [["b1", "b2", "b3"], ["b4", "b5", "b6"]],
+      "edits": [
+        {"id": "zh-light", "op": "add", "after": "b3", "block": "b7", "type": "p", "text": "光反应 (light-dependent reactions) 在类囊体膜 (thylakoid membrane) 上进行，水被分解并释放氧气，同时产生 ATP 和 NADPH。"},
+        {"id": "zh-calvin", "op": "replace", "block": "b5", "text": "卡尔文循环 (Calvin cycle) 在叶绿体基质中进行，利用 ATP 和 NADPH 固定二氧化碳，生成 G3P (甘油醛-3-磷酸)。"},
+        {"id": "zh-heading", "op": "replace", "block": "b4", "text": "第二节 暗反应 (light-independent reactions)"},
+        {"id": "zh-factors", "op": "replace", "block": "b6", "text": "影响光合作用速率的因素：光照强度、二氧化碳浓度和温度。温度过高时酶 (enzyme) 会变性，速率下降。"}
+      ]
+    },
+    {
+      "id": "m_phys",
+      "kind": "material",
+      "format": "note",
+      "name": "Forces revision",
+      "chapter": "ch_maths",
+      "blocks": [
+        {"id": "b1", "type": "h2", "text": "Newton's laws"},
+        {"id": "b2", "type": "p", "text": "First law: an object stays at rest or moves at constant velocity unless a resultant force acts on it."},
+        {"id": "b3", "type": "p", "text": "Second law: F = ma. Example: a 2 kg mass accelerating at 3 m/s² needs a resultant force of 6 N."},
+        {"id": "b4", "type": "p", "text": "Third law: when A exerts a force on B, B exerts an equal and opposite force on A."},
+        {"id": "b5", "type": "h2", "text": "Momentum"},
+        {"id": "b6", "type": "p", "text": "Momentum p = mv is conserved in a collision when no external force acts."}
+      ],
+      "chunks": [["b1", "b2", "b3", "b4"], ["b5", "b6"]],
+      "edits": [
+        {"id": "phys-example", "op": "replace", "block": "b3", "text": "Second law: F = ma. Example: a 5 kg trolley accelerating at 2 m/s² needs a resultant force of 10 N."},
+        {"id": "phys-impulse", "op": "add", "after": "b6", "block": "b7", "type": "p", "text": "Impulse = F × t = change in momentum. A 0.2 kg ball hitting a wall at 15 m/s and bouncing back at 10 m/s receives an impulse of 5 N s."},
+        {"id": "phys-heading", "op": "replace", "block": "b5", "text": "Momentum and impulse"}
+      ]
+    },
+    {
+      "id": "f_txt",
+      "kind": "file",
+      "format": "text",
+      "name": "reading-list.md",
+      "chapter": "ch_hist",
+      "blocks": [
+        {"id": "Line 1", "text": "# Reading list"},
+        {"id": "Line 2", "text": "- Clark, The Sleepwalkers (chapters 9–12)"},
+        {"id": "Line 3", "text": "- MacMillan, The War That Ended Peace"},
+        {"id": "Line 4", "text": "- Hobsbawm, The Age of Empire"},
+        {"id": "Line 5", "text": "- Joll and Martel, The Origins of the First World War"}
+      ],
+      "chunks": [["Line 1", "Line 2", "Line 3", "Line 4", "Line 5"]],
+      "edits": [
+        {"id": "txt-strachan", "op": "add", "after": "Line 5", "block": "Line 6", "text": "- Strachan, The First World War: A New History (for the July Crisis)"},
+        {"id": "txt-hobsbawm", "op": "remove", "block": "Line 4"}
+      ]
+    },
+    {
+      "id": "f_enz",
+      "kind": "file",
+      "format": "pdf",
+      "name": "Biology textbook ch. 4 - Enzymes.pdf",
+      "chapter": "ch_bio",
+      "chunk_texts": [
+        "4.1 What enzymes are\nEnzymes are biological catalysts: proteins that speed up chemical reactions without being used up. Each enzyme has an active site, a region with a specific three-dimensional shape that binds the substrate. Enzymes lower the activation energy of a reaction by stabilising the transition state.",
+        "4.2 Models of enzyme action\nThe lock-and-key model proposes that the substrate fits the active site exactly, like a key in a lock. The induced-fit model, now widely accepted, proposes that the active site changes shape slightly when the substrate binds, moulding itself around the substrate so that the enzyme-substrate complex forms.",
+        "4.3 Factors affecting enzyme activity\nRaising the temperature increases the rate of reaction up to an optimum, because molecules collide more often. Above the optimum, hydrogen bonds in the enzyme break, the active site changes shape and the enzyme is denatured. Each enzyme also has an optimum pH; pepsin works best at about pH 2 and amylase at about pH 7.",
+        "4.4 Inhibition\nA competitive inhibitor has a shape similar to the substrate and binds to the active site, so its effect can be overcome by raising the substrate concentration. A non-competitive inhibitor binds elsewhere on the enzyme (an allosteric site) and changes the shape of the active site; raising the substrate concentration does not reverse it.",
+        "4.5 Enzyme kinetics\nThe Michaelis constant Km is the substrate concentration at which the rate is half of Vmax, the maximum rate. A low Km means a high affinity between the enzyme and its substrate. Competitive inhibitors raise the apparent Km without changing Vmax; non-competitive inhibitors lower Vmax."
+      ]
+    },
+    {
+      "id": "f_cold",
+      "kind": "file",
+      "format": "pdf",
+      "name": "History textbook - The Cold War 1945-1991.pdf",
+      "chapter": "ch_hist",
+      "chunk_texts": [
+        "Chapter 1. From allies to rivals\nAt the Yalta Conference in February 1945, Roosevelt, Churchill and Stalin agreed to divide Germany into occupation zones and to hold free elections in Eastern Europe. By the Potsdam Conference in July 1945, Truman had replaced Roosevelt and distrust between the Soviet Union and the West was growing.",
+        "Chapter 2. Containment\nIn March 1947 President Truman told Congress that the United States would support free peoples resisting subjugation by armed minorities or outside pressures. This Truman Doctrine began with aid to Greece and Turkey and set out the policy of containment of communism. The Marshall Plan, announced in June 1947, offered economic aid to rebuild Europe.",
+        "Chapter 3. The Berlin Blockade\nIn June 1948 the Western powers introduced a new currency, the Deutschmark, in their zones of Germany. Stalin responded by blocking all road, rail and canal routes into West Berlin. The Western allies supplied the city by air for eleven months, the Berlin Airlift, until the blockade was lifted in May 1949.",
+        "Chapter 6. The Cuban Missile Crisis\nIn October 1962 American U-2 spy planes photographed Soviet missile sites under construction in Cuba. Kennedy announced a naval quarantine of the island. After thirteen days Khrushchev agreed to remove the missiles in return for a public US pledge not to invade Cuba and a secret promise to withdraw American missiles from Turkey.",
+        "Chapter 9. The end of the Cold War\nMikhail Gorbachev's policies of glasnost (openness) and perestroika (restructuring) loosened Soviet control. The Berlin Wall fell on 9 November 1989, Germany reunified in October 1990, and the Soviet Union was dissolved in December 1991."
+      ]
+    },
+    {
+      "id": "f_org",
+      "kind": "file",
+      "format": "pdf",
+      "name": "Chemistry - Organic reactions summary.pdf",
+      "chapter": "ch_chem",
+      "chunk_texts": [
+        "Alkanes\nAlkanes react with chlorine or bromine in ultraviolet light by free-radical substitution. The mechanism has three stages: initiation, in which UV light splits the halogen molecule into radicals; propagation; and termination, in which two radicals combine.",
+        "Alkenes\nAlkenes undergo electrophilic addition because the C=C double bond is a region of high electron density. Bromine water is decolourised by an alkene, which is the test for unsaturation. Addition of hydrogen bromide follows Markovnikov's rule.",
+        "Alcohols\nPrimary alcohols are oxidised to aldehydes and then to carboxylic acids by acidified potassium dichromate, which turns from orange to green. Secondary alcohols are oxidised to ketones. Tertiary alcohols are not oxidised.",
+        "Esters\nAn ester is made by heating a carboxylic acid with an alcohol in the presence of a concentrated sulfuric acid catalyst. This reversible reaction is called esterification. Ethanoic acid and ethanol give ethyl ethanoate and water. Esters have fruity smells and are used in flavourings and perfumes."
+      ]
+    },
+    {
+      "id": "m_econ",
+      "kind": "material",
+      "format": "note",
+      "name": "Market failure notes",
+      "chapter": "ch_econ",
+      "blocks": [
+        {"id": "b1", "type": "h2", "text": "Externalities"},
+        {"id": "b2", "type": "p", "text": "A negative externality is a cost imposed on a third party who is not part of the transaction, for example pollution from a factory or noise from an airport. The good is over-produced because the social cost is higher than the private cost."},
+        {"id": "b3", "type": "p", "text": "A positive externality is a benefit to third parties, such as vaccination or education; these goods are under-consumed."},
+        {"id": "b4", "type": "h2", "text": "Public goods"},
+        {"id": "b5", "type": "p", "text": "Public goods are non-rival and non-excludable, for example street lighting and national defence. The free-rider problem means private markets fail to provide them."},
+        {"id": "b6", "type": "h2", "text": "Government intervention"},
+        {"id": "b7", "type": "p", "text": "Governments correct market failure with indirect taxes (such as a carbon tax), subsidies, regulation and tradable pollution permits. Government failure happens when intervention makes the allocation of resources worse."}
+      ],
+      "chunks": [["b1", "b2", "b3"], ["b4", "b5"], ["b6", "b7"]]
+    }
+  ]
+}

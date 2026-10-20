@@ -17,6 +17,7 @@ import type {
   LearnerQuestion,
   QuestionPart,
 } from '@/features/questions/types';
+import { attemptMinutes } from '@/features/study/attempts';
 import { m } from '@/i18n';
 import { scoreBucket, track } from '@/lib/analytics';
 import { toastSignInRequired } from '@/lib/authToasts';
@@ -127,6 +128,7 @@ export function AttemptBody({
   const [answers, setAnswers] = useState<Answers>({});
   const [startedAt, setStartedAt] = useState(() => new Date().toISOString());
   const [graded, setGraded] = useState<Graded | null>(null);
+  const [minutes, setMinutes] = useState<string>();
   const [grading, setGrading] = useState(false);
   const setAnswer = useCallback(
     (partId: string, value: Answer) =>
@@ -196,6 +198,9 @@ export function AttemptBody({
       const result = await grade(answers, startedAt);
       const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
       track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
+      setMinutes(
+        attemptMinutes({ startedAt, takenAt: new Date().toISOString() })
+      );
       setGraded(result);
       onGraded?.(answers, result);
     } catch (err) {
@@ -228,6 +233,7 @@ export function AttemptBody({
               awarded={graded.awarded}
               confetti
               max={graded.max}
+              minutes={minutes}
               questions={graded.questions}
             />
           )}
