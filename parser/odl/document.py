@@ -4,12 +4,13 @@ LibreOffice PDF that is both parsed and published as the citation preview."""
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import capy_sandbox
 import pymupdf
 
 _ZIP = b"PK\x03\x04"
@@ -30,7 +31,33 @@ OFFICE_PREVIEW_MAX_BYTES = int(
 OFFICE_CONVERT_TIMEOUT_S = max(
     30, int(os.environ.get("CAPY_OFFICE_CONVERT_TIMEOUT", "180"))
 )
-SOFFICE = "/usr/bin/soffice"
+# LibreOffice itself, not its launcher scripts, so the conversion runs with
+# process creation denied (capy_sandbox).
+SOFFICE = "/usr/lib/libreoffice/program/soffice.bin"
+# soffice.bin exits with this once it has set up a fresh profile (every job's
+# is fresh); its launcher would start it again, so the conversion runs again.
+_PROFILE_CREATED_EXIT = 81
+# Each conversion's job folder in its parse child's slot folder; short, so its
+# IPC pipe's path fits a Unix socket address (``check_pipe_path``).
+_JOB_PREFIX = "lo-"
+# A Unix socket path holds 107 bytes; LibreOffice names its pipe
+# OSL_PIPE_<uid>_SingleOfficeIPC_<MD5 hex, at most 32 characters>.
+_SOCKET_PATH_MAX = 107
+# What LibreOffice reads besides its job folder: libraries, configuration,
+# fonts and the random device.
+READ = (
+    "/usr",
+    "/lib",
+    "/lib64",
+    "/etc",
+    "/var/cache/fontconfig",
+    "/dev/urandom",
+    "/dev/random",
+)
+# Per conversion (bench/parsers S0 measurements: at most 47.5 s of CPU and 21
+# descriptors per process); the address space is the parse child's soft
+# 2 GiB, inherited.
+_LIMITS = {"CPU": 180, "NOFILE": 256, "FSIZE": 256 << 20, "CORE": 0}
 
 # Each job's fresh LibreOffice profile (7.4 schema): no link loads from
 # documents outside trusted locations (there are none), macros off at the
@@ -103,9 +130,11 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             detail += " (password-protected files can't be read)"
         raise OfficeFormatMismatch(detail)
 
-    # The profile and LibreOffice's own temporary files live in the job
-    # directory, so they go with the job.
-    with tempfile.TemporaryDirectory(prefix="capy_office_", dir=work_dir) as tmp_name:
+    # The profile, LibreOffice's own temporary files and its IPC pipe live in
+    # the job directory, so they go with the job. LibreOffice puts the pipe in
+    # /tmp or /var/tmp when it may write there (the image lets it write
+    # neither), else in OSL_SOCKET_PATH (``check_pipe_path``).
+    with tempfile.TemporaryDirectory(prefix=_JOB_PREFIX, dir=work_dir) as tmp_name:
         tmp = Path(tmp_name)
         source = tmp / f"source{suffix}"
         source.write_bytes(data)
@@ -114,45 +143,38 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
         (profile / "user" / "registrymodifications.xcu").write_text(
             _REGISTRY, encoding="utf-8"
         )
-        process = subprocess.Popen(
-            [
-                SOFFICE,
-                f"-env:UserInstallation={profile.as_uri()}",
-                "--headless",
-                "--nologo",
-                "--nodefault",
-                "--nolockcheck",
-                "--nofirststartwizard",
-                f"--infilter={import_filter}",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(tmp),
-                str(source),
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            # Two malloc arenas: LibreOffice then fits the parse child's
-            # address-space limit it inherits (2.18 GiB of address space for
-            # a 224k-cell workbook, 0.52 GiB with two).
-            env={**os.environ, "TMPDIR": tmp_name, "MALLOC_ARENA_MAX": "2"},
-            # Its own group for the timeout kill below, inside the parse
-            # child's session so ending a parse child ends LibreOffice too.
-            process_group=0,
-        )
+        command = [
+            SOFFICE,
+            f"-env:UserInstallation={profile.as_uri()}",
+            f"-env:OSL_SOCKET_PATH={tmp}",
+            "--headless",
+            "--nologo",
+            "--nodefault",
+            "--nolockcheck",
+            "--nofirststartwizard",
+            f"--infilter={import_filter}",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(tmp),
+            str(source),
+        ]
+        deadline = time.monotonic() + OFFICE_CONVERT_TIMEOUT_S
         try:
-            stdout, stderr = process.communicate(timeout=OFFICE_CONVERT_TIMEOUT_S)
+            completed = _convert(command, tmp, OFFICE_CONVERT_TIMEOUT_S)
+            if completed.returncode == _PROFILE_CREATED_EXIT:
+                completed = _convert(command, tmp, deadline - time.monotonic())
         except subprocess.TimeoutExpired:
-            # soffice.bin outlives its killed launcher; end the whole group.
-            os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
             raise OfficeConversionTimeout(
                 f"LibreOffice conversion exceeded {OFFICE_CONVERT_TIMEOUT_S} seconds"
             ) from None
         rendered = tmp / "source.pdf"
-        if process.returncode != 0 or not rendered.is_file():
-            detail = (stderr or stdout or "conversion failed").strip()
+        if completed.returncode != 0 or not rendered.is_file():
+            detail = (
+                (completed.stderr or completed.stdout or b"conversion failed")
+                .decode(errors="replace")
+                .strip()
+            )
             raise OfficeConversionFailed(
                 f"LibreOffice could not convert {suffix}: {detail[:500]}"
             )
@@ -168,6 +190,57 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
         suffix.lstrip("."),
         preview_pdf=pdf,
     )
+
+
+def check_pipe_path(work_dir: Path) -> None:
+    """Refuse a work folder whose job folders cannot hold LibreOffice's IPC
+    pipe. It goes there (OSL_SOCKET_PATH) only when LibreOffice may write
+    neither /tmp nor /var/tmp, as in the parser image."""
+    if os.access("/tmp", os.W_OK) or os.access("/var/tmp", os.W_OK):
+        return
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    pipe = (
+        work_dir
+        / f"{_JOB_PREFIX}{'x' * 8}"
+        / f"OSL_PIPE_{uid}_SingleOfficeIPC_{'0' * 32}"
+    )
+    excess = len(os.fsencode(pipe)) - _SOCKET_PATH_MAX
+    if excess > 0:
+        raise RuntimeError(
+            f"CAPY_PARSE_WORK_DIR is {excess} bytes too long: LibreOffice's IPC "
+            f"pipe in a job folder there would pass the {_SOCKET_PATH_MAX}-byte "
+            "Unix socket path"
+        )
+
+
+def _convert(
+    command: list[str], job: Path, timeout_s: float
+) -> subprocess.CompletedProcess[bytes]:
+    """One soffice.bin run under the sandbox: files only in its job folder,
+    no network or new processes, and its own process group inside the parse
+    child's session, killed whole at the timeout."""
+    if timeout_s <= 0:
+        raise subprocess.TimeoutExpired(command, OFFICE_CONVERT_TIMEOUT_S)
+    environment = {
+        key: os.environ[key] for key in ("PATH", "LANG") if key in os.environ
+    }
+    policy = capy_sandbox.Policy(
+        limits=_LIMITS,
+        blocked=frozenset({"setsid", "setpgid", "fork"}),
+        read=(*READ, SOFFICE),
+        write=(str(job), "/dev/null"),
+        # Two malloc arenas: LibreOffice then fits the parse child's
+        # address-space limit (2.18 GiB of address space for a 224k-cell
+        # workbook, 0.52 GiB with two).
+        env={
+            **environment,
+            "HOME": str(job),
+            "TMPDIR": str(job),
+            "MALLOC_ARENA_MAX": "2",
+        },
+        timeout_s=timeout_s,
+    )
+    return capy_sandbox.run(command, policy, max_output=None)
 
 
 def pdf_page_count(data: bytes) -> int:

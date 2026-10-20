@@ -770,3 +770,21 @@ fn a_room_keeps_the_format_markers_its_peers_sent() {
         );
     }
 }
+
+/// A step 1's answer is known to be large without encoding it: the walk
+/// counts what lies past the asker's state, a merged text block only from
+/// where the asker stopped (a returning member's resync stays small).
+#[test]
+fn a_step_1_answer_is_large_only_for_what_lies_past_the_asker() {
+    let room = doc(1);
+    let text = room.get_or_insert_text("content");
+    text.insert(&mut room.transact_mut(), 0, &"a".repeat(300_000));
+    let nearly = room.transact().state_vector();
+    text.insert(&mut room.transact_mut(), 300_000, &"b".repeat(1_000));
+    let txn = room.transact();
+    assert!(answer_at_least(&txn, &StateVector::default(), 256 << 10));
+    assert!(!answer_at_least(&txn, &txn.state_vector(), 256 << 10));
+    assert!(!answer_at_least(&txn, &nearly, 256 << 10));
+    assert!(answer_at_least(&txn, &nearly, 1_000));
+    assert!(!answer_at_least(&txn, &nearly, 1_002));
+}

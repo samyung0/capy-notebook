@@ -17,6 +17,10 @@ The API process opens no source with MuPDF: the parse children count a
 document's pages and parse it. Children answer in JSON and plain files,
 never pickle. The API serves a cached bundle only as
 it wrote it, and no other process of the parser user can read its memory.
+Each parse child confines itself after its setsid (capy_sandbox): files only
+in its slot folder, no network, no leaving its session; LibreOffice and Java
+start through the same sandbox with explicit environments, so no child holds
+PARSER_TOKEN.
 """
 
 from __future__ import annotations
@@ -48,8 +52,11 @@ from pathlib import Path, PurePosixPath
 from stat import S_ISREG
 from typing import Any, BinaryIO, NoReturn
 
+import capy_sandbox
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from odl import document as office
+from odl import java
 from odl.document import (
     OfficeConversionFailed,
     OfficeConversionTimeout,
@@ -65,6 +72,10 @@ try:
 except ImportError:  # Not POSIX.
     resource = None
 
+# Every route's bearer token. Held here and removed from the environment at
+# import, before any child starts, so no child inherits it; startup refuses
+# to run without one.
+PARSER_TOKEN = os.environ.pop("PARSER_TOKEN", "")
 ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 # Bump when parse output changes: it names the output in the ingest donor key.
 PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v19"
@@ -136,7 +147,6 @@ PARSE_CHILD_MAX_BYTES = 2 << 30
 # A child's answer on its pipe: a status and small payloads.
 # A longer one ends that child.
 MESSAGE_MAX_BYTES = 1 << 24
-PR_SET_DUMPABLE = 4
 SHARED_DIR = Path(
     os.environ.get("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
 ).resolve()
@@ -347,17 +357,6 @@ def _release_memory() -> None:
         pass  # Not glibc (macOS development).
 
 
-def _make_undumpable() -> None:
-    """No other process of the parser user may trace the API or read its
-    memory and environment (children start dumpable again on exec)."""
-    try:
-        libc = ctypes.CDLL("libc.so.6", use_errno=True)
-    except OSError:
-        return  # Not glibc (macOS development).
-    if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
-        raise OSError(ctypes.get_errno(), "prctl(PR_SET_DUMPABLE) failed")
-
-
 def _set_oom_score_adj(value: int) -> None:
     try:
         Path("/proc/self/oom_score_adj").write_text(str(value), encoding="ascii")
@@ -394,6 +393,29 @@ def _limit_address_space(limit: int) -> None:
     resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
 
 
+def _sandbox_parse_child(work_dir: str) -> None:
+    """Confine a parse child once it leads its own session: it reads its own
+    code and what LibreOffice and Java load, writes only its slot folder
+    (its temporary files go there too), opens no network socket and cannot
+    leave the session the API ends it by. Its descriptors, file size and
+    core are bounded; its address space is ``_limit_address_space``'s."""
+    os.environ["TMPDIR"] = work_dir
+    tempfile.tempdir = work_dir
+    capy_sandbox.confine(
+        capy_sandbox.Policy(
+            limits={"NOFILE": 256, "FSIZE": 512 << 20, "CORE": 0},
+            blocked=frozenset({"setsid"}),
+            read=(
+                *capy_sandbox.python_paths(),
+                *office.READ,
+                *java.READ,
+                str(java.ENTRY_JAR),
+            ),
+            write=(work_dir, "/dev/null"),
+        )
+    )
+
+
 def _parse_worker_main(
     requests: Connection, responses: Connection, work_dir: str
 ) -> None:
@@ -406,6 +428,7 @@ def _parse_worker_main(
     _set_oom_score_adj(PARSE_OOM_SCORE_ADJ)
     _limit_address_space(PARSE_CHILD_MAX_BYTES)
     WORK_DIR = Path(work_dir)
+    _sandbox_parse_child(work_dir)
 
     while True:
         try:
@@ -467,11 +490,21 @@ def _unwrap(message: Any) -> Any:
     raise RuntimeError("parser child returned an invalid response")
 
 
-def _temporary_file(suffix: str) -> Path:
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(prefix="transfer-", suffix=suffix, dir=WORK_DIR)
-    os.close(descriptor)
-    return Path(name)
+def _slot_dir(slot: int) -> Path:
+    """A parse child's folder: the only one it may write."""
+    return WORK_DIR / f"slot-{slot}"
+
+
+def _temporary_file(directory: Path, suffix: str) -> tuple[BinaryIO, Path]:
+    """A new transfer file in a slot folder, open for writing. The parse
+    child may write that folder, so the API writes only through this handle
+    (made by mkstemp, never through a link) and reads the child's results
+    with ``_open_spool_file``."""
+    directory.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(
+        prefix="transfer-", suffix=suffix, dir=directory
+    )
+    return os.fdopen(descriptor, "wb"), Path(name)
 
 
 class _Child:
@@ -580,7 +613,7 @@ class _ParseWorkerProcess(_Child):
     """One parse slot's child with file-backed messages for large results."""
 
     def __init__(self, slot: int) -> None:
-        self.work_dir = WORK_DIR / f"slot-{slot}"
+        self.work_dir = _slot_dir(slot)
         super().__init__(
             _parse_worker_main, str(self.work_dir), name=f"parse child {slot}"
         )
@@ -595,9 +628,10 @@ class _ParseWorkerProcess(_Child):
         """Parse into ``result_path``."""
         if not self.alive:
             raise ParserRuntimeFailure(f"{self._name} is not running")
-        source_path = _temporary_file(".source")  # sync: see _run_slot
+        source, source_path = _temporary_file(self.work_dir, ".source")  # see _run_slot
         try:
-            await asyncio.to_thread(source_path.write_bytes, document.data)
+            with source:
+                await asyncio.to_thread(source.write, document.data)
             await self.send(
                 (
                     str(source_path),
@@ -643,8 +677,8 @@ def _write_worker_result(path: Path, result: dict[str, Any]) -> None:
 
 
 def _read_worker_result(path: Path) -> dict[str, Any]:
-    with path.open("rb") as result_file:
-        left = os.fstat(result_file.fileno()).st_size
+    result_file, left = _open_spool_file(path)
+    with result_file:
         # A larger result could not become a bundle anyway.
         if left > MAX_ARTIFACT_EXPANDED_BYTES:
             raise ValueError("parser child returned an oversized result file")
@@ -819,7 +853,8 @@ class ParserRuntime:
             # Made before taking a document, so documents start in FIFO order.
             # Synchronous on purpose: a cancel landing on a to_thread await
             # would leave the thread's file behind with no path to unlink.
-            result_path = _temporary_file(".result")
+            handle, result_path = _temporary_file(_slot_dir(slot.index), ".result")
+            handle.close()
             try:
                 work = await self._next()
                 while work.future.done():
@@ -970,7 +1005,13 @@ _artifact_tasks_lock = asyncio.Lock()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    _make_undumpable()
+    if not PARSER_TOKEN:
+        raise RuntimeError("PARSER_TOKEN must be set")
+    capy_sandbox.make_undumpable()
+    # A deployed host without Landlock ABI 6 refuses here; local runs say so.
+    if not capy_sandbox.landlock_available():
+        print("Landlock unavailable: parse children run without it", flush=True)
+    office.check_pipe_path(_slot_dir(PARSE_WORKERS - 1))
     (SHARED_DIR / "sources").mkdir(parents=True, exist_ok=True)
     (SHARED_DIR / "artifacts").mkdir(parents=True, exist_ok=True)
     (SHARED_DIR / "quarantine").mkdir(parents=True, exist_ok=True)
@@ -983,12 +1024,11 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
 
 
 def _authorized(request: Request) -> bool:
-    expected = os.environ.get("PARSER_TOKEN", "")
-    if not expected:
-        return True
     supplied = request.headers.get("authorization", "")
-    return supplied.startswith("Bearer ") and hmac.compare_digest(
-        supplied[7:], expected
+    return (
+        bool(PARSER_TOKEN)
+        and supplied.startswith("Bearer ")
+        and hmac.compare_digest(supplied[7:], PARSER_TOKEN)
     )
 
 
@@ -1011,9 +1051,9 @@ def _shared_path(key: str, expected_dir: str) -> Path:
 
 
 def _open_spool_file(path: Path) -> tuple[BinaryIO, int]:
-    """Open a spool file as a child may have left it: never through a link,
-    never waiting on a FIFO, only a regular file. Returns it and its size;
-    the caller bounds the size."""
+    """Open a spool or transfer file as a child may have left it: never
+    through a link, never waiting on a FIFO, only a regular file. Returns it
+    and its size; the caller bounds the size."""
     descriptor = os.open(
         path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     )

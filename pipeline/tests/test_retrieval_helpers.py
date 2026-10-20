@@ -502,7 +502,7 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     body = rendered["content"]
 
     assert rendered["_kind"] == "turn_context"
-    assert "Open: Cells.pdf (file f_1)." in body
+    assert "Open: Cells.pdf (file f_1). The learner owns this workspace." in body
     assert "key points first" in body, "brief writing"
     assert "a deck explains each chapter" in body
     assert "a quiz of 5 questions and a set of 10 flashcards" in body
@@ -515,8 +515,11 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
-    empty = turn_context.message(_library_ctx())["content"]
-    assert "Open: nothing." in empty and "Library excerpts" not in empty
+    viewer = _library_ctx()
+    viewer.role = "viewer"
+    empty = turn_context.message(viewer)["content"]
+    assert "Open: nothing. The learner can only view this workspace." in empty
+    assert "Library excerpts" not in empty
     assert (
         "a quiz of 5 questions; make no standalone flashcards unless asked." in empty
     ), "default preferences: quiz less, flashcards off said off"
@@ -899,6 +902,7 @@ async def test_pipeline_chat_defense_rejects_query_character_overflow(character)
         contractVersion=contract.VERSION,
         operations=[],
         spendSessionId="cr_1",
+        role="editor",
     )
 
     chunk = await anext(service._chat_events(req, None))
@@ -1165,13 +1169,16 @@ async def test_the_descriptor_regenerates_at_two_percent_or_first(
     published = {
         "descriptor": "Stored descriptor.",
         "change_share": 0.0199,
+        "updated_at": "written",
         "chunks": chunks,
     }
-    fresh = ("Fresh descriptor.", 0.0, None)
+    fresh = ("Fresh descriptor.", 0.0, None, None)
 
+    # A reuse keeps when the descriptor was written.
     assert await indexing._descriptor("f", chunks, published) == (
         "Stored descriptor.",
         0.0199,
+        "written",
         None,
     )
     assert (
@@ -1200,16 +1207,27 @@ async def test_a_failed_descriptor_is_pending_or_keeps_the_published_one(
 
     monkeypatch.setattr(indexing, "summarize_file", _fail)
     chunks = [Chunk(text="Chlorophyll absorbs red and blue light.")]
-    published = {"descriptor": "Stored.", "change_share": 0.05, "chunks": chunks}
+    published = {
+        "descriptor": "Stored.",
+        "change_share": 0.05,
+        "updated_at": "written",
+        "chunks": chunks,
+    }
 
     assert await indexing._descriptor("f", chunks, published) == (
         "Stored.",
         0.05,
+        "written",
         None,
     )
-    assert await indexing._descriptor("f", chunks, None) == (None, 0.0, failure)
+    assert await indexing._descriptor("f", chunks, None) == (None, 0.0, None, failure)
     blank = {**published, "descriptor": ""}
-    assert await indexing._descriptor("f", chunks, blank) == (None, 0.0, failure)
+    assert await indexing._descriptor("f", chunks, blank) == (
+        None,
+        0.0,
+        None,
+        failure,
+    )
     for raised in (
         accounting.SettlementError("receipt rejected"),
         accounting.AccountingError("model capacity is not configured"),
@@ -1292,6 +1310,7 @@ def test_chat_request_requires_enabled_thinking():
         "contractVersion": contract.VERSION,
         "operations": [],
         "spendSessionId": "cr_1",
+        "role": "editor",
     }
     for thinking in ("instant", "", "off", None):
         with pytest.raises(ValidationError):
@@ -1310,6 +1329,12 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
     # Without a write tool (a viewer) the model is told it cannot write.
     assert chat_prompts.READ_ONLY_RULE in chat_prompts.system_prompt("en", writes=False)
     assert chat_prompts.READ_ONLY_RULE not in off
+    # The first-turn note or deck offer is for a learner who can write
+    # (Epo 2026-10-20).
+    assert chat_prompts.FIRST_TURN_OFFER in off and chat_prompts.FIRST_TURN_OFFER in on
+    assert chat_prompts.FIRST_TURN_OFFER not in chat_prompts.system_prompt(
+        "en", writes=False
+    )
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt

@@ -216,6 +216,9 @@ function OfficeRuntime() {
     readOnlyRef.current = readOnly;
   }, [readOnly]);
   const holding = () => pausedRef.current && !readOnlyRef.current;
+  // The tab holds back its collaboration messages (`sending`): the XLSX
+  // editor refuses edits with a busy cursor; DOCX and PPTX pause instead.
+  const [sending, setSending] = useState(false);
   // The host's narrowed canEdit, kept for a `load` that comes after it (a
   // runtime that boots before the source loads gets set-capabilities first).
   const canEditRef = useRef<boolean | null>(null);
@@ -507,6 +510,10 @@ function OfficeRuntime() {
         );
         return;
       }
+      if (message.type === 'sending') {
+        setSending(message.pending);
+        return;
+      }
       if (message.type === 'set-capabilities') {
         canEditRef.current = message.canEdit;
         pausedRef.current = pausedFor(message.canEdit);
@@ -773,6 +780,7 @@ function OfficeRuntime() {
               onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
               readOnly={readOnly}
+              sending={sending}
             />
           ) : (
             <PptxEditorHost

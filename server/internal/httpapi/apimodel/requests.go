@@ -379,6 +379,12 @@ type CreateConversationReq struct {
 	Title ConversationTitle `json:"title,omitempty" doc:"Optional thread title"`
 }
 
+type UpdateConversationReq struct {
+	Title    *ConversationTitle `json:"title,omitempty" minLength:"1"`
+	Pinned   *bool              `json:"pinned,omitempty"`
+	Archived *bool              `json:"archived,omitempty" doc:"true archives and unpins; false puts the thread back in the list"`
+}
+
 type CreateCanvasReq struct {
 	Name MaterialTitle `json:"name,omitempty"`
 }

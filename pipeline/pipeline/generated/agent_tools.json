@@ -1,5 +1,5 @@
 {
-  "version": 31,
+  "version": 32,
   "operations": [
     "source.read",
     "material.read",
@@ -355,7 +355,7 @@
         "chat"
       ],
       "requiredOperations": [
-        "material.create"
+        "source.read"
       ],
       "retention": "none"
     },
@@ -372,11 +372,11 @@
               "additionalProperties": false,
               "properties": {
                 "back": {
-                  "maxLength": 2000,
+                  "maxLength": 1000,
                   "type": "string"
                 },
                 "front": {
-                  "maxLength": 4000,
+                  "maxLength": 200,
                   "type": "string"
                 }
               },
@@ -872,7 +872,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner's Undo. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner's Undo. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -888,7 +888,7 @@
                       "type": "string"
                     },
                     "target_id": {
-                      "description": "Block, paragraph or shape target id; omit for a plain text source.",
+                      "description": "The note block's id; omit for a plain text source.",
                       "type": "string"
                     },
                     "text": {
@@ -988,42 +988,8 @@
                 {
                   "additionalProperties": false,
                   "properties": {
-                    "cell": {
-                      "description": "A1-style address.",
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "expected_value": {
-                      "description": "Current value or =formula; empty for an empty cell.",
-                      "type": "string"
-                    },
-                    "sheet": {
-                      "description": "Sheet id or name from inspect_document.",
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "type": {
-                      "const": "set_cell"
-                    },
-                    "value": {
-                      "description": "New value; prefix with = for a formula; empty clears.",
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "sheet",
-                    "cell",
-                    "expected_value",
-                    "value"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
                     "back": {
-                      "maxLength": 2000,
+                      "maxLength": 1000,
                       "type": "string"
                     },
                     "card_id": {
@@ -1032,7 +998,7 @@
                       "type": "string"
                     },
                     "front": {
-                      "maxLength": 4000,
+                      "maxLength": 200,
                       "type": "string"
                     },
                     "type": {
@@ -1055,11 +1021,11 @@
                       ]
                     },
                     "back": {
-                      "maxLength": 2000,
+                      "maxLength": 1000,
                       "type": "string"
                     },
                     "front": {
-                      "maxLength": 4000,
+                      "maxLength": 200,
                       "type": "string"
                     },
                     "type": {
@@ -1295,6 +1261,514 @@
       ],
       "requiredOperations": [
         "trash.restore"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "inspect_office_document",
+      "version": 1,
+      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: paragraphs with their target ids and text, count from start. PPTX: without slide, shapes with their target ids and text, count from start; with slide, that slide's shapes.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "default": 60,
+            "description": "DOCX, PPTX: targets to read.",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "file_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "range": {
+            "description": "XLSX: an A1 range on that sheet, like \"A1:H40\".",
+            "minLength": 1,
+            "type": "string"
+          },
+          "sheet": {
+            "description": "XLSX: the sheet's id or name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "slide": {
+            "description": "PPTX: one slide's number.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "start": {
+            "default": 0,
+            "description": "DOCX, PPTX: first target index.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_id"
+        ],
+        "type": "object"
+      },
+      "mutates": false,
+      "usesEmbedding": false,
+      "concurrency": "read",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "source.read"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "edit_office_document",
+      "version": 1,
+      "description": "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly. A call's commands are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "commands": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "First command only, without file_id: makes a new file; the call's other commands then apply to it.",
+                  "properties": {
+                    "chapter_id": {
+                      "description": "The chapter to file it in; omit to leave it unfiled.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "format": {
+                      "enum": [
+                        "xlsx"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "The file's name, without its extension.",
+                      "maxLength": 120,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "create"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "format",
+                    "title"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: write a rectangle of cells.",
+                  "properties": {
+                    "expected": {
+                      "description": "The range's current inputs as inspect_office_document shows them, one row per array; \"\" for an empty cell.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 10000,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "maxItems": 10000,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "range": {
+                      "description": "An A1 range on that sheet, like \"B2:D9\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "set_range"
+                    },
+                    "values": {
+                      "description": "The new inputs as typed, in the range's shape: \"=...\" for a formula, \"\" to clear.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "maxItems": 10000,
+                        "minItems": 1,
+                        "type": "array"
+                      },
+                      "maxItems": 10000,
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "range",
+                    "expected",
+                    "values"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: format a range; fields left out stay as they are.",
+                  "properties": {
+                    "bold": {
+                      "type": "boolean"
+                    },
+                    "fill_color": {
+                      "description": "A hex colour, like \"#FFF2CC\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "font_family": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "font_size": {
+                      "maximum": 409,
+                      "minimum": 1,
+                      "type": "number"
+                    },
+                    "horizontal_alignment": {
+                      "enum": [
+                        "left",
+                        "center",
+                        "right"
+                      ],
+                      "type": "string"
+                    },
+                    "italic": {
+                      "type": "boolean"
+                    },
+                    "number_format": {
+                      "description": "automatic, plain_text, number, percent, scientific, currency, date, time, or an Excel number format pattern like \"0.0%\" or \"yyyy-mm-dd\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "range": {
+                      "description": "An A1 range on that sheet, like \"B2:D9\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "strikethrough": {
+                      "type": "boolean"
+                    },
+                    "text_color": {
+                      "description": "A hex colour, like \"#1F4E79\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "format_cells"
+                    },
+                    "vertical_alignment": {
+                      "enum": [
+                        "top",
+                        "middle",
+                        "bottom"
+                      ],
+                      "type": "string"
+                    },
+                    "wrap": {
+                      "description": "true wraps text inside the cell; false lets it overflow.",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "range"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: add an empty sheet.",
+                  "properties": {
+                    "after": {
+                      "description": "The sheet it follows; omit to add it last.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "add_sheet"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: rename a sheet.",
+                  "properties": {
+                    "expected_name": {
+                      "description": "The sheet's current name.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "rename_sheet"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "expected_name",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: insert empty rows.",
+                  "properties": {
+                    "at": {
+                      "description": "The row number the first new row takes; rows from there move down.",
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "count": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "insert_rows"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "at",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: delete whole rows.",
+                  "properties": {
+                    "at": {
+                      "description": "The first row number to delete.",
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "count": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "description": "The rows' current inputs as inspect_office_document shows them, one array per row with its cells from column A; trailing empty cells and rows may be left out, [] for empty rows.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_rows"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "at",
+                    "count",
+                    "expected"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: insert empty columns.",
+                  "properties": {
+                    "at": {
+                      "description": "The column letter the first new column takes, like \"C\"; columns from there move right.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "count": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "insert_columns"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "at",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: delete whole columns.",
+                  "properties": {
+                    "at": {
+                      "description": "The first column letter to delete, like \"C\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "count": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "expected": {
+                      "description": "The columns' current inputs as inspect_office_document shows them, one array per row from row 1 holding the deleted columns' cells; trailing empty cells and rows may be left out, [] for empty columns.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_columns"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "at",
+                    "count",
+                    "expected"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "XLSX: delete a sheet.",
+                  "properties": {
+                    "expected_name": {
+                      "description": "The sheet's current name.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "sheet": {
+                      "description": "The sheet's id or name as inspect_office_document lists it.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_sheet"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "sheet",
+                    "expected_name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX, PPTX: replace text inside one paragraph or shape.",
+                  "properties": {
+                    "expected_text": {
+                      "description": "Exact text to replace as inspect_office_document shows it; must occur once in the target.",
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "description": "The paragraph's or shape's target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Plain replacement text; empty deletes the expected text.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "replace_text"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target_id",
+                    "expected_text",
+                    "text"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "file_id": {
+            "description": "The file to edit; omit when the first command is create.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "commands"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "document.edit"
       ],
       "retention": "full"
     }

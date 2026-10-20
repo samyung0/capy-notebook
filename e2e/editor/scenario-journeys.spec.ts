@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
 import { officeEditMenu, saveOffice } from '../helpers/office';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 const marker = 'My unsaved scenario edit.';
@@ -98,9 +99,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const mounted = await input.elementHandle();
   const currentURL = page.url();
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   page.once('dialog', (dialog) => dialog.dismiss());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')
@@ -712,9 +711,7 @@ test('a text source in view mode shows its latest saved state, not only the publ
   await expect(page.getByText(savedMarker)).toBeVisible();
   // A fresh open in view mode reads the viewer session: saving did not
   // publish, yet the edit shows.
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')
     .click();

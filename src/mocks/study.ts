@@ -807,42 +807,136 @@ function pastSortKey(r: PastReview, sort: string | null) {
   }
 }
 
+/** Answered items in answer order, with their records; `current` finds an
+ * item as its material holds it now. */
+function answeredItems(
+  session: Session,
+  current: (materialId: string, itemId: string) => ReviewItem | undefined
+) {
+  return [...session.answers].flatMap(([key, a]): ReviewAnswer[] => {
+    const [materialId, itemId] = key.split('/');
+    const found = current(materialId, itemId);
+    if (!found) return [];
+    // The learner view's question gives way to the graded one.
+    const { question: _learner, ...item } = found;
+    return a.kind === 'card'
+      ? [{ ...item, rating: a.rating }]
+      : [
+          {
+            ...item,
+            answers: a.answers,
+            correct: a.correct,
+            question: a.graded,
+            rating: a.rating,
+            total: a.total,
+          },
+        ];
+  });
+}
+
+/** The showcase Biology 101 review: graded questions from the seeded quiz
+ * attempt between cards of Cell organelles. */
+function showcaseResultItems(): ReviewAnswer[] {
+  const attempt = db.attempts.find((a) => a.id === 'at_1');
+  const questions = [1, 2, 5, 7, 10].flatMap(
+    (i) => attempt?.questions?.[i] ?? []
+  );
+  // The second card's front and back run near their caps (120 and 1,000
+  // characters), to see how a result tile holds them.
+  const near = (sentence: string, cap: number) =>
+    sentence
+      .repeat(Math.ceil(cap / sentence.length))
+      .slice(0, cap - 2)
+      .trim();
+  const cards = cardsOf('dk_1')
+    .slice(0, 5)
+    .map((card, i) =>
+      i === 1
+        ? {
+            ...card,
+            back: near(
+              'The nucleus holds the DNA, controls gene expression and ships mRNA out through its pores. ',
+              1000
+            ),
+            front: near(
+              'Explain, with reference to the nuclear envelope, nucleolus and chromatin, how the nucleus controls the activities of a eukaryotic cell. ',
+              120
+            ),
+          }
+        : card
+    );
+  const RATINGS = [3, 1, 4, 2, 3];
+  return questions.flatMap((question, i): ReviewAnswer[] => {
+    const marks = question.parts.reduce((n, p) => n + p.marks, 0);
+    const awarded = question.parts.reduce((n, p) => n + (p.awarded ?? 0), 0);
+    const card = cards[i];
+    return [
+      {
+        answers: attempt?.answers,
+        correct: awarded,
+        itemId: question.id,
+        kind: 'question',
+        materialId: 'qz_1',
+        materialTitle: 'Cell biology basics',
+        question,
+        rating: awarded / marks < 0.5 ? 1 : awarded / marks < 0.7 ? 2 : 3,
+        total: marks,
+      },
+      ...(card
+        ? [
+            {
+              back: card.back,
+              front: card.front,
+              itemId: card.id,
+              kind: 'card' as const,
+              materialId: 'dk_1',
+              materialTitle: 'Cell organelles',
+              rating: RATINGS[i],
+            },
+          ]
+        : []),
+    ];
+  });
+}
+
+function pastRow(id: string, s: Session): PastReview {
+  const ws = db.workspaces.find((w) => w.id === s.workspaceId);
+  const answers = [...s.answers.values()];
+  const quiz = answers.filter((a) => a.kind === 'question');
+  const cards = answers.filter((a) => a.kind === 'card');
+  return {
+    answered: answers.length,
+    cards: cards.length
+      ? {
+          correct: cards.filter((a) => a.rating >= 3).length,
+          total: cards.length,
+        }
+      : undefined,
+    chapterId: s.chapterId,
+    chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
+    finishedAt: s.finishedAt ? new Date(s.finishedAt).toISOString() : undefined,
+    group: s.group,
+    iconId: ws?.iconId ?? '',
+    id,
+    lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
+    mode: s.mode,
+    quiz: quiz.length
+      ? {
+          correct: quiz.reduce((n, a) => n + a.correct, 0),
+          total: quiz.reduce((n, a) => n + a.total, 0),
+        }
+      : undefined,
+    startedAt: new Date(s.startedAt).toISOString(),
+    total: s.items.length,
+    workspaceId: s.workspaceId,
+    workspaceName: ws?.name ?? s.workspaceId,
+  };
+}
+
 function pastReviews(params: URLSearchParams) {
-  const recorded: PastReview[] = [...sessions]
+  const recorded = [...sessions]
     .filter(([, s]) => s.finishedAt)
-    .map(([id, s]) => {
-      const ws = db.workspaces.find((w) => w.id === s.workspaceId);
-      const answers = [...s.answers.values()];
-      const quiz = answers.filter((a) => a.kind === 'question');
-      const cards = answers.filter((a) => a.kind === 'card');
-      return {
-        answered: answers.length,
-        cards: cards.length
-          ? {
-              correct: cards.filter((a) => a.rating >= 3).length,
-              total: cards.length,
-            }
-          : undefined,
-        chapterId: s.chapterId,
-        chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
-        finishedAt: new Date(s.finishedAt ?? 0).toISOString(),
-        group: s.group,
-        iconId: ws?.iconId ?? '',
-        id,
-        lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
-        mode: s.mode,
-        quiz: quiz.length
-          ? {
-              correct: quiz.reduce((n, a) => n + a.correct, 0),
-              total: quiz.reduce((n, a) => n + a.total, 0),
-            }
-          : undefined,
-        startedAt: new Date(s.startedAt).toISOString(),
-        total: s.items.length,
-        workspaceId: s.workspaceId,
-        workspaceName: ws?.name ?? s.workspaceId,
-      };
-    });
+    .map(([id, s]) => pastRow(id, s));
   const workspaces = params.get('workspaceId')?.split(',') ?? [];
   const has = params.get('has')?.split(',') ?? [];
   const list = [...recorded, ...SHOWCASE_PAST]
@@ -941,26 +1035,7 @@ export const studyHandlers = [
     const all = pool(session.workspaceId);
     const current = (materialId: string, itemId: string) =>
       all.find((p) => p.materialId === materialId && p.itemId === itemId);
-    // Answered items in answer order, with their records, for Previous.
-    const done = [...session.answers].flatMap(([key, a]): ReviewAnswer[] => {
-      const [materialId, itemId] = key.split('/');
-      const found = current(materialId, itemId);
-      if (!found) return [];
-      // The learner view's question gives way to the graded one.
-      const { question: _learner, ...item } = found;
-      return a.kind === 'card'
-        ? [{ ...item, rating: a.rating }]
-        : [
-            {
-              ...item,
-              answers: a.answers,
-              correct: a.correct,
-              question: a.graded,
-              rating: a.rating,
-              total: a.total,
-            },
-          ];
-    });
+    const done = answeredItems(session, current);
     return HttpResponse.json({
       answered: session.answers.size,
       chapterId: session.chapterId,
@@ -971,6 +1046,28 @@ export const studyHandlers = [
         .filter(Boolean),
       mode: session.mode,
       total: session.items.length,
+    });
+  }),
+  http.get('/api/review/sessions/:id/result', ({ params }) => {
+    const id = String(params.id);
+    const session = sessions.get(id);
+    if (session) {
+      const all = pool(session.workspaceId);
+      const items = answeredItems(session, (materialId, itemId) =>
+        all.find((p) => p.materialId === materialId && p.itemId === itemId)
+      );
+      return HttpResponse.json({
+        better: items.filter((it) => it.rating >= 3).length > 0 ? 1 : 0,
+        items,
+        session: pastRow(id, session),
+      });
+    }
+    const row = SHOWCASE_PAST.find((r) => r.id === id);
+    if (!row) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json({
+      better: 3,
+      items: showcaseResultItems(),
+      session: row,
     });
   }),
   http.post('/api/review/sessions/:id/finish', ({ params }) => {

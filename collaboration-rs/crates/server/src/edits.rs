@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use tokio::sync::oneshot;
 use ydoc::undo::Captured;
 use yrs::updates::decoder::Decode;
-use yrs::{ReadTxn, StateVector, Transact};
+use yrs::{ReadTxn, Snapshot, StateVector, Transact};
 
 use crate::access::{self, AccessError};
 use crate::app::Shared;
@@ -63,6 +63,22 @@ pub enum DocumentError {
 pub const ROOM_RESET: &str = "collaboration room is being reset";
 /// An edit's refusal while its room is under the eviction lease.
 pub const ROOM_COMPACTING: &str = "collaboration room is being compacted";
+/// A write whose update is over `ydoc::MAX_UPDATE_BYTES` (Epo 2026-10-18),
+/// refused before anything commits: the agent's `quota_rejected` reason, the
+/// replace-block command's 413.
+pub const UPDATE_TOO_LARGE: &str = "update_size_exceeded";
+
+/// Whether any of an edit's writes, as stored or as sent to the live room,
+/// is over the update cap.
+fn over_update_cap(writes: &[Write]) -> bool {
+    writes.iter().any(|write| {
+        write.row.len() > ydoc::MAX_UPDATE_BYTES
+            || write
+                .live_update
+                .as_ref()
+                .is_some_and(|update| update.len() > ydoc::MAX_UPDATE_BYTES)
+    })
+}
 
 impl DocumentError {
     pub fn status_and_body(&self) -> (u16, Value) {
@@ -209,6 +225,8 @@ pub struct DocumentRequest {
     pub actor_user_id: String,
     #[serde(default)]
     pub commands: Vec<Value>,
+    /// An agent's scoped Office read (`inspect_office_document`).
+    pub office: Option<Value>,
     pub operation: Option<Operation>,
     pub provenance: Option<Value>,
     pub room: Option<String>,
@@ -429,7 +447,9 @@ struct Scratch {
     doc: yrs::Doc,
     durable: ydoc::Durable,
     live: Option<StateVector>,
-    before: StateVector,
+    /// Inserts and deletions both: an edit that only removes moves no state
+    /// vector.
+    before: Snapshot,
 }
 
 impl Scratch {
@@ -461,7 +481,7 @@ impl Scratch {
             }
             None => None,
         };
-        let before = doc.transact().state_vector();
+        let before = doc.transact().snapshot();
         Ok(Scratch {
             doc,
             durable,
@@ -470,10 +490,15 @@ impl Scratch {
         })
     }
 
+    /// Whether the edit inserted or deleted anything.
+    fn changed(&self) -> bool {
+        self.doc.transact().snapshot() != self.before
+    }
+
     /// The document's write, or none when the edit left it as it was.
     /// `captured` is kept only when a live room took part.
     fn write(&self, doc: note_store::Doc, captured: Option<Captured>) -> Option<Write> {
-        if self.doc.transact().state_vector() == self.before {
+        if !self.changed() {
             return None;
         }
         let hidden = markers::live_items(&self.doc);
@@ -820,6 +845,9 @@ pub async fn edit_material(
         tokio::task::spawn_blocking(move || compute(base, rows, live, kind, commands, quiz))
             .await
             .map_err(|error| DocumentError::Unknown(error.to_string()))??;
+    if over_update_cap(&computed.writes) {
+        return Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()));
+    }
     let mut version = stored;
     let mut versions = Vec::new();
     for write in &computed.writes {
@@ -1069,6 +1097,9 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         tx.commit().await.map_err(|error| error.to_string())?;
         return Ok(());
     };
+    if over_update_cap(&computed.writes) {
+        return Err(UPDATE_TOO_LARGE.into());
+    }
     let mut version = stored;
     let mut versions = Vec::new();
     for write in &computed.writes {
@@ -1190,7 +1221,6 @@ fn replace_on(
         return Ok((!computed.writes.is_empty()).then_some(computed));
     }
     let doc = &scratch.doc;
-    let before = scratch.before.clone();
     let model = Model::of(&kind);
     let previous = notes::limits::measure_value(&model.document_value(&doc.transact())?);
     match model {
@@ -1206,7 +1236,7 @@ fn replace_on(
             item.replace_block(&mut txn, &command.replacement_block)?;
         }
     }
-    if doc.transact().state_vector() == before {
+    if !scratch.changed() {
         return Ok(None);
     }
     if let Model::Item(item) = model {
@@ -1243,9 +1273,12 @@ pub async fn source_request(
         let rooms = app.clone();
         let inspection = app
             .sources
-            .inspect(&request.target.id, &request.actor_user_id, move |room| {
-                Box::pin(async move { live_state(&rooms, &room).await })
-            })
+            .inspect(
+                &request.target.id,
+                &request.actor_user_id,
+                request.office.clone(),
+                move |room| Box::pin(async move { live_state(&rooms, &room).await }),
+            )
             .await?;
         return Ok(serde_json::to_value(inspection).unwrap_or(Value::Null));
     }
@@ -1455,9 +1488,37 @@ fn undo_status(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     Ok(json!({ "live": live }))
 }
 
-/// `/internal/documents/{inspect,edit,undo,undo-status}` after the secret
-/// check.
+/// `CreateRequest`: a new Office file for the agent's `create`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRequest {
+    pub format: Value,
+    #[serde(default)]
+    pub commands: Vec<Value>,
+}
+
+/// `/internal/documents/create` after the secret check: the new file's bytes
+/// (base64) and the removed-characters notice. The API stores the file.
+pub async fn create(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
+    use base64::Engine;
+    let request: CreateRequest = serde_json::from_slice(body)
+        .map_err(|_| DocumentError::Invalid("invalid create request".into()))?;
+    let (bytes, notice) = app
+        .sources
+        .create_office(request.format, request.commands)
+        .await?;
+    Ok(json!({
+        "content": base64::engine::general_purpose::STANDARD.encode(bytes),
+        "notice": notice,
+    }))
+}
+
+/// `/internal/documents/{create,inspect,edit,undo,undo-status}` after the
+/// secret check.
 pub async fn document(app: &Shared, path: &str, body: &[u8]) -> Result<Value, DocumentError> {
+    if path.ends_with("/create") {
+        return create(app, body).await;
+    }
     if path.ends_with("/undo") {
         return undo(app, body).await;
     }
@@ -1491,7 +1552,25 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{DocumentError, Model, Scratch, compute, compute_quiz};
+    use super::{DocumentError, Model, Scratch, Write, compute, compute_quiz, over_update_cap};
+
+    /// An agent edit or content-API write whose update, stored or sent live,
+    /// is over the cap is refused before it commits; one at the cap goes (Epo
+    /// 2026-10-18).
+    #[test]
+    fn writes_over_the_update_cap_are_refused() {
+        let write = |row: usize, live: Option<usize>| Write {
+            doc: crate::note_store::Doc::Content,
+            row: vec![0; row],
+            durable: Default::default(),
+            live_update: live.map(|bytes| vec![0; bytes]),
+            captured: None,
+        };
+        let cap = ydoc::MAX_UPDATE_BYTES;
+        assert!(!over_update_cap(&[write(cap, Some(cap))]));
+        assert!(over_update_cap(&[write(10, None), write(cap + 1, None)]));
+        assert!(over_update_cap(&[write(10, Some(cap + 1))]));
+    }
 
     /// A text source's ambiguous span keeps the lines it occurs in on its way
     /// to the gateway: the notes refusal, the sources error, the body.
@@ -1575,5 +1654,46 @@ mod tests {
             Err(DocumentError::Edit { code, .. }) if code == "unsupported_operation"
         ));
         assert!(rebuilt(json!([{ "type": "text", "text": "Stem" }])).is_ok());
+    }
+
+    /// A quiz edit that only removes a question writes both documents, though
+    /// a deletion moves neither state vector.
+    #[test]
+    fn a_removal_only_quiz_edit_writes_both_documents() {
+        let question = |id: &str| {
+            json!({
+                "type": "quiz_question", "id": id, "children": [{ "text": "" }],
+                "question": {
+                    "id": id, "labels": "letters", "layout": "paper", "stem": [],
+                    "parts": [{
+                        "id": format!("{id}-p"), "marks": 1, "solution": [],
+                        "blocks": [{ "type": "text", "text": "True?" }],
+                        "answer": { "type": "boolean", "correct": true },
+                    }],
+                },
+            })
+        };
+        let value =
+            [json!({ "type": "quiz", "id": "quiz", "children": [question("q1"), question("q2")] })];
+        let (content, keys) = items::quiz::states_from_value(&value, 0);
+        let content = Scratch::new(&content, &[], None).unwrap();
+        let keys = Scratch::new(&keys, &[], None).unwrap();
+        let remove = notes::edit::DocumentCommand::RemoveChild {
+            parent_type: "quiz".into(),
+            node_id: "q2".into(),
+        };
+        let computed = compute_quiz(&content, &keys, |content, keys| {
+            items::quiz::apply_commands(content, keys, &[remove])?;
+            Ok(notes::edit::EditOutcome::default())
+        })
+        .unwrap();
+        let docs: Vec<_> = computed.writes.iter().map(|write| write.doc).collect();
+        assert_eq!(
+            docs,
+            [
+                crate::note_store::Doc::Content,
+                crate::note_store::Doc::Keys
+            ]
+        );
     }
 }

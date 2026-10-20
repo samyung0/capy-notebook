@@ -127,12 +127,15 @@ export function QuizScore({
   questions,
   awarded,
   max,
+  minutes,
   confetti = false,
 }: {
   /** Graded questions: every part carries the server's `awarded`. */
   questions: Question[];
   awarded: number;
   max: number;
+  /** "12 min" beside the score; absent where the start is unknown. */
+  minutes?: string;
   confetti?: boolean;
 }) {
   const results = questions.map(
@@ -151,7 +154,7 @@ export function QuizScore({
     <div className="grid gap-8">
       <div className="grid gap-3">
         <div className="flex items-center gap-4">
-          <ResultScore awarded={awarded} max={max} />
+          <ResultScore awarded={awarded} max={max} minutes={minutes} />
           {confetti && <Confetti />}
         </div>
         <ResultSquares

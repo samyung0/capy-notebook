@@ -183,8 +183,8 @@ failures of the same kind update/deduplicate instead of stacking. The global
 Toaster stays at the bottom right and normally displays at most three toasts.
 While an error is present, the shared list expands with no count cap so other
 toasts cannot cover the error.
-Warnings and errors last seven seconds; default and success toasts retain
-Sonner's four-second duration.
+Warnings and errors last twelve seconds; other toasts with a button last seven,
+and the rest keep Sonner's four-second duration (`userToast`).
 
 ## Persisted query cache
 

@@ -7,6 +7,7 @@ import {
   postToOfficeRuntime,
   saveOffice,
 } from '../helpers/office';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 declare global {
@@ -54,9 +55,7 @@ for (const [format, name] of [
       });
     }
     await page.goto('/workspaces/ws_bio');
-    await page
-      .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-      .click();
+    await showPanelView(page, m.workspace_tab_files());
     await page
       .locator(`[data-workspace-file-tree] a[href*="file=${fileId}"]`)
       .click();
@@ -409,13 +408,16 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
   const opened = sessions;
 
   // One column below lg, two columns at lg: both switch the surrounding layout.
-  // Below lg an open Office file keeps chat to its round button.
-  for (const [width, role, tools] of [
-    [900, 'button', m.workspace_tab_chat()],
-    [1280, 'tab', m.workspace_tab_files()],
+  // Below lg an open Office file keeps chat to its round button; at lg the
+  // right panel's title reads Files.
+  for (const [width, tools] of [
+    [900, m.workspace_tab_chat()],
+    [1280, m.workspace_tab_files()],
   ] as const) {
     await page.setViewportSize({ height: 800, width });
-    await expect(page.getByRole(role, { name: tools }).first()).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: tools }).first()
+    ).toBeVisible();
     await expect(iframe).toHaveAttribute('data-layout-probe', 'kept');
   }
   expect(sessions).toBe(opened);
@@ -427,9 +429,7 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
     .click();
@@ -551,9 +551,7 @@ test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hi
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
     .click();
@@ -1316,9 +1314,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=bio-office-xlsx"]')
     .click();
@@ -1328,9 +1324,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   });
   await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 30_000 });
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
-    .click();
+  await showPanelView(page, m.workspace_tab_chat());
   const chat = page.getByRole('textbox', { name: m.chat_placeholder() });
   await expect(chat).toBeVisible();
 
@@ -1394,14 +1388,14 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
   await page.keyboard.press('ArrowUp');
   await expect(formula).toHaveValue('67');
 
-  // Input the engine refuses: the editor reports it in the frame, and Capy
-  // shows no file error for a save nobody asked for.
+  // Input the engine refuses: the editor reports it on its line under the
+  // formula bar, and Capy shows no file error for a save nobody asked for.
   await page.mouse.click(box.x + 150, box.y + 75);
   await page.keyboard.press('9');
   await editor.fill('x'.repeat(40_000));
   await frameFocus(false);
   await chat.click();
-  await expect(frame.getByTestId('xlsx-error')).toBeVisible();
+  await expect(frame.getByTestId('xlsx-edit-refusal')).toBeVisible();
   await expect(page.getByText(m.error_file_body())).toHaveCount(0);
 });
 
@@ -1448,9 +1442,7 @@ test('an Office citation highlights its passage again after the runtime reloads'
 }) => {
   test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio');
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
-    .click();
+  await showPanelView(page, m.workspace_tab_chat());
   await page.getByRole('button', { name: m.chat_history() }).click();
   await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
   await page.getByTitle(m.chat_source_number({ n: 1 })).click();
@@ -1748,9 +1740,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
   await test.step('a newly opened editor leaves the focus in the chat box', async () => {
     await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
     // The workspace panel opens on Files, also with a file in the URL.
-    await page
-      .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
-      .click();
+    await showPanelView(page, m.workspace_tab_chat());
     await chat.click();
     await page.keyboard.type('hi');
     // Typed before the editor was ready.
@@ -1804,6 +1794,11 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
     await expect
       .poll(() => updates.evaluate((seen) => seen.count), { timeout: 30_000 })
       .toBeGreaterThan(0);
+    // Saved means stored (Epo 2026-10-19): Syncing until the receipt.
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'syncing'
+    );
     await receipts(false);
     // Every key lands and saves before the next step counts updates: the
     // rest of "Hello" can still be in the editor's input queue here.
@@ -1920,9 +1915,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       return seen;
     });
     await mode.click();
-    await page
-      .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-      .click();
+    await showPanelView(page, m.workspace_tab_files());
     await page
       .locator('[data-workspace-file-tree]')
       .locator('..')
@@ -1974,6 +1967,8 @@ test('closing DOCX header editing gives the document the focus back', async ({
   };
   await openHeader();
   await options.click();
+  // Remove would change only this editor's copy (Epo 2026-10-20).
+  await expect(frame.getByRole('button', { name: /^Remove / })).toHaveCount(0);
   await frame.getByRole('button', { name: 'Close header editing' }).click();
   await expect(frame.getByLabel('Document input')).toBeFocused();
 
@@ -2185,6 +2180,13 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   // The vertical ruler starts at the first page's top.
   const vertical = await frame.locator('.docx-vertical-ruler').boundingBox();
   expect(vertical?.y).toBeCloseTo(firstPage?.y ?? -1, 0);
+  // The margins show but do not drag: they would change only this editor's
+  // copy (Epo 2026-10-20).
+  const margins = frame.locator('[data-ruler-margin]');
+  await expect(margins).toHaveCount(4);
+  await expect(
+    margins.and(frame.locator('[data-draggable="true"]'))
+  ).toHaveCount(0);
 
   // View mode draws no ruler and offers no toggle; edit opens with the choice.
   const mode = page.getByRole('button', { name: m.material_mode() });

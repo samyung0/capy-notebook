@@ -20,6 +20,7 @@ from odl import context as parser_context
 from odl import furniture as parser_furniture
 from odl import table_html as parser_table_html
 
+from pipeline.ingest import decode
 from pipeline.retrieval import chunking, packing
 from pipeline.retrieval.headings import retain_headings
 
@@ -43,7 +44,8 @@ def test_packer_reproduces_the_lab_chunks_for_a_refined_bundle() -> None:
     )
 
     chunks = packing.pack_blocks(blocks, furniture)
-    chunks = retain_headings(blocks, FIXTURE / "source.pdf", chunks)
+    evidence = decode.page_evidence(FIXTURE / "source.pdf", blocks)
+    chunks = retain_headings(blocks, chunks, verified=set(evidence["visible_headings"]))
 
     # This expected output was frozen by the recovery experiment before the
     # production fix. It includes 76 restored interior occurrences; the original

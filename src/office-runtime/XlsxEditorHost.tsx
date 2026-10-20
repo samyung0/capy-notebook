@@ -39,12 +39,6 @@ import {
 } from './xlsxRender';
 import './xlsx-runtime.css';
 
-/**
- * The largest update one XLSX clear may send: the collaboration server's
- * per-message payload limit (`COLLABORATION_MAX_PAYLOAD_BYTES`, 2 MiB).
- */
-const OFFICE_MESSAGE_MAX_BYTES = 2 * 1024 * 1024;
-
 export function XlsxEditorHost({
   bytes,
   collaboration,
@@ -63,6 +57,7 @@ export function XlsxEditorHost({
   onThumbnailer,
   onZoomChange,
   readOnly,
+  sending,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
@@ -76,7 +71,7 @@ export function XlsxEditorHost({
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onMenus: OfficeMenuReporter;
-  /** A clear too big for the room, or a copy too big to read: nothing changed. */
+  /** An edit past the engine's update cap, or a copy past its ceiling: nothing changed. */
   onNotice: (notice: OfficeNotice) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onPendingChange: (pending: boolean) => void;
@@ -89,6 +84,11 @@ export function XlsxEditorHost({
   onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
+  /**
+   * The tab holds back its collaboration messages (pacing, an update's
+   * pieces, a timeout): the grid refuses edits with a loading cursor.
+   */
+  sending?: boolean;
 }) {
   const apiRef = useRef<XlsxEditorApi | null>(null);
   useEffect(() => {
@@ -196,7 +196,6 @@ export function XlsxEditorHost({
     >
       <XlsxEditor
         className="office-editor-host"
-        clearLimitBytes={OFFICE_MESSAGE_MAX_BYTES}
         collaboration={collaboration}
         file={bytes}
         fileName={fileName}
@@ -218,6 +217,7 @@ export function XlsxEditorHost({
         }}
         onSave={onSave}
         readOnly={readOnly}
+        sending={sending}
         showCustomNumberFormat={false}
         showFontPicker={!narrow}
         showFontSizePicker={!narrow}

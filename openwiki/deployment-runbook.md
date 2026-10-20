@@ -622,6 +622,31 @@ The prod file runs `/migrate` once per deploy, starts the API with
    docker exec $(docker ps -qf name=collaboration) sh -c 'grep "open files" /proc/1/limits'
    ```
 
+   The Office engine children run sandboxed (Epo 2026-10-20; the policy in
+   [office-files](frontend/office-files.md)). The compose files give the
+   collaboration service `cap_drop: [ALL]` and
+   `security_opt: [no-new-privileges:true]`; the server runs as `nobody` and
+   needs no capability. Each engine sets its own limits (64 descriptors, no
+   core file, the data cap above), Landlock and seccomp, and keeps only
+   `CAPY_ENGINE_*`, `MALLOC_*`, `APP_ENV` and `LOG_FORMAT` from the server's
+   environment; the server makes itself non-dumpable, so processes of the
+   same uid cannot read its environment or memory. The engine sandbox
+   needs Landlock with its signal and abstract Unix-socket scoping (ABI 6,
+   Linux 6.12 or later) in the host kernel: with `APP_ENV=production` (UAT
+   included) the server exits at start with `captured error` naming Landlock
+   (stage `engine_sandbox`) instead of serving without it. Before the first
+   deploy of this to a host, check that the kernel has it:
+
+   ```bash
+   grep -o landlock /sys/kernel/security/lsm; uname -r
+   ```
+
+   It must print `landlock` and a kernel of 6.12 or later. The engine's
+   seccomp filters also refuse every x32 call, so the host's x32 setting does
+   not matter. The non-dumpable server's `/proc/1` files belong to root inside the
+   container: `docker exec … cat /proc/1/environ` as the service user fails by
+   design, while `/proc/1/limits` and `/proc/1/status` stay readable.
+
    Each WebSocket has an 8 KiB read buffer (`READ_BUFFER` in `http.rs`;
    tungstenite's default is 128 KiB). An idle connection costs about 30 KiB
    in all, measured on a local stack with 2,000 idle connections; Node used
@@ -637,6 +662,50 @@ The prod file runs `/migrate` once per deploy, starts the API with
    When peers leave, the process keeps the small allocations they freed and
    reuses them for later joins, so RSS stays near its peak instead of falling
    back.
+
+   Each user's SYNC, awareness and query messages, over all their sockets
+   and draft sends, have an allowance kept in the process (Epo 2026-10-18,
+   [plate-editor](frontend/plate-editor.md#connection-lifetime-and-refusals)):
+   a burst of `COLLABORATION_UPDATE_BURST` messages or
+   `COLLABORATION_UPDATE_BURST_BYTES`, then
+   `COLLABORATION_UPDATES_PER_SECOND` and
+   `COLLABORATION_UPDATE_BYTES_PER_SECOND`. They default to 10,000 messages
+   or 8 MiB, then 200 and 2 MiB a second, the same in every environment, so
+   nothing renders or sets them. The byte burst may not be set below 8 MiB,
+   the largest update a room takes (the server refuses to start). A user
+   over it is timed out (3 s to 5 minutes) and shows as
+   `capy_collaboration_timeouts_total` on `/metrics` and a `user timed out`
+   warn line naming the room, socket and user. A count from many users means
+   real editing reaches it: measure with `pnpm bench:rates` before raising a
+   value in the compose environment. Never lower one: the client paces by
+   the defaults, so every tab would time out. Each user's open budget for
+   full-document answers (`COLLABORATION_OPEN_BYTES`, 80 MiB, refilled over
+   `COLLABORATION_OPEN_REFILL_SECONDS`, 300) slows opens past it and is also
+   left unset.
+
+   A client address holds at most `COLLABORATION_SOCKETS_PER_ADDRESS` sockets
+   (500, `capy_collaboration_seat_refusals_total` counts refusals) and a user
+   at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
+   `COLLABORATION_CONNECTIONS_PER_DOCUMENT` connections to one document (4;
+   one more closes their oldest, counted in
+   `capy_collaboration_oldest_closed_total`), also left unset, as are
+   `COLLABORATION_PING_SECONDS` (30) and `COLLABORATION_SILENT_SECONDS` (60):
+   every socket is pinged and one silent that long closes, freeing its places. The address is the gateway limiter's
+   (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
+   peer's; an IPv6 one by its /64), so the cap holds only while the origin is
+   reachable through the Cloudflare tunnel alone, as it is for the gateway's
+   own limits. A school behind one address would need the address cap
+   raised.
+
+   A load test whose peers share one user or one address (the local stress
+   stack's `u_owner` from one machine, `docker-compose.stress.yml`) shares
+   one allowance and one address cap: its compose file raises
+   `COLLABORATION_UPDATE_BURST`, `COLLABORATION_UPDATES_PER_SECOND`,
+   `COLLABORATION_OPEN_BYTES`, `COLLABORATION_SOCKETS_PER_ADDRESS`,
+   `COLLABORATION_JOINED_PER_USER` and
+   `COLLABORATION_CONNECTIONS_PER_DOCUMENT`.
+   A UAT stress run from one machine needs the address cap raised on UAT
+   for the run.
 
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
@@ -817,10 +886,10 @@ token.
 Same values whether Coolify, bare compose, or A records. Coolify domain fields
 are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `deploy/.env.example` (Clerk, Stripe, Sentry DSNs, provider keys).
-`APP_ENV` is required: the gateway refuses to start without it (Epo
-2026-10-20). `deploy/docker-compose.prod.yml` sets `production` (UAT included),
-`deploy/docker-compose.e2e.yml` sets `e2e`, and local setup sets `development`
-(`deploy/docker-compose.yml`, `deploy/.env.example`).
+`APP_ENV` is required: the gateway and Ops refuse to start without it (Epo
+2026-10-20). `deploy/docker-compose.prod.yml` and `deploy/docker-compose.ops.yml`
+set `production` (UAT included), `deploy/docker-compose.e2e.yml` sets `e2e`, and
+local setup sets `development` (`deploy/docker-compose.yml`, `deploy/.env.example`).
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
 120/minute editor class are not env-overridable. Configure model capacity in the
 Ops model catalog before allowing platform model calls. Each environment stores
@@ -1402,6 +1471,12 @@ DOCKER-USER does on the app host. `nftables.service` loads it at boot and Docker
 never edits the table. The output chain's parser rule is §7.4.
 
 `pipeline/tests/test_host_hardening.py` keeps all of this in the playbooks.
+
+**Ptrace, both hosts.** Both playbooks set `kernel.yama.ptrace_scope=1` in
+`/etc/sysctl.d/60-capy-ptrace.conf`: a process can trace only its own
+descendants. On the app host the task carries the `sysctl` tag, so
+`ansible-playbook playbook.yml --tags sysctl` applies it alone; check it with
+`sysctl kernel.yama.ptrace_scope`.
 
 **Applying, lockout-safe.** Run from the playbook's directory with its ignored
 `inventory.yml` (the README lists the values). The `ssh` and `firewall` tags
@@ -2169,13 +2244,20 @@ the host:
   refused before LibreOffice starts, as the terminal `422 parse_format_mismatch`
   (the coordinator fails the file without a retry). Every conversion gets a
   fresh LibreOffice profile in a job directory under the parse child's slot
-  directory, which is also LibreOffice's `TMPDIR`, so a killed conversion's
-  files go when the slot is wiped. Its
+  directory, which is also LibreOffice's `TMPDIR` and holds its IPC pipe
+  (`-env:OSL_SOCKET_PATH`), so a killed conversion's files go when the slot is
+  wiped. LibreOffice puts the pipe in `/tmp` or `/var/tmp` whenever it may
+  write there, so the image leaves both unwritable for the parser user. A
+  socket path holds 107 bytes, so the parser refuses to start when
+  `CAPY_PARSE_WORK_DIR` is too long for the pipe's path in a job folder (the
+  default leaves a few bytes spare). Its
   `registrymodifications.xcu` blocks links from documents outside trusted
   locations (there are none), disables macros at the highest security level and
-  sets Writer and Calc link updates to never. A conversion that exceeds
+  sets Writer and Calc link updates to never. LibreOffice starts as
+  `soffice.bin` itself, through the decoder sandbox (§7.5), so it can start no
+  process to leave behind. A conversion that exceeds
   `CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is killed with its whole process group,
-  so `soffice.bin` cannot outlive its launcher, and the document fails as
+  and the document fails as
   `parse_hard_timeout` with its fingerprint quarantined, like a parse past its
   deadline. Ingest, `/capture_page`, and
   Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
@@ -2185,11 +2267,13 @@ the host:
   `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp
   profile and `read_only: true`. Its writable places are a 64 MiB tmpfs HOME
   (`/run/capy-parser/home`, also the parser user's passwd home, which Java
-  reads), a 64 MiB tmpfs `/tmp` (only the JVM's perf data: Java's
-  `java.io.tmpdir` is the document's output directory), the `parse_spool`
+  reads), the `parse_spool`
   volume and the disk-backed `parser_work` volume at `/run/capy-parser/work`
   (slot directories, transfers, Office jobs, and the image's `TMPDIR`, so
-  spooled uploads stay off RAM; startup empties it). The release script runs
+  spooled uploads stay off RAM; startup empties it). There is no `/tmp`
+  mount: `/tmp` stays the image's (root, mode 0755). A writable tmpfs there
+  would draw LibreOffice's pipe into it, where the sandbox refuses it, and
+  every Office conversion would fail. The release script runs
   `parse-spool-init` before every candidate parser, not only at bootstrap, so
   the volumes get their directories and owner (uid 10001) from init rather
   than from the image. The Parser budget workflow runs the image under the
@@ -2213,7 +2297,10 @@ the host:
   the template in the same release or the nonprod healthcheck fails.
 - **Process isolation.** The parser's API process makes itself non-dumpable
   at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
-  same user, can neither trace it nor read its memory or environment. The
+  same user, can neither trace it nor read its memory or environment. It holds
+  `PARSER_TOKEN` in a constant, removes it from its environment at import,
+  before any child starts, and refuses to start, or a request, without one;
+  its children run under the decoder sandbox (§7.5). The
   playbook also sets `kernel.yama.ptrace_scope=1`
   (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
   descendants. Check it with `sysctl kernel.yama.ptrace_scope` after applying
@@ -2253,6 +2340,95 @@ docker exec "$parser" curl -sS --max-time 5 https://example.com    # fails at on
 docker exec "$parser" curl -fsS http://10.77.0.2:8091/healthz      # 200
 docker inspect --format '{{.State.Health.Status}}' "$parser"       # healthy
 curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the host keeps egress
+```
+
+### 7.5 Decoder sandbox
+
+Every process that decodes an uploaded file runs under one policy (decision
+2026-10-20), applied by `pipeline/capy_sandbox.py`; the parser image copies the
+same file. Each child gets an empty environment plus an allowlist, a
+non-dumpable parent, `no_new_privs`, a seccomp filter (no non-Unix sockets, no
+io_uring, no cross-process calls such as ptrace, `process_vm_readv`,
+`pidfd_getfd` or `process_madvise`, and no `setsid`/`setpgid` or new processes
+where the child never needs them), a Landlock ruleset limiting its files to its
+own code and job folder and scoping its signals and abstract Unix sockets to
+its own domain (no signal to, or socket of, a process outside it), rlimits
+sized from the S0 measurements, its own process group killed whole at its
+wall-clock timeout, and death with its parent. Children keep their parent's
+non-root uid. A per-job child starts through a trampoline (a fresh interpreter
+applies the policy to itself, then execs the target); the persistent parse
+child confines itself right after its `setsid`.
+
+| Child | Environment | Memory | CPU | Descriptors | File size | Also blocked | Files |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Parse child (persistent) | the API's, without `PARSER_TOKEN` | 2 GiB soft address space | none (600 s per document) | 256 | 512 MiB | `setsid` | reads its code, the system trees and Java's jars; writes its slot folder |
+| LibreOffice (`soffice.bin`) | `PATH`, `LANG`, `HOME` and `TMPDIR` (its job folder), `MALLOC_ARENA_MAX=2` | the parse child's, inherited | 180 s | 256 | 256 MiB | `setsid`, `setpgid`, new processes | reads the system trees; writes its job folder, its IPC pipe included |
+| Java (OpenDataLoader) | `PATH`, `HOME`, `LANG`; `-XX:ActiveProcessorCount` from the container's CPU quota | 2 GiB data, address space lifted | 2,400 s behind the 600 s deadline | 256 | 512 MiB | `setsid`, `setpgid`, new processes | reads the system trees, its jars and its PDF; writes its output folder |
+| Ingest decode helper (`pipeline/ingest/decode.py`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
+
+Core dumps are off for all of them. The ingest worker never imports MuPDF or
+Pillow: PDF page text and heading evidence, image captions and card thumbnails
+all come from the helper. The helper has no network through seccomp; the
+worker's uid gets no nftables rule, which would cut the worker's own traffic.
+The parser's uid-10001 rule (§7.4) stays as its outer layer. The sandboxed JVM
+reads neither `/sys` nor `/proc`, so the parser reads the container's CPU quota
+(`/sys/fs/cgroup/cpu.max`, rounded up, at most the CPUs it may run on) at
+import and passes it as the JVM's CPU count, which sizes its GC and compiler
+threads.
+
+**What the parents read back.** A child's answer can come from a compromised
+decoder, so its parent bounds and checks it. The launcher reads a child's
+stdout only up to the cap its caller sets, counting what is still in the pipe
+when the child exits, and keeps the last 64 KiB of its stderr; past the cap it
+kills the group, as it does when it cannot start the threads that read the
+child. The decode helper's cap is 32 MiB:
+the largest real answer measured, a 1,475-page PDF's page texts, is 4 MiB, and
+the densest page, 22 KiB, fits 1,400 times. The worker accepts only the JSON
+shape each mode answers (page texts as strings, heading indices as integers,
+images as base64, a pixel limit as which limit applied, logged with the
+worker's own message); anything else, like an answer past the cap, fails the
+decode as an ordinary error, retried as the job's policy says. The parse child
+may write its slot folder, so the API writes a document's transfer file only
+through the descriptor it created and opens a result there only as a regular
+file, never through a link and never waiting on a FIFO. Card thumbnails shrink
+while they decode, as captions do, so an image near Pillow's 89 Mpx limit fits
+the helper's 768 MiB.
+
+**Landlock.** A deployed host (`APP_ENV=production`, as rendered for UAT and
+production) without Landlock ABI 6 (kernel 6.12 or later, which scopes signals
+and abstract sockets) refuses to start: the parser API at startup and every
+ingest-host worker process (ingest worker, parse coordinator, import worker).
+Local and e2e run the decoders with whatever ABI the kernel has, or without
+the Landlock layer and log `Landlock unavailable`; off Linux (local
+development) the launcher keeps only the environment and the timeout. Check a
+host with `grep -o landlock /sys/kernel/security/lsm` and its ABI with
+`python3 -c 'import ctypes; print(ctypes.CDLL(None).syscall(444, None, 0, 1))'`
+(6 or more).
+
+**Containers.** Both ingest compose files run the pipeline services (parse
+coordinator, ingest worker, import worker, host sampler) as the image's
+`capy-ingest` user, uid 10002 in the spool's group (gid 10001, the parser's),
+with `cap_drop: [ALL]` and `no-new-privileges:true`; the parser keeps its own
+flags (§7.4). `parse-spool-init` still makes the spool directories setgid 10001
+with mode 2770 on every release, so what either side writes the other may read
+and remove. The role locks in the nonprod capacity folder are opened read-only
+(`flock` needs no write), so a lock file init gave to uid 10001 with group read
+still locks. The pipeline image makes its sources and retrieval diagnostics
+readable to that user (the ingest host builds under umask 077), and the worker
+makes itself non-dumpable at startup. The local `deploy/docker-compose.yml`
+runs its worker, parse coordinator and import worker with the same user and
+flags. `pipeline/tests/test_ingest_compose.py` and
+`pipeline/tests/test_decoder_sandbox.py` keep these rules.
+
+Verify after a release (nonprod shown; production's services are `worker`,
+`parse-coordinator`, `import-worker` and `host-sampler`):
+
+```bash
+worker=$(docker ps -q --filter label=com.docker.compose.service=worker-uat | head -1)
+docker exec "$worker" grep -E '^(Uid|Gid|CapEff|NoNewPrivs)' /proc/1/status  # 10002, 10001, 0, 1
+docker logs "$worker" 2>&1 | grep -c 'Landlock unavailable'                   # 0
+docker logs "$parser" 2>&1 | grep -c 'Landlock unavailable'                   # 0
+docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # read-only
 ```
 
 ---
@@ -3107,6 +3283,16 @@ variable stored as a secret, so `pnpm env:push` checks for it instead: it
 lists the target environment's secret names (never values) and refuses to run,
 naming each such key, before it changes anything. Local env files reject
 unknown keys.
+
+The deploy workflows run from `main` but render with the target revision's
+`scripts/env/config.py`. Revisions before 00724c461 read every secret from
+`CAPY_GITHUB_SECRETS`, which today's workflows no longer pass, so a deploy or
+rollback of such a revision fails at its render step. To roll back to one,
+tag the old SHA and dispatch that revision's own workflow from the tag
+(`gh workflow run deploy-uat.yml --ref <tag> -f revision=<sha>`, and likewise
+Deploy Ops and Deploy ingest). That workflow still passes `toJSON(secrets)`,
+so GitHub holds the run until someone with write access approves it on the
+run page.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
 file for the optional ops edge check. The UAT workflow and local review scripts

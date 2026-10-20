@@ -89,11 +89,13 @@ async function edit(
   api: APIRequestContext,
   target: Target,
   commands: object[],
-  figures: { id: string; image: string }[] = []
+  figures: { id: string; image: string }[] = [],
+  office = false
 ) {
   const receipt = await agent<Receipt>(api, '/api/internal/documents/edit', {
     commands,
     figures,
+    office,
     target,
   });
   expect(receipt.outcome, JSON.stringify(receipt)).toBe('succeeded');
@@ -101,9 +103,14 @@ async function edit(
   return receipt.effect!.undo!.operationId;
 }
 
-async function inspect<T>(api: APIRequestContext, target: Target) {
+/** inspect_document's read, or inspect_office_document's with `office`. */
+async function inspect<T>(
+  api: APIRequestContext,
+  target: Target,
+  office?: object
+) {
   const response = await api.post('/api/internal/documents/inspect', {
-    data: { count: 200, target, userId: users.owner, workspaceId },
+    data: { count: 200, office, target, userId: users.owner, workspaceId },
     headers: { 'X-Pipeline-Secret': pipelineSecret },
   });
   expect(response.status(), await response.text()).toBe(200);
@@ -119,9 +126,36 @@ type Block = {
 type Entry = { id: string; label: string; position: string; value: string };
 const blocks = async (api: APIRequestContext, id: string) =>
   (await inspect<{ blocks: Block[] }>(api, { id, kind: 'material' })).blocks;
-const entries = async (api: APIRequestContext, id: string) =>
-  (await inspect<{ entries: Entry[] }>(api, { id, kind: 'source_file' }))
-    .entries;
+type Sheet = { id: string; name: string; usedRange: string };
+type Cell = { address: string; input: string; value: string };
+/** An Office source as the agent reads it: DOCX paragraphs and PPTX shapes,
+ * or the cells of an XLSX's first sheet (by address, their input as value). */
+async function entries(
+  api: APIRequestContext,
+  id: string,
+  format: OfficeFormat
+): Promise<Entry[]> {
+  const target = { id, kind: 'source_file' } as const;
+  if (format !== 'xlsx')
+    return (await inspect<{ entries: Entry[] }>(api, target, { count: 200 }))
+      .entries;
+  const listed = await inspect<{ scoped: { sheets: Sheet[] } }>(
+    api,
+    target,
+    {}
+  );
+  const [sheet] = listed.scoped.sheets;
+  const read = await inspect<{ scoped: { cells: Cell[] } }>(api, target, {
+    range: sheet.usedRange,
+    sheet: sheet.name,
+  });
+  return read.scoped.cells.map((cell) => ({
+    id: cell.address,
+    label: sheet.name,
+    position: '',
+    value: cell.input,
+  }));
+}
 
 /** The chat card's Undo, by the owner. */
 async function undo(ownerApi: APIRequestContext, operationId: string) {
@@ -1108,7 +1142,7 @@ test.describe('agent writes to Office sources', () => {
   test.describe.configure({ timeout: 300_000 });
 
   for (const format of ['docx', 'pptx', 'xlsx'] as const) {
-    test(`${format === 'xlsx' ? 'set_cell' : 'replace_text'} on a ${format.toUpperCase()} source lands on its targets, live for two editors, and one Undo restores both`, async ({
+    test(`${format === 'xlsx' ? 'set_range' : 'replace_text'} on a ${format.toUpperCase()} source lands on its targets, live for two editors, and one Undo restores both`, async ({
       anonymousApi,
       editorPage,
       ownerApi,
@@ -1119,8 +1153,11 @@ test.describe('agent writes to Office sources', () => {
         await openOffice(ownerPage, fileId, format),
         await openOffice(editorPage, fileId, format),
       ];
-      const before = await entries(anonymousApi, fileId);
-      const texts = before.filter((entry) => entry.value.trim().length > 3);
+      const before = await entries(anonymousApi, fileId, format);
+      // Text, not formulas: the agent's value is the text with a suffix.
+      const texts = before.filter(
+        (entry) => entry.value.trim().length > 3 && !entry.value.startsWith('=')
+      );
       const [one, two] =
         format === 'pptx'
           ? [
@@ -1132,11 +1169,11 @@ test.describe('agent writes to Office sources', () => {
       const commands = [one, two].map((entry, i) =>
         format === 'xlsx'
           ? {
-              cell: entry.label.split('!').pop(),
-              expected_value: entry.value,
-              sheet: entry.label.split('!')[0],
-              type: 'set_cell',
-              value: changed[i],
+              expected: [[entry.value]],
+              range: entry.id,
+              sheet: entry.label,
+              type: 'set_range',
+              values: [[changed[i]]],
             }
           : {
               expected_text: entry.value,
@@ -1150,7 +1187,7 @@ test.describe('agent writes to Office sources', () => {
       // (it merges the room, Epo 2026-10-13) and the edit and its Undo keep.
       const typed = 'Collaborator line typed live.';
       const read = async () => {
-        const now = await entries(anonymousApi, fileId);
+        const now = await entries(anonymousApi, fileId, format);
         if (format === 'docx')
           expect(now.map((entry) => entry.value)).toContain(typed);
         return now.filter((entry) => entry.value !== typed);
@@ -1180,7 +1217,9 @@ test.describe('agent writes to Office sources', () => {
       const operation = await edit(
         anonymousApi,
         { id: fileId, kind: 'source_file' },
-        commands
+        commands,
+        [],
+        true
       );
       const after = await read();
       expect(after.find((entry) => entry.id === one.id)?.value).toBe(

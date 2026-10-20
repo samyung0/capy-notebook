@@ -35,7 +35,8 @@ async def test_history_reuses_current_passages_and_preserves_tool_notes(monkeypa
     tools.assign_citations(ctx, [passage("other")])
     saved = {
         "tools": [{"name": "list_sources", "text": "full source listing"}],
-        "passages": [asdict(first), asdict(gone), asdict(changed)],
+        # The first passage's line said its document had unindexed edits.
+        "passages": [asdict(first) | {"unindexed": 2}, asdict(gone), asdict(changed)],
     }
     history = await evidence.history_turns(
         [
@@ -58,10 +59,17 @@ async def test_history_reuses_current_passages_and_preserves_tool_notes(monkeypa
     assert (
         "[2] source.pdf\nSource fact." in content and "full source listing" in content
     )
+    # Replayed with the current-text wording and its flag as first written
+    # (review hints-round S4).
+    assert "edits made since then come with a read" in content
+    assert "apply any supplied pending edits" not in content
+    assert '[2] "source.pdf" has 2 edits not indexed yet' in content
     assert "gone in file f is no longer available" in content
     assert "changed in file f is no longer available" in content
     assert "Changed source fact." not in content
     assert [p.chunk_id for p in ctx.citations] == ["other", "current"]
+    # Cited again this turn, it is saved with the same count (re-review N3).
+    assert evidence.pack(ctx, [2])["passages"][0]["unindexed"] == 2
     messages = chat.chat_messages(
         locale="en", checkpoint=None, history=history, query="Explain it"
     )
@@ -92,8 +100,10 @@ def test_pack_keeps_only_cited_passages_and_all_selected_results():
     ctx.evidence_notes = [
         {"name": "list_sources", "text": "日" * 8192} for _ in range(6)
     ]
+    ctx.passage_flags = {"cited": 3}
     packed = evidence.pack(ctx, [1, 1])
     assert [p["chunk_id"] for p in packed["passages"]] == ["cited"]
+    assert packed["passages"][0]["unindexed"] == 3
     assert packed["tools"] == ctx.evidence_notes
     assert evidence.pack(ctx, [])["passages"] == []
 

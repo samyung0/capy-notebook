@@ -2158,6 +2158,30 @@ export const conversations: Conversation[] = [
     updatedAt: hours(3),
     workspaceId: workspaces[0].id,
   },
+  {
+    createdAt: days(3),
+    id: 'conv_seed_pinned',
+    pinnedAt: hours(2),
+    title: 'Exam plan for the cell unit',
+    updatedAt: days(3),
+    workspaceId: workspaces[0].id,
+  },
+  {
+    archivedAt: days(2),
+    createdAt: days(9),
+    id: 'conv_seed_archived1',
+    title: 'Lab report draft questions',
+    updatedAt: days(8),
+    workspaceId: workspaces[0].id,
+  },
+  {
+    archivedAt: days(21),
+    createdAt: days(40),
+    id: 'conv_seed_archived2',
+    title: 'Old exam tips',
+    updatedAt: days(30),
+    workspaceId: workspaces[0].id,
+  },
 ];
 
 /** Owner-only trash bin: metadata rows plus the original record so restore can

@@ -22,7 +22,6 @@ pub struct Config {
     pub debounce: Duration,
     pub max_debounce: Duration,
     pub host: String,
-    pub max_payload_bytes: u64,
     pub port: u16,
     pub redis_url: String,
     pub secret: String,
@@ -55,6 +54,25 @@ pub struct Config {
     /// 10 GiB, UAT 5 GiB). No default.
     pub source_disk_dir: std::path::PathBuf,
     pub source_disk_bytes: u64,
+    /// Each user's update allowance (Epo 2026-10-18, `rate.rs`), the same
+    /// everywhere: sized from what editors send
+    /// (bench/collaboration/reports/2026-10-18-update-rates.md), the burst
+    /// for a DOCX paste of about 5,000 paragraphs (two updates each), the
+    /// rate three times the fastest key repeat. The byte burst is at least
+    /// the largest update (`ydoc::MAX_UPDATE_BYTES`). The open budget beside
+    /// it (Epo 2026-10-19). An operator lowering any of these makes tabs
+    /// time out (the client paces by the defaults, `allowance.ts`).
+    pub update_limits: crate::rate::Limits,
+    /// Sockets one client address may hold, and channels one user may have
+    /// joined, in all and to one document, before a join closes their oldest
+    /// (`seats.rs`): stress stacks with one address and one user raise them.
+    pub sockets_per_address: u64,
+    pub joined_per_user: u64,
+    pub connections_per_document: u64,
+    /// How often every socket is pinged, and how long one may stay silent
+    /// before it closes (`socket.rs`); tests shorten them.
+    pub ping_every: Duration,
+    pub silent_close: Duration,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -85,6 +103,14 @@ fn positive(env: &HashMap<String, String>, name: &str, fallback: u64) -> Result<
             _ => Err(ConfigError(format!("{name} must be a positive integer"))),
         },
     }
+}
+
+fn seconds(
+    env: &HashMap<String, String>,
+    name: &str,
+    fallback: Duration,
+) -> Result<Duration, ConfigError> {
+    positive(env, name, fallback.as_secs()).map(Duration::from_secs)
 }
 
 fn millis(
@@ -128,6 +154,39 @@ impl Config {
             ));
         }
         let port = positive(env, "PORT", 1234)?;
+        let update_limits = crate::rate::Limits {
+            burst_updates: positive(env, "COLLABORATION_UPDATE_BURST", 10_000)?,
+            burst_bytes: positive(env, "COLLABORATION_UPDATE_BURST_BYTES", 8 << 20)?,
+            updates_per_second: positive(env, "COLLABORATION_UPDATES_PER_SECOND", 200)?,
+            bytes_per_second: positive(env, "COLLABORATION_UPDATE_BYTES_PER_SECOND", 2 << 20)?,
+            open_bytes: positive(env, "COLLABORATION_OPEN_BYTES", crate::rate::OPEN_BYTES)?,
+            open_refill_seconds: positive(
+                env,
+                "COLLABORATION_OPEN_REFILL_SECONDS",
+                crate::rate::OPEN_REFILL.as_secs(),
+            )?,
+        };
+        let ping_every = seconds(env, "COLLABORATION_PING_SECONDS", crate::socket::PING_EVERY)?;
+        let silent_close = seconds(
+            env,
+            "COLLABORATION_SILENT_SECONDS",
+            crate::socket::SILENT_CLOSE,
+        )?;
+        // A silent window no longer than the pings would close quiet sockets
+        // that answer every ping.
+        if silent_close <= ping_every {
+            return Err(ConfigError(
+                "COLLABORATION_SILENT_SECONDS must be greater than COLLABORATION_PING_SECONDS"
+                    .into(),
+            ));
+        }
+        // A smaller burst would refuse an update the rooms take, every time.
+        if update_limits.burst_bytes < ydoc::MAX_UPDATE_BYTES as u64 {
+            return Err(ConfigError(format!(
+                "COLLABORATION_UPDATE_BURST_BYTES must be at least {}",
+                ydoc::MAX_UPDATE_BYTES
+            )));
+        }
         Ok(Config {
             allowed_origins,
             api_url: optional(env, "API_URL", dev::API_URL)
@@ -150,7 +209,6 @@ impl Config {
             debounce: millis(env, "COLLABORATION_DEBOUNCE_MS", 2000)?,
             max_debounce: millis(env, "COLLABORATION_MAX_DEBOUNCE_MS", 10_000)?,
             host: optional(env, "HOST", "0.0.0.0"),
-            max_payload_bytes: positive(env, "COLLABORATION_MAX_PAYLOAD_BYTES", 2 * 1024 * 1024)?,
             port: u16::try_from(port)
                 .map_err(|_| ConfigError("PORT must be a positive integer".into()))?,
             redis_url: optional(env, "REDIS_URL", dev::REDIS_URL),
@@ -185,13 +243,31 @@ impl Config {
                 }
             },
             source_disk_bytes: required(env, "COLLABORATION_SOURCE_DISK_BYTES")?,
+            update_limits,
+            sockets_per_address: positive(
+                env,
+                "COLLABORATION_SOCKETS_PER_ADDRESS",
+                crate::seats::SOCKETS_PER_ADDRESS,
+            )?,
+            joined_per_user: positive(
+                env,
+                "COLLABORATION_JOINED_PER_USER",
+                crate::seats::JOINED_PER_USER,
+            )?,
+            connections_per_document: positive(
+                env,
+                "COLLABORATION_CONNECTIONS_PER_DOCUMENT",
+                crate::seats::CONNECTIONS_PER_DOCUMENT,
+            )?,
+            ping_every,
+            silent_close,
         })
     }
 
-    /// The largest WebSocket frame: a whole source state fits.
+    /// The largest WebSocket frame a client may send: the largest update
+    /// and its framing (`socket.rs` refuses an update over the cap inside it).
     pub fn max_frame_bytes(&self) -> usize {
-        let source = sources::MAX_SOURCE_STATE_BYTES as u64 + 1024;
-        usize::try_from(self.max_payload_bytes.max(source)).unwrap_or(usize::MAX)
+        ydoc::MAX_UPDATE_BYTES + 64 * 1024
     }
 }
 
@@ -228,6 +304,22 @@ mod tests {
         assert_eq!(config.port, 1234);
         assert_eq!(config.projection_idle, Duration::from_secs(30));
         assert_eq!(config.projection_cadence, Duration::from_secs(300));
+        assert_eq!(
+            config.update_limits,
+            crate::rate::Limits {
+                burst_updates: 10_000,
+                burst_bytes: 8 << 20,
+                updates_per_second: 200,
+                bytes_per_second: 2 << 20,
+                open_bytes: 80 << 20,
+                open_refill_seconds: 300,
+            }
+        );
+        assert_eq!(config.sockets_per_address, 500);
+        assert_eq!(config.joined_per_user, 22);
+        assert_eq!(config.connections_per_document, 4);
+        assert_eq!(config.ping_every, Duration::from_secs(30));
+        assert_eq!(config.silent_close, Duration::from_secs(60));
     }
 
     #[test]
@@ -320,5 +412,17 @@ mod tests {
         );
         assert!(Config::load(&env(&[("PORT", "0")])).is_err());
         assert!(Config::load(&env(&[("COLLABORATION_DEBOUNCE_MS", "x")])).is_err());
+        assert_eq!(
+            Config::load(&env(&[("COLLABORATION_UPDATE_BURST_BYTES", "8388607")]))
+                .unwrap_err()
+                .to_string(),
+            "COLLABORATION_UPDATE_BURST_BYTES must be at least 8388608"
+        );
+        assert_eq!(
+            Config::load(&env(&[("COLLABORATION_PING_SECONDS", "60")]))
+                .unwrap_err()
+                .to_string(),
+            "COLLABORATION_SILENT_SECONDS must be greater than COLLABORATION_PING_SECONDS"
+        );
     }
 }

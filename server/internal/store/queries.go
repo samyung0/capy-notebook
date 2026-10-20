@@ -2089,8 +2089,21 @@ func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetai
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}
+	if err != nil {
+		return d, err
+	}
 	if d.Chapters == nil {
 		d.Chapters = []string{}
+	}
+	if d.Kind == "flashcards" && d.MaterialID != nil {
+		var prev PreviousAttempt
+		err = s.pool.QueryRow(ctx, `SELECT correct, total, taken_at FROM attempts
+			WHERE user_id=$1 AND material_id=$2 AND taken_at < $3 ORDER BY taken_at DESC LIMIT 1`,
+			userID, *d.MaterialID, d.TakenAt).Scan(&prev.Correct, &prev.Total, &prev.TakenAt)
+		if isNoRows(err) {
+			return d, nil
+		}
+		d.Previous = &prev
 	}
 	return d, err
 }

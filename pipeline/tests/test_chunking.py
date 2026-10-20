@@ -536,6 +536,28 @@ def test_query_terms_are_or_joined_for_websearch_tsquery():
     )
 
 
+def test_query_terms_carry_no_websearch_negation_or_phrase():
+    """A leading - or ! made a word NOT, and quotes swallowed the joiners
+    (hints eval 2026-10-20)."""
+    terms = search_query_terms('What is -5 + !x? the "cell wall"')
+
+    assert terms.any_of == "What or is or 5 or + or x? or the or cell or wall"
+    assert '"' not in terms.all_of and " -" not in terms.all_of
+    # Websearch skips ( ) ! & | < before an operand, so a "-" anywhere but
+    # inside a word is NOT too (review hints-round S1); a hyphenated word stays.
+    for query, word in [
+        ("(-5)", "(5)"),
+        ("f(-x)", "f(x)"),
+        ("2*(-5)", "2*(5)"),
+        ("x^(-1)", "x^(1)"),
+        ("(-ve)", "(ve)"),
+        ("&-5", "&5"),
+        ("5-", "5"),
+        ("cost-push", "cost-push"),
+    ]:
+        assert search_query_terms(query).any_of == word, query
+
+
 def test_query_terms_count_a_cjk_run_once_and_keep_latin_apart():
     """The exact tier counts words as typed. '标准差' is one term however many
     bigrams it becomes; the Latin words are handed to Postgres separately so

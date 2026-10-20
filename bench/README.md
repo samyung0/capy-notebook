@@ -23,7 +23,7 @@ place (Epo 2026-10-10).
 
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
+| [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency. Update rates one user's editing sends, scored against the server's allowance | `pnpm bench:stress` (Docker), `pnpm bench:rates` |
 | [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |
 | [`parity/`](parity/)       | Office feature parity per format against Google Docs, Sheets and Slides: hand-assigned view, edit, save and collab statuses, each Y backed by a test on the pin; ranked remaining work | `python3 bench/parity/scripts/parity.py` (CI: `--check`) |
@@ -123,6 +123,22 @@ repeats the ladder for the Rust collaboration server against Node. The
 [2026-10-17 allocator run](collaboration/reports/2026-10-17-collaboration-allocator.md)
 measures the memory the server keeps after its peers leave, per glibc setting
 and with mimalloc.
+
+`bench/collaboration/scripts/update-rates.rates.ts` (`pnpm bench:rates`,
+`playwright.rates.config.ts`) measures what one user's editing sends: the
+Vite dev server with MSW and the perf seed, the real note and Office
+editors, and a counter on the mock rooms, which see each update before the
+room provider cuts it into pieces. Per scenario (typing at 15 keys a second,
+keys held at 33 and 66 a second, undo and redo, pastes, photos, DOCX pastes
+of 100 to 2,500 paragraphs with their undo, redo, Replace All and select all
+with bold, a replayed session) it
+reports the most updates and bytes in any 1 s, the 99th percentile of 1 s
+windows, the most in 100 ms, the largest update and how the server's
+allowance as shipped scores it (unpaced, and the paced socket's longest
+wait), into the gitignored `collaboration/.results/rates.jsonl`. It sized the
+collaboration server's per-user update allowance
+([2026-10-18 report](collaboration/reports/2026-10-18-update-rates.md), its
+record in `collaboration/reports/2026-10-18-windows-pc/rates.jsonl`).
 
 `bench/collaboration/scripts/chaos-peers.ts` (`pnpm chaos:peers`) is not a
 measurement: it joins synthetic collaborators to one live room of the Rust
@@ -228,6 +244,26 @@ replacing `--repeats 2` with `--score`. The sibling TypeScript scorer uses the
 official parser and local recovery checks. Add `--model deepseek` or `--model glm`
 to limit the live sample to one provider. These are format samples, not
 production failure-rate measurements or retrieval-quality tests.
+
+The pending-hints eval (`rag/scripts/hints_eval_*.py`, fixtures in
+`rag/fixtures/hints-eval/`, findings in
+[`rag/reports/2026-10-20-hints-eval.md`](rag/reports/2026-10-20-hints-eval.md))
+measures the hints `pipeline/retrieval/pending_hints.py` attaches for unindexed
+edits:
+- `hints_eval_matcher.py` scores the matcher's precision, recall and noise on
+  70 labelled messages without a model.
+- `hints_eval_agent.py` runs chat turns through `lab/playground`'s Turn on GLM
+  and DeepSeek, with real hints, injected junk hints and rule variants, and
+  scores correctness, reads, junk quotes, tokens, latency and cost.
+- `hints_eval_cjk.py` compares word rules for Chinese, Japanese and Korean
+  messages (overlapping pairs, whole runs, the HSK word list, production's
+  hand-picked lists) on 36 Chinese, 7 Japanese and 7 Korean messages; findings in
+  [`rag/reports/2026-10-20-hints-cjk-rule.md`](rag/reports/2026-10-20-hints-cjk-rule.md).
+
+The matcher and agent evals run against a scratch `pgvector/pgvector:pg16`
+container that `hints_eval_db.py` migrates and loads with real embeddings;
+`hints_eval_cjk.py` needs only an empty Postgres 16. Keys are read in memory
+from the repository's `.env.local`.
 
 `rag/scripts/rag_eval.py` is a live retrieval diagnostic that
 runs the production `search()` against a real workspace inside the pipeline

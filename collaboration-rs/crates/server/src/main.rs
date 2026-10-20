@@ -23,7 +23,9 @@ mod observe;
 mod projection;
 mod protocol;
 mod pubsub;
+mod rate;
 mod room;
+mod seats;
 mod socket;
 mod source_rooms;
 
@@ -44,10 +46,11 @@ fn main() {
     match args.next().as_deref() {
         None => {}
         // An Office engine process of the server's pool (DESIGN.md 6.3):
-        // frames on stdin and stdout, so every line goes to stderr.
+        // frames on stdin and stdout, so every line goes to stderr. No Sentry
+        // (Epo 2026-10-20): its environment has no SENTRY_DSN, and its
+        // failures surface as the server's failed calls.
         Some("engine") => {
             observe::log_to_stderr();
-            let _sentry = observe::init();
             observe::install_for_sources();
             if let Err(error) = sources::engine::serve() {
                 observe::capture(&error.to_string(), None, &[("stage", "engine")]);
@@ -64,13 +67,29 @@ fn main() {
             std::process::exit(2);
         }
     }
-    // Before any connection is accepted, so a startup failure is reported.
-    let _sentry = observe::init();
+    // Before any connection is accepted, so a startup failure is reported;
+    // each failure below drops the guard first, which flushes its event.
+    let sentry = observe::init();
     observe::install_for_sources();
+    // The Office engine sandbox: production does not start without Landlock.
+    match sources::engine::sandbox::check_host() {
+        Ok(None) => {}
+        Ok(Some(gap)) => log(
+            Level::Warn,
+            "office engine sandbox incomplete",
+            json!({ "gap": gap }),
+        ),
+        Err(error) => {
+            observe::capture(&error, None, &[("stage", "engine_sandbox")]);
+            drop(sentry);
+            std::process::exit(1);
+        }
+    }
     let config = match Config::from_env() {
         Ok(config) => config,
         Err(error) => {
             observe::capture(&error.to_string(), None, &[("stage", "config")]);
+            drop(sentry);
             std::process::exit(1);
         }
     };
@@ -79,6 +98,7 @@ fn main() {
         Ok(limit) => log(Level::Info, "open_files_limit", json!({ "soft": limit })),
         Err(error) => {
             observe::capture(&error, None, &[("stage", "open_files_limit")]);
+            drop(sentry);
             std::process::exit(1);
         }
     }
@@ -89,6 +109,7 @@ fn main() {
         .expect("the tokio runtime starts");
     if let Err(error) = runtime.block_on(serve(config)) {
         observe::capture(&error, None, &[("stage", "startup")]);
+        drop(sentry);
         std::process::exit(1);
     }
 }
@@ -183,6 +204,10 @@ async fn serve(config: Config) -> Result<(), String> {
         }
     };
     let publication_hold = config.uat_publication_hold;
+    let allowances = crate::rate::Allowances::new(config.update_limits, std::time::Instant::now());
+    let address_sockets = crate::seats::Seats::new(config.sockets_per_address);
+    let joined = crate::seats::Joined::new(config.joined_per_user);
+    let per_document = crate::seats::Joined::new(config.connections_per_document);
     let app = Arc::new(App {
         instance_id: format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()),
         config,
@@ -193,6 +218,10 @@ async fn serve(config: Config) -> Result<(), String> {
         rooms: Default::default(),
         evictions: Default::default(),
         stats: Default::default(),
+        allowances,
+        address_sockets,
+        joined,
+        per_document,
         health: Default::default(),
         unplaced: Default::default(),
         projection_failures: Default::default(),
@@ -231,6 +260,7 @@ async fn serve(config: Config) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(&address)
         .await
         .map_err(|error| error.to_string())?;
+    let listener = crate::seats::TrackedListener(listener);
     log(
         Level::Info,
         "collaboration service listening",
@@ -239,7 +269,10 @@ async fn serve(config: Config) -> Result<(), String> {
     let stopping = app.clone();
     // Upgraded sockets are not waited for: every room stores first, then the
     // listener stops and the process exits (clients reconnect elsewhere).
-    axum::serve(listener, http::router(app.clone()))
+    // Each socket's client address counts toward its cap, and its connection
+    // tells when it last moved bytes out (`seats.rs`).
+    let service = http::router(app.clone()).into_make_service_with_connect_info::<seats::Peer>();
+    axum::serve(listener, service)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
             log(Level::Info, "flushing collaboration documents", json!({}));

@@ -100,6 +100,7 @@ import type {
   RequestAccountDeletionReq,
   RetryProcessingReq,
   ReviewOverview,
+  ReviewResult,
   ReviewSession,
   ReviewStart,
   SaveCanvasReq,
@@ -121,6 +122,7 @@ import type {
   UndoEditReq,
   UpdateChapterReq,
   UpdateCommentReq,
+  UpdateConversationReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardSetReq,
@@ -1695,11 +1697,60 @@ export const messagesQuery = (convId: string | null) =>
 export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
   useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });
 
-export function useDeleteConversation(wsId: string) {
+export const useArchivedConversations = (
+  wsId: string,
+  enabled: boolean,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    enabled: enabled && !!wsId,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<Conversation[]>(
+        `/workspaces/${wsId}/conversations?archived=true`
+      ),
+    queryKey: qk.archivedConversations(wsId),
+  });
+
+/** Rename, pin or archive one thread; the live and archived lists refetch. */
+export function useUpdateConversation(
+  wsId: string,
+  options?: MutationUiOptions
+) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: ({ id, ...body }: UpdateConversationReq & { id: string }) =>
+      api.patch<Conversation>(`/conversations/${id}`, body),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
+  });
+}
+
+export function useDeleteConversation(
+  wsId: string,
+  options?: MutationUiOptions
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (convId: string) => api.del<void>(`/conversations/${convId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
+  });
+}
+
+/** Unarchive all or delete all of the archived threads. */
+export function useArchivedConversationsAction(
+  wsId: string,
+  options?: MutationUiOptions
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: (action: 'unarchive' | 'delete') =>
+      action === 'unarchive'
+        ? api.post<void>(`/workspaces/${wsId}/conversations/unarchive`)
+        : api.del<void>(`/workspaces/${wsId}/conversations/archived`),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
   });
 }
 export function useGenerate(wsId: string, options?: MutationUiOptions) {
@@ -2552,6 +2603,19 @@ export const useResumeReviewSession = (
     queryFn: () => api.get<ReviewSession>(`/review/sessions/${sessionId}`),
     queryKey: qk.reviewSession(sessionId),
     staleTime: 0,
+  });
+
+/** A session's result page, finished or just ended. */
+export const useReviewResult = (
+  sessionId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<ReviewResult>(`/review/sessions/${sessionId}/result`),
+    queryKey: qk.reviewResult(sessionId),
   });
 
 /** Ends a session before its last item (Done). */

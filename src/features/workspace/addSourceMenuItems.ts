@@ -25,7 +25,7 @@ export function addSourceMenuItems(
     ...(onAddChapter
       ? [
           {
-            icon: 'archive' as const,
+            icon: 'chapter' as const,
             label: m.action_add_chapter(),
             onClick: onAddChapter,
           },

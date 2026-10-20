@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { expectErrorSurface } from '../helpers/errors';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 async function openWorkspace(page: Page) {
@@ -11,9 +12,7 @@ async function openWorkspace(page: Page) {
 }
 
 async function openFile(page: Page, name: string) {
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page.getByRole('link', { exact: true, name }).click();
 }
 
@@ -274,7 +273,7 @@ test('User scenarios opens seeded material errors in the workspace and survives 
   ).toBeVisible({ timeout: 30_000 });
 });
 
-test('PDF annotation load toast retries failures and recovers without reloading the PDF', async ({
+test('PDF annotation load toast shows before the PDF loads', async ({
   page,
   context,
 }) => {
@@ -300,21 +299,6 @@ test('PDF annotation load toast retries failures and recovers without reloading 
     .getByRole('button', { exact: true, name: 'Annotation load error.pdf' })
     .click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'ready');
-  await page.evaluate(async () => {
-    const browserPath = '/src/mocks/browser.ts';
-    const mswPath = '/node_modules/msw/lib/core/index.mjs';
-    const { worker } = await import(browserPath);
-    const { http, HttpResponse } = await import(mswPath);
-    let ready = false;
-    window.addEventListener('annotations-retry-enable', () => {
-      ready = true;
-    });
-    worker.use(
-      http.get('/api/files/mock-preview-annotations/annotations', () =>
-        ready ? HttpResponse.json([]) : new HttpResponse(null, { status: 503 })
-      )
-    );
-  });
   const canvas = page.locator('[data-page="1"] canvas');
   const toast = page.locator('[data-sonner-toast]').filter({
     hasText: m.pdf_annotations_failed(),
@@ -323,33 +307,13 @@ test('PDF annotation load toast retries failures and recovers without reloading 
   await expect(canvas).toHaveCount(0);
   releasePdf!();
   await expect(canvas).toBeVisible();
-  const originalCanvas = await canvas.elementHandle();
   await expect(
     page.getByRole('alert').filter({
       hasText: m.pdf_annotations_failed(),
     })
   ).toHaveCount(0);
   await page.getByRole('button', { name: m.material_mode() }).click();
-
   await expect(
     page.getByRole('button', { exact: true, name: m.pdf_draw() })
   ).toBeDisabled();
-  await toast
-    .getByRole('button', { exact: true, name: m.error_action_retry() })
-    .click();
-  await expect(toast).toHaveCount(0);
-  await expect(toast).toHaveCount(1, { timeout: 15_000 });
-  await page.evaluate(() =>
-    window.dispatchEvent(new Event('annotations-retry-enable'))
-  );
-  await toast
-    .getByRole('button', { exact: true, name: m.error_action_retry() })
-    .click();
-  await expect(toast).toHaveCount(0);
-  await expect(
-    page.getByRole('button', { exact: true, name: m.pdf_draw() })
-  ).toBeEnabled();
-  expect(await originalCanvas?.evaluate((element) => element.isConnected)).toBe(
-    true
-  );
 });

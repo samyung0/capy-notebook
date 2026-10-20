@@ -233,6 +233,7 @@ async fn agent_input_a_file_cannot_hold_is_dropped_with_a_note_or_refused_as_inv
                 };
                 (dropped, target_id, refused)
             }
+            other => unreachable!("command() makes set_cell or replace_text, not {other:?}"),
         };
         let applied = pool
             .apply_commands(on, &seed, std::slice::from_ref(&dropped))
@@ -308,4 +309,102 @@ async fn the_seed_check_seeds_each_base_once_and_reports_every_changed_seed() {
         error.to_string().contains("downloaded other bytes"),
         "{error}"
     );
+}
+
+/// The agent's scoped XLSX read and `create` answer through the pool as the
+/// crate does in process; a refused read and a create of a format without a
+/// starter stay edit refusals with their sentence (Epo 2026-10-20).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn scoped_reads_and_creates_go_through_the_pool() {
+    use office_service::InspectQuery;
+    use sources::engine::{EngineError, FailureKind};
+
+    let pool = pool();
+    let base = fixture("e2e/fixtures/files/basic/grades.xlsx");
+    let sha = office_service::sha256_hex(&base);
+    let on = On {
+        format: Format::Xlsx,
+        base: &base,
+        base_sha256: &sha,
+        room: None,
+    };
+    let seed = pool.seed(on).await.unwrap();
+    let checkpoint = Checkpoint {
+        format: Format::Xlsx,
+        schema_version: 1,
+        base_sha256: &sha,
+        state: &seed,
+    };
+    let sheets = pool
+        .inspect_scoped(on, &seed, &InspectQuery::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        sheets,
+        office_service::inspect_scoped(&base, checkpoint, &InspectQuery::default()).unwrap()
+    );
+    let first = sheets["sheets"][0]["id"].as_str().unwrap().to_owned();
+    let range = InspectQuery {
+        sheet: Some(first.clone()),
+        range: Some("A1:C3".into()),
+    };
+    let cells = pool.inspect_scoped(on, &seed, &range).await.unwrap();
+    assert!(!cells["cells"].as_array().unwrap().is_empty());
+    let too_big = InspectQuery {
+        sheet: Some(first),
+        range: Some("A1:Z1000".into()),
+    };
+    match pool.inspect_scoped(on, &seed, &too_big).await {
+        Err(EngineError::Refused(failure)) => {
+            assert!(
+                failure.message.starts_with("invalid_input: "),
+                "{}",
+                failure.message
+            )
+        }
+        other => panic!("a 26,000-cell read: {other:?}"),
+    }
+
+    let commands = vec![Command::SetRange {
+        sheet: "Sheet1".into(),
+        range: "A1:B1".into(),
+        expected: vec![vec![String::new(), String::new()]],
+        values: vec![vec!["Total".into(), "=1+2".into()]],
+    }];
+    let seed_hex = "b".repeat(64);
+    let (bytes, notice) = pool
+        .create(
+            Format::Xlsx,
+            &commands,
+            &seed_hex,
+            "2000-01-01T00:00:00.000Z",
+        )
+        .await
+        .unwrap();
+    let direct = office_service::create(
+        Format::Xlsx,
+        office_service::starter(Format::Xlsx).unwrap(),
+        &commands,
+        office_service::Determinism {
+            seed: &seed_hex,
+            now: "2000-01-01T00:00:00.000Z",
+        },
+    )
+    .unwrap();
+    assert_eq!((bytes, notice), (direct.bytes, direct.notice));
+
+    // DOCX has no starter yet: a create is refused, not retried as a fault.
+    match pool
+        .create(Format::Docx, &[], &seed_hex, "2000-01-01T00:00:00.000Z")
+        .await
+    {
+        Err(EngineError::Refused(failure)) => {
+            assert_eq!(failure.kind, FailureKind::Edit);
+            assert_eq!(
+                failure.message,
+                "unsupported_operation: docx files cannot be created yet"
+            );
+        }
+        other => panic!("a DOCX create: {other:?}"),
+    }
 }

@@ -4,6 +4,7 @@ import { authHeaders } from '@/api/auth';
 import type { SourceFile } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
+import { useCollaborationHeld } from '@/features/collaboration/held';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
@@ -481,17 +482,40 @@ export function useOfficeRuntime({
   // A capture uploads only what the room has (saved) while the user may edit.
   const captureAllowed = useRef<() => boolean>(() => false);
   captureAllowed.current = () => editable && source.status === 'saved';
+  const sending = useCollaborationHeld();
   // After the load above, and again whenever the runtime document boots. A
   // paused editor shows its content read-only, for selecting and copying.
   useEffect(() => {
     if (frameLoaded)
       post({
-        canEdit:
-          editable && (mode !== 'edit' || frameDoc.current === source.doc),
+        canEdit: frameCanEdit({
+          current: mode !== 'edit' || frameDoc.current === source.doc,
+          editable,
+          format,
+          sending,
+        }),
         type: 'set-capabilities',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [editable, frameBoot, frameLoaded, mode, post, source.doc]);
+  }, [
+    editable,
+    format,
+    frameBoot,
+    frameLoaded,
+    mode,
+    post,
+    sending,
+    source.doc,
+  ]);
+
+  useEffect(() => {
+    if (frameLoaded && mode === 'edit')
+      post({
+        pending: sending,
+        type: 'sending',
+        version: OFFICE_PROTOCOL_VERSION,
+      });
+  }, [frameBoot, frameLoaded, mode, post, sending]);
 
   useEffect(() => {
     const doc = source.doc;
@@ -953,6 +977,7 @@ export function useOfficeRuntime({
     setFrameLoaded,
     setRuntimeMode,
     sizeLimited,
+    slowed: mode === 'edit' && source.slowed,
     status: source.status,
     storageFull: source.session?.storageFull,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
@@ -978,14 +1003,16 @@ const OFFICE_NOTICE_TOASTS: Record<
   OfficeNotice,
   { once: boolean; title: (imageMaxBytes: number) => string }
 > = {
-  // Each refused clear or copy is its own keystroke: every time.
-  'clear-too-large': {
-    once: false,
-    title: () => m.files_office_clear_too_large(),
-  },
+  // Each copy or cut is its own keystroke: every time.
+  'copy-failed': { once: false, title: () => m.files_office_copy_failed() },
   'copy-too-large': {
     once: false,
     title: () => m.files_office_copy_too_large(),
+  },
+  // Each refused edit is its own keystroke: every time.
+  'edit-too-large': {
+    once: false,
+    title: () => m.files_office_edit_too_large(),
   },
   // A refused keystroke repeats on every key: once per frame.
   'equation-text': { once: true, title: () => m.files_office_equation_text() },
@@ -999,6 +1026,27 @@ const OFFICE_NOTICE_TOASTS: Record<
   },
   'image-type': { once: false, title: () => m.image_unreadable() },
 };
+
+/**
+ * The `set-capabilities` canEdit: an editable frame showing the room's
+ * current document. While the tab holds back its collaboration messages
+ * (pacing, pieces, a timeout; Epo 2026-10-18) a DOCX or PPTX editor pauses,
+ * as for any pause; the XLSX editor takes `sending` instead and refuses edits
+ * with a busy cursor.
+ */
+export function frameCanEdit({
+  current,
+  editable,
+  format,
+  sending,
+}: {
+  current: boolean;
+  editable: boolean;
+  format: OfficeFormat;
+  sending: boolean;
+}) {
+  return editable && current && !(sending && format !== 'xlsx');
+}
 
 /**
  * The notices a frame shows, each as its entry says: a `once` notice once per

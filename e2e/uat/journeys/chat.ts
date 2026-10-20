@@ -4,6 +4,7 @@
 // the tool calls a `[uat-scripted-tools]` message names instead of a model's.
 import assert from 'node:assert/strict';
 import type { Page } from '@playwright/test';
+import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
 import type { UatRun } from './runtime';
 
@@ -102,9 +103,7 @@ export async function scriptedSearch(
 ) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
-    .click();
+  await showPanelView(page, m.workspace_tab_chat());
   const { frames } = await scripted(page, [
     [{ arguments: { query }, name: 'search_workspace' }],
     'root = Answer([a])\na = Md("Scripted search ran.", [1])',

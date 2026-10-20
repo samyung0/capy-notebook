@@ -244,6 +244,17 @@ func TestReviewSessionRecords(t *testing.T) {
 	if len(past) != 2 || past[0].ID != second.ID || past[0].Answered != 1 || past[0].Total != 3 {
 		t.Fatalf("past after a second session = %+v", past)
 	}
+	// Its result: the answered card, which rose from Again in the first session.
+	result, err := f.s.ReviewSessionResult(ctx, f.user, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Session.ID != second.ID || len(result.Items) != 1 || result.Items[0].Rating != 3 || result.Better != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := f.s.ReviewSessionResult(ctx, other, second.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("another user's result: %v", err)
+	}
 	if past, _, _ := f.s.PastReviews(ctx, f.user, PastReviewParams{Sort: "date", Has: []string{"quiz"}, Limit: 10}); len(past) != 0 {
 		t.Fatalf("quiz filter kept card sessions: %+v", past)
 	}

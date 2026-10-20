@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from pipeline.ingest import capacity, worker
 
 
@@ -20,6 +24,21 @@ def test_role_lock_is_shared_and_released(tmp_path, monkeypatch):
     replacement = capacity.try_acquire("ingest")
     assert replacement is not None
     replacement.release()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root opens any file read-write")
+def test_a_lock_file_the_worker_cannot_write_still_locks(tmp_path, monkeypatch):
+    """(security regression: S2 non-root ingest) The spool's init gives every
+    lock file to the parser's uid with group read only; the pipeline user, in
+    that group, still takes and releases the role."""
+    monkeypatch.setattr(capacity.cfg, "shared_capacity_lock_dir", str(tmp_path))
+    (tmp_path / "parse.lock").touch()
+    (tmp_path / "parse.lock").chmod(0o440)
+
+    lease = capacity.try_acquire("parse")
+    assert lease is not None
+    assert capacity.try_acquire("parse") is None
+    lease.release()
 
 
 def test_unconfigured_lock_keeps_existing_process_capacity(monkeypatch):

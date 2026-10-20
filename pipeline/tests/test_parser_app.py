@@ -29,6 +29,8 @@ if str(PARSER_DIR) not in sys.path:
 # The compose files set them; the module refuses to load without them.
 os.environ.setdefault("CAPY_PARSE_WORKERS", "1")
 os.environ.setdefault("CAPY_PARSE_MAX_PAGES", "1400")
+# The module takes it out of the environment at import.
+os.environ.setdefault("PARSER_TOKEN", "test-parser-token")
 
 spec = importlib.util.spec_from_file_location("app", PARSER_DIR / "app.py")
 assert spec is not None and spec.loader is not None
@@ -829,6 +831,7 @@ def test_a_parse_past_the_address_space_answers_parse_oom(
     # Not this test process's own limits.
     monkeypatch.setattr(parser_app, "_limit_address_space", lambda _limit: None)
     monkeypatch.setattr(parser_app, "_set_oom_score_adj", lambda _value: None)
+    monkeypatch.setattr(parser_app, "_sandbox_parse_child", lambda _work_dir: None)
     monkeypatch.setattr(parser_app.os, "setsid", lambda: None, raising=False)
     child_requests, requests = multiprocessing.Pipe(duplex=False)
     responses, child_responses = multiprocessing.Pipe(duplex=False)
@@ -889,7 +892,111 @@ async def test_the_api_process_is_not_dumpable_once_started(
         async with parser_app.lifespan(parser_app.app):
             assert libc.prctl(3, 0, 0, 0, 0) == 0  # PR_GET_DUMPABLE
     finally:
-        libc.prctl(parser_app.PR_SET_DUMPABLE, 1, 0, 0, 0)
+        libc.prctl(parser_app.capy_sandbox.PR_SET_DUMPABLE, 1, 0, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_the_parser_holds_its_token_out_of_every_childs_reach(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """(security regression: S1 parser token) The token lives in the module,
+    not the environment children inherit; the parser refuses to start without
+    one and no request passes without it."""
+
+    class Request:
+        def __init__(self, header: str) -> None:
+            self.headers = {"authorization": header} if header else {}
+
+    assert parser_app.PARSER_TOKEN and "PARSER_TOKEN" not in os.environ
+    assert parser_app._authorized(Request(f"Bearer {parser_app.PARSER_TOKEN}"))
+    assert not parser_app._authorized(Request(""))
+    assert not parser_app._authorized(Request("Bearer wrong"))
+    monkeypatch.setattr(parser_app, "PARSER_TOKEN", "")
+    assert not parser_app._authorized(Request("Bearer "))
+    with pytest.raises(RuntimeError, match="PARSER_TOKEN"):
+        async with parser_app.lifespan(parser_app.app):
+            pass
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="prctl is Linux")
+@pytest.mark.asyncio
+async def test_a_deployed_parser_refuses_to_start_without_landlock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(security regression: S0 Landlock requirement)"""
+    import ctypes
+
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    monkeypatch.setattr(parser_app.capy_sandbox, "landlock_abi", lambda: 0)
+    monkeypatch.setenv("APP_ENV", "production")
+    try:
+        with pytest.raises(RuntimeError, match="Landlock"):
+            async with parser_app.lifespan(parser_app.app):
+                pass
+    finally:
+        ctypes.CDLL("libc.so.6").prctl(
+            parser_app.capy_sandbox.PR_SET_DUMPABLE, 1, 0, 0, 0
+        )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="prctl is Linux")
+@pytest.mark.asyncio
+async def test_a_parser_whose_work_folder_cannot_hold_the_pipe_refuses_to_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A CAPY_PARSE_WORK_DIR too long for LibreOffice's pipe path stops the
+    parser at startup, not at its first Office document."""
+    import ctypes
+
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    monkeypatch.setattr(parser_app, "WORK_DIR", Path("/run/" + "w" * 40))
+    monkeypatch.setattr(parser_app.office.os, "access", lambda _path, _mode: False)
+    try:
+        with pytest.raises(RuntimeError, match="CAPY_PARSE_WORK_DIR"):
+            async with parser_app.lifespan(parser_app.app):
+                pass
+    finally:
+        ctypes.CDLL("libc.so.6").prctl(
+            parser_app.capy_sandbox.PR_SET_DUMPABLE, 1, 0, 0, 0
+        )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Landlock and seccomp are Linux")
+@pytest.mark.asyncio
+async def test_a_parse_child_reads_only_its_slot_and_holds_no_token(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(security regression: S1 parse child sandbox) A parse child confines
+    itself after its setsid: it cannot read the spool (another job's source),
+    it inherited no PARSER_TOKEN, and its limits, no_new_privs and seccomp
+    filter are in place."""
+    spool = tmp_path / "spool" / "sources"
+    spool.mkdir(parents=True)
+    other = spool / "source-other-job"
+    other.write_bytes(b"%PDF-1.7 another user's upload")
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path / "work")
+    child = parser_app._ParseWorkerProcess(0)
+    child.start()
+    try:
+        await child.send(
+            (str(other), str(child.work_dir / "transfer.result"), "a.pdf", "", None)
+        )
+        status, (kind, _detail) = await child.recv()
+        pid = child._process.pid
+        environ = Path(f"/proc/{pid}/environ").read_bytes()
+        limits = Path(f"/proc/{pid}/limits").read_text()
+        proc_status = Path(f"/proc/{pid}/status").read_text()
+    finally:
+        await asyncio.to_thread(child.stop)
+
+    assert (status, kind) == ("error", "PermissionError")
+    assert b"PARSER_TOKEN=" not in environ
+    assert parser_app.PARSER_TOKEN.encode() not in environ
+    rows = {line[:26].strip(): line[26:].split()[:2] for line in limits.splitlines()}
+    assert rows["Max open files"] == ["256", "256"]
+    assert rows["Max file size"] == [str(512 << 20)] * 2
+    assert rows["Max core file size"] == ["0", "0"]
+    assert "NoNewPrivs:	1" in proc_status and "Seccomp:	2" in proc_status
 
 
 def test_a_parse_result_file_round_trips_blocks_and_bytes(tmp_path: Path) -> None:
@@ -1333,6 +1440,73 @@ def test_a_fifo_or_link_in_the_spool_is_refused_promptly(
     assert _finishes(parser_app._artifact_descriptor, "artifacts/fp.zip", "fp") is None
     assert not os.path.lexists(bundle) and kept.exists()
     assert _finishes(parser_app._quarantine, "fp") is None
+
+
+def _read_result(path: Path) -> object:
+    try:
+        return parser_app._read_worker_result(path)
+    except OSError as exc:
+        return exc
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="FIFOs and links: Linux")
+@pytest.mark.parametrize("kind", ["fifo", "link"])
+def test_a_result_file_the_child_swapped_is_refused_promptly(
+    tmp_path: Path, kind: str
+) -> None:
+    """(security regression: S1 transfer files) A parse child may write its
+    slot folder, so the API reads a result there only as a regular file: a
+    FIFO does not block the slot, a link is not followed."""
+    elsewhere = tmp_path / "another-slot.result"
+    parser_app._write_worker_result(elsewhere, {"content_list": []})
+    result = tmp_path / "transfer.result"
+    if kind == "fifo":
+        os.mkfifo(result)
+    else:
+        result.symlink_to(elsewhere)
+
+    assert isinstance(_finishes(_read_result, result), OSError)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="links: Linux")
+@pytest.mark.asyncio
+async def test_the_api_writes_a_source_only_through_the_file_it_made(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(security regression: S1 transfer files) A link the parse child puts
+    in place of the next source file is never written through: the API writes
+    the document only through the descriptor it created."""
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"kept")
+    mkstemp = parser_app.tempfile.mkstemp
+
+    def swapped(*args, **kwargs):
+        descriptor, name = mkstemp(*args, **kwargs)
+        os.unlink(name)
+        os.symlink(victim, name)
+        return descriptor, name
+
+    async def send(_message) -> None:
+        pass
+
+    async def recv() -> list:
+        return ["ok", None]
+
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path / "work")
+    monkeypatch.setattr(parser_app.tempfile, "mkstemp", swapped)
+    monkeypatch.setattr(
+        parser_app._ParseWorkerProcess, "alive", property(lambda _self: True)
+    )
+    child = parser_app._ParseWorkerProcess(0)
+    monkeypatch.setattr(child, "send", send)
+    monkeypatch.setattr(child, "recv", recv)
+
+    await child.run(
+        parser_app.Document(b"%PDF-1.7 the next user's upload", "a.pdf"),
+        tmp_path / "transfer.result",
+    )
+
+    assert victim.read_bytes() == b"kept"
 
 
 @pytest.mark.asyncio

@@ -51,6 +51,16 @@ type documentRequest struct {
 	// Provenance is the merged attribution record the authority writes onto the
 	// material in the edit's own transaction.
 	Provenance *Provenance `json:"provenance,omitempty"`
+	// Office is an inspect_office_document read's query; the engine answers
+	// it in the inspection's Scoped.
+	Office *OfficeQuery `json:"office,omitempty"`
+}
+
+// OfficeQuery scopes an XLSX read: no range lists the sheets, a sheet and a
+// range read those cells.
+type OfficeQuery struct {
+	Sheet string `json:"sheet,omitempty"`
+	Range string `json:"range,omitempty"`
 }
 
 // MaterialInspection is the authority's editable view of a material.
@@ -73,6 +83,8 @@ type SourceInspection struct {
 	Format     string            `json:"format"`
 	Text       *string           `json:"text,omitempty"`
 	Entries    []json.RawMessage `json:"entries,omitempty"`
+	// Scoped is the engine's answer to an Office query, passed on unchanged.
+	Scoped json.RawMessage `json:"scoped,omitempty"`
 }
 
 func (s *Store) postDocumentAuthority(ctx context.Context, path string, body any, out any) error {
@@ -85,6 +97,8 @@ var limitMessages = map[string]string{
 	"document_size_exceeded":  "the material would be over its size limit; put the rest in a new material",
 	"document_nodes_exceeded": "the material would hold too many blocks; put the rest in a new material",
 	"document_depth_exceeded": "the material would nest lists or quotes too deeply; flatten them",
+	// Over the collaboration server's 8 MiB update cap (Epo 2026-10-18).
+	"update_size_exceeded": "this edit is too large to apply at once; make it as several smaller edits",
 }
 
 func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path string, body any, out any) error {
@@ -165,11 +179,33 @@ func (s *Store) InspectMaterialDocument(ctx context.Context, actorID, materialID
 	return out, err
 }
 
-func (s *Store) InspectSourceDocument(ctx context.Context, actorID, fileID string) (SourceInspection, error) {
+// InspectSourceDocument reads a source's editable view; an Office query (nil
+// for a whole read) asks the engine for one scoped part of it.
+func (s *Store) InspectSourceDocument(ctx context.Context, actorID, fileID string, office *OfficeQuery) (SourceInspection, error) {
 	var out SourceInspection
 	err := s.postDocumentAuthority(ctx, "/internal/documents/inspect", documentRequest{
-		Target: DocumentTarget{Kind: agenttools.KindSourceFile, ID: fileID}, ActorUserID: actorID,
+		Target: DocumentTarget{Kind: agenttools.KindSourceFile, ID: fileID}, ActorUserID: actorID, Office: office,
 	}, &out)
+	return out, err
+}
+
+// OfficeCreation is a new Office file the engine built from its starter with
+// the agent's commands applied, and its note on characters the text lost.
+type OfficeCreation struct {
+	Content []byte `json:"content"`
+	Notice  string `json:"notice,omitempty"`
+}
+
+// CreateOfficeDocument asks the authority's engine for a new file's bytes;
+// nothing is stored there. Its refusals are the edit refusals.
+func (s *Store) CreateOfficeDocument(ctx context.Context, actorID, format string, commands []json.RawMessage) (OfficeCreation, error) {
+	var out OfficeCreation
+	err := s.postDocumentAuthority(ctx, "/internal/documents/create", map[string]any{
+		"format": format, "commands": commands, "actorUserId": actorID,
+	}, &out)
+	if err == nil && len(out.Content) == 0 {
+		err = fmt.Errorf("%w: the engine created an empty file", ErrAuthorityUnavailable)
+	}
 	return out, err
 }
 

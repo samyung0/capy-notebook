@@ -319,10 +319,21 @@ class QueryTerms:
     terms: int
 
 
+# What websearch_to_tsquery would read as syntax inside one word.
+_WEBSEARCH_SYNTAX = re.compile(r'(?<!\w)-|-(?!\w)|[!"]')
+
+
 def search_query_terms(query: str) -> QueryTerms:
-    """Build `websearch_to_tsquery`-safe strings matching the index tokens."""
+    """Build `websearch_to_tsquery`-safe strings matching the index tokens.
+
+    websearch syntax is taken from the words: a "-" the parser reads as NOT
+    (any not between two word characters: "-5", "(-5)", "f(-x)", "&-5"; it
+    skips ( ) ! & | < on the way, so "-5" matched every passage without a 5),
+    "!" and quotes, which open a phrase that swallows the " or " joiners. A
+    hyphen inside a word ("cost-push") stays."""
     tokenized = tokenize_for_search(query)
-    words = [w for w in re.split(r"\s+", tokenized) if w and w not in "&|!():*"]
+    words = [_WEBSEARCH_SYNTAX.sub("", w) for w in re.split(r"\s+", tokenized)]
+    words = [w for w in words if w and w not in "&|!():*<"]
     words = words[:40]
     latin = [w for w in words if not CJK_RUN_RE.search(w)]
     cjk_runs = len(CJK_RUN_RE.findall(query))

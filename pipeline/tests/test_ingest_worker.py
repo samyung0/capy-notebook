@@ -1012,15 +1012,11 @@ def test_page_chunks_apply_the_bundle_furniture_and_prefer_the_repaired_pdf(
     the page model, ahead of an Office preview and the spooled source."""
     seen: dict[str, Path] = {}
 
-    def _retain(blocks, pdf, chunks):
-        seen["headings"] = pdf
-        return chunks
+    def _evidence(pdf, blocks):
+        seen["evidence"] = pdf
+        return {"page_texts": ["Body text."], "visible_headings": []}
 
-    def _score(chunks, pdf, *, vlm):
-        seen["confidence"] = pdf
-
-    monkeypatch.setattr(worker, "retain_headings", _retain)
-    monkeypatch.setattr(worker, "score_chunks", _score)
+    monkeypatch.setattr(worker.decode, "page_evidence", _evidence)
     content_list = [
         {"type": "text", "text": "Running header", "page_idx": 0},
         {"type": "text", "text": "Body text.", "page_idx": 0},
@@ -1031,11 +1027,11 @@ def test_page_chunks_apply_the_bundle_furniture_and_prefer_the_repaired_pdf(
     chunks = worker._page_chunks(content_list, raw_dir, Path("/shared/sources/missing"))
 
     assert [c.text for c in chunks] == ["Body text."]
-    assert seen["headings"] == seen["confidence"] == raw_dir / "parsed.pdf"
+    assert seen["evidence"] == raw_dir / "parsed.pdf"
     (raw_dir / "parsed.pdf").unlink()
     source = _page_pdf(tmp_path, "source.pdf", "Body text.")
     worker._page_chunks(content_list, raw_dir, source)
-    assert seen["confidence"] == source
+    assert seen["evidence"] == source
     with pytest.raises(worker.RetryableError):
         worker._page_chunks(content_list, raw_dir, Path("/shared/sources/missing"))
 
