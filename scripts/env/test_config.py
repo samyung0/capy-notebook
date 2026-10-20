@@ -3,6 +3,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -56,35 +57,94 @@ class ConfigTest(unittest.TestCase):
                         "UNRELATED_CI_SETTING": "ignored",
                     }
                 ),
-                "CAPY_GITHUB_SECRETS": json.dumps(
-                    {"TEST_ALIBABA": "private", "github_token": "runner"}
-                ),
+                "CAPY_SECRET_STRIPE_SECRET_KEY": "private",
+                # An unset GitHub secret expands to blank: absent, as before.
+                "CAPY_SECRET_OPENAI_API_KEY": "",
+                "CAPY_SECRET_TEST_ALIBABA": "unmanaged",
             },
         ):
             self.assertEqual(
                 config.github_values(),
-                {"DEPLOYMENT_OPS_URL": "https://uat-ops.example.com"},
+                {
+                    "DEPLOYMENT_OPS_URL": "https://uat-ops.example.com",
+                    "STRIPE_SECRET_KEY": "private",
+                },
             )
         with (
             patch.dict(
                 config.os.environ,
-                {
-                    "CAPY_GITHUB_VARS": json.dumps({"POSTGRES_PASSWORD": "private"}),
-                    "CAPY_GITHUB_SECRETS": "{}",
-                },
+                {"CAPY_GITHUB_VARS": json.dumps({"POSTGRES_PASSWORD": "private"})},
             ),
             self.assertRaisesRegex(ValueError, "wrong GitHub namespace"),
         ):
             config.github_values()
-        # Actions injects its automatic token lowercase; it is not our configuration.
-        with patch.dict(
-            config.os.environ,
-            {
-                "CAPY_GITHUB_VARS": "{}",
-                "CAPY_GITHUB_SECRETS": json.dumps({"github_token": "runner"}),
-            },
-        ):
-            self.assertEqual(config.github_values(), {})
+
+    def test_render_steps_name_exactly_the_secrets_their_render_reads(self):
+        """Security regression (deploys held for approval): every workflow step
+        that renders from GitHub passes each secret its render reads as
+        CAPY_SECRET_<KEY>, and no other; never all of them via toJSON(secrets)."""
+        self.maxDiff = None
+
+        class Recording(dict):
+            def get(self, key, default=None):
+                read.add(key)
+                return super().get(key, default)
+
+            def __getitem__(self, key):
+                read.add(key)
+                return super().__getitem__(key)
+
+        secrets = {
+            key for key, rule in config.MANIFEST.items() if rule["kind"] == "secret"
+        }
+        renders = {
+            "render-build": config.render_build,
+            "render": config.render,
+            "render-ops": config.render_ops,
+        }
+        needed = {}
+        for command, renderer in renders.items():
+            read = set()
+            # One workflow serves both environments; production reads other targets.
+            for environment in ("uat", "production"):
+                values = Recording(
+                    {
+                        key: "explicit"
+                        for key, rule in config.MANIFEST.items()
+                        if rule.get("required_for")
+                    },
+                    POSTGRES_PASSWORD="secret",
+                    CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+                    CLERK_PUBLISHABLE_KEY="pk_public",
+                    DEPLOYMENT_APP_URL="https://uat.example.com",
+                    OPS_INGEST_PRIMARY_ENVIRONMENT=environment,
+                )
+                with (
+                    tempfile.TemporaryDirectory() as temp,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    renderer(values, environment, temp, "a" * 40)
+            needed[command] = sorted(read & secrets)
+        texts = [
+            (path.name, path.read_text())
+            for path in sorted(Path(config.ROOT, ".github/workflows").glob("*.yml"))
+        ]
+        checked = 0
+        for name, text in texts:
+            for step in re.split(r"\n(?=\s*- )", text):
+                command = re.search(r"config\.py (render\S*) ", step)
+                if not command:
+                    continue
+                checked += 1
+                wired = re.findall(r"CAPY_SECRET_(\w+): \$\{\{ secrets\.\1 \}\}", step)
+                where = f"{name}: {command[1]}"
+                self.assertEqual(re.findall(r"CAPY_SECRET_(\w+):", step), wired, where)
+                self.assertEqual(re.findall(r"\bsecrets\.(\w+)", step), wired, where)
+                self.assertEqual(sorted(wired), needed[command[1]], where)
+        # Each render call sits in its own step, so none goes unchecked.
+        self.assertEqual(
+            checked, sum(text.count("config.py render") for _, text in texts)
+        )
 
     def test_render_clears_optional_values_and_encodes_credentials(self):
         values = {
