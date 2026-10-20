@@ -2531,6 +2531,15 @@ lost process is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
+The chat agent reads Office files with `inspect_office_document` and edits
+them with `edit_office_document` (since agent contract v32, 2026-10-20; see
+[agentic retrieval](../agentic-retrieval.md), Office tools). Go turns its
+commands into the engine's (`normalizeOfficeCommands`): `replace_text` for
+DOCX and PPTX, and for XLSX `set_range`, `format_cells`, `add_sheet`,
+`rename_sheet`, row and column inserts and deletes and `delete_sheet`, the
+XLSX ones pending in the engine. Go no longer sends `set_cell`, which the
+engine keeps.
+
 An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
 as a substring that occurs exactly once in the paragraph, counted as note
 edits count it (Epo, 2026-10-14; an empty one matches only an empty

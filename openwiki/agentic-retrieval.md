@@ -2758,7 +2758,7 @@ build, and the knowledge library is one more source while the switch is on.
   instructions are read on demand, so a turn that only answers a question does
   not pay for them on every call. `read_skill(name)` lists each skill with when
   to read it (appended to its description by `tools.schemas_for`) and returns
-  the skill's text under a `# Skill: <name>` header. Production has three.
+  the skill's text under a `# Skill: <name>` header. Production has four.
   `editing`, for any write: a short budget paragraph (each successful write is
   progress, the turn context counts the responses left, the errored-write
   grace), and the precautions (ground every write, write as soon
@@ -2789,8 +2789,9 @@ build, and the knowledge library is one more source while the switch is on.
   it needs are in the request (`skills.REQUIRES`, checked in `tools.run`):
   every write needs `editing`; `create_material` of a note and an
   `edit_document` with an `insert_markdown` or `replace_block` command also
-  need `note_building`. The refusal carries the missing
-  skills: a short error (`Not applied: this write needs the … skills, which
+  need `note_building`; both Office tools need `office_building`. The
+  refusal carries the missing
+  skills: a short error (`Not applied: this call needs the … skills, which
   follow and now count as read`, the text the chat stores) and, for the model
   only (`ToolResult.detail`), each skill's text under its `# Skill:` header.
   The write is not applied; the model checks it against the skills and sends
@@ -2805,7 +2806,16 @@ build, and the knowledge library is one more source while the switch is on.
   `deck_building`, is the method, slide rules and style for decks (a deck is
   finished in the turn that creates it); `create_deck` and `write_slide` need
   `editing` and `deck_building`, and both are always offered
-  ([decks.md](decks.md)).
+  ([decks.md](decks.md)). The fourth, `office_building` (Epo 2026-10-20), is
+  read before reading, editing or creating a Word, Excel or PowerPoint file:
+  how to read each format, each command's purpose, expected values exactly as
+  the read shows them, formulas only with functions the workbook supports and
+  only its own sheets, `create` first for a new file (decks stay
+  `create_deck`), and one limits line (a call's commands up to 256 KB; split
+  larger edits). Reading it offers the Office tools (Office tools, above).
+  `editing` carries no Office instructions and says that after reading a
+  document the agent sees its most recent changes, recent edits not yet in
+  search possibly showing as hints.
 - **Turn context** (`retrieval/turn_context.py`). One user message, rebuilt
   before every model call and appended last (`_append_turn_context` in
   `agent.py`). Earlier copies stay where they were sent, so every request
@@ -3153,10 +3163,12 @@ build, and the knowledge library is one more source while the switch is on.
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard); a material with provenance is grounded in the library and does not require indexed workspace content. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
-| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
+| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
-| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance |
+| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX and PPTX read their paragraph or shape entries with target ids, paged by `start`/`count` as `inspect_document` paged them, until the engine's scoped DOCX and PPTX reads land; a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size and asking for several calls). Receipts, Undo and refusals as `edit_document`'s for a source |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3177,10 +3189,12 @@ or the library reaches a model only inside a `<source>` … `</source>` block
 - a `search_knowledge` card is one block, the `read_knowledge` reminder after
   the last; a `read_knowledge` page (head, facets, scope, chunk range, reviewed
   notes, chunks and figures) is one block, its next-start or end line after;
-- `inspect_document` of a source file holds its lines or entries in one block,
-  the title and supported operations before it and the next start after (a
-  material's inspection is not wrapped); a refused `edit_document` of a source
-  file shows the target as it reads now (`_missed_target`) in one block;
+- `inspect_document` of a source file holds its lines in one block, the
+  title and supported operations before it and the next start after (a
+  material's inspection is not wrapped), and `inspect_office_document` holds
+  its sheets, cells or entries the same way; a refused `edit_document` or
+  `edit_office_document` of a source file shows the target as it reads now
+  (`_missed_target`) in one block;
 - a captured page (`capture_page`, `capture_knowledge_page`,
   `resolve_source_change`) rides after its label with the image between the
   two tags (`capture.inject_images`);
@@ -3299,7 +3313,9 @@ and removes `browse_knowledge` and section reading (`read_knowledge` takes an
 `insert_markdown`, lists the note blocks a create or edit wrote in
 `effect.blockIds` and keeps a `replace_card` side that is not sent; options
 stay shuffled, and `add_questions` and the editing skill say never to refer to
-an option by its letter or position. Go and the pipeline deploy
+an option by its letter or position. Version 32 (2026-10-20) adds
+`inspect_office_document` and `edit_office_document` and takes `set_cell` and
+Office targets out of `edit_document`. Go and the pipeline deploy
 together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
@@ -3343,7 +3359,7 @@ the note; `compute` in `collaboration-rs/crates/server/src/edits.rs`), a source 
 be over its byte limit (authority 413) as `quota_rejected`, and the
 authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
 `undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). An
-Office `replace_text` or `set_cell` carrying characters no Office file can
+Office edit or create carrying characters no Office file can
 store applies without them, and its tool result says which were removed
 (the receipt's `notice`, Epo 2026-10-15); whatever an Office engine refuses
 about the agent's input (a line break inside a DOCX
@@ -3483,9 +3499,10 @@ playground's write stubs run the same code.
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,
 `replace_card`, `add_card`, `remove_card`, `replace_question`, `add_question`,
-`remove_question`, `set_mermaid` for Plate materials; `replace_text` for text,
-DOCX and PPTX sources; `set_cell` for XLSX) and applied by the collaboration
-service on an isolated Y.Doc. The agent's `edit_document` schema offers
+`remove_question`, `set_mermaid` for Plate materials; `replace_text` for
+text sources) and applied by the collaboration service on an isolated Y.Doc.
+`edit_office_document` commands go through the same route with `office: true`
+and Go's `normalizeOfficeCommands` (Office tools, below). The agent's `edit_document` schema offers
 `remove_question` but not `add_question` or `replace_question`, which only the
 question tools send; inspecting a quiz lists `remove_question` and names
 `add_questions` for the rest. A `replace_card` keeps the side it is not sent
@@ -3598,6 +3615,49 @@ readable) is dropped from the note, so a late Undo brings back everything else. 
 keys for trash, restore, purge and Undo are scoped to the acting user
 (`req_<user>:<key>`, at most 64 characters).
 
+**Office tools** (Epo 2026-10-15, 2026-10-20). Word, Excel and PowerPoint
+sources are read with `inspect_office_document` and edited or created with
+`edit_office_document`; `inspect_document` and `edit_document` keep their
+definitions and refuse an Office source with the sentence `Office files are
+read and edited with inspect_office_document and edit_office_document,
+offered after read_skill("office_building").` The two tools are offered only
+once the `office_building` skill is read (`ToolContext.office_tools`): its
+`read_skill` sets the flag, and after that response's tools ran the agent
+appends the two schemas to the turn's tool list, so the rest of the request
+keeps its provider-cached prefix (a tool list change misses Z.AI's whole
+cached prompt; accepted once per chat). They stay offered for the rest of the
+conversation: `evidence.pack` marks the turn's `toolEvidence.officeTools`,
+and Go's `ConversationPrompt` sends `officeTools` with every later turn when
+any completed message of the conversation carries that mark, a turn a
+checkpoint folded away included. Both tools need the skill's text in the
+request (`skills.REQUIRES`: `inspect_office_document` needs
+`office_building`, `edit_office_document` `editing` and `office_building`;
+the refusal carries them, worded `Not applied: this call needs the …`).
+A read reaches Go's `/api/internal/documents/inspect` with an `office` query
+(`sheet`, `range`, `start`, `count`, `slide`); for XLSX Go forwards
+`{sheet, range}` as the collaboration inspect body's `office` and passes the
+engine's `scoped` answer through unchanged, and DOCX and PPTX page their
+existing entries. An edit reaches `/api/internal/documents/edit` with
+`office: true`, where only an Office source takes it and
+`normalizeOfficeCommands` turns each command into the engine's JSON (type
+snake_case, fields camelCase, `format_cells`' flat fields into its `style`
+object with `wrap` as `textWrapping` `wrap` or `overflow`, `number_format`'s
+names into `NumberFormatMutation` tags and any other text into a custom
+pattern; borders are not offered yet). A `create` goes to
+`/api/internal/documents/office/create` with the call's other commands: Go
+checks the actor and replays a receipt as `/api/internal/files` does, asks the
+collaboration server's `/internal/documents/create` for the file's bytes, and
+stores them as the agent's deck is stored (`storeAgentFile`: the upload's
+size check, the blob, the files row, the parse job and a receipt whose Undo
+trashes the file); the file is named from the title (path separators and
+control characters dropped) plus `.xlsx` or `.docx`. The collaboration
+server's scoped inspect and create routes and the engine commands other than
+`replace_text` are pending (the collaboration and engine sessions); until
+they land, an XLSX read is refused as not available yet (Go, when the answer
+holds no `scoped`) and the new commands fail in the collaboration server. A source edit whose checkpoint carries no inverse commands keeps no
+Undo (no step row, no Undo ref): agent Undo moves to the live room (Epo
+2026-10-20).
+
 A block's text, as `inspect_document` shows it and as every expected text
 (`replace_text`, `remove_block`, `replace_block`, their Undo) matches it, is its
 flattened text with inline math written `$tex$` and display math `$$tex$$`
@@ -3631,10 +3691,12 @@ refusal stays far below Go's 8 MiB read), and one not found carries nothing
 crate's refusal). A DOCX or PPTX `replace_text` whose expected text is not
 in the paragraph, occurs in it more than once, or is empty in a paragraph
 with text carries the paragraph in `details.block` (`type: "paragraph"`, its
-text as `inspect_document` shows it), and a stale XLSX `set_cell` carries
-the cell (`type: "cell"`, its inspect entry id and value) unless it is empty
-(Epo 2026-10-14, the fork's `office-service`, see
-[Office files](frontend/office-files.md)). The pipeline keeps what this turn last inspected or wrote of each
+text as `inspect_office_document` shows it) (Epo 2026-10-14, the fork's
+`office-service`, see [Office files](frontend/office-files.md)). An
+`edit_office_document` refusal names its target by the block's type
+(`_missed_target(office=True)`): `Range <id> now holds, as TSV:`, `Cell`,
+`Sheet`, `Paragraph` or `Shape <id> now reads:`, and a `details.blocks`
+listing of sheets as `The workbook's sheets now:` with `[id] name` lines. The pipeline keeps what this turn last inspected or wrote of each
 block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
 adds "changed since you last saw it" when the block differs. An insert whose
 `after_block_id` is gone is not refused (decision 2026-10-09): when the same
