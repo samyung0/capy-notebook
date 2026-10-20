@@ -128,10 +128,11 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 }
 
 // Every way a note index job ends releases the note through the trigger on
-// jobs (migrations 0082 and 0083). A job that failed with no edit since its
-// admission parks the note (dirty, index_error, counted in pendingNotes) until
-// its next edit; an edit made while the job ran keeps the note due, whether
-// the job failed or finished, so it is admitted again.
+// jobs (migrations 0082, 0083 and 0098). A job that failed with no edit since
+// its admission leaves the note due, retried at most twice: the third such
+// failure parks it (dirty, index_error, counted in pendingNotes) until its
+// next edit (Epo 2026-10-20). An edit made while the job ran keeps the note
+// due, whether the job failed or finished, so it is admitted again.
 func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -186,10 +187,27 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			staleNote(t, s, note.ID)
-			jobID, err := s.RequestMaterialIndex(ctx, note.ID)
-			if err != nil {
-				t.Fatal(err)
+			admit := func() string {
+				t.Helper()
+				staleNote(t, s, note.ID)
+				jobID, err := s.RequestMaterialIndex(ctx, note.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return jobID
+			}
+			jobID := admit()
+			if tc.parked {
+				// Two failures leave the note due; the third parks it.
+				for range 2 {
+					if err := tc.end(jobID, ownerID); err != nil {
+						t.Fatal(err)
+					}
+					if dirty, job, indexErr := noteIndexState(t, s, note.ID); !dirty || job != nil || indexErr != nil {
+						t.Fatalf("a retried note: dirty=%v job=%v err=%v", dirty, job, indexErr)
+					}
+					jobID = admit()
+				}
 			}
 			if tc.edited {
 				edit(t, note.ID, ownerID, "edited while indexing")
@@ -213,6 +231,10 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 					t.Fatalf("a parked note waits for its next edit, got %v", err)
 				}
 				edit(t, note.ID, ownerID, "edited after the failure")
+				var failures int
+				if err := s.pool.QueryRow(ctx, `SELECT index_failures FROM materials WHERE id=$1`, note.ID).Scan(&failures); err != nil || failures != 0 {
+					t.Fatalf("an edit leaves %d index failures (%v)", failures, err)
+				}
 			}
 			staleNote(t, s, note.ID)
 			if next, err := s.RequestMaterialIndex(ctx, note.ID); err != nil || next == jobID {

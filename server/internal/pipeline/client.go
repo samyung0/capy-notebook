@@ -58,6 +58,9 @@ type ErrorBody struct {
 	// FileIDs accompanies pending_sources_too_large: the edited files whose
 	// unprocessed changes do not fit the request.
 	FileIDs []string `json:"fileIds"`
+	// MaterialIDs names the notes whose changes do not fit; notes have no
+	// Process, they wait for their reindex.
+	MaterialIDs []string `json:"materialIds"`
 }
 
 func (e *Error) Decode() ErrorBody {
@@ -81,15 +84,19 @@ func errorBodyFrom(raw map[string]any) ErrorBody {
 	code, _ := raw["code"].(string)
 	message, _ := raw["message"].(string)
 	seconds, _ := raw["retryAfterSeconds"].(float64)
-	var fileIDs []string
-	if ids, ok := raw["fileIds"].([]any); ok {
-		for _, id := range ids {
-			if id, ok := id.(string); ok {
-				fileIDs = append(fileIDs, id)
+	strs := func(key string) []string {
+		var out []string
+		if ids, ok := raw[key].([]any); ok {
+			for _, id := range ids {
+				if id, ok := id.(string); ok {
+					out = append(out, id)
+				}
 			}
 		}
+		return out
 	}
-	return ErrorBody{Code: code, Message: message, RetryAfterSeconds: int(seconds), FileIDs: fileIDs}
+	return ErrorBody{Code: code, Message: message, RetryAfterSeconds: int(seconds),
+		FileIDs: strs("fileIds"), MaterialIDs: strs("materialIds")}
 }
 
 func (c *Client) applyHeaders(req *http.Request) {

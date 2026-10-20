@@ -421,3 +421,51 @@ async def test_a_note_data_placeholder_resolves_to_its_block_text(gateway, monke
         "http://gateway/api/internal/note-changes/resolve",
         {"workspaceId": "ws", "userId": "reader", "materialId": "m_1", "blockId": "ch"},
     )
+
+
+async def test_only_documents_read_are_validated_and_resolvable(monkeypatch):
+    """Epo 2026-10-20: changes pass on only for documents read this turn, so
+    only those must still pair with their published index."""
+    published = {"f_1": "rgc_a", "f_2": "rgc_a"}
+
+    async def snapshot(_workspace_id, file_ids, *, evidence=True):
+        assert not evidence
+        return [
+            {
+                "fileId": f,
+                "revision": 1,
+                "content_id": published[f],
+                "epoch": 1,
+                "indexedCheckpoint": 1,
+            }
+            for f in sorted(published)
+            if file_ids is None or f in file_ids
+        ]
+
+    monkeypatch.setattr(pending, "_snapshot", snapshot)
+    sources = _sources()
+    sources._workspace_id = "ws"
+    sources._baseline = pending._identities(await snapshot("ws", None, evidence=False))
+    sources.notes = [_note_change("data", "ch")]
+    sources.read_ids = set()
+    assert sources.message() is None and not sources.pending
+
+    published["f_2"] = "rgc_b"  # never read: not checked
+    await sources.validate()
+    with pytest.raises(ValueError, match="unavailable"):
+        await pending.resolve_note(
+            sources=sources,
+            workspace_id="ws",
+            user_id="u",
+            material_id="m_1",
+            block_id="ch",
+        )
+    sources.read("f_1")
+    await sources.validate()
+    assert "latest exact source" in sources.message()["content"]
+    assert sources.event(False)["fileIds"] == ["f_1"]
+    sources.read("f_2")  # read, but no changes passed on: not checked
+    await sources.validate()
+    published["f_1"] = "rgc_b"
+    with pytest.raises(pending.SourceChanged):
+        await sources.validate()

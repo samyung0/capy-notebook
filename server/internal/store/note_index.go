@@ -18,17 +18,18 @@ import (
 // ProjectMaterialContent and UpdateMaterial); the collaboration scheduler calls RequestMaterialIndex for
 // dirty notes that have been idle; the ingest worker fetches the note's text
 // through MaterialIndexText and writes rag_material_contents. When the job
-// ends, the trigger on jobs (migrations 0082, 0083) clears index_job_id: a job
-// that failed with no edit since admission parks the note (dirty, index_error)
-// until its next edit, and an edit made while the job ran keeps it due.
+// ends, the trigger on jobs (migrations 0082, 0083, 0098) clears index_job_id:
+// a job that failed with no edit since admission counts an index failure and
+// leaves the note due; the third parks it (dirty, index_error) until its next
+// edit (Epo 2026-10-20), and an edit made while the job ran keeps it due.
 // Standalone notes have no workspace and are never indexed.
 
 // noteIndexDirtySQL is the SET fragment a content write appends: a workspace
 // note becomes dirty (keeping an earlier dirty mark) and forgets its last
-// index failure, so the next scheduler pass retries, and its pending tokens
-// are measured again.
+// index failures (migration 0098), so the next scheduler pass retries, and
+// its pending tokens are measured again.
 const noteIndexDirtySQL = `index_dirty_at=CASE WHEN kind='note' AND workspace_id IS NOT NULL
-	THEN COALESCE(index_dirty_at, now()) END, index_error=NULL, pending_tokens=NULL`
+	THEN COALESCE(index_dirty_at, now()) END, index_error=NULL, pending_tokens=NULL, index_failures=0`
 
 // A dirty note is reindexed once its change since the last index reaches
 // NoteIndexTokens net tokens, or once it has been dirty for NoteIndexStale

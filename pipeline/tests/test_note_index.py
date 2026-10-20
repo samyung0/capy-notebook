@@ -206,7 +206,8 @@ def _baseline(workspace, material_id: str) -> list[dict] | None:
 def _note_state(workspace, material_id: str) -> tuple:
     return _rows(
         workspace,
-        "SELECT index_job_id, index_error, index_dirty_at IS NOT NULL FROM materials WHERE id=%s",
+        "SELECT index_job_id, index_error, index_dirty_at IS NOT NULL, index_failures "
+        "FROM materials WHERE id=%s",
         (material_id,),
     )[0]
 
@@ -260,7 +261,7 @@ async def test_a_note_job_indexes_through_the_real_boundaries(workspace, provide
     assert _rows(
         workspace, "SELECT status FROM provider_sessions WHERE id=%s", (reservation,)
     ) == [("settled",)]
-    assert _note_state(workspace, material_id) == (None, None, False)
+    assert _note_state(workspace, material_id) == (None, None, False, 0)
 
 
 async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
@@ -299,7 +300,8 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
         (job["attemptId"],),
     ) == [(3, "1")]
 
-    # A failed job keeps the published index and parks the note until an edit.
+    # A failed job keeps the published index and leaves the note due: it is
+    # retried at most twice before it is parked (Epo 2026-10-20).
     provider["text"] = _text(Light="Chlorophyll reflects green light.")
 
     async def refuse():
@@ -321,12 +323,17 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
         "SELECT count(*) FROM rag_contents WHERE workspace_id=%s AND status='processing'",
         (workspace.id,),
     ) == [(0,)]
-    assert _note_state(workspace, material_id) == (None, "embedding refused", True)
+    assert _note_state(workspace, material_id) == (None, None, True, 1)
 
 
 def test_the_lease_reaper_parks_a_note_whose_worker_died(workspace):
+    """The third failed job parks the note until its next edit."""
     material_id = _note(workspace)
     job_id = _admit(workspace, material_id)
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE materials SET index_failures=2 WHERE id=%s", (material_id,)
+        )
     _claim(workspace, job_id)
     with workspace._connect() as conn:
         conn.execute(
@@ -342,7 +349,7 @@ def test_the_lease_reaper_parks_a_note_whose_worker_died(workspace):
     assert _rows(workspace, "SELECT status FROM jobs WHERE id=%s", (job_id,)) == [
         ("failed",)
     ]
-    assert _note_state(workspace, material_id) == (None, "lease expired", True)
+    assert _note_state(workspace, material_id) == (None, "lease expired", True, 3)
 
 
 def test_a_note_job_stops_while_the_notes_payer_is_deleting(workspace):

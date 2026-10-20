@@ -343,6 +343,8 @@ async def _run_turn(
             return
 
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
+    # Changes reach the agent only for the documents it reads (Epo 2026-10-20).
+    ctx.pending_sources.read_ids = set()
     prior = await evidence.history_turns(history, ctx)
     schemas = tools.schemas_for(ctx)
     messages = chat_prompts.chat_messages(
