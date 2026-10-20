@@ -1848,7 +1848,16 @@ async fn a_burst_of_small_answers_waits_past_a_full_budget_of_debt() {
         .expect("the note's text");
     let since: StateVector = held
         .iter()
-        .map(|(client, at)| (*client, if *client == author { clock - 200_000 } else { *at }))
+        .map(|(client, at)| {
+            (
+                *client,
+                if *client == author {
+                    clock - 200_000
+                } else {
+                    *at
+                },
+            )
+        })
         .collect();
     let step1 = sync(0, &since.encode_v1());
     for _ in 0..6 {
