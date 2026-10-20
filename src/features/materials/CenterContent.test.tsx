@@ -99,21 +99,33 @@ const materials: Record<string, Partial<Material>> = {
   },
 };
 
-vi.mock('@/api/hooks', () => ({
-  useMaterial: (id: string) => ({
-    data: {
-      capabilities: { canEdit: false, canEditContent: false },
-      id,
-      provenance,
-      revision: 1,
-      title: `Title ${id}`,
-      workspaceId: 'ws',
-      ...materials[id],
-    },
-    error: null,
-    isLoading: false,
-  }),
-}));
+vi.mock('@/api/hooks', async () => {
+  const { ApiError } = await import('@/api/client');
+  return {
+    useMaterial: (id: string) =>
+      id === 'unreadable'
+        ? {
+            data: undefined,
+            error: new ApiError(422, 'Unprocessable Entity', undefined, {
+              code: 'material_content_unreadable',
+            }),
+            isLoading: false,
+          }
+        : {
+            data: {
+              capabilities: { canEdit: false, canEditContent: false },
+              id,
+              provenance,
+              revision: 1,
+              title: `Title ${id}`,
+              workspaceId: 'ws',
+              ...materials[id],
+            },
+            error: null,
+            isLoading: false,
+          },
+  };
+});
 vi.mock('@tanstack/react-router', async (original) => ({
   ...(await original<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
@@ -197,4 +209,21 @@ it('credits the embeds the note holds in its footer', async () => {
     footer.indexOf('Credited source book')
   );
   expect(footer).not.toContain('Removed quiz book');
+});
+
+// A quiz or set whose stored content the rules refuse is left out of the study
+// pages; opening it shows the center file error (Epo 2026-10-20).
+it('shows the center file error for a material whose content cannot be read', async () => {
+  const html = await render(
+    <MaterialContent
+      allowExternalAssets={false}
+      centerQuiz={false}
+      forceReadOnly={false}
+      materialId="unreadable"
+      mode="view"
+      onEditorStatusChange={() => {}}
+    />
+  );
+  expect(html).toContain('data-error-surface="panel"');
+  expect(html).toContain('could not be loaded');
 });
