@@ -597,6 +597,51 @@ python bench/parsers/scripts/bench_mixed_lanes.py
 
 Both scripts read `PARSER_URL` and `PARSER_TOKEN`, or accept matching flags.
 
+## Concurrent parses in the production shape
+
+`capacity_pass.sh` runs one pass on the ingest host: a throwaway parser
+container from a parser image with the production compose file's hardening
+(read-only root, no capabilities, `no-new-privileges`, the HOME tmpfs), its
+limits (14 GiB, 18 GiB with swap, 8 CPUs, 512 pids), its env (`APP_ENV`
+production, a throwaway `PARSER_TOKEN`, the queue depth, deadlines and caps)
+and its own spool and work volumes, published on loopback only. It removes the
+container and both volumes when the pass ends. `stress_parser.py` drives it
+through the production artifact route (`solo` or `burst`) and samples the
+cgroup every 250 ms: memory (anon, file, swap), CPU and quota throttling, OOM
+kills, RSS per process kind, VmPeak of the parse child, LibreOffice and Java
+(the address-space caps), VmData (Java's data cap), the host's CPU, steal,
+free memory and swap, and each process kind's command line and rlimits. Every
+other running container is watched: a restart, or host swap growing past
+`ABORT_SWAP_GIB` (1), kills the throwaway container and ends the pass.
+`--keep` copies bundles out for `bundle_identity.py`, which compares two
+bundles of one document (bytes, pages, flattened figures, packed chunks) in
+the pipeline image.
+
+```sh
+IMG=capy-ingest-nonprod-parser:<sha> WORKERS=7 MODE=burst \
+  MANIFEST=a.json OUT=results/a7 bash bench/parsers/scripts/capacity_pass.sh
+docker run --rm --network none -v "$PWD:/b:ro" capy-ingest-nonprod-pipeline:<sha> \
+  python /b/bundle_identity.py /b/old/bio.zip /b/new/bio.zip
+```
+
+Reports: [v14](reports/2026-10-15-parser-v14-stress.md),
+[v16](reports/2026-10-16-parser-v16-recalibration.md),
+[v19 with the decoder sandbox](reports/2026-10-20-parser-v19-sandbox-stress.md).
+
+## Page-read capacity ramp
+
+`vlm_ramp.py` measures the VLM page read from inside an ingest worker
+container (`feed` on the host pipes the driver and the page renders into
+`docker exec -i <worker> python -c "$(python3 vlm_ramp.py boot)" drive …`),
+so each call uses that container's catalog row, prompt, OpenRouter routing and
+key, and nothing is written there. `level` holds a fixed number of calls in
+flight with no retries; `burst` replays the worker's read: three attempts in a
+120 s budget, a shared gate, ten pages at once per job and the job's one
+busy re-pend. `pool` takes the renders out of kept bundles, `truth` reads the
+source books' text layer (PyMuPDF) and `score` reports 429s, latency, reads a
+minute, tokens, key-phrase recall and spend per level. Report:
+[2026-10-20 page-read ramp](reports/2026-10-20-vlm-page-read-ramp.md).
+
 ## Ingest-worker resource checks
 
 `build_worker_stress_fixtures.py` creates four unique 26-page copies in each
