@@ -618,12 +618,15 @@ through the production artifact route (`solo` or `burst`) and samples the
 cgroup every 250 ms: memory (anon, file, swap), CPU and quota throttling, OOM
 kills, RSS per process kind, VmPeak of the parse child, LibreOffice and Java
 (the address-space caps), VmData (Java's data cap), the host's CPU, steal,
-free memory and swap, and each process kind's command line and rlimits. Every
+free memory and swap, and each process kind's command line and rlimits (a
+parse child's once it has confined itself). Every
 other running container is watched: a restart, or host swap growing past
 `ABORT_SWAP_GIB` (1), kills the throwaway container and ends the pass.
 `--keep` copies bundles out for `bundle_identity.py`, which compares two
-bundles of one document (bytes, pages, flattened figures, packed chunks) in
-the pipeline image.
+bundles of one document in the pipeline image: bytes, the pages whose blocks
+differ (ODL's element ids aside, since they renumber the rest of a document
+after one change), flattened figures and placeholders there, and the chunks
+the production packer makes.
 
 ```sh
 IMG=capy-ingest-nonprod-parser:<sha> WORKERS=7 MODE=burst \
@@ -634,21 +637,7 @@ docker run --rm --network none -v "$PWD:/b:ro" capy-ingest-nonprod-pipeline:<sha
 
 Reports: [v14](reports/2026-10-15-parser-v14-stress.md),
 [v16](reports/2026-10-16-parser-v16-recalibration.md),
-[v19 with the decoder sandbox](reports/2026-10-20-parser-v19-sandbox-stress.md).
-
-## Page-read capacity ramp
-
-`vlm_ramp.py` measures the VLM page read from inside an ingest worker
-container (`feed` on the host pipes the driver and the page renders into
-`docker exec -i <worker> python -c "$(python3 vlm_ramp.py boot)" drive …`),
-so each call uses that container's catalog row, prompt, OpenRouter routing and
-key, and nothing is written there. `level` holds a fixed number of calls in
-flight with no retries; `burst` replays the worker's read: three attempts in a
-120 s budget, a shared gate, ten pages at once per job and the job's one
-busy re-pend. `pool` takes the renders out of kept bundles, `truth` reads the
-source books' text layer (PyMuPDF) and `score` reports 429s, latency, reads a
-minute, tokens, key-phrase recall and spend per level. Report:
-[2026-10-20 page-read ramp](reports/2026-10-20-vlm-page-read-ramp.md).
+[v19 with the decoder sandbox](reports/2026-10-21-parser-v19-sandbox-stress.md).
 
 ## Ingest-worker resource checks
 

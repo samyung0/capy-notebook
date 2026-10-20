@@ -6,11 +6,11 @@ Runs where the ``pipeline`` package imports (the pipeline image, no network):
       python /b/bundle_identity.py /b/old/bio.zip /b/new/bio.zip
 
 Prints one JSON object: whether ``content_list.json`` is byte-identical, the
-pages whose blocks differ and, for those, whether the newer bundle carries a
-flattened figure (parser v17+) or a ``[formula]`` placeholder there (v18
-quiet regions), and the chunk texts both bundles pack with the production
-packer (``retrieval.packing.pack_blocks``): identical, only in either, and
-the pages the differing chunks cover.
+pages whose blocks differ (ODL's element ids aside) and, for those, whether
+the newer bundle carries a flattened figure (parser v17+) or a ``[formula]``
+placeholder there (v18 quiet regions), and the chunk texts both bundles pack
+with the production packer (``retrieval.packing.pack_blocks``): identical,
+only in either, and the pages the differing chunks cover.
 """
 
 from __future__ import annotations
@@ -31,9 +31,13 @@ def load(path: str) -> tuple[bytes, list[dict], dict, dict]:
 
 
 def pages(blocks: list[dict]) -> dict[int, list[str]]:
+    """Each page's blocks, without ODL's element ids: they number elements
+    through the whole document, so one merged or removed element renumbers
+    every later page."""
     out: dict[int, list[str]] = defaultdict(list)
     for block in blocks:
-        out[int(block.get("page_idx", -1))].append(json.dumps(block, sort_keys=True))
+        kept = {k: v for k, v in block.items() if k != "_native_id"}
+        out[int(block.get("page_idx", -1))].append(json.dumps(kept, sort_keys=True))
     return out
 
 

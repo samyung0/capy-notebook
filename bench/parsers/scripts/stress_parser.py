@@ -96,16 +96,23 @@ class Sampler(threading.Thread):
         self.cgroup, self.rows, self.stop = cgroup, [], threading.Event()
         self.out = out
         # The first process of each kind: its command line and the rlimits
-        # in force (proof of the caps a pass ran under).
+        # in force (proof of the caps a pass ran under). A parse child
+        # confines itself after it starts, so one seen before that (Docker's
+        # single seccomp filter) is replaced by the first confined one.
         self.first_seen: dict[str, dict] = {}
 
-    def remember(self, name: str, pid: str) -> None:
-        if name in self.first_seen or name not in COUNTS:
+    def remember(self, name: str, pid: str, status: str) -> None:
+        if name not in COUNTS or self.first_seen.get(name, {}).get("confined"):
+            return
+        confined = any(
+            line.startswith("Seccomp_filters:") and int(line.split()[1]) > 1
+            for line in status.splitlines()
+        )
+        if name in self.first_seen and not confined:
             return
         try:
             cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(errors="replace")
             limits = Path(f"/proc/{pid}/limits").read_text()
-            status = Path(f"/proc/{pid}/status").read_text()
         except OSError:
             return
         keep = ("Max cpu time", "Max file size", "Max data size", "Max open files", "Max address space", "Max core file size")
@@ -114,6 +121,7 @@ class Sampler(threading.Thread):
             "cmdline": cmdline[:2000],
             "limits": [line for line in limits.splitlines() if line.startswith(keep)],
             "status": [line for line in status.splitlines() if line.startswith(flags)],
+            "confined": confined,
         }
 
     def read(self, name: str) -> str:
@@ -148,8 +156,9 @@ class Sampler(threading.Thread):
                     cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
                 except OSError:
                     continue
-                # The spawned parse child runs multiprocessing's entry point.
-                name = "child" if b"multiprocessing" in cmdline else "api"
+                # A spawned parse child runs multiprocessing's spawn entry
+                # point; its resource tracker counts with the API process.
+                name = "child" if b"spawn_main" in cmdline else "api"
 
             def kib(key: str) -> int:
                 return int(fields.get(key, "0 kB").split()[0]) * 1024
@@ -165,7 +174,7 @@ class Sampler(threading.Thread):
                 totals[key] = max(totals[key], kib("VmData"))
             if key := COUNTS.get(name):
                 totals[key] += 1
-                self.remember(name, pid)
+                self.remember(name, pid, status)
         return totals
 
     def run(self) -> None:
