@@ -410,7 +410,8 @@ async def run_one(job: dict[str, Any], playground, versions: dict[str, int], doc
         }
     )
     config["target"] = "local"
-    turn = playground.Turn(config, q["text"], [], playground.PdfResolver("local"))
+    # An offer case may carry an earlier turn: the offer is first-turn only.
+    turn = playground.Turn(config, q["text"], q.get("history", []), playground.PdfResolver("local"))
     shown: list[str] = []
     errors = []
     started = time.perf_counter()
@@ -578,6 +579,12 @@ def read_targets(result: dict[str, Any]) -> list[str]:
     return out
 
 
+# The first-turn offer (2026-10-20): an AskUser whose question or choices name
+# a note or a slide deck.
+OFFER = re.compile(r"AskUser\((?:[^()]|\([^()]*\))*?\b(note|deck|slides?)\b", re.I | re.S)
+WRITES = ("create_material", "edit_document", "create_deck", "write_slide", "add_questions")
+
+
 def judge(result: dict[str, Any], q: dict[str, Any], markers: dict[str, str], owner: dict[str, str]) -> dict[str, Any]:
     answer = normalize(result["answer"])
     reads = read_targets(result)
@@ -609,6 +616,14 @@ def judge(result: dict[str, Any], q: dict[str, Any], markers: dict[str, str], ow
         "gold_hinted": gold_hinted,
         "gold_in_tail": gold_in_tail,
         "unread_key": bool(key_ok and q["kind"] == "edit" and not (gold & set(reads))),
+        "offered": bool(OFFER.search(result["answer"])),
+        "offer_ok": (bool(OFFER.search(result["answer"])) == q["offer"]) if "offer" in q else None,
+        # Write calls in a turn that asked for none (question, small talk, offer
+        # cases other than a requested note): unrequested writes and slips.
+        "writes": sum(1 for c in result["calls"] if c["name"] in WRITES),
+        "writes_landed": sum(
+            1 for c in result["calls"] if c["name"] in WRITES and c.get("outcome") == "succeeded"
+        ),
         "junk_quoted": junk_quoted,
         "noise_quoted": noise_quoted,
         "input_tokens": sum(c.get("input_tokens") or 0 for c in result["provider_calls"]),
@@ -656,6 +671,10 @@ def score(args) -> None:
                 "correct_indexed": mean([float(r["correct"]) for r in indexed]),
                 "read_gold_edit": mean([float(r["read_gold"]) for r in edit]),
                 "unread_key_edit": mean([float(r["unread_key"]) for r in edit]),
+                "offer_ok": mean([float(r["offer_ok"]) for r in items if r["offer_ok"] is not None]),
+                "writes_landed_unasked": mean(
+                    [r["writes_landed"] for r in items if r["question"] not in ("O04", "P21")]
+                ),
                 "wasted_reads": mean([r["wasted_reads"] for r in items]),
                 "junk_reads": mean([r["junk_reads"] for r in items]),
                 "junk_quoted": mean([float(bool(r["junk_quoted"])) for r in items]),

@@ -1,5 +1,5 @@
 {
-  "about": "Part 2 questions for the pending-hints eval, each with its answer key. kind edit: the answer is only right with a pending edit (the index holds the old text); indexed: the index answers it and hints are noise; smalltalk: no key, only reads and junk quotes are scored. key: every group must match the answer (a group is a regex); stale: a regex that, matched without the key, means the answer used the indexed (old) text. gold_docs: documents a useful read targets. not_junk: changes and documents never injected as junk for that question (on its subject). markers: a regex per pending change that only an answer repeating that change would contain, for spotting a quoted junk hint.",
+  "about": "Part 2 questions for the pending-hints eval, each with its answer key. kind edit: the answer is only right with a pending edit (the index holds the old text); indexed: the index answers it and hints are noise; smalltalk: no key, only reads and junk quotes are scored. key: every group must match the answer (a group is a regex); stale: a regex that, matched without the key, means the answer used the indexed (old) text. gold_docs: documents a useful read targets. not_junk: changes and documents never injected as junk for that question (on its subject). markers: a regex per pending change that only an answer repeating that change would contain, for spotting a quoted junk hint. kind offer (2026-10-20): the first-turn note or deck offer. offer is whether the answer should end with an AskUser offering a note or a slide deck: yes for an explanation or summary on a chat's first message; no when the user asked for a material, for small talk, and on a later message (history holds the earlier turn). No key; writes are counted.",
   "questions": [
     {
       "id": "P01",
@@ -395,6 +395,84 @@
       "key": [],
       "stale": [],
       "not_junk": []
+    },
+    {
+      "id": "O01",
+      "kind": "offer",
+      "text": "Explain the chain rule from my calculus note.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": true
+    },
+    {
+      "id": "O02",
+      "kind": "offer",
+      "text": "Can you summarise my First World War essay plan?",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": true
+    },
+    {
+      "id": "O03",
+      "kind": "offer",
+      "text": "Explain how an ester is made.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": true
+    },
+    {
+      "id": "O04",
+      "kind": "offer",
+      "text": "Make me a note on the Truman Doctrine.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": false
+    },
+    {
+      "id": "O05",
+      "kind": "offer",
+      "text": "Hi! How are you today?",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": false
+    },
+    {
+      "id": "O06",
+      "kind": "offer",
+      "text": "Explain it again with an everyday example.",
+      "gold_docs": [],
+      "gold_changes": [],
+      "key": [],
+      "stale": [],
+      "not_junk": [],
+      "offer": false,
+      "history": [
+        {
+          "id": "u0",
+          "role": "user",
+          "content": "What is a negative externality?"
+        },
+        {
+          "id": "a0",
+          "role": "assistant",
+          "content": "A negative externality is a cost of a market activity that falls on a third party who is not part of the transaction."
+        }
+      ]
     }
   ],
   "markers": {
