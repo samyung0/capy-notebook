@@ -10,10 +10,12 @@ drops what users ask about, fall back to counting each run of characters once.
 
 - Word list: HSK 3.0 levels from
   [complete-hsk-vocabulary](https://github.com/drkameleon/complete-hsk-vocabulary)
-  (MIT; licence in the file headers), 10,969 words at their lowest level
+  (MIT; licence in the file headers), 10,969 words at their lowest level,
+  plus the source's Traditional forms at the same level (6,731 more; HSK
+  itself is Simplified, Editor 2026-10-20), 17,700 entries
   (`fixtures/hints-eval/hsk-levels.tsv`). Production keeps the same list in
   `pipeline/retrieval/hsk_words.tsv` without the single characters above
-  level 1, which split the same as unlisted ones (9,655 words, 92 KB).
+  level 1, which split the same as unlisted ones (15,599 words, 149 KB).
 - Messages: 18 Chinese messages over three simple-config notes
   (`fixtures/hints-eval/chinese.json`): 11 about an edit (7 by its words,
   including 什么是光合作用; 1 "what is X", 什么是细胞分裂; 3 by a synonym),
@@ -63,7 +65,11 @@ note through the note's name); 광합성 에너지는 무엇인가요? hints its
 
 ## Limits
 
-18 hand-written messages on three notes, simplified Chinese only. HSK covers
+18 hand-written messages on three notes, simplified Chinese only; the
+Traditional forms were added after the run and leave every Simplified unit
+of every rule unchanged (checked against the run's units), and the
+Traditional messages checked (什麼是光合作用, 什麼是細胞分裂, 謝謝, 合作學習有什麼好處 and
+the rest of the set's shapes) give the same words as their Simplified forms. HSK covers
 everyday and exam vocabulary, not subject terms; seg-merge relies on unlisted
 characters joining a neighbouring list word, which held for every term here
 (光合作, 卡尔文循环, 减数分裂, 染色体) but is not measured on other subjects.
