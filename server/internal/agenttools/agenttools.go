@@ -463,9 +463,9 @@ func editCommandSchema() map[string]any {
 // officeCommandSchema is edit_office_document's tagged union. Each variant's
 // description starts with the formats it applies to; Go turns the model's
 // snake_case commands into the engine's (NormalizeOfficeCommands). The grid
-// bounds are schema sanity bounds only: the engine refuses a range over
-// 10,000 cells and the retrieval service a call whose commands are over
-// 256 KB of JSON (Epo 2026-10-20).
+// bounds are schema sanity bounds only: the engine refuses a range, or a call,
+// over 10,000 cells and the retrieval service a call whose commands are over
+// 256 KB of JSON or 10,000 cells (Epo 2026-10-20).
 func officeCommandSchema() map[string]any {
 	variant := func(name, desc string, props map[string]any, required ...string) map[string]any {
 		props["type"] = map[string]any{"const": name}
@@ -484,7 +484,14 @@ func officeCommandSchema() map[string]any {
 	count := map[string]any{"type": "integer", "minimum": 1}
 	row := map[string]any{"type": "integer", "minimum": 1, "description": "The row number the first new row takes; rows from there move down."}
 	column := str(`The column letter the first new column takes, like "C"; columns from there move right.`)
-	tsv := map[string]any{"type": "string", "description": "Their current inputs as inspect_office_document shows them, as TSV: a tab between cells, a newline between rows."}
+	// A delete's expected band: rows of cells like set_range's expected, with
+	// trailing empty cells and rows left out (Epo 2026-10-20, review finding 6).
+	band := func(desc string) map[string]any {
+		return map[string]any{
+			"type": "array", "description": desc,
+			"items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		}
+	}
 	return map[string]any{
 		"oneOf": []any{
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
@@ -530,7 +537,7 @@ func officeCommandSchema() map[string]any {
 				"sheet":    sheet,
 				"at":       map[string]any{"type": "integer", "minimum": 1, "description": "The first row number to delete."},
 				"count":    count,
-				"expected": tsv,
+				"expected": band(`The rows' current inputs as inspect_office_document shows them, one array per row with its cells from column A; trailing empty cells and rows may be left out, [] for empty rows.`),
 			}, "sheet", "at", "count", "expected"),
 			variant("insert_columns", "XLSX: insert empty columns.", map[string]any{
 				"sheet": sheet, "at": column, "count": count,
@@ -539,7 +546,7 @@ func officeCommandSchema() map[string]any {
 				"sheet":    sheet,
 				"at":       str(`The first column letter to delete, like "C".`),
 				"count":    count,
-				"expected": tsv,
+				"expected": band(`The columns' current inputs as inspect_office_document shows them, one array per row from row 1 holding the deleted columns' cells; trailing empty cells and rows may be left out, [] for empty columns.`),
 			}, "sheet", "at", "count", "expected"),
 			variant("delete_sheet", "XLSX: delete a sheet.", map[string]any{
 				"sheet":         sheet,
@@ -1046,7 +1053,7 @@ func Definitions() []Definition {
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
 				"whole call. Edits save directly; most can be undone from the chat. A call's commands " +
-				"are at most 256 KB; split larger edits into several calls.",
+				"are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
 				"commands": map[string]any{

@@ -1323,7 +1323,7 @@
     {
       "name": "edit_office_document",
       "version": 1,
-      "description": "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat. A call's commands are at most 256 KB; split larger edits into several calls.",
+      "description": "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat. A call's commands are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1592,8 +1592,14 @@
                       "type": "integer"
                     },
                     "expected": {
-                      "description": "Their current inputs as inspect_office_document shows them, as TSV: a tab between cells, a newline between rows.",
-                      "type": "string"
+                      "description": "The rows' current inputs as inspect_office_document shows them, one array per row with its cells from column A; trailing empty cells and rows may be left out, [] for empty rows.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
                     },
                     "sheet": {
                       "description": "The sheet's id or name as inspect_office_document lists it.",
@@ -1657,8 +1663,14 @@
                       "type": "integer"
                     },
                     "expected": {
-                      "description": "Their current inputs as inspect_office_document shows them, as TSV: a tab between cells, a newline between rows.",
-                      "type": "string"
+                      "description": "The columns' current inputs as inspect_office_document shows them, one array per row from row 1 holding the deleted columns' cells; trailing empty cells and rows may be left out, [] for empty columns.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
                     },
                     "sheet": {
                       "description": "The sheet's id or name as inspect_office_document lists it.",

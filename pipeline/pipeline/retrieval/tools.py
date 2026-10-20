@@ -2028,6 +2028,19 @@ def _missed_target(
         if len(text) > SHOWN_BLOCK_CHARS:
             more = len(text) - SHOWN_BLOCK_CHARS
             shown += f" … ({more} more characters; {reader} shows them)"
+        grid = block.get("grid")
+        if office and isinstance(grid, list):
+            # A refused row or column delete's band, exact for its expected.
+            cut = (
+                f" … (its first 2,000 cells; {reader} reads the rest)"
+                if block.get("gridCut")
+                else ""
+            )
+            return (
+                f"Range {bid} now holds, as rows of cells:\n"
+                + json.dumps(grid, ensure_ascii=False, separators=(",", ":"))
+                + cut
+            )
         if office and block.get("type") in _OFFICE_TARGETS:
             return _OFFICE_TARGETS[str(block["type"])].format(id=bid) + f"\n{shown}"
         changed = seen.get(bid, text) != text
@@ -2198,6 +2211,25 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 # One edit_office_document call's commands at most, as compact JSON (Epo
 # 2026-10-20); a larger call is refused before it leaves.
 OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
+# Cells one call writes across its commands (Epo 2026-10-20, review finding
+# 3). The pipeline counts set_range and format_cells areas for an early
+# refusal; the engine counts every command's cells and stays the authority.
+OFFICE_CALL_MAX_CELLS = 10_000
+_A1_RANGE = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
+
+
+def _range_cells(text: str) -> int:
+    """The cells an A1 range covers; 0 for one the engine refuses anyway."""
+    match = _A1_RANGE.fullmatch(text.strip().upper())
+    if not match:
+        return 0
+
+    def column(letters: str) -> int:
+        return sum((ord(ch) - 64) * 26**i for i, ch in enumerate(reversed(letters)))
+
+    first, row = column(match[1]), int(match[2])
+    last, end = (column(match[3]), int(match[4])) if match[3] else (first, row)
+    return (abs(last - first) + 1) * (abs(end - row) + 1)
 
 
 def _render_scoped(body: dict[str, Any], scoped: dict[str, Any]) -> str:
@@ -2273,6 +2305,16 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
         return _refused(
             f"The commands are {-(-size // 1024)} KB, over the 256 KB one call may "
             "send; split the edit into several calls."
+        )
+    cells = sum(
+        _range_cells(str(command.get("range") or ""))
+        for command in commands
+        if command.get("type") in ("set_range", "format_cells")
+    )
+    if cells > OFFICE_CALL_MAX_CELLS:
+        return _refused(
+            f"The commands write {cells:,} cells, over the 10,000 one call may "
+            "write; split the edit into several calls."
         )
     rid = str(args.get("file_id") or "")
     creating = commands[0].get("type") == "create"

@@ -69,13 +69,13 @@ Read:
 Edit, one file a call; one stale expectation refuses the whole call:
 - set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
 - format_cells sets fonts, colours, alignment, wrapping and number formats on a range; fields left out stay as they are.
-- add_sheet, rename_sheet and delete_sheet change sheets; insert_rows, delete_rows, insert_columns and delete_columns change rows and columns. A delete names what it removes: the sheet's name, or the rows' or columns' inputs as TSV.
+- add_sheet, rename_sheet and delete_sheet change sheets; insert_rows, delete_rows, insert_columns and delete_columns change rows and columns. A delete names what it removes: the sheet's name, or the rows' or columns' inputs as rows of cells like set_range's expected (a row's cells from column A; for columns, rows from row 1 holding the deleted columns' cells), trailing empty cells and rows left out.
 - replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
 - Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
 
 Create: a new Excel file is a create command first, without file_id, followed by the commands that fill it. Word files cannot be created yet. A deck is made with create_deck (the deck_building skill).
 
-Limits: a call's commands up to 256 KB; split larger edits into several calls."""
+Limits: a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits into several calls."""
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""

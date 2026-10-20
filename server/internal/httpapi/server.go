@@ -127,6 +127,9 @@ type api struct {
 	// (treeLive says whether that LISTEN is attached); see fanout.go.
 	broker   *channelBroker
 	treeLive atomic.Bool
+	// operations hold an agent edit's or create's retry until its first
+	// attempt ends (internal_documents.go).
+	operations operationLocks
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and the

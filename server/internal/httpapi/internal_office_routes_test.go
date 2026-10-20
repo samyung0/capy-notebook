@@ -1,13 +1,16 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -230,5 +233,99 @@ func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
 	}
 	if built := len(authority.sent("/internal/documents/create")); built != 0 || files != 0 || fx.blobs(t) != 0 {
 		t.Fatalf("built %d, files %d, blobs %d", built, files, fx.blobs(t))
+	}
+}
+
+// A retried edit or create whose first attempt is still running waits for
+// it (Epo 2026-10-20, review finding 3): the retrieval service gave up on the
+// first attempt, which still finishes, and the retry answers the receipt that
+// attempt stored, from one collaboration call.
+func TestOfficeRetryWaitsForTheRunningAttempt(t *testing.T) {
+	fx := openDeckFiles(t)
+	xlsx := officeSource(t, fx, "grades.xlsx")
+	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)
+	arrived, release := make(chan string, 4), make(chan struct{})
+	var calls sync.Map
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Operation store.DocumentOperation `json:"operation"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		count, _ := calls.LoadOrStore(r.URL.Path, new(atomic.Int32))
+		count.(*atomic.Int32).Add(1)
+		arrived <- r.URL.Path
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/internal/documents/create" {
+			_, _ = w.Write([]byte(`{"content":"UEsDBA=="}`))
+			return
+		}
+		// The collaboration server commits an edit's receipt through Go's
+		// checkpoint route; here it is written directly.
+		op := body.Operation
+		if _, err := fx.st.Pool().Exec(context.Background(), `INSERT INTO agent_operations
+			(id, kind, request_hash, actor_user_id, workspace_id, message_id, call_id, outcome)
+			VALUES ($1, 'edit_document', $2, $3, $4, $5, $6, 'succeeded')`,
+			op.ID, op.RequestHash, fx.editor, fx.ws, op.MessageID, op.CallID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		receipt, _ := fx.st.GetAgentOperation(context.Background(), op.ID)
+		_ = json.NewEncoder(w).Encode(receipt)
+	}))
+	t.Cleanup(server.Close)
+	t.Cleanup(sync.OnceFunc(func() { close(release) }))
+	fx.st.ConfigureCollaboration(server.URL, "collab-test-secret")
+
+	post := func(ctx context.Context, path string, body map[string]any) <-chan *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequestWithContext(ctx, http.MethodPost, path, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Pipeline-Secret", pipeSecret)
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			rec := httptest.NewRecorder()
+			fx.h.ServeHTTP(rec, req)
+			done <- rec
+		}()
+		return done
+	}
+	for _, tc := range []struct {
+		route, authority string
+		body             map[string]any
+	}{
+		{"/api/internal/documents/edit", "/internal/documents/edit", map[string]any{
+			"workspaceId": fx.ws, "userId": fx.editor, "assistantMessageId": msgID, "toolCallId": "call_slow_edit",
+			"target": map[string]any{"kind": "source_file", "id": xlsx}, "office": true,
+			"commands": []map[string]any{{"type": "rename_sheet", "sheet": "0", "expected_name": "Sheet1", "name": "Grades"}},
+		}},
+		{"/api/internal/documents/office/create", "/internal/documents/create", map[string]any{
+			"workspaceId": fx.ws, "userId": fx.editor, "assistantMessageId": msgID, "toolCallId": "call_slow_create",
+			"format": "xlsx", "title": "Grades", "commands": []map[string]any{},
+		}},
+	} {
+		gaveUp, cancel := context.WithCancel(context.Background())
+		first := post(gaveUp, tc.route, tc.body)
+		<-arrived
+		cancel()
+		retry := post(context.Background(), tc.route, tc.body)
+		select {
+		case path := <-arrived:
+			t.Fatalf("%s: the retry reached %s while the first attempt ran", tc.route, path)
+		case <-time.After(300 * time.Millisecond):
+		}
+		release <- struct{}{}
+		one, two := <-first, <-retry
+		var receipts [2]receiptBody
+		for i, rec := range []*httptest.ResponseRecorder{one, two} {
+			if err := json.Unmarshal(rec.Body.Bytes(), &receipts[i]); err != nil || rec.Code != http.StatusOK {
+				t.Fatalf("%s: answer %d = %d %s", tc.route, i+1, rec.Code, rec.Body.String())
+			}
+		}
+		count, _ := calls.Load(tc.authority)
+		if receipts[0].OperationID == "" || receipts[0].Outcome != "succeeded" || !reflect.DeepEqual(receipts[0], receipts[1]) ||
+			count.(*atomic.Int32).Load() != 1 {
+			t.Fatalf("%s: first %s, retry %s, %d calls", tc.route, one.Body.String(), two.Body.String(), count.(*atomic.Int32).Load())
+		}
 	}
 }

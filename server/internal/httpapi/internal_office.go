@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"regexp"
@@ -132,7 +133,13 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 		case "insert_rows", "insert_columns":
 			normalized = map[string]any{"sheet": c.Sheet, "at": c.At, "count": c.Count}
 		case "delete_rows", "delete_columns":
-			normalized = map[string]any{"sheet": c.Sheet, "at": c.At, "count": c.Count, "expected": c.Expected}
+			// The band's inputs as a grid of rows (Epo 2026-10-20, review
+			// finding 6); [] expects an empty band.
+			var band [][]string
+			if err := json.Unmarshal(c.Expected, &band); err != nil || band == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "%s needs expected: the band's current inputs as a grid of rows, [] when it is empty", c.Type)
+			}
+			normalized = map[string]any{"sheet": c.Sheet, "at": c.At, "count": c.Count, "expected": band}
 		case "delete_sheet":
 			normalized = map[string]any{"sheet": c.Sheet, "expectedName": c.ExpectedName}
 		case "replace_text":
@@ -200,6 +207,14 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	name := fieldlimits.ClampFileName(title + "." + req.Format)
+	// A retry waits for a running attempt and replays its receipt, as an edit's
+	// does (operationLocks).
+	unlock, err := a.operations.lock(r.Context(), store.ChatOperationID(req.AssistantMessageID, req.ToolCallID))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer unlock()
 	op, ok := a.agentFileOperation(w, r, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
 		"format": req.Format, "title": req.Title, "chapterId": req.ChapterID, "commands": req.Commands,
 	})
@@ -215,12 +230,15 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 		a.failDocument(w, err)
 		return
 	}
-	created, err := a.s.CreateOfficeDocument(r.Context(), req.UserID, req.Format, commands)
+	// Uncancelled from here: an attempt the retrieval service gave up on still
+	// builds and stores the file, so its retry replays the receipt.
+	ctx := context.WithoutCancel(r.Context())
+	created, err := a.s.CreateOfficeDocument(ctx, req.UserID, req.Format, commands)
 	if err != nil {
 		a.failDocument(w, err)
 		return
 	}
-	receipt, ok := a.storeAgentFile(w, r.Context(), agentFile{
+	receipt, ok := a.storeAgentFile(w, ctx, agentFile{
 		name: name, chapterID: chapterID, content: created.Content, op: op,
 	})
 	if ok {

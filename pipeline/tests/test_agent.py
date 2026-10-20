@@ -3861,6 +3861,55 @@ async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatc
     )
 
 
+async def test_an_office_edit_over_10_000_cells_is_refused_before_it_leaves(
+    monkeypatch,
+):
+    """set_range and format_cells areas count toward the call's 10,000 cells
+    (Epo 2026-10-20, review finding 3); the engine counts the rest."""
+    posts: list[str] = []
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: posts.append(url))
+    commands = [
+        {
+            "type": "set_range",
+            "sheet": "Grades",
+            "range": "$A$6000:A1",
+            "expected": [[""]] * 6000,
+            "values": [["1"]] * 6000,
+        },
+        {"type": "format_cells", "sheet": "Grades", "range": "b1:f1000", "bold": True},
+    ]
+    result = await tools.run(
+        "edit_office_document",
+        {"file_id": "f_1", "commands": commands, "_tool_call_id": "c1"},
+        ctx,
+    )
+    assert result.error_code == "invalid_input" and posts == []
+    assert result.error == (
+        "The commands write 11,000 cells, over the 10,000 one call may write; "
+        "split the edit into several calls."
+    )
+
+
+def test_a_stale_office_band_shows_its_grid_to_copy():
+    """A refused row or column delete shows the band as rows of cells, exact
+    for cells holding tabs or line breaks, and says when the engine cut it
+    (Epo 2026-10-20, review finding 6)."""
+    block = {
+        "id": "Grades!3:4",
+        "type": "range",
+        "text": "a\nb\tx\ty",
+        "grid": [["a\nb", "x\ty"], [], ["Zoë"]],
+    }
+    assert tools._missed_target({"block": block}, {}, office=True) == (
+        "Range Grades!3:4 now holds, as rows of cells:\n"
+        + r'[["a\nb","x\ty"],[],["Zoë"]]'
+    )
+    cut = tools._missed_target({"block": {**block, "gridCut": True}}, {}, office=True)
+    assert cut.endswith(
+        " … (its first 2,000 cells; inspect_office_document reads the rest)"
+    )
+
+
 async def test_office_edits_and_creates_reach_their_routes(monkeypatch):
     """An edit goes to the edit route marked office, a stale range comes back as
     its TSV, and a create sends the call's other commands to the create route."""

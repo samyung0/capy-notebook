@@ -30,11 +30,15 @@ func TestNormalizeOfficeCommands(t *testing.T) {
 		{"xlsx", `{"type":"rename_sheet","sheet":"0","expected_name":"Sheet1","name":"Grades"}`,
 			`{"expectedName":"Sheet1","name":"Grades","sheet":"0","type":"rename_sheet"}`},
 		{"xlsx", `{"type":"insert_rows","sheet":"0","at":3,"count":2}`, `{"at":3,"count":2,"sheet":"0","type":"insert_rows"}`},
-		{"xlsx", `{"type":"delete_rows","sheet":"0","at":3,"count":1,"expected":"Ann\t91"}`,
-			`{"at":3,"count":1,"expected":"Ann\t91","sheet":"0","type":"delete_rows"}`},
+		// A delete's band is a grid of rows, so cells may hold tabs and line
+		// breaks; [] expects an empty band (review finding 6).
+		{"xlsx", `{"type":"delete_rows","sheet":"0","at":3,"count":1,"expected":[["Ann","91"],["a\nb","x\ty"]]}`,
+			`{"at":3,"count":1,"expected":[["Ann","91"],["a\nb","x\ty"]],"sheet":"0","type":"delete_rows"}`},
+		{"xlsx", `{"type":"delete_rows","sheet":"0","at":3,"count":2,"expected":[]}`,
+			`{"at":3,"count":2,"expected":[],"sheet":"0","type":"delete_rows"}`},
 		{"xlsx", `{"type":"insert_columns","sheet":"0","at":"C","count":1}`, `{"at":"C","count":1,"sheet":"0","type":"insert_columns"}`},
-		{"xlsx", `{"type":"delete_columns","sheet":"0","at":"C","count":1,"expected":"Score\n91"}`,
-			`{"at":"C","count":1,"expected":"Score\n91","sheet":"0","type":"delete_columns"}`},
+		{"xlsx", `{"type":"delete_columns","sheet":"0","at":"C","count":1,"expected":[["Score"],[],["91"]]}`,
+			`{"at":"C","count":1,"expected":[["Score"],[],["91"]],"sheet":"0","type":"delete_columns"}`},
 		{"xlsx", `{"type":"delete_sheet","sheet":"1","expected_name":"Old"}`, `{"expectedName":"Old","sheet":"1","type":"delete_sheet"}`},
 		{"docx", `{"type":"replace_text","target_id":"body:paragraph:p1","expected_text":"old","text":"new"}`,
 			`{"expectedText":"old","targetId":"body:paragraph:p1","text":"new","type":"replace_text"}`},
@@ -67,6 +71,10 @@ func TestNormalizeOfficeCommandsRefusesTheWrongFormat(t *testing.T) {
 			agenttools.ErrInvalidInput, "create must be the call's first command, without file_id"},
 		{"xlsx", `{"type":"format_cells","sheet":"0","range":"A1"}`,
 			agenttools.ErrInvalidInput, "format_cells needs at least one format to set"},
+		{"xlsx", `{"type":"delete_rows","sheet":"0","at":3,"count":1,"expected":"Ann\t91"}`,
+			agenttools.ErrInvalidInput, "delete_rows needs expected: the band's current inputs as a grid of rows, [] when it is empty"},
+		{"xlsx", `{"type":"delete_columns","sheet":"0","at":"C","count":1}`,
+			agenttools.ErrInvalidInput, "delete_columns needs expected: the band's current inputs as a grid of rows, [] when it is empty"},
 	} {
 		_, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		var refused *store.EditRefusal
