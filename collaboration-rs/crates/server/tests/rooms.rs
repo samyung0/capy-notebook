@@ -1952,6 +1952,96 @@ async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
     }
 }
 
+/// Security regression (Epo 2026-10-20, rate-limit review r6 S-1): the
+/// awareness a JOIN sends counts against the open budget and, past the
+/// small-answer floor, waits like an awareness query. Two re-JOINs of a room
+/// holding about 480 KB of presence (two channels of four ids) take a 300 KB
+/// budget 360 KB past its floor (300 KB owed); the next re-JOIN joins but
+/// hears no awareness until the budget refills (100 KB a second). Fails if
+/// the JOIN's awareness never waits.
+#[tokio::test]
+async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "300000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "3"),
+        ],
+    )
+    .await;
+    let (user, room, mut client) = writer(&env, server.port, "crowd").await;
+    let write = token(&room, &user, "write");
+    let join = join_payload(&room, &write, Some(client_protocol()));
+    // A second presence channel, joined while the room holds none.
+    client.send_on(3, 0, &join).await;
+    assert!(client.heard_within(3, 1, Duration::from_secs(5)).await);
+    let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
+    for id in 1..=4 {
+        client.send(7, &awareness_update(id, 1, &state)).await;
+        client
+            .send_on(3, 7, &awareness_update(id + 4, 1, &state))
+            .await;
+    }
+    for round in 0..2 {
+        client.send_on(2, 0, &join).await;
+        assert!(
+            client.awareness_after_join(2, Duration::from_secs(2)).await,
+            "re-JOIN {round} hears the presence"
+        );
+    }
+    client.send_on(2, 0, &join).await;
+    assert!(
+        !client.awareness_after_join(2, Duration::from_secs(2)).await,
+        "past the floor the JOIN's awareness waits"
+    );
+    assert!(
+        client.heard_within(2, 7, Duration::from_secs(12)).await,
+        "and comes once the budget refills"
+    );
+}
+
+/// Security regression (Epo 2026-10-20, rate-limit review r6 N-5): the server
+/// pings every socket and closes one that sends nothing for the silent
+/// window (here 1 s pings and 2 s of silence), freeing its places; any frame
+/// counts, a pong too. With two connections to a note allowed, a socket that
+/// stops reading is closed while one that only answers pings stays open, and
+/// a third connection then closes nothing. Fails if silent sockets keep their
+/// places (the third connection closes the oldest) or pongs do not count.
+#[tokio::test]
+async fn a_silent_socket_closes_and_frees_its_places_while_an_answering_one_stays() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_PING_SECONDS", "1"),
+            ("COLLABORATION_SILENT_SECONDS", "2"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+        ],
+    )
+    .await;
+    let (user, room, mut answering) = writer(&env, server.port, "pinged").await;
+    let write = token(&room, &user, "write");
+    let mut silent = Client::open(server.port).await;
+    silent.joined(&room, &write).await;
+    // The silent socket reads nothing from here on; the answering one only
+    // reads, so pongs are all it sends.
+    assert!(
+        answering.still_open(Duration::from_millis(3500)).await,
+        "a socket that answers pings stays open"
+    );
+    let mut third = Client::open(server.port).await;
+    third.joined(&room, &write).await;
+    let closes = answering.closes_within(Duration::from_millis(500)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+    assert!(
+        !silent.still_open(Duration::from_secs(2)).await,
+        "the silent socket was closed"
+    );
+}
+
 /// Security regression (Epo 2026-10-19): a JOIN costs one message of its
 /// user's allowance, so a join loop runs into a timeout like any other flood
 /// (a JOIN on a joined channel leaves and joins again, reloading what the
@@ -2476,6 +2566,75 @@ impl Client {
             at += len;
         }
         messages
+    }
+
+    /// Whether a `kind` message arrives on `channel` within `window`
+    /// (answering pings meanwhile).
+    async fn heard_within(&mut self, channel: u64, kind: u8, window: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + window;
+        loop {
+            let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                return false;
+            };
+            let Ws::Binary(bytes) = message else { continue };
+            let mut at = 0;
+            while at < bytes.len() {
+                let heard = read_var(&bytes, &mut at);
+                let heard_kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                at += len;
+                if (heard, heard_kind) == (channel, kind) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    /// After a JOIN on `channel`: whether awareness reaches it within `window`
+    /// of its JOINED; what came before the JOINED (an earlier join's) is
+    /// skipped.
+    async fn awareness_after_join(&mut self, channel: u64, window: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut joined: Option<tokio::time::Instant> = None;
+        loop {
+            let limit = joined.map_or(deadline, |at| at + window);
+            let Ok(Some(Ok(message))) = tokio::time::timeout_at(limit, self.ws.next()).await else {
+                assert!(joined.is_some(), "channel {channel} joined");
+                return false;
+            };
+            let Ws::Binary(bytes) = message else { continue };
+            let mut at = 0;
+            while at < bytes.len() {
+                let heard = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                at += len;
+                if heard != channel {
+                    continue;
+                }
+                if kind == 1 {
+                    joined = Some(tokio::time::Instant::now());
+                } else if kind == 7 && joined.is_some() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    /// Whether the socket stays open for `window`, reading (and so answering
+    /// pings) meanwhile.
+    async fn still_open(&mut self, window: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + window;
+        loop {
+            match tokio::time::timeout_at(deadline, self.ws.next()).await {
+                Err(_) => return true,
+                Ok(Some(Ok(Ws::Close(_)))) | Ok(Some(Err(_))) | Ok(None) => return false,
+                Ok(Some(Ok(_))) => {}
+            }
+        }
     }
 
     /// Every CLOSED heard in the next `window`, as (channel, payload).

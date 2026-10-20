@@ -58,6 +58,12 @@ pub const OUTDATED_REASON: &str = "collaboration-outdated";
 /// A socket with no room joined (and none authenticating) after this long
 /// closes (Epo 2026-10-19): a client joins as soon as it opens one.
 const JOIN_DEADLINE: Duration = Duration::from_secs(10);
+/// Every socket is pinged this often (`COLLABORATION_PING_SECONDS`), and one
+/// that sends nothing for [SILENT_CLOSE] (`COLLABORATION_SILENT_SECONDS`;
+/// any frame counts, the browser's automatic pong too) closes, freeing its
+/// places (Epo 2026-10-20): a dead connection would hold its user's caps.
+pub const PING_EVERY: Duration = Duration::from_secs(30);
+pub const SILENT_CLOSE: Duration = Duration::from_secs(60);
 /// What a timed-out user's channels hear (`update-timeout` in
 /// src/features/collaboration/roomProvider.ts).
 pub const TIMEOUT_TYPE: &str = "update-timeout";
@@ -451,18 +457,36 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
         closing_tx,
     };
     let mut socket = socket;
+    let (ping_every, silent) = (app.config.ping_every, app.config.silent_close);
+    let mut ping = tokio::time::interval_at((Instant::now() + ping_every).into(), ping_every);
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut heard = Instant::now();
     loop {
         let next_timer = connection.timers.keys().next().map(|(at, _)| *at);
         tokio::select! {
-            incoming = socket.recv() => match incoming {
-                Some(Ok(WsMessage::Binary(frame))) => {
-                    if !connection.on_frame(frame).await {
-                        break;
+            incoming = socket.recv() => {
+                heard = Instant::now();
+                match incoming {
+                    Some(Ok(WsMessage::Binary(frame))) => {
+                        if !connection.on_frame(frame).await {
+                            break;
+                        }
                     }
+                    Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => break,
+                    Some(Ok(_)) => {}
                 }
-                Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => break,
-                Some(Ok(_)) => {}
-            },
+            }
+            _ = ping.tick() => {
+                if socket.send(WsMessage::Ping(Default::default())).await.is_err() {
+                    break;
+                }
+            }
+            () = tokio::time::sleep_until((heard + silent).into()) => {
+                log(Level::Info, "silent socket closed", json!({ "socket_id": connection.socket_id }));
+                let close = CloseFrame { code: 1001, reason: "silent".into() };
+                let _ = socket.send(WsMessage::Close(Some(close))).await;
+                break;
+            }
             Some(out) = out_rx.recv() => match out {
                 Out::Frame(frame) => {
                     let len = frame.len();

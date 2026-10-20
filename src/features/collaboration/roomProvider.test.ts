@@ -359,33 +359,38 @@ it('applies remote awareness and sends back only its own re-asserted state', asy
   expect(document.clientID).toBe(provider.awareness.clientID);
 });
 
-it('ends the room when the socket drops and rejoins once it reopens', async () => {
-  vi.useFakeTimers();
-  const document = new Y.Doc();
-  const onClose = vi.fn();
-  const provider = new RoomProvider({
-    document,
-    name: 'material:m1:schema:1',
-    onClose,
-    token: async () => 't',
-    url: `wss://collab.test/${url++}`,
-  });
-  provider.connect();
-  const first = FakeSocket.instances.at(-1) as FakeSocket;
-  first.open();
-  await vi.advanceTimersByTimeAsync(0);
-  const [join] = first.take(MessageKind.Join);
-  first.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
-  first.close();
-  expect(onClose).toHaveBeenCalled();
-  expect(provider.isConnected).toBe(false);
-  await vi.advanceTimersByTimeAsync(2000);
-  const second = FakeSocket.instances.at(-1) as FakeSocket;
-  expect(second).not.toBe(first);
-  second.open();
-  await vi.advanceTimersByTimeAsync(0);
-  expect(second.take(MessageKind.Join)).toHaveLength(1);
-});
+// A drop of any kind, the server's close of a silent socket (1001, Epo
+// 2026-10-20) too, rejoins the same way.
+it.each([1005, 1001])(
+  'ends the room when the socket drops (%i) and rejoins once it reopens',
+  async (code) => {
+    vi.useFakeTimers();
+    const document = new Y.Doc();
+    const onClose = vi.fn();
+    const provider = new RoomProvider({
+      document,
+      name: 'material:m1:schema:1',
+      onClose,
+      token: async () => 't',
+      url: `wss://collab.test/${url++}`,
+    });
+    provider.connect();
+    const first = FakeSocket.instances.at(-1) as FakeSocket;
+    first.open();
+    await vi.advanceTimersByTimeAsync(0);
+    const [join] = first.take(MessageKind.Join);
+    first.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+    first.close(code);
+    expect(onClose).toHaveBeenCalled();
+    expect(provider.isConnected).toBe(false);
+    await vi.advanceTimersByTimeAsync(2000);
+    const second = FakeSocket.instances.at(-1) as FakeSocket;
+    expect(second).not.toBe(first);
+    second.open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(second.take(MessageKind.Join)).toHaveLength(1);
+  }
+);
 
 it('in a timeout holds its edits, then joins again on the same socket and resyncs them, its drafts kept', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });

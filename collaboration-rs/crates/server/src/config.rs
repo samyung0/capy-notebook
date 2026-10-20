@@ -69,6 +69,10 @@ pub struct Config {
     pub sockets_per_address: u64,
     pub joined_per_user: u64,
     pub connections_per_document: u64,
+    /// How often every socket is pinged, and how long one may stay silent
+    /// before it closes (`socket.rs`); tests shorten them.
+    pub ping_every: Duration,
+    pub silent_close: Duration,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -99,6 +103,14 @@ fn positive(env: &HashMap<String, String>, name: &str, fallback: u64) -> Result<
             _ => Err(ConfigError(format!("{name} must be a positive integer"))),
         },
     }
+}
+
+fn seconds(
+    env: &HashMap<String, String>,
+    name: &str,
+    fallback: Duration,
+) -> Result<Duration, ConfigError> {
+    positive(env, name, fallback.as_secs()).map(Duration::from_secs)
 }
 
 fn millis(
@@ -233,6 +245,12 @@ impl Config {
                 "COLLABORATION_CONNECTIONS_PER_DOCUMENT",
                 crate::seats::CONNECTIONS_PER_DOCUMENT,
             )?,
+            ping_every: seconds(env, "COLLABORATION_PING_SECONDS", crate::socket::PING_EVERY)?,
+            silent_close: seconds(
+                env,
+                "COLLABORATION_SILENT_SECONDS",
+                crate::socket::SILENT_CLOSE,
+            )?,
         })
     }
 
@@ -290,6 +308,8 @@ mod tests {
         assert_eq!(config.sockets_per_address, 500);
         assert_eq!(config.joined_per_user, 22);
         assert_eq!(config.connections_per_document, 4);
+        assert_eq!(config.ping_every, Duration::from_secs(30));
+        assert_eq!(config.silent_close, Duration::from_secs(60));
     }
 
     #[test]

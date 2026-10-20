@@ -965,10 +965,11 @@ a time (`Allowances::open_turn`): one waits while another is encoded, so
 answers waiting as the budget refills are released one by one, each charged
 before the next is looked at. A user in a timeout meanwhile asks again when it
 ends, so their waiting opens are dropped. The awareness sent on JOIN is
-charged but never waits (each JOIN costs a message of the edit allowance);
+charged too and, past the small-answer floor, waits like an awareness query
+(kept per channel, released as the budget refills; Epo 2026-10-20, r6 S-1);
 nothing else waits, and the edit allowance is untouched. The budget is the
 user's across rooms and sockets (in each server process), so rejoining spends
-it too: a user's step 1 answers and queries fetch at most the larger of two
+it too: a user's step 1 answers, queries and JOIN awareness fetch at most the larger of two
 budgets (160 MiB) and one budget plus the largest document, plus one resync
 per open room (small answers encoded before their charges land), at once,
 and then the refill rate, per process, however many files they open or
@@ -1104,7 +1105,12 @@ an embed channel counts toward its own room, not its note's): a fifth closes
 their oldest connection to it the same way. The closed room waits, not synced, and joins again once the user
 comes back to it: its tab shows again, or an edit is made in it (a local
 transaction; an applied update such as a restored draft is none); joining at
-once would close the user's next oldest.
+once would close the user's next oldest. The server pings every socket every
+30 s and closes one that sends nothing for 60 s (`PING_EVERY`, `SILENT_CLOSE`,
+`COLLABORATION_PING_SECONDS`, `COLLABORATION_SILENT_SECONDS`; any frame counts,
+the browser's automatic pong too; Epo 2026-10-20), so a dead connection (a
+laptop that changed networks) frees its places through the normal close; the
+client takes that close (1001) like any drop and reconnects.
 
 **Embeds in their note's seat** (Epo 2026-10-20). An embedded quiz's or
 flashcard set's room (content, and a writer's quiz keys) joins inside its

@@ -663,7 +663,9 @@ The prod file runs `/migrate` once per deploy, starts the API with
    at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
    `COLLABORATION_CONNECTIONS_PER_DOCUMENT` connections to one document (4;
    one more closes their oldest, counted in
-   `capy_collaboration_oldest_closed_total`), also left unset. The address is the gateway limiter's
+   `capy_collaboration_oldest_closed_total`), also left unset, as are
+   `COLLABORATION_PING_SECONDS` (30) and `COLLABORATION_SILENT_SECONDS` (60):
+   every socket is pinged and one silent that long closes, freeing its places. The address is the gateway limiter's
    (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
    peer's; an IPv6 one by its /64), so the cap holds only while the origin is
    reachable through the Cloudflare tunnel alone, as it is for the gateway's

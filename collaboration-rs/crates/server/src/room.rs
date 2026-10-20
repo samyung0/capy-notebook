@@ -1876,6 +1876,7 @@ impl Room {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
         }
+        let user = context.user_id.clone();
         // A writer of a document holding a block this version cannot edit
         // joins read-only and hears why.
         let unsupported = context.access == Access::Write && self.unsupported().is_some();
@@ -1916,8 +1917,19 @@ impl Room {
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
         if !(viewer || self.awareness.is_empty()) {
-            let sent = self.send_awareness_states(key);
-            self.charge_open(key, sent);
+            // Past the small-answer floor it waits like an awareness query
+            // (Epo 2026-10-20, rate-limit review r6 S-1).
+            let now = Instant::now();
+            let allowances = &self.app.allowances;
+            match allowances.open_wait(&user, now) {
+                Some(wait) if !allowances.small_skips(&user, now) => {
+                    self.wait_to_open(key, None, true, wait);
+                }
+                _ => {
+                    let sent = self.send_awareness_states(key);
+                    self.charge_open(key, sent);
+                }
+            }
         }
         // A quiz's readers get the matching and ordering lists as they stand.
         if let Kindly::Note(note) = &self.kind
