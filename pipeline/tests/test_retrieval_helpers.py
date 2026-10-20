@@ -1315,6 +1315,7 @@ def test_chat_request_requires_enabled_thinking():
 
 def test_one_prompt_adds_the_library_rules_only_with_library_on():
     from pipeline.prompts import chat as chat_prompts
+    from pipeline.prompts import skills
     from pipeline.retrieval import limits
 
     off = chat_prompts.system_prompt("en")
@@ -1330,10 +1331,14 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
     assert chat_prompts.FIRST_TURN_OFFER not in chat_prompts.system_prompt(
         "en", writes=False
     )
+    assert "lacks the learning scope or the learner's level" in skills.editing(
+        library=False
+    )
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt
-        assert "lacks the learning scope or the learner's level" in prompt
+        # Only a turn that writes needs the scope question (Epo 2026-10-21).
+        assert "lacks the learning scope or the learner's level" not in prompt
         assert (
             f"Until its first successful write a turn has "
             f"{limits.PLANNING_RESPONSES} responses" in prompt
