@@ -11,7 +11,7 @@ import json
 from dataclasses import asdict
 from typing import Any
 
-from . import skills, store, tools
+from . import pending_hints, skills, store, tools
 from .search import Passage
 
 
@@ -32,6 +32,10 @@ def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
         payload["passages"].append(asdict(passage))
     if ctx.library:
         payload["libraryExcerpts"] = ctx.library_evidence.pack()
+    if ctx.pending_hints:
+        payload["pendingHints"] = pending_hints.pack(ctx.pending_hints)
+    if ctx.pending_sources.read_ids:
+        payload["readDocuments"] = sorted(ctx.pending_sources.read_ids)
     return payload
 
 
@@ -60,13 +64,28 @@ async def history_turns(
     )
     out = []
     replayed: set[str] = set()
-    for i, turn in enumerate(history or []):
+    turns = history or []
+    # The documents read in each turn and every later one: a hint stays
+    # through compaction only once its document was read.
+    read_from: list[set[str]] = [set() for _ in range(len(turns) + 1)]
+    for i in range(len(turns) - 1, -1, -1):
+        saved = turns[i].get("toolEvidence") or {}
+        read_from[i] = read_from[i + 1] | set(saved.get("readDocuments") or [])
+    for i, turn in enumerate(turns):
         role, content = turn.get("role"), turn.get("content") or ""
         if role not in ("user", "assistant"):
             continue
         saved = turn.get("toolEvidence") or {}
         if content:
-            out.append({"id": turn.get("id") or "", "role": role, "content": content})
+            message = {"id": turn.get("id") or "", "role": role, "content": content}
+            # A user message's hints are saved with the answer that follows it.
+            answer = turns[i + 1] if i + 1 < len(turns) else {}
+            if role == "user" and answer.get("role") == "assistant":
+                hints = (answer.get("toolEvidence") or {}).get("pendingHints") or []
+                pending_hints.attach(
+                    message, pending_hints.unpack(hints), read_from[i + 1]
+                )
+            out.append(message)
         parts = list(library_parts.get(i, []))
         for result in saved.get("tools", []):
             parts.append(

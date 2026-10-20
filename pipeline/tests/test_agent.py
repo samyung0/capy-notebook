@@ -3667,7 +3667,12 @@ async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
             _assembled(_answer(("done", []))),
         ]
     )
+
+    async def no_match(*_args, **_kwargs):
+        return []
+
     monkeypatch.setattr(pending, "load", load)
+    monkeypatch.setattr(agent.pending_hints, "match", no_match)
     monkeypatch.setattr(tools.store, "read_file_range", read_range)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
@@ -3683,3 +3688,52 @@ async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
     assert "file edit" not in first and "note edit" not in first
     assert "read file edit" in second
     assert "unread file edit" not in second and "unread note edit" not in second
+
+
+async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeypatch):
+    """Epo 2026-10-20: matching edits ride with the user message as short
+    hints, saved with the answer so later turns replay and skip them."""
+
+    async def load(*_args, **_kwargs):
+        return pending.PendingSources(
+            [
+                {
+                    "fileId": "f_1",
+                    "name": "bio.pdf",
+                    "epoch": 1,
+                    "checkpoint": 2,
+                    "indexedCheckpoint": 1,
+                    "changes": [
+                        {
+                            "id": "c1",
+                            "kind": "text",
+                            "operation": "replace",
+                            "label": "",
+                            "before": "old",
+                            "after": "mitosis has four phases",
+                        }
+                    ],
+                },
+            ]
+        )
+
+    async def match(_query, pool, limit=5):
+        return pool[:limit]
+
+    stream, seen = _script_stream([_assembled(_answer(("done", [])))])
+    monkeypatch.setattr(pending, "load", load)
+    monkeypatch.setattr(agent.pending_hints, "match", match)
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    events = await _collect(
+        "How many phases does mitosis have?", ToolContext(workspace_id="ws_1")
+    )
+    query = next(m for m in seen[0]["messages"] if m.get("_kind") == "query")
+    assert query["content"].startswith("How many phases does mitosis have?\n\n")
+    assert (
+        '- bio.pdf (file_id=f_1): changed: "mitosis has four phases"'
+        in query["content"]
+    )
+    # The full change is not passed on before a read.
+    assert not any(m.get("_kind") == "pending_sources" for m in seen[0]["messages"])
+    done = next(e for e in events if e["type"] == "done")
+    assert [h["changeId"] for h in done["toolEvidence"]["pendingHints"]] == ["c1"]

@@ -34,6 +34,7 @@ from . import (
     library,
     models,
     pending,
+    pending_hints,
     scripted,
     skills,
     store,
@@ -357,6 +358,13 @@ async def _run_turn(
         writes=any(s["function"]["name"] in skills.REQUIRES for s in schemas),
     )
     query_msg = messages[-1]
+    # Unindexed edits matching the user's words, not hinted earlier in the
+    # conversation, ride with the message (Epo 2026-10-20).
+    hinted = {hint.key for message in prior for hint, _ in message.get("_hints") or []}
+    ctx.pending_hints = await pending_hints.for_message(
+        query, ctx.pending_sources, hinted=hinted
+    )
+    pending_hints.attach(query_msg, ctx.pending_hints)
 
     _, pending_reserve, pending_omitted = pending.reserve(
         messages, ctx.pending_sources, spec, schemas

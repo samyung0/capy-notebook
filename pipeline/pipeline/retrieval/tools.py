@@ -36,7 +36,17 @@ from ..generated import MATERIAL_TITLE_MAX
 from ..generated.limits import QUESTION_DESCRIPTION_MAX, QUESTION_METADATA_MAX
 from ..prompts import preferences
 from ..prompts.sources import source_block
-from . import capture, contract, deck, library, pending, questions, skills, store
+from . import (
+    capture,
+    contract,
+    deck,
+    library,
+    pending,
+    pending_hints,
+    questions,
+    skills,
+    store,
+)
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
@@ -187,6 +197,8 @@ class ToolContext:
     pending_sources: pending.PendingSources = field(
         default_factory=pending.PendingSources
     )
+    # The unindexed edits this turn's user message was hinted (pending_hints).
+    pending_hints: list[tuple[pending_hints.Hint, str]] = field(default_factory=list)
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
@@ -401,13 +413,32 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
             overlap=overlap,
         )
     )
+    edits = await _unindexed_edits(query, ctx, ids)
     if not passages:
         return _result(
-            "No passages matched. Try different wording, or list_sources first."
+            edits
+            or "No passages matched. Try different wording, or list_sources first."
         )
     return ToolResult(
         passages=passages,
-        text_parts=[_overlap_footer(overlap, len(passages))],
+        text_parts=[_overlap_footer(overlap, len(passages)), edits],
+    )
+
+
+async def _unindexed_edits(query: str, ctx: ToolContext, ids: list[str]) -> str:
+    """Edits not in the index yet that match the search (Epo 2026-10-20): not
+    citable, they name the document to read. Documents already read this turn
+    pass their changes on in full instead."""
+    sources = ctx.pending_sources
+    pool = [
+        hint
+        for hint in pending_hints.candidates(sources, exclude=sources.read_ids or set())
+        if not ids or hint.doc_id in ids
+    ]
+    matched = await pending_hints.match(query, pool)
+    return pending_hints.render(
+        [(hint, pending_hints.snippet(hint, query)) for hint in matched],
+        pending_hints.SEARCH_HEADING,
     )
 
 

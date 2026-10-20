@@ -20,7 +20,7 @@ from ..prompts.chat import (
     turn_note_messages,
 )
 from ..registry import ModelConfig
-from . import accounting, models
+from . import accounting, models, pending_hints
 
 EFFECTIVE_INPUT_LIMIT_TOKENS = 250_000
 PROTOCOL_SAFETY_MARGIN_TOKENS = 512
@@ -170,7 +170,9 @@ async def summarize_checkpoint(
     purpose: str = accounting.PURPOSE_CHECKPOINT,
     build: Callable[..., list[dict[str, str]]] = checkpoint_messages,
 ) -> str:
-    """Fold all supplied turns, using chronological batches when necessary."""
+    """Fold all supplied turns, using chronological batches when necessary.
+    Hints whose document was never read are not folded (pending_hints)."""
+    turns = [pending_hints.for_summary(turn) for turn in turns]
     memory = str(prior_summary or "").strip()
     batch: list[dict[str, Any]] = []
     for turn in turns:
