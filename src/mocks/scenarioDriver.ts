@@ -105,6 +105,20 @@ export function scenarioDriver(signal: AbortSignal, root: Document = document) {
       input.dispatchEvent(new Event('change', { bubbles: true }));
       return input;
     },
+    /** Shows a view of the workspace's right panel (Files, Chat, Study)
+     * through its title menu, as e2e/helpers/panelView.ts does. */
+    async panelView(name: string) {
+      const title = await wait(
+        () =>
+          [...root.querySelectorAll<HTMLElement>('[data-panel-title]')]
+            .filter(visible)
+            .at(-1),
+        'panel title'
+      );
+      if (title.textContent?.trim() === name) return;
+      activate(title);
+      activate(await button(name, '[role="menuitem"]'));
+    },
     async submit(selector = 'form') {
       const form = await element<HTMLFormElement>(selector);
       await wait(

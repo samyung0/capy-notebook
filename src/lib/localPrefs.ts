@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 /**
  * Display preferences one viewer keeps in this browser: list or grid views,
- * list sorts, the pinned file tree, which chapters are open. localStorage rather than
+ * list sorts, the workspace's side panels, which chapters are open. localStorage rather than
  * IndexedDB because the first render reads them synchronously, so nothing
  * flashes from the default. Values are JSON. Storage can be blocked (private
  * windows); reads then give the fallback and writes are dropped.
@@ -10,13 +10,16 @@ import { useState } from 'react';
  * Every key lives here so the stored set stays in one place.
  */
 export const PREF_KEYS = {
-  filesPinned: 'capy.workspace.filesPinned',
   filesView: 'capy.files.view',
+  /** The opened workspace's left panel (chats and files) is open. */
+  leftPanel: 'capy.workspace.leftPanel',
   /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
   mapFinishPlayed: 'capy.map.finishPlayed',
   openChapters: (workspaceId: string) =>
     `capy.workspace.openChapters.${workspaceId}`,
   recentsView: 'capy.recents.view',
+  /** The opened workspace's right panel (Files, Chat, Study) is open. */
+  rightPanel: 'capy.workspace.rightPanel',
   sort: (list: SortedList) => `capy.sort.${list}`,
 } as const;
 

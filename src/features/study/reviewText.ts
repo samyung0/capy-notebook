@@ -46,13 +46,7 @@ export function reviewReason(s: ReviewSuggestion): string {
   }
   const when = relativeTime(ev.lastPractisedAt);
   if (s.mode === 'learned') return m.review_reason_learned({ when });
-  if (ev.forgotten <= 1)
-    return m.review_reason_fading_one({ items: s.items, when });
-  return m.review_reason_fading({
-    forgotten: ev.forgotten,
-    items: s.items,
-    when,
-  });
+  return m.review_reason_fading({ when });
 }
 
 /** The group a suggestion or session names: its chapter, Others, or the

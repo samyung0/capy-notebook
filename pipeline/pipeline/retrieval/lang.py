@@ -173,6 +173,14 @@ for _lang, _words in _STOPWORDS.items():
 FUNCTION_WORDS = frozenset(_STOPWORD_LANG)
 
 
+def is_kana(ch: str) -> bool:
+    return _KANA[0] <= ord(ch) <= _KANA[1]
+
+
+def is_hangul(ch: str) -> bool:
+    return _HANGUL[0] <= ord(ch) <= _HANGUL[1]
+
+
 def is_cjk(ch: str) -> bool:
     code = ord(ch)
     return any(lo <= code <= hi for lo, hi in _CJK_RANGES)

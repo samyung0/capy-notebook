@@ -442,7 +442,7 @@ func TestInternalMaterialRefusesAnOverLongCard(t *testing.T) {
 		},
 	}
 	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "cards[1]: a flashcard front holds at most 4000 characters") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "cards[1]: a flashcard front holds at most 200 characters") {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
