@@ -2407,6 +2407,16 @@ def test_an_office_edit_receipt_says_which_characters_it_removed():
     )
 
 
+def test_an_edit_receipt_offers_undo_only_when_it_has_one():
+    """An edit the engine returned no inverse for has no Undo ref, so its
+    result does not promise one (Epo 2026-10-20)."""
+    undo = " The user can undo this edit from the chat result."
+    body = _receipt("edited", "source_file", "f_1")
+    assert undo not in tools._receipt_result(body).text()
+    body["effect"]["undo"] = {"operationId": "op_x", "status": "available"}
+    assert tools._receipt_result(body).text().endswith(undo)
+
+
 def test_an_edit_receipt_says_where_a_relocated_insert_landed():
     body = _receipt("edited", "material", "mat_1")
     body["effect"]["relocated"] = [

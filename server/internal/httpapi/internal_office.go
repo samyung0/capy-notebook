@@ -52,12 +52,12 @@ type officeCommand struct {
 	Text         string `json:"text"`
 }
 
-// namedNumberFormats are format_cells' preset number formats and the engine's
-// NumberFormatMutation tags (xlsx-ops formatting.rs); any other text is a
-// custom pattern.
+// namedNumberFormats are format_cells' preset number formats, matched in any
+// case, and the engine's NumberFormatMutation tags (xlsx-ops formatting.rs);
+// Excel's "General" is automatic, and any other text is a custom pattern.
 var namedNumberFormats = map[string]string{
-	"automatic": "automatic", "plain_text": "plainText", "number": "number", "percent": "percent",
-	"scientific": "scientific", "currency": "currency", "date": "date", "time": "time",
+	"automatic": "automatic", "general": "automatic", "plain_text": "plainText", "number": "number",
+	"percent": "percent", "scientific": "scientific", "currency": "currency", "date": "date", "time": "time",
 }
 
 var xlsxCommands = []string{
@@ -113,7 +113,7 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			if c.Wrap != nil {
 				style["textWrapping"] = map[bool]string{true: "wrap", false: "overflow"}[*c.Wrap]
 			}
-			if name, ok := namedNumberFormats[c.NumberFormat]; ok {
+			if name, ok := namedNumberFormats[strings.ToLower(c.NumberFormat)]; ok {
 				style["numberFormat"] = map[string]any{"type": name}
 			} else if c.NumberFormat != "" {
 				style["numberFormat"] = map[string]any{"type": "custom", "pattern": c.NumberFormat}
@@ -188,9 +188,9 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
-	if req.Format != "xlsx" && req.Format != "docx" {
+	if req.Format != "xlsx" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "invalid_input", "message": "create makes an xlsx or docx file; a deck is made with create_deck",
+			"code": "invalid_input", "message": "create makes an xlsx file; a deck is made with create_deck",
 		})
 		return
 	}
@@ -206,6 +206,10 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	chapterID, ok := a.agentChapter(w, r.Context(), req.ChapterID, req.WorkspaceID)
+	if !ok {
+		return
+	}
 	commands, err := NormalizeOfficeCommands(req.Format, req.Commands)
 	if err != nil {
 		a.failDocument(w, err)
@@ -217,7 +221,7 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	receipt, ok := a.storeAgentFile(w, r.Context(), agentFile{
-		name: name, chapterID: req.ChapterID, content: created.Content, op: op,
+		name: name, chapterID: chapterID, content: created.Content, op: op,
 	})
 	if ok {
 		writeJSON(w, http.StatusOK, store.DocumentEdit{AgentOperation: receipt, Notice: created.Notice})

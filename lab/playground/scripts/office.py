@@ -320,10 +320,10 @@ async def _create(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     """internalCreateOfficeDocument: the starter with the call's other
     commands, kept in the run instead of stored as an upload."""
     fmt = payload["format"]
-    if fmt not in ("xlsx", "docx"):
+    if fmt != "xlsx":
         raise Refusal(
             "invalid_input",
-            "create makes an xlsx or docx file; a deck is made with create_deck",
+            "create makes an xlsx file; a deck is made with create_deck",
         )
     title = " ".join(TITLE_UNSAFE.sub(" ", str(payload["title"])).split())
     if not title:

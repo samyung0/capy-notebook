@@ -1010,9 +1010,16 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             if effect.get("projectionPending")
             else ""
         )
+        # Only an edit whose receipt carries an Undo ref has one (an Office
+        # edit the engine returned no inverse for has none, Epo 2026-10-20).
+        undo_note = (
+            " The user can undo this edit from the chat result."
+            if effect.get("undo")
+            else ""
+        )
         text = (
             f"Edited '{title}' (id {rid}).{notice}{pending_note}{_relocations(effect)}"
-            f"{_block_ids(effect)} The user can undo this edit from the chat result."
+            f"{_block_ids(effect)}{undo_note}"
         )
     elif operation == "edit_undone":
         text = f"Reversed the earlier edit of '{title}' (id {rid})."

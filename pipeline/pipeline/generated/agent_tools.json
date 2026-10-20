@@ -1323,7 +1323,7 @@
     {
       "name": "edit_office_document",
       "version": 1,
-      "description": "Edit one Word, Excel or PowerPoint file, or create one, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly and the learner can undo them. A call's commands are at most 256 KB; split larger edits into several calls.",
+      "description": "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat. A call's commands are at most 256 KB; split larger edits into several calls.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1341,8 +1341,7 @@
                     },
                     "format": {
                       "enum": [
-                        "xlsx",
-                        "docx"
+                        "xlsx"
                       ],
                       "type": "string"
                     },
@@ -1373,11 +1372,11 @@
                         "items": {
                           "type": "string"
                         },
-                        "maxItems": 500,
+                        "maxItems": 10000,
                         "minItems": 1,
                         "type": "array"
                       },
-                      "maxItems": 500,
+                      "maxItems": 10000,
                       "minItems": 1,
                       "type": "array"
                     },
@@ -1400,11 +1399,11 @@
                         "items": {
                           "type": "string"
                         },
-                        "maxItems": 500,
+                        "maxItems": 10000,
                         "minItems": 1,
                         "type": "array"
                       },
-                      "maxItems": 500,
+                      "maxItems": 10000,
                       "minItems": 1,
                       "type": "array"
                     }

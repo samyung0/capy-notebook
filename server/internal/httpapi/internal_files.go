@@ -87,8 +87,12 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	chapterID, ok := a.agentChapter(w, r.Context(), req.ChapterID, req.WorkspaceID)
+	if !ok {
+		return
+	}
 	receipt, ok := a.storeAgentFile(w, r.Context(), agentFile{
-		name: name, chapterID: req.ChapterID, content: req.Content, provenance: req.Provenance, op: op,
+		name: name, chapterID: chapterID, content: req.Content, provenance: req.Provenance, op: op,
 	})
 	if ok {
 		writeJSON(w, http.StatusOK, receipt)
@@ -128,36 +132,44 @@ func (a *api) agentFileOperation(w http.ResponseWriter, r *http.Request, userID,
 	}, true
 }
 
-// agentFile is a file the chat agent made, ready to store under op.
-type agentFile struct {
-	name, chapterID string
-	content         []byte
-	provenance      *store.Provenance
-	op              store.AgentOperation
+// agentChapter checks a chat file's chapter before anything is built or
+// stored; "" files it in none (nil). A refusal is written to w and ok is
+// false.
+func (a *api) agentChapter(w http.ResponseWriter, ctx context.Context, chapterID, workspaceID string) (*string, bool) {
+	if chapterID == "" {
+		return nil, true
+	}
+	ok, err := a.s.ChapterInWorkspace(ctx, chapterID, workspaceID)
+	if err != nil {
+		a.fail(w, err)
+		return nil, false
+	}
+	if !ok {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": "invalid_input", "message": "chapterId is not a chapter of this workspace",
+		})
+		return nil, false
+	}
+	return &chapterID, true
 }
 
-// storeAgentFile lands an agent's file like an upload (the chapter, the
-// upload's size check, the blob, the files row, the parse job) with its
-// receipt, whose Undo trashes it. A refusal is written to w and ok is false.
+// agentFile is a file the chat agent made, ready to store under op in the
+// chapter agentChapter checked.
+type agentFile struct {
+	name       string
+	chapterID  *string
+	content    []byte
+	provenance *store.Provenance
+	op         store.AgentOperation
+}
+
+// storeAgentFile lands an agent's file like an upload (the upload's size
+// check, the blob, the files row, the parse job) with its receipt, whose Undo
+// trashes it. A refusal is written to w and ok is false.
 func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agentFile) (store.AgentOperation, bool) {
 	if a.blob == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "blob store not configured"})
 		return store.AgentOperation{}, false
-	}
-	var chapterID *string
-	if f.chapterID != "" {
-		ok, err := a.s.ChapterInWorkspace(ctx, f.chapterID, f.op.WorkspaceID)
-		if err != nil {
-			a.fail(w, err)
-			return store.AgentOperation{}, false
-		}
-		if !ok {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"code": "invalid_input", "message": "chapterId is not a chapter of this workspace",
-			})
-			return store.AgentOperation{}, false
-		}
-		chapterID = &f.chapterID
 	}
 	kind := kindFromName(f.name)
 	parseMode := sourceupload.DefaultParseMode(f.name, kind)
@@ -178,7 +190,7 @@ func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agent
 	}
 	op, created, err := a.s.CreateAgentFileOperation(ctx, store.AgentFileDraft{
 		WorkspaceID: f.op.WorkspaceID, ActorUserID: f.op.ActorUserID, Name: f.name, Kind: kind,
-		ChapterID: chapterID, SizeBytes: size, BlobPath: blobPath, Parser: a.parser,
+		ChapterID: f.chapterID, SizeBytes: size, BlobPath: blobPath, Parser: a.parser,
 		ParseMode: parseMode, Provenance: f.provenance,
 	}, f.op)
 	// Uncancelled: a pipeline timeout or disconnect that failed the insert

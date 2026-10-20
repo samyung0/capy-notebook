@@ -3,11 +3,13 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -179,5 +181,54 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), receipt.Effect.Resource.ID) ||
 		len(authority.sent("/internal/documents/create")) != 1 || fx.blobs(t) != 1 {
 		t.Fatalf("replay = %d %s", replay.Code, replay.Body.String())
+	}
+}
+
+// A viewer, an editor of another workspace, and a chapter not in the
+// workspace are refused before the collaboration server builds anything, and
+// nothing is stored.
+func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
+	fx := openDeckFiles(t)
+	ctx := context.Background()
+	authority := newOfficeAuthority(t, fx.st, map[string]string{
+		"/internal/documents/create": `{"content":"UEsDBA=="}`,
+	})
+	stranger := fmt.Sprintf("u_office_stranger_%d", time.Now().UnixNano())
+	if _, err := fx.st.Pool().Exec(ctx, `INSERT INTO users (id, name, email, plan_tier)
+		VALUES ($1, 'Stranger', $2, 'free')`, stranger, stranger+"@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	elsewhere, err := fx.st.CreateWorkspace(ctx, stranger, store.WorkspaceCreate{Name: "Elsewhere"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = fx.st.Pool().Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, elsewhere.ID)
+		_, _ = fx.st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, stranger)
+	})
+	for _, tc := range []struct {
+		name, user, ws, chapter string
+		status                  int
+	}{
+		{"viewer", fx.viewer, fx.ws, "", http.StatusNotFound},
+		{"editor of another workspace", fx.editor, elsewhere.ID, "", http.StatusNotFound},
+		{"chapter not in the workspace", fx.editor, fx.ws, "ch_elsewhere", http.StatusBadRequest},
+	} {
+		msgID := seedAssistantMessage(t, fx.st, tc.user, tc.ws)
+		rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, map[string]any{
+			"workspaceId": tc.ws, "userId": tc.user, "assistantMessageId": msgID, "toolCallId": "call_create",
+			"format": "xlsx", "title": "Grades", "chapterId": tc.chapter, "commands": []map[string]any{},
+		})
+		if rec.Code != tc.status {
+			t.Fatalf("%s: %d %s", tc.name, rec.Code, rec.Body.String())
+		}
+	}
+	var files int
+	if err := fx.st.Pool().QueryRow(ctx, `SELECT count(*) FROM files WHERE workspace_id = ANY($1)`,
+		[]string{fx.ws, elsewhere.ID}).Scan(&files); err != nil {
+		t.Fatal(err)
+	}
+	if built := len(authority.sent("/internal/documents/create")); built != 0 || files != 0 || fx.blobs(t) != 0 {
+		t.Fatalf("built %d, files %d, blobs %d", built, files, fx.blobs(t))
 	}
 }

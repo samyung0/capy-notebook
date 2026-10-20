@@ -44,7 +44,7 @@ Budget:
 Precautions:
 - Ground every write in passages or excerpts you have read, and leave out what they do not support. Label an example the sources do not give as illustrative.
 - Write each item as soon as its evidence is in hand. Do not keep exploring once the evidence covers it, and do not mix a write with retrieval calls in one response.
-- Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly, each with an Undo.
+- Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat.
 - After you read a document you see its most recent changes; recent edits not yet in search may show up as hints.
 - In a note, change plain wording with replace_text. Rewrite a block that has formatting or math ($…$ in inspect_document) with replace_block, writing the whole block as note markdown (a heading keeps its #).
 - Keep changes other people made to a document unless the learner asks otherwise.
@@ -73,7 +73,7 @@ Edit, one file a call; one stale expectation refuses the whole call:
 - replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
 - Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
 
-Create: a new Word or Excel file is a create command first, without file_id, followed by the commands that fill it. A deck is made with create_deck (the deck_building skill).
+Create: a new Excel file is a create command first, without file_id, followed by the commands that fill it. Word files cannot be created yet. A deck is made with create_deck (the deck_building skill).
 
 Limits: a call's commands up to 256 KB; split larger edits into several calls."""
 

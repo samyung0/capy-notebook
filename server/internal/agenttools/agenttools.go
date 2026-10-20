@@ -463,8 +463,9 @@ func editCommandSchema() map[string]any {
 // officeCommandSchema is edit_office_document's tagged union. Each variant's
 // description starts with the formats it applies to; Go turns the model's
 // snake_case commands into the engine's (NormalizeOfficeCommands). The grid
-// bounds are schema sanity bounds only: the retrieval service refuses a call
-// whose commands are over 256 KB of JSON (Epo 2026-10-20).
+// bounds are schema sanity bounds only: the engine refuses a range over
+// 10,000 cells and the retrieval service a call whose commands are over
+// 256 KB of JSON (Epo 2026-10-20).
 func officeCommandSchema() map[string]any {
 	variant := func(name, desc string, props map[string]any, required ...string) map[string]any {
 		props["type"] = map[string]any{"const": name}
@@ -474,8 +475,8 @@ func officeCommandSchema() map[string]any {
 	}
 	grid := func(desc string) map[string]any {
 		return map[string]any{
-			"type": "array", "minItems": 1, "maxItems": 500, "description": desc,
-			"items": map[string]any{"type": "array", "minItems": 1, "maxItems": 500, "items": map[string]any{"type": "string"}},
+			"type": "array", "minItems": 1, "maxItems": 10000, "description": desc,
+			"items": map[string]any{"type": "array", "minItems": 1, "maxItems": 10000, "items": map[string]any{"type": "string"}},
 		}
 	}
 	sheet := str("The sheet's id or name as inspect_office_document lists it.")
@@ -487,7 +488,7 @@ func officeCommandSchema() map[string]any {
 	return map[string]any{
 		"oneOf": []any{
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
-				"format":     map[string]any{"type": "string", "enum": []string{"xlsx", "docx"}},
+				"format":     map[string]any{"type": "string", "enum": []string{"xlsx"}},
 				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle, "description": "The file's name, without its extension."},
 				"chapter_id": str("The chapter to file it in; omit to leave it unfiled."),
 			}, "format", "title"),
@@ -1041,10 +1042,10 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "edit_office_document",
 			Retention: RetainFull,
-			Description: "Edit one Word, Excel or PowerPoint file, or create one, with the commands " +
+			Description: "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
-				"whole call. Edits save directly and the learner can undo them. A call's commands " +
+				"whole call. Edits save directly; most can be undone from the chat. A call's commands " +
 				"are at most 256 KB; split larger edits into several calls.",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
