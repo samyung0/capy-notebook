@@ -151,12 +151,12 @@ func expectUnreadable(t *testing.T, h http.Handler, reads []unreadableRead) {
 	}
 }
 
-// Study reads a quiz's stored content to rate, check and rank its questions:
-// once a rule refuses it, the workspace's Study tab, its attempts, a new or
-// resumed review, Learning's Review tab, and rating or checking
-// one of its questions answer 422 material_content_unreadable, never a 500
-// (Epo 2026-10-20). Fails if any of those routes maps the error to a 500.
-func TestStudyOfAQuizARuleRefusesIsUnreadable(t *testing.T) {
+// A quiz whose stored content the rules refuse is left out of the Study tab,
+// its attempts, a new or resumed review and Learning's Review tab, which show
+// everything else with 200, while rating or checking one of its questions
+// (opening the item) answers 422 material_content_unreadable (Epo
+// 2026-10-20). Fails if a study page refuses whole or lists the broken quiz.
+func TestStudyLeavesOutAQuizARuleRefuses(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
 	pool := st.Pool()
@@ -173,46 +173,80 @@ func TestStudyOfAQuizARuleRefusesIsUnreadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	quiz, err := st.CreateMaterial(ctx, store.Material{
-		CreatedBy: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "quiz", Title: "Broken later",
-		Content: content, Privacy: "private",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if rec := doReq(t, h, http.MethodPut, "/api/workspaces/"+ws.ID+"/study/enabled", "u_owner",
 		map[string]any{"enabled": true}); rec.Code != http.StatusNoContent {
 		t.Fatalf("study on = %d %s", rec.Code, rec.Body.String())
 	}
-	answers := map[string]any{"q1:part:1": true, "q2:part:1": true}
-	if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/attempts", "u_owner",
-		map[string]any{"answers": answers}); rec.Code != http.StatusCreated {
-		t.Fatalf("attempt = %d %s", rec.Code, rec.Body.String())
+	quiz := func(title string) string {
+		t.Helper()
+		created, err := st.CreateMaterial(ctx, store.Material{
+			CreatedBy: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "quiz", Title: title,
+			Content: content, Privacy: "private",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		answers := map[string]any{"q1:part:1": true, "q2:part:1": true}
+		if rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+created.ID+"/attempts", "u_owner",
+			map[string]any{"answers": answers}); rec.Code != http.StatusCreated {
+			t.Fatalf("attempt = %d %s", rec.Code, rec.Body.String())
+		}
+		return created.ID
 	}
-	// A review session left after its first answer, to resume.
+	good, broken := quiz("Good"), quiz("Broken later")
+	// A review session over both, left after its first answer, to resume.
 	const session = "6f1c2a8e-0000-4000-8000-000000000001"
+	items := []any{}
+	for _, id := range []string{good, broken} {
+		for _, item := range []string{"q1", "q2"} {
+			items = append(items, map[string]any{"materialId": id, "itemId": item})
+		}
+	}
 	if rec := doReq(t, h, http.MethodPost, "/api/review/check", "u_owner", map[string]any{
-		"materialId": quiz.ID, "itemId": "q1", "answers": map[string]any{"q1:part:1": true},
-		"session": map[string]any{"id": session, "workspaceId": ws.ID, "group": "workspace", "items": []any{
-			map[string]any{"materialId": quiz.ID, "itemId": "q1"}, map[string]any{"materialId": quiz.ID, "itemId": "q2"},
-		}},
+		"materialId": good, "itemId": "q1", "answers": map[string]any{"q1:part:1": true},
+		"session": map[string]any{"id": session, "workspaceId": ws.ID, "group": "workspace", "items": items},
 	}); rec.Code != http.StatusOK {
 		t.Fatalf("first review answer = %d %s", rec.Code, rec.Body.String())
 	}
 	stored := `{"schemaVersion":1,"value":[{"type":"p","id":"p1","children":[{"text":"say "},` +
 		`{"type":"mention","value":"Ada","children":[{"text":"hidden"}]},{"text":""}]}]}`
 	// A new revision, so no parsed copy of the old content answers for it.
-	if _, err := pool.Exec(ctx, `UPDATE materials SET content=$2::jsonb, revision=revision+1 WHERE id=$1`, quiz.ID, stored); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE materials SET content=$2::jsonb, revision=revision+1 WHERE id=$1`, broken, stored); err != nil {
 		t.Fatal(err)
 	}
+
+	// The summary's progress rows are marks, not content: only its review
+	// count and Quick review are checked below.
+	for _, path := range []string{
+		"/api/workspaces/" + ws.ID + "/study/attempts",
+		"/api/workspaces/" + ws.ID + "/review",
+		"/api/review/sessions/" + session,
+		"/api/review/overview",
+	} {
+		rec := doReq(t, h, http.MethodGet, path, "u_owner", nil)
+		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), broken) {
+			t.Errorf("%s = %d %s, want 200 without the broken quiz", path, rec.Code, rec.Body.String())
+		}
+		if path != "/api/review/overview" && !strings.Contains(rec.Body.String(), good) {
+			t.Errorf("%s = %s, want the good quiz", path, rec.Body.String())
+		}
+	}
+	rec := doReq(t, h, http.MethodGet, "/api/workspaces/"+ws.ID+"/study", "u_owner", nil)
+	var summary struct {
+		Reviewable  int
+		QuickReview []struct{ MaterialID string } `json:"quickReview"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &summary); rec.Code != http.StatusOK || err != nil || summary.Reviewable != 2 {
+		t.Errorf("study = %d, reviewable %d (%v), want 200 and the good quiz's 2 questions", rec.Code, summary.Reviewable, err)
+	}
+	for _, it := range summary.QuickReview {
+		if it.MaterialID == broken {
+			t.Errorf("Quick review holds the broken quiz")
+		}
+	}
 	expectUnreadable(t, h, []unreadableRead{
-		{http.MethodGet, "/api/workspaces/" + ws.ID + "/study", "u_owner", nil},
-		{http.MethodGet, "/api/workspaces/" + ws.ID + "/study/attempts", "u_owner", nil},
-		{http.MethodGet, "/api/workspaces/" + ws.ID + "/review", "u_owner", nil},
-		{http.MethodGet, "/api/review/sessions/" + session, "u_owner", nil},
-		{http.MethodGet, "/api/review/overview", "u_owner", nil},
-		{http.MethodPost, "/api/review/ratings", "u_owner", map[string]any{"materialId": quiz.ID, "itemId": "q1", "rating": 3}},
-		{http.MethodPost, "/api/review/check", "u_owner", map[string]any{"materialId": quiz.ID, "itemId": "q1", "answers": map[string]any{}}},
+		{http.MethodPost, "/api/review/ratings", "u_owner", map[string]any{"materialId": broken, "itemId": "q1", "rating": 3}},
+		{http.MethodPost, "/api/review/check", "u_owner", map[string]any{"materialId": broken, "itemId": "q1", "answers": map[string]any{}}},
 	})
 }
 

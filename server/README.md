@@ -21,6 +21,10 @@ go mod tidy                        # resolve deps + write go.sum (first run)
 go run ./cmd/api
 ```
 
+The gateway refuses to start without `APP_ENV` (`development` here; the e2e and
+prod compose files set `e2e` and `production`), so local-only behaviour
+(`AUTH_DISABLED`, API docs, the demo seed) never comes from a missing value.
+
 ## Test
 
 From the repository root:
@@ -45,6 +49,10 @@ pnpm api:docs
 This serves the checked-in `openapi.yaml` at `http://localhost:3000`, so it does
 not require Go. When Go is available and the contract needs regeneration, use
 `pnpm api:docs:generate` instead.
+
+A gateway running with `APP_ENV=development` also serves live docs at `/docs`
+and the spec at `/openapi.yaml`; deployed environments and the e2e stack serve
+neither (openwiki/deployment-runbook.md §10).
 
 `pnpm gen:api:full` regenerates OpenAPI, the Python `Surface` enum, and the
 Orval TypeScript bindings. Frontend code imports generated contracts through

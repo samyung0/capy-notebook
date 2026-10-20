@@ -28,7 +28,7 @@ const migrateLockKey int64 = 0x65766f6d696731 // Stable advisory lock across rel
 // ShouldApplyDevSeed reports whether this process should load the local demo
 // rows. Production, UAT, and e2e stay empty of Kate Malone.
 func ShouldApplyDevSeed(appEnv string) bool {
-	return appEnv == "" || appEnv == "development"
+	return appEnv == "development"
 }
 
 // MigrationFileStatus is one migration file in the validated execution plan.
