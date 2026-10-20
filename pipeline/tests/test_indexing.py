@@ -261,8 +261,8 @@ def _note(ws) -> str:
     with psycopg.connect(ws.dsn, autocommit=True) as conn:
         conn.execute(
             "INSERT INTO materials (id, workspace_id, owner_user_id, created_by, kind, title) "
-            "VALUES (%s, %s, %s, %s, 'note', 'Topics')",
-            (material_id, ws.id, ws.user_id, ws.user_id),
+            "VALUES (%s, %s, %s, %s, 'note', %s)",
+            (material_id, ws.id, ws.user_id, ws.user_id, material_id),
         )
     return material_id
 
