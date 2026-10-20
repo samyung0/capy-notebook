@@ -443,6 +443,7 @@ func main() {
 		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
 		MailSender:             emailSender,
 		ReleaseSHA:             env("RELEASE_SHA", ""),
+		APIDocs:                appEnv == "development",
 		ClerkSecretKey:         clerkSecret,
 		ClerkWebhookSecret:     clerkWebhookSecret,
 		AuthDisabled:           authDisabled,

@@ -16,7 +16,7 @@ import (
 
 func validationRouter() http.Handler {
 	router := chi.NewRouter()
-	api := humachi.New(router, humaConfig())
+	api := humachi.New(router, humaConfig(false))
 	registerRoutes(api, &api2{})
 	return router
 }
