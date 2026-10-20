@@ -28,11 +28,11 @@ func TestMigrationFilesAreNumbered(t *testing.T) {
 }
 
 func TestShouldApplyDevSeed(t *testing.T) {
-	if !ShouldApplyDevSeed("development") || !ShouldApplyDevSeed("") {
+	if !ShouldApplyDevSeed("development") {
 		t.Fatal("local/dev must seed")
 	}
-	if ShouldApplyDevSeed("production") || ShouldApplyDevSeed("e2e") {
-		t.Fatal("prod and e2e must not seed")
+	if ShouldApplyDevSeed("production") || ShouldApplyDevSeed("e2e") || ShouldApplyDevSeed("") {
+		t.Fatal("prod, e2e and a missing APP_ENV must not seed")
 	}
 }
 

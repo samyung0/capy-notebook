@@ -28,7 +28,8 @@
 # omitted on purpose: an empty string from compose interpolation would override
 # the code defaults (text in development, json otherwise).
 x-observability: &observability
-  APP_ENV: ${APP_ENV:-development}
+  # This stack is local development; the e2e and prod files name their own.
+  APP_ENV: development
   RELEASE_SHA: ${RELEASE_SHA:-}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
   # The Sentry environment tag. Empty falls back to APP_ENV in code; UAT sets

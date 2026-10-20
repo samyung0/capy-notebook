@@ -123,7 +123,8 @@ pnpm email:build
 ```
 
 The Go binary and the Python worker do not auto-load `deploy/.env`. Export it
-first: `set -a; . deploy/.env; set +a`.
+first: `set -a; . deploy/.env; set +a`. The gateway refuses to start without
+`APP_ENV`; `deploy/.env.example` sets `development`.
 
 ## Developing betteroffice
 
