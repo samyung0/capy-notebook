@@ -4086,11 +4086,13 @@ sub/superscript and CJK folds), with the query from `search_query_terms`;
 each `to_tsvector` is computed once. A hint matches in its document's language
 (Epo 2026-10-20): the dominant language of the document's indexed chunks (one
 query per load), else one detection over the document's pending changes
-together. While a document's language stays undetermined (`simple`, which keeps
-every word), the query's words on Postgres's English, French, German and
-Spanish stopword lists (`ts_lexize` on their snowball dictionaries) are dropped
-before matching it, so "What is the formula?" no longer matches any edit
-holding "the". The candidates are prepared once per load of the turn's pending
+together. For a document under the `simple` config, which keeps every word
+(Chinese, Japanese, Korean, or a language that stays undetermined), the
+query's words on Postgres's English stopword list (`ts_lexize` on
+`english_stem`) are dropped before matching it, so "What is the formula?" no
+longer matches any edit holding "the" (Epo 2026-10-20). Only English: the
+French, German and Spanish lists dropped English content words such as "war"
+and "die". The candidates are prepared once per load of the turn's pending
 changes, the tokenizing and detection in a worker thread. A candidate is an
 added or changed text (its new text), a removed one (its old text), or a change
 without text by its label, read up to 500 characters; moves are left out, and

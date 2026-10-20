@@ -69,7 +69,7 @@ class _Prepared:
     hint: Hint
     tokens: str  # the text through the search tokenizer
     config: str  # its document's language's text search config
-    undetermined: bool  # its document's language is not known
+    simple: bool  # its config is simple (CJK or undetermined): keeps every word
 
 
 def candidates(sources: Any) -> list[Hint]:
@@ -155,7 +155,7 @@ def _prepare(hints: list[Hint], indexed: dict[str, str]) -> list[_Prepared]:
             hint,
             tokenize_for_search(hint.text),
             TS_CONFIG[langs[hint.doc_id]],
-            langs[hint.doc_id] == UND,
+            TS_CONFIG[langs[hint.doc_id]] == "simple",
         )
         for hint in hints
     ]
@@ -201,10 +201,12 @@ async def match(
 ) -> list[Hint]:
     """The best lexical matches of ``query`` among ``pool``: the search
     tokenizer (ligature, sub/superscript and CJK folds) on both sides and each
-    document's language's text search config. For a document of undetermined
-    language the query's words on Postgres's English, French, German and
-    Spanish stopword lists are dropped first (Epo 2026-10-20): its ``simple``
-    config keeps every word, so "the" would match almost anything."""
+    document's language's text search config. For a document under the
+    ``simple`` config (Chinese, Japanese, Korean or undetermined) the query's
+    words on Postgres's English stopword list are dropped first (Epo
+    2026-10-20): ``simple`` keeps every word, so "the" would match almost
+    anything. Only English: the French, German and Spanish lists dropped
+    English content words such as "war" and "die"."""
     any_of = search_query_terms(query).any_of
     if not pool or not any_of:
         return []
@@ -214,22 +216,20 @@ async def match(
             """WITH plain AS (
                 SELECT coalesce(string_agg(w, ' or '), '') AS q
                 FROM unnest(string_to_array(%(any)s, ' or ')) AS w
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM unnest(ARRAY['english_stem', 'french_stem',
-                        'german_stem', 'spanish_stem']::regdictionary[]) AS d
-                    WHERE ts_lexize(d, lower(w)) = '{}'::text[])),
+                WHERE ts_lexize('english_stem'::regdictionary, lower(w))
+                    IS DISTINCT FROM '{}'::text[]),
             m AS MATERIALIZED (
                 SELECT c.ord, to_tsvector(c.cfg, c.t) AS v,
-                    websearch_to_tsquery(c.cfg, CASE WHEN c.und THEN plain.q ELSE %(any)s END) AS q
-                FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(und)s::boolean[])
-                    WITH ORDINALITY AS c(t, cfg, und, ord)
+                    websearch_to_tsquery(c.cfg, CASE WHEN c.simple THEN plain.q ELSE %(any)s END) AS q
+                FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(simple)s::boolean[])
+                    WITH ORDINALITY AS c(t, cfg, simple, ord)
                 CROSS JOIN plain)
             SELECT ord FROM m WHERE v @@ q ORDER BY ts_rank(v, q) DESC, ord LIMIT %(limit)s""",
             {
                 "any": any_of,
                 "texts": [p.tokens for p in pool],
                 "cfgs": [p.config for p in pool],
-                "und": [p.undetermined for p in pool],
+                "simple": [p.simple for p in pool],
                 "limit": limit,
             },
         )

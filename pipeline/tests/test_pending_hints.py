@@ -364,9 +364,41 @@ async def test_matching_folds_like_search_in_each_documents_language(workspace):
     assert await ids("细胞分裂") == {"cjk"}
     assert await ids("enzyme") == {"stem", "und"}
     assert await ids("volcano") == set()
-    # f_1's language is undetermined: the query's stopwords are dropped, so
+    # f_1's language is undetermined: the query's English stopwords are
+    # dropped, so
     # "the" no longer matches "Added the enzyme diagram" (Epo 2026-10-20).
     assert await ids("What is the formula?") == set()
+
+
+@pytest.mark.integration
+async def test_simple_config_documents_drop_only_english_stopwords(workspace):
+    """Epo 2026-10-20 (review hints-r3 R6): CJK documents drop the query's
+    English stopwords too, and undetermined ones drop no other language's."""
+    chinese = workspace.add_file("chinese.pdf")
+    _index_as(workspace, chinese, "zh")
+    sources = pending.PendingSources(
+        [
+            _file(chinese, _change("add", after="第三章 the end", cid="zh")),
+            _file(
+                "f_1",
+                _change("add", after="World War II casualties", cid="war"),
+                _change("add", after="cells die by apoptosis", cid="die"),
+            ),
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+    assert {p.hint.change_id: (p.config, p.simple) for p in pool} == {
+        "zh": ("simple", True),
+        "war": ("simple", True),
+        "die": ("simple", True),
+    }
+
+    async def ids(query):
+        return {hint.change_id for hint in await pending_hints.match(query, pool)}
+
+    assert "zh" not in await ids("what is the derivative")
+    assert await ids("the war of 1812") == {"war"}
+    assert await ids("how does a cell die") == {"die"}
 
 
 def test_a_snippet_is_placed_by_the_longest_query_word():
