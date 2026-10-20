@@ -3369,8 +3369,11 @@ and removes `browse_knowledge` and section reading (`read_knowledge` takes an
 stay shuffled, and `add_questions` and the editing skill say never to refer to
 an option by its letter or position. Version 32 (2026-10-20) adds
 `inspect_office_document` and `edit_office_document` and takes `set_cell` and
-Office targets out of `edit_document`. Go and the pipeline deploy
-together. `cmd/openapi -agent-tools`
+Office targets out of `edit_document`. Version 33 (2026-10-21) gives
+`create_material`, `add_questions` (a new quiz) and `create_deck` a `sources`
+made-from line of plain strings instead of an id scope, and lets
+`search_workspace`'s `file_ids` take any workspace item. Go and the pipeline
+deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.

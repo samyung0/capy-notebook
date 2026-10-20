@@ -93,10 +93,10 @@ import (
 // and edited or created with edit_office_document, offered once the
 // office_building skill is read (Epo 2026-10-20); edit_document loses set_cell
 // and its replace_text takes notes and text sources only.
-// v32 (also): create_material, add_questions (a new quiz) and create_deck take
+// v33: create_material, add_questions (a new quiz) and create_deck take
 // sources, a made-from line of plain strings, instead of an id scope;
 // search_workspace's file_ids take any workspace item (Epo 2026-10-21).
-const ContractVersion = 32
+const ContractVersion = 33
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
