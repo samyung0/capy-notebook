@@ -378,7 +378,7 @@ async def _run_turn(
 
     # Pending changes reach the agent in the tool result of a read of their
     # document (pending.PendingSources.for_read); none are sent up front.
-    reported_omitted = 0
+    reported_omitted: set[str] = set()
     try:
         await ctx.pending_sources.validate()
         messages, replacement = await _admit_checkpoint(
@@ -511,9 +511,9 @@ async def _run_turn(
                 )
             )
             outside = image_tokens + context_tokens
-            if len(ctx.pending_sources.omitted_ids) != reported_omitted:
+            if not ctx.pending_sources.omitted_ids <= reported_omitted:
                 # A read's changes were too large to pass on: offer Process.
-                reported_omitted = len(ctx.pending_sources.omitted_ids)
+                reported_omitted |= ctx.pending_sources.omitted_ids
                 yield ctx.pending_sources.event(True)
             await ctx.pending_sources.validate()
             messages = await compact.compact_messages(
@@ -1028,10 +1028,11 @@ def _append_turn_context(
 ) -> None:
     """Send this call's turn context last and keep it where it was sent.
 
-    Each request then extends the previous one exactly. GLM-5.3-Flash reuses
-    its cache only at the end of an earlier request, so a context that moved
-    or changed in place would leave every later step uncached. A context not
-    yet followed by a step is replaced.
+    Each request then extends the previous one exactly, so all of it is a
+    cached prefix: providers reuse any shared prefix (GLM on Z.AI measured
+    2026-10-20), and a context that moved or changed in place would leave
+    every step after its old place uncached. A context not yet followed by a
+    step is replaced.
     """
     if messages and messages[-1].get("_kind") == "turn_context":
         messages[-1] = message

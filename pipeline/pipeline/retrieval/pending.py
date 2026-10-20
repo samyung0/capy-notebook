@@ -24,6 +24,12 @@ NOTICE = (
     "the latest edits."
 )
 
+# What a read gets in place of changes over READ_PENDING_TOKENS.
+READ_OMITTED = (
+    "This document has pending edits larger than a read carries, so they were "
+    "left out. Process file changes to include them."
+)
+
 
 class SourceChanged(RuntimeError):
     code = "source_changed"
@@ -137,21 +143,21 @@ class PendingSources:
             body = (body + "\n" + NOTICE).strip()
         return body
 
-    def message(self, *, omitted: bool = False) -> dict[str, Any] | None:
+    def message(self) -> dict[str, Any] | None:
         """Generation's message with every scoped change: it reads its whole
         scope."""
         if not self.pending:
             return None
-        if omitted:
-            body = (
-                NOTICE
-                + " Exact pending edits were omitted because they exceed the model input limit."
-            )
-        else:
-            body = self._evidence(
-                self.shown_files, self.shown_notes, self._unread_shown
-            )
+        body = self._evidence(self.shown_files, self.shown_notes, self._unread_shown)
         return {"role": "user", "content": body, "_kind": "pending_sources"}
+
+    def carry(self, previous: PendingSources, changed: str | None) -> None:
+        """Keep what this turn already read, passed on and omitted across a
+        reload; the document the turn just changed passes its new changes on
+        at its next read."""
+        self.read_ids = previous.read_ids
+        self._delivered = previous._delivered - {changed}
+        self.omitted_ids = set(previous.omitted_ids)
 
     def for_read(self, document_id: str) -> str:
         """The changes a chat read of this document appends to its own tool
@@ -169,10 +175,7 @@ class PendingSources:
         body = self._evidence(files, notes, unread)
         if estimate_tokens(body) > READ_PENDING_TOKENS:
             self.omitted_ids.add(document_id)
-            return (
-                NOTICE
-                + " Exact pending edits were omitted because they exceed the model input limit."
-            )
+            return READ_OMITTED
         return body
 
     def event(self, omitted: bool) -> dict[str, Any]:

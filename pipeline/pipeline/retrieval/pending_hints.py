@@ -346,7 +346,10 @@ def for_summary(item: dict[str, Any]) -> dict[str, Any] | None:
     tail = item.get("_hint_tail")
     if tail:
         # A search result's unindexed edits (tools.limit_tool_result's tail).
-        content = str(item.get("content") or "").removesuffix("\n\n" + tail)
+        # rpartition: a notice appended after the tail (agent.py's
+        # last-with-tools notice) must not keep the edits in.
+        head, cut, after = str(item.get("content") or "").rpartition("\n\n" + tail)
+        content = head + after if cut else str(item.get("content") or "")
         return {k: v for k, v in item.items() if k != "_hint_tail"} | {
             "content": content
         }

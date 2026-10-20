@@ -410,18 +410,25 @@ async def test_a_turn_fold_with_only_the_hint_older_leaves_the_turn(monkeypatch)
 
 async def test_condensing_drops_a_searchs_listed_edits(monkeypatch):
     """Review hints-r2 H2: edits a search listed are hints too; the turn
-    fold summarizes the search result without them."""
+    fold summarizes the search result without them, also with the
+    last-with-tools notice after them (r3 R5), and keeps the turn's own hint
+    message after its query (r3 M3)."""
     tail = (
         pending_hints.SEARCH_HEADING + "\n<source>\n- never-read note edit\n</source>"
     )
+    query = {"role": "user", "content": "q", "_kind": "query"}
+    hint = pending_hints.message(
+        pending_hints.unpack(_packed(_sources(_change("add", after="x", cid="a"))))
+    )
     turn = [
         {"role": "system", "content": "sys"},
-        {"role": "user", "content": "q", "_kind": "query"},
+        query,
+        hint,
         {"role": "assistant", "content": "", "tool_calls": [{"id": "1"}]},
         {
             "role": "tool",
             "tool_call_id": "1",
-            "content": "passages\n\n" + tail,
+            "content": "passages\n\n" + tail + "\n\nLast notice.",
             "_hint_tail": tail,
         },
         {"role": "assistant", "content": "", "tool_calls": [{"id": "2"}]},
@@ -436,6 +443,24 @@ async def test_condensing_drops_a_searchs_listed_edits(monkeypatch):
         return "note"
 
     monkeypatch.setattr(compact, "_summarize_batch", summarize)
-    await compact._fold_turn(turn, 1, _spec(), None)
+    folded_turn = await compact._fold_turn(turn, 1, _spec(), None)
     text = " ".join(str(m.get("content")) for m in folded)
-    assert "passages" in text and "never-read note edit" not in text
+    assert "passages" in text and "Last notice." in text
+    assert "never-read note edit" not in text
+    assert folded_turn[1:3] == [query, hint]
+
+
+def test_an_undetected_first_edit_takes_the_language_of_the_documents_edits():
+    """Review hints-r3 M20: one detection over a document's edits together."""
+    english = (
+        "The mitochondria produce most of the chemical energy that powers the "
+        "cell, and this process is called cellular respiration."
+    )
+    hints = pending_hints.candidates(
+        _sources(
+            _change("add", after="42", cid="n"),
+            _change("add", after=english, cid="e"),
+        )
+    )
+    configs = {p.hint.change_id: p.config for p in pending_hints._prepare(hints, {})}
+    assert configs == {"n": "english", "e": "english"}

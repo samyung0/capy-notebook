@@ -421,10 +421,12 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     )
     edits = await _unindexed_edits(query, ctx, ids)
+    if not passages and edits:
+        # Still a tail, so condensing drops the listed edits.
+        return ToolResult(text_parts=["No indexed passages matched."], tail=edits)
     if not passages:
         return _result(
-            edits
-            or "No passages matched. Try different wording, or list_sources first."
+            "No passages matched. Try different wording, or list_sources first."
         )
     return ToolResult(
         passages=passages,
@@ -1812,14 +1814,15 @@ async def _after_lifecycle_change(
     ctx._scope_outline = None
     if trashed and kind == "source_file" and ctx.file_ids is not None:
         ctx.file_ids = [fid for fid in ctx.file_ids if fid != rid]
-    await _reload_pending(ctx)
+    await _reload_pending(ctx, rid)
 
 
-async def _reload_pending(ctx: ToolContext) -> None:
-    """Re-read the turn's pending changes, keeping which documents it read."""
-    read_ids = ctx.pending_sources.read_ids
+async def _reload_pending(ctx: ToolContext, changed: str) -> None:
+    """Re-read the turn's pending changes after it changed a document,
+    keeping what it read, passed on and omitted (PendingSources.carry)."""
+    previous = ctx.pending_sources
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
-    ctx.pending_sources.read_ids = read_ids
+    ctx.pending_sources.carry(previous, changed)
 
 
 def _chat_context(ctx: ToolContext, call_id: str) -> dict[str, Any]:
@@ -2185,7 +2188,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         # pending evidence so the next source-dependent call sees the edit.
         ctx._scope_outline = None
         if kind == "source_file":
-            await _reload_pending(ctx)
+            await _reload_pending(ctx, rid)
         else:
             landed(ctx, credited)
             _saw_edit(ctx.seen_blocks.get(rid, {}), commands)

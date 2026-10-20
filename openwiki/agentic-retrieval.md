@@ -4068,7 +4068,13 @@ after its system instructions. In chat, a read appends its document's exact
 changes to its own tool result, once per turn, after the result's clip
 (`PendingSources.for_read`): nothing earlier in the conversation changes, so
 earlier requests stay a cached prefix (providers reuse any shared prefix; a
-message near the top that grew with each read re-billed the whole history). `resolve_source_change` stays offered when any captured change has a
+message near the top that grew with each read re-billed the whole history).
+An `inspect_document` result is kept in full (`retention: full`), so its
+appended changes stay in the conversation history with it; `read_document`
+and `capture_page` keep none. When the turn changes a source (an edit, a
+trash or restore), the pending changes are re-read and the turn keeps what it
+already read, passed on and omitted (`PendingSources.carry`); only the changed
+document passes its new changes on at its next read. `resolve_source_change` stays offered when any captured change has a
 placeholder (the tools are fixed for the turn) and refuses one in a document
 not read yet.
 
@@ -4164,10 +4170,12 @@ are checked with the files'; a failed read keeps the turn going, with the
 outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
 omitted note change waits for its reindex.
 
-A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`) are omitted: the
-read gets the outdated notice saying exact edits were omitted, the changes
-stay durable, and the user gets a `pending_sources` event naming the read file,
-for which the UI offers Process file changes. Generation uses the
+A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`, Epo 2026-10-20)
+are omitted: the read says the document's pending edits are larger than a
+read carries and can be processed (`READ_OMITTED`), the changes stay durable,
+and once the turn's set of omitted files grows the user gets a
+`pending_sources` event naming all of them, for which the UI offers Process
+file changes. Generation uses the
 same evidence for its whole scope and returns `pending_sources_too_large`
 with the edited file ids (`fileIds`, which Process file changes sends) and
 note ids (`materialIds`, which wait for their reindex) only when it cannot

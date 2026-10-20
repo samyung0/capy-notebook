@@ -11,7 +11,7 @@ from pathlib import Path
 import pymupdf
 import pytest
 
-from pipeline.retrieval import capture, tools
+from pipeline.retrieval import capture, pending, tools
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.tools import ToolContext
 
@@ -87,11 +87,34 @@ async def test_capture_refuses_files_outside_the_scope(rendered):
 
 async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     ctx = _ctx(1, 2)
+    ctx.pending_sources = pending.PendingSources(
+        [
+            {
+                "fileId": "f_1",
+                "name": "bio.pdf",
+                "epoch": 1,
+                "checkpoint": 2,
+                "indexedCheckpoint": 1,
+                "changes": [
+                    {
+                        "id": "c",
+                        "kind": "text",
+                        "operation": "replace",
+                        "before": "old",
+                        "after": "leaf relabelled",
+                    }
+                ],
+            }
+        ],
+        read_ids=set(),
+    )
     result = await tools._capture_page(
         {"file_id": "f_1", "page": 2, "bbox": [0, 0, 500, 500], "_tool_call_id": "c7"},
         ctx,
     )
     assert not result.refused and not result.passages
+    # A capture is a read: it passes the page's file changes on (r3 M17).
+    assert "leaf relabelled" in result.pending
     # The model is pointed at the number that already covers the page.
     assert "already in the evidence as [2]" in result.text()
     assert len(ctx.citations) == 2

@@ -59,8 +59,24 @@ def test_a_read_passes_its_documents_changes_on_once():
     assert sources.for_read("f_2") == ""  # no changes there
     large = _sources("exact" * 20_000)
     large.read_ids = set()
-    assert "omitted" in large.for_read("f_1")
+    assert large.for_read("f_1") == pending.READ_OMITTED
     assert large.event(True)["fileIds"] == ["f_1"]
+
+
+def test_a_reload_carries_what_the_turn_read_except_the_changed_document():
+    """Review hints-r3 R3: after the turn changes a document, its other reads
+    stay passed on and omitted; the changed one passes its changes on again."""
+    previous = _sources()
+    previous.read_ids = set()
+    previous.for_read("f_1")
+    previous.omitted_ids.add("f_big")
+    reloaded = _sources()
+    reloaded.carry(previous, "f_9")
+    assert reloaded.for_read("f_1") == ""
+    assert reloaded.omitted_ids == {"f_big"} and reloaded.read_ids == {"f_1"}
+    again = _sources()
+    again.carry(previous, "f_1")
+    assert "latest exact source" in again.for_read("f_1")
 
 
 async def test_generation_accepts_pending_only_sources_and_refuses_oversized_evidence(
