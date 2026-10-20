@@ -18,6 +18,7 @@
 //! number of them, and they close with it.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -37,7 +38,7 @@ use crate::observe::{Level, log};
 use crate::protocol::{self, Kind, Message};
 use crate::rate::{TimedOut, Verdict};
 use crate::room::{self, RoomCmd};
-use crate::seats::{Closing, Membership, Seat};
+use crate::seats::{Closing, Membership, Seat, Sending, Sent};
 
 /// A writer's access is revalidated at most this often per channel.
 const RECHECK: Duration = Duration::from_secs(5);
@@ -433,8 +434,9 @@ struct Connection {
 }
 
 /// Serves one socket; `_address` is its place among its client address's
-/// sockets, given back when it closes.
-pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
+/// sockets, given back when it closes, and `sent` says when its connection
+/// last moved bytes out.
+pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sent>) {
     let id = app.next_connection.fetch_add(1, Ordering::Relaxed);
     app.stats.connections.fetch_add(1, Ordering::Relaxed);
     let (outbox, mut out_rx) = Outbox::new();
@@ -473,7 +475,8 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
                 }
             }
             _ = ping.tick() => {
-                if socket.send(WsMessage::Ping(Default::default())).await.is_err() {
+                let ping = WsMessage::Ping(Default::default());
+                if !send(&mut socket, ping, &sent, silent, &connection.socket_id).await {
                     break;
                 }
             }
@@ -488,16 +491,17 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
                     continue;
                 }
                 log(Level::Info, "silent socket closed", json!({ "socket_id": connection.socket_id }));
-                let close = CloseFrame { code: 1001, reason: "silent".into() };
-                let _ = socket.send(WsMessage::Close(Some(close))).await;
+                let close = WsMessage::Close(Some(CloseFrame { code: 1001, reason: "silent".into() }));
+                send(&mut socket, close, &sent, silent, &connection.socket_id).await;
                 break;
             }
             Some(out) = out_rx.recv() => match out {
                 Out::Frame(frame) => {
                     let len = frame.len();
-                    let sent = socket.send(WsMessage::Binary(frame)).await;
+                    let frame = WsMessage::Binary(frame);
+                    let delivered = send(&mut socket, frame, &sent, silent, &connection.socket_id).await;
                     connection.outbox.sent(len);
-                    if sent.is_err() {
+                    if !delivered {
                         break;
                     }
                 }
@@ -534,14 +538,38 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat) {
                     continue;
                 }
                 log(Level::Warn, "socket closed before any join", json!({ "socket_id": connection.socket_id }));
-                let close = CloseFrame { code: 1008, reason: "no room joined".into() };
-                let _ = socket.send(WsMessage::Close(Some(close))).await;
+                let close = WsMessage::Close(Some(CloseFrame { code: 1008, reason: "no room joined".into() }));
+                send(&mut socket, close, &sent, silent, &connection.socket_id).await;
                 break;
             }
         }
     }
     connection.close_all().await;
     app.stats.connections.fetch_sub(1, Ordering::Relaxed);
+}
+
+/// Sends `message`: false when the socket must close, the send having failed
+/// or moved no bytes for the silent window (logged like the silent close;
+/// Epo 2026-10-20, rate-limit review r7).
+async fn send(
+    socket: &mut WebSocket,
+    message: WsMessage,
+    sent: &Sent,
+    silent: Duration,
+    socket_id: &str,
+) -> bool {
+    match crate::seats::watched(socket.send(message), sent, silent).await {
+        Sending::Sent => true,
+        Sending::Failed => false,
+        Sending::Stalled => {
+            log(
+                Level::Info,
+                "stalled socket closed",
+                json!({ "socket_id": socket_id }),
+            );
+            false
+        }
+    }
 }
 
 async fn sleep_until(deadline: Option<Instant>) {

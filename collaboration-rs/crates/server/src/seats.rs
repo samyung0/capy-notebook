@@ -3,13 +3,24 @@
 //! channels per user and per user and document (`socket.rs`), where a join
 //! past the cap closes the key's oldest joined channel instead. A [Seat] or
 //! [Membership] is held while its socket or channel lives and gives its
-//! place back when dropped.
+//! place back when dropped. A socket whose sends move no bytes for the
+//! silent window closes, giving its places back ([Sent], [watched]).
 
 use std::collections::{HashMap, VecDeque};
+use std::io;
+use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::task::{Context, Poll};
+use std::time::Duration;
 
+use axum::extract::connect_info::Connected;
+use axum::serve::{IncomingStream, Listener};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 
 /// Sockets one client address may hold open (`COLLABORATION_SOCKETS_PER_ADDRESS`).
 pub const SOCKETS_PER_ADDRESS: u64 = 500;
@@ -171,9 +182,218 @@ impl Drop for Membership {
     }
 }
 
+/// When a connection's kernel last took bytes to send (Epo 2026-10-20,
+/// rate-limit review r7): a send has no total time limit, since a whole-state
+/// answer is one frame that a slow link takes long to receive, but one that
+/// moves no bytes for the silent window closes its socket ([watched]).
+#[derive(Debug)]
+pub struct Sent {
+    born: Instant,
+    /// Milliseconds after `born`.
+    at: AtomicU64,
+}
+
+impl Default for Sent {
+    fn default() -> Self {
+        Sent {
+            born: Instant::now(),
+            at: AtomicU64::new(0),
+        }
+    }
+}
+
+impl Sent {
+    fn mark(&self) {
+        let at = u64::try_from(self.born.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.at.store(at, Ordering::Relaxed);
+    }
+
+    fn last(&self) -> Instant {
+        self.born + Duration::from_millis(self.at.load(Ordering::Relaxed))
+    }
+}
+
+/// A connection's IO, marking its [Sent] whenever a write takes bytes.
+#[derive(Debug)]
+pub struct Tracked<T> {
+    io: T,
+    sent: Arc<Sent>,
+}
+
+impl<T: AsyncRead + Unpin> AsyncRead for Tracked<T> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.io).poll_read(cx, buf)
+    }
+}
+
+impl<T: AsyncWrite + Unpin> AsyncWrite for Tracked<T> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let polled = Pin::new(&mut self.io).poll_write(cx, buf);
+        if let Poll::Ready(Ok(1..)) = &polled {
+            self.sent.mark();
+        }
+        polled
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        let polled = Pin::new(&mut self.io).poll_write_vectored(cx, bufs);
+        if let Poll::Ready(Ok(1..)) = &polled {
+            self.sent.mark();
+        }
+        polled
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.io.is_write_vectored()
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.io).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.io).poll_shutdown(cx)
+    }
+}
+
+/// The server's TCP listener, its connections [Tracked].
+pub struct TrackedListener(pub TcpListener);
+
+impl Listener for TrackedListener {
+    type Io = Tracked<TcpStream>;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        let (io, address) = Listener::accept(&mut self.0).await;
+        let sent = Arc::default();
+        (Tracked { io, sent }, address)
+    }
+
+    fn local_addr(&self) -> io::Result<Self::Addr> {
+        Listener::local_addr(&self.0)
+    }
+}
+
+/// A connection's client address and its [Sent] (axum's connect info).
+#[derive(Clone, Debug)]
+pub struct Peer {
+    pub address: SocketAddr,
+    pub sent: Arc<Sent>,
+}
+
+impl Connected<IncomingStream<'_, TrackedListener>> for Peer {
+    fn connect_info(stream: IncomingStream<'_, TrackedListener>) -> Self {
+        Peer {
+            address: *stream.remote_addr(),
+            sent: stream.io().sent.clone(),
+        }
+    }
+}
+
+/// How a [watched] send ended.
+#[derive(Debug, PartialEq)]
+pub enum Sending {
+    Sent,
+    Failed,
+    /// No bytes moved for the stall window.
+    Stalled,
+}
+
+/// Waits for `sending`, a send on the connection whose writes mark `sent`:
+/// it stalls once the connection's kernel took no bytes for `stall` since the
+/// send began, however long a send that keeps moving takes.
+pub async fn watched<E>(
+    sending: impl Future<Output = Result<(), E>>,
+    sent: &Sent,
+    stall: Duration,
+) -> Sending {
+    let began = Instant::now();
+    tokio::pin!(sending);
+    loop {
+        let deadline = sent.last().max(began) + stall;
+        if deadline <= Instant::now() {
+            return Sending::Stalled;
+        }
+        tokio::select! {
+            biased;
+            result = &mut sending => {
+                return if result.is_ok() { Sending::Sent } else { Sending::Failed };
+            }
+            () = tokio::time::sleep_until(deadline) => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::SinkExt;
+    use tokio::io::{AsyncReadExt, DuplexStream};
+    use tokio_tungstenite::WebSocketStream;
+    use tokio_tungstenite::tungstenite::Message;
+    use tokio_tungstenite::tungstenite::protocol::Role;
+
+    /// A server socket over a pipe holding 64 KiB, its [Sent], and the
+    /// peer's end.
+    async fn piped() -> (
+        WebSocketStream<Tracked<DuplexStream>>,
+        Arc<Sent>,
+        DuplexStream,
+    ) {
+        let (ours, peer) = tokio::io::duplex(64 * 1024);
+        let sent = Arc::new(Sent::default());
+        let io = Tracked {
+            io: ours,
+            sent: sent.clone(),
+        };
+        let socket = WebSocketStream::from_raw_socket(io, Role::Server, None).await;
+        (socket, sent, peer)
+    }
+
+    /// Security regression (Epo 2026-10-20, rate-limit review r7): a 1 MiB
+    /// send to a peer that reads nothing stalls after the window (60 s), and
+    /// the same send to a peer reading 16 KiB every 10 s goes out though it
+    /// takes over ten minutes. Fails without the stall (the first send never
+    /// ends), or with a bound on the whole send (the slow one stalls).
+    #[tokio::test(start_paused = true)]
+    async fn a_send_moving_no_bytes_stalls_while_a_slow_one_goes_out() {
+        let stall = Duration::from_secs(60);
+        let frame = Message::binary(vec![0u8; 1 << 20]);
+        let (mut socket, sent, _reads_nothing) = piped().await;
+        let stalled =
+            tokio::time::timeout(stall * 2, watched(socket.send(frame.clone()), &sent, stall))
+                .await;
+        assert_eq!(stalled.ok(), Some(Sending::Stalled));
+
+        let (mut socket, sent, mut peer) = piped().await;
+        let reader = tokio::spawn(async move {
+            let mut chunk = vec![0u8; 16 * 1024];
+            let mut read = 0;
+            while read < 1 << 20 {
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                read += peer.read(&mut chunk).await.unwrap_or(0);
+            }
+        });
+        let began = Instant::now();
+        assert_eq!(
+            watched(socket.send(frame), &sent, stall).await,
+            Sending::Sent
+        );
+        assert!(began.elapsed() > Duration::from_secs(600));
+        reader.abort();
+    }
 
     #[test]
     fn a_key_holds_up_to_its_cap_and_a_dropped_seat_frees_one() {

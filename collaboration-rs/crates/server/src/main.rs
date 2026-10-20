@@ -240,6 +240,7 @@ async fn serve(config: Config) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(&address)
         .await
         .map_err(|error| error.to_string())?;
+    let listener = crate::seats::TrackedListener(listener);
     log(
         Level::Info,
         "collaboration service listening",
@@ -248,9 +249,9 @@ async fn serve(config: Config) -> Result<(), String> {
     let stopping = app.clone();
     // Upgraded sockets are not waited for: every room stores first, then the
     // listener stops and the process exits (clients reconnect elsewhere).
-    // Each socket's client address counts toward its cap (`seats.rs`).
-    let service =
-        http::router(app.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    // Each socket's client address counts toward its cap, and its connection
+    // tells when it last moved bytes out (`seats.rs`).
+    let service = http::router(app.clone()).into_make_service_with_connect_info::<seats::Peer>();
     axum::serve(listener, service)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
