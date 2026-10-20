@@ -719,8 +719,8 @@ cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, OpenRouter DeepSeek V4 Flash
-0731 32 / 32 / 1280 (set from OpenRouter's Relace price, cached reads at the
-input price, before the route left Relace on 2026-10-20), embedding 40, reranker 50.
+0731 42 / 12 / 1056 (Reka's list price, its first route, decision 2026-10-20),
+embedding 40, reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
