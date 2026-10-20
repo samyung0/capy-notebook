@@ -240,8 +240,8 @@ edits:
   and DeepSeek, with real hints, injected junk hints and rule variants, and
   scores correctness, reads, junk quotes, tokens, latency and cost.
 - `hints_eval_cjk.py` compares word rules for Chinese, Japanese and Korean
-  messages (overlapping pairs, whole runs, the HSK word list) on 18 Chinese
-  messages; findings in
+  messages (overlapping pairs, whole runs, the HSK word list, production's
+  hand-picked lists) on 36 Chinese, 7 Japanese and 7 Korean messages; findings in
   [`rag/reports/2026-10-20-hints-cjk-rule.md`](rag/reports/2026-10-20-hints-cjk-rule.md).
 
 Both run against a scratch `pgvector/pgvector:pg16` container that

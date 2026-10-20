@@ -1,0 +1,115 @@
+{
+  "about": "CJK hint word rules beyond chinese.json (the hints-round re-review, 2026-10-20): Chinese subject terms the HSK list splits into a level-1 word (R1) and level-2+ question words (R2), and Japanese and Korean messages with kana and particle decoys (R3). Same labels as chinese.json: relevant, topical, everything else noise.",
+  "sets": [
+    {
+      "lang": "zh",
+      "documents": [
+        {
+          "id": "m_phys",
+          "name": "物理笔记",
+          "edits": [
+            {"id": "e-electron", "text": "电子是带负电的粒子，绕着原子核运动。"},
+            {"id": "e-neutron", "text": "中子不带电，和质子一起组成原子核。"},
+            {"id": "e-circuit", "text": "电流和电压的关系由欧姆定律描述。"},
+            {"id": "e-newton", "text": "牛顿第一定律：物体在不受外力时保持静止或匀速直线运动。"},
+            {"id": "e-kinetic", "text": "动能等于二分之一乘以质量乘以速度的平方。"}
+          ]
+        },
+        {
+          "id": "m_geo",
+          "name": "地理与历史",
+          "edits": [
+            {"id": "g-rain", "text": "下雨是因为空气中的水蒸气遇冷凝结成水滴。"},
+            {"id": "g-boil", "text": "水的沸点在标准大气压下是100摄氏度。"},
+            {"id": "g-planet", "text": "太阳系有八颗行星，地球是第三颗。"},
+            {"id": "g-china", "text": "中国历史上，唐朝是经济和文化很繁荣的时期。"},
+            {"id": "g-ww2", "text": "第二次世界大战从1939年持续到1945年。"}
+          ]
+        },
+        {
+          "id": "m_study",
+          "name": "学习方法",
+          "edits": [
+            {"id": "s-review", "text": "为什么要复习：记忆会随时间衰退。"},
+            {"id": "s-ml", "text": "机器学习让电脑从数据中找出规律。"},
+            {"id": "s-log", "text": "对数是指数运算的逆运算。"},
+            {"id": "s-idiom", "text": "这个成语的意思是做事要有耐心。"},
+            {"id": "s-white", "text": "白血球帮助身体抵抗细菌。"},
+            {"id": "s-college", "text": "大学生每天应该安排时间自学。"}
+          ]
+        }
+      ],
+      "messages": [
+        {"id": "T01", "kind": "edit", "text": "什么是电子？", "relevant": ["e-electron"], "topical": ["e-neutron"]},
+        {"id": "T02", "kind": "edit", "text": "什么是中子？", "relevant": ["e-neutron"], "topical": ["e-electron"]},
+        {"id": "T03", "kind": "edit", "text": "质子和中子", "relevant": ["e-neutron"], "topical": ["e-electron"]},
+        {"id": "T04", "kind": "edit", "text": "电流和电压", "relevant": ["e-circuit"], "topical": []},
+        {"id": "T05", "kind": "edit", "text": "水的沸点是多少？", "relevant": ["g-boil"], "topical": []},
+        {"id": "T06", "kind": "edit", "text": "什么是对数？", "relevant": ["s-log"], "topical": []},
+        {"id": "T07", "kind": "edit", "text": "什么是动能？", "relevant": ["e-kinetic"], "topical": []},
+        {"id": "T08", "kind": "edit", "text": "什么是大学生？", "relevant": ["s-college"], "topical": []},
+        {"id": "T09", "kind": "edit", "text": "白血球", "relevant": ["s-white"], "topical": []},
+        {"id": "T10", "kind": "edit", "text": "太阳系有几个行星？", "relevant": ["g-planet"], "topical": []},
+        {"id": "T11", "kind": "edit", "text": "什么是机器学习？", "relevant": ["s-ml"], "topical": []},
+        {"id": "T12", "kind": "edit", "text": "中国历史", "relevant": ["g-china"], "topical": []},
+        {"id": "T13", "kind": "edit", "text": "第二次世界大战", "relevant": ["g-ww2"], "topical": []},
+        {"id": "T14", "kind": "edit", "text": "为什么会下雨？", "relevant": ["g-rain"], "topical": []},
+        {"id": "T15", "kind": "edit", "text": "牛顿第一定律", "relevant": ["e-newton"], "topical": []},
+        {"id": "T16", "kind": "smalltalk", "text": "请问这个是什么意思？", "relevant": [], "topical": []},
+        {"id": "T17", "kind": "smalltalk", "text": "为什么要学物理？", "relevant": [], "topical": []},
+        {"id": "T18", "kind": "smalltalk", "text": "可以帮我复习一下吗？", "relevant": [], "topical": []}
+      ]
+    },
+    {
+      "lang": "ja",
+      "documents": [
+        {
+          "id": "m_ja",
+          "name": "メモ",
+          "edits": [
+            {"id": "ja-cell", "text": "細胞分裂は一つの細胞が二つに分かれることです。"},
+            {"id": "ja-photo", "text": "光合成は光のエネルギーを使って糖を作る反応です。"},
+            {"id": "ja-weather", "text": "今日は晴れです。"},
+            {"id": "ja-plan", "text": "明日は図書館で勉強します。"},
+            {"id": "ja-dna", "text": "DNAは遺伝情報を持つ分子です。"},
+            {"id": "ja-mito", "text": "ミトコンドリアは細胞のエネルギーを作ります。"}
+          ]
+        }
+      ],
+      "messages": [
+        {"id": "J01", "kind": "edit", "text": "細胞分裂とは何ですか？", "relevant": ["ja-cell"], "topical": ["ja-mito"]},
+        {"id": "J02", "kind": "edit", "text": "光合成とは何ですか？", "relevant": ["ja-photo"], "topical": []},
+        {"id": "J03", "kind": "edit", "text": "ミトコンドリアの役割は？", "relevant": ["ja-mito"], "topical": ["ja-cell"]},
+        {"id": "J04", "kind": "edit", "text": "遺伝情報はどこにありますか？", "relevant": ["ja-dna"], "topical": []},
+        {"id": "J05", "kind": "edit", "text": "明日の予定は？", "relevant": ["ja-plan"], "topical": []},
+        {"id": "J06", "kind": "smalltalk", "text": "こんにちは、元気ですか？", "relevant": [], "topical": []},
+        {"id": "J07", "kind": "smalltalk", "text": "何をすればいいですか？", "relevant": [], "topical": []}
+      ]
+    },
+    {
+      "lang": "ko",
+      "documents": [
+        {
+          "id": "m_ko",
+          "name": "메모",
+          "edits": [
+            {"id": "ko-photo", "text": "광합성은 빛 에너지를 이용해 포도당을 만든다."},
+            {"id": "ko-cell", "text": "세포 분열은 하나의 세포가 둘로 나뉘는 과정이다."},
+            {"id": "ko-iran", "text": "이것은 무엇인가요? 이란 나라."},
+            {"id": "ko-weather", "text": "오늘은 날씨가 맑습니다."},
+            {"id": "ko-mito", "text": "미토콘드리아는 세포의 에너지를 만든다."}
+          ]
+        }
+      ],
+      "messages": [
+        {"id": "K01", "kind": "edit", "text": "광합성이란 무엇인가요?", "relevant": ["ko-photo"], "topical": []},
+        {"id": "K02", "kind": "edit", "text": "세포 분열은 어떻게 일어나나요?", "relevant": ["ko-cell"], "topical": ["ko-mito"]},
+        {"id": "K03", "kind": "edit", "text": "미토콘드리아의 역할은?", "relevant": ["ko-mito"], "topical": ["ko-cell"]},
+        {"id": "K04", "kind": "edit", "text": "광합성에 필요한 에너지", "relevant": ["ko-photo"], "topical": ["ko-mito"]},
+        {"id": "K05", "kind": "smalltalk", "text": "안녕하세요, 잘 지내세요?", "relevant": [], "topical": []},
+        {"id": "K06", "kind": "smalltalk", "text": "이건 무엇인가요?", "relevant": [], "topical": []},
+        {"id": "K07", "kind": "smalltalk", "text": "오늘 기분이 어때요?", "relevant": [], "topical": []}
+      ]
+    }
+  ]
+}

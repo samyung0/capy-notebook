@@ -1,26 +1,35 @@
-"""The CJK word rule of the hints matcher, measured on Chinese messages (Epo
-2026-10-20, after the hints-round review's S3: overlapping pairs let
-什么是光合作用 hint notes matching only 什么+么是 or 合作+作用).
+"""The CJK word rules of the hints matcher, measured on Chinese, Japanese and
+Korean messages (Epo 2026-10-20, after the hints-round review's S3 and the
+re-review's R1-R3: overlapping pairs let 什么是光合作用 hint notes matching only
+什么+么是 or 合作+作用; dropping every HSK level-1 word lost 电子 and 沸点;
+any-pair matching let です hint).
 
 Each unit rule turns a message into the words the two-word rule counts, and
 production's ``pending_hints.match_units`` matches them against the edits of
-bench/rag/fixtures/hints-eval/chinese.json (simple config). Rules:
+fixtures/hints-eval/chinese.json and cjk-terms.json (simple config). Rules:
 
-- pairs: every overlapping pair a word (production before the rule);
-- runs-any / runs-all: each CJK run one word, matched by any / all of its pairs
-  (the fallback "each run counts once");
+- pairs: every overlapping pair a word (production before the CJK rule);
+- runs-any / runs-all: each CJK run one word, matched by any / all of its
+  pairs (Epo's fallback, "each run counts once");
 - hsk1-all / hsk1-any: HSK 3.0 level-1 words dropped from each run by longest
   match, each piece left one word matched by all / any of its pairs;
-- seg-merge: production's ``pending_hints.message_units`` (chosen from this
-  run): the run split by longest match over every HSK 3.0 word, level-1 words
-  dropped, kept list words their own word and other characters joined to the
-  next list word (or their own word after the last);
+- hsk1-merge: the first list rule (bench/hints-eval fb020fadb): the run split
+  by longest match over every HSK 3.0 word, level-1 words dropped, kept list
+  words their own word and other characters joined to the next list word;
 - seg-words: the same split, each kept list word of two or more characters a
-  word, single characters dropped.
+  word, single characters dropped;
+- hand: production's ``pending_hints.message_units`` (``hint_words``): Chinese
+  split over HSK plus a hand-picked list, only function words, question
+  words, request verbs, measure words and locatives dropped, a character left
+  alone keeping a joinable neighbour (对数, 动能, 中子); Japanese without
+  hiragana-only pairs; Korean without its ending and question words, two
+  pairs a word.
+
+Japanese and Korean run pairs, any (each run once by any pair, the first
+rule for them) and hand.
 
 The word list is fixtures/hints-eval/hsk-levels.tsv (MIT, licence inside);
-production keeps the same list in pipeline/retrieval/hsk_words.tsv. Japanese
-and Korean cases only check that a hint still comes through.
+production keeps the same list in pipeline/retrieval/hsk_words.tsv.
 
 Needs only a Postgres 16 (no tables); run from pipeline/ for its imports:
 
@@ -40,24 +49,6 @@ from typing import Any, Callable
 
 HERE = Path(__file__).resolve().parent
 FIXTURES = HERE.parents[0] / "fixtures" / "hints-eval"
-OTHERS = [
-    {
-        "lang": "ja",
-        "doc": {"id": "m_ja", "name": "光合成ノート", "edits": [
-            {"id": "ja-def", "text": "光合成は光のエネルギーを使って糖を作る反応です。"},
-            {"id": "ja-other", "text": "明日の予定を確認する。"},
-        ]},
-        "messages": [{"id": "J01", "text": "光合成とは何ですか？", "relevant": ["ja-def"]}],
-    },
-    {
-        "lang": "ko",
-        "doc": {"id": "m_ko", "name": "광합성 노트", "edits": [
-            {"id": "ko-def", "text": "광합성은 빛 에너지를 이용해 포도당을 만든다."},
-            {"id": "ko-other", "text": "내일 일정을 확인한다."},
-        ]},
-        "messages": [{"id": "K01", "text": "광합성 에너지는 무엇인가요?", "relevant": ["ko-def"]}],
-    },
-]
 
 
 @cache
@@ -97,6 +88,29 @@ def without_level1(run: str) -> list[str]:
     return [*pieces, kept]
 
 
+def level1_merge(run: str) -> list[str]:
+    """The first list rule: level 1 dropped, list words end a word, other
+    characters join the next list word."""
+    levels = hsk_levels()
+    pieces, piece, ended = [], "", False
+    for token in segment(run):
+        if levels.get(token) == 1:
+            pieces.append(piece)
+            piece, ended = "", False
+            continue
+        if ended:
+            pieces.append(piece)
+            piece = ""
+        piece, ended = piece + token, len(token) > 1
+    return [*pieces, piece]
+
+
+def seg_words(run: str) -> list[str]:
+    """Each list word of two or more characters above level 1; the rest dropped."""
+    levels = hsk_levels()
+    return [t for t in segment(run) if len(t) > 1 and levels.get(t) != 1]
+
+
 def units_by(query: str, split: Callable[[str], list[str]], joiner: str) -> list[str]:
     """The message's Latin words, then each CJK piece ``split`` gives (of two or
     more characters) as its pairs joined by ``joiner``."""
@@ -108,25 +122,35 @@ def units_by(query: str, split: Callable[[str], list[str]], joiner: str) -> list
     return words + [joiner.join(tokenize_for_search(p).split()) for p in pieces]
 
 
-def seg_words(run: str) -> list[str]:
-    """Each list word of two or more characters above level 1; the rest dropped."""
-    levels = hsk_levels()
-    return [t for t in segment(run) if len(t) > 1 and levels.get(t) != 1]
-
-
-def rules() -> dict[str, Callable[[str], list[str]]]:
+def rules(lang: str) -> dict[str, Callable[[str], list[str]]]:
     from pipeline.retrieval import pending_hints
     from pipeline.retrieval.chunking import search_query_terms
 
+    def pairs(q: str) -> list[str]:
+        return [w for w in search_query_terms(q).any_of.split(" or ") if w]
+
+    def runs_any(q: str) -> list[str]:
+        return units_by(q, lambda run: [run], " or ")
+
+    if lang != "zh":
+        return {"pairs": pairs, "any": runs_any, "hand": pending_hints.message_units}
     return {
-        "pairs": lambda q: [w for w in search_query_terms(q).any_of.split(" or ") if w],
-        "runs-any": lambda q: units_by(q, lambda run: [run], " or "),
+        "pairs": pairs,
+        "runs-any": runs_any,
         "runs-all": lambda q: units_by(q, lambda run: [run], " "),
         "hsk1-all": lambda q: units_by(q, without_level1, " "),
         "hsk1-any": lambda q: units_by(q, without_level1, " or "),
-        "seg-merge": pending_hints.message_units,
+        "hsk1-merge": lambda q: units_by(q, level1_merge, " "),
         "seg-words": lambda q: units_by(q, seg_words, " "),
+        "hand": pending_hints.message_units,
     }
+
+
+def sets() -> list[dict[str, Any]]:
+    out = [{"name": "chinese", "lang": "zh", **json.loads((FIXTURES / "chinese.json").read_text(encoding="utf-8"))}]
+    for s in json.loads((FIXTURES / "cjk-terms.json").read_text(encoding="utf-8"))["sets"]:
+        out.append({"name": f"terms-{s['lang']}", **s})
+    return out
 
 
 def sources_for(docs: list[dict[str, Any]]):
@@ -175,32 +199,29 @@ async def run() -> dict[str, Any]:
     from pipeline.retrieval import pending_hints, store
     from pipeline.retrieval.chunking import search_query_terms
 
-    data = json.loads((FIXTURES / "chinese.json").read_text(encoding="utf-8"))
-    sources = sources_for(data["documents"])
-    pool = pending_hints._prepare(pending_hints.candidates(sources), {d["id"]: "zh" for d in data["documents"]})
-    out: dict[str, Any] = {"rules": {}, "messages": {}, "others": {}}
+    out: dict[str, Any] = {}
+    chinese: dict[str, list] = {}  # rule -> rows of both Chinese sets
     try:
-        for name, units_of in rules().items():
-            rows = []
-            for m in data["messages"]:
-                units = units_of(m["text"])
-                any_of = search_query_terms(m["text"]).any_of
-                hints = await pending_hints.match_units(units, any_of, pool) if units else []
-                rows.append({**m, "units": units, "shown": [h.change_id for h in hints]})
-            out["rules"][name] = score(rows)
-            out["messages"][name] = {r["id"]: {"units": r["units"], "shown": r["shown"]} for r in rows}
-        for case in OTHERS:
-            o_sources = sources_for([case["doc"]])
-            o_pool = pending_hints._prepare(pending_hints.candidates(o_sources), {case["doc"]["id"]: case["lang"]})
-            for m in case["messages"]:
-                hints = await pending_hints.match(m["text"], o_pool)
-                out["others"][m["id"]] = {
-                    "units": pending_hints.message_units(m["text"]),
-                    "shown": [h.change_id for h in hints],
-                    "relevant": m["relevant"],
-                }
+        for s in sets():
+            sources = sources_for(s["documents"])
+            langs = {d["id"]: s["lang"] for d in s["documents"]}
+            pool = pending_hints._prepare(pending_hints.candidates(sources), langs)
+            result: dict[str, Any] = {"rules": {}, "messages": {}}
+            for name, units_of in rules(s["lang"]).items():
+                rows = []
+                for m in s["messages"]:
+                    units = units_of(m["text"])
+                    any_of = search_query_terms(m["text"]).any_of
+                    hints = await pending_hints.match_units(units, any_of, pool) if units and any_of else []
+                    rows.append({**m, "units": units, "shown": [h.change_id for h in hints]})
+                result["rules"][name] = score(rows)
+                result["messages"][name] = {r["id"]: {"units": r["units"], "shown": r["shown"]} for r in rows}
+                if s["lang"] == "zh":
+                    chinese.setdefault(name, []).extend(rows)
+            out[s["name"]] = result
     finally:
         await store.close_pool()
+    out["chinese-all"] = {"rules": {name: score(rows) for name, rows in chinese.items()}}
     return out
 
 
@@ -218,15 +239,15 @@ def main() -> None:
     result = asyncio.run(run())
     if args.out:
         args.out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
-    for name, row in result["rules"].items():
-        print(f"{name:10} {json.dumps(row, ensure_ascii=False)}")
-    print("\nper message (rule: units -> shown):")
-    for mid in result["messages"]["pairs"]:
-        print(f"  {mid}")
-        for name in result["rules"]:
-            m = result["messages"][name][mid]
-            print(f"    {name:10} {m['units']} -> {m['shown']}")
-    print("\nJapanese / Korean:", json.dumps(result["others"], ensure_ascii=False))
+    for set_name, res in result.items():
+        print(f"\n== {set_name}")
+        for name, row in res["rules"].items():
+            print(f"{name:10} {json.dumps(row, ensure_ascii=False)}")
+        for mid in next(iter(res.get("messages", {}).values()), {}):
+            print(f"  {mid}")
+            for name in res["rules"]:
+                m = res["messages"][name][mid]
+                print(f"    {name:10} {m['units']} -> {m['shown']}")
 
 
 if __name__ == "__main__":
