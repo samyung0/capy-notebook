@@ -639,10 +639,11 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 
 /// The version gate: a JOIN or draft send without the client protocol (a tab
 /// from before the gate), below its family's minimum (`MIN_MATERIAL`,
-/// `MIN_SOURCE`, read from `protocol.rs`) or above the server's own (a
-/// rollback) is refused as `collaboration-outdated` before any lookup, in
-/// material and source rooms alike; a refused draft send stores nothing and
-/// is counted by family.
+/// `MIN_SOURCE`, read from `protocol.rs`), one below the server's own (both
+/// minimums equal it since the rate-limit round: a tab without the
+/// open-slowed notice must reload) or above it (a rollback) is refused as
+/// `collaboration-outdated` before any lookup, in material and source rooms
+/// alike; a refused draft send stores nothing and is counted by family.
 #[tokio::test]
 async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let Some(env) = env() else { return };
@@ -654,6 +655,7 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     for protocol in [
         None,
         Some(protocol_constant("MIN_MATERIAL") - 1),
+        Some(client_protocol() - 1),
         Some(client_protocol() + 1),
     ] {
         client.send(0, &join_payload(&room, &write, protocol)).await;
@@ -662,7 +664,11 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     }
     // Before the gateway is asked about a file it does not know.
     let source = "source:file_outdated:epoch:1";
-    for protocol in [None, Some(protocol_constant("MIN_SOURCE") - 1)] {
+    for protocol in [
+        None,
+        Some(protocol_constant("MIN_SOURCE") - 1),
+        Some(client_protocol() - 1),
+    ] {
         client
             .send(
                 0,
@@ -698,8 +704,8 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     );
     let metrics = metrics_text(server.port).await;
     for line in [
-        "capy_collaboration_outdated_refusals_total{family=\"material\"} 4",
-        "capy_collaboration_outdated_refusals_total{family=\"source\"} 2",
+        "capy_collaboration_outdated_refusals_total{family=\"material\"} 5",
+        "capy_collaboration_outdated_refusals_total{family=\"source\"} 3",
         "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1",
     ] {
         assert!(

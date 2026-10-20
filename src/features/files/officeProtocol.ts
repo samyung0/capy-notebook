@@ -6,7 +6,7 @@ import {
   type OfficeMenu,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 11 as const;
+export const OFFICE_PROTOCOL_VERSION = 12 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';

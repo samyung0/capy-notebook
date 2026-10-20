@@ -1283,9 +1283,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   The Office protocol 11 (the edit `load`'s growth budget, Epo 2026-10-17)
   raised `CLIENT_PROTOCOL` to 5 and `MIN_SOURCE` to 5; `MIN_MATERIAL` stays 4.
   Its deploy request names "client protocol 4 -> 5, source 3 -> 5".
-  The rate-limit round's open-slowed notice (both families) and an embed's
-  note channel in its JOIN (Epo 2026-10-20) raise both minimums with
-  `CLIENT_PROTOCOL` (numbers in `protocol.rs`).
+  The rate-limit round (the open-slowed notice in both families, an embed's
+  note channel in its JOIN; Epo 2026-10-20), landing with the XLSX pin and
+  Office protocol 12, raised `CLIENT_PROTOCOL` to 6 and both minimums to 6.
+  Its deploy request names "client protocol 5 -> 6, material 4 -> 6, source
+  5 -> 6, Office 12".
 
 #### When to bump
 

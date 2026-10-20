@@ -1500,10 +1500,10 @@ PPTX editor is paused the same way (`canEdit: false`, Epo 2026-10-18). In
 edit mode the host also sends that state as `sending` (`pending`), whenever
 it changes and after every boot: the runtime keeps it in state and passes it
 to `XlsxEditorHost`, which hands it to the fork's `XlsxEditor` (its `sending`
-prop, from the XLSX pieces round): the XLSX editor refuses edits with a busy
-cursor instead of pausing, once the BetterOffice pin carries the prop (until
-then the editor ignores it). It needs no `OFFICE_PROTOCOL_VERSION` bump: a runtime without it
-drops a message it does not know, and the host and runtime ship together. Pages stay white in
+prop, from the XLSX pieces round): the XLSX editor marks its grid busy
+(`aria-busy`) and refuses edits instead of pausing (`held-back.spec.ts`). It
+shipped with the rate-limit landing's Office protocol 12; a runtime without
+it drops a message it does not know, and the host and runtime ship together. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
