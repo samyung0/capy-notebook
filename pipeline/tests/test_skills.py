@@ -42,9 +42,21 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     assert "Edits not yet in search show up as hints" in editing
     office = (await tools._read_skill({"name": "office_building"}, ctx)).text()
     assert (
-        "a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits"
-        in office
+        "a call's commands up to 256 KB, writing up to 10,000 cells or inserting up to "
+        "20 paragraphs; split larger edits" in office
     )
+    # Word files are read, edited and created (Epo 2026-10-20, phase 2).
+    for command in (
+        "insert_paragraph",
+        "delete_paragraph",
+        "set_list",
+        "insert_table",
+        "delete_table",
+        "format_text",
+        "set_alignment",
+    ):
+        assert command in office, command
+    assert "a new Excel or Word file is a create command first" in office
     ctx.library = True
     assert (
         "Practice from the library"

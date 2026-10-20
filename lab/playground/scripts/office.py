@@ -275,6 +275,13 @@ async def _inspect(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
         scoped = {k: query[k] for k in ("sheet", "range") if query.get(k)}
         body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, scoped)
         return body
+    if fmt == "docx":
+        page = {
+            "start": max(int(query.get("start") or 0), 0),
+            "count": _page_count(query.get("count")),
+        }
+        body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, page)
+        return body
     if fmt == "pptx" and int(query.get("slide") or 0) > 0:
         raise Refusal("unsupported_operation", ONE_SLIDE)
     entries = await call("inspectOffice", base, checkpoint)
@@ -320,10 +327,10 @@ async def _create(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     """internalCreateOfficeDocument: the starter with the call's other
     commands, kept in the run instead of stored as an upload."""
     fmt = payload["format"]
-    if fmt != "xlsx":
+    if fmt not in ("xlsx", "docx"):
         raise Refusal(
             "invalid_input",
-            "create makes an xlsx file; a deck is made with create_deck",
+            "create makes an xlsx or docx file; a deck is made with create_deck",
         )
     title = " ".join(TITLE_UNSAFE.sub(" ", str(payload["title"])).split())
     if not title:

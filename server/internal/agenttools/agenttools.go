@@ -93,7 +93,10 @@ import (
 // and edited or created with edit_office_document, offered once the
 // office_building skill is read (Epo 2026-10-20); edit_document loses set_cell
 // and its replace_text takes notes and text sources only.
-const ContractVersion = 32
+// v33: edit_office_document creates Word files and edits their paragraphs,
+// lists, tables, text formatting and alignment; inspect_office_document reads
+// a Word file's paragraphs with their styles (Epo 2026-10-20).
+const ContractVersion = 33
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -492,10 +495,13 @@ func officeCommandSchema() map[string]any {
 			"items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		}
 	}
+	paragraph := str("A paragraph's target id from inspect_office_document.")
+	after := str("The body paragraph it follows; several inserts after one paragraph keep their order. Omit to add it at the end of the document.")
+	flag := map[string]any{"type": "boolean"}
 	return map[string]any{
 		"oneOf": []any{
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
-				"format":     map[string]any{"type": "string", "enum": []string{"xlsx"}},
+				"format":     map[string]any{"type": "string", "enum": []string{"xlsx", "docx"}},
 				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle, "description": "The file's name, without its extension."},
 				"chapter_id": str("The chapter to file it in; omit to leave it unfiled."),
 			}, "format", "title"),
@@ -557,6 +563,47 @@ func officeCommandSchema() map[string]any {
 				"expected_text": map[string]any{"type": "string", "description": "Exact text to replace as inspect_office_document shows it; must occur once in the target."},
 				"text":          map[string]any{"type": "string", "description": "Plain replacement text; empty deletes the expected text."},
 			}, "target_id", "expected_text", "text"),
+			variant("insert_paragraph", "DOCX: add a paragraph to the document body.", map[string]any{
+				"after_id": after,
+				"text":     str("One paragraph's plain text, up to 5,000 characters, without line breaks."),
+				"style":    str(`A paragraph style id from inspect_office_document's styles, like "Heading1"; omit for the default style.`),
+				"list":     map[string]any{"type": "string", "enum": []string{"bullet", "numbered"}},
+			}, "text"),
+			variant("delete_paragraph", "DOCX: delete a paragraph.", map[string]any{
+				"id":            paragraph,
+				"expected_text": str("The paragraph's whole text as inspect_office_document shows it."),
+			}, "id", "expected_text"),
+			variant("set_list", "DOCX: make paragraphs bulleted or numbered, or end their list.", map[string]any{
+				"ids":  map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Paragraph target ids."},
+				"list": map[string]any{"type": "string", "enum": []string{"bullet", "numbered", "none"}},
+			}, "ids", "list"),
+			variant("insert_table", "DOCX: add a table of text to the document body, followed by an empty paragraph.", map[string]any{
+				"after_id": after,
+				"rows":     band("The cells' text, one array per row, every row the same length; at most 20 rows of 10 cells."),
+			}, "rows"),
+			variant("delete_table", "DOCX: delete a table.", map[string]any{
+				"id":       str("The table's id from inspect_office_document."),
+				"expected": band("The table's cells' text as inspect_office_document shows them, one array per row; a cell's paragraphs joined by line breaks."),
+			}, "id", "expected"),
+			variant("format_text", "DOCX: format text inside one paragraph; fields left out stay as they are.", map[string]any{
+				"target_id":     paragraph,
+				"expected_text": str("The exact text to format as inspect_office_document shows it; must occur once in the paragraph."),
+				"bold":          flag,
+				"italic":        flag,
+				"underline":     flag,
+				"strikethrough": flag,
+				"color":         str(`A hex colour, like "#1F4E79".`),
+				"highlight": map[string]any{"type": "string", "enum": []string{
+					"none", "yellow", "green", "cyan", "magenta", "blue", "red", "darkBlue", "darkCyan",
+					"darkGreen", "darkMagenta", "darkRed", "darkYellow", "darkGray", "lightGray", "black", "white",
+				}},
+				"font_size":   map[string]any{"type": "number", "minimum": 1, "maximum": 1638, "description": "Points."},
+				"font_family": str(""),
+			}, "target_id", "expected_text"),
+			variant("set_alignment", "DOCX: align one paragraph.", map[string]any{
+				"target_id": paragraph,
+				"alignment": map[string]any{"type": "string", "enum": []string{"left", "center", "right", "justify"}},
+			}, "target_id", "alignment"),
 		},
 	}
 }
@@ -1032,7 +1079,8 @@ func Definitions() []Definition {
 			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
-				"cells a read. DOCX: paragraphs with their target ids and text, count from start. " +
+				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
+				"table cells; the first page also lists the paragraph styles. " +
 				"PPTX: without slide, shapes with their target ids and text, count from start; " +
 				"with slide, that slide's shapes.",
 			InputSchema: obj(map[string]any{
@@ -1049,11 +1097,12 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "edit_office_document",
 			Retention: RetainFull,
-			Description: "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands " +
+			Description: "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
 				"whole call. Edits save directly; most can be undone from the chat. A call's commands " +
-				"are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
+				"are at most 256 KB, write at most 10,000 cells and insert at most 20 paragraphs; split " +
+				"larger edits into several calls.",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
 				"commands": map[string]any{

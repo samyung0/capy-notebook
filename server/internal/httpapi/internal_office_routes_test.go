@@ -57,9 +57,9 @@ func officeSource(t *testing.T, fx deckFileFixture, name string) string {
 }
 
 // inspect_office_document's query reaches the engine as the inspect body's
-// office object and its scoped answer comes back unchanged; DOCX reads its
-// entries a page at a time until the engine's scoped DOCX read lands, and
-// inspect_document points an Office file at the Office tools.
+// office object and its scoped answer comes back unchanged, an XLSX range or
+// a DOCX page of paragraphs; inspect_document points an Office file at the
+// Office tools.
 func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	fx := openDeckFiles(t)
 	scoped := `{"sheet":"0","name":"Grades","range":"A1:B2","cells":[{"address":"A1","input":"=1+1","value":"2"}]}`
@@ -93,12 +93,11 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	}
 
 	rec = inspect(docx, map[string]any{"start": 1, "count": 1})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"entries":[{"id":"p2","label":"Paragraph 2","value":"Two"}]`) ||
-		!strings.Contains(rec.Body.String(), `"supportedOperations":["replace_text"]`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) {
 		t.Fatalf("docx read = %d %s", rec.Code, rec.Body.String())
 	}
-	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || sent[1]["office"] != nil {
-		t.Fatalf("a DOCX page sent an office query: %v", sent)
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || string(sent[1]["office"]) != `{"start":1,"count":1}` {
+		t.Fatalf("a DOCX page sent %v", sent)
 	}
 
 	rec = inspect(xlsx, nil)
@@ -184,6 +183,22 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), receipt.Effect.Resource.ID) ||
 		len(authority.sent("/internal/documents/create")) != 1 || fx.blobs(t) != 1 {
 		t.Fatalf("replay = %d %s", replay.Code, replay.Body.String())
+	}
+
+	// A Word file is created the same way, its commands normalized.
+	rec = doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, map[string]any{
+		"workspaceId": fx.ws, "userId": fx.editor, "assistantMessageId": msgID, "toolCallId": "call_create_docx",
+		"format": "docx", "title": "Lab report",
+		"commands": []map[string]any{{"type": "insert_paragraph", "text": "Method", "style": "Heading1"}},
+	})
+	if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil || rec.Code != http.StatusOK ||
+		receipt.Effect == nil || receipt.Effect.Resource.Title != "Lab report.docx" {
+		t.Fatalf("docx create = %d %s", rec.Code, rec.Body.String())
+	}
+	sent = authority.sent("/internal/documents/create")
+	if len(sent) != 2 || string(sent[1]["format"]) != `"docx"` ||
+		string(sent[1]["commands"]) != `[{"style":"Heading1","text":"Method","type":"insert_paragraph"}]` {
+		t.Fatalf("authority got %v", sent)
 	}
 }
 

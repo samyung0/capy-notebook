@@ -4196,10 +4196,39 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "docx",
                 "title": "essay.docx",
-                "supportedOperations": ["replace_text"],
-                "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
-                "total": 80,
-                "nextStart": 60,
+                "scoped": {
+                    "paragraphs": [
+                        {
+                            "id": "body:paragraph:1A",
+                            "style": "Heading1",
+                            "list": None,
+                            "text": "Method",
+                        },
+                        {
+                            "id": "body:paragraph:2B",
+                            "style": None,
+                            "list": "bullet",
+                            "text": "Ruler",
+                        },
+                        {
+                            "id": "body:t0:r0c1:paragraph:3C",
+                            "style": "Normal",
+                            "list": None,
+                            "table": {
+                                "id": "body:t0:r0c0:paragraph:3A",
+                                "row": 0,
+                                "column": 1,
+                            },
+                            "text": "Period",
+                        },
+                    ],
+                    "total": 80,
+                    "nextStart": 60,
+                    "styles": [
+                        {"id": "Normal", "name": "Normal"},
+                        {"id": "Heading1", "name": "heading 1"},
+                    ],
+                },
             },
         ]
     )
@@ -4234,10 +4263,21 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
     assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
     assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
     paragraphs = (await inspect(start=0, count=60)).text()
-    assert (
-        "[p1] Paragraph 1: Intro" in paragraphs
-        and "(next start = 60 of 80)" in paragraphs
+    assert paragraphs == "\n".join(
+        [
+            "essay.docx format=docx",
+            "paragraphs as [id] (style, list, table cell) text:",
+            source_block(
+                "[body:paragraph:1A] (Heading1) Method\n"
+                "[body:paragraph:2B] (bullet) Ruler\n"
+                "[body:t0:r0c1:paragraph:3C] (Normal, table "
+                "body:t0:r0c0:paragraph:3A row 1 column 2) Period"
+            ),
+            "(next start = 60 of 80)",
+            "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)",
+        ]
     )
+    assert sent[2]["office"] == {"start": 0, "count": 60}
 
 
 async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatch):
@@ -4310,6 +4350,26 @@ def test_a_stale_office_band_shows_its_grid_to_copy():
     cut = tools._missed_target({"block": {**block, "gridCut": True}}, {}, office=True)
     assert cut.endswith(
         " … (its first 2,000 cells; inspect_office_document reads the rest)"
+    )
+    # A refused table delete shows the table's cells the same way.
+    table = {
+        "id": "body:t0:r0c0:paragraph:3A",
+        "type": "table",
+        "text": "a\tb",
+        "grid": [["a", "b"]],
+    }
+    assert tools._missed_target({"block": table}, {}, office=True) == (
+        'Table body:t0:r0c0:paragraph:3A now holds, as rows of cells:\n[["a","b"]]'
+    )
+
+
+def test_an_unknown_docx_style_lists_the_documents_styles():
+    styles = [
+        {"id": "Normal", "type": "style", "text": "Normal"},
+        {"id": "Heading1", "type": "style", "text": "heading 1"},
+    ]
+    assert tools._missed_target({"blocks": styles}, {}, office=True) == (
+        "The document's paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
     )
 
 

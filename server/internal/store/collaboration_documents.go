@@ -60,11 +60,13 @@ type documentRequest struct {
 	Office *OfficeQuery `json:"office,omitempty"`
 }
 
-// OfficeQuery scopes an XLSX read: no range lists the sheets, a sheet and a
-// range read those cells.
+// OfficeQuery scopes an Office read. XLSX: no range lists the sheets, a sheet
+// and a range read those cells. DOCX: count paragraphs from start.
 type OfficeQuery struct {
 	Sheet string `json:"sheet,omitempty"`
 	Range string `json:"range,omitempty"`
+	Start int    `json:"start,omitempty"`
+	Count int    `json:"count,omitempty"`
 }
 
 // MaterialInspection is the authority's editable view of a material.

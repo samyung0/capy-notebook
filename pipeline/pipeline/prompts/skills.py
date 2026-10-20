@@ -64,18 +64,24 @@ _OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and
 
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, count at a time from start. PPTX: shapes with their target ids and text, the same way.
+- DOCX: paragraphs with their target ids, styles and lists, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column. The first page lists the paragraph styles by id and name.
+- PPTX: shapes with their target ids and text, count at a time from start.
 
 Edit, one file a call; one stale expectation refuses the whole call:
 - set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
 - format_cells sets fonts, colours, alignment, wrapping and number formats on a range; fields left out stay as they are.
 - add_sheet, rename_sheet and delete_sheet change sheets; insert_rows, delete_rows, insert_columns and delete_columns change rows and columns. A delete names what it removes: the sheet's name, or the rows' or columns' inputs as rows of cells like set_range's expected (a row's cells from column A; for columns, rows from row 1 holding the deleted columns' cells), trailing empty cells and rows left out.
-- replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
 - Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
+- replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
+- insert_paragraph adds one body paragraph after after_id, or at the end without it; several inserts after one paragraph land in the order given. style is a style id from the read; list makes it bulleted or numbered.
+- delete_paragraph deletes a paragraph whose whole text is expected_text; it refuses a paragraph with pictures, fields or tracked changes, the paragraph after a table, and a story's last paragraph.
+- set_list makes paragraphs bulleted or numbered, or ends their list (none); a document has one bulleted and one numbered list, so numbering continues across them.
+- insert_table adds a table of text, at most 20 rows of 10 cells, placed like insert_paragraph and followed by an empty paragraph. delete_table names the table's id and its cells' text as rows of cells.
+- format_text formats the one occurrence of expected_text in a paragraph (bold, italic, underline, strikethrough, colour, highlight, size, font); set_alignment aligns one paragraph.
 
-Create: a new Excel file is a create command first, without file_id, followed by the commands that fill it. Word files cannot be created yet. A deck is made with create_deck (the deck_building skill).
+Create: a new Excel or Word file is a create command first, without file_id, followed by the commands that fill it; a new Word file's insert_paragraph and insert_table commands omit after_id and build it in order. A deck is made with create_deck (the deck_building skill).
 
-Limits: a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits into several calls."""
+Limits: a call's commands up to 256 KB, writing up to 10,000 cells or inserting up to 20 paragraphs; split larger edits into several calls."""
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""

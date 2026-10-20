@@ -2102,14 +2102,16 @@ def _missed_target(
             shown += f" … ({more} more characters; {reader} shows them)"
         grid = block.get("grid")
         if office and isinstance(grid, list):
-            # A refused row or column delete's band, exact for its expected.
+            # A refused row, column or table delete's cells, exact for its
+            # expected.
             cut = (
                 f" … (its first 2,000 cells; {reader} reads the rest)"
                 if block.get("gridCut")
                 else ""
             )
+            what = "Table" if block.get("type") == "table" else "Range"
             return (
-                f"Range {bid} now holds, as rows of cells:\n"
+                f"{what} {bid} now holds, as rows of cells:\n"
                 + json.dumps(grid, ensure_ascii=False, separators=(",", ":"))
                 + cut
             )
@@ -2125,6 +2127,11 @@ def _missed_target(
     if isinstance(blocks, list):
         listed = [b for b in blocks if isinstance(b, dict)]
         sheets = office and all(b.get("type") == "sheet" for b in listed)
+        if office and listed and all(b.get("type") == "style" for b in listed):
+            # An unknown paragraph style: the file's styles to choose from.
+            return "The document's paragraph styles as id (name): " + ", ".join(
+                f"{b.get('id')} ({b.get('text')})" for b in listed
+            )
         lines = [
             f"[{b.get('id')}] {b.get('text')}"
             if sheets
@@ -2306,9 +2313,35 @@ def _range_cells(text: str) -> int:
 
 def _render_scoped(body: dict[str, Any], scoped: dict[str, Any]) -> str:
     """An XLSX read: its sheets as ``[id] name used-range``, or a range's
-    cells as ``A1: input``, followed by ``→ shown value`` where that differs."""
+    cells as ``A1: input``, followed by ``→ shown value`` where that differs.
+    A DOCX read: its paragraphs as ``[id] (style, list) text``, a table cell's
+    marked with its table and place, then the styles on the first page."""
     head = f"{body.get('title') or ''} format={body.get('format')}"
     lines: list[str] = []
+    if "paragraphs" in scoped:
+        head += "\nparagraphs as [id] (style, list, table cell) text:"
+        for paragraph in scoped.get("paragraphs") or []:
+            marks = [str(paragraph[k]) for k in ("style", "list") if paragraph.get(k)]
+            if table := paragraph.get("table"):
+                marks.append(
+                    f"table {table.get('id')} row {int(table.get('row') or 0) + 1} "
+                    f"column {int(table.get('column') or 0) + 1}"
+                )
+            group = f" ({', '.join(marks)})" if marks else ""
+            lines.append(
+                f"[{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
+            )
+        tail = []
+        if scoped.get("nextStart") is not None:
+            tail.append(
+                f"(next start = {scoped['nextStart']} of {scoped.get('total')})"
+            )
+        if styles := scoped.get("styles"):
+            tail.append(
+                "paragraph styles as id (name): "
+                + ", ".join(f"{s.get('id')} ({s.get('name')})" for s in styles)
+            )
+        return "\n".join([head, source_block("\n".join(lines)), *tail])
     if "sheets" in scoped:
         head += "\nsheets as [id] name used range:"
         for sheet in scoped.get("sheets") or []:
