@@ -2631,16 +2631,19 @@ server that runs the pool is not dumpable, so an engine of the same uid
 cannot read the server's environment or memory through `/proc`. Before its
 engine thread starts, an engine keeps 64 descriptors and no core file (no
 file-size cap: its stderr may be a file), sets no_new_privs, takes Landlock
-(reads only under its own `/proc/self`, no TCP) and seccomp filters that
+(reads only under its own `/proc/self`, no TCP, and with its signal and
+abstract Unix-socket scoping no signal or abstract socket reaches outside
+its own sandbox) and seccomp filters that
 refuse non-Unix sockets and exec (EACCES), cross-process calls
 (`ptrace`, `process_vm_*`, `pidfd_getfd` and the like), `setsid`/`setpgid`
 and new processes (EPERM), and io_uring and `clone3` (ENOSYS, so glibc starts
 threads with `clone`, which the filter lets through only with
 `CLONE_THREAD`). An engine that cannot take its sandbox does not serve. A
 production server (`APP_ENV=production`, UAT included) on a host without
-Landlock does not start; elsewhere it logs the gap once (`office engine
-sandbox incomplete`) and engines run with seccomp and their limits, and off
-Linux (Windows development) with the cleared environment only. The engine
+Landlock's scoping (ABI 6, Linux 6.12) does not start; elsewhere it logs the
+gap once (`office engine sandbox incomplete`) and engines run with seccomp,
+their limits and whatever Landlock the kernel has, and off Linux (Windows
+development) with the cleared environment only. The engine
 sandbox has no CPU limit: the per-call timeout bounds it. A call running past
 120 s kills its process group; a process
 that dies (a crash, an abort at its cap) fails its call as transient and the

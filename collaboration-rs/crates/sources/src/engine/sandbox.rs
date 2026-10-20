@@ -8,13 +8,15 @@
 //! - the engine ([`confine`], before its engine thread starts) dies with the
 //!   pool, keeps 64 descriptors and no core file (the data cap is the pool's;
 //!   no file-size cap: stderr may be a file), sets no_new_privs, and takes
-//!   Landlock (reads only under /proc/self, no TCP) and seccomp: no non-Unix
-//!   socket, io_uring, cross-process call, setsid/setpgid, new process or
-//!   exec, while threads still start.
+//!   Landlock (reads only under /proc/self, no TCP, no signal or abstract
+//!   Unix socket outside its own sandbox) and seccomp: no non-Unix socket,
+//!   io_uring, cross-process call, setsid/setpgid, new process or exec, while
+//!   threads still start.
 //!
-//! A production server on a host without Landlock does not start
-//! ([`check_host`]); elsewhere the gap is logged once. Off Linux (Windows and
-//! macOS development) an engine gets the cleared environment only.
+//! A production server on a host without Landlock's scoping (ABI 6, Linux
+//! 6.12; Epo 2026-10-20) does not start ([`check_host`]); elsewhere the gap is
+//! logged once. Off Linux (Windows and macOS development) an engine gets the
+//! cleared environment only.
 
 use tokio::process::{Child, Command};
 
@@ -34,20 +36,21 @@ pub fn passes(name: &str) -> bool {
 }
 
 /// At server start: refuses production (`APP_ENV=production`, UAT included)
-/// on a host without Landlock; otherwise the gap to log once, if any.
+/// on a host without Landlock's signal and abstract Unix-socket scoping;
+/// otherwise the gap to log once, if any.
 pub fn check_host() -> Result<Option<&'static str>, String> {
     let production = std::env::var("APP_ENV").is_ok_and(|env| env == "production");
     if landlock_available() {
         return Ok(None);
     }
     let gap = if cfg!(target_os = "linux") {
-        "Landlock unavailable: Office engines run with seccomp and limits only"
+        "Landlock with scoping (ABI 6, Linux 6.12) unavailable: Office engines run with          seccomp, their limits and any older Landlock"
     } else {
         "not Linux: Office engines run with a cleared environment only"
     };
     if production {
         return Err(format!(
-            "{gap}; a production collaboration server does not start without Landlock"
+            "{gap}; a production collaboration server does not start without Landlock's scoping"
         ));
     }
     Ok(Some(gap))
@@ -116,7 +119,7 @@ mod linux {
 
     use landlock::{
         Access, AccessFs, AccessNet, CompatLevel, Compatible, PathBeneath, PathFd, Ruleset,
-        RulesetAttr, RulesetCreatedAttr,
+        RulesetAttr, RulesetCreatedAttr, Scope,
     };
     use nix::libc;
     use rlimit::Resource;
@@ -129,10 +132,12 @@ mod linux {
     /// what it has (best effort).
     const ABI: landlock::ABI = landlock::ABI::V9;
 
+    /// Landlock with the signal and abstract Unix-socket scopes.
     pub(super) fn landlock_available() -> bool {
         Ruleset::default()
             .set_compatibility(CompatLevel::HardRequirement)
             .handle_access(AccessFs::Execute)
+            .and_then(|ruleset| ruleset.scope(Scope::from_all(landlock::ABI::V6)))
             .and_then(Ruleset::create)
             .is_ok()
     }
@@ -150,6 +155,7 @@ mod linux {
         Ruleset::default()
             .handle_access(AccessFs::from_all(ABI))
             .and_then(|ruleset| ruleset.handle_access(AccessNet::from_all(ABI)))
+            .and_then(|ruleset| ruleset.scope(Scope::from_all(ABI)))
             .and_then(Ruleset::create)
             .and_then(|ruleset| {
                 ruleset.add_rule(PathBeneath::new(

@@ -303,8 +303,9 @@ async fn refusals_and_glue_panics_answer_and_keep_the_process() {
 /// engine keeps none of the server's environment, opens no network socket,
 /// starts no process, execs nothing and cannot change its process group
 /// while its threads still start, runs with no_new_privs, seccomp, its limits
-/// and its own process group, and reads no file outside its own /proc
-/// entries.
+/// and its own process group, reads no file outside its own /proc entries,
+/// and signals nothing and reaches no abstract Unix socket outside its
+/// sandbox.
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_engine_runs_inside_its_sandbox() {
@@ -312,6 +313,12 @@ async fn an_engine_runs_inside_its_sandbox() {
     const EACCES: i64 = 13;
     let outside = std::env::temp_dir().join(format!("capy-engine-reach-{}", std::process::id()));
     std::fs::write(&outside, b"outside the sandbox").unwrap();
+    use std::os::linux::net::SocketAddrExt;
+    let name = format!("capy-engine-reach-{}", std::process::id());
+    let _listener = std::os::unix::net::UnixListener::bind_addr(
+        &std::os::unix::net::SocketAddr::from_abstract_name(&name).unwrap(),
+    )
+    .unwrap();
     let mut config = config(1, 1);
     config.memory_limit_bytes = Some(3 << 30);
     let pool = EnginePool::new(config);
@@ -319,7 +326,7 @@ async fn an_engine_runs_inside_its_sandbox() {
         .call(
             Lane::Save,
             None,
-            request("test.reach", json!({ "path": outside })),
+            request("test.reach", json!({ "path": outside, "abstract": name })),
         )
         .await;
     std::fs::remove_file(&outside).unwrap();
@@ -374,6 +381,12 @@ async fn an_engine_runs_inside_its_sandbox() {
     assert_eq!(reach["setpgid"], json!(EPERM), "{reach}");
     assert_eq!(reach["file"], json!(EACCES), "{reach}");
     assert_ne!(reach["parent_environ"], json!("ok"), "{reach}");
+    // Landlock's scoping (ABI 6): checked where the kernel has it, as on the
+    // deployed hosts (a production server refuses to start without it).
+    if sources::engine::sandbox::check_host() == Ok(None) {
+        assert_eq!(reach["signal_parent"], json!(EPERM), "{reach}");
+        assert_eq!(reach["abstract_unix"], json!(EPERM), "{reach}");
+    }
 }
 
 /// Security regression (the Office engine sandbox, Epo 2026-10-20): an

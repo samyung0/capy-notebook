@@ -55,10 +55,12 @@ fn call(request: &Frame) -> Answer {
 
 /// What this engine can still reach from inside its sandbox: its environment,
 /// sockets, new processes and threads, its kernel-side status and limits, a
-/// file outside it (`path`) and its parent's environment. Each attempt
+/// file outside it (`path`), its parent's environment, a signal to its parent
+/// and an abstract Unix socket outside it (`abstract`). Each attempt
 /// answers `ok` or the errno it failed with.
 #[cfg(target_os = "linux")]
 fn reach(args: &Value) -> Value {
+    use std::os::linux::net::SocketAddrExt;
     use std::os::unix::process::CommandExt;
 
     fn errno<T>(result: std::io::Result<T>) -> Value {
@@ -95,6 +97,11 @@ fn reach(args: &Value) -> Value {
         "own_group": nix::unistd::getpgrp() == nix::unistd::getpid(),
         "setpgid": errno(nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0)).map_err(std::io::Error::from)),
         "file": errno(std::fs::read(args["path"].as_str().unwrap_or(missing))),
+        "signal_parent": errno(nix::sys::signal::kill(nix::unistd::getppid(), None).map_err(std::io::Error::from)),
+        "abstract_unix": errno(
+            std::os::unix::net::SocketAddr::from_abstract_name(args["abstract"].as_str().unwrap_or("capy"))
+                .and_then(|address| std::os::unix::net::UnixStream::connect_addr(&address)),
+        ),
         "parent_environ": errno(std::fs::read(format!("/proc/{}/environ", nix::unistd::getppid()))),
     })
 }

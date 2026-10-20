@@ -631,16 +631,18 @@ The prod file runs `/migrate` once per deploy, starts the API with
    `CAPY_ENGINE_*`, `MALLOC_*`, `APP_ENV` and `LOG_FORMAT` from the server's
    environment; the server makes itself non-dumpable, which matters where
    `kernel.yama.ptrace_scope` is 0 (the UAT app host). The engine sandbox
-   needs Landlock in the host kernel: with `APP_ENV=production` (UAT
+   needs Landlock with its signal and abstract Unix-socket scoping (ABI 6,
+   Linux 6.12 or later) in the host kernel: with `APP_ENV=production` (UAT
    included) the server exits at start with `captured error` naming Landlock
    (stage `engine_sandbox`) instead of serving without it. Before the first
    deploy of this to a host, check that the kernel has it:
 
    ```bash
-   grep -o landlock /sys/kernel/security/lsm
+   grep -o landlock /sys/kernel/security/lsm; uname -r
    ```
 
-   It prints `landlock` on the UAT and ingest hosts (Debian 13, kernel 6.12).
+   It prints `landlock` and a 6.12 kernel on the UAT and ingest hosts
+   (Debian 13).
    The non-dumpable server's `/proc/1` files belong to root inside the
    container: `docker exec … cat /proc/1/environ` as the service user fails by
    design, while `/proc/1/limits` and `/proc/1/status` stay readable.
