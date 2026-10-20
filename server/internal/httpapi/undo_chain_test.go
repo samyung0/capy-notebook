@@ -1,10 +1,13 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,7 +18,8 @@ import (
 )
 
 // The chat's Undo endpoint walks a created file's chain: Undo trashes it, the
-// returned step's Undo (Redo) restores it, and a used step is refused.
+// returned step's Undo (Redo) restores it, and a used step answers with its
+// receipt (live-Undo review H1: a retry or a second click).
 func TestUndoEndpointWalksACreatedFilesChain(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
@@ -102,9 +106,101 @@ func TestUndoEndpointWalksACreatedFilesChain(t *testing.T) {
 	if restored.Effect == nil || restored.Effect.Operation != "restored" || restored.Effect.Undo == nil {
 		t.Fatalf("redo = %+v", restored.Effect)
 	}
-	// The same request replays its receipt; the used step is refused.
+	// The same request replays its receipt; another request for the used
+	// step gets that receipt too.
 	if again := undo(created.ID, "r1", http.StatusOK); again.ID != trashed.ID {
 		t.Fatalf("replay = %+v", again)
 	}
-	undo(created.ID, "r3", http.StatusConflict)
+	if again := undo(created.ID, "r3", http.StatusOK); again.ID != trashed.ID {
+		t.Fatalf("used step = %+v", again)
+	}
+}
+
+// A chat Undo whose client goes away while the room reverts still records its
+// receipt (the work runs uncancelled), and a second request for the step under
+// another request id (a second click) answers with that receipt without asking
+// the room again (live-Undo review H1: fails if the endpoint drops the work
+// with the request or runs two at once).
+func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	userID := fmt.Sprintf("u_undo_once_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Undo',$2)`,
+		userID, userID+"@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	})
+	ws, err := st.CreateWorkspace(ctx, userID, store.WorkspaceCreate{Name: "Undo once", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, _, err := st.CreateMaterialOperation(ctx, store.MaterialDraft{
+		ID: "mat_" + userID, ActorUserID: userID, WorkspaceID: ws.ID, Kind: "flashcards", Title: "Cells",
+		Cards: [][2]string{{"Cell", "Unit of life"}},
+	}, store.AgentOperation{ID: "op_" + userID, RequestHash: "c1", ActorUserID: userID, WorkspaceID: ws.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := "op_edit_" + userID
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO agent_operations (id,kind,request_hash,actor_user_id,workspace_id,outcome,effect)
+		VALUES ($1,'edit_document','e1',$2,$3,'succeeded',$4)`, edit, userID, ws.ID,
+		fmt.Sprintf(`{"operation":"edited","resource":{"kind":"material","id":%q},"undo":{"operationId":%q,"status":"available"}}`,
+			created.Effect.Resource.ID, edit)); err != nil {
+		t.Fatal(err)
+	}
+	// The room: the Undo lands after the client left.
+	started := make(chan struct{}, 1)
+	var undos atomic.Int32
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Operation struct {
+				ID string `json:"id"`
+			} `json:"operation"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		undos.Add(1)
+		started <- struct{}{}
+		time.Sleep(300 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]string{"operationId": body.Operation.ID})
+	}))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
+		httpapi.Config{AuthDisabled: true, DevUserID: userID})
+	path := "/api/chat/edit-operations/" + edit + "/undo"
+
+	gone, leave := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		raw, _ := json.Marshal(map[string]string{"requestId": "r1"})
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw)).WithContext(gone)
+		req.Header.Set("Content-Type", "application/json")
+		h.ServeHTTP(httptest.NewRecorder(), req)
+	}()
+	<-started
+	// The second click arrives while the room is still reverting the first.
+	second := make(chan *httptest.ResponseRecorder, 1)
+	go func() { second <- doReq(t, h, http.MethodPost, path, "", map[string]string{"requestId": "r2"}) }()
+	leave()
+	<-done
+	rec := <-second
+	receipt, err := st.UndoReceipt(ctx, edit)
+	if err != nil {
+		t.Fatalf("the left request's receipt: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("second request: %d %s", rec.Code, rec.Body.String())
+	}
+	var again store.AgentOperation
+	_ = json.Unmarshal(rec.Body.Bytes(), &again)
+	if again.ID != receipt.ID || undos.Load() != 1 {
+		t.Fatalf("second request answered %s (first %s) after %d room calls", again.ID, receipt.ID, undos.Load())
+	}
 }

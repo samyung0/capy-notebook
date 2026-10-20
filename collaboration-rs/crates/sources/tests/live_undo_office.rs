@@ -111,7 +111,7 @@ fn undo_restores_a_docx_and_a_pptx_paragraph() {
                 .value
         };
         assert_eq!(text(&room), edited, "{path}");
-        let (_, redo) = ydoc::undo::revert(&room, change).unwrap();
+        let redo = ydoc::undo::revert(&room, change).unwrap().next.unwrap();
         assert_eq!(text(&room), entry.value, "{path}");
         ydoc::undo::revert(&room, redo).unwrap();
         assert_eq!(text(&room), edited, "{path}");

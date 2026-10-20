@@ -1112,8 +1112,7 @@ export const UndoEditOperationResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -1214,8 +1213,7 @@ export const ListMessagesResponseItem = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 })).nullish(),
   "endedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -5541,8 +5539,7 @@ export const PurgeTrashedResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -5599,8 +5596,7 @@ export const RestoreTrashedResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -7404,8 +7400,6 @@ export const CheckpointSourceDocumentBody = zod.object({
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
   "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
   "operation": zod.object({
-  "guards": zod.unknown().optional(),
-  "inverse": zod.unknown().optional(),
   "receipt": zod.object({
   "actorUserId": zod.string(),
   "callId": zod.string().optional(),
@@ -7414,8 +7408,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "messageId": zod.string().optional(),
   "requestHash": zod.string(),
   "toolVersion": zod.int()
-}),
-  "undoOf": zod.string().optional()
+})
 }).optional(),
   "pendingEffects": zod.unknown(),
   "preview": zod.string().optional(),
@@ -7451,8 +7444,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({

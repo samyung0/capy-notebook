@@ -39,6 +39,24 @@ func (s *Store) UndoStep(ctx context.Context, operationID string) (AgentOperatio
 	return *op, nil
 }
 
+// UndoReceipt is the receipt of the Undo (or Redo) that reversed a step:
+// ErrNotFound while the step is unused.
+func (s *Store) UndoReceipt(ctx context.Context, stepID string) (AgentOperation, error) {
+	var id string
+	err := s.pool.QueryRow(ctx, `SELECT id FROM agent_operations WHERE undo_of=$1`, stepID).Scan(&id)
+	if isNoRows(err) {
+		return AgentOperation{}, ErrNotFound
+	}
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	op, err := getAgentOperation(ctx, s.pool, id)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	return *op, nil
+}
+
 // FileStep reports whether a step's Undo trashes or restores a file the chat
 // created, as opposed to reverting an edit in its room.
 func FileStep(step AgentOperation) bool {
@@ -128,20 +146,27 @@ func resourceOwnerTx(ctx context.Context, tx pgx.Tx, kind agenttools.ResourceKin
 
 // UndoDocumentEdit reverts an edit step in the collaboration room holding it
 // (an Undo, or the Undo of an Undo: Redo), then records the receipt, whose
-// own Undo ref names the step the room now holds. It carries no provenance:
-// an undo restores the text only, because provenance only grows —
-// over-crediting a source is harmless and under-crediting one is the licence
-// risk.
+// own Undo ref names the step the room now holds. The room answers with the
+// id it keeps that step under: this request's, or an earlier request's whose
+// answer was lost, and the receipt takes that id, so a reversed step always
+// ends with one receipt. It carries no provenance: an undo restores the text
+// only, because provenance only grows — over-crediting a source is harmless
+// and under-crediting one is the licence risk.
 func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step AgentOperation, op DocumentOperation) (AgentOperation, error) {
-	if step.Effect.Resource.Kind == agenttools.KindSourceFile {
+	resource := step.Effect.Resource
+	if resource.Kind == agenttools.KindSourceFile {
 		// The maintenance pause refuses an Office Undo as it refuses the edit.
-		if err := s.officeEditRefusal(ctx, step.Effect.Resource.ID); err != nil {
+		if err := s.officeEditRefusal(ctx, resource.ID); err != nil {
 			return AgentOperation{}, err
 		}
 	}
+	var answer struct {
+		OperationID string `json:"operationId"`
+	}
 	err := s.postDocumentAuthority(ctx, "/internal/documents/undo", map[string]any{
 		"actorUserId": actorID, "operation": op, "undoOf": step.ID,
-	}, nil)
+		"target": DocumentTarget{Kind: resource.Kind, ID: resource.ID},
+	}, &answer)
 	var refusal *EditRefusal
 	if errors.As(err, &refusal) && refusal.Code == undoUnavailableCode {
 		return AgentOperation{}, ErrUndoUnavailable
@@ -154,17 +179,21 @@ func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, step Agent
 		return AgentOperation{}, err
 	}
 	defer tx.Rollback(ctx)
+	id := op.ID
+	if answer.OperationID != "" {
+		id = answer.OperationID
+	}
 	operation := agenttools.EffectEditUndone
 	if step.Effect.Operation == agenttools.EffectEditUndone {
 		operation = agenttools.EffectEdited
 	}
 	receipt := AgentOperation{
-		ID: op.ID, Kind: "undo_edit", ToolVersion: 1, RequestHash: op.RequestHash, ActorUserID: actorID,
+		ID: id, Kind: "undo_edit", ToolVersion: 1, RequestHash: op.RequestHash, ActorUserID: actorID,
 		WorkspaceID: step.WorkspaceID, ConversationID: op.ConversationID, MessageID: op.MessageID,
 		Outcome: agenttools.OutcomeSucceeded,
 		Effect: &agenttools.ResourceEffect{
-			Operation: operation, Resource: step.Effect.Resource, OperationID: op.ID,
-			Undo: &agenttools.UndoRef{OperationID: op.ID, Status: agenttools.UndoAvailable},
+			Operation: operation, Resource: resource, OperationID: id,
+			Undo: &agenttools.UndoRef{OperationID: id, Status: agenttools.UndoAvailable},
 		},
 	}
 	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {

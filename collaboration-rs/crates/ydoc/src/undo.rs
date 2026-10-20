@@ -61,29 +61,38 @@ pub fn apply_kept(doc: &Doc, update: Update) -> Result<Vec<u8>, yrs::error::Upda
     Ok(applied)
 }
 
+/// A performed revert: the update that made it, and the change that
+/// reverses it (Redo), when yrs kept one.
+pub struct Reverted {
+    pub update: Vec<u8>,
+    pub next: Option<Change>,
+}
+
 /// Reverts `change` in `doc` as the editor's undo does: what it inserted and
-/// is still there goes, copies of what it deleted come back. The update and
-/// the change that reverses this one, or none when nothing of `change` was
-/// left to revert.
-pub fn revert(doc: &Doc, change: Change) -> Option<(Vec<u8>, Change)> {
+/// is still there goes, copies of what it deleted come back. None when nothing
+/// of `change` was left to revert; a revert that ran always comes back with
+/// its update, so the caller can send what changed.
+pub fn revert(doc: &Doc, change: Change) -> Option<Reverted> {
     let mut manager = manager(doc, vec![change]);
     let update = Arc::new(Mutex::new(Vec::new()));
     let popped = update.clone();
     manager.observe_item_popped_with("capy-agent-edit-popped", move |txn, _| {
-        if let Ok(mut update) = popped.lock() {
-            *update = txn.encode_update_v1();
-        }
+        let mut update = popped
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *update = txn.encode_update_v1();
     });
     if !manager.undo_blocking() {
         return None;
     }
-    let next = manager.redo_stack().last().cloned()?;
+    let next = manager.redo_stack().last().cloned();
     drop(manager);
-    let update = update
-        .lock()
-        .map(|mut update| std::mem::take(&mut *update))
-        .ok()?;
-    Some((update, next))
+    let update = std::mem::take(
+        &mut *update
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+    );
+    Some(Reverted { update, next })
 }
 
 /// A manager over every root of `doc` but the contributor markers, holding
@@ -227,15 +236,15 @@ mod tests {
         sync(&person, &room);
         assert_eq!(text(&room), "Hi hello thXere");
 
-        let (undo, redo) = revert(&room, change).unwrap();
+        let undo = revert(&room, change).unwrap();
         assert_eq!(text(&room).replace('X', ""), "Hi hello world");
         assert!(text(&room).contains('X'));
-        crate::apply(&person, Update::decode_v1(&undo).unwrap()).unwrap();
+        crate::apply(&person, Update::decode_v1(&undo.update).unwrap()).unwrap();
         assert_eq!(text(&person), text(&room));
 
-        let (again, _) = revert(&room, redo).unwrap();
+        let again = revert(&room, undo.next.unwrap()).unwrap();
         assert_eq!(text(&room).replace('X', ""), "Hi hello there");
-        crate::apply(&person, Update::decode_v1(&again).unwrap()).unwrap();
+        crate::apply(&person, Update::decode_v1(&again.update).unwrap()).unwrap();
         assert_eq!(text(&person), text(&room));
     }
 
@@ -257,10 +266,39 @@ mod tests {
                 .to_string(&txn)
         };
         assert_eq!(cell(&room), "2");
-        let (_, redo) = revert(&room, change).unwrap();
+        let redo = revert(&room, change).unwrap().next.unwrap();
         assert_eq!(cell(&room), "1");
         revert(&room, redo).unwrap();
         assert_eq!(cell(&room), "2");
+    }
+
+    /// The Undo of an earlier agent edit after a later one rewrote the same
+    /// span keeps both: the later text stays and the earlier edit's deleted
+    /// text comes back beside it (its own text is gone already), as the
+    /// editor's undo does.
+    #[test]
+    fn undo_of_an_earlier_edit_keeps_a_later_edit_of_its_span() {
+        let room = crate::scratch_doc();
+        room.get_or_insert_text("source")
+            .insert(&mut room.transact_mut(), 0, "hello world");
+        let first = agent_edit(&room, |txn| {
+            let source = txn.get_or_insert_text("source");
+            source.remove_range(txn, 6, 5);
+            source.insert(txn, 6, "there");
+        });
+        agent_edit(&room, |txn| {
+            let source = txn.get_or_insert_text("source");
+            source.remove_range(txn, 6, 5);
+            source.insert(txn, 6, "folks");
+        });
+        assert_eq!(text(&room), "hello folks");
+        revert(&room, first).unwrap();
+        let after = text(&room);
+        assert!(
+            after.contains("world") && after.contains("folks"),
+            "{after}"
+        );
+        assert!(!after.contains("there"), "{after}");
     }
 
     /// Once a person removed everything the agent wrote, there is nothing

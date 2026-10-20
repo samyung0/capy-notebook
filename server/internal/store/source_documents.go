@@ -157,10 +157,10 @@ type SourceCheckpoint struct {
 const sourcePreviewChars = 600
 
 // SourceCheckpointOperation is the receipt side of a source edit checkpoint.
-// Undoable says the source's live room took the edit and holds its Undo.
+// The receipt commits without an Undo ref: the collaboration service adds it
+// once the source's live room took the edit (its Undo lives there).
 type SourceCheckpointOperation struct {
-	Receipt  SourceCheckpointReceipt `json:"receipt"`
-	Undoable bool                    `json:"undoable,omitempty"`
+	Receipt SourceCheckpointReceipt `json:"receipt"`
 }
 
 // SourceCheckpointReceipt is the trusted operation identity the collaboration
@@ -602,9 +602,6 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 	}
 	receipt.Kind = "edit_document"
 	effect.Operation = agenttools.EffectEdited
-	if op.Undoable {
-		effect.Undo = &agenttools.UndoRef{OperationID: receipt.ID, Status: agenttools.UndoAvailable}
-	}
 	receipt.Effect = &effect
 	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
 		return AgentOperation{}, err

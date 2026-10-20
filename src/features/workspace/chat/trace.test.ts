@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ApiError } from '@/api/client';
 import type { ActivityBlock, ResourceEffect } from '@/api/types';
 import {
   buildTrace,
@@ -9,6 +10,7 @@ import {
   type ToolBlock,
   toolIcon,
   undoAction,
+  undoRefused,
 } from './trace';
 
 const at = (s: number) =>
@@ -217,4 +219,10 @@ it('offers Undo until a step is undone, then Redo', () => {
   expect(undoAction('restored')).toBe('undo');
   expect(undoAction('edit_undone')).toBe('redo');
   expect(undoAction('trashed')).toBe('redo');
+});
+
+it('keeps Undo after an unknown outcome and hides it after a refusal', () => {
+  expect(undoRefused(new ApiError(409, 'Conflict'))).toBe(true);
+  expect(undoRefused(new ApiError(503, 'Service Unavailable'))).toBe(false);
+  expect(undoRefused(new TypeError('Failed to fetch'))).toBe(false);
 });

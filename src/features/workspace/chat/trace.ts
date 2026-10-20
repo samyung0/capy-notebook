@@ -1,3 +1,4 @@
+import { isApiError } from '@/api/client';
 import type {
   ActivityBlock,
   ResourceEffect,
@@ -485,6 +486,13 @@ export function foldSegments(rows: readonly TraceRow[]): TraceRow[][] {
     } else out.push([row]);
   }
   return out;
+}
+
+/** Whether a failed Undo or Redo was refused (its step is gone: hide the
+ * button) rather than of unknown outcome (no answer, a server error), which
+ * keeps the button: a retry gets the step's receipt if the first landed. */
+export function undoRefused(error: unknown): boolean {
+  return isApiError(error) && error.status < 500;
 }
 
 /** Undo reverses created, edited and restored; Redo reverses an Undo. */

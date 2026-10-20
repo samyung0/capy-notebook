@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -364,6 +365,47 @@ func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.editAgentDocument(w, r, req)
+}
+
+// operationLocks run the attempts of one agent operation id one at a time
+// (Epo 2026-10-20, review finding 3): when the retrieval service gives up on
+// an attempt and posts the same operation again, the retry waits for the
+// first attempt, which keeps running uncancelled, and then replays its
+// receipt instead of finding its own edit landed and refusing as stale. The
+// gateway runs as one process in UAT and production (deploy/), so the lock is
+// in memory; the zero value is ready.
+type operationLocks struct {
+	mu   sync.Mutex
+	held map[string]chan struct{}
+}
+
+// lock waits until no other attempt of id runs, or ctx ends, and returns the
+// release.
+func (l *operationLocks) lock(ctx context.Context, id string) (func(), error) {
+	for {
+		l.mu.Lock()
+		running, busy := l.held[id]
+		if !busy {
+			if l.held == nil {
+				l.held = map[string]chan struct{}{}
+			}
+			done := make(chan struct{})
+			l.held[id] = done
+			l.mu.Unlock()
+			return func() {
+				l.mu.Lock()
+				delete(l.held, id)
+				l.mu.Unlock()
+				close(done)
+			}, nil
+		}
+		l.mu.Unlock()
+		select {
+		case <-running:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 // editAgentDocument applies one chat edit: the internal edit route with a

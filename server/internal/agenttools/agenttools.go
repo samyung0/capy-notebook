@@ -221,22 +221,20 @@ type ToolError struct {
 	Message string    `json:"message"`
 }
 
-// UndoStatus is the advisory availability of an edit's Undo action.
+// UndoStatus is the availability of a step's Undo: the server sends
+// available; the chat marks a refused step unavailable for the session.
 type UndoStatus string
 
 const (
 	UndoAvailable   UndoStatus = "available"
-	UndoUndone      UndoStatus = "undone"
 	UndoUnavailable UndoStatus = "unavailable"
-	UndoPending     UndoStatus = "pending"
 )
 
 // UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
 // room holds its Yjs items while the step is live (Epo 2026-10-20).
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
-	Status      UndoStatus `json:"status" enum:"available,undone,unavailable,pending"`
-	Reason      string     `json:"reason,omitempty"`
+	Status      UndoStatus `json:"status" enum:"available,unavailable"`
 }
 
 // EffectOperation names what a mutation did to a resource.

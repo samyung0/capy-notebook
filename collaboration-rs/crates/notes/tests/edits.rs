@@ -383,6 +383,56 @@ fn an_edit_inserts_a_figure_image_and_no_other_media() {
     }
 }
 
+/// The live Undo of an edit that placed a library figure removes it again
+/// (the room reverts the edit's own items; the children pass then lets the
+/// asset go), while an edit itself still may not remove a block holding
+/// media. (The deleted `undo_removes_the_figure_its_edit_inserted`, for the
+/// live Undo.)
+#[test]
+fn undo_removes_the_figure_its_edit_inserted() {
+    use yrs::updates::decoder::Decode;
+    let value = vec![json!({ "type": "p", "id": "b1", "children": [{ "text": "intro" }] })];
+    let room = common::doc(&notes::slate_yjs::state_from_value(&value, 3), 4);
+    let figure = json!({
+        "assetId": "ea_figure", "caption": [{ "text": "A leaf" }],
+        "children": [{ "text": "" }], "id": "f1", "type": "img",
+    });
+    let scratch = common::doc(&common::state(&room), 9);
+    let root = scratch.get_or_insert_text(plate::CONTENT_ROOT);
+    let captured = {
+        let mut txn = scratch.transact_mut();
+        edit::apply_material_commands(
+            &mut txn,
+            &root,
+            &[DocumentCommand::InsertBlock {
+                after_block_id: Some("b1".into()),
+                blocks: vec![figure],
+            }],
+        )
+        .unwrap();
+        ydoc::undo::Captured::of(&mut txn)
+    };
+    let update = scratch
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    ydoc::undo::apply_kept(&room, yrs::Update::decode_v1(&update).unwrap()).unwrap();
+    let content = room.get_or_insert_text(plate::CONTENT_ROOT);
+    let removal = edit::apply_material_commands(
+        &mut room.transact_mut(),
+        &content,
+        &[DocumentCommand::RemoveBlock {
+            block_id: "f1".into(),
+            expected_text: String::new(),
+        }],
+    );
+    assert!(
+        matches!(&removal, Err(EditError::Edit { message, .. }) if message == "blocks holding media cannot be removed by an edit"),
+        "{removal:?}"
+    );
+    ydoc::undo::revert(&room, captured.change(&room)).unwrap();
+    assert_eq!(plate::value(&room.transact()).unwrap(), value);
+}
+
 #[test]
 fn inspect_matches_the_node_server() {
     let corpus = common::load("inspect");

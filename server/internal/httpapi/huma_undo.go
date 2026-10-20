@@ -27,6 +27,11 @@ func (a *api) registerUndo(api huma.API) {
 // created (trash), or an earlier Undo (which makes it Redo). Only the
 // original chat actor with current edit access may invoke it. The receipt's
 // effect carries the next step's ref.
+//
+// The requests for one step run one at a time, and the work runs to its end
+// once started, so a reversed step always gets its receipt: a request whose
+// client went away still records it, and any later request for the step (a
+// retry, a second click) answers with it.
 func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operationOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -39,6 +44,12 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 	if step.ActorUserID != actor {
 		return nil, hErr(store.ErrNotFound)
 	}
+	unlock, err := a.undos.lock(ctx, step.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	defer unlock()
+	ctx = context.WithoutCancel(ctx)
 	// A retried request answers with its receipt, also once the step is used.
 	hash, err := store.RequestHash(map[string]any{"action": "undo", "undoOf": in.OperationID})
 	if err != nil {
@@ -49,6 +60,12 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 		return &operationOutput{Body: *existing}, nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, trashError(err)
+	}
+	// A step already reversed answers with that receipt (another request's).
+	if existing, err := a.s.UndoReceipt(ctx, step.ID); err == nil {
+		return &operationOutput{Body: existing}, nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, hErr(err)
 	}
 	if store.FileStep(step) {
 		// A created file's step: the trash and restore paths check access

@@ -847,7 +847,8 @@ pub async fn edit_material(
         Some(row) => (row.get("title"), row.get("kind"), row.get("workspace_id")),
         None => (String::new(), String::new(), None),
     };
-    // The edit's Undo lives in its rooms: every document it wrote had one.
+    // The edit's Undo lives in its rooms: every document it wrote had one
+    // (its ref goes on the receipt once they took it, below).
     let undoable =
         !computed.writes.is_empty() && computed.writes.iter().all(|write| write.captured.is_some());
     let mut effect = json!({
@@ -862,9 +863,6 @@ pub async fn edit_material(
             "workspaceId": workspace.clone().unwrap_or_default(),
         },
     });
-    if undoable {
-        effect["undo"] = json!({ "operationId": operation.id, "status": "available" });
-    }
     // Inserts whose anchor block was gone say where they landed instead.
     if !computed.outcome.relocated.is_empty() {
         effect["relocated"] = json!(computed.outcome.relocated);
@@ -918,7 +916,9 @@ pub async fn edit_material(
     // The committed changes go to the live rooms, whose durable covers take
     // them, with the edit's items for its Undo.
     let step = undoable.then_some(operation.id.as_str());
-    send_writes(app, &room, &keys_room, computed.writes, &versions, step).await;
+    if send_writes(app, &room, &keys_room, computed.writes, &versions, step).await {
+        offer_undo(app, &operation.id, &mut receipt).await;
+    }
     let content = json!({ "schemaVersion": 1, "value": computed.value });
     match projection::project(app, &material_id, version, &content, computed.asset_ids).await {
         Ok(()) => {
@@ -1091,7 +1091,8 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
 
 /// Each write to its live room (the content room, or a quiz's keys room)
 /// with the version its row took, and under `step` the edit's own items
-/// that room keeps for the edit's Undo.
+/// that room keeps for the edit's Undo. Whether every written document's room
+/// took the step (none without a step).
 async fn send_writes(
     app: &Shared,
     room: &str,
@@ -1099,7 +1100,9 @@ async fn send_writes(
     writes: Vec<Write>,
     versions: &[i64],
     step: Option<&str>,
-) {
+) -> bool {
+    let mut answers = Vec::new();
+    let mut taken = step.is_some() && !writes.is_empty();
     for (write, version) in writes.into_iter().zip(versions) {
         let (name, other) = match write.doc {
             note_store::Doc::Content => (room, keys_room),
@@ -1107,25 +1110,60 @@ async fn send_writes(
         };
         match app.rooms.get(name) {
             Some(handle) => {
+                let step = step
+                    .zip(write.captured)
+                    .map(|(id, items)| (id.to_owned(), items));
+                let (reply, answer) = oneshot::channel();
+                if step.is_some() {
+                    answers.push(answer);
+                } else {
+                    taken = false;
+                }
                 let edit = ServiceEdit {
                     update: write.live_update.unwrap_or_else(|| write.row.clone()),
                     durable: write.durable,
                     version: *version as u64,
                     row_bytes: write.row.len(),
-                    step: step
-                        .zip(write.captured)
-                        .map(|(id, items)| (id.to_owned(), items)),
+                    step,
+                    taken: Some(reply),
                 };
                 let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
             }
             // A quiz document whose room is not loaded changed: the other
             // one's room reads it (its metrics; the keys' readers' lists).
             None => {
+                taken = false;
                 if let Some(handle) = app.rooms.get(other) {
                     let _ = handle.tx.send(RoomCmd::PeerReload).await;
                 }
             }
         }
+    }
+    for answer in answers {
+        taken &= matches!(
+            tokio::time::timeout(SNAPSHOT_WAIT, answer).await,
+            Ok(Ok(true))
+        );
+    }
+    taken
+}
+
+/// The Undo ref of an agent edit every room it wrote took: stored on the
+/// receipt, then shown on it (a receipt whose ref did not store has none).
+async fn offer_undo(app: &Shared, operation_id: &str, receipt: &mut Value) {
+    let undo = json!({ "operationId": operation_id, "status": "available" });
+    let Ok(client) = app.db.get().await else {
+        return;
+    };
+    let stored = client
+        .execute(
+            "UPDATE agent_operations SET effect = jsonb_set(effect, '{undo}', $2)
+             WHERE id=$1 AND effect IS NOT NULL",
+            &[&operation_id, &undo],
+        )
+        .await;
+    if matches!(stored, Ok(1)) {
+        receipt["effect"]["undo"] = undo;
     }
 }
 
@@ -1230,80 +1268,170 @@ pub async fn source_request(
             Box::pin(async move { live_state(&app, &room).await })
         })
         .await?;
+    let mut taken = false;
     if let Some(handle) = app.rooms.get(&result.room) {
+        let step = result.captured.map(|items| (operation.id.clone(), items));
+        let offered = step.is_some();
+        let (reply, answer) = oneshot::channel();
         let edit = ServiceEdit {
             update: result.update,
             durable: result.durable,
             version: result.checkpoint,
             row_bytes: result.row_bytes,
-            step: result.captured.map(|items| (operation.id.clone(), items)),
+            step,
+            taken: Some(reply),
         };
-        let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
+        let sent = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
+        taken = offered
+            && sent.is_ok()
+            && matches!(
+                tokio::time::timeout(SNAPSHOT_WAIT, answer).await,
+                Ok(Ok(true))
+            );
     }
     // Go passes the engine's note on the characters the agent's text lost
     // on to the tool result (Epo 2026-10-15).
     let mut receipt = result.receipt;
+    if taken {
+        offer_undo(app, &operation.id, &mut receipt).await;
+    }
     if let Some(notice) = result.notice {
         receipt["notice"] = json!(notice);
     }
     Ok(receipt)
 }
 
-/// What an Undo or Redo asks of the rooms holding an agent edit's items.
+/// What an Undo or Redo asks of the rooms holding an agent edit's items:
+/// the step, the id its reverse is kept under, and the document it changes.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UndoRequest {
     actor_user_id: String,
     operation: Operation,
     undo_of: String,
+    target: Target,
 }
+
+/// How long one room may take to revert and store an Undo; two rooms (a quiz)
+/// answer within the API's 20 s.
+const UNDO_WAIT: Duration = Duration::from_secs(8);
 
 fn undo_unavailable(message: &str) -> DocumentError {
     DocumentError::edit("undo_unavailable", message)
 }
 
-/// An Undo (or Redo) of a step a loaded room holds: each room holding a part
-/// of it (a quiz: content and keys) reverts it, stores it and keeps the step
-/// that reverses it under the request's operation id. Refused once no room
-/// holds it, or when nothing of it is left. Go records the receipt.
+/// Whether `room` holds a document of `target` (a note's or quiz's content
+/// or keys room, a source's room).
+fn room_of(target: &Target, room: &str) -> bool {
+    let prefixes: &[&str] = match target.kind.as_str() {
+        "material" => &["material:", "keys:"],
+        "source_file" => &["source:"],
+        _ => &[],
+    };
+    prefixes.iter().any(|prefix| {
+        room.strip_prefix(prefix)
+            .and_then(|rest| rest.strip_prefix(target.id.as_str()))
+            .is_some_and(|rest| rest.starts_with(':'))
+    })
+}
+
+/// One room's answer to an Undo, within [UNDO_WAIT].
+async fn ask_room(
+    handle: &crate::app::RoomHandle,
+    step: &str,
+    next: &str,
+    actor: &str,
+) -> Result<Reverted, DocumentError> {
+    let (reply, answer) = oneshot::channel();
+    let command = RoomCmd::AgentUndo(Box::new(AgentUndo {
+        step: step.to_owned(),
+        next: next.to_owned(),
+        actor: actor.to_owned(),
+        reply,
+    }));
+    if handle.tx.send(command).await.is_err() {
+        return Err(undo_unavailable("this edit can no longer be undone"));
+    }
+    match tokio::time::timeout(UNDO_WAIT, answer).await {
+        Ok(Ok(Ok(reverted))) => Ok(reverted),
+        Ok(Ok(Err(error))) => Err(DocumentError::Unknown(error)),
+        Ok(Err(_)) => Err(undo_unavailable("this edit can no longer be undone")),
+        Err(_) => Err(DocumentError::Unknown(
+            "the Undo was not stored in time".into(),
+        )),
+    }
+}
+
+/// An Undo (or Redo) of a step loaded rooms hold: each room holding a part of
+/// it (a quiz: content and keys) reverts it, stores it and keeps the step that
+/// reverses it under the request's operation id, or under the id of an
+/// earlier request whose answer was lost, which it answers with. When one
+/// room fails, the rooms asked before it (and the failing one, whose answer
+/// may still come) are put back, so the document is as it was and the step
+/// stays. Refused once no room holds it, or when nothing of it is left. Go
+/// records the receipt under the answered id.
 async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     let request: UndoRequest = serde_json::from_slice(body)
         .map_err(|_| DocumentError::Invalid("invalid undo request".into()))?;
-    let rooms = app.agent_steps.rooms(&request.undo_of);
+    let mut rooms = app.agent_steps.rooms(&request.undo_of);
+    if rooms.is_empty() {
+        // Reverted already: a request repeated after a lost answer gets the
+        // same answer from the rooms that reverted it.
+        rooms = app.agent_steps.reverted(&request.undo_of);
+    }
+    if rooms.iter().any(|room| !room_of(&request.target, room)) {
+        return Err(undo_unavailable("this edit can no longer be undone"));
+    }
     // Every room holding a part must still be loaded before any reverts.
     let handles: Option<Vec<_>> = rooms.iter().map(|room| app.rooms.get(room)).collect();
     let Some(handles) = handles.filter(|handles| !handles.is_empty()) else {
         app.agent_steps.forget(&request.undo_of);
         return Err(undo_unavailable("this edit can no longer be undone"));
     };
-    let mut reverted = false;
+    let (step, actor) = (&request.undo_of, &request.actor_user_id);
+    let mut kept: Option<String> = None;
+    let mut asked: Vec<(crate::app::RoomHandle, String)> = Vec::new();
     for handle in handles {
-        let (reply, answer) = oneshot::channel();
-        let command = RoomCmd::AgentUndo(Box::new(AgentUndo {
-            step: request.undo_of.clone(),
-            next: request.operation.id.clone(),
-            actor: request.actor_user_id.clone(),
-            reply,
-        }));
-        if handle.tx.send(command).await.is_err() {
-            return Err(undo_unavailable("this edit can no longer be undone"));
-        }
-        match answer.await {
-            Ok(Ok(Reverted::Done)) => reverted = true,
-            Ok(Ok(Reverted::Nothing)) => {}
-            Ok(Ok(Reverted::Missing)) | Err(_) => {
-                return Err(undo_unavailable("this edit can no longer be undone"));
+        match ask_room(&handle, step, &request.operation.id, actor).await {
+            Ok(Reverted::Done(id)) => {
+                kept.get_or_insert_with(|| id.clone());
+                asked.push((handle, id));
             }
-            Ok(Ok(Reverted::Refused { code, message })) => {
-                return Err(DocumentError::edit(code, message));
+            Ok(Reverted::Nothing) => {}
+            failure => {
+                if matches!(failure, Err(DocumentError::Unknown(_))) {
+                    asked.push((handle, request.operation.id.clone()));
+                }
+                put_back(asked, step, actor);
+                return Err(match failure {
+                    Ok(Reverted::Refused { code, message }) => DocumentError::edit(code, message),
+                    Err(error) => error,
+                    _ => undo_unavailable("this edit can no longer be undone"),
+                });
             }
-            Ok(Err(error)) => return Err(DocumentError::Unknown(error)),
         }
     }
-    if !reverted {
+    let Some(kept) = kept else {
         return Err(undo_unavailable("nothing of this edit is left to undo"));
+    };
+    Ok(json!({ "operationId": kept }))
+}
+
+/// Reverts each room's revert again (its step under `step` once more), in
+/// the background: a room answers in order, after the Undo it was asked.
+fn put_back(asked: Vec<(crate::app::RoomHandle, String)>, step: &str, actor: &str) {
+    for (handle, id) in asked {
+        let (step, actor) = (step.to_owned(), actor.to_owned());
+        tokio::spawn(async move {
+            if let Err(error) = ask_room(&handle, &id, &step, &actor).await {
+                observe::capture(
+                    &format!("{error:?}"),
+                    None,
+                    &[("stage", "agent_undo_put_back")],
+                );
+            }
+        });
     }
-    Ok(json!({ "operationId": request.operation.id }))
 }
 
 /// `/internal/documents/undo-status`: which of the given steps a loaded room

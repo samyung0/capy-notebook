@@ -12,32 +12,61 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 )
 
-// undoTestEdit commits a text source edit through its checkpoint; undoable
-// says a live room took it.
-func undoTestEdit(t *testing.T, s *Store, owner, fileID string, undoable bool) AgentOperation {
+// undoTestEdit commits a text source edit through its checkpoint, then puts
+// the Undo ref on its receipt as the collaboration service does once the
+// live room took it.
+func undoTestEdit(t *testing.T, s *Store, owner, fileID string) AgentOperation {
 	t.Helper()
 	ctx := context.Background()
 	doc := sourceTestSeed(t, s, owner, fileID)
 	save := sourceTestSave(doc, owner, "edited")
 	save.Operation = &SourceCheckpointOperation{
-		Receipt:  SourceCheckpointReceipt{ID: uid("op"), ToolVersion: 1, RequestHash: "h", ActorUserID: owner},
-		Undoable: undoable,
+		Receipt: SourceCheckpointReceipt{ID: uid("op"), ToolVersion: 1, RequestHash: "h", ActorUserID: owner},
 	}
 	saved, err := s.SaveSourceCheckpoint(ctx, fileID, save)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return *saved.Operation
+	if saved.Operation.Effect.Undo != nil {
+		t.Fatalf("a checkpoint set the Undo ref: %+v", saved.Operation.Effect)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE agent_operations SET effect = jsonb_set(effect, '{undo}', $2) WHERE id=$1`,
+		saved.Operation.ID, agenttools.UndoRef{OperationID: saved.Operation.ID, Status: agenttools.UndoAvailable}); err != nil {
+		t.Fatal(err)
+	}
+	op, err := getAgentOperation(ctx, s.pool, saved.Operation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return *op
 }
 
 // undoTestAuthority answers the collaboration service's Undo routes: every
-// Undo lands, and undo-status names the steps in `live`.
-func undoTestAuthority(t *testing.T, s *Store, live func() []string, asked *[]string) {
+// Undo lands under the id `kept` gives (the request's when it gives ""), and
+// undo-status names the steps in `live`. It counts the Undos it was asked.
+func undoTestAuthority(t *testing.T, s *Store, live func() []string, asked *[]string) *int {
 	t.Helper()
+	return undoTestAuthorityKeeping(t, s, live, asked, func(string) string { return "" })
+}
+
+func undoTestAuthorityKeeping(t *testing.T, s *Store, live func() []string, asked *[]string, kept func(step string) string) *int {
+	t.Helper()
+	undos := new(int)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/internal/documents/undo":
-			_, _ = w.Write([]byte(`{}`))
+			var body struct {
+				UndoOf    string            `json:"undoOf"`
+				Operation DocumentOperation `json:"operation"`
+				Target    DocumentTarget    `json:"target"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			*undos++
+			id := kept(body.UndoOf)
+			if id == "" {
+				id = body.Operation.ID
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"operationId": id})
 		case "/internal/documents/undo-status":
 			var body struct {
 				OperationIDs []string `json:"operationIds"`
@@ -51,20 +80,35 @@ func undoTestAuthority(t *testing.T, s *Store, live func() []string, asked *[]st
 	}))
 	t.Cleanup(srv.Close)
 	s.ConfigureCollaboration(srv.URL, "undo-secret")
+	return undos
 }
 
-// A direct edit's receipt carries an Undo ref only when a loaded room took
-// it (Epo 2026-10-20 (a): no room loaded, no Undo).
-func TestSourceEditReceiptCarriesUndoOnlyWhenARoomTookIt(t *testing.T) {
+// A step whose Undo landed in the room but whose receipt was not written (a
+// lost answer, a failed insert) ends with one receipt: the room answers the
+// next request with the id it kept the reverse under, the receipt takes that
+// id, and the step's receipt is then found for any later request.
+func TestALostUndoAnswerEndsWithOneReceipt(t *testing.T) {
 	s := openAccessTestStore(t)
-	owner := newBlobTestUser(t, s, "undo_ref")
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "undo_lost")
 	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
-	live := undoTestEdit(t, s, owner, file.ID, true)
-	if live.Effect.Operation != agenttools.EffectEdited || live.Effect.Undo == nil || live.Effect.Undo.OperationID != live.ID {
-		t.Fatalf("edit a room took = %+v", live.Effect)
+	edit := undoTestEdit(t, s, owner, file.ID)
+	earlier := uid("op")
+	var asked []string
+	undoTestAuthorityKeeping(t, s, func() []string { return nil }, &asked, func(string) string { return earlier })
+	if _, err := s.UndoReceipt(ctx, edit.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("receipt of an unused step: %v", err)
 	}
-	if closed := undoTestEdit(t, s, owner, file.ID, false); closed.Effect.Undo != nil {
-		t.Fatalf("edit no room took = %+v", closed.Effect)
+	undo, err := s.UndoDocumentEdit(ctx, owner, edit, DocumentOperation{ID: uid("op"), RequestHash: "u1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if undo.ID != earlier || undo.Effect.Undo.OperationID != earlier {
+		t.Fatalf("receipt %s (ref %+v), want the room's %s", undo.ID, undo.Effect.Undo, earlier)
+	}
+	found, err := s.UndoReceipt(ctx, edit.ID)
+	if err != nil || found.ID != earlier {
+		t.Fatalf("step's receipt = %+v err = %v", found, err)
 	}
 }
 
@@ -76,7 +120,7 @@ func TestDocumentUndoRecordsTheRoomsSteps(t *testing.T) {
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "undo_room")
 	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
-	edit := undoTestEdit(t, s, owner, file.ID, true)
+	edit := undoTestEdit(t, s, owner, file.ID)
 	var asked []string
 	undoTestAuthority(t, s, func() []string { return nil }, &asked)
 
@@ -174,9 +218,9 @@ func TestChatHistoryKeepsUndoOnlyForStepsARoomHolds(t *testing.T) {
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "undo_history")
 	ws, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
-	held := undoTestEdit(t, s, owner, file.ID, true)
-	unloaded := undoTestEdit(t, s, owner, file.ID, true)
-	undone := undoTestEdit(t, s, owner, file.ID, true)
+	held := undoTestEdit(t, s, owner, file.ID)
+	unloaded := undoTestEdit(t, s, owner, file.ID)
+	undone := undoTestEdit(t, s, owner, file.ID)
 	created, _, err := s.CreateMaterialOperation(ctx, MaterialDraft{
 		ID: uid("mat"), ActorUserID: owner, WorkspaceID: ws.ID, Kind: "flashcards", Title: "Cells",
 		Cards: [][2]string{{"Cell", "Unit of life"}},

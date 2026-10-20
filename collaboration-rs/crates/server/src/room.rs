@@ -186,6 +186,8 @@ pub struct ServiceEdit {
     pub version: u64,
     pub row_bytes: usize,
     pub step: Option<(String, Captured)>,
+    /// Answers whether this room kept `step` for its Undo.
+    pub taken: Option<oneshot::Sender<bool>>,
 }
 
 /// An Undo or Redo of the agent step `step` (`edits::undo`), under the chat
@@ -200,8 +202,10 @@ pub struct AgentUndo {
 
 /// What an Undo or Redo of an agent step came to in one room.
 pub enum Reverted {
-    /// Reverted and stored; the step that reverses it is kept.
-    Done,
+    /// Reverted (stored, or its store retrying), the step that reverses it
+    /// kept under this id: the request's, or an earlier request's whose
+    /// answer was lost.
+    Done(String),
     /// Nothing of the step was left to revert here.
     Nothing,
     /// The room holds no such step (used already, or the room reloaded).
@@ -345,6 +349,9 @@ struct Store {
     retry_delay: Duration,
     failed_event: Option<String>,
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
+    /// Agent Undos waiting on the store that takes them, with the id their
+    /// reverse is kept under.
+    undo_waiters: Vec<(String, oneshot::Sender<Result<Reverted, String>>)>,
 }
 
 /// See `sync_message`: not a valid update, so a release build refuses it.
@@ -355,6 +362,11 @@ const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
 /// builds only.
 #[cfg(debug_assertions)]
 const IT_PANIC_LOAD: &str = "capy-it-panic-load";
+
+/// See `agent_undo`: an Undo whose new step id starts with this is refused
+/// in a quiz's keys room, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_REFUSE_KEYS_UNDO: &str = "capy-it-refuse-keys-undo";
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -391,6 +403,9 @@ pub struct Room {
     /// The agent edits (and their Undo and Redo steps) this room keeps the
     /// items of, by operation id (`ydoc::undo`); gone with the room.
     agent_changes: HashMap<String, Change>,
+    /// Steps this room reverted, by the id their reverse is kept under, so a
+    /// request repeated after a lost answer gets the same answer.
+    agent_reverted: HashMap<String, String>,
 }
 
 /// Spawns a room task; its handle goes into the registry. `actor` is the
@@ -773,6 +788,7 @@ async fn run(
             retry_delay: RETRY_FIRST / 2,
             failed_event: None,
             waiters: Vec::new(),
+            undo_waiters: Vec::new(),
         },
         idle_at: None,
         kind,
@@ -784,6 +800,7 @@ async fn run(
         child_running: false,
         applying: false,
         agent_changes: HashMap::new(),
+        agent_reverted: HashMap::new(),
     };
     let log_bytes = match &room.kind {
         Kindly::Note(note) => note.log_bytes,
@@ -915,6 +932,7 @@ impl Room {
             && !self.store.running
             && self.store.retry_at.is_none()
             && self.store.waiters.is_empty()
+            && self.store.undo_waiters.is_empty()
             && !markers::pending(&self.doc)
     }
 
@@ -1439,12 +1457,17 @@ impl Room {
             Ok(update) => {
                 // A room that loaded after the edit committed holds its items
                 // already, without what it deleted: no Undo there.
+                let mut taken = false;
                 if let Some((id, items)) = edit.step
                     && !update.is_empty()
                 {
                     self.agent_changes
                         .insert(id.clone(), items.change(&self.doc));
                     self.app.agent_steps.hold(&id, &self.name);
+                    taken = true;
+                }
+                if let Some(reply) = edit.taken {
+                    let _ = reply.send(taken);
                 }
                 let bytes = update.len() as u64;
                 self.broadcast_update(None, update);
@@ -1456,6 +1479,9 @@ impl Room {
                     None,
                     &[("room", &self.name), ("stage", "service_edit")],
                 );
+                if let Some(reply) = edit.taken {
+                    let _ = reply.send(false);
+                }
                 return;
             }
         };
@@ -1488,7 +1514,10 @@ impl Room {
     /// stay; a note the store would refuse is put back at once. The result
     /// goes out like a writer's update under the actor's contributor marker
     /// (the store checks the actor's access), and the reply waits for the
-    /// store. The step that reverses it stays as `next`.
+    /// store (a store that failed and retries still answers done: the revert
+    /// stays in the room). The step that reverses it stays as `next`. A step
+    /// this room reverted already answers done again, with the id its reverse
+    /// is kept under, so a request whose answer was lost can be repeated.
     async fn agent_undo(&mut self, undo: AgentUndo) {
         let AgentUndo {
             step,
@@ -1497,19 +1526,35 @@ impl Room {
             reply,
         } = undo;
         let Some(change) = self.agent_changes.remove(&step) else {
-            let _ = reply.send(Ok(Reverted::Missing));
+            let answer = match self.agent_reverted.get(&step) {
+                Some(kept) => Reverted::Done(kept.clone()),
+                None => Reverted::Missing,
+            };
+            let _ = reply.send(Ok(answer));
             return;
         };
-        let refused =
-            if self.discard_pending.is_some() || self.app.evictions.blocks(&self.name, false) {
-                Some(("unavailable_target", crate::edits::ROOM_RESET))
-            } else if self.unsupported().is_some() {
-                Some(("unsupported_operation", UNSUPPORTED_BLOCK))
-            } else if matches!(&self.kind, Kindly::Source(source) if source.paused) {
-                Some(("office_editing_paused", "Office editing is paused"))
-            } else {
-                None
-            };
+        let refused = if self.discard_pending.is_some()
+            || !self.forced_unload.is_empty()
+            || self.app.evictions.blocks(&self.name, false)
+        {
+            Some(("unavailable_target", crate::edits::ROOM_RESET))
+        } else if matches!(self.kind, Kindly::Source(_)) && self.app.handoff().busy(&self.name) {
+            // A publication handoff holds every writer read-only, as drafts.
+            Some(("unavailable_target", "a publication is under way"))
+        } else if self.unsupported().is_some() {
+            Some(("unsupported_operation", UNSUPPORTED_BLOCK))
+        } else if matches!(&self.kind, Kindly::Source(source) if source.paused) {
+            Some(("office_editing_paused", "Office editing is paused"))
+        } else {
+            None
+        };
+        // Debug builds only: the integration tests' refusal of a quiz's keys
+        // room, to check the content room is put back.
+        #[cfg(debug_assertions)]
+        let refused = refused.or_else(|| {
+            (self.name.starts_with("keys:") && next.starts_with(IT_REFUSE_KEYS_UNDO))
+                .then_some(("unavailable_target", "integration test refusal"))
+        });
         if let Some((code, message)) = refused {
             self.agent_changes.insert(step, change);
             let _ = reply.send(Ok(Reverted::Refused {
@@ -1519,12 +1564,13 @@ impl Room {
             return;
         }
         let doc = self.doc.clone();
-        let Some((update, back)) = tokio::task::block_in_place(|| ydoc::undo::revert(&doc, change))
+        let Some(reverted) = tokio::task::block_in_place(|| ydoc::undo::revert(&doc, change))
         else {
-            self.app.agent_steps.forget(&step);
+            self.app.agent_steps.release(&step, &self.name);
             let _ = reply.send(Ok(Reverted::Nothing));
             return;
         };
+        let ydoc::undo::Reverted { update, next: back } = reverted;
         if let Kindly::Note(note) = &self.kind {
             let (model, kind, previous, peer) = (
                 note.model,
@@ -1536,11 +1582,27 @@ impl Room {
                 tokio::task::block_in_place(|| validate(&doc, model, &kind, previous, peer))
             {
                 self.broadcast_update(None, update);
-                if let Some((restore, again)) =
+                let restored = back.and_then(|back| {
                     tokio::task::block_in_place(|| ydoc::undo::revert(&doc, back))
-                {
-                    self.broadcast_update(None, restore);
-                    self.agent_changes.insert(step, again);
+                });
+                match restored {
+                    Some(restored) => {
+                        self.broadcast_update(None, restored.update);
+                        match restored.next {
+                            Some(again) => {
+                                self.agent_changes.insert(step, again);
+                            }
+                            None => self.app.agent_steps.release(&step, &self.name),
+                        }
+                    }
+                    None => {
+                        self.app.agent_steps.release(&step, &self.name);
+                        observe::capture(
+                            "a refused agent Undo could not be put back",
+                            None,
+                            &[("room", &self.name), ("stage", "agent_undo")],
+                        );
+                    }
                 }
                 self.content_changed();
                 let (code, message) = match error {
@@ -1581,20 +1643,14 @@ impl Room {
         }
         self.content_changed();
         self.broadcast_update(None, update);
-        self.agent_changes.insert(next.clone(), back);
-        self.app.agent_steps.forget(&step);
-        self.app.agent_steps.hold(&next, &self.name);
-        let (stored, durable) = oneshot::channel();
-        self.store.waiters.push(stored);
+        self.app.agent_steps.revert(&step, &self.name);
+        self.agent_reverted.insert(step, next.clone());
+        if let Some(back) = back {
+            self.agent_changes.insert(next.clone(), back);
+            self.app.agent_steps.hold(&next, &self.name);
+        }
+        self.store.undo_waiters.push((next, reply));
         self.start_store().await;
-        tokio::spawn(async move {
-            let answer = match durable.await {
-                Ok(Ok(())) => Ok(Reverted::Done),
-                Ok(Err(error)) => Err(error),
-                Err(_) => Err("the room closed before the Undo was stored".into()),
-            };
-            let _ = reply.send(answer);
-        });
     }
 
     /// Sends `notification` (if any) and CLOSED, and forgets the channel.
@@ -1650,6 +1706,7 @@ impl Room {
         }
         self.store.dirty = false;
         self.store.retry_at = None;
+        self.fail_undo_waiters("collaboration room discarded");
         self.answer_store_waiters(Err("collaboration room discarded".into()));
         let _ = reply.send(Ok(()));
     }
@@ -3113,6 +3170,7 @@ impl Room {
                 "store refused the document",
                 json!({ "error": error.to_string(), "room": self.name }),
             );
+            self.fail_undo_waiters(&error.to_string());
             self.answer_store_waiters(Err(error.to_string()));
             self.reject_after_store(&error, bytes);
             return;
@@ -3242,6 +3300,7 @@ impl Room {
             source.failing_since = None;
         }
         let cause = incidents::Cause::from_source(&error.discard_cause(slow_limit));
+        self.fail_undo_waiters(&error.to_string());
         self.answer_store_waiters(Err(error.to_string()));
         let eviction = uuid::Uuid::new_v4().to_string();
         let payload = json!({
@@ -3254,9 +3313,23 @@ impl Room {
         self.reject_room(cause, bytes, &eviction, payload);
     }
 
+    /// Answers the store's waiters. An agent Undo is done either way: a
+    /// failed store is retried with the revert still in the room; a store the
+    /// room gives up on calls `fail_undo_waiters` first.
     fn answer_store_waiters(&mut self, result: Result<(), String>) {
         for waiter in self.store.waiters.drain(..) {
             let _ = waiter.send(result.clone());
+        }
+        for (kept, waiter) in self.store.undo_waiters.drain(..) {
+            let _ = waiter.send(Ok(Reverted::Done(kept)));
+        }
+    }
+
+    /// The room drops what it holds (a discard, a store refused for good):
+    /// the agent Undos waiting on it did not land.
+    fn fail_undo_waiters(&mut self, error: &str) {
+        for (_, waiter) in self.store.undo_waiters.drain(..) {
+            let _ = waiter.send(Err(error.to_owned()));
         }
     }
 

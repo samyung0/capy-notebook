@@ -184,7 +184,8 @@ impl Sources {
             )
             .await?;
         let live_state = live(&name).await;
-        // The edit's Undo lives in the room: none without one (Epo 2026-10-20).
+        // The edit's Undo lives in the room: none without one (Epo 2026-10-20);
+        // the server puts its ref on the receipt once the room took it.
         let undoable = live_state.is_some();
         // The durable document, then the live room's (both off the runtime).
         let (doc, durable, live_vector) = tokio::task::spawn_blocking(
@@ -289,7 +290,7 @@ impl Sources {
         } else {
             row
         };
-        let operation = json!({ "receipt": operation, "undoable": undoable });
+        let operation = json!({ "receipt": operation });
         let body = CheckpointBody {
             actor_ids: vec![input.actor_user_id.clone()],
             epoch: session.epoch,

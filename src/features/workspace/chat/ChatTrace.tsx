@@ -35,6 +35,7 @@ import {
   type TraceRow,
   toolIcon,
   undoAction,
+  undoRefused,
 } from './trace';
 
 type Undoable = ResourceEffect & { undo: UndoRef };
@@ -257,8 +258,14 @@ function toastRefusal(effect: Undoable, code: string) {
   });
 }
 
+/** Steps with an Undo or Redo request out: a second click, in any receipt
+ * showing the step, waits for the first one's answer. */
+const undoing = new Set<string>();
+
 /** Undo on created, edited and restored effects; Redo once undone. Hidden
- * unless the server says the step is available. */
+ * unless the server says the step is available. A refusal hides it for the
+ * session; an unknown outcome (no answer, a server error) keeps it, and the
+ * server answers a retry with the step's receipt if the first one landed. */
 function UndoButton({
   effect,
   handlers,
@@ -274,12 +281,15 @@ function UndoButton({
     <Button
       className="px-1.5 py-1"
       disabled={isPending}
-      onClick={() =>
+      onClick={() => {
+        if (undoing.has(operationId)) return;
+        undoing.add(operationId);
         undo(operationId, {
           onError: (error) => {
             toastRefusal(effect, isApiError(error) ? (error.code ?? '') : '');
-            handlers.onUndoRefused(effect);
+            if (undoRefused(error)) handlers.onUndoRefused(effect);
           },
+          onSettled: () => undoing.delete(operationId),
           onSuccess: (receipt) => {
             if (receipt.outcome === 'succeeded' && receipt.effect) {
               handlers.onUndoApplied(operationId, receipt.effect);
@@ -288,8 +298,8 @@ function UndoButton({
             toastRefusal(effect, receipt.error?.code ?? '');
             handlers.onUndoRefused(effect);
           },
-        })
-      }
+        });
+      }}
       size="xs"
       variant={redo ? 'ghost-hover' : 'danger-light'}
     >
