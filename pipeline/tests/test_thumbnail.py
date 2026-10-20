@@ -1,7 +1,10 @@
-"""Page-1 thumbnails and text previews written at the end of ingest."""
+"""Page-1 thumbnails and text previews written at the end of ingest. The
+pixels are decoded in the sandboxed helper (pipeline/ingest/decode.py); the
+tests that watch Pillow call the helper's functions in this process."""
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import logging
@@ -15,8 +18,8 @@ import pymupdf
 import pytest
 from PIL import Image
 
+from pipeline.ingest import decode, thumbnail
 from pipeline.ingest import plan as ingest_plan
-from pipeline.ingest import thumbnail
 
 
 def _plan(route: str, format_name: str) -> ingest_plan.ProcessingPlan:
@@ -97,8 +100,10 @@ def test_a_bundled_page_is_checked_before_it_is_decoded(monkeypatch, page):
     monkeypatch.setattr(Image.Image, "load", lambda self: decoded.append(self))
 
     with pytest.raises((ValueError, Image.UnidentifiedImageError)):
-        thumbnail.bundled_page(page)
+        decode._page(page)
     assert decoded == []
+    with pytest.raises(decode.DecodeFailed):
+        thumbnail.render(_plan(ingest_plan.DOCUMENT_PARSE, "pdf"), Path("-"), page)
 
 
 def test_an_image_is_oriented_shrunk_and_flattened(tmp_path, monkeypatch):
@@ -116,9 +121,12 @@ def test_an_image_is_oriented_shrunk_and_flattened(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Image.Image, "paste", record)
 
-    webp = thumbnail.render(_plan(ingest_plan.IMAGE_CAPTION, "png"), source, None)
+    webp = base64.b64decode(decode._thumbnail(str(source), "png", 100_000_000)["webp"])
 
     assert _size(webp) == (200, 400)
+    assert (
+        thumbnail.render(_plan(ingest_plan.IMAGE_CAPTION, "png"), source, None) == webp
+    )
     # Flattening worked on the thumbnail, not the 400 x 800 original.
     assert flattened == [(200, 400)]
     with Image.open(io.BytesIO(webp)) as rendered:

@@ -55,7 +55,15 @@ x-worker-env: &worker-env
   CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
   CAPY_PARSE_SPOOL_TTL_HOURS: ${CAPY_PARSE_SPOOL_TTL_HOURS:-2}
 
+# The pipeline services run as capy-ingest (pipeline/Dockerfile), in the parse
+# spool's group, with no capabilities and no privilege gain. The workers decode
+# uploads only in sandboxed children (pipeline/capy_sandbox.py), which keep
+# their uid.
 x-pipeline-service: &pipeline-service
+  user: "10002:10001"
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
   image: capy-ingest-nonprod-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
   build:
     context: ..

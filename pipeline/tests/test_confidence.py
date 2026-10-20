@@ -1,4 +1,5 @@
-"""Extraction confidence and heading retention on a parsed document's PDF."""
+"""Extraction confidence and heading retention on a parsed document's PDF, its
+evidence read by the ingest decode helper."""
 
 from __future__ import annotations
 
@@ -6,9 +7,21 @@ from pathlib import Path
 
 import pymupdf
 
+from pipeline.ingest import decode
 from pipeline.retrieval import confidence
 from pipeline.retrieval.chunking import Chunk, Region, chunk_content_list
-from pipeline.retrieval.headings import retain_headings
+from pipeline.retrieval.headings import retain_headings as _retain_verified
+
+
+def retain_headings(blocks: list[dict], pdf: Path, chunks: list[Chunk]) -> list[Chunk]:
+    evidence = decode.page_evidence(pdf, blocks)
+    return _retain_verified(blocks, chunks, verified=set(evidence["visible_headings"]))
+
+
+def score_chunks(chunks: list[Chunk], pdf: Path, *, vlm: set[int]) -> None:
+    page_texts = decode.page_evidence(pdf, [])["page_texts"]
+    confidence.score_chunks(chunks, vlm=vlm, page_texts=page_texts)
+
 
 PAGE = "Mean height 15 m. West 16 18 12 20. Total 120 120."
 
@@ -47,7 +60,7 @@ def test_vlm_read_pages_score_full_confidence() -> None:
     assert confidence.vlm_pages(blocks) == {4}
 
 
-def test_score_chunks_reads_the_pdf_once_per_file(tmp_path: Path) -> None:
+def test_score_chunks_scores_paged_chunks_against_their_pages(tmp_path: Path) -> None:
     document = pymupdf.open()
     document.new_page().insert_text((50, 50), PAGE)
     document.new_page().insert_text(
@@ -64,7 +77,7 @@ def test_score_chunks_reads_the_pdf_once_per_file(tmp_path: Path) -> None:
         Chunk(text="invented words nowhere on the page", page_start=2, page_end=2),
         Chunk(text="no page model"),
     ]
-    confidence.score_chunks(chunks, path, vlm={2})
+    score_chunks(chunks, path, vlm={2})
     assert chunks[0].confidence == 1.0 and chunks[0].confidence_reasons == []
     assert chunks[1].confidence == 1.0 and chunks[1].confidence_reasons == []
     assert chunks[2].confidence is None and chunks[2].confidence_reasons == []
@@ -221,7 +234,7 @@ def test_font_repaired_pdf_scores_like_the_lab(tmp_path: Path) -> None:
     repaired_path = tmp_path / "parsed.pdf"
     repaired_path.write_bytes(repaired)
     unrepaired = copy.deepcopy(chunks)
-    confidence.score_chunks(unrepaired, fixture / "source.pdf", vlm=set())
-    confidence.score_chunks(chunks, repaired_path, vlm=set())
+    score_chunks(unrepaired, fixture / "source.pdf", vlm=set())
+    score_chunks(chunks, repaired_path, vlm=set())
     assert all(c.confidence < 0.9 for c in unrepaired)
     assert all(c.confidence >= 0.98 and not c.confidence_reasons for c in chunks)

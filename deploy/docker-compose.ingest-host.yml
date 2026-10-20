@@ -32,6 +32,16 @@ x-pipeline-env: &pipeline-env
   # it because its APP_ENV stays `production` to exercise production checks.
   SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
 
+# The pipeline services run as capy-ingest (pipeline/Dockerfile), in the parse
+# spool's group, with no capabilities and no privilege gain. The worker decodes
+# uploads only in sandboxed children (pipeline/capy_sandbox.py), which keep its
+# uid.
+x-pipeline-user: &pipeline-user
+  user: "10002:10001"
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
 services:
   parse-spool-init:
     image: alpine:3.20
@@ -141,6 +151,7 @@ services:
     restart: unless-stopped
 
   parse-coordinator:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
@@ -174,6 +185,7 @@ services:
   # Drive/OneDrive imports: one provider file per claim, streamed into B2.
   # Its own service so a slow provider download never holds an ingest slot.
   import-worker:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
@@ -206,6 +218,7 @@ services:
       - parse_spool:/var/lib/capy-parse
 
   worker:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
@@ -244,6 +257,7 @@ services:
       - parse_spool:/var/lib/capy-parse
 
   host-sampler:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
     read_only: true

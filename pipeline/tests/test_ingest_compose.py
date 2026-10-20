@@ -1,9 +1,9 @@
 """The ingest-host compose files: the parser reads untrusted documents, so it
 runs with no capabilities, no privilege gain and a read-only root (small tmpfs
 mounts, a disk-backed work volume), the Parser budget runs the image the same
-way, the deploy can supply every variable the files require, the image's
-own execute-only init is PID 1, and the host lets a process trace only its own
-descendants."""
+way, the pipeline services run non-root with no capabilities, the deploy can
+supply every variable the files require, the image's own execute-only init is
+PID 1, and the host lets a process trace only its own descendants."""
 
 from __future__ import annotations
 
@@ -94,6 +94,34 @@ def test_the_parser_runs_with_two_malloc_arenas(name: str) -> None:
     _, parser = _parser(name)
 
     assert parser["environment"]["MALLOC_ARENA_MAX"] == "2"
+
+
+@pytest.mark.parametrize("name", COMPOSE)
+def test_the_pipeline_services_run_unprivileged_in_the_spool_group(name: str) -> None:
+    """(security regression: S2 ingest containers) The worker, import worker,
+    parse coordinator and host sampler run as the image's capy-ingest user in
+    the spool's group (the parser's gid), with no capabilities and no
+    privilege gain; the image's sources are readable by that user."""
+    services = yaml.safe_load((DEPLOY / name).read_text())["services"]
+    pipeline = {
+        key: service
+        for key, service in services.items()
+        if "pipeline:" in service.get("image", "")
+    }
+    dockerfile = (ROOT / "pipeline/Dockerfile").read_text(encoding="utf-8")
+
+    roles = {key.removesuffix("-local").removesuffix("-uat") for key in pipeline}
+    assert roles == {"parse-coordinator", "import-worker", "worker", "host-sampler"}
+    for service in pipeline.values():
+        assert service["user"] == "10002:10001"
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert "cap_add" not in service and not service.get("privileged")
+    assert "useradd --uid 10002 --gid 10001" in dockerfile
+    assert "chmod -R a+rX /app/pipeline /app/server" in dockerfile
+    init = services["parse-spool-init"]["command"][-1]
+    assert "chown -R 10001:10001 /var/lib/capy-parse" in init
+    assert "chmod 2770 /var/lib/capy-parse " in init
 
 
 @pytest.mark.parametrize(("name", "targets"), COMPOSE.items())

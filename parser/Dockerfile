@@ -63,6 +63,9 @@ ENV RELEASE_SHA=$RELEASE_SHA
 COPY --chmod=644 parser/app.py ./parser/
 COPY --chmod=644 parser/odl/ ./parser/odl/
 RUN chmod 755 /app/parser/odl
+# The decoder sandbox, the same file the pipeline image carries
+# (test_decoder_sandbox.py checks both copy it from this one source).
+COPY --chmod=644 pipeline/capy_sandbox.py ./parser/capy_sandbox.py
 
 # Under read_only the HOME tmpfs is the user's only writable home, and Java
 # reads user.home from passwd, not $HOME.
