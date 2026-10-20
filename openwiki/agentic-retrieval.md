@@ -2697,9 +2697,11 @@ plain strings, at most 20 of 1 to 200 characters (`fieldlimits.MaterialSources`
 and `MaterialSource`), sent as written. Go (`resolveSources` in
 `internal_materials.go`) stores each as a name in `scope_file_names`: the id or
 exact name of an untrashed file, a top-level material of any kind or a chapter
-becomes its current name, anything else (a lecture, a handout, a web address)
+of the same workspace becomes its current name, anything else (a lecture, a
+handout, a web address, an id from another workspace or of a trashed item)
 stays as written, trimmed, duplicates once (Epo 2026-10-21). No sources stores
-none; the chat scope is not filled in. Over the bounds is the only refusal
+none; the chat scope is not filled in. Over the bounds (more than 20 distinct
+after trimming, or one of 0 or over 200 characters) is the only refusal
 (`invalid_input`, "sources: send at most 20 sources of 1 to 200 characters
 each."); nothing is refused for a source's kind or index state, and agent
 creates no longer return `invalid_scope` or `scope_has_no_indexed_content`.

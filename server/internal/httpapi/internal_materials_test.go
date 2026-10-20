@@ -437,8 +437,8 @@ func TestInternalMaterialWithoutSourcesStoresNone(t *testing.T) {
 	}
 }
 
-// The only refusal sources can get is their format: at most 20 of 1 to 200
-// characters each.
+// The only refusal sources can get is their format: at most 20 distinct ones
+// of 1 to 200 characters each.
 func TestInternalMaterialRefusesSourcesOverTheirBounds(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
@@ -463,6 +463,61 @@ func TestInternalMaterialRefusesSourcesOverTheirBounds(t *testing.T) {
 	if err := st.Pool().QueryRow(context.Background(), `SELECT count(*) FROM materials WHERE id=$1`,
 		store.ChatMaterialID(msgID, "call_bounds")).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("materials = %d, %v", count, err)
+	}
+
+	// A repeat counts once: 25 strings naming 15 sources are within the bound.
+	repeated := make([]string, 25)
+	for i := range repeated {
+		repeated[i] = fmt.Sprintf("Lecture %d", i%15)
+	}
+	id := store.ChatMaterialID(msgID, "call_repeats")
+	cleanupMaterial(t, st, id)
+	body := noteBody(msgID, "call_repeats", "Repeated sources "+msgID, "body")
+	body["sources"] = repeated
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("repeats: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	material, err := st.GetMaterial(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(material.ScopeFileNames) != 15 {
+		t.Fatalf("sources = %#v", material.ScopeFileNames)
+	}
+}
+
+// Only an untrashed item of the material's own workspace resolves to its name
+// (security regression: any-item-sources review F1): an id from another
+// workspace or of a trashed item is stored as written, so a made-from line
+// never shows a name its readers could not see.
+func TestInternalMaterialKeepsForeignAndTrashedIDsAsWritten(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	if _, err := st.Pool().Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id='trash_sources',
+		purge_after=now() + interval '1 day' WHERE id='qz_e2e_private'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `UPDATE materials SET trashed_at=NULL,
+			trash_episode_id=NULL, purge_after=NULL WHERE id='qz_e2e_private'`)
+	})
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	id := store.ChatMaterialID(msgID, "call_1")
+	cleanupMaterial(t, st, id)
+	body := noteBody(msgID, "call_1", "Foreign sources "+msgID, "body")
+	body["sources"] = []string{"f_e2e_public", "note_e2e_public", "ch_e2e_public", "qz_e2e_private", "note_e2e_private"}
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	material, err := st.GetMaterial(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"f_e2e_public", "note_e2e_public", "ch_e2e_public", "qz_e2e_private", "Secret private title"}
+	if !slices.Equal(material.ScopeFileNames, want) {
+		t.Fatalf("sources = %#v, want %#v", material.ScopeFileNames, want)
 	}
 }
 

@@ -95,6 +95,16 @@ func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 		t.Fatalf("unknown file = %d body=%s", rec.Code, rec.Body.String())
 	}
 
+	// Another workspace's file gets the missing id's answer, word for word
+	// (security regression: any-item-sources review F1).
+	unknownFile["fileIds"] = []string{"f_e2e_public"}
+	foreign := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_editor", unknownFile)
+	if foreign.Code != rec.Code ||
+		strings.ReplaceAll(foreign.Body.String(), "f_e2e_public", "f_does_not_exist") != rec.Body.String() {
+		t.Fatalf("foreign file = %d body=%s, missing body=%s", foreign.Code, foreign.Body.String(), rec.Body.String())
+	}
+
 	unknownChapter := generateBody("quiz", "Unknown chapter")
 	unknownChapter["chapters"] = []string{"ch_does_not_exist"}
 	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",

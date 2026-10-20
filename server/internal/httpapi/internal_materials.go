@@ -151,16 +151,17 @@ func mergeProvenance(stored, added *store.Provenance) (*store.Provenance, string
 var sourcesBounds = fmt.Sprintf("sources: send at most %d sources of 1 to %d characters each.",
 	fieldlimits.MaterialSources, fieldlimits.MaterialSource)
 
+// validSources counts a repeated source once, as resolveSources stores it.
 func validSources(sources []string) bool {
-	if len(sources) > fieldlimits.MaterialSources {
-		return false
-	}
+	distinct := map[string]struct{}{}
 	for _, source := range sources {
-		if n := utf8.RuneCountInString(strings.TrimSpace(source)); n == 0 || n > fieldlimits.MaterialSource {
+		source = strings.TrimSpace(source)
+		if n := utf8.RuneCountInString(source); n == 0 || n > fieldlimits.MaterialSource {
 			return false
 		}
+		distinct[source] = struct{}{}
 	}
-	return true
+	return len(distinct) <= fieldlimits.MaterialSources
 }
 
 // resolveSources turns an agent's sources, its made-from line in plain strings
