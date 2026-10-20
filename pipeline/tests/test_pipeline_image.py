@@ -17,7 +17,8 @@ def test_the_image_ships_the_retrieval_diagnostics_without_the_library_writer() 
     dockerfile = (ROOT / "pipeline/Dockerfile").read_text(encoding="utf-8")
     ignored = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
 
-    assert "COPY bench/rag/scripts ./bench/rag/scripts" in dockerfile
+    assert "COPY --chmod=644 bench/rag/scripts ./bench/rag/scripts" in dockerfile
+    assert "find /app/bench -type d -exec chmod 755 {} +" in dockerfile
     assert WRITER in ignored
     assert not [
         line for line in ignored if line.startswith("!") and "bench/rag" in line
