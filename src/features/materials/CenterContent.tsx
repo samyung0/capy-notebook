@@ -1,3 +1,8 @@
+import {
+  type InfiniteData,
+  type QueryClient,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   lazy,
@@ -10,7 +15,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { isMaterialContentUnreadable } from '@/api/client';
+import { isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useFile,
   useMaterial,
@@ -20,6 +25,7 @@ import {
 import type {
   Chapter,
   Material,
+  MaterialPage,
   Provenance,
   Region,
   UserColor,
@@ -337,6 +343,24 @@ export function CenterContent({
   );
 }
 
+/** The kind a cached Files page list gives a standalone material, so a read
+ * that fails can still name it. */
+function listedKind(queryClient: QueryClient, id: string) {
+  for (const [, data] of queryClient.getQueriesData<InfiniteData<MaterialPage>>(
+    { queryKey: qk.ownedMaterialsRoot }
+  )) {
+    for (const page of data?.pages ?? []) {
+      const hit = page.items.find((item) => item.id === id);
+      if (hit) return hit.kind;
+    }
+  }
+}
+
+const UNREADABLE_TITLES: Partial<Record<Material['kind'], () => string>> = {
+  flashcards: m.material_decode_flashcards_title,
+  quiz: m.material_decode_quiz_title,
+};
+
 /** Gates the fetch on a confirmation when the list metadata says the document
  * is heavy. The weight comes from the already-cached material list, so nothing
  * of the document itself is downloaded before the reader chooses. Keyed by
@@ -362,6 +386,7 @@ function MaterialBody({
   target?: string;
 }) {
   const { data: materials, isPending } = useMaterials(workspaceId);
+  const queryClient = useQueryClient();
   const [choice, setChoice] = useState<HeavyMaterialChoice | null>(null);
 
   // Wait for the list before deciding. Rendering first and gating afterwards
@@ -387,6 +412,7 @@ function MaterialBody({
       centerQuiz={centerQuiz}
       forceReadOnly={readOnly || choice === 'readOnly'}
       key={materialId}
+      kind={reference?.type ?? listedKind(queryClient, materialId)}
       materialId={materialId}
       mode={mode}
       onEditorStatusChange={onEditorStatusChange}
@@ -425,6 +451,7 @@ function LiveSetGrid({
 
 export function MaterialContent({
   centerQuiz,
+  kind,
   materialId,
   mode,
   allowExternalAssets,
@@ -434,6 +461,8 @@ export function MaterialContent({
   target,
 }: {
   centerQuiz: boolean;
+  /** The kind the opening list or route knows, for a read that fails. */
+  kind?: Material['kind'];
   materialId: string;
   mode: MaterialMode | null;
   allowExternalAssets: boolean;
@@ -474,7 +503,9 @@ export function MaterialContent({
     return isMaterialContentUnreadable(error) ? (
       <FileError
         message={m.material_decode_body()}
-        title={m.material_decode_title()}
+        title={
+          (kind && UNREADABLE_TITLES[kind]?.()) ?? m.material_decode_title()
+        }
       />
     ) : (
       <FileError />
