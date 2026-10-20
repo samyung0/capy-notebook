@@ -376,7 +376,7 @@
                   "type": "string"
                 },
                 "front": {
-                  "maxLength": 120,
+                  "maxLength": 200,
                   "type": "string"
                 }
               },
@@ -1028,7 +1028,7 @@
                       "type": "string"
                     },
                     "front": {
-                      "maxLength": 120,
+                      "maxLength": 200,
                       "type": "string"
                     },
                     "type": {
@@ -1055,7 +1055,7 @@
                       "type": "string"
                     },
                     "front": {
-                      "maxLength": 120,
+                      "maxLength": 200,
                       "type": "string"
                     },
                     "type": {

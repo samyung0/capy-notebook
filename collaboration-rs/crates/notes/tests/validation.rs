@@ -281,7 +281,7 @@ fn a_card_holds_what_go_projects() {
     .unwrap();
     assert_eq!(
         set(card(&format!("{front}x"), "b", None)).unwrap_err(),
-        "a flashcard front holds at most 120 characters"
+        "a flashcard front holds at most 200 characters"
     );
     assert_eq!(
         set(card("f", &format!("{back}x"), None)).unwrap_err(),

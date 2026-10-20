@@ -88,7 +88,7 @@ const (
 	AnonymousLocalID = 64
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
-	CardFront = 120
+	CardFront = 200
 	CardBack  = 1_000
 )
 
