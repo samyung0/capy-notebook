@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
@@ -457,11 +456,6 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 			return doc, err
 		}
 		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
-		if err == nil {
-			// Rebase can change native identities. Release AI edit guards and
-			// their Undo with the old editing epoch.
-			err = invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased")
-		}
 	}
 	if err != nil {
 		return doc, err
@@ -724,11 +718,6 @@ func (s *Store) RebuildSource(ctx context.Context, fileID string, in SourceRebui
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
-		return err
-	}
-	// Rebase can change native identities. Release AI edit guards and their
-	// Undo with the old editing epoch.
-	if err = invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased"); err != nil {
 		return err
 	}
 	if err = releaseArtifactCacheTx(ctx, tx, oldSHA, published); err != nil {

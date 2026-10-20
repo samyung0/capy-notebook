@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use items::quiz::{self, ReaderLists};
 use items::{Admission, Kind, Refusal, Validator};
-use notes::edit::{DocumentCommand, EditError};
+use notes::edit::DocumentCommand;
 use notes::questions::Policy;
 use serde_json::{Value, json};
 use yrs::branch::BranchPtr;
@@ -1423,8 +1423,11 @@ fn the_save_api_rewrites_only_changed_questions() {
     assert_eq!(projected(&content, &keys), next);
 }
 
+/// The agent's question commands, computed on copies of both documents as
+/// the server does, land in the two rooms, and each room's Undo
+/// (`ydoc::undo`) brings the quiz back.
 #[test]
-fn agent_question_commands_apply_undo_and_refuse_a_changed_question() {
+fn agent_question_commands_apply_and_undo_in_the_rooms() {
     let questions = fixtures();
     let (content, keys, _, _) = rooms(&questions);
     let mut replaced = questions[0].clone();
@@ -1436,24 +1439,43 @@ fn agent_question_commands_apply_undo_and_refuse_a_changed_question() {
         node_id: id.clone(),
         node,
     }];
-    let outcome = quiz::apply_commands(
-        &mut content.transact_mut(),
-        &mut keys.transact_mut(),
-        &commands,
-    )
-    .unwrap();
+    let copy = |room: &Doc, client: u64| {
+        let doc = Doc::with_client_id(client);
+        let whole = room
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        doc.transact_mut()
+            .apply_update(Update::decode_v1(&whole).unwrap())
+            .unwrap();
+        doc
+    };
+    let (content_copy, keys_copy) = (copy(&content, 71), copy(&keys, 72));
+    let (content_edit, keys_edit) = {
+        let mut content_txn = content_copy.transact_mut();
+        let mut keys_txn = keys_copy.transact_mut();
+        quiz::apply_commands(&mut content_txn, &mut keys_txn, &commands).unwrap();
+        (
+            ydoc::undo::Captured::of(&mut content_txn),
+            ydoc::undo::Captured::of(&mut keys_txn),
+        )
+    };
+    let mut changes = Vec::new();
+    for (room, copy, edit) in [
+        (&content, &content_copy, content_edit),
+        (&keys, &keys_copy, keys_edit),
+    ] {
+        let update = copy
+            .transact()
+            .encode_state_as_update_v1(&room.transact().state_vector());
+        ydoc::undo::apply_kept(room, Update::decode_v1(&update).unwrap()).unwrap();
+        changes.push((room, edit.change(room)));
+    }
     assert_eq!(projected(&content, &keys)[0], replaced);
-    quiz::verify_guards(&content.transact(), &keys.transact(), &outcome.guards).unwrap();
-    quiz::apply_commands(
-        &mut content.transact_mut(),
-        &mut keys.transact_mut(),
-        &outcome.inverse,
-    )
-    .unwrap();
+    for (room, change) in changes {
+        // A document the edit left as it was has nothing to revert.
+        let _ = ydoc::undo::revert(room, change);
+    }
     assert_eq!(projected(&content, &keys), questions);
-    // After someone changed it, the old guards refuse.
-    let stale = quiz::verify_guards(&content.transact(), &keys.transact(), &outcome.guards);
-    assert!(matches!(stale, Err(EditError::Edit { .. })));
 }
 
 /// The asset ids a projection names beside its value: every image, in

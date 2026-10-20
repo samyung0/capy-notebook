@@ -54,12 +54,6 @@ func TestCutoverResetMigration(t *testing.T) {
 		`INSERT INTO materials (id,created_by,kind,title) VALUES ('` + mindmap + `','` + owner + `','mindmap','Map'),('` + diagram + `','` + owner + `','diagram','Flow')`,
 		`INSERT INTO material_yjs_documents (material_id,room_schema,state,stored_version,projected_version) VALUES
 			('` + mindmap + `',3,'\x00',2,2),('` + diagram + `',1,'\x00',1,1)`,
-		// AI edit Undo on the note and on the text source, charged to owner.
-		`INSERT INTO agent_operations (id,kind,request_hash,actor_user_id,outcome) VALUES
-			('op_` + note.ID + `','edit_document','h','` + owner + `','succeeded'),('op_` + text + `','edit_document','h','` + owner + `','succeeded')`,
-		`INSERT INTO agent_edit_inverses (operation_id,resource_kind,resource_id,actor_user_id,owner_user_id,incarnation,revision,inverse,guards,inverse_bytes) VALUES
-			('op_` + note.ID + `','material','` + note.ID + `','` + owner + `','` + owner + `',2,3,'{"commands":[]}','[]',100),
-			('op_` + text + `','source_file','` + text + `','` + owner + `','` + owner + `',1,1,'{"commands":[]}','[]',100)`,
 	} {
 		if _, err = s.pool.Exec(ctx, q); err != nil {
 			t.Fatal(q, err)
@@ -88,6 +82,9 @@ func TestCutoverResetMigration(t *testing.T) {
 			`UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',running_job_id=NULL,rebuild_pending=false,
 				rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL WHERE file_id NOT IN ('` + office + `','` + text + `')`,
 			`UPDATE material_yjs_documents SET projected_version=stored_version WHERE material_id<>'` + note.ID + `'`,
+			// 0100 dropped the AI edit Undo table this body still releases.
+			`CREATE TEMP TABLE agent_edit_inverses (resource_kind text, resource_id text, undo_status text, undo_reason text,
+				inverse jsonb, guards jsonb, inverse_bytes bigint, updated_at timestamptz) ON COMMIT DROP`,
 		}, steps...) {
 			if _, err = tx.Exec(ctx, q); err != nil {
 				t.Fatal(q, err)
@@ -147,17 +144,15 @@ func TestCutoverResetMigration(t *testing.T) {
 	// past every name the old state had.
 	var yjsRows, logRows, room, revision int64
 	var content string
-	var released bool
 	if err = tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM material_yjs_documents WHERE material_id=m.id),
 		(SELECT count(*) FROM material_yjs_updates WHERE material_id=m.id),
 		COALESCE((SELECT room_schema FROM material_yjs_documents WHERE material_id=m.id), 1 + m.trash_restores),
-		m.content::text, m.revision,
-		NOT EXISTS (SELECT 1 FROM agent_edit_inverses WHERE owner_user_id=m.created_by AND undo_status='available')
-		FROM materials m WHERE m.id=$1`, note.ID).Scan(&yjsRows, &logRows, &room, &content, &revision, &released); err != nil {
+		m.content::text, m.revision
+		FROM materials m WHERE m.id=$1`, note.ID).Scan(&yjsRows, &logRows, &room, &content, &revision); err != nil {
 		t.Fatal(err)
 	}
-	if yjsRows != 0 || logRows != 0 || room != 3 || !released {
-		t.Fatalf("note: yjs rows=%d log rows=%d room schema=%d undo released=%v", yjsRows, logRows, room, released)
+	if yjsRows != 0 || logRows != 0 || room != 3 {
+		t.Fatalf("note: yjs rows=%d log rows=%d room schema=%d", yjsRows, logRows, room)
 	}
 	if strings.Contains(content, "pending") || revision != revisionBefore+1 {
 		t.Fatalf("note projection after the reset (revision %d): %s", revision, content)

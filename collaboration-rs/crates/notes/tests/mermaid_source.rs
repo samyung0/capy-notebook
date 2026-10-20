@@ -300,7 +300,7 @@ fn a_source_set_by_command_keeps_typing_that_arrives_meanwhile() {
         text.insert(&mut peer.transact_mut(), end, " --> C");
     });
     let root = room.get_or_insert_text(plate::CONTENT_ROOT);
-    let outcome = edit::apply_material_commands(
+    edit::apply_material_commands(
         &mut room.transact_mut(),
         &root,
         &[DocumentCommand::SetProperty {
@@ -311,15 +311,6 @@ fn a_source_set_by_command_keeps_typing_that_arrives_meanwhile() {
         }],
     )
     .unwrap();
-    assert_eq!(
-        outcome.inverse,
-        vec![DocumentCommand::SetProperty {
-            expected_value: "flowchart TD\n  A --> B".into(),
-            node_type: "mermaid".into(),
-            property: "source".into(),
-            value: SOURCE.into(),
-        }]
-    );
     common::apply(&room, &typing);
     assert_eq!(projected_source(&room), "flowchart TD\n  A --> B --> C");
     assert_eq!(

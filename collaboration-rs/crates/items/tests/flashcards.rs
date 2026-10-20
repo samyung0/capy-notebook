@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use items::flashcards::{self, Card};
 use items::{Admission, Kind, Refusal, Validator};
-use notes::edit::{DocumentCommand, EditError};
+use notes::edit::DocumentCommand;
 use serde_json::{Value, json};
 use yrs::updates::decoder::Decode;
 use yrs::{
@@ -351,7 +351,9 @@ fn node(id: &str, front: &str, back: &str) -> Value {
 }
 
 #[test]
-fn agent_card_commands_apply_undo_and_refuse_a_changed_card() {
+/// The agent's card commands, computed on a copy as the server does, land in
+/// the room, and the room's Undo of them (`ydoc::undo`) brings the set back.
+fn agent_card_commands_apply_and_undo_in_the_room() {
     let (doc, _) = room(&set_value(&[("c1", "A", "a"), ("c2", "B", "b")]));
     let commands = vec![
         DocumentCommand::ReplaceChild {
@@ -369,27 +371,30 @@ fn agent_card_commands_apply_undo_and_refuse_a_changed_card() {
             node_id: "c2".into(),
         },
     ];
-    let outcome = {
-        let mut txn = doc.transact_mut();
+    let copy = Doc::with_client_id(77);
+    let whole = doc
+        .transact()
+        .encode_state_as_update_v1(&yrs::StateVector::default());
+    copy.transact_mut()
+        .apply_update(Update::decode_v1(&whole).unwrap())
+        .unwrap();
+    let captured = {
+        let mut txn = copy.transact_mut();
         Kind::Flashcards
             .apply_commands(&mut txn, &commands)
-            .unwrap()
+            .unwrap();
+        ydoc::undo::Captured::of(&mut txn)
     };
+    let update = copy
+        .transact()
+        .encode_state_as_update_v1(&doc.transact().state_vector());
+    ydoc::undo::apply_kept(&doc, Update::decode_v1(&update).unwrap()).unwrap();
     let after: Vec<(String, String)> = cards(&doc).into_iter().map(|c| (c.id, c.front)).collect();
     assert_eq!(
         after,
         [("c1".into(), "A2".into()), ("c3".into(), "C".into())]
     );
-    // Undo: guards hold, the inverse brings the set back.
-    Kind::Flashcards
-        .verify_guards(&doc.transact(), &outcome.guards)
-        .unwrap();
-    {
-        let mut txn = doc.transact_mut();
-        Kind::Flashcards
-            .apply_commands(&mut txn, &outcome.inverse)
-            .unwrap();
-    }
+    ydoc::undo::revert(&doc, captured.change(&doc)).unwrap();
     let restored: Vec<(String, String, String)> = cards(&doc)
         .into_iter()
         .map(|c| (c.id, c.front, c.back))
@@ -401,19 +406,6 @@ fn agent_card_commands_apply_undo_and_refuse_a_changed_card() {
             ("c2".into(), "B".into(), "b".into())
         ]
     );
-    // A card someone typed in since the edit: Undo is refused.
-    let (doc, _) = room(&set_value(&[("c1", "A", "a"), ("c2", "B", "b")]));
-    let outcome = {
-        let mut txn = doc.transact_mut();
-        Kind::Flashcards
-            .apply_commands(&mut txn, &commands[..1])
-            .unwrap()
-    };
-    face(&doc, "c1", "front").insert(&mut doc.transact_mut(), 0, "x");
-    match Kind::Flashcards.verify_guards(&doc.transact(), &outcome.guards) {
-        Err(EditError::Edit { message, .. }) => assert!(message.contains("changed")),
-        other => panic!("expected stale, got {other:?}"),
-    }
 }
 
 #[test]

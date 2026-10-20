@@ -231,8 +231,8 @@ const (
 	UndoPending     UndoStatus = "pending"
 )
 
-// UndoRef points at the durable edit operation whose inverse the server holds.
-// The inverse payload itself never leaves the server.
+// UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
+// room holds its Yjs items while the step is live (Epo 2026-10-20).
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
 	Status      UndoStatus `json:"status" enum:"available,undone,unavailable,pending"`
@@ -252,7 +252,7 @@ const (
 
 // ResourceEffect is one durable mutation receipt as shown in chat and stored
 // on the assistant message. It carries identity and status only, never the
-// document content or an inverse payload.
+// document content.
 type ResourceEffect struct {
 	Operation   EffectOperation `json:"operation" enum:"created,edited,edit_undone,trashed,restored"`
 	Resource    ResourceRef     `json:"resource"`

@@ -2289,6 +2289,14 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
     assert seen["assistantMessageId"] == "m_1" and seen["toolCallId"] == "c1"
     assert result.effects[0]["operation"] == "edited"
     assert ctx._scope_outline is None and reloaded["n"] == 1
+    assert "The user can undo this" in result.text()
+
+
+def test_an_edit_no_open_room_took_says_nothing_of_undo():
+    """No loaded room took the edit, so it has no Undo (Epo 2026-10-20)."""
+    result = tools._receipt_result(_receipt("edited", "source_file", "f_1"))
+    assert result.text().startswith("Edited ")
+    assert "undo" not in result.text().lower()
 
 
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(

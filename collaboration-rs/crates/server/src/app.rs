@@ -277,6 +277,47 @@ pub struct App {
     pub source_joins: Mutex<HashMap<(u64, u64), (String, Instant)>>,
     /// The agent markdown converter, when its bundle is configured.
     pub markdown: Option<notes::markdown::Converter>,
+    /// Agent edits whose Undo a loaded room holds.
+    pub agent_steps: AgentSteps,
+}
+
+/// The agent edits (and their Undo and Redo steps) whose Yjs items a loaded
+/// room holds for the live Undo (`ydoc::undo`, Epo 2026-10-20): each step's
+/// id and the rooms holding its parts (a quiz: its content and keys rooms).
+/// A room's steps go when it unloads.
+#[derive(Default)]
+pub struct AgentSteps(Mutex<HashMap<String, Vec<String>>>);
+
+impl AgentSteps {
+    fn map(&self) -> std::sync::MutexGuard<'_, HashMap<String, Vec<String>>> {
+        self.0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// `room` holds a part of step `id`.
+    pub fn hold(&self, id: &str, room: &str) {
+        let mut map = self.map();
+        let rooms = map.entry(id.to_owned()).or_default();
+        if !rooms.iter().any(|held| held == room) {
+            rooms.push(room.to_owned());
+        }
+    }
+
+    /// The rooms holding step `id` (none: no Undo).
+    pub fn rooms(&self, id: &str) -> Vec<String> {
+        self.map().get(id).cloned().unwrap_or_default()
+    }
+
+    pub fn forget(&self, id: &str) {
+        self.map().remove(id);
+    }
+
+    /// `room` unloaded: every step it held a part of goes.
+    pub fn forget_room(&self, room: &str) {
+        self.map()
+            .retain(|_, rooms| !rooms.iter().any(|held| held == room));
+    }
 }
 
 impl App {

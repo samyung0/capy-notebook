@@ -1926,8 +1926,7 @@ func TestOfficeStateDiffMigrationKeepsTheLedger(t *testing.T) {
 			COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1),0)
 			+COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1),0)
 			+COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id=$1 AND status='ready'),0)
-			+COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1),0)
-			+COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE owner_user_id=$1),0)`, owner).Scan(&booked, &recount); err != nil {
+			+COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1),0)`, owner).Scan(&booked, &recount); err != nil {
 			t.Fatal(err)
 		}
 		return booked, recount

@@ -140,9 +140,6 @@ func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID stri
 		if err != nil {
 			return nil, err
 		}
-		if err := invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "trashed"); err != nil {
-			return nil, err
-		}
 		return &agenttools.ResourceEffect{
 			Operation:      agenttools.EffectTrashed,
 			Resource:       agenttools.ResourceRef{Kind: agenttools.KindSourceFile, ID: fileID, Title: name, WorkspaceID: wsID},
@@ -217,9 +214,6 @@ func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materia
 			return nil, ErrNotFound
 		}
 		if err != nil {
-			return nil, err
-		}
-		if err := invalidateEditInversesTx(ctx, tx, agenttools.KindMaterial, materialID, "trashed"); err != nil {
 			return nil, err
 		}
 		if kind == "note" {
@@ -590,8 +584,7 @@ func purgeTrashedRowTx(ctx context.Context, tx pgx.Tx, kind agenttools.ResourceK
 	if ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	// A chat step that would restore it has nothing left to restore.
-	return invalidateEditInversesTx(ctx, tx, kind, id, "purged")
+	return nil
 }
 
 // SweepDueTrash purges episodes whose retention has passed, one resource per

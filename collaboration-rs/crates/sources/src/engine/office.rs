@@ -31,8 +31,6 @@ pub struct Args {
     pub object_ref: Option<ObjectRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commands: Option<Vec<Command>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ids: Option<Vec<String>>,
 }
 
 /// The process's XLSX replica cache, sized by the pool (its share of the
@@ -166,26 +164,16 @@ pub fn dispatch(request: &Frame) -> Answer {
                 vec![result.state],
             ))
         }
-        "locateOfficeTargets" => {
-            let ids = args.ids.as_deref().unwrap_or_default();
-            Ok((
-                to_json(
-                    office_service::locate_targets(blob(0)?, checkpoint(1)?, ids)
-                        .map_err(failure)?,
-                )?,
-                Vec::new(),
-            ))
-        }
         other => Err(Failure::invalid(format!("unknown engine method {other}"))),
     }
 }
 
 /// The typed calls the server makes, on the lane each belongs to: saves
 /// (effects, seeds for a load, replica drops) never wait behind background
-/// work (exports, rebases, inspect, agent commands, locate, assets).
+/// work (exports, rebases, inspect, agent commands, assets).
 pub mod calls {
     use office_service::{
-        BaselineEntry, Command, CommandResult, Entry, Format, NetEffect, ObjectRef, Target,
+        BaselineEntry, Command, CommandResult, Entry, Format, NetEffect, ObjectRef,
     };
     use serde::de::DeserializeOwned;
     use serde_json::Value;
@@ -357,22 +345,6 @@ pub mod calls {
                 targets: parse(reply.value["targets"].take())?,
                 notice: parse(reply.value["notice"].take())?,
             })
-        }
-
-        pub async fn locate_targets(
-            &self,
-            on: On<'_>,
-            state: &[u8],
-            ids: &[String],
-        ) -> Result<Vec<Target>, EngineError> {
-            let mut request = args(on);
-            request.ids = Some(ids.to_vec());
-            let request = frame(
-                "locateOfficeTargets",
-                &request,
-                vec![on.base.to_vec(), state.to_vec()],
-            );
-            parse(self.call(Lane::Background, on.room, request).await?.value)
         }
 
         /// The image bytes of an effect's asset: (bytes, mime type, sha256).

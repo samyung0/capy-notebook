@@ -415,7 +415,7 @@ export function getMockScenarioHandlers(
         }),
         http.post('/api/chat/edit-operations/:id/undo', () =>
           HttpResponse.json(
-            { errors: [{ message: 'stale_target' }], status: 409 },
+            { errors: [{ message: 'undo_unavailable' }], status: 409 },
             { status: 409 }
           )
         ),

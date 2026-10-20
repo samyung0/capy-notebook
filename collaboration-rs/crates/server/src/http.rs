@@ -34,6 +34,7 @@ pub fn router(app: Shared) -> Router {
         .route("/internal/documents/inspect", post(document))
         .route("/internal/documents/edit", post(document))
         .route("/internal/documents/undo", post(document))
+        .route("/internal/documents/undo-status", post(document))
         .route("/internal/commands", post(command))
         .route("/internal/markdown/convert", post(markdown))
         // Reads its own body within a writer's sync cap (`drafts.rs`).
@@ -277,7 +278,8 @@ async fn publish_source_refresh(
     source_answer("source_publish", result)
 }
 
-/// `/internal/documents/{inspect,edit,undo}`: direct AI edits (`edits.rs`).
+/// `/internal/documents/{inspect,edit,undo,undo-status}`: direct AI edits
+/// (`edits.rs`).
 async fn document(
     State(app): State<Shared>,
     uri: axum::http::Uri,
@@ -594,6 +596,7 @@ pub(crate) mod tests {
             handoff: Default::default(),
             source_joins: Default::default(),
             markdown: None,
+            agent_steps: Default::default(),
         })
     }
 

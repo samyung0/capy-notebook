@@ -327,8 +327,8 @@ function OpenButton({
 const hasUndo = (effect: ResourceEffect): effect is Undoable => !!effect.undo;
 
 /** A file the turn created or edited: one strip in full text colour, with the
- * file's own icon, Undo (danger-light) and Open. The verb follows the
- * operation, so Undo/Redo steps rewrite it in place. */
+ * file's own icon, Undo (danger-light) while the step is live, and Open. The
+ * verb follows the operation, so Undo/Redo steps rewrite it in place. */
 function ReceiptRow({
   effect,
   handlers,

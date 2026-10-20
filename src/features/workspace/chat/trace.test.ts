@@ -124,7 +124,7 @@ describe('buildTrace', () => {
     expect(stopped.at(-1)).toMatchObject({ state: 'stopped' });
   });
 
-  it('folds later steps on a created file into its card and keeps edit receipts', () => {
+  it('folds later steps on a created file into its card and keeps edit receipts, Undo or not', () => {
     const edit: ResourceEffect = {
       operation: 'edited',
       resource: { id: 'f_2', kind: 'source_file', title: 'Notes.md' },
@@ -138,11 +138,16 @@ describe('buildTrace', () => {
           effects: [{ ...quiz, operation: 'edited', undo: undefined }],
         }),
         tool('c', 'edit_document', [3, 4], { effects: [edit] }),
+        // An edit no loaded room took has no Undo; its receipt still shows.
+        tool('d', 'edit_document', [4, 5], {
+          effects: [{ ...edit, undo: undefined }],
+        }),
       ],
     });
     expect(rows.map((row) => row.type)).toEqual([
       'thinking',
       'created',
+      'edited',
       'edited',
     ]);
   });

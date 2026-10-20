@@ -143,8 +143,8 @@ type SourceCheckpoint struct {
 	// is measured from.
 	SeedBytes        int64  `json:"seedBytes,omitempty" minimum:"0"`
 	BaseSourceSHA256 string `json:"baseSourceSHA256,omitempty"`
-	// A direct AI edit or its Undo commits its receipt (and inverse) with the
-	// checkpoint so the saved state and the durable effect cannot diverge.
+	// A direct AI edit commits its receipt with the checkpoint so the saved
+	// state and the durable effect cannot diverge.
 	Operation *SourceCheckpointOperation `json:"operation,omitempty"`
 	// A text source's opening characters as saved (openwiki/thumbnails.md),
 	// written to files.preview with the checkpoint. The collaboration server
@@ -157,12 +157,10 @@ type SourceCheckpoint struct {
 const sourcePreviewChars = 600
 
 // SourceCheckpointOperation is the receipt side of a source edit checkpoint.
-// Inverse and Guards are present for an edit; UndoOf for an Undo.
+// Undoable says the source's live room took the edit and holds its Undo.
 type SourceCheckpointOperation struct {
-	Receipt SourceCheckpointReceipt `json:"receipt"`
-	Inverse json.RawMessage         `json:"inverse,omitempty"`
-	Guards  json.RawMessage         `json:"guards,omitempty"`
-	UndoOf  string                  `json:"undoOf,omitempty"`
+	Receipt  SourceCheckpointReceipt `json:"receipt"`
+	Undoable bool                    `json:"undoable,omitempty"`
 }
 
 // SourceCheckpointReceipt is the trusted operation identity the collaboration
@@ -230,8 +228,8 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	}
 	accounts := append([]string{owner}, actors...)
 	if edit {
-		// An edit charges the file's payer (inverses, update log), so its row
-		// joins the batch, as material writes lock theirs. The payer is set
+		// An edit charges the file's payer (its update log), so its row joins
+		// the batch, as material writes lock theirs. The payer is set
 		// once at insert, so the unlocked read is stable.
 		payer, err := filePayer(ctx, tx, fileID)
 		if err != nil {
@@ -475,7 +473,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true)
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true)
 	if err != nil {
 		return out, err
 	}
@@ -499,7 +497,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 			return out, tx.Commit(ctx)
 		}
 	}
-	// The maintenance pause refuses committing an Office agent edit or Undo (a
+	// The maintenance pause refuses committing an Office agent edit (a
 	// replayed receipt above still answers); saves of rooms already open still
 	// land, so the pause's flush persists.
 	if in.Operation != nil && format != "text" {
@@ -571,7 +569,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		}
 	}
 	if in.Operation != nil {
-		receipt, err := s.commitSourceOperationTx(ctx, tx, fileID, ws, owner, epoch, out.Checkpoint, *in.Operation)
+		receipt, err := s.commitSourceOperationTx(ctx, tx, fileID, ws, *in.Operation)
 		if err != nil {
 			return out, err
 		}
@@ -587,9 +585,9 @@ func validSourcePreview(preview string) bool {
 		!strings.ContainsRune(preview, 0)
 }
 
-// commitSourceOperationTx records the edit (receipt + inverse) or the Undo
-// (receipt + consumed eligibility) in the checkpoint's transaction.
-func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, ws, owner string, epoch, checkpoint int64, op SourceCheckpointOperation) (AgentOperation, error) {
+// commitSourceOperationTx records the edit's receipt in the checkpoint's
+// transaction.
+func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, ws string, op SourceCheckpointOperation) (AgentOperation, error) {
 	receipt := op.Receipt.operation()
 	receipt.WorkspaceID = ws
 	receipt.Outcome = agenttools.OutcomeSucceeded
@@ -604,38 +602,12 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 	}
 	receipt.Kind = "edit_document"
 	effect.Operation = agenttools.EffectEdited
-	if op.UndoOf != "" {
-		receipt.Kind = "undo_edit"
-		if effect.Operation, err = undoneStepEffectTx(ctx, tx, op.UndoOf); err != nil {
-			return AgentOperation{}, err
-		}
-		if err := markEditInverseUndoneTx(ctx, tx, op.UndoOf, receipt.ID); err != nil {
-			return AgentOperation{}, err
-		}
-	}
-	// Every step stores the one reversing it, so an Undo's Undo is Redo.
-	reversible := op.UndoOf == "" || hasInverseCommands(op.Inverse)
-	if reversible {
+	if op.Undoable {
 		effect.Undo = &agenttools.UndoRef{OperationID: receipt.ID, Status: agenttools.UndoAvailable}
 	}
 	receipt.Effect = &effect
 	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
 		return AgentOperation{}, err
-	}
-	if reversible {
-		// The stored inverse is charged to the file's payer, like the edit.
-		payer, err := filePayer(ctx, tx, fileID)
-		if err != nil {
-			return AgentOperation{}, err
-		}
-		if err := insertEditInverseTx(ctx, tx, EditInverse{
-			OperationID: receipt.ID, ResourceKind: agenttools.KindSourceFile, ResourceID: fileID,
-			ActorUserID: receipt.ActorUserID, OwnerUserID: payer, WorkspaceID: ws,
-			Incarnation: epoch, Revision: checkpoint, Inverse: op.Inverse, Guards: op.Guards,
-			InverseBytes: int64(len(op.Inverse) + len(op.Guards)),
-		}); err != nil {
-			return AgentOperation{}, err
-		}
 	}
 	return receipt, nil
 }

@@ -1,13 +1,12 @@
 [package]
 name = "ydoc"
-description = "Pure yrs helpers shared by note and source rooms: update inspection, guards, scratch documents."
+description = "Pure yrs helpers shared by note and source rooms: update inspection, scratch documents, live Undo."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
-serde.workspace = true
 thiserror.workspace = true
 yrs.workspace = true
 

@@ -133,11 +133,7 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 		return AgentOperation{}, false, err
 	}
 	// Its Undo moves it to the trash (UndoFileStep).
-	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, f.ID).Scan(&ownerID); err != nil {
-		return AgentOperation{}, false, err
-	}
-	if err := insertFileStepTx(ctx, tx, &op, StepTrash, ownerID, ""); err != nil {
+	if err := markFileUndoTx(ctx, tx, &op); err != nil {
 		return AgentOperation{}, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
