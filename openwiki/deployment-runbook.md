@@ -2219,13 +2219,17 @@ the host:
   refused before LibreOffice starts, as the terminal `422 parse_format_mismatch`
   (the coordinator fails the file without a retry). Every conversion gets a
   fresh LibreOffice profile in a job directory under the parse child's slot
-  directory, which is also LibreOffice's `TMPDIR`, so a killed conversion's
-  files go when the slot is wiped. Its
+  directory, which is also LibreOffice's `TMPDIR` and holds its IPC pipe
+  (`-env:OSL_SOCKET_PATH`), so a killed conversion's files go when the slot is
+  wiped. LibreOffice puts the pipe in `/tmp` or `/var/tmp` whenever it may
+  write there, so the image leaves both unwritable for the parser user. Its
   `registrymodifications.xcu` blocks links from documents outside trusted
   locations (there are none), disables macros at the highest security level and
-  sets Writer and Calc link updates to never. A conversion that exceeds
+  sets Writer and Calc link updates to never. LibreOffice starts as
+  `soffice.bin` itself, through the decoder sandbox (§7.5), so it can start no
+  process to leave behind. A conversion that exceeds
   `CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is killed with its whole process group,
-  so `soffice.bin` cannot outlive its launcher, and the document fails as
+  and the document fails as
   `parse_hard_timeout` with its fingerprint quarantined, like a parse past its
   deadline. Ingest, `/capture_page`, and
   Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
@@ -2235,11 +2239,13 @@ the host:
   `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp
   profile and `read_only: true`. Its writable places are a 64 MiB tmpfs HOME
   (`/run/capy-parser/home`, also the parser user's passwd home, which Java
-  reads), a 64 MiB tmpfs `/tmp` (only the JVM's perf data: Java's
-  `java.io.tmpdir` is the document's output directory), the `parse_spool`
+  reads), the `parse_spool`
   volume and the disk-backed `parser_work` volume at `/run/capy-parser/work`
   (slot directories, transfers, Office jobs, and the image's `TMPDIR`, so
-  spooled uploads stay off RAM; startup empties it). The release script runs
+  spooled uploads stay off RAM; startup empties it). There is no `/tmp`
+  mount: `/tmp` stays the image's (root, mode 0755). A writable tmpfs there
+  would draw LibreOffice's pipe into it, where the sandbox refuses it, and
+  every Office conversion would fail. The release script runs
   `parse-spool-init` before every candidate parser, not only at bootstrap, so
   the volumes get their directories and owner (uid 10001) from init rather
   than from the image. The Parser budget workflow runs the image under the
@@ -2263,7 +2269,10 @@ the host:
   the template in the same release or the nonprod healthcheck fails.
 - **Process isolation.** The parser's API process makes itself non-dumpable
   at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
-  same user, can neither trace it nor read its memory or environment. The
+  same user, can neither trace it nor read its memory or environment. It holds
+  `PARSER_TOKEN` in a constant, removes it from its environment at import,
+  before any child starts, and refuses to start, or a request, without one;
+  its children run under the decoder sandbox (§7.5). The
   playbook also sets `kernel.yama.ptrace_scope=1`
   (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
   descendants. Check it with `sysctl kernel.yama.ptrace_scope` after applying
@@ -2303,6 +2312,92 @@ docker exec "$parser" curl -sS --max-time 5 https://example.com    # fails at on
 docker exec "$parser" curl -fsS http://10.77.0.2:8091/healthz      # 200
 docker inspect --format '{{.State.Health.Status}}' "$parser"       # healthy
 curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the host keeps egress
+```
+
+### 7.5 Decoder sandbox
+
+Every process that decodes an uploaded file runs under one policy (decision
+2026-10-20), applied by `pipeline/capy_sandbox.py`; the parser image copies the
+same file. Each child gets an empty environment plus an allowlist, a
+non-dumpable parent, `no_new_privs`, a seccomp filter (no non-Unix sockets, no
+io_uring, no cross-process calls such as ptrace, `process_vm_readv`,
+`pidfd_getfd` or `process_madvise`, and no `setsid`/`setpgid` or new processes
+where the child never needs them), a Landlock ruleset limiting its files to its
+own code and job folder and scoping its signals and abstract Unix sockets to
+its own domain (no signal to, or socket of, a process outside it), rlimits
+sized from the S0 measurements, its own process group killed whole at its
+wall-clock timeout, and death with its parent. Children keep their parent's
+non-root uid. A per-job child starts through a trampoline (a fresh interpreter
+applies the policy to itself, then execs the target); the persistent parse
+child confines itself right after its `setsid`.
+
+| Child | Environment | Memory | CPU | Descriptors | File size | Also blocked | Files |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Parse child (persistent) | the API's, without `PARSER_TOKEN` | 2 GiB soft address space | none (600 s per document) | 256 | 512 MiB | `setsid` | reads its code, the system trees and Java's jars; writes its slot folder |
+| LibreOffice (`soffice.bin`) | `PATH`, `LANG`, `HOME` and `TMPDIR` (its job folder), `MALLOC_ARENA_MAX=2` | the parse child's, inherited | 180 s | 256 | 256 MiB | `setsid`, `setpgid`, new processes | reads the system trees; writes its job folder, its IPC pipe included |
+| Java (OpenDataLoader) | `PATH`, `HOME`, `LANG`; `-XX:ActiveProcessorCount` from the container's CPU quota | 2 GiB data, address space lifted | 2,400 s behind the 600 s deadline | 256 | 512 MiB | `setsid`, `setpgid`, new processes | reads the system trees, its jars and its PDF; writes its output folder |
+| Ingest decode helper (`pipeline/ingest/decode.py`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
+
+Core dumps are off for all of them. The ingest worker never imports MuPDF or
+Pillow: PDF page text and heading evidence, image captions and card thumbnails
+all come from the helper. The helper has no network through seccomp; the
+worker's uid gets no nftables rule, which would cut the worker's own traffic.
+The parser's uid-10001 rule (§7.4) stays as its outer layer. The sandboxed JVM
+reads neither `/sys` nor `/proc`, so the parser reads the container's CPU quota
+(`/sys/fs/cgroup/cpu.max`, rounded up, at most the CPUs it may run on) at
+import and passes it as the JVM's CPU count, which sizes its GC and compiler
+threads.
+
+**What the parents read back.** A child's answer can come from a compromised
+decoder, so its parent bounds and checks it. The launcher reads a child's
+stdout only up to the cap its caller sets and keeps the last 64 KiB of its
+stderr; past the cap it kills the group. The decode helper's cap is 32 MiB:
+the largest real answer measured, a 1,475-page PDF's page texts, is 4 MiB, and
+the densest page, 22 KiB, fits 1,400 times. The worker accepts only the JSON
+shape each mode answers (page texts as strings, heading indices as integers,
+images as base64); anything else, like an answer past the cap, fails the
+decode as an ordinary error, retried as the job's policy says. The parse child
+may write its slot folder, so the API writes a document's transfer file only
+through the descriptor it created and opens a result there only as a regular
+file, never through a link and never waiting on a FIFO. Card thumbnails shrink
+while they decode, as captions do, so an image near Pillow's 89 Mpx limit fits
+the helper's 768 MiB.
+
+**Landlock.** A deployed host (`APP_ENV=production`, as rendered for UAT and
+production) without Landlock ABI 6 (kernel 6.12 or later, which scopes signals
+and abstract sockets) refuses to start: the parser API at startup and every
+ingest-host worker process (ingest worker, parse coordinator, import worker).
+Local and e2e run the decoders with whatever ABI the kernel has, or without
+the Landlock layer and log `Landlock unavailable`; off Linux (local
+development) the launcher keeps only the environment and the timeout. Check a
+host with `grep -o landlock /sys/kernel/security/lsm` and its ABI with
+`python3 -c 'import ctypes; print(ctypes.CDLL(None).syscall(444, None, 0, 1))'`
+(6 or more).
+
+**Containers.** Both ingest compose files run the pipeline services (parse
+coordinator, ingest worker, import worker, host sampler) as the image's
+`capy-ingest` user, uid 10002 in the spool's group (gid 10001, the parser's),
+with `cap_drop: [ALL]` and `no-new-privileges:true`; the parser keeps its own
+flags (§7.4). `parse-spool-init` still makes the spool directories setgid 10001
+with mode 2770 on every release, so what either side writes the other may read
+and remove. The role locks in the nonprod capacity folder are opened read-only
+(`flock` needs no write), so a lock file init gave to uid 10001 with group read
+still locks. The pipeline image makes its sources and retrieval diagnostics
+readable to that user (the ingest host builds under umask 077), and the worker
+makes itself non-dumpable at startup. The local `deploy/docker-compose.yml`
+runs its worker, parse coordinator and import worker with the same user and
+flags. `pipeline/tests/test_ingest_compose.py` and
+`pipeline/tests/test_decoder_sandbox.py` keep these rules.
+
+Verify after a release (nonprod shown; production's services are `worker`,
+`parse-coordinator`, `import-worker` and `host-sampler`):
+
+```bash
+worker=$(docker ps -q --filter label=com.docker.compose.service=worker-uat | head -1)
+docker exec "$worker" grep -E '^(Uid|Gid|CapEff|NoNewPrivs)' /proc/1/status  # 10002, 10001, 0, 1
+docker logs "$worker" 2>&1 | grep -c 'Landlock unavailable'                   # 0
+docker logs "$parser" 2>&1 | grep -c 'Landlock unavailable'                   # 0
+docker exec "$parser" sh -c 'test -w /tmp || echo read-only'                  # read-only
 ```
 
 ---

@@ -25,6 +25,7 @@ from pipeline.retrieval.chunking import (
     clean_inline,
     flatten_table,
 )
+from pipeline.ingest import decode
 from pipeline.retrieval.headings import retain_headings
 from pipeline.retrieval.packing import pack_blocks
 
@@ -396,8 +397,11 @@ def evaluate(source: dict, attempt: Path, output: Path, code_hashes: dict) -> di
         measured = folder / "parsed.pdf" if (folder / "parsed.pdf").is_file() else pdf
         if sha256(measured) != receipt["measured_pdf_sha256"]:
             raise ValueError(f"Measured PDF mismatch: {source['id']} {arm}")
+        evidence = decode.page_evidence(measured, blocks[arm])
         chunks[arm] = retain_headings(
-            blocks[arm], measured, pack_blocks(blocks[arm], frozenset(furniture))
+            blocks[arm],
+            pack_blocks(blocks[arm], frozenset(furniture)),
+            verified=set(evidence["visible_headings"]),
         )
         write(output / f"{arm}-chunks.json", [asdict(c) for c in chunks[arm]])
     body = compare_body(

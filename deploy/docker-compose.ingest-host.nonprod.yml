@@ -55,7 +55,15 @@ x-worker-env: &worker-env
   CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
   CAPY_PARSE_SPOOL_TTL_HOURS: ${CAPY_PARSE_SPOOL_TTL_HOURS:-2}
 
+# The pipeline services run as capy-ingest (pipeline/Dockerfile), in the parse
+# spool's group, with no capabilities and no privilege gain. The workers decode
+# uploads only in sandboxed children (pipeline/capy_sandbox.py), which keep
+# their uid.
 x-pipeline-service: &pipeline-service
+  user: "10002:10001"
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
   image: capy-ingest-nonprod-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
   build:
     context: ..
@@ -103,16 +111,17 @@ services:
     network_mode: host
     # No `init: true`: the image's own PID 1 (tini, execute-only) reaps.
     # The parser reads untrusted documents: no capabilities, no privilege gain,
-    # Docker's default seccomp profile and a read-only root. HOME and /tmp are
-    # small RAM tmpfs mounts; sources, conversions and temporary files use the
-    # disk-backed parser_work volume (the image sets TMPDIR to it).
+    # Docker's default seccomp profile and a read-only root. HOME is a small
+    # RAM tmpfs mount and /tmp stays the image's, which the parser user cannot
+    # write (LibreOffice's IPC pipe then goes to each conversion's folder);
+    # sources, conversions and temporary files use the disk-backed parser_work
+    # volume (the image sets TMPDIR to it).
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
       - /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
-      - /tmp:noexec,nosuid,nodev,size=64m
     environment:
       <<: *parser-env
       APP_ENV: production
