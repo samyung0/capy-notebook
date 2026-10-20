@@ -3673,6 +3673,7 @@ async def test_pending_changes_reach_the_agent_only_for_documents_it_reads(
 
     monkeypatch.setattr(pending, "load", load)
     monkeypatch.setattr(agent.pending_hints, "match", no_match)
+    monkeypatch.setattr(agent.pending_hints, "_indexed_langs", _no_langs)
     monkeypatch.setattr(tools.store, "read_file_range", read_range)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
@@ -3718,6 +3719,10 @@ async def _match_all(_query, pool, limit=5):
     return [p.hint for p in pool[:limit]]
 
 
+async def _no_langs(_doc_ids):
+    return {}
+
+
 async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeypatch):
     """Epo 2026-10-20: matching edits follow the user message as short hints
     in a source block, saved with the answer so later turns skip them."""
@@ -3728,6 +3733,7 @@ async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeyp
     stream, seen = _script_stream([_assembled(_answer(("done", [])))])
     monkeypatch.setattr(pending, "load", load)
     monkeypatch.setattr(agent.pending_hints, "match", _match_all)
+    monkeypatch.setattr(agent.pending_hints, "_indexed_langs", _no_langs)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     events = await _collect(
         "How many phases does mitosis have?", ToolContext(workspace_id="ws_1")
@@ -3774,43 +3780,3 @@ async def test_a_user_message_carries_hints_for_matching_unindexed_edits(monkeyp
     assert kinds.index(agent.pending_hints.KIND) < kinds.index("query")
     done = next(e for e in events if e["type"] == "done")
     assert "pendingHints" not in done["toolEvidence"]
-
-
-async def test_a_turn_saves_the_documents_it_read(monkeypatch):
-    """Review S6: readDocuments is what lets a later fold keep a hint."""
-
-    async def load(*_args, **_kwargs):
-        return _hinted_sources()
-
-    async def read_range(**_kwargs):
-        return [
-            {
-                "id": "c1",
-                "file_id": "f_1",
-                "file_name": "bio.pdf",
-                "chunk_idx": 0,
-                "text": "x",
-            }
-        ]
-
-    async def no_match(*_args, **_kwargs):
-        return []
-
-    stream, _seen = _script_stream(
-        [
-            _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
-            _assembled(_answer(("done", []))),
-        ]
-    )
-    monkeypatch.setattr(pending, "load", load)
-    monkeypatch.setattr(agent.pending_hints, "match", no_match)
-    monkeypatch.setattr(tools.store, "read_file_range", read_range)
-    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    ctx = ToolContext(workspace_id="ws_1", operations=frozenset({"source.read"}))
-    ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "bio.pdf", "chapter_id": None, "chunks": 3}],
-    }
-    events = await _collect("What changed?", ctx)
-    done = next(e for e in events if e["type"] == "done")
-    assert done["toolEvidence"]["readDocuments"] == ["f_1"]

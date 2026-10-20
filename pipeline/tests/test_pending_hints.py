@@ -3,6 +3,8 @@ uncitable search hits, compaction dropping hints never followed by a read."""
 
 from __future__ import annotations
 
+import secrets
+
 import pytest
 
 from pipeline.prompts import chat as chat_prompts
@@ -62,6 +64,18 @@ async def _all_match(_query, pool, limit=pending_hints.HINT_LIMIT):
     return [p.hint for p in pool[:limit]]
 
 
+@pytest.fixture(autouse=True)
+def no_indexed_langs(request, monkeypatch):
+    """Unit tests have no index: every document's language is detected."""
+    if request.node.get_closest_marker("integration"):
+        return
+
+    async def none(_doc_ids):
+        return {}
+
+    monkeypatch.setattr(pending_hints, "_indexed_langs", none)
+
+
 def test_hints_say_added_changed_or_removed_with_the_right_text():
     sources = _sources(
         _change("add", after="new mitosis paragraph", cid="a", label="Text at 3"),
@@ -106,7 +120,8 @@ def test_hints_are_bounded_and_notes_are_not_starved():
     assert len(pool) == pending_hints.CANDIDATES_MAX
     assert "m_1" in {hint.doc_id for hint in pool}
 
-    long = "filler " * 100 + "photosynthesis happens here " + "filler " * 100
+    # Past two snippets in, within the 500 characters matching reads.
+    long = "filler " * 45 + "photosynthesis happens here " + "filler " * 100
     [hint] = pending_hints.candidates(_sources(_change("add", after=long)))
     text = pending_hints.snippet(hint, "photosynthesis")
     assert len(text) <= pending_hints.HINT_CHARS and "photosynthesis" in text
@@ -120,7 +135,7 @@ def test_hints_are_bounded_and_notes_are_not_starved():
 
 def test_a_cjk_snippet_holds_its_match():
     # Review S3: the window was placed by the bigram-folded offset.
-    text = "无关的文字" * 100 + "细胞分裂的过程" + "其他内容" * 200
+    text = "无关的文字" * 70 + "细胞分裂的过程" + "其他内容" * 200
     [hint] = pending_hints.candidates(_sources(_change("add", after=text)))
     assert "细胞分裂" in pending_hints.snippet(hint, "细胞分裂")
 
@@ -157,7 +172,7 @@ async def test_only_rendered_hints_are_kept_and_read_documents_skipped(monkeypat
     assert await pending_hints.for_message("细胞", sources, skip=set()) == []
 
 
-def _history(packed, *, read_later=()):
+def _history(packed):
     return [
         {"id": "u1", "role": "user", "content": "what about division?"},
         {
@@ -167,12 +182,7 @@ def _history(packed, *, read_later=()):
             "toolEvidence": {"pendingHints": packed},
         },
         {"id": "u2", "role": "user", "content": "and the lecture?"},
-        {
-            "id": "a2",
-            "role": "assistant",
-            "content": "Answer two.",
-            "toolEvidence": {"readDocuments": list(read_later)},
-        },
+        {"id": "a2", "role": "assistant", "content": "Answer two."},
     ]
 
 
@@ -187,7 +197,9 @@ def _packed(sources):
     )
 
 
-async def test_replay_keeps_pending_documents_and_reads_as_past():
+async def test_replay_keeps_hints_as_shown_and_reads_as_past():
+    """Epo 2026-10-20: hints stay in context until condensing, so earlier
+    requests stay a cached prefix: replay does not depend on this turn."""
     sources = _two_documents()
     ctx = tools.ToolContext(workspace_id="ws", pending_sources=sources)
     replayed = await evidence.history_turns(_history(_packed(sources)), ctx)
@@ -202,25 +214,19 @@ async def test_replay_keeps_pending_documents_and_reads_as_past():
     assert hinted["content"].startswith(pending_hints.REPLAY_HEADING)
     assert {h.key for h, _ in hinted["_hints"]} == {("f_1", "a"), ("m_1", "n")}
 
-    # Review S4: a document no longer pending here (trashed, processed or out
-    # of scope) is not replayed.
-    narrowed = tools.ToolContext(
-        workspace_id="ws",
-        pending_sources=_sources(_change("add", after="mitosis text", cid="a")),
-    )
-    replayed = await evidence.history_turns(_history(_packed(sources)), narrowed)
-    [hinted] = [m for m in replayed if m.get("_kind") == pending_hints.KIND]
-    assert {h.key for h, _ in hinted["_hints"]} == {("f_1", "a")}
+    # The same block whatever this turn's pending changes are.
+    elsewhere = tools.ToolContext(workspace_id="ws")
+    again = await evidence.history_turns(_history(_packed(sources)), elsewhere)
+    replayed_again = next(m for m in again if m.get("_kind") == pending_hints.KIND)
+    assert replayed_again["content"] == hinted["content"]
 
 
-async def test_checkpoint_and_mid_turn_folds_drop_unread_hints(monkeypatch):
-    """Review B1: the live fold sees history through chat_messages, and a
-    document read in the current turn counts."""
+async def test_condensing_drops_every_hint(monkeypatch):
+    """Epo 2026-10-20: a checkpoint fold and a mid-turn fold (history through
+    chat_messages, review B1) drop every hint, read or not."""
     sources = _two_documents()
     ctx = tools.ToolContext(workspace_id="ws", pending_sources=sources)
-    prior = await evidence.history_turns(
-        _history(_packed(sources), read_later=["m_1"]), ctx
-    )
+    prior = await evidence.history_turns(_history(_packed(sources)), ctx)
     folded: list = []
 
     async def summarize(**kwargs):
@@ -232,17 +238,8 @@ async def test_checkpoint_and_mid_turn_folds_drop_unread_hints(monkeypatch):
         prior_summary="", turns=prior, current_user_message="next", spec=_spec()
     )
     text = " ".join(m["content"] for m in folded)
-    assert "nucleus text" in text and "mitosis text" not in text
-
-    async def fold(read):
-        folded.clear()
-        messages = chat_prompts.chat_messages(
-            locale="en", checkpoint=None, history=prior, query="next"
-        )
-        pending_hints.mark_read(messages, read)
-        with pytest.raises(compact.ContextTooLarge):
-            await compact.compact_messages(messages, _spec())
-        return " ".join(m["content"] for m in folded)
+    assert "what about division?" in text
+    assert "nucleus text" not in text and "mitosis text" not in text
 
     # The chat request forced over the limit: the fold runs, then the size
     # check still fails. The summarizer's own input fits.
@@ -254,14 +251,15 @@ async def test_checkpoint_and_mid_turn_folds_drop_unread_hints(monkeypatch):
         return real(messages, *args, **kwargs)
 
     monkeypatch.setattr(compact, "needs_compact", needs)
-    text = await fold(set())
-    assert "nucleus text" in text and "mitosis text" not in text
-    assert "mitosis text" in await fold({"f_1"})  # read during this turn
-    hint_turns = [m for m in folded if m.get("_kind") == pending_hints.KIND]
-    assert hint_turns and all(
-        chat_prompts._checkpoint_turn(m)["provenance"] == "untrusted_source_data"
-        for m in hint_turns
+    folded.clear()
+    messages = chat_prompts.chat_messages(
+        locale="en", checkpoint=None, history=prior, query="next"
     )
+    with pytest.raises(compact.ContextTooLarge):
+        await compact.compact_messages(messages, _spec())
+    text = " ".join(m["content"] for m in folded)
+    assert "what about division?" in text
+    assert "nucleus text" not in text and "mitosis text" not in text
 
 
 async def test_search_lists_unshown_unindexed_edits_after_its_passages(monkeypatch):
@@ -315,23 +313,46 @@ async def test_search_lists_unshown_unindexed_edits_after_its_passages(monkeypat
     assert clipped.endswith("EDITS BLOCK")
 
 
+def _index_as(workspace, doc_id: str, lang: str) -> None:
+    """Give a file an indexed chunk in ``lang``."""
+    content_id = "content_" + secrets.token_hex(6)
+    with workspace._connect() as conn, conn.transaction():
+        conn.execute(
+            "INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES(%s,%s,%s,'ready')",
+            (content_id, workspace.id, content_id),
+        )
+        conn.execute(
+            "INSERT INTO rag_chunks(id,workspace_id,content_id,chunk_idx,text,indexed_text,lang) "
+            "VALUES(%s,%s,%s,0,'indexed','indexed',%s)",
+            (content_id + "c", workspace.id, content_id, lang),
+        )
+        conn.execute(
+            "INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES(%s,%s,%s)",
+            (doc_id, workspace.id, content_id),
+        )
+
+
 @pytest.mark.integration
-async def test_matching_folds_like_search_and_stems_per_language(workspace):
-    del workspace  # the migrated database the pipeline pool reaches
-    sources = _sources(
-        _change("add", after="We ﬁnd the eﬄuent here.", cid="lig"),
-        _change("add", after="Water is H₂O at room temperature.", cid="sub"),
-        _change("add", after="细胞分裂的过程", cid="cjk"),
-        _change(
-            "add",
-            after="During mitosis the cells were dividing quickly and the "
-            "chromosomes separated into two nuclei.",
-            cid="stem",
-        ),
-        _change("add", after="Unrelated sentence about rocks.", cid="none"),
+async def test_matching_folds_like_search_in_each_documents_language(workspace):
+    english = workspace.add_file("english.pdf")
+    _index_as(workspace, english, "en")
+    sources = pending.PendingSources(
+        [
+            _file(
+                "f_1",
+                _change("add", after="We ﬁnd the eﬄuent here.", cid="lig"),
+                _change("add", after="Water is H₂O at room temperature.", cid="sub"),
+                _change("add", after="细胞分裂的过程", cid="cjk"),
+                _change("add", after="Unrelated sentence about rocks.", cid="none"),
+                _change("add", after="Added the enzyme diagram", cid="und"),
+            ),
+            # Its indexed chunks are English, so a short edit stems.
+            _file(english, _change("add", after="Enzymes speed reactions", cid="stem")),
+        ]
     )
     pool = await pending_hints.prepared(sources)
     assert await pending_hints.prepared(sources) is pool  # once per load
+    assert {p.hint.change_id: p.config for p in pool}["stem"] == "english"
 
     async def ids(query):
         return {hint.change_id for hint in await pending_hints.match(query, pool)}
@@ -339,7 +360,8 @@ async def test_matching_folds_like_search_and_stems_per_language(workspace):
     assert await ids("find effluent") == {"lig"}
     assert await ids("H2O") == {"sub"}
     assert await ids("细胞分裂") == {"cjk"}
-    # Stemmed in the edit's language (English here; a short edit detects as
-    # undetermined and is matched unstemmed, as a short chunk is).
-    assert await ids("divides") == {"stem"}
+    assert await ids("enzyme") == {"stem", "und"}
     assert await ids("volcano") == set()
+    # f_1's language is undetermined: the query's stopwords are dropped, so
+    # "the" no longer matches "Added the enzyme diagram" (Epo 2026-10-20).
+    assert await ids("What is the formula?") == set()

@@ -171,7 +171,7 @@ async def summarize_checkpoint(
     build: Callable[..., list[dict[str, str]]] = checkpoint_messages,
 ) -> str:
     """Fold all supplied turns, using chronological batches when necessary.
-    Hints whose document was never read are not folded (pending_hints)."""
+    Hints are not folded: condensing drops them (pending_hints)."""
     turns = [
         folded
         for folded in (pending_hints.for_summary(turn) for turn in turns)

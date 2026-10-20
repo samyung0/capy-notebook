@@ -4074,14 +4074,20 @@ Unindexed edits stay findable through a lexical match of the captured
 changes' text (`retrieval/pending_hints.py`, Epo 2026-10-20): no chunking,
 vectors or provider call. One SQL statement over `unnest` runs `to_tsvector
 @@ websearch_to_tsquery` on the texts after `tokenize_for_search` (ligature,
-sub/superscript and CJK folds), each in its own language's config, with the
-query from `search_query_terms`; each `to_tsvector` is computed once. The
-candidates are prepared once per load of the turn's pending changes, in a
-worker thread (tokenizing and detecting 2,000 long texts takes seconds). A
-candidate is an added or changed text (its new text), a removed one (its old
-text), or a change without text by its label; moves are left out, and at most
-2,000 changes are taken round-robin across documents, so one busy file does
-not starve the rest. Documents already read this turn are skipped. Each hint
+sub/superscript and CJK folds), with the query from `search_query_terms`;
+each `to_tsvector` is computed once. A hint matches in its document's language
+(Epo 2026-10-20): the dominant language of the document's indexed chunks (one
+query per load), else one detection over the document's pending changes
+together. While a document's language stays undetermined (`simple`, which keeps
+every word), the query's words on Postgres's English, French, German and
+Spanish stopword lists (`ts_lexize` on their snowball dictionaries) are dropped
+before matching it, so "What is the formula?" no longer matches any edit
+holding "the". The candidates are prepared once per load of the turn's pending
+changes, the tokenizing and detection in a worker thread. A candidate is an
+added or changed text (its new text), a removed one (its old text), or a change
+without text by its label, read up to 500 characters; moves are left out, and
+at most 2,000 changes are taken round-robin across documents, so one busy file
+does not starve the rest. Documents already read this turn are skipped. Each hint
 names the document (`file_id` or `material_id`), its name and the change label
 or block quoted, and says "added", "changed" or "removed" with a snippet of at
 most 200 characters around the first query word (found in the original text,
@@ -4091,14 +4097,13 @@ so a CJK match stays in the window). The lines are source data, in a
 - The user message: at most 5 hints, a block of at most 400 tokens in its own
   message right after the query (`_kind` `pending_hints`). Only the hints that
   fit are shown, saved and counted as hinted. A change hinted earlier in the
-  conversation is not hinted again. The hints are saved with the answer
-  (`toolEvidence.pendingHints`, snippets only, with `readDocuments`, the
-  documents the turn read) and replayed after their user message under a
-  past-tense heading, only while their document still has pending changes in
-  the turn's scope (not trashed, processed or out of scope). A checkpoint or
-  live-history fold keeps a hint only once its document was read, in that
-  turn, a later one or the current one, and tags it as untrusted source data
-  for the summarizer; it drops the rest.
+  conversation (since its last checkpoint) is not hinted again. The hints are
+  saved with the answer (`toolEvidence.pendingHints`, snippets only) and
+  replayed after their user message as shown, under a past-tense heading, so
+  earlier requests stay a cached prefix. Hints stay in context until the chat
+  is condensed; condensing (a checkpoint or a live-history fold) drops every
+  hint, read or not (Epo 2026-10-20). A read document's details stay through
+  its read result.
 - `search_workspace`: matching edits not yet shown this conversation come
   after the passages under their own heading, not citable (no passage
   numbers), and stay whole when a long result is clipped; with no passage,

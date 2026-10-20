@@ -34,8 +34,6 @@ def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
         payload["libraryExcerpts"] = ctx.library_evidence.pack()
     if ctx.pending_hints:
         payload["pendingHints"] = pending_hints.pack(ctx.pending_hints)
-    if ctx.pending_sources.read_ids:
-        payload["readDocuments"] = sorted(ctx.pending_sources.read_ids)
     return payload
 
 
@@ -65,12 +63,6 @@ async def history_turns(
     out = []
     replayed: set[str] = set()
     turns = history or []
-    # The documents read in each turn and every later one: a hint stays
-    # through compaction only once its document was read.
-    read_from: list[set[str]] = [set() for _ in range(len(turns) + 1)]
-    for i in range(len(turns) - 1, -1, -1):
-        saved = turns[i].get("toolEvidence") or {}
-        read_from[i] = read_from[i + 1] | set(saved.get("readDocuments") or [])
     for i, turn in enumerate(turns):
         role, content = turn.get("role"), turn.get("content") or ""
         if role not in ("user", "assistant"):
@@ -78,17 +70,16 @@ async def history_turns(
         saved = turn.get("toolEvidence") or {}
         if content:
             out.append({"id": turn.get("id") or "", "role": role, "content": content})
-            # A user message's hints are saved with the answer that follows it,
-            # and replayed after it while their document is still pending here.
+            # A user message's hints are saved with the answer that follows it
+            # and replayed after it, as shown, until the chat is condensed.
             answer = turns[i + 1] if i + 1 < len(turns) else {}
             if role == "user" and answer.get("role") == "assistant":
                 saved_hints = pending_hints.unpack(
                     (answer.get("toolEvidence") or {}).get("pendingHints") or []
                 )
                 hint_message = pending_hints.message(
-                    pending_hints.replayed(saved_hints, ctx.pending_sources),
+                    pending_hints.replayed(saved_hints),
                     heading=pending_hints.REPLAY_HEADING,
-                    read=read_from[i + 1],
                     message_id=turn.get("id") or "",
                 )
                 if hint_message is not None:

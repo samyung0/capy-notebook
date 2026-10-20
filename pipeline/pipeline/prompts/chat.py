@@ -142,14 +142,11 @@ def chat_messages(
     summary = str((checkpoint or {}).get("summary") or "")
     if summary:
         messages.append(memory_message(summary))
-    # A replayed hint message keeps what compaction needs to drop the hints
-    # whose document was never read (pending_hints.for_summary).
-    kept = ("_kind", "_hints", "_heading", "_read")
     messages.extend(
         {
             "role": turn["role"],
             "content": turn["content"],
-            **{key: turn[key] for key in kept if turn.get(key)},
+            **({"_kind": turn["_kind"]} if turn.get("_kind") else {}),
         }
         for turn in history
     )
@@ -201,7 +198,7 @@ def _checkpoint_turn(turn: dict[str, Any]) -> dict[str, str]:
         "content": content,
         **(
             {"provenance": "untrusted_source_data"}
-            if turn.get("_kind") in ("source_evidence", "pending_hints")
+            if turn.get("_kind") == "source_evidence"
             else {}
         ),
     }

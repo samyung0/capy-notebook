@@ -25,7 +25,7 @@ from .chunking import (
     search_query_terms,
     tokenize_for_search,
 )
-from .lang import TS_CONFIG, detect_lang
+from .lang import TS_CONFIG, UND, detect_lang
 
 # Bounds (the Editor, 2026-10-20): a handful of snippets of about 200
 # characters, about 400 tokens a message; candidates are capped because a
@@ -34,7 +34,7 @@ HINT_LIMIT = 5
 HINT_CHARS = 200
 HINT_TOKENS = 400
 CANDIDATES_MAX = 2000
-CANDIDATE_CHARS = 2000
+CANDIDATE_CHARS = 500  # read per change for matching (Epo 2026-10-20)
 
 _VERBS = {"add": "added", "replace": "changed", "remove": "removed"}
 
@@ -68,7 +68,8 @@ class Hint:
 class _Prepared:
     hint: Hint
     tokens: str  # the text through the search tokenizer
-    config: str  # its language's text search config
+    config: str  # its document's language's text search config
+    undetermined: bool  # its document's language is not known
 
 
 def candidates(sources: Any) -> list[Hint]:
@@ -134,21 +135,64 @@ def candidates(sources: Any) -> list[Hint]:
     return out[:CANDIDATES_MAX]
 
 
-def _prepare(hints: list[Hint]) -> list[_Prepared]:
+# How much of a document's pending text one detection reads.
+DETECT_CHARS = 4000
+
+
+def _prepare(hints: list[Hint], indexed: dict[str, str]) -> list[_Prepared]:
+    """Tokens and each document's language (Epo 2026-10-20): the dominant
+    language of its indexed chunks, else one detection over its pending
+    changes together."""
+    langs = dict(indexed)
+    joined: dict[str, list[str]] = {}
+    for hint in hints:
+        if hint.doc_id not in langs:
+            joined.setdefault(hint.doc_id, []).append(hint.text)
+    for doc_id, texts in joined.items():
+        langs[doc_id] = detect_lang(" ".join(texts)[:DETECT_CHARS])
     return [
         _Prepared(
-            hint, tokenize_for_search(hint.text), TS_CONFIG[detect_lang(hint.text)]
+            hint,
+            tokenize_for_search(hint.text),
+            TS_CONFIG[langs[hint.doc_id]],
+            langs[hint.doc_id] == UND,
         )
         for hint in hints
     ]
 
 
+async def _indexed_langs(doc_ids: list[str]) -> dict[str, str]:
+    """Each document's dominant language among its indexed chunks of a known
+    language; documents with none are left out."""
+    if not doc_ids:
+        return {}
+    db = await store.pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """SELECT doc, lang FROM (
+                SELECT doc, c.lang,
+                    row_number() OVER (PARTITION BY doc ORDER BY count(*) DESC, c.lang) AS r
+                FROM (
+                    SELECT file_id AS doc, content_id FROM rag_file_contents WHERE file_id = ANY(%s)
+                    UNION ALL
+                    SELECT material_id, content_id FROM rag_material_contents WHERE material_id = ANY(%s)
+                ) d JOIN rag_chunks c ON c.content_id = d.content_id
+                WHERE c.lang <> %s
+                GROUP BY doc, c.lang) ranked
+            WHERE r = 1""",
+            (doc_ids, doc_ids, UND),
+        )
+        return {row["doc"]: row["lang"] for row in await cur.fetchall()}
+
+
 async def prepared(sources: Any) -> list[_Prepared]:
     """The turn's candidates with their search tokens and configs, computed
-    once per PendingSources (a reload starts over) and off the event loop:
-    tokenizing and detecting 2,000 long texts takes seconds."""
+    once per PendingSources (a reload starts over), the tokenizing and
+    detection off the event loop: 2,000 texts take about a second."""
     if sources.hint_pool is None:
-        sources.hint_pool = await asyncio.to_thread(_prepare, candidates(sources))
+        hints = candidates(sources)
+        indexed = await _indexed_langs(sorted({hint.doc_id for hint in hints}))
+        sources.hint_pool = await asyncio.to_thread(_prepare, hints, indexed)
     return sources.hint_pool
 
 
@@ -157,18 +201,37 @@ async def match(
 ) -> list[Hint]:
     """The best lexical matches of ``query`` among ``pool``: the search
     tokenizer (ligature, sub/superscript and CJK folds) on both sides and each
-    edit's own language's text search config, as search ranks chunks."""
+    document's language's text search config. For a document of undetermined
+    language the query's words on Postgres's English, French, German and
+    Spanish stopword lists are dropped first (Epo 2026-10-20): its ``simple``
+    config keeps every word, so "the" would match almost anything."""
     any_of = search_query_terms(query).any_of
     if not pool or not any_of:
         return []
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            """WITH m AS MATERIALIZED (
-                SELECT c.ord, to_tsvector(c.cfg, c.t) AS v, websearch_to_tsquery(c.cfg, %s) AS q
-                FROM unnest(%s::text[], %s::regconfig[]) WITH ORDINALITY AS c(t, cfg, ord))
-            SELECT ord FROM m WHERE v @@ q ORDER BY ts_rank(v, q) DESC, ord LIMIT %s""",
-            (any_of, [p.tokens for p in pool], [p.config for p in pool], limit),
+            """WITH plain AS (
+                SELECT coalesce(string_agg(w, ' or '), '') AS q
+                FROM unnest(string_to_array(%(any)s, ' or ')) AS w
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM unnest(ARRAY['english_stem', 'french_stem',
+                        'german_stem', 'spanish_stem']::regdictionary[]) AS d
+                    WHERE ts_lexize(d, lower(w)) = '{}'::text[])),
+            m AS MATERIALIZED (
+                SELECT c.ord, to_tsvector(c.cfg, c.t) AS v,
+                    websearch_to_tsquery(c.cfg, CASE WHEN c.und THEN plain.q ELSE %(any)s END) AS q
+                FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(und)s::boolean[])
+                    WITH ORDINALITY AS c(t, cfg, und, ord)
+                CROSS JOIN plain)
+            SELECT ord FROM m WHERE v @@ q ORDER BY ts_rank(v, q) DESC, ord LIMIT %(limit)s""",
+            {
+                "any": any_of,
+                "texts": [p.tokens for p in pool],
+                "cfgs": [p.config for p in pool],
+                "und": [p.undetermined for p in pool],
+                "limit": limit,
+            },
         )
         return [pool[row["ord"] - 1].hint for row in await cur.fetchall()]
 
@@ -248,12 +311,10 @@ def message(
     hints: list[tuple[Hint, str]],
     *,
     heading: str = MESSAGE_HEADING,
-    read: set[str] | None = None,
     message_id: str = "",
 ) -> dict[str, Any] | None:
-    """The hint message that follows a user message (None: nothing fits). It
-    keeps the hints it shows and the documents read since, so compaction can
-    drop the hints whose document was never read (``for_summary``)."""
+    """The hint message that follows a user message (None: nothing fits),
+    with the hints it shows."""
     block, kept = render(hints, heading)
     if not kept:
         return None
@@ -263,29 +324,14 @@ def message(
         "content": block,
         "_kind": KIND,
         "_hints": kept,
-        "_heading": heading,
-        "_read": set(read or ()),
     }
 
 
-def mark_read(messages: list[dict[str, Any]], read: set[str] | None) -> None:
-    """Count the documents read so far this turn before a fold."""
-    for item in messages:
-        if item.get("_kind") == KIND and read:
-            item["_read"] = set(item.get("_read") or ()) | read
-
-
 def for_summary(item: dict[str, Any]) -> dict[str, Any] | None:
-    """A message as compaction folds it: a hint message keeps only the hints
-    whose document was read (Epo 2026-10-20), or goes."""
-    if item.get("_kind") != KIND:
-        return item
-    read = item.get("_read") or set()
-    kept = [(h, s) for h, s in item.get("_hints") or [] if h.doc_id in read]
-    if not kept:
-        return None
-    block, kept = render(kept, item.get("_heading") or MESSAGE_HEADING)
-    return {"role": "user", "content": block, "_kind": KIND} if kept else None
+    """A message as condensing folds it: hints stay in context until the chat
+    is condensed, which drops every one (Epo 2026-10-20); a read document's
+    details stay through its read result."""
+    return None if item.get("_kind") == KIND else item
 
 
 _SAVED = {"doc_id": "docId", "change_id": "changeId"}
@@ -318,11 +364,7 @@ def unpack(saved: list[dict[str, Any]]) -> list[tuple[Hint, str]]:
     return out
 
 
-def replayed(hints: list[tuple[Hint, str]], sources: Any) -> list[tuple[Hint, str]]:
-    """Saved hints still worth replaying: their document is in this turn's
-    scope and still has pending changes (not trashed, processed or out of
-    scope)."""
-    pending = {str(f["fileId"]) for f in sources.files} | {
-        str(n["materialId"]) for n in sources.notes
-    }
-    return [(replace(h, text=s), s) for h, s in hints if h.doc_id in pending]
+def replayed(hints: list[tuple[Hint, str]]) -> list[tuple[Hint, str]]:
+    """Saved hints as they were shown: they stay in context until condensing,
+    so earlier requests remain a cached prefix (Epo 2026-10-20)."""
+    return [(replace(hint, text=text), text) for hint, text in hints]

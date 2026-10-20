@@ -521,7 +521,6 @@ async def _run_turn(
                 pending_omitted = omitted
                 yield ctx.pending_sources.event(omitted)
             await ctx.pending_sources.validate()
-            pending_hints.mark_read(messages, ctx.pending_sources.read_ids)
             messages = await compact.compact_messages(
                 messages,
                 spec,
