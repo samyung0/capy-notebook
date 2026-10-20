@@ -3253,6 +3253,16 @@ lists the target environment's secret names (never values) and refuses to run,
 naming each such key, before it changes anything. Local env files reject
 unknown keys.
 
+The deploy workflows run from `main` but render with the target revision's
+`scripts/env/config.py`. Revisions before 00724c461 read every secret from
+`CAPY_GITHUB_SECRETS`, which today's workflows no longer pass, so a deploy or
+rollback of such a revision fails at its render step. To roll back to one,
+tag the old SHA and dispatch that revision's own workflow from the tag
+(`gh workflow run deploy-uat.yml --ref <tag> -f revision=<sha>`, and likewise
+Deploy Ops and Deploy ingest). That workflow still passes `toJSON(secrets)`,
+so GitHub holds the run until someone with write access approves it on the
+run page.
+
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
 file for the optional ops edge check. The UAT workflow and local review scripts
 use this name directly; there is no repository-level ops URL fallback.
