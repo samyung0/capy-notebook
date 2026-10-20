@@ -2641,7 +2641,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `chatSendKey`, the same `PATCH /api/me/chat` with `{"sendKey"}`, migration
    0092), picks the composer key that sends; the other adds a new line and an
    IME's Enter never sends.
-   Checkpoint events stay on the Python→Go hop.
+   `checkpoint` (the conversation memory) and `turn_checkpoint` (the turn so
+   far, below) events stay on the Python→Go hop.
 
    The chat panel shows a turn's work as trace rows
    (`src/features/workspace/chat/ChatTrace.tsx`, logic in `trace.ts`). Each
@@ -2686,6 +2687,42 @@ without appending a failed tool result. Its optional `scope` contains
 scope. The tool resolves and persists source provenance, cannot widen the chat
 scope, rejects the whole call if any id is invalid or unavailable, and rejects
 a valid scope with no indexed content.
+
+### How a turn's work is saved
+
+However a turn ends, its assistant row keeps the tool calls that finished
+(activity blocks, which Ops' `ops_assistant_turns.tool_calls` counts) and
+their results (`toolEvidence`) (Epo 2026-10-21). Python keeps a call's
+evidence note when the call finishes (`agent._run_tools`; notes are put back
+in call order after the batch), sends `turn_checkpoint` with the turn's
+`activity` and `toolEvidence` (nothing cited yet) after every tool batch, and
+every `error` carries the same two fields (`agent.with_turn_state`, applied
+in `run_agent` and to the generic failure in `service._chat_events`). A turn
+without an answer still records its search telemetry, no hit cited. Go keeps
+the latest `activity` and `toolEvidence` from `turn_checkpoint`, `error` and
+`done`, writes each checkpoint onto the row while it is `streaming`
+(`store.CheckpointAssistantMessage`), and finalizes any ending with that state
+merged with the mutation receipts, on a context detached from the request.
+Only `complete` rows replay into later turns (`ConversationPrompt`), so the
+evidence an aborted or failed row keeps serves history and Ops.
+
+| Ending | Where handled | Tool calls saved | Results saved | Status |
+| --- | --- | --- | --- | --- |
+| Answer; planning, stall and tool caps | `agent._run_turn` `done` → `chat_stream.go` | all | all, cited passages included | `complete` |
+| Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | all, nothing cited | `error` |
+| Turn time cap | none exists; a provider call past its deadline is a provider error | — | — | — |
+| User stop, client disconnect | `chat_stream.go`: request cancelled, detached finalize | up to the last checkpoint, plus receipts | up to the last checkpoint | `aborted` |
+| Tool exception | `tools.run`: a failed result, the turn goes on | its failed row | its error text | the turn's |
+| `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | all, nothing cited | `error` |
+| Exception outside the step (loop code) | `service._chat_events` `error` with state | all | all, nothing cited | `error` |
+| Flagged response | `agent._run_turn` `response_flagged`, state from `run_agent` | all | all, nothing cited | `error` |
+| Pipeline dies | `relayChat` EOF → `chat_stream.go` | last checkpoint, plus receipts | last checkpoint | `error` |
+| Go dies | `AbortOrphanedStreams` at the next boot | last checkpoint on the row, plus receipts | last checkpoint | `aborted` |
+
+A stop or a lost hop ends what Go hears at the last checkpoint: calls of the
+batch that was running then keep only their receipts. The boot sweep marks
+every `streaming` row, so with several API replicas a restart would abort
+another replica's live turn.
 
 ### Chat below lg
 
@@ -3378,8 +3415,9 @@ request hash, outcome, effect and error. A retry with the same identity replays
 the receipt; a different payload under the same id is a 409. Materials created
 by chat use `mat_ + sha256(...)[:16]` so a duplicate call cannot create twice.
 Finalizing the assistant message merges receipts into the persisted activity
-blocks (`outcome`, `effects`, `error`), and `AbortOrphanedStreams` rebuilds the
-activity of an interrupted turn from its receipts. Tool blocks persisted
+blocks (`outcome`, `effects`, `error`), and `AbortOrphanedStreams` merges them
+into an interrupted turn's last checkpoint (How a turn's work is saved, above).
+Tool blocks persisted
 before this contract map their legacy `status` onto an outcome on hydration,
 anything unrecognised becoming `outcome_unknown`. Tool errors carry a stable
 code (`unsupported_format`, `unsupported_operation`, `invalid_input`,

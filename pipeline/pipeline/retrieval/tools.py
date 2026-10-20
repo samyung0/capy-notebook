@@ -204,6 +204,9 @@ class ToolContext:
     # widen the scope to every file.
     file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
+    # The turn's narration and tool blocks so far: what its checkpoints and
+    # whatever event ends it carry, so Go saves them however the turn ends.
+    activity: list[dict[str, Any]] = field(default_factory=list)
     evidence_notes: list[dict[str, Any]] = field(default_factory=list)
     evidence_passage_ids: set[str] = field(default_factory=set)
     # Each searched passage's unindexed-edit count as its line first showed it,
@@ -221,6 +224,7 @@ class ToolContext:
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
+    searches_recorded: bool = False
     # capture_page records for the activity blocks, and the JPEGs (by tool
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
