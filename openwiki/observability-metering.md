@@ -556,18 +556,23 @@ named provider directly. These exact routing exceptions are allowed:
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
   `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` and the slug's
-  provider pin from `OPENROUTER_ROUTING` in `pipeline/elitellm/client.py`, always
-  `allow_fallbacks: false`, so a busy provider answers 429 rather than the call
-  moving to another host. `deepseek/deepseek-v4-flash-0731`, the ingest
-  descriptor pin, is held on Relace; `deepseek/deepseek-v4.1-flash-1017`, the
-  captioning pin for page reads and image captions (decision 2026-10-19), on
-  DeepInfra. Default routing is never used: providers behind one slug differ
-  on images (one drops them silently, others take none), so a slug with no pin
-  fails when its request is built, naming the slug. The allowlist in
+  provider list from `OPENROUTER_ROUTING` in `pipeline/elitellm/client.py`: an
+  ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
+  providers in turn and never a host outside the list, and the call answers 429
+  only when every listed provider is busy. `deepseek/deepseek-v4-flash-0731`,
+  the ingest descriptor pin, goes to Reka, then DigitalOcean, then StreamLake
+  (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
+  each held 32 summary calls in flight without a 429 when probed that day);
+  `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
+  image captions (decision 2026-10-19), DeepInfra only. Default routing is
+  never used: providers behind one slug differ on images (one drops them
+  silently, others take none), so a slug with no pin fails when its request is
+  built, naming the slug. The allowlist in
   `elitellm_providers.json` lists the same slugs. OpenRouter bills the
-  provider's listed price; for 0731 that is
-  Relace's, below Relace's own account rate: response `usage.cost`,
-  the Logs page and the key's usage agreed on 2026-10-15. Accounting still
+  listed price of the provider that served the call (response `usage.cost`,
+  the Logs page and the key's usage agreed on 2026-10-15); for 0731 Reka lists
+  $0.021 / $0.0056 / $0.528 per million input / cached / output tokens, and the
+  two fallbacks list more. Accounting still
   prices tokens from the catalog row. Its nested `cached_tokens` is inclusive
   of `prompt_tokens` (1,024 of 1,208 observed).
 
@@ -714,8 +719,8 @@ cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
 80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, OpenRouter DeepSeek V4 Flash
-0731 32 / 32 / 1280 (OpenRouter's Relace price, cached reads at the input
-price), embedding 40, reranker 50.
+0731 32 / 32 / 1280 (set from OpenRouter's Relace price, cached reads at the
+input price, before the route left Relace on 2026-10-20), embedding 40, reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.

@@ -1752,7 +1752,7 @@ those services start.
    to the import
    worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
-   (DeepSeek V4 Flash 0731 held on Relace) and the captioning pin (DeepSeek
+   (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake) and the captioning pin (DeepSeek
    V4.1 Flash 1017 held on DeepInfra: standalone-image captions and the VLM
    read of text-less document pages; Ops reads the key too, to flag a missing
    credential), and `ZAI_API_KEY` for GLM-5.3-Flash, the same Z.AI key the app
