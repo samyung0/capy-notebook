@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
@@ -290,6 +293,76 @@ func TestThumbnailCaptureQueuesAFailedPut(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = th.st.Pool().Exec(context.Background(), `DELETE FROM pending_blob_deletions WHERE object_path=$1`, key)
 	})
+}
+
+// cancellingPuts is a bucket whose put fails because the browser left: the
+// request context is cancelled mid-put, after the object may have landed.
+type cancellingPuts struct {
+	*blob.Memory
+	cancel context.CancelFunc
+}
+
+func (c cancellingPuts) PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error {
+	_ = c.Memory.PutObjectOnce(ctx, key, body, contentType, cacheControl)
+	c.cancel()
+	return ctx.Err()
+}
+
+type thumbnailSentryTransport struct{ events []*sentry.Event }
+
+func (t *thumbnailSentryTransport) Configure(sentry.ClientOptions)        {}
+func (t *thumbnailSentryTransport) SendEvent(e *sentry.Event)             { t.events = append(t.events, e) }
+func (t *thumbnailSentryTransport) Flush(time.Duration) bool              { return true }
+func (t *thumbnailSentryTransport) FlushWithContext(context.Context) bool { return true }
+func (t *thumbnailSentryTransport) Close()                                {}
+
+// A put the browser cancelled by leaving is not a storage failure: no Sentry
+// event, though its key is still queued for deletion. A put that fails while
+// the browser waits stays a reported 503.
+func TestThumbnailCaptureReportsOnlyLiveFailedPuts(t *testing.T) {
+	previous := sentry.CurrentHub().Client()
+	defer sentry.CurrentHub().BindClient(previous)
+	transport := &thumbnailSentryTransport{}
+	if err := sentry.Init(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: transport}); err != nil {
+		t.Fatal(err)
+	}
+	queued := func(th thumbnailHarness, key string) bool {
+		t.Helper()
+		var queued bool
+		if err := th.st.Pool().QueryRow(context.Background(),
+			`SELECT EXISTS (SELECT 1 FROM pending_blob_deletions WHERE object_path=$1)`, key).Scan(&queued); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_, _ = th.st.Pool().Exec(context.Background(), `DELETE FROM pending_blob_deletions WHERE object_path=$1`, key)
+		})
+		return queued
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	left := openThumbnailHarnessWith(t, cancellingPuts{blob.NewMemory(), cancel})
+	left.file(t, "f_capture_left", "ws_e2e_private", "deck.pptx", "slides")
+	req := httptest.NewRequest(http.MethodPost, "/api/files/f_capture_left/thumbnail", bytes.NewReader(webpCapture)).WithContext(ctx)
+	req.Header.Set("Content-Type", "image/webp")
+	req.Header.Set(auth.HeaderE2EUserID, "u_editor")
+	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
+	rec := httptest.NewRecorder()
+	left.h.ServeHTTP(rec, req)
+	if rec.Code == http.StatusServiceUnavailable || len(transport.events) != 0 {
+		t.Fatalf("a cancelled put: status=%d events=%d", rec.Code, len(transport.events))
+	}
+	if !queued(left, captureKey("f_capture_left", webpCapture)) {
+		t.Fatal("the cancelled put's key was not queued for deletion")
+	}
+
+	live := openThumbnailHarnessWith(t, failingPuts{blob.NewMemory()})
+	live.file(t, "f_capture_live_failure", "ws_e2e_private", "deck.pptx", "slides")
+	expectStatus(t, live.post(t, "u_editor", "f_capture_live_failure", webpCapture), http.StatusServiceUnavailable, "live failed put")
+	if len(transport.events) != 1 {
+		t.Fatalf("a live failed put sent %d events", len(transport.events))
+	}
+	queued(live, captureKey("f_capture_live_failure", webpCapture))
 }
 
 // Without a bucket a capture is refused before it claims the interval, so the
