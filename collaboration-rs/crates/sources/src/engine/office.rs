@@ -164,8 +164,8 @@ pub fn dispatch(request: &Frame) -> Answer {
         }
         "createOffice" => {
             let format = format()?;
-            let starter = office_service::starter(format)
-                .ok_or_else(|| Failure::invalid(format!("no {} starter", format.as_str())))?;
+            // A format without a starter is an edit refusal (409), not a fault.
+            let starter = office_service::starter(format).map_err(failure)?;
             let determinism = Determinism {
                 seed: args.seed.as_deref().unwrap_or_default(),
                 now: args.now.as_deref().unwrap_or_default(),

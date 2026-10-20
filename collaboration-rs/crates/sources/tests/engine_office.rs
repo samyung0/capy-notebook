@@ -316,12 +316,12 @@ async fn the_seed_check_seeds_each_base_once_and_reports_every_changed_seed() {
 }
 
 /// The agent's scoped XLSX read and `create` answer through the pool as the
-/// crate does in process; a refused read stays an edit refusal with its
-/// sentence (Epo 2026-10-20).
+/// crate does in process; a refused read and a create of a format without a
+/// starter stay edit refusals with their sentence (Epo 2026-10-20).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn scoped_reads_and_creates_go_through_the_pool() {
     use office_service::InspectQuery;
-    use sources::engine::EngineError;
+    use sources::engine::{EngineError, FailureKind};
 
     let pool = pool();
     let base = fixture("e2e/fixtures/files/basic/grades.xlsx");
@@ -396,4 +396,19 @@ async fn scoped_reads_and_creates_go_through_the_pool() {
     )
     .unwrap();
     assert_eq!((bytes, notice), (direct.bytes, direct.notice));
+
+    // DOCX has no starter yet: a create is refused, not retried as a fault.
+    match pool
+        .create(Format::Docx, &[], &seed_hex, "2000-01-01T00:00:00.000Z")
+        .await
+    {
+        Err(EngineError::Refused(failure)) => {
+            assert_eq!(failure.kind, FailureKind::Edit);
+            assert_eq!(
+                failure.message,
+                "unsupported_operation: docx files cannot be created yet"
+            );
+        }
+        other => panic!("a DOCX create: {other:?}"),
+    }
 }
