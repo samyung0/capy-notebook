@@ -76,7 +76,7 @@ Not recommended:
   - `read_document` with `for_read`.
 - **Models:**
   - GLM-5.3-Flash on Z.AI's production route, high thinking, at most 4 concurrent.
-  - DeepSeek: `.env.local` has no DeepSeek key, so DeepSeek V4.1 Flash ran on DeepInfra (`deepseek-ai/DeepSeek-V4.1-Flash`) through the playground's transport override, with production's deepseek request body and high thinking.
+  - DeepSeek: V4.1 Flash ran on DeepInfra (`deepseek-ai/DeepSeek-V4.1-Flash`) through the playground's transport override, with production's deepseek request body and high thinking.
 - **Questions** (`questions.json`, 22 in all):
   - 13 whose answer exists only in a pending edit (the index holds the old text);
   - 7 that the index answers;
@@ -320,7 +320,7 @@ Busy pool:
 3. **Rec. 5** (header context in spreadsheet cell effects) is a fork change. Is it worth it once rec. 1 exists?
 4. **Unrequested edits (rec. 4).** Should the write guard refuse document edits in a turn where the user asked a question, or is a wording change in the read evidence enough? The guard's "now counts as read, send it again" makes a refused edit easy to retry.
 5. **DeepSeek's placeholder notes** in Q&A turns (also without hints) and its full survey on "plan my revision" (14.7k output tokens with 10 hints shown): worth separate looks?
-6. **DeepSeek's own endpoint** (`deepseek-flash`, max thinking per the 2026-10-19 line) was not tested: `.env.local` has no DeepSeek key. Results are for V4.1 Flash on DeepInfra at high thinking. Rerunning with a key is `hints_eval_agent.py launch --workers deepseek=4` after pointing `MODELS["deepseek"]` at the production route.
+6. **DeepSeek's own endpoint** (`deepseek-flash`, max thinking per the 2026-10-19 line) was not tested. Results are for V4.1 Flash on DeepInfra at high thinking. Rerunning with a key is `hints_eval_agent.py launch --workers deepseek=4` after pointing `MODELS["deepseek"]` at the production route.
 
 ## Deviations and limits
 
@@ -335,11 +335,11 @@ Busy pool:
   - Labels were written before the runs by one person. Precision is given strict and lenient to bracket the "topical" judgement.
 - **Junk is off-topic real edits**, so it measures tolerance of unrelated noise. The harmful noise is on-topic-looking (shares a word), and that comes from the real matcher.
 - **The 5-junk condition shows up to 10 hint lines**, twice production's maximum.
-- **Heavy lock.** I held it 15:59-16:00 to start the scratch container `hints-eval-pg` (pgvector:pg16, port 55991), migrate it, load the fixture and run Part 1. I released it for the model runs, which only queried that small container.
+- **Database.** A scratch `pgvector/pgvector:pg16` container, migrated and loaded by `hints_eval_db.py`; Part 1 and the model runs queried only it.
 
-## Files and cleanup
+## Files
 
-- **Worktree** `C:/WEB/capy-worktrees/hints-eval`, branch `bench/hints-eval` from origin/main fe4d2274c. Uncommitted, per this agent's rules; the Editor commits or pushes.
+- **Committed** (measured against main at fe4d2274c):
   - `bench/rag/fixtures/hints-eval/`:
     - `workspace.json`: 13 documents and their edits;
     - `busy.json`: the 40-paragraph draft;
@@ -350,10 +350,9 @@ Busy pool:
     - `hints_eval_db.py`: migrate and load the scratch database;
     - `hints_eval_matcher.py`: Part 1;
     - `hints_eval_agent.py`: Part 2 `plan` / `run` / `launch` / `score`, all conditions.
-  - `bench/rag/reports/2026-10-20-hints-eval.md`: a copy of this report.
+  - `bench/rag/reports/2026-10-20-hints-eval.md`: this report.
   - `bench/README.md`: a paragraph in the rag section.
 - **Raw data**, ignored:
   - `bench/rag/reports/local/2026-10-20-hints-eval/`: Part 1 JSON, Part 2 results, scored.json, logs;
   - `lab/playground/local/runs/`: every turn's run.json and requests.
 - **Spend:** $4.27 at list price (GLM $1.24, DeepSeek $3.04), plus about $0.0001 of embeddings. Z.AI ran at most 4 concurrent.
-- **Cleanup:** no processes of mine remain, and the scratch container is removed (see the final message). Production code, live containers, the shared checkout and UAT were not touched.

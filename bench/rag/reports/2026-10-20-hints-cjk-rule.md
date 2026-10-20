@@ -54,8 +54,11 @@ drops what users ask about, fall back to counting each run of characters once.
 - **seg-words**: the same split keeping only list words; dropping unlisted
   characters loses terms the list lacks (减数, 染色体, 叶绿体).
 
-The list does not drop what users asked about here: seg-merge found every edit
-question, so the fallback is not needed. Its two noisy messages share two real
+The list did not drop what these 18 messages ask about: seg-merge found every
+edit question. None of them has a term the list splits into a level-1 word;
+the re-review found such terms lose their words (什么是电子, 水的沸点, 电流和电压
+give none) and level-2 question words count (为什么, 如何, 可以), so the rule
+is not settled by this set. Its two noisy messages share two real
 words with the noise (温度+影响 against "温度对很多事情都有影响"; 进行+复习
 against the review plan).
 
