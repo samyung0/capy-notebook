@@ -28,3 +28,18 @@ Copyright (c) 2017 Alexey Galakhov; Copyright (c) 2016 Jason Housley.
 
 License: MIT or Apache License, Version 2.0, at your option. The vendored
 directory ships both texts (`LICENSE-MIT`, `LICENSE-APACHE`).
+
+---
+
+## HSK 3.0 word list (derived data)
+
+`pipeline/pipeline/retrieval/hsk_words.tsv` (and its bench copy
+`bench/rag/fixtures/hints-eval/hsk-levels.tsv`) lists the HSK 3.0 words with
+their lowest level and their Traditional forms, taken from `complete.min.json`
+of complete-hsk-vocabulary (https://github.com/drkameleon/complete-hsk-vocabulary).
+Only the words, levels and Traditional forms are kept; the hints matcher uses
+them to split Chinese messages into words (Epo 2026-10-20).
+
+Copyright (c) 2026 Yanis Zafirópulos.
+
+License: MIT. The full text is in each file's header.

@@ -68,7 +68,7 @@ class ToolResult:
     error: str | None = None
     error_code: str | None = None
     # What the model reads after the error, kept out of the error the chat
-    # stores and shows: a missed target as it is now, carried skills or excerpts.
+    # stores and shows: a missed target as it is now, or carried excerpts.
     detail: str = ""
     refused: bool = False
     failed: bool = False
@@ -78,6 +78,8 @@ class ToolResult:
     # A read document's pending changes, appended after the clipped result
     # (pending.PendingSources.for_read).
     pending: str = ""
+    # A search's documents with unindexed edits, by id: their passages say so.
+    unindexed: dict[str, int] = field(default_factory=dict)
 
     @property
     def outcome(self) -> str:
@@ -197,6 +199,9 @@ class ToolContext:
     citations: list[Passage] = field(default_factory=list)
     evidence_notes: list[dict[str, Any]] = field(default_factory=list)
     evidence_passage_ids: set[str] = field(default_factory=set)
+    # Each searched passage's unindexed-edit count as its line first showed it,
+    # saved with the answer so a replay repeats it word for word.
+    passage_flags: dict[str, int] = field(default_factory=dict)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
     pending_sources: pending.PendingSources = field(
@@ -428,10 +433,15 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         return _result(
             "No passages matched. Try different wording, or list_sources first."
         )
+    unindexed = ctx.pending_sources.unindexed_counts()
+    for passage in passages:
+        if passage.file_id in unindexed:
+            ctx.passage_flags.setdefault(passage.chunk_id, unindexed[passage.file_id])
     return ToolResult(
         passages=passages,
         text_parts=[_overlap_footer(overlap, len(passages))],
         tail=edits,
+        unindexed=unindexed,
     )
 
 
@@ -2768,10 +2778,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(problem)
     needs = skills.missing(name, args, ctx.skills_read)
     if needs:
-        return _refused(
-            skills.refusal(needs),
-            detail=skills.carried(needs, lambda n: skills.SKILLS[n].text(ctx.library)),
-        )
+        return _refused(skills.refusal(needs))
     try:
         result = await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):
@@ -2823,7 +2830,12 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
         parts.extend([body, result.text_parts[0]])
     else:
         if numbered:
-            parts.append("\n\n".join(passage.as_context(n) for n, passage in numbered))
+            parts.append(
+                "\n\n".join(
+                    passage.as_context(n, result.unindexed.get(passage.file_id, 0))
+                    for n, passage in numbered
+                )
+            )
         parts.extend(part for part in result.text_parts if part)
     text = "\n\n".join(parts) if parts else result.text()
     if numbered:
