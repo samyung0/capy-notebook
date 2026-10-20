@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
@@ -26,13 +28,11 @@ type collaborationClaims struct {
 	// checks against this claim (Epo 2026-10-20).
 	Parent string `json:"parent,omitempty"`
 	// Who the connection is, for the room's presence and cursor labels (Epo
-	// 2026-10-20): the verified display name and avatar, and the browser and
-	// OS read from the User-Agent (deviceLabel). Each is bounded, since the
+	// 2026-10-20): the verified display name and avatar, nothing about the
+	// device (Epo 2026-10-20, privacy). Both are bounded, since the
 	// collaboration server sends them to every co-editor.
 	Name      string `json:"name,omitempty"`
 	AvatarURL string `json:"avatarUrl,omitempty"`
-	Browser   string `json:"browser,omitempty"`
-	OS        string `json:"os,omitempty"`
 }
 
 // maxClaimAvatarURL bounds the avatar a token carries; a longer one (none
@@ -56,12 +56,11 @@ func signCollaborationToken(secret string, claims collaborationClaims) (string, 
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-func newCollaborationClaims(userID, room, access, name, avatarURL, userAgent, tokenID string, schema int) collaborationClaims {
+func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID string, schema int) collaborationClaims {
 	now := time.Now().UTC()
 	if len(avatarURL) > maxClaimAvatarURL {
 		avatarURL = ""
 	}
-	browser, os := deviceLabel(userAgent)
 	return collaborationClaims{
 		Audience:  "capy-collaboration",
 		ExpiresAt: now.Add(5 * time.Minute).Unix(),
@@ -72,9 +71,23 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, userAgent, to
 		Room:      room,
 		Access:    access,
 		Schema:    schema,
-		Name:      fieldlimits.Clamp(name, fieldlimits.UserName),
+		Name:      fieldlimits.Clamp(claimName(name), fieldlimits.UserName),
 		AvatarURL: avatarURL,
-		Browser:   browser,
-		OS:        os,
 	}
+}
+
+// claimName is the name co-editors see on an avatar and a cursor label,
+// without bidi controls or zero-width characters, which could make one name
+// read as another's.
+func claimName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Bidi_Control, r) {
+			return -1
+		}
+		switch r {
+		case '\u200b', '\u200c', '\u200d', '\u2060', '\ufeff':
+			return -1
+		}
+		return r
+	}, name)
 }

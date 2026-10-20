@@ -409,10 +409,7 @@ export function Header({
   // Phones drop the read toggle and the status icons for the title's chevron.
   const compact = !!oneColumn && !sm;
   const fileIcon = (
-    <FileIcon
-      className="size-4 shrink-0 -translate-y-px md:size-5"
-      name={icon}
-    />
+    <FileIcon className="size-4 shrink-0 md:size-5" name={icon} />
   );
   const nameClassName = cn(
     'min-w-0 truncate',

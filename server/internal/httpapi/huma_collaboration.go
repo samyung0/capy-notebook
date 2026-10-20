@@ -52,13 +52,6 @@ type collaborationTokenInput struct {
 	ID string `path:"id"`
 }
 
-// sourceCollaborationTokenInput is a file's room token request: the browser's
-// User-Agent gives the token its device label (deviceLabel).
-type sourceCollaborationTokenInput struct {
-	ID        string `path:"id"`
-	UserAgent string `header:"User-Agent" hidden:"true"`
-}
-
 // MaterialCollaborationTokenBody names the document: a quiz's keys document
 // goes to editors who can write only (live-items, Epo 2026-10-10). Access
 // "read" asks for a read channel whatever the user may do: a View or a study
@@ -70,9 +63,8 @@ type MaterialCollaborationTokenBody struct {
 }
 
 type materialCollaborationTokenInput struct {
-	ID        string                          `path:"id"`
-	UserAgent string                          `header:"User-Agent" hidden:"true"`
-	Body      *MaterialCollaborationTokenBody `required:"false"`
+	ID   string                          `path:"id"`
+	Body *MaterialCollaborationTokenBody `required:"false"`
 }
 
 type collaborationTokenResponse struct {
@@ -324,7 +316,7 @@ func (a *api) createMaterialCollaborationToken(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, in.UserAgent, randID("collab"), schema)
+	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"), schema)
 	claims.Parent = parent
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {

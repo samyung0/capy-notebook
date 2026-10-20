@@ -8,15 +8,11 @@ import {
 
 const connection = (
   person: number,
-  browser: string,
-  os: string,
   clients: number[] = []
 ): PresenceConnection => ({
   avatar: null,
-  browser,
   clients,
   name: `Person ${person}`,
-  os,
   person,
 });
 
@@ -25,10 +21,8 @@ it('reads the room’s presence and nothing else', () => {
     connections: [
       {
         avatar: '/icons/waves-01.svg',
-        browser: 'Chrome',
         clients: [7, 'x'],
         name: 'Bob',
-        os: null,
         person: 2,
       },
       { name: 'no person' },
@@ -38,10 +32,8 @@ it('reads the room’s presence and nothing else', () => {
   expect(readPresence(sent)).toEqual([
     {
       avatar: '/icons/waves-01.svg',
-      browser: 'Chrome',
       clients: [7],
       name: 'Bob',
-      os: null,
       person: 2,
     },
   ]);
@@ -49,27 +41,15 @@ it('reads the room’s presence and nothing else', () => {
   expect(readPresence('{"type":"room-presence"')).toBeNull();
 });
 
-it('groups connections into people with each device once, and names client ids', () => {
+it('groups connections into people, one each, and names client ids', () => {
   const connections = [
-    connection(1, 'Chrome', 'Windows', [11]),
-    connection(2, 'Safari', 'iOS', [12]),
-    connection(1, 'Safari', 'iOS', [13]),
-    connection(1, 'Chrome', 'Windows', [14]),
+    connection(1, [11]),
+    connection(2, [12]),
+    connection(1, [13]),
+    connection(1, [14]),
   ];
-  expect(
-    presencePeople(connections).map(({ devices, person }) => ({
-      devices,
-      person,
-    }))
-  ).toEqual([
-    {
-      devices: [
-        { browser: 'Chrome', os: 'Windows' },
-        { browser: 'Safari', os: 'iOS' },
-      ],
-      person: 1,
-    },
-    { devices: [{ browser: 'Safari', os: 'iOS' }], person: 2 },
+  expect(presencePeople(connections).map(({ person }) => person)).toEqual([
+    1, 2,
   ]);
   expect([...presenceNames(connections)]).toEqual([
     [11, 'Person 1'],

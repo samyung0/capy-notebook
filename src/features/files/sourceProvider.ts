@@ -1,3 +1,4 @@
+import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import type { SourceSession } from '@/api/types';
@@ -16,6 +17,8 @@ export function sourceDocOptions(format: SourceSession['format']) {
 /** The slice of the room provider that source editing drives. Under MSW an
  * in-page provider registered by the mocks stands in for the sidecar. */
 export interface SourceProvider {
+  /** The room's awareness: an Office editor's cursor (`officeCursors.ts`). */
+  awareness: Awareness;
   connect(): unknown;
   destroy(): void;
   disconnect(): void;

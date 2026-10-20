@@ -1,13 +1,6 @@
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { Avatar } from '@/components/ui/Avatar';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/Tooltip';
-import {
-  type PresenceDevice,
-  type PresencePerson,
   type PresenceStore,
   presencePeople,
 } from '@/features/collaboration/presence';
@@ -22,35 +15,14 @@ const LIFT_PX = -4;
 const FALLOFF = 0.45;
 const SCALE = 1.05;
 
-export function deviceLabel({ browser, os }: PresenceDevice) {
-  if (browser && os) return m.presence_device({ browser, os });
-  return browser ?? os ?? m.presence_device_unknown();
-}
-
-/** An avatar's hover: the person's name and each device they have the
- * document open on. */
-export function PresenceCard({ person }: { person: PresencePerson }) {
-  return (
-    <>
-      <span className="font-semibold">
-        {person.name ?? m.editor_collaborator()}
-      </span>
-      {person.devices.map((device) => (
-        <span key={`${device.browser}:${device.os}`}>
-          {deviceLabel(device)}
-        </span>
-      ))}
-    </>
-  );
-}
-
 /**
- * Who else is editing the open document (Epo 2026-10-20): one avatar per
- * person, at most three, then a +N count; each avatar's hover lists that
- * person's devices. The user's own avatar shows only while the document is
- * open on another tab or device of theirs, which the room lists (it never
- * lists this tab). Hidden below sm. Hovering spreads the group like
- * transitions.dev's avatar group: a clean lift in, a bouncy return.
+ * Who else has the open document, among people who can edit it (Epo
+ * 2026-10-20): one avatar per person, at most three, then a +N count. The
+ * user's own avatar shows only while the document is open on another tab or
+ * device of theirs, which the room lists (it never lists this tab). No
+ * tooltip and nothing about devices (Epo 2026-10-20, privacy): hovering only
+ * spreads the group like transitions.dev's avatar group, a clean lift in and
+ * a bouncy return. Hidden below sm.
  */
 export function RoomPresence({ store }: { store: PresenceStore }) {
   const [connections, setConnections] = useState(store.getState().connections);
@@ -88,28 +60,21 @@ export function RoomPresence({ store }: { store: PresenceStore }) {
       role="group"
     >
       {shown.map((person, index) => (
-        <Tooltip key={person.person}>
-          <TooltipTrigger
-            className={cn(itemClass, 'outline-none focus-visible:ring-action')}
-            data-presence-person={person.person}
-            onPointerEnter={() => setHovered(index)}
-            render={<span />}
-            style={lift(index)}
-            tabIndex={0}
-          >
-            <Avatar
-              className="size-6 text-[10px]"
-              name={person.name ?? undefined}
-              src={person.avatar ?? undefined}
-            />
-          </TooltipTrigger>
-          <TooltipContent
-            className="flex-col items-start gap-0.5"
-            side="bottom"
-          >
-            <PresenceCard person={person} />
-          </TooltipContent>
-        </Tooltip>
+        <span
+          aria-label={person.name ?? m.editor_collaborator()}
+          className={itemClass}
+          data-presence-person={person.person}
+          key={person.person}
+          onPointerEnter={() => setHovered(index)}
+          role="img"
+          style={lift(index)}
+        >
+          <Avatar
+            className="size-6 text-[10px]"
+            name={person.name ?? undefined}
+            src={person.avatar ?? undefined}
+          />
+        </span>
       ))}
       {more > 0 && (
         <span

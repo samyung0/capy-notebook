@@ -144,13 +144,7 @@ class ChaosPeer {
         room.target.kind === 'material' ? new Awareness(document) : undefined,
       document,
       // An editor in the room's presence, as its token would name it.
-      identity: {
-        avatar: null,
-        browser: 'Chrome',
-        name: this.name,
-        os: 'Windows',
-        person: 1000 + slot,
-      },
+      identity: { avatar: null, name: this.name, person: 1000 + slot },
       origin: this,
     };
     this.schedule(() => this.join(), slot * 250);

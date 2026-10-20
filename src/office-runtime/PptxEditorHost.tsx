@@ -1,11 +1,16 @@
-import { EquationTextError } from '@betteroffice/pptx';
+import {
+  EquationTextError,
+  type PptxPresence,
+  type PptxPresencePeer,
+  presenceColorForClientId,
+} from '@betteroffice/pptx';
 import { analyzeOpenPresentation } from '@betteroffice/pptx/viewer';
 import {
   type PptxCommandState,
   PptxEditor,
   type PptxEditorApi,
 } from '@betteroffice/pptx-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PaneLoading } from '@/components/ui/feedback';
 import type {
   OfficeAnalysis,
@@ -20,6 +25,7 @@ import type {
   OfficeExporter,
   OfficeFlusher,
 } from './officeCollaboration';
+import { type CursorChannel, mappedPeers } from './officePresence';
 import { editorMenus, splitCommand } from './pptxEditorMenus';
 import { loadPptxFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
@@ -38,6 +44,35 @@ import {
   writeViewToggle,
 } from './viewToggles';
 import './pptx-runtime.css';
+
+/** The PPTX editor's presence over the frame's cursor channel: co-editors'
+ * slides and shapes under the names Capy gives them. */
+function pptxPresence(channel: CursorChannel): PptxPresence {
+  const peers = mappedPeers(channel, (peer): PptxPresencePeer | null =>
+    'slideId' in peer.cursor
+      ? {
+          cursorMovedAt: peer.movedAt,
+          lastSeen: peer.seenAt,
+          state: {
+            clientId: peer.clientId,
+            clock: 0,
+            cursor: peer.cursor,
+            user: {
+              color: presenceColorForClientId(peer.clientId),
+              name: peer.name,
+            },
+          },
+        }
+      : null
+  );
+  return {
+    onPresence: (listener) => channel.subscribe(() => listener(peers())),
+    get peers() {
+      return peers();
+    },
+    setCursor: (cursor) => channel.send(cursor),
+  };
+}
 
 export function PptxEditorHost({
   bytes,
@@ -92,6 +127,13 @@ export function PptxEditorHost({
   readOnly: boolean;
 }) {
   const apiRef = useRef<PptxEditorApi | null>(null);
+  const editorCollaboration = useMemo(
+    () => ({
+      ...collaboration,
+      presence: pptxPresence(collaboration.cursors),
+    }),
+    [collaboration]
+  );
   const [commandState, setCommandState] = useState<PptxCommandState | null>(
     null
   );
@@ -228,7 +270,7 @@ export function PptxEditorHost({
     <div className="office-editor-host">
       <PptxEditor
         className="office-editor-host"
-        collaboration={collaboration}
+        collaboration={editorCollaboration}
         defaultPresenterNotesSize={notesSize}
         defaultSpeakerNotes={speakerNotes}
         file={bytes}

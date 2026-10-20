@@ -395,6 +395,10 @@ The parent owns the room provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
+Cursors cross the same way: the editor's own goes to the room's awareness and
+the co-editors' come back under the names the room's presence gives them
+([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
+Capy's idle close as an `activity` message ([plate-editor](plate-editor.md#idle-close)).
 
 The parent's Y.Doc runs no formatting cleanup, matching yrs in the DOCX and
 PPTX editors (`docx-edit`, `pptx-edit`) and the room. Stock Yjs, after every remote update to a text with formatting,

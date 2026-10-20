@@ -5,36 +5,24 @@ import { createStore, type StoreApi } from 'zustand';
  * The room's presence (Epo 2026-10-20), a stateless message the collaboration
  * server sends the room's editors when it changes (`PRESENCE_TYPE`,
  * collaboration-rs/crates/server/src/room.rs): the other connections of
- * people who can edit, each with the name, avatar and device its signed token
- * carries and the awareness client ids that name its cursor, and its person's
- * number in the room (never a user id), which groups a person's tabs and
- * devices. A member's own
- * connection is never listed, so its user shows only for their other tabs and
- * devices. Labels come from here, never from what a peer's awareness says.
+ * people who can edit, each with the name and avatar its signed token carries
+ * (nothing about its device, Epo 2026-10-20), the awareness client ids that
+ * name its cursor, and its person's number in the room (never a user id),
+ * which groups a person's tabs and devices. A member's own connection is never
+ * listed, so its user shows only for their other tabs and devices. Labels come
+ * from here, never from what a peer's awareness says.
  */
 export const PRESENCE_TYPE = 'room-presence';
 
 export interface PresenceConnection {
   avatar: string | null;
-  browser: string | null;
   clients: number[];
   name: string | null;
-  os: string | null;
   person: number;
 }
 
-export interface PresenceDevice {
-  browser: string | null;
-  os: string | null;
-}
-
-/** One avatar per person, with each device they have the room open on. */
-export interface PresencePerson {
-  avatar: string | null;
-  devices: PresenceDevice[];
-  name: string | null;
-  person: number;
-}
+/** One avatar per person, however many tabs and devices they have open. */
+export type PresencePerson = Omit<PresenceConnection, 'clients'>;
 
 const text = (value: unknown) => (typeof value === 'string' ? value : null);
 
@@ -54,14 +42,12 @@ export function readPresence(payload: string): PresenceConnection[] | null {
       ? [
           {
             avatar: text(entry.avatar),
-            browser: text(entry.browser),
             clients: Array.isArray(entry.clients)
               ? entry.clients.filter(
                   (client): client is number => typeof client === 'number'
                 )
               : [],
             name: text(entry.name),
-            os: text(entry.os),
             person: entry.person,
           },
         ]
@@ -70,26 +56,13 @@ export function readPresence(payload: string): PresenceConnection[] | null {
 }
 
 /** The people in the room, in the order the server lists their first
- * connection; a device shows once however many tabs it has open. */
+ * connection. */
 export function presencePeople(
   connections: readonly PresenceConnection[]
 ): PresencePerson[] {
   const people = new Map<number, PresencePerson>();
-  for (const connection of connections) {
-    const person = people.get(connection.person) ?? {
-      avatar: connection.avatar,
-      devices: [],
-      name: connection.name,
-      person: connection.person,
-    };
-    people.set(connection.person, person);
-    const known = person.devices.some(
-      (device) =>
-        device.browser === connection.browser && device.os === connection.os
-    );
-    if (!known)
-      person.devices.push({ browser: connection.browser, os: connection.os });
-  }
+  for (const { avatar, name, person } of connections)
+    if (!people.has(person)) people.set(person, { avatar, name, person });
   return [...people.values()];
 }
 

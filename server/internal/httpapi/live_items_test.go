@@ -241,10 +241,10 @@ func TestEmbeddedItemTokensNameTheirNote(t *testing.T) {
 	}
 }
 
-// A room token names who the connection is for the room's presence (Epo
-// 2026-10-20): the verified name and the browser and OS the API read from the
-// request's User-Agent, never the header itself.
-func TestCollaborationTokensNameTheDevice(t *testing.T) {
+// Security regression (Epo 2026-10-20, privacy): a room token names who the
+// connection is for the room's presence by the verified name alone; nothing
+// about the device (no browser or OS, no part of the User-Agent) goes in.
+func TestCollaborationTokensCarryNoDevice(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
 	if err != nil {
@@ -278,7 +278,9 @@ func TestCollaborationTokensNameTheDevice(t *testing.T) {
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		t.Fatal(err)
 	}
-	if claims["browser"] != "Safari" || claims["os"] != "macOS" || claims["name"] == "" || strings.Contains(string(payload), "Mozilla") {
+	_, hasBrowser := claims["browser"]
+	_, hasOS := claims["os"]
+	if hasBrowser || hasOS || claims["name"] == "" || strings.Contains(string(payload), "Safari") || strings.Contains(string(payload), "Mac") {
 		t.Fatalf("claims = %s", payload)
 	}
 }

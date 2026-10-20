@@ -31,17 +31,12 @@ pub struct Claims {
     pub aud: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
-    /// The browser and OS Go read from the User-Agent (`deviceLabel`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub browser: Option<String>,
     pub exp: i64,
     pub iat: i64,
     pub iss: String,
     pub jti: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub os: Option<String>,
     /// An embedded quiz's or set's note (Go names it): its channels join
     /// only inside that note's (Epo 2026-10-20).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -70,14 +65,12 @@ pub struct Context {
     pub identity: Box<Identity>,
 }
 
-/// A connection's verified name, avatar and device, from its token's claims
-/// (Go bounds each).
+/// A connection's verified name and avatar, from its token's claims (Go
+/// bounds both); nothing about its device (Epo 2026-10-20, privacy).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Identity {
     pub name: Option<String>,
     pub avatar_url: Option<String>,
-    pub browser: Option<String>,
-    pub os: Option<String>,
 }
 
 impl From<&Claims> for Context {
@@ -92,8 +85,6 @@ impl From<&Claims> for Context {
             identity: Box::new(Identity {
                 name: claims.name.clone(),
                 avatar_url: claims.avatar_url.clone(),
-                browser: claims.browser.clone(),
-                os: claims.os.clone(),
             }),
         }
     }
@@ -286,13 +277,11 @@ pub fn claims_for(room: &str, user: &str, access: Access, now: i64, seconds: i64
         access,
         aud: "capy-collaboration".into(),
         avatar_url: None,
-        browser: None,
         exp: now + seconds,
         iat: now,
         iss: "capy-api".into(),
         jti: format!("tok_{now}_{user}"),
         name: None,
-        os: None,
         parent: None,
         room: room.into(),
         schema: RoomName::parse(room).map(|name| name.number()).unwrap_or(0),

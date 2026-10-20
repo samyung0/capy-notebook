@@ -817,10 +817,8 @@ it('hands the room’s presence to onPresence and clears it when the channel end
       connections: [
         {
           avatar: null,
-          browser: 'Chrome',
           clients: [7],
           name: 'Bob',
-          os: 'Windows',
           person: 2,
         },
       ],

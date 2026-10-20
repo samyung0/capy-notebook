@@ -165,9 +165,7 @@ test('the header lists co-editors as an avatar group', async ({ page }) => {
     const leaves = ['Ann', 'Ben', 'Cy', 'Dee', 'Eve'].map((name, index) =>
       mockPresencePeer('mat_e2e_editor', {
         avatar: null,
-        browser: 'Firefox',
         name,
-        os: 'Linux',
         person: index + 1,
       })
     );

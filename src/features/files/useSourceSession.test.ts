@@ -40,7 +40,10 @@ vi.mock('react', async (load) => ({
   },
   useRef: <T>(current: T) => hooks.slot(() => ({ current }))[1],
   useState: <T>(initial: T) => {
-    const [at, value] = hooks.slot(() => initial);
+    // React calls an initializer function once.
+    const [at, value] = hooks.slot(() =>
+      typeof initial === 'function' ? (initial as () => T)() : initial
+    );
     const set = (update: T | ((previous: T) => T)) =>
       hooks.set(
         at,

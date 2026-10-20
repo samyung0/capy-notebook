@@ -46,6 +46,7 @@ import { editIncidentReporter } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
 import { officeMark } from '@/lib/officeMarks';
 import { PresenceContext } from './fileModeContext';
+import { createOfficeCursors } from './officeCursors';
 import { takeSourceOpen } from './sourceOpen';
 import {
   createSourceProvider,
@@ -215,6 +216,8 @@ export function useSourceSession(
   const presence = useContext(PresenceContext);
   const reportPresence = useRef(presence);
   reportPresence.current = presence;
+  // Office co-editors' cursors, under the presence's names (Epo 2026-10-20).
+  const [cursors] = useState(createOfficeCursors);
   const actorId = me?.id;
   const [loaded, setLoaded] = useState<{
     session: SourceSession;
@@ -793,7 +796,9 @@ export function useSourceSession(
           }
         },
         onPresence: (connections) => {
-          if (!cancelled) reportPresence.current?.(connections);
+          if (cancelled) return;
+          reportPresence.current?.(connections);
+          cursors.names(connections);
         },
         // Joined, the answer waiting on the open budget: reachable, so never
         // offline meanwhile (an offline episode before it ends here).
@@ -994,6 +999,7 @@ export function useSourceSession(
       officeMark('provider');
       active.provider = provider;
       runtime.current = active;
+      cursors.attach(provider.awareness);
       disposeReconnect = reconnect.dispose;
       // A base that cannot be read ends the session as its read did before.
       const baseRead = async () => {
@@ -1057,13 +1063,15 @@ export function useSourceSession(
       runtime.current = null;
       discardHandler.current = null;
       disposeReconnect();
+      cursors.attach(null);
+      cursors.names(null);
       provider?.destroy();
       reportPresence.current?.(null);
       doc?.destroy();
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(new SourceSessionError(m.source_edit_save_failed()));
     };
-  }, [fileId, actorId, enabled, generation, pendingInput]);
+  }, [fileId, actorId, enabled, generation, pendingInput, cursors]);
 
   useEffect(() => {
     if (!dirty && !bufferDirty) return;
@@ -1079,6 +1087,7 @@ export function useSourceSession(
     ...loaded,
     atSizeLimit,
     banner,
+    cursors,
     dirty: dirty || bufferDirty,
     discardDraft,
     discarding,

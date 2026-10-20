@@ -996,12 +996,11 @@ impl Room {
                 if let Some(member) = self.members.get_mut(&key) {
                     member.read_only = member.held_read_only || context.access == Access::Read;
                     // A narrowed writer of a source room leaves its presence.
-                    let material = matches!(self.kind, Kindly::Note(_));
-                    let was = in_presence(member, material);
+                    let was = in_presence(member, &self.kind);
                     let renamed = member.context.identity != context.identity;
                     member.context = context;
                     self.view_dirty = true;
-                    let now = in_presence(member, material);
+                    let now = in_presence(member, &self.kind);
                     if was != now || (now && renamed) {
                         self.mark_presence();
                     }
@@ -1966,7 +1965,7 @@ impl Room {
         if self
             .members
             .get(&key)
-            .is_some_and(|member| in_presence(member, matches!(self.kind, Kindly::Note(_))))
+            .is_some_and(|member| in_presence(member, &self.kind))
         {
             self.mark_presence();
         }
@@ -2023,7 +2022,7 @@ impl Room {
             return;
         };
         self.view_dirty = true;
-        if in_presence(&member, matches!(self.kind, Kindly::Note(_))) {
+        if in_presence(&member, &self.kind) {
             self.mark_presence();
         }
         if let Kindly::Source(_) = &self.kind {
@@ -2123,9 +2122,12 @@ impl Room {
                 member.out.frame(frame.freeze());
             }
         }
-        // Removed clients are forgotten once their removal went out.
-        self.awareness
-            .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
+        // Removed clients are forgotten once their removal went out, or, while
+        // a presence is due, once it went out too (`send_presence`).
+        if !self.presence_dirty {
+            self.awareness
+                .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
+        }
     }
 
     fn broadcast_update(&mut self, sender: Option<MemberKey>, update: Vec<u8>) {
@@ -2715,10 +2717,10 @@ impl Room {
         for entry in entries {
             let current = self.awareness.get(&entry.client);
             // A client id is its user's: another user's channel neither
-            // writes nor removes it (Epo 2026-10-19).
-            if current
-                .is_some_and(|state| state.owner.is_some() && state.user != member.context.user_id)
-            {
+            // writes nor removes it (Epo 2026-10-19), nor takes it once it is
+            // released until the presence after that went out, since until
+            // then co-editors still label it with its user's name.
+            if current.is_some_and(|state| state.user != member.context.user_id) {
                 continue;
             }
             // y-protocols: a newer clock wins; at the same clock a removal wins.
@@ -2796,11 +2798,10 @@ impl Room {
     fn send_presence(&mut self, now: Instant) {
         self.presence_dirty = false;
         self.presence_at = Some(now + PRESENCE_EVERY);
-        let material = matches!(self.kind, Kindly::Note(_));
         let mut listed: Vec<(&MemberKey, &Member)> = self
             .members
             .iter()
-            .filter(|(_, member)| in_presence(member, material))
+            .filter(|(_, member)| in_presence(member, &self.kind))
             .collect();
         listed.sort_by_key(|(_, member)| member.channel_id);
         self.people.retain(|user, _| {
@@ -2822,7 +2823,7 @@ impl Room {
             })
             .collect();
         for (key, member) in &self.members {
-            if member.inside || !in_presence(member, material) {
+            if member.inside || !in_presence(member, &self.kind) {
                 continue;
             }
             let others: Vec<&str> = entries
@@ -2837,6 +2838,12 @@ impl Room {
             );
             self.send(*key, Kind::Stateless, &protocol::text(&payload));
         }
+        // An id released before this presence, which no longer lists it, is
+        // free for anyone now that its removal went out too (`on_awareness`).
+        let unsent = &self.changed_awareness;
+        self.awareness.retain(|client, state| {
+            !(state.entry.removed() && state.owner.is_none()) || unsent.contains(client)
+        });
     }
 
     /// Sends the room's awareness states to a channel; returns their bytes.
@@ -3888,12 +3895,18 @@ async fn sleep_until(deadline: Option<Instant>) {
 /// a viewer from the material's access at join, so an editor's reading tab (a
 /// View) and a narrowed editor are in and their cursors keep their names; a
 /// source room knows only the token's access, so only its write channels are.
-fn in_presence(member: &Member, material: bool) -> bool {
-    !member.viewer && (material || member.context.access == Access::Write)
+/// A quiz's keys room has none: its writers' page shows the content room's.
+fn in_presence(member: &Member, kind: &Kindly) -> bool {
+    !member.viewer
+        && match kind {
+            Kindly::Note(note) => note.doc != note_store::Doc::Keys,
+            Kindly::Source(_) => member.context.access == Access::Write,
+        }
 }
 
 /// One connection in the room's presence: its person's number, the token's
-/// name, avatar and device, and the awareness client ids it holds.
+/// name and avatar (nothing about its device, Epo 2026-10-20), and the
+/// awareness client ids it holds.
 fn presence_entry(member: &Member, person: u64) -> Value {
     let identity = &member.context.identity;
     let mut clients: Vec<u64> = member.clients.iter().copied().collect();
@@ -3902,8 +3915,6 @@ fn presence_entry(member: &Member, person: u64) -> Value {
         "person": person,
         "name": identity.name,
         "avatar": identity.avatar_url,
-        "browser": identity.browser,
-        "os": identity.os,
         "clients": clients,
     })
 }

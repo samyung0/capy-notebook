@@ -554,14 +554,42 @@ export function mockNotePeer(materialId: string) {
   };
 }
 
-/** Another editor in the open mock room of a material or file, there for
- * the room's presence only (screenshots, e2e); returns its leave. */
-export function mockPresencePeer(targetId: string, identity: MockIdentity) {
+function openRoom(targetId: string) {
   const room = [...rooms.values()].find(
     (candidate) => candidate.target.id === targetId && !candidate.retired
   );
   if (!room) throw new Error(`No mock room is open for ${targetId}`);
-  return join(room, { document: new Y.Doc(), identity, origin: {} });
+  return room;
+}
+
+/** Another editor in the open mock room of a material or file, there for
+ * the room's presence (screenshots, e2e), with `state` as its awareness (an
+ * Office cursor); returns its leave. */
+export function mockPresencePeer(
+  targetId: string,
+  identity: MockIdentity,
+  state?: Record<string, unknown>
+) {
+  const document = new Y.Doc();
+  const awareness = state ? new Awareness(document) : undefined;
+  const leave = join(openRoom(targetId), {
+    awareness,
+    document,
+    identity,
+    origin: {},
+  });
+  // Set once joined, so the room relays it to the others.
+  awareness?.setLocalState(state ?? null);
+  return leave;
+}
+
+/** This tab's own awareness in a file's open mock room (its Office cursor),
+ * for a peer to copy in screenshots and e2e. */
+export function mockOwnAwareness(targetId: string) {
+  const room = openRoom(targetId);
+  for (const provider of sourceProviders)
+    if (provider.room === room) return provider.awareness.getLocalState();
+  return null;
 }
 
 export function setCollaborationReachable(value: boolean) {
@@ -808,12 +836,13 @@ class MockCollaborationProvider implements UnifiedProvider {
  * connecting is a merge plus a `synced` on the next microtask. A checkpoint
  * saves without publishing; View reads it through the viewer's session. */
 class MockSourceProvider implements SourceProvider {
+  readonly awareness: Awareness;
   // The in-page room applies updates synchronously.
   readonly hasUnsyncedChanges = false;
   isAuthenticated = true;
   private readonly config: SourceProviderConfig;
   private readonly leave: () => void;
-  private readonly room: Room;
+  readonly room: Room;
 
   constructor(config: SourceProviderConfig) {
     const room = rooms.get(config.name);
@@ -822,7 +851,9 @@ class MockSourceProvider implements SourceProvider {
     }
     this.config = config;
     this.room = room;
+    this.awareness = new Awareness(config.document);
     this.leave = join(room, {
+      awareness: this.awareness,
       document: config.document,
       onPresence: config.onPresence,
       origin: this,

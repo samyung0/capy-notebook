@@ -238,57 +238,81 @@ Its actions use the same Yjs history as note editing.
 
 ### Room presence
 
-Developer Epo decided the avatar group, verified cursor labels and device
-labels on 2026-10-20. The collaboration token names who a connection is: Go
-puts the user's display name (cut to the 60-character user name limit), the
-avatar (left out past 1,024 bytes; co-editors then see initials) and a coarse
-browser and OS (`deviceLabel`, read from the token request's User-Agent from a
-fixed list of names, never echoed, nothing stored) in its claims
-(`collaboration_tokens.go`), and the server keeps them in each channel's
-`Context` (`auth::Identity`).
+Developer Epo decided the avatar group and verified cursor labels on
+2026-10-20, and for privacy the same day that the group has no tooltip and
+nothing about a device reaches anyone. The collaboration token names who a
+connection is by the user's display name and avatar alone
+(`collaboration_tokens.go`): the name without bidi controls or zero-width
+characters (`claimName`) and cut to the 60-character user name limit, the
+avatar left out past 1,024 bytes (co-editors then see initials). The server
+keeps them in each channel's `Context` (`auth::Identity`).
 
-Each room sends its editors a stateless `room-presence` message (`send_presence` in `room.rs`, `PRESENCE_TYPE`) a flush window after
-a join, a leave, a token whose identity changed, or a change in a channel's
-awareness client ids, and at most once a second (`PRESENCE_EVERY`). It lists
-the room's other connections of people who can edit (`in_presence`: in a
-material room every non-viewer channel, an editor's reading tab and a
-narrowed editor included; in a source room, which knows only the token's
-access, its write channels), oldest first and at most 64 (`MAX_PRESENCE`):
-each one's person (a number the room keeps per user while they are in it,
-never the user id, which a reader may not learn: Epo 2026-10-12), name,
-avatar, browser, OS and the awareness client ids it holds. Only those channels hear it, and an embed's channel inside its note's
-hears none (its page's header shows the note's). A member's own connection
-is never in its list, so its user appears only for their other tabs and
-devices. The ids come
-from the room's own map of which channel holds which client id, so a client
-cannot label a cursor as someone else: labels and the group read only this
-message.
+Each room sends its editors a stateless `room-presence` message
+(`send_presence` in `room.rs`, `PRESENCE_TYPE`) a flush window after a join, a
+leave, a token whose identity changed, or a change in a channel's awareness
+client ids, and at most once a second (`PRESENCE_EVERY`). It lists the room's
+other connections of people who can edit (`in_presence`: in a material room
+every non-viewer channel, an editor's reading tab and a narrowed editor
+included; in a source room, which knows only the token's access, its write
+channels; a quiz's keys room has none, its page showing the content room's),
+oldest first and at most 64 (`MAX_PRESENCE`): each one's person (a number the
+room keeps per user while they are in it, never the user id, which a reader
+may not learn: Epo 2026-10-12), name, avatar and the awareness client ids it
+holds. Only those channels hear it, and an embed's channel inside its note's
+hears none (its page's header shows the note's). A member's own connection is
+never in its list, so its user appears only for their other tabs and devices.
+The ids come from the room's own map of which channel holds which client id,
+so a client cannot label a cursor as someone else: labels and the group read
+only this message. An id its user released (a removal, a leave) stays theirs
+until the next presence, which no longer lists it, has gone out: until then
+co-editors still label it with their name, so another user's channel cannot
+take it.
 
 The browser (`presence.ts`) hands it to the open editor (`onPresence` on
 `RoomProvider`; it goes empty when the channel ends): notes keep it for cursor
-labels (`useRemotePeers`) and report it, with items (quiz, set, Mermaid) and
-Office and text sources (`PresenceContext`), to the pane's presence store,
-which the header's avatar group reads (`RoomPresence.tsx`): one avatar per
-person, at most three, then +N; each avatar's hover lists the person's name
-and devices ("Chrome on Windows", each pair once); hidden below sm. Hovering
-spreads the group as transitions.dev's avatar group does (the hovered avatar
-lifts 4 px and grows 5 %, neighbours lift 0.45 as much per step, 320 ms in on
-the smooth-out curve and back on the strong bounce; reduced motion keeps them
-still). Office files show the group too; their runtime draws no remote
-cursors.
+labels (`useRemotePeers`), Office files for theirs (below), and both report
+it, with items (quiz, set, Mermaid) and text sources (`PresenceContext`), to
+the pane's presence store, which the header's avatar group reads
+(`RoomPresence.tsx`, labelled "Also in this document"): one avatar per person,
+at most three, then +N, with no tooltip; hidden below sm. Hovering spreads the
+group as transitions.dev's avatar group does (the hovered avatar lifts 4 px
+and grows 5 %, neighbours lift 0.45 as much per step, 320 ms in on the
+smooth-out curve and back on the strong bounce; reduced motion keeps them
+still).
+
+### Office cursors
+
+Developer Epo decided on 2026-10-20 that Office files draw co-editors'
+cursors through BetterOffice's own overlays, labelled like notes. Each fork
+editor takes a presence object (DOCX `collaboration.presence`, XLSX
+`collaboration.provider`, PPTX `collaboration.presence`); the runtime gives
+it one over the frame (`officePresence.ts`, an adapter per editor host), so
+the fork's providers, which would read names from awareness, are not used.
+The editor's cursor goes out as a `cursor` message (at most every 80 ms, the
+last always; a DOCX edit's move waits for the next) and Capy puts it in the
+source room's awareness (`officeCursors.ts`, `useSourceSession`). Capy sends
+the frame the co-editors' cursors as `peers`: each client id with a cursor in
+the room's awareness and a name in the room's presence, under that name,
+never one from awareness; an id the presence does not list (a reader, or a
+peer not listed yet) is not drawn. A cursor is a DOCX story and its encoded
+positions, an XLSX sheet and cell range, or a PPTX slide and shape, each
+bounded (`isOfficeCursor`). The flags look as the fork draws them.
 
 ### Idle close
 
 The browser closes a page's collaboration connections after 60 minutes
 without keyboard, pointer, touch or wheel input (`idle.ts`, Epo 2026-10-20);
 a hidden page gets no input, so 60 minutes hidden closes them too, and
-scroll events do not count since pages scroll themselves. Each room's channel
-ends first, quietly, as a room closed as its user's oldest does (no close or
-drop reported; it waits not synced), then the tab's socket closes and stays
-closed (`CollabSocket.sleep`). The next input or window focus opens it
-(`wake`) and every room joins again, catching up with its step 1 (the
-small-answer path). The server keeps no idle timer of its own: the per-user
-caps bound a client that ignores this.
+scroll events do not count since pages scroll themselves. Input inside an
+Office frame never reaches Capy's page, so the runtime reports it
+(`activity.ts`: an `activity` message at once, then at most once a minute)
+and Capy counts it as its own (`frameInput`). Each room's channel ends first,
+quietly, as a room closed as its user's oldest does (no close or drop
+reported; it waits not synced), then the tab's socket closes and stays closed
+(`CollabSocket.sleep`). The next input or window focus opens it (`wake`) and
+every room joins again, catching up with its step 1 (the small-answer path).
+The server keeps no idle timer of its own: the per-user caps bound a client
+that ignores this.
 
 ## Stable IDs and persisted node data
 
