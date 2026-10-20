@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
@@ -26,10 +25,6 @@ type internalFileReq struct {
 	Content            []byte            `json:"content"`
 	Provenance         *store.Provenance `json:"provenance"`
 }
-
-// agentFileExtensions are the files the chat agent stores: decks and the
-// Office files edit_office_document creates (Epo 2026-10-20).
-var agentFileExtensions = []string{".docx", ".pptx", ".xlsx"}
 
 // internalCreateFile stores an agent's file the way an upload lands: the
 // editor check an upload makes, the workspace owner's quota on the bytes, the
@@ -61,9 +56,11 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(req.Name)
-	if !slices.Contains(agentFileExtensions, sourceupload.Extension(name)) || len(req.Content) == 0 {
+	// Decks only: edit_office_document's create stores the engine's bytes
+	// itself through storeAgentFile (Epo 2026-10-20, review finding 9).
+	if !strings.EqualFold(sourceupload.Extension(name), ".pptx") || len(req.Content) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "invalid_input", "message": "an agent file is a non-empty .docx, .pptx or .xlsx",
+			"code": "invalid_input", "message": "an agent file is a non-empty .pptx",
 		})
 		return
 	}
