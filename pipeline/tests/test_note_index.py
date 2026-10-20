@@ -417,7 +417,9 @@ async def test_a_failed_note_summary_publishes_the_chunks_and_the_next_index_wri
 ):
     """A summary failure must not fail the job, which would abandon the new
     chunks; the note publishes without one and its next index writes it, paid
-    from that job's owner reservation (Editor 2026-10-20)."""
+    from that job's owner reservation (Editor 2026-10-20), also when that
+    index has the same text hash, as after a formatting-only edit (Epo
+    2026-10-20), and a note that has one makes no call."""
     spec = registry.current_job_pins().ingest
     with workspace._connect() as conn:
         added = conn.execute(
@@ -456,21 +458,36 @@ async def test_a_failed_note_summary_publishes_the_chunks_and_the_next_index_wri
 
     monkeypatch.setattr(worker.indexing, "summarize_note", summarize)
     monkeypatch.setattr(elitellm, "complete", complete)
-    provider["text"] = _LONG.replace("Topic 3 covers", "Topic 3 explains")
-    second = _admit(workspace, material_id)
-    await _run(workspace, second)
-    try:
-        assert _summary(workspace, material_id) == [("Photosynthesis topics.",)]
+
+    def summary_calls(job_id: str) -> list[tuple]:
         reservation = json.loads(
-            _rows(workspace, "SELECT payload::text FROM jobs WHERE id=%s", (second,))[
+            _rows(workspace, "SELECT payload::text FROM jobs WHERE id=%s", (job_id,))[
                 0
             ][0]
         )["reservationId"]
-        assert ("note_summary", "applied") in _rows(
+        return _rows(
             workspace,
-            "SELECT purpose, status FROM provider_calls WHERE reservation_id=%s",
+            "SELECT status FROM provider_calls WHERE reservation_id=%s "
+            "AND purpose='note_summary'",
             (reservation,),
         )
+
+    # The same text: the content is reused, and only the summary is written.
+    provider["inputs"].clear()
+    second = _admit(workspace, material_id)
+    await _run(workspace, second)
+    try:
+        assert _alias(workspace, material_id) == (content_id, "ready")
+        assert provider["inputs"] == []  # nothing re-embedded
+        assert _summary(workspace, material_id) == [("Photosynthesis topics.",)]
+        assert summary_calls(second) == [("applied",)]
+        # With a summary, the same text makes no call.
+        third = _admit(workspace, material_id)
+        await _run(workspace, third)
+        assert summary_calls(third) == []
+        assert _rows(workspace, "SELECT status FROM jobs WHERE id=%s", (third,)) == [
+            ("done",)
+        ]
     finally:
         if added:
             with workspace._connect() as conn:

@@ -1961,6 +1961,14 @@ async def _process_material_index_bound(job: dict) -> None:
                 await store.abandon_content(association["content_id"])
                 raise
             embedded = result["embedded"]
+        else:
+            await indexing.fill_note_summary(
+                workspace_id=ws,
+                material_id=material_id,
+                title=str(note.get("title") or ""),
+                content_id=association["content_id"],
+                chunks=chunks,
+            )
         telemetry.record(chunks_created=len(chunks), chunks_embedded=embedded)
         await asyncio.to_thread(_finish_material_index, job)
     finally:

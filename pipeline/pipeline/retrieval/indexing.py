@@ -419,6 +419,28 @@ async def _descriptor(
         return None, 0.0, None, exc
 
 
+async def fill_note_summary(
+    *,
+    workspace_id: str,
+    material_id: str,
+    title: str,
+    content_id: str,
+    chunks: list[Chunk],
+) -> None:
+    """A reindex onto ready content (an unchanged text hash, as after a
+    formatting-only edit) runs the summary step alone when that content has
+    none (Epo 2026-10-20): no re-chunk, no re-embed."""
+    if await store.has_content_summary(content_id):
+        return
+    await _note_summary(
+        workspace_id=workspace_id,
+        name=f"{title} ({material_id})",
+        content_id=content_id,
+        chunks=chunks,
+        published=None,
+    )
+
+
 async def _note_summary(
     *,
     workspace_id: str,

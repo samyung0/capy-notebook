@@ -3874,7 +3874,11 @@ excerpt without the title (`summarize_note`, purpose `note_summary`), under
 the job's ingest accounting, so the workspace owner pays. A failed call does
 not fail the job, which would abandon the new chunks: the note publishes
 without a summary (or keeps its previous one with the accumulated share), and
-its next index writes it. `publish_material_content` then marks the new row ready and moves
+its next index writes it: also a reindex whose text hash is unchanged (a
+formatting-only edit), which reuses the ready content and runs only the summary
+step when that content has none (`fill_note_summary`, Epo 2026-10-20). Notes
+indexed before summaries get none until they are edited: there is no backfill.
+`publish_material_content` then marks the new row ready and moves
 the alias in one transaction, and the orphan trigger drops the old row. The
 alias move (here, or when the claim finds ready content) also stores the
 fetched `blocks` as `materials.indexed_blocks` (migration 0098): the baseline
