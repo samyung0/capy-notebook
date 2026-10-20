@@ -18,25 +18,42 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from ..prompts.sources import source_block
-from . import store
+from . import hint_words, store
 from .chunking import (
     SEARCH_FOLD,
     estimate_tokens,
     search_query_terms,
     tokenize_for_search,
 )
-from .lang import FUNCTION_WORDS, TS_CONFIG, UND, detect_lang, is_cjk
+from .lang import (
+    CJK_RUN_RE,
+    FUNCTION_WORDS,
+    TS_CONFIG,
+    UND,
+    detect_lang,
+    is_cjk,
+    is_hangul,
+    is_kana,
+)
 
-# Bounds (the Editor, 2026-10-20): a handful of snippets of about 200
-# characters, about 400 tokens a message; candidates are capped because a
-# workspace with auto processing off keeps every edit pending.
-HINT_LIMIT = 5
+# Bounds (the Editor, 2026-10-20): at most 3 snippets of about 200
+# characters (Epo, after the hints eval), about 400 tokens a message;
+# candidates are capped because a workspace with auto processing off keeps
+# every edit pending.
+HINT_LIMIT = 3
+# A hint needs this many of the message's words matching its document's name
+# or change text (Epo 2026-10-20: a one-word match was relevant 5% of the
+# time, two or more 73%), or every content word of a shorter message.
+MIN_MATCHED_WORDS = 2
 HINT_CHARS = 200
+# The words a message counts, as search's query terms (search_query_terms).
+MESSAGE_UNITS_MAX = 40
 HINT_TOKENS = 400
 CANDIDATES_MAX = 2000
 CANDIDATE_CHARS = 500  # read per change for matching (Epo 2026-10-20)
 
 _VERBS = {"add": "added", "replace": "changed", "remove": "removed"}
+_WORD = re.compile(r"\w")
 
 KIND = "pending_hints"  # the hint message's _kind
 
@@ -67,7 +84,7 @@ class Hint:
 @dataclass(frozen=True)
 class _Prepared:
     hint: Hint
-    tokens: str  # the text through the search tokenizer
+    tokens: str  # the document's name and the text, through the search tokenizer
     config: str  # its document's language's text search config
     simple: bool  # its config is simple (CJK or undetermined): keeps every word
 
@@ -153,7 +170,8 @@ def _prepare(hints: list[Hint], indexed: dict[str, str]) -> list[_Prepared]:
     return [
         _Prepared(
             hint,
-            tokenize_for_search(hint.text),
+            # The name gives "my calculus note" its second word.
+            tokenize_for_search(f"{hint.name}\n{hint.text}"),
             TS_CONFIG[langs[hint.doc_id]],
             TS_CONFIG[langs[hint.doc_id]] == "simple",
         )
@@ -196,40 +214,109 @@ async def prepared(sources: Any) -> list[_Prepared]:
     return sources.hint_pool
 
 
+def message_units(query: str) -> list[str]:
+    """The message's words as the two-word rule counts them, each a websearch
+    string. Latin words are search_query_terms' words. Overlapping CJK pairs
+    would let 什么是 count as words (Epo 2026-10-20, review S3 and R1-R3), so
+    each CJK run counts by its language's rule (``hint_words``): a Korean run
+    (hangul) as a word matched by two of its pairs, a run of a message with
+    kana as one Japanese word matched by any pair not only hiragana, and
+    otherwise as Chinese words each matched by all of its pairs.
+    Punctuation is not a word; at most MESSAGE_UNITS_MAX words count."""
+    words = [
+        w for w in search_query_terms(query).any_of.split(" or ") if _WORD.search(w)
+    ]
+    runs = CJK_RUN_RE.findall(query)
+    if not runs:
+        return words
+    units = [w for w in words if not CJK_RUN_RE.search(w)]
+    japanese = any(is_kana(ch) for ch in query)
+    for run in runs:
+        if any(is_hangul(ch) for ch in run):
+            units.append(hint_words.korean_unit(run))
+        elif japanese:
+            units.append(hint_words.japanese_unit(run))
+        else:
+            units += hint_words.chinese_units(run)
+    return list(dict.fromkeys(unit for unit in units if unit))[:MESSAGE_UNITS_MAX]
+
+
 async def match(
     query: str, pool: list[_Prepared], limit: int = HINT_LIMIT
 ) -> list[Hint]:
-    """The best lexical matches of ``query`` among ``pool``: the search
-    tokenizer (ligature, sub/superscript and CJK folds) on both sides and each
-    document's language's text search config. For a document under the
+    """The best lexical matches of ``query`` among ``pool`` that match at
+    least MIN_MATCHED_WORDS distinct words of it (every content word when it
+    has fewer; ``message_units``): the search tokenizer (ligature,
+    sub/superscript and CJK folds) on both sides and each document's
+    language's text search config. For a document under the
     ``simple`` config (Chinese, Japanese, Korean or undetermined) the query's
     words on Postgres's English stopword list are dropped first (Epo
     2026-10-20): ``simple`` keeps every word, so "the" would match almost
     anything. Only English: the French, German and Spanish lists dropped
     English content words such as "war" and "die"."""
-    any_of = search_query_terms(query).any_of
-    if not pool or not any_of:
+    if not pool:
         return []
+    any_of = search_query_terms(query).any_of
+    units = message_units(query)
+    if not any_of or not units:
+        return []
+    return await match_units(units, any_of, pool, limit)
+
+
+async def match_units(
+    units: list[str], any_of: str, pool: list[_Prepared], limit: int = HINT_LIMIT
+) -> list[Hint]:
+    """``match`` over given message units (the eval compares unit rules)."""
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            """WITH plain AS (
-                SELECT coalesce(string_agg(w, ' or '), '') AS q
-                FROM unnest(string_to_array(%(any)s, ' or ')) AS w
-                WHERE ts_lexize('english_stem'::regdictionary, lower(w))
-                    IS DISTINCT FROM '{}'::text[]),
+            """WITH words AS (
+                SELECT DISTINCT w, ts_lexize('english_stem'::regdictionary, lower(w))
+                    IS DISTINCT FROM '{}'::text[] AS content
+                FROM unnest(%(units)s::text[]) AS w),
+            plain AS (
+                SELECT coalesce(string_agg(w, ' or '), '') AS q FROM words WHERE content),
+            c AS (
+                SELECT * FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(simple)s::boolean[])
+                    WITH ORDINALITY AS c(t, cfg, simple, ord)),
+            -- Once per message and config, not per candidate: the query, and
+            -- each message word's lexemes (a stopword there has none and sends
+            -- the client a notice, so it is parsed once). A config whose query
+            -- is all stopwords matches nothing.
+            q AS MATERIALIZED (
+                SELECT k.cfg, k.simple, k.q FROM (
+                    SELECT cfgs.cfg, cfgs.simple, websearch_to_tsquery(
+                        cfgs.cfg, CASE WHEN cfgs.simple THEN plain.q ELSE %(any)s END) AS q
+                    FROM (SELECT DISTINCT cfg, simple FROM c) cfgs CROSS JOIN plain) k
+                WHERE numnode(k.q) > 0),
+            lex AS MATERIALIZED (
+                SELECT q.cfg, q.simple, t.tsq::text AS key, t.tsq
+                FROM q JOIN words ON NOT q.simple OR words.content
+                CROSS JOIN LATERAL (SELECT websearch_to_tsquery(q.cfg, words.w) AS tsq) t
+                WHERE numnode(t.tsq) > 0),
             m AS MATERIALIZED (
-                SELECT c.ord, to_tsvector(c.cfg, c.t) AS v,
-                    websearch_to_tsquery(c.cfg, CASE WHEN c.simple THEN plain.q ELSE %(any)s END) AS q
-                FROM unnest(%(texts)s::text[], %(cfgs)s::regconfig[], %(simple)s::boolean[])
-                    WITH ORDINALITY AS c(t, cfg, simple, ord)
-                CROSS JOIN plain)
-            SELECT ord FROM m WHERE v @@ q ORDER BY ts_rank(v, q) DESC, ord LIMIT %(limit)s""",
+                SELECT c.ord, c.cfg, c.simple, to_tsvector(c.cfg, c.t) AS v, q.q
+                FROM c JOIN q ON q.cfg = c.cfg AND q.simple = c.simple),
+            hit AS (
+                -- Per matching candidate: the distinct message lexemes it
+                -- matches, and those its config keeps, so "Cell" and "cell,"
+                -- (or "derivative" and "derivatives" under english) are one word.
+                SELECT m.ord,
+                    count(DISTINCT lex.key) FILTER (WHERE m.v @@ lex.tsq) AS matched,
+                    count(DISTINCT lex.key) AS usable
+                FROM m JOIN lex ON lex.cfg = m.cfg AND lex.simple = m.simple
+                WHERE m.v @@ m.q
+                GROUP BY m.ord)
+            SELECT m.ord FROM m JOIN hit USING (ord)
+            WHERE hit.matched >= least(%(min_words)s, hit.usable)
+            ORDER BY ts_rank(m.v, m.q) DESC, m.ord LIMIT %(limit)s""",
             {
                 "any": any_of,
+                "units": units,
                 "texts": [p.tokens for p in pool],
                 "cfgs": [p.config for p in pool],
                 "simple": [p.simple for p in pool],
+                "min_words": MIN_MATCHED_WORDS,
                 "limit": limit,
             },
         )
