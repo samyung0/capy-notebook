@@ -482,26 +482,32 @@ async def test_a_hint_needs_two_message_words_and_a_message_three_hints(workspac
 
 
 def test_a_cjk_message_counts_words_not_overlapping_pairs():
-    """Epo 2026-10-20 (review hints-round S3): Chinese splits by longest match
-    over the HSK words and drops level 1; Japanese and Korean count each run
-    once."""
+    """Epo 2026-10-20 (review hints-round S3, re-review R1-R3): Chinese splits
+    over the HSK words and drops only hand-picked function words; Japanese
+    pairs of only hiragana do not count; a Korean word loses its ending and
+    question words count none."""
     units = pending_hints.message_units
-    # 什么 and 是 are level 1; 光 joins 合作 and 用 is level 1.
+    # 什么 and 是 are dropped; 光 joins 合作.
     assert units("什么是光合作用？") == ["光合 合作"]
     assert units("什么是细胞分裂？") == ["细胞", "分裂"]
-    assert units("减数分裂以后染色体有多少？") == [
-        "减数 数分 分裂",
-        "以后",
-        "染色 色体",
-    ]
-    assert units("谢谢！") == []
-    # The list holds Traditional forms too (HSK itself is Simplified).
+    # Level-1 words stay terms (R1), 为什么 and 会 are dropped (R2).
+    assert units("为什么会下雨？") == ["下雨"]
+    assert units("水的沸点是多少？") == ["沸点"]
+    # A character left alone keeps a joinable neighbour.
+    assert units("什么是对数？") == ["对数"]
+    assert units("什么是动能？") == ["动能"]
+    assert units("质子和中子") == ["质子", "中子"]
+    # A measure word is dropped: 行星, not 个行星.
+    assert units("太阳系有几个行星？") == ["太阳", "行星"]
+    assert units("谢谢！") == units("请问这个是什么意思？") == []
+    # Traditional forms are in the lists (HSK itself is Simplified).
     assert units("什麼是光合作用？") == ["光合 合作"]
     assert units("謝謝！") == []
-    assert units("光合成とは何ですか？") == [
-        "光合 or 合成 or 成と or とは or は何 or 何で or です or すか"
-    ]
-    assert units("광합성 에너지?") == ["광합 or 합성", "에너 or 너지"]
+    assert units("光合成とは何ですか？") == ["光合 or 合成 or 成と or は何 or 何で"]
+    assert units("何をすればいいですか？") == ["何を"]
+    assert units("광합성이란 무엇인가요?") == ["광합 합성"]
+    assert units("광합성 에너지?") == ["광합 합성", "에너 너지"]
+    assert units("이건 무엇인가요?") == []
 
 
 @pytest.mark.integration
@@ -543,9 +549,11 @@ async def test_what_is_x_in_chinese_hints_only_notes_on_x(workspace):
 
     assert await ids("什么是光合作用？") == {"energy"}
     assert await ids("什么是细胞分裂？") == {"cell"}
-    # A Japanese run counts once and matches by any pair, so the Chinese
-    # photosynthesis edit (光合) comes along.
+    # A Japanese run counts once and matches by any pair not only hiragana,
+    # so the Chinese photosynthesis edit (光合) comes along, but です alone
+    # matches nothing (re-review R3).
     assert await ids("光合成とは何ですか？") == {"ja", "energy"}
+    assert await ids("何をすればいいですか？") == set()
 
 
 def test_a_snippet_is_placed_by_the_longest_query_word():

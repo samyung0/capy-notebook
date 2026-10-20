@@ -15,12 +15,10 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, replace
-from functools import cache
-from importlib import resources
 from typing import Any
 
 from ..prompts.sources import source_block
-from . import store
+from . import hint_words, store
 from .chunking import (
     SEARCH_FOLD,
     estimate_tokens,
@@ -34,7 +32,8 @@ from .lang import (
     UND,
     detect_lang,
     is_cjk,
-    is_kana_or_hangul,
+    is_hangul,
+    is_kana,
 )
 
 # Bounds (the Editor, 2026-10-20): at most 3 snippets of about 200
@@ -213,56 +212,15 @@ async def prepared(sources: Any) -> list[_Prepared]:
     return sources.hint_pool
 
 
-@cache
-def _hsk_words() -> tuple[dict[str, int], int]:
-    """HSK 3.0 words and their Traditional forms by level (hsk_words.tsv, MIT)
-    and the longest's length."""
-    text = resources.files("pipeline.retrieval").joinpath("hsk_words.tsv")
-    levels = {}
-    for line in text.read_text("utf-8").splitlines():
-        if line and not line.startswith("#"):
-            word, level = line.split("\t")
-            levels[word] = int(level)
-    return levels, max(map(len, levels))
-
-
-def _chinese_pieces(run: str) -> list[str]:
-    """A Chinese run's words as the two-word rule counts them: split by longest
-    match over the HSK words, the level-1 ones (什么, 是, 好) dropped, every
-    other list word ending a piece, and characters the list lacks joined to
-    the next list word. 什么是光合作用 gives 光合作 (光 joins 合作; 用 is
-    level 1), so a note on 合作与作用 shares only one of its pairs."""
-    levels, longest = _hsk_words()
-    pieces, piece, ended, i = [], "", False, 0
-    while i < len(run):
-        size = next(
-            (
-                n
-                for n in range(min(longest, len(run) - i), 1, -1)
-                if run[i : i + n] in levels
-            ),
-            1,
-        )
-        token, i = run[i : i + size], i + size
-        if levels.get(token) == 1:
-            pieces.append(piece)
-            piece, ended = "", False
-            continue
-        if ended:
-            pieces.append(piece)
-            piece = ""
-        piece, ended = piece + token, size > 1
-    return [p for p in [*pieces, piece] if len(p) > 1]
-
-
 def message_units(query: str) -> list[str]:
     """The message's words as the two-word rule counts them, each a websearch
     string. Latin words are search_query_terms' words. Overlapping CJK pairs
-    would let one word, or 什么是, count twice (Epo 2026-10-20, review S3), so
-    a Chinese run counts ``_chinese_pieces``, each matched by all of its
-    pairs; a Japanese or Korean run, with no word list here, counts once and
-    matches by any of its pairs. A one-character piece cannot match the pair
-    index and is left out, as is punctuation."""
+    would let 什么是 count as words (Epo 2026-10-20, review S3 and R1-R3), so
+    each CJK run counts by its language's rule (``hint_words``): a Korean run
+    (hangul) as a word matched by two of its pairs, a run of a message with
+    kana as one Japanese word matched by any pair not only hiragana, and
+    otherwise as Chinese words each matched by all of its pairs.
+    Punctuation is not a word."""
     words = [
         w for w in search_query_terms(query).any_of.split(" or ") if _WORD.search(w)
     ]
@@ -270,11 +228,18 @@ def message_units(query: str) -> list[str]:
     if not runs:
         return words
     units = [w for w in words if not CJK_RUN_RE.search(w)]
-    if any(is_kana_or_hangul(ch) for ch in query):
-        pieces, joiner = [run for run in runs if len(run) > 1], " or "
-    else:
-        pieces, joiner = [p for run in runs for p in _chinese_pieces(run)], " "
-    return units + [joiner.join(tokenize_for_search(p).split()) for p in pieces]
+    japanese = any(is_kana(ch) for ch in query)
+    for run in runs:
+        if any(is_hangul(ch) for ch in run):
+            units.append(hint_words.korean_unit(run))
+        elif japanese:
+            units.append(hint_words.japanese_unit(run))
+        else:
+            units += [
+                " ".join(tokenize_for_search(piece).split())
+                for piece in hint_words.chinese_pieces(run)
+            ]
+    return [unit for unit in units if unit]
 
 
 async def match(

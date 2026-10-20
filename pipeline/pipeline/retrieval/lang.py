@@ -173,10 +173,12 @@ for _lang, _words in _STOPWORDS.items():
 FUNCTION_WORDS = frozenset(_STOPWORD_LANG)
 
 
-def is_kana_or_hangul(ch: str) -> bool:
-    """Japanese kana or Korean hangul: CJK text that is not Chinese."""
-    code = ord(ch)
-    return _KANA[0] <= code <= _KANA[1] or _HANGUL[0] <= code <= _HANGUL[1]
+def is_kana(ch: str) -> bool:
+    return _KANA[0] <= ord(ch) <= _KANA[1]
+
+
+def is_hangul(ch: str) -> bool:
+    return _HANGUL[0] <= ord(ch) <= _HANGUL[1]
 
 
 def is_cjk(ch: str) -> bool:

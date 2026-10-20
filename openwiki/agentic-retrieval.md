@@ -4148,23 +4148,32 @@ The query and each message word's lexemes are parsed once per config, not per
 candidate: a stopword sends the client a notice per parse, which per
 candidate was thousands of notices a match.
 A CJK message is not counted by its overlapping two-character pieces, which
-let 什么是光合作用 hint notes sharing only 什么+么是 or 合作+作用 (Epo
-2026-10-20, review S3; `message_units`). A Chinese run is split by longest
-match over the HSK 3.0 word list with each word's Traditional forms at the
-same level (`retrieval/hsk_words.tsv`, MIT, from complete-hsk-vocabulary;
-HSK itself is Simplified), the level-1 words (什么, 是, 好) are dropped, each
-other list word ends a word and characters the list lacks join the next list
-word; each word matches by all its pairs, so 什么是光合作用 counts one word,
-光合作. An unlisted character just before a level-1 word is dropped with
-it, so a term the list splits into a level-1 word loses its word (什么是电子
-and 水的沸点 count none; re-review R1, open with Epo). A Japanese or Korean
-message (any kana or hangul) has no list here:
-each run counts once and matches by any of its pairs. Punctuation is not a
-word. On 18 Chinese messages (`bench/rag/fixtures/hints-eval/chinese.json`)
-the list rule found all 11 edit questions at precision 0.61 (0.89 counting
-edits on the question's subject) with 0.11 noise hints a message; the
-fallback, each run once by any pair, also found 11 but at 0.30 with 1.06
-noise, and the old pairs 0.48 with 0.28 noise.
+let 什么是光合作用 hint notes sharing only 什么+么是 or 合作+作用; each CJK run
+counts by its language's rule (`retrieval/hint_words.py`, `message_units`;
+Epo 2026-10-20, review S3 and re-review R1-R3, hand-picked lists where
+measured necessary):
+
+- Chinese: the run is split by longest match over the HSK 3.0 words with
+  their Traditional forms (`retrieval/hsk_words.tsv`, MIT, from
+  complete-hsk-vocabulary; HSK itself is Simplified) and a hand-picked list
+  of function words, question words, request verbs (请问, 解释, 复习),
+  measure words and locatives, which are dropped. Other list words end a word
+  and characters between them join the next; each word matches by all its
+  pairs, so 什么是光合作用 counts 光合作 and 为什么会下雨 counts 下雨. A
+  character left alone takes a one-character measure word, locative, 对 or 能
+  next to it, so 对数, 动能 and 中子 stay terms.
+- Japanese (a message with kana): a run counts once and matches by any of its
+  pairs not made only of hiragana, so です and とは match nothing.
+- Korean (a run with hangul): a word loses one ending (광합성이란 → 광합성),
+  question words and set phrases (무엇, 어떻게, 역할, 이건) count none, and a
+  word matches by two of its pairs.
+
+Punctuation is not a word. On 36 Chinese messages
+(`bench/rag/fixtures/hints-eval/chinese.json` and `cjk-terms.json`) the rule
+found 25 of 26 edit questions with 0.17 noise hints a message; the old pairs
+found 21 with 0.25, dropping every HSK level-1 word 16 with 0.17, each run once
+by any pair 26 with 1.00. Japanese found 5 of 5 and Korean 4 of 4 with no
+noise (any pair: 1.29 and 0.14 noise, Korean 2 of 4).
 The lines are source data, in a `<source>` block. Two paths use it:
 
 - The user message: at most 3 hints (`HINT_LIMIT`), a block of at most 400 tokens in its own
