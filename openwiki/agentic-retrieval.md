@@ -1729,7 +1729,7 @@ exists; the local bundle is gone once the first ingest finished.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
 4. The file descriptor (~50 words, one call on the ingest pin, DeepSeek V4
-  Flash 0731 through OpenRouter held on Relace); upsert
+  Flash 0731 through OpenRouter on Reka, then DigitalOcean, then StreamLake); upsert
   `rag_content_summaries`. Like compaction's summary, the call asks for plain
   text (one dense sentence of about 50 words, no JSON, no preamble, starting
   with the subject rather than "This document…", in the source's language or
