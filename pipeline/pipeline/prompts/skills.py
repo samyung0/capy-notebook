@@ -19,7 +19,8 @@ DECK_BUILDING_WHEN = (
     "deck (create_deck, write_slide)"
 )
 OFFICE_BUILDING_WHEN = (
-    "read before reading or editing a Word, Excel or PowerPoint file, or creating one"
+    "read before reading a Word, Excel or PowerPoint file; to edit or create one, read "
+    "it together with editing, in the same response"
 )
 
 # The general guideline for every write (Epo 2026-10-14): the build plan, the
