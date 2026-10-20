@@ -2288,6 +2288,110 @@ async fn embed_channels_count_toward_their_own_rooms_four_connections() {
     );
 }
 
+/// Rate-limit review r6 S-3: a join closes only what its caps need. A note's
+/// second copy of a set closes the first (its twin) before taking a place
+/// among the user's connections to the set, so with four connections to it
+/// (two tabs and a phone on their own, the first copy in the note) only the
+/// first copy closes. Fails if the twin closes after the places are taken
+/// (the oldest tab's connection closes too).
+#[tokio::test]
+async fn a_twin_embed_closes_before_its_places_are_taken() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut note) = writer(&env, server.port, "a note").await;
+    let material = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &material, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let alone = token(&set, &user, "write");
+    let join_alone = |client: Client| {
+        let (set, alone) = (set.clone(), alone.clone());
+        async move {
+            let mut client = client;
+            client
+                .send(0, &join_payload(&set, &alone, Some(client_protocol())))
+                .await;
+            assert!(client.until(1).await.is_some(), "joined on its own");
+            client
+        }
+    };
+    let mut tabs = vec![
+        join_alone(Client::open(server.port).await).await,
+        join_alone(Client::open(server.port).await).await,
+    ];
+    let embed = embed_token(&set, &user, &material);
+    assert_eq!(note.join_embed(2, &set, &embed).await.0, 1);
+    tabs.push(join_alone(Client::open(server.port).await).await);
+    let mut payload = join_payload(&set, &embed, Some(client_protocol()));
+    var(&mut payload, 1);
+    note.send_on(3, 0, &payload).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut closes = Vec::new();
+    'joined: loop {
+        for (heard, kind, payload) in note.raw_until(deadline).await {
+            if kind == 4 {
+                closes.push((heard, String::from_utf8_lossy(&payload).into_owned()));
+            }
+            if heard == 3 && kind == 1 {
+                break 'joined;
+            }
+        }
+    }
+    closes.extend(note.closes_within(Duration::from_millis(300)).await);
+    assert_eq!(closes.len(), 1, "{closes:?}");
+    assert_eq!(closes[0].0, 2);
+    assert!(
+        closes[0].1.contains("collaboration-embed-closed"),
+        "{closes:?}"
+    );
+    for tab in &mut tabs {
+        let closes = tab.closes_within(Duration::from_millis(300)).await;
+        assert!(closes.is_empty(), "{closes:?}");
+    }
+}
+
+/// Rate-limit review r6 S-3: a join past both caps closes one channel. With
+/// three joined documents allowed and two connections to one document, a
+/// user holding another note and two connections to note N who opens N a
+/// third time closes their oldest connection to N, which frees a place among
+/// their documents too, so the other note stays. Fails if the joined-documents
+/// cap also closes its oldest.
+#[tokio::test]
+async fn a_join_past_both_caps_closes_only_the_oldest_connection_to_its_document() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_JOINED_PER_USER", "3"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+        ],
+    )
+    .await;
+    let (user, _, mut other) = writer(&env, server.port, "another note").await;
+    let note = note_of(&env, &user, "note n").await;
+    let room = format!("material:{note}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut connections = Vec::new();
+    for _ in 0..3 {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &write).await;
+        connections.push(client);
+    }
+    let closed = connections[0]
+        .until(4)
+        .await
+        .expect("the oldest to N closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("collaboration-oldest-closed"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    let closes = other.closes_within(Duration::from_millis(500)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+}
+
 /// Security regression (Epo 2026-10-19): a user holds a capped number of
 /// joined documents over all their sockets (22); one more join closes their
 /// oldest joined channel instead of being refused, and a channel left frees

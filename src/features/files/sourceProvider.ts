@@ -34,7 +34,7 @@ export interface SourceProviderConfig {
   onClose?: () => void;
   onDisconnect?: () => void;
   /** The room's answer waits on the user's open budget (`RoomProvider`). */
-  onSlowed?: () => void;
+  onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;

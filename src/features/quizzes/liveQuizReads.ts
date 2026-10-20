@@ -59,20 +59,27 @@ export function readLive(
   void Promise.all([
     import('@/features/collaboration/itemRoom'),
     import('./liveQuiz'),
-  ]).then(([{ ItemRoom }, { readLearnerQuestions }]) => {
+  ]).then(([{ openItemRoom }, { readLearnerQuestions }]) => {
     if (cancelled) return;
-    const room = new ItemRoom(quizId, { inside, onReplace, read: true });
+    // Shared with another copy of the quiz in the note (r6 S-2).
+    const { close: leave, room } = openItemRoom(quizId, {
+      inside,
+      onReplace,
+      read: true,
+    });
     if (joined) joined.current = room;
     const update = () => {
       if (room.getSnapshot().synced)
         onQuestions(readLearnerQuestions(room.doc, room.lists));
     };
-    room.subscribe(update);
+    const unsubscribe = room.subscribe(update);
     room.doc.on('update', update);
-    void room.start();
+    update();
     close = () => {
       if (joined?.current === room) joined.current = null;
-      room.destroy();
+      unsubscribe();
+      room.doc.off('update', update);
+      leave();
     };
   });
   return () => {

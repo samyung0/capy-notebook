@@ -38,8 +38,9 @@ export interface RoomProviderConfig {
   /** The socket dropped or the room was left. */
   onDisconnect?: () => void;
   /** The room's answer waits on the user's open budget (many large opens
-   * lately): joined and still loading, not offline. */
-  onSlowed?: () => void;
+   * lately): joined and still loading, not offline (true); or that wait
+   * ended with its channel, closed or parked unsynced (false). */
+  onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
@@ -116,6 +117,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private paused = false;
   /** Closed as the user's oldest: joins again on the user's return. */
   private parked = false;
+  /** The channel's open is slowed and has not synced. */
+  private slowedOpen = false;
   /** An update over the server's cap: no more joins. */
   private stopped = false;
   private readonly config: RoomProviderConfig;
@@ -284,7 +287,10 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
         if (event.includes(OPEN_SLOWED_TYPE)) {
           const notice = JSON.parse(event) as { type?: string };
           if (notice.type === OPEN_SLOWED_TYPE) {
-            if (!this.isSynced) this.config.onSlowed?.();
+            if (!this.isSynced) {
+              this.slowedOpen = true;
+              this.config.onSlowed?.(true);
+            }
             return;
           }
         }
@@ -475,6 +481,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     Y.applyUpdate(this.document, body, this);
     if (kind === SyncKind.Step2 && !this.isSynced) {
       this.isSynced = true;
+      this.slowedOpen = false;
       this.config.onSynced?.({ state: true });
     }
   }
@@ -504,6 +511,11 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     if (remote.length) removeAwarenessStates(this.awareness, remote, this);
     if (wasJoined) this.noteSeat?.ended();
     if (wasSynced) this.config.onSynced?.({ state: false });
+    // A parked room's slowed line goes with its channel (r6 N-4).
+    if (this.slowedOpen) {
+      this.slowedOpen = false;
+      this.config.onSlowed?.(false);
+    }
   }
 
   private readonly documentUpdate = (

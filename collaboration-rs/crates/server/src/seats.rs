@@ -116,14 +116,16 @@ impl Joined {
         }
     }
 
-    /// `user` joined `channel` on the socket that hears `socket`: past the
-    /// cap their oldest joined channel's socket hears that it closes.
+    /// `user` (a key) joined `channel` on the socket that hears `socket`:
+    /// past the cap, when `evict`, their oldest joined channel's socket hears
+    /// that it closes. Also says whether one closed.
     pub fn join(
         &self,
         user: &str,
         channel: u64,
         socket: &mpsc::UnboundedSender<Closing>,
-    ) -> Membership {
+        evict: bool,
+    ) -> (Membership, bool) {
         let mut users = self.users.lock().unwrap_or_else(PoisonError::into_inner);
         let id = NEXT_MEMBERSHIP.fetch_add(1, Ordering::Relaxed);
         let joined = users.by_user.entry(user.to_owned()).or_default();
@@ -132,16 +134,19 @@ impl Joined {
             channel,
             socket: socket.clone(),
         });
-        while joined.len() > self.cap {
+        let mut evicted = false;
+        while evict && joined.len() > self.cap {
             if let Some(oldest) = joined.pop_front() {
                 let _ = oldest.socket.send((oldest.channel, oldest.id));
+                evicted = true;
             }
         }
-        Membership {
+        let membership = Membership {
             id,
             user: user.to_owned(),
             users: self.users.clone(),
-        }
+        };
+        (membership, evicted)
     }
 }
 
@@ -176,15 +181,22 @@ mod tests {
     fn a_join_past_the_cap_closes_the_users_oldest_channel() {
         let joined = Joined::new(2);
         let (socket, mut heard) = mpsc::unbounded_channel();
-        let first = joined.join("a", 1, &socket);
-        let second = joined.join("a", 2, &socket);
-        let _other = joined.join("b", 9, &socket);
+        let (first, _) = joined.join("a", 1, &socket, true);
+        let (second, _) = joined.join("a", 2, &socket, true);
+        let _other = joined.join("b", 9, &socket, true);
         assert!(heard.try_recv().is_err());
-        let _third = joined.join("a", 3, &socket);
+        let (_third, evicted) = joined.join("a", 3, &socket, true);
+        assert!(evicted);
         assert_eq!(heard.try_recv().ok(), Some((1, first.id)));
         // A channel that left gives its place back.
         drop(second);
-        let _fourth = joined.join("a", 4, &socket);
+        let (_fourth, evicted) = joined.join("a", 4, &socket, true);
+        assert!(!evicted);
+        assert!(heard.try_recv().is_err());
+        // A join whose place another cap's close already frees closes
+        // nothing here (rate-limit review r6 S-3).
+        let (_fifth, evicted) = joined.join("a", 5, &socket, false);
+        assert!(!evicted);
         assert!(heard.try_recv().is_err());
     }
 }

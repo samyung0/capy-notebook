@@ -788,8 +788,12 @@ export function useSourceSession(
         },
         // Joined, the answer waiting on the open budget: reachable, so never
         // offline meanwhile (an offline episode before it ends here).
-        onSlowed: () => {
+        onSlowed: (slowed) => {
           if (cancelled || active.recovery) return;
+          if (!slowed) {
+            setSlowed(false);
+            return;
+          }
           reconnect.slowed();
           setSlowed(true);
           if (!offlineMode) return;

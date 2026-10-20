@@ -244,8 +244,19 @@ it('reports an open slowed by the open budget, not as a stateless message', asyn
     message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
     message(join.channel, MessageKind.Stateless, slowed)
   );
-  expect(onSlowed).toHaveBeenCalledTimes(1);
+  expect(onSlowed).toHaveBeenCalledWith(true);
   expect(events.stateless).not.toHaveBeenCalled();
+  // Closed as the user's oldest while slowed, it parks and its slowed line
+  // goes (rate-limit review r6 N-4).
+  socket.deliver(
+    message(
+      join.channel,
+      MessageKind.Closed,
+      closedPayload(0, OLDEST_CLOSED_REASON)
+    )
+  );
+  expect(onSlowed).toHaveBeenLastCalledWith(false);
+  expect(onSlowed).toHaveBeenCalledTimes(2);
 });
 
 /** Embedded quizzes and sets join inside their note's channel (Epo

@@ -586,7 +586,7 @@ interface MockCollaborationOptions {
   materialId: string;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
-  onSlowed?: () => void;
+  onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
 }
 
@@ -659,7 +659,7 @@ class MockCollaborationProvider implements UnifiedProvider {
       return;
     }
     if (browser && sessionStorage.getItem(SLOWED) === 'true') {
-      this.options.onSlowed?.();
+      this.options.onSlowed?.(true);
       return;
     }
     const room = materialRoom(this.options.name, this.options.initialValue);

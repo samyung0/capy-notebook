@@ -933,7 +933,8 @@ export function NoteEditorCore({
                     materialId: material.id,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
-                    onSlowed: () => slowedNow.current(),
+                    onSlowed: (slowed: boolean) =>
+                      slowed ? slowedNow.current() : markSlowed(false),
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
@@ -951,7 +952,8 @@ export function NoteEditorCore({
                         socketOpen(roomProvider(editorRef.current)?.provider)
                       );
                     },
-                    onSlowed: () => slowedNow.current(),
+                    onSlowed: (slowed: boolean) =>
+                      slowed ? slowedNow.current() : markSlowed(false),
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },

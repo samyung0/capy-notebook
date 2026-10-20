@@ -94,7 +94,8 @@ vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
 vi.mock('./unsentItems', () => ({ markUnsent: vi.fn() }));
 
-const { ItemRoom } = await import('./itemRoom');
+const { ItemRoom, openItemRoom } = await import('./itemRoom');
+const { NoteSeat } = await import('./noteSeat');
 const { applyDrafts } = await import('@/lib/editDrafts');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
 const { markUnsent } = await import('./unsentItems');
@@ -119,6 +120,59 @@ async function started(onReplace = vi.fn()) {
   await room.start();
   return { onReplace, room };
 }
+
+// Rate-limit review r6 S-2: two copies of one embedded set in a note share
+// one room, so the note's channel joins it once (the server closes a second
+// channel of one room under a note); both read its state, the room stays
+// while a copy holds it, and a replace reaches both copies.
+it('shares one room between two copies of an embed in a note', async () => {
+  const seat = new NoteSeat();
+  const replaces = [vi.fn(), vi.fn()];
+  const first = openItemRoom('q', {
+    inside: seat,
+    onReplace: replaces[0],
+    read: true,
+  });
+  const second = openItemRoom('q', {
+    inside: seat,
+    onReplace: replaces[1],
+    read: true,
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(second.room).toBe(first.room);
+  expect(providers).toHaveLength(1);
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  expect(second.room.getSnapshot().synced).toBe(true);
+  // Another document of the material is a room of its own.
+  const keys = openItemRoom('q', {
+    document: 'keys',
+    inside: seat,
+    onReplace: vi.fn(),
+  });
+  expect(keys.room).not.toBe(first.room);
+  keys.close();
+
+  const destroy = vi.spyOn(first.room, 'destroy');
+  first.close();
+  expect(destroy).not.toHaveBeenCalled();
+  await provider.config.token();
+  tokens.push({ access: 'write', room: 'material:q:schema:2' });
+  await expect(provider.config.token()).rejects.toThrow('room moved');
+  await vi.advanceTimersByTimeAsync(0);
+  expect(replaces[0]).not.toHaveBeenCalled();
+  expect(replaces[1]).toHaveBeenCalledTimes(1);
+  second.close();
+  expect(destroy).toHaveBeenCalledTimes(1);
+  // The next copy opens a fresh room.
+  const third = openItemRoom('q', {
+    inside: seat,
+    onReplace: vi.fn(),
+    read: true,
+  });
+  expect(third.room).not.toBe(first.room);
+  third.close();
+});
 
 // REVIEW1 M1: a refused update never rejoins with what was refused: the
 // edits are kept as a refused draft and a fresh room replaces this one.
@@ -401,7 +455,7 @@ it('loads while its open is slowed, never offline, until it syncs', async () => 
   provider.config.onSynced?.({ state: true });
   provider.config.onClose?.({ code: 0, reason: 'socket closed' });
   expect(room.getSnapshot().status).toBe('offline');
-  provider.config.onSlowed?.();
+  provider.config.onSlowed?.(true);
   expect(room.getSnapshot()).toMatchObject({
     offline: null,
     slowed: true,
@@ -410,6 +464,11 @@ it('loads while its open is slowed, never offline, until it syncs', async () => 
   await vi.advanceTimersByTimeAsync(60_000);
   expect(room.getSnapshot().status).toBe('connecting');
   provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot().slowed).toBe(false);
+  // A slowed open whose channel parked (closed as the user's oldest) shows
+  // no slowed line (rate-limit review r6 N-4).
+  provider.config.onSlowed?.(true);
+  provider.config.onSlowed?.(false);
   expect(room.getSnapshot().slowed).toBe(false);
   room.destroy();
 });

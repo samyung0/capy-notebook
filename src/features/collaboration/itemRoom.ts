@@ -334,7 +334,8 @@ export class ItemRoom {
         }
         this.refused();
       },
-      onSlowed: () => this.slowed(),
+      onSlowed: (slowed) =>
+        slowed ? this.slowed() : this.set({ slowed: false }),
       onStateless: ({ payload }) => this.stateless(payload),
       onSynced: ({ state }) => {
         if (state) {
@@ -681,6 +682,33 @@ export class ItemRoom {
 }
 
 /**
+ * An item room for one rendered copy, started: a new one, or for an embed
+ * the one its note's seat holds for this material and document, so two
+ * copies in a note share one channel (rate-limit review r6 S-2). `close`
+ * gives this copy's hold back.
+ */
+export function openItemRoom(
+  materialId: string,
+  options: ItemRoomOptions & { onReplace: () => void }
+): { close: () => void; room: ItemRoom } {
+  const create = (onReplace: () => void) => {
+    const room = new ItemRoom(materialId, { ...options, onReplace });
+    void room.start();
+    return room;
+  };
+  const { inside, onReplace } = options;
+  if (!inside) {
+    const room = create(onReplace);
+    return { close: () => room.destroy(), room };
+  }
+  const key = [materialId, options.document ?? 'content', !!options.read].join(
+    ' '
+  );
+  const { release, room } = inside.hold(key, create, onReplace);
+  return { close: release, room };
+}
+
+/**
  * The item's room while `enabled`: created on mount, joined once the token
  * arrives, left on unmount, and replaced by a fresh one when it ends here
  * (refused, moved to a new lineage, recovery left).
@@ -706,16 +734,15 @@ export function useItemRoom(
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
     if (!(materialId && enabled)) return;
-    const created = new ItemRoom(materialId, {
+    const { close, room: created } = openItemRoom(materialId, {
       document,
       drafts: actorId ? { actorId } : undefined,
       inside,
       onReplace: () => setGeneration((value) => value + 1),
     });
     setRoom(created);
-    void created.start();
     return () => {
-      created.destroy();
+      close();
       setRoom((current) => (current === created ? null : current));
     };
   }, [materialId, enabled, document, actorId, inside, generation]);

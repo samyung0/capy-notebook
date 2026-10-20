@@ -32,9 +32,10 @@ export function useLiveSetCards(
       void Promise.all([
         import('@/features/collaboration/itemRoom'),
         import('./liveSet'),
-      ]).then(([{ ItemRoom }, { readCards, setScope }]) => {
+      ]).then(([{ openItemRoom }, { readCards, setScope }]) => {
         if (cancelled) return;
-        const room = new ItemRoom(setId, {
+        // Shared with another copy of the set in the note (r6 S-2).
+        const { close: leave, room } = openItemRoom(setId, {
           inside,
           onReplace: () => setGeneration((value) => value + 1),
           read: true,
@@ -43,12 +44,15 @@ export function useLiveSetCards(
         const update = () => {
           if (room.getSnapshot().synced) setLive(readCards(room.doc));
         };
-        room.subscribe(update);
-        setScope(room.doc).observeDeep(update);
-        void room.start();
+        const unsubscribe = room.subscribe(update);
+        const scope = setScope(room.doc);
+        scope.observeDeep(update);
+        update();
         close = () => {
           if (joined.current === room) joined.current = null;
-          room.destroy();
+          unsubscribe();
+          scope.unobserveDeep(update);
+          leave();
         };
       });
       return () => {

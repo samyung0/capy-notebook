@@ -916,14 +916,10 @@ impl Connection {
         let _ = room.tx.send(RoomCmd::Leave((self.id, embed))).await;
     }
 
-    /// An embed channel joined inside its note's. An earlier channel of the
-    /// same room under that note closes (rate-limit review r5 S-a: a note
-    /// channel never takes one room's updates twice), and past
-    /// [EMBEDS_PER_NOTE] the note's oldest embed channel closes.
-    async fn add_embed(&mut self, note: u64, embed: u64) {
-        let Some(Channel::Joined { name, .. }) = self.channels.get(&embed) else {
-            return;
-        };
+    /// An embed of `name` joins inside `note`: the note's earlier channel of
+    /// that room closes (rate-limit review r5 S-a: a note channel never
+    /// takes one room's updates twice), before the new one takes its places.
+    async fn close_twin(&mut self, note: u64, name: &RoomName) {
         let twin = match self.channels.get(&note) {
             Some(Channel::Joined { embeds, .. }) => embeds.iter().copied().find(|other| {
                 matches!(
@@ -933,9 +929,20 @@ impl Connection {
             }),
             _ => None,
         };
+        let Some(twin) = twin else {
+            return;
+        };
+        if let Some(Channel::Joined { embeds, .. }) = self.channels.get_mut(&note) {
+            embeds.retain(|other| *other != twin);
+        }
+        self.close_embed(twin, EMBED_CLOSED_REASON).await;
+    }
+
+    /// An embed channel joined inside its note's: past [EMBEDS_PER_NOTE] the
+    /// note's oldest embed channel closes.
+    async fn add_embed(&mut self, note: u64, embed: u64) {
         let oldest = match self.channels.get_mut(&note) {
             Some(Channel::Joined { embeds, .. }) => {
-                embeds.retain(|other| Some(*other) != twin);
                 embeds.push_back(embed);
                 if embeds.len() > EMBEDS_PER_NOTE {
                     embeds.pop_front()
@@ -945,8 +952,8 @@ impl Connection {
             }
             _ => None,
         };
-        for closed in [twin, oldest].into_iter().flatten() {
-            self.close_embed(closed, EMBED_CLOSED_REASON).await;
+        if let Some(oldest) = oldest {
+            self.close_embed(oldest, EMBED_CLOSED_REASON).await;
         }
     }
 
@@ -1104,20 +1111,29 @@ impl Connection {
         self.joined_once = true;
         self.join_deadline = None;
         self.arm_token(channel, &context);
-        // Only a note's (or any other document's) channel takes a place among
-        // the user's joined channels, never an embed's.
-        let joined = parent.is_none().then(|| {
-            self.app
-                .joined
-                .join(&context.user_id, channel, &self.closing_tx)
-        });
+        // An embed's earlier channel of the same room under its note closes
+        // first, giving its places back (rate-limit review r6 S-3).
+        if let Some((note, _)) = parent {
+            self.close_twin(note, &name).await;
+        }
         // Every channel, an embed's too, takes a place among the user's to
         // its document: a fifth closes their oldest one (Epo 2026-10-20).
-        let document = self.app.per_document.join(
+        let (document, freed) = self.app.per_document.join(
             &format!("{} {name}", context.user_id),
             channel,
             &self.closing_tx,
+            true,
         );
+        // Only a note's (or any other document's) channel takes a place among
+        // the user's joined channels, never an embed's; one the per-document
+        // close above already frees closes nothing more (r6 S-3).
+        let joined = parent.is_none().then(|| {
+            let user = &context.user_id;
+            self.app
+                .joined
+                .join(user, channel, &self.closing_tx, !freed)
+                .0
+        });
         // A user in a timeout hears it on each channel they join.
         let timeout = self
             .app

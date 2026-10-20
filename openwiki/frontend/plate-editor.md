@@ -968,9 +968,11 @@ ends, so their waiting opens are dropped. The awareness sent on JOIN is
 charged but never waits (each JOIN costs a message of the edit allowance);
 nothing else waits, and the edit allowance is untouched. The budget is the
 user's across rooms and sockets (in each server process), so rejoining spends
-it too: a user's step 1 answers and queries fetch at most about two budgets
-(160 MiB) at once and then the refill rate, per process, however many files
-they open or however they slice their asks.
+it too: a user's step 1 answers and queries fetch at most the larger of two
+budgets (160 MiB) and one budget plus the largest document, plus one resync
+per open room (small answers encoded before their charges land), at once,
+and then the refill rate, per process, however many files they open or
+however they slice their asks.
 
 A step 1 that begins to wait tells its channel once (a stateless
 `{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers). The editor
@@ -1116,8 +1118,12 @@ joined note `collaboration-note-closed`). An embed channel takes no place
 among the user's 22 joined documents; a note channel holds at most 64
 (`EMBEDS_PER_NOTE`), and one more closes its oldest
 (`collaboration-embed-closed`). It holds a room once: joining the same room
-again under it closes the earlier channel the same way (a quiz embedded twice
-keeps the copy that joined last; rate-limit review r5 S-a). A closed embed's
+again under it closes the earlier channel the same way (rate-limit review r5
+S-a), so the client shares one item room per material and document among a
+note's copies of it (`NoteSeat.hold`, `openItemRoom`; r6 S-2): a quiz embedded
+twice joins once and both copies are live. That close comes before the new
+channel takes its places, and a join whose per-document close frees a place
+closes nothing among the user's 22 (r6 S-3). A closed embed's
 room waits, as one closed as the user's oldest does, and joins again when its block comes near the screen again
 (`useNearScreen().entered`, `RoomProvider.wake`), its tab shows again or an
 edit is made in it. When the note's channel goes (left, closed, expired,
