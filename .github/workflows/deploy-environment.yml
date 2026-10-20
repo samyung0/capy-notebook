@@ -70,7 +70,8 @@ jobs:
       - name: Render the build configuration from GitHub
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
-          CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
+          # Exactly the secrets this render reads; test_config.py checks the list.
+          CAPY_SECRET_SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: python3 scripts/env/config.py render-build --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-config"
@@ -106,7 +107,36 @@ jobs:
       - name: Render deployment configuration from GitHub
         env:
           CAPY_GITHUB_VARS: ${{ toJSON(vars) }}
-          CAPY_GITHUB_SECRETS: ${{ toJSON(secrets) }}
+          # Exactly the secrets this render reads; test_config.py checks the list.
+          CAPY_SECRET_ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CAPY_SECRET_B2_APP_KEY: ${{ secrets.B2_APP_KEY }}
+          CAPY_SECRET_B2_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          CAPY_SECRET_BANK_DATABASE_URL: ${{ secrets.BANK_DATABASE_URL }}
+          CAPY_SECRET_BANK_EDITOR_DATABASE_URL: ${{ secrets.BANK_EDITOR_DATABASE_URL }}
+          CAPY_SECRET_BANK_PUBLIC_B2_APP_KEY: ${{ secrets.BANK_PUBLIC_B2_APP_KEY }}
+          CAPY_SECRET_BANK_PUBLIC_B2_KEY_ID: ${{ secrets.BANK_PUBLIC_B2_KEY_ID }}
+          CAPY_SECRET_CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CAPY_SECRET_CLERK_WEBHOOK_SECRET: ${{ secrets.CLERK_WEBHOOK_SECRET }}
+          CAPY_SECRET_CLOUDFLARE_EMAIL_TOKEN: ${{ secrets.CLOUDFLARE_EMAIL_TOKEN }}
+          CAPY_SECRET_COLLABORATION_SECRET: ${{ secrets.COLLABORATION_SECRET }}
+          CAPY_SECRET_DEEPINFRA_API_KEY: ${{ secrets.DEEPINFRA_API_KEY }}
+          CAPY_SECRET_DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          CAPY_SECRET_EMAIL_UNSUBSCRIBE_SECRET: ${{ secrets.EMAIL_UNSUBSCRIBE_SECRET }}
+          CAPY_SECRET_JEV_TYPESAFE_API_KEY: ${{ secrets.JEV_TYPESAFE_API_KEY }}
+          CAPY_SECRET_KNOWLEDGE_BASE_B2_APP_KEY: ${{ secrets.KNOWLEDGE_BASE_B2_APP_KEY }}
+          CAPY_SECRET_KNOWLEDGE_BASE_B2_KEY_ID: ${{ secrets.KNOWLEDGE_BASE_B2_KEY_ID }}
+          CAPY_SECRET_LIBRARY_DATABASE_URL: ${{ secrets.LIBRARY_DATABASE_URL }}
+          CAPY_SECRET_LLM_CREDENTIALS_KEY: ${{ secrets.LLM_CREDENTIALS_KEY }}
+          CAPY_SECRET_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CAPY_SECRET_OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CAPY_SECRET_PARSER_TOKEN: ${{ secrets.PARSER_TOKEN }}
+          CAPY_SECRET_PIPELINE_SECRET: ${{ secrets.PIPELINE_SECRET }}
+          CAPY_SECRET_POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          CAPY_SECRET_SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          CAPY_SECRET_SHARE_LINK_SECRET: ${{ secrets.SHARE_LINK_SECRET }}
+          CAPY_SECRET_STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          CAPY_SECRET_STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          CAPY_SECRET_ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: python3 scripts/env/config.py render --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-config"

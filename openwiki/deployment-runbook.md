@@ -3077,9 +3077,19 @@ or secret and names its deployment targets. Both complete examples include
 backend, browser, provider and ingest inputs. Keep the real files ignored and
 mode `0600`. Use `CLERK_PUBLISHABLE_KEY` for deployments; the renderer derives
 its browser/ops `VITE_` form. Local development continues using `deploy/.env`.
-The renderer selects only manifest keys from GitHub's variable and secret
-contexts, ignoring unrelated settings. Managed keys must still use the correct
-namespace and satisfy required-setting checks. Local env files reject unknown keys.
+The renderer takes manifest variables from GitHub's whole `vars` context
+(`CAPY_GITHUB_VARS`), ignoring unrelated settings, and each secret from its own
+step variable `CAPY_SECRET_<KEY>: ${{ secrets.<KEY> }}`. Every render step
+(`render-build`, `render`, `render-ops`) names exactly the secrets its render
+reads, because GitHub holds a run whose workflow passes `toJSON(secrets)` for
+approval. A manifest secret added without wiring fails CI
+(`scripts/env/test_config.py`); add its line to each render step the failure
+names. An unset GitHub secret arrives blank and renders as missing. A manifest
+secret stored as a variable fails the render. Deploys cannot see a manifest
+variable stored as a secret, so `pnpm env:push` checks for it instead: it
+lists the target environment's secret names (never values) and refuses to run,
+naming each such key, before it changes anything. Local env files reject
+unknown keys.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
 file for the optional ops edge check. The UAT workflow and local review scripts
@@ -3117,7 +3127,10 @@ needs the token for git (the submodule and fork fetches are public, `gh` reads
 step's `env`. Secrets sit only on the steps that use them, never in a
 workflow or job `env` or on an install or action step: the UAT journey job's
 secrets sit on its tunnel, ingest-check, journey and cleanup steps, and Deploy
-Ops passes the Coolify token only to its three Coolify steps. The SPA build
+Ops passes the Coolify token only to its three Coolify steps. No file under
+`.github` uses `toJSON(secrets)`: since 2026-07-28 GitHub holds such runs on
+public repositories until someone approves them, and the step would see every
+secret; the render steps name theirs instead (§12.7). The SPA build
 job renders only the build values (`config.py render-build`); the deploy job
 renders the Coolify and ingest configuration, so it is never on disk while
 third-party build code runs. `SENTRY_AUTH_TOKEN` stays in the build values

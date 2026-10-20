@@ -1,8 +1,9 @@
 // CI and deploy configuration rules (security regressions: CI hardening):
 // third-party actions pinned by commit, a limited token per workflow, no token
 // left in git config after checkout, no expression expanded inside a run
-// script, secrets only on the steps that use them, a vulnerability job per
-// ecosystem, and no workers.dev or preview URL for any Worker.
+// script, secrets only on the steps that use them and each by name, a
+// vulnerability job per ecosystem, and no workers.dev or preview URL for any
+// Worker.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -54,6 +55,8 @@ const AUDITS = [
 const WRANGLER_FILE = /^wrangler.*\.jsonc$/;
 // The wrangler files comment only on whole lines.
 const LINE_COMMENT = /^\s*\/\/.*$/gm;
+// Expression function names are case-insensitive.
+const ALL_SECRETS = /toJSON\s*\(\s*secrets\s*\)/i;
 
 test('every third-party action is pinned to a commit with its release in a comment', () => {
   for (const file of [...workflowFiles, ...actionFiles]) {
@@ -112,6 +115,24 @@ test('secrets sit on the steps that use them, never on a workflow, a job, an ins
         );
       }
     }
+  }
+});
+
+// GitHub holds a run whose workflow serializes the whole secrets context
+// until someone approves it, and that step would see every secret.
+test('no file under .github passes every secret with toJSON(secrets)', () => {
+  const files = readdirSync(path.join(root, '.github'), {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath, entry.name));
+  for (const file of files) {
+    assert.doesNotMatch(
+      readFileSync(file, 'utf8'),
+      ALL_SECRETS,
+      path.relative(root, file)
+    );
   }
 });
 
