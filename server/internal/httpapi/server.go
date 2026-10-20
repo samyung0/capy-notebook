@@ -131,6 +131,9 @@ type api struct {
 	// (treeLive says whether that LISTEN is attached); see fanout.go.
 	broker   *channelBroker
 	treeLive atomic.Bool
+	// operations hold an agent edit's or create's retry until its first
+	// attempt ends (internal_documents.go).
+	operations operationLocks
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and, in
@@ -270,6 +273,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
 		r.Post("/api/internal/documents/edit", a.internalEditDocument)
+		r.Post("/api/internal/documents/office/create", a.internalCreateOfficeDocument)
 		r.Post("/api/internal/provider-calls", a.internalSettleProviderCall)
 		r.Post("/api/internal/import/acquire", a.internalAcquireSourceImport)
 		r.Post("/api/internal/import/complete", a.internalCompleteSourceImport)

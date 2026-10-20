@@ -18,6 +18,10 @@ DECK_BUILDING_WHEN = (
     "read together with editing, in the same response, before making a PowerPoint "
     "deck (create_deck, write_slide)"
 )
+OFFICE_BUILDING_WHEN = (
+    "read before reading a Word, Excel or PowerPoint file; to edit or create one, read "
+    "it together with editing, in the same response"
+)
 
 # The general guideline for every write (Epo 2026-10-14): the build plan, the
 # quiz, flashcards, mindmap and diagram formats, and how to edit. A note's and
@@ -40,7 +44,8 @@ Budget:
 Precautions:
 - Ground every write in passages or excerpts you have read, and leave out what they do not support. Label an example the sources do not give as illustrative.
 - Write each item as soon as its evidence is in hand. Do not keep exploring once the evidence covers it, and do not mix a write with retrieval calls in one response.
-- Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text or value it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; uploaded media and PDFs cannot be edited.
+- Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat.
+- After you read a document you see its most recent changes. Edits not yet in search show up as hints with the user's message, and a search passage whose document has newer edits says so: read that document before relying on the passage.
 - In a note, change plain wording with replace_text. Rewrite a block that has formatting or math ($…$ in inspect_document) with replace_block, writing the whole block as note markdown (a heading keeps its #).
 - Keep changes other people made to a document unless the learner asks otherwise.
 - Edit the learner's own source files only when asked. Such an edit takes no excerpt_ids.
@@ -52,6 +57,25 @@ Flashcards: cards, a list of {{front, back}}.
 Mindmaps and diagrams: content is one ```mermaid fence.
 
 When done, answer with the materials made, what each covers and its size, and the work still open."""
+
+# Reading, editing and creating Office files (Epo 2026-10-20): required for
+# every Office read and write, and what offers the two Office tools.
+_OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and PowerPoint (PPTX) files with inspect_office_document and edit_office_document.
+
+Read:
+- XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
+- DOCX: paragraphs with their target ids, count at a time from start. PPTX: shapes with their target ids and text, the same way.
+
+Edit, one file a call; one stale expectation refuses the whole call:
+- set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
+- format_cells sets fonts, colours, alignment, wrapping and number formats on a range; fields left out stay as they are.
+- add_sheet, rename_sheet and delete_sheet change sheets; insert_rows, delete_rows, insert_columns and delete_columns change rows and columns. A delete names what it removes: the sheet's name, or the rows' or columns' inputs as rows of cells like set_range's expected (a row's cells from column A; for columns, rows from row 1 holding the deleted columns' cells), trailing empty cells and rows left out.
+- replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
+- Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
+
+Create: a new Excel file is a create command first, without file_id, followed by the commands that fill it. Word files cannot be created yet. A deck is made with create_deck (the deck_building skill).
+
+Limits: a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits into several calls."""
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""
@@ -74,6 +98,10 @@ Practice from the library:
 
 def editing(*, library: bool) -> str:
     return _EDITING + (_EDITING_LIBRARY if library else "")
+
+
+def office_building() -> str:
+    return _OFFICE_BUILDING
 
 
 def note_building(formats: dict[str, str], *, library: bool) -> str:

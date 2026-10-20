@@ -133,6 +133,43 @@ func TestGeneratedContractIsCurrent(t *testing.T) {
 	}
 }
 
+func commandTypes(def *Definition) []string {
+	commands := def.InputSchema["properties"].(map[string]any)["commands"].(map[string]any)
+	var tags []string
+	for _, v := range commands["items"].(map[string]any)["oneOf"].([]any) {
+		tags = append(tags, v.(map[string]any)["properties"].(map[string]any)["type"].(map[string]any)["const"].(string))
+	}
+	return tags
+}
+
+// Office files have their own tools, last in the contract (the retrieval
+// service appends them once office_building is read); edit_document keeps no
+// Office command (Epo 2026-10-15, 2026-10-20).
+func TestOfficeFilesHaveTheirOwnTools(t *testing.T) {
+	defs := Definitions()
+	names := []string{defs[len(defs)-2].Name, defs[len(defs)-1].Name}
+	if !slices.Equal(names, []string{"inspect_office_document", "edit_office_document"}) {
+		t.Fatalf("last tools = %v", names)
+	}
+	read, edit := Lookup("inspect_office_document"), Lookup("edit_office_document")
+	if read.Mutates || !slices.Equal(read.RequiredOperations, []Operation{OpSourceRead}) || read.Retention != RetainFull {
+		t.Fatalf("inspect_office_document = %+v", read)
+	}
+	if !edit.Mutates || !slices.Equal(edit.RequiredOperations, []Operation{OpDocumentEdit}) {
+		t.Fatalf("edit_office_document = %+v", edit)
+	}
+	want := []string{
+		"create", "set_range", "format_cells", "add_sheet", "rename_sheet", "insert_rows", "delete_rows",
+		"insert_columns", "delete_columns", "delete_sheet", "replace_text",
+	}
+	if got := commandTypes(edit); !slices.Equal(got, want) {
+		t.Fatalf("office commands = %v", got)
+	}
+	if slices.Contains(commandTypes(Lookup("edit_document")), "set_cell") {
+		t.Fatal("edit_document still offers set_cell")
+	}
+}
+
 // The agent writes questions only through the question tools: create_material
 // makes no quiz, edit_document neither adds nor replaces a question, and the
 // question format is not in the contract.
