@@ -89,8 +89,18 @@ export function scenarioDriver(signal: AbortSignal, root: Document = document) {
     },
     element,
     async fill(selector: string, value: string) {
-      const input = await element<HTMLInputElement | HTMLTextAreaElement>(
-        selector
+      // Only a field a person could type into: the XLSX formula bar is
+      // disabled until its sheet loads, and an edit sent before then is lost.
+      const input = await wait(
+        () =>
+          [
+            ...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+              selector
+            ),
+          ].find(
+            (node) => visible(node) && !node.matches(':disabled, [readonly]')
+          ),
+        `${selector} editable`
       );
       signal.throwIfAborted();
       const prototype =

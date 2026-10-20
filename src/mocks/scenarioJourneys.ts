@@ -351,10 +351,7 @@ export async function runJourney(
         })
       );
     } else if (format === 'docx') {
-      await officeUI.fill(
-        '[aria-label="Document input"]:not([readonly])',
-        scenarioMarker
-      );
+      await officeUI.fill('[aria-label="Document input"]', scenarioMarker);
     } else {
       await officeUI.element('[data-testid="pptx-slide-canvas"]');
       frame.contentWindow!.dispatchEvent(
