@@ -1,17 +1,11 @@
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { usePastReviews, useReviewOverview } from '@/api/hooks';
 import type { PastReview, PastReviewSort, SessionScore } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
-import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
-import { PageBody } from '@/components/app/layout';
+import { FilterPopover, toggleValue } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import {
-  ariaSort,
-  type ColumnSort,
-  SortHeader,
-  sortDirection,
-} from '@/components/app/SortHeader';
+import type { ColumnSort } from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
@@ -28,8 +22,9 @@ import {
 } from './reviewSearch';
 import { groupName } from './reviewText';
 
-/** Learning → Past reviews: finished review sessions in the Files table
- * style, with the list pages' filter; every column header sorts. */
+/** Learning → Review's last section: finished review sessions in the Files
+ * table style, with the list pages' filter beside the heading; every column
+ * header sorts. */
 export function PastReviews() {
   const search = useSearch({ strict: false }) as PastReviewsSearch;
   const navigate = useNavigate();
@@ -77,168 +72,150 @@ export function PastReviews() {
     });
 
   return (
-    <>
-      <ListToolbar
-        filters={[
-          {
-            emptyLabel: m.create_filter_no_workspaces(),
-            key: 'workspace',
-            label: m.files_filter_workspace(),
-            onToggle: (value) =>
-              setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
-            options: (overview?.workspaces ?? []).map((ws) => ({
-              label: ws.name,
-              value: ws.workspaceId,
-            })),
-            selected: workspaceIds,
-          },
-          {
-            key: 'has',
-            label: m.past_filter_has(),
-            onToggle: (value) =>
-              setSearch({ has: csv(toggleValue(has, value)) }),
-            options: [
-              { label: m.past_has_quiz(), value: 'quiz' },
-              { label: m.past_has_cards(), value: 'flashcards' },
-            ],
-            selected: has,
-          },
-        ]}
-        onResetFilters={() =>
-          setSearch({ has: undefined, workspace: undefined })
-        }
-      />
-      <PageBody belowToolbar>
-        {waitsForConnection(fetchStatus, data) ? (
-          <QueryPausedState />
-        ) : isLoading ? (
-          <SkeletonList count={6} rowHeight={52} />
-        ) : rows.length === 0 ? (
-          <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>
-        ) : (
-          <div className="flex flex-col gap-3" ref={revealRef}>
-            {/* Phones and tablets: Billing's plain table, scrolling sideways,
-             * without Time and Status. */}
-            <div className="xl:hidden">
-              <BillingTable
-                columns={[
-                  { id: 'date', label: m.quiz_col_date(), sort: 'date' },
-                  {
-                    clamp: true,
-                    id: 'workspace',
-                    label: m.quiz_col_workspace(),
-                    sort: 'workspace',
-                  },
-                  {
-                    clamp: true,
-                    id: 'chapter',
-                    label: m.past_col_chapter(),
-                    sort: 'chapter',
-                  },
-                  { id: 'quiz', label: m.past_col_quiz(), sort: 'quiz' },
-                  { id: 'cards', label: m.past_col_cards(), sort: 'cards' },
-                  { align: 'right', id: 'menu', label: '' },
-                ]}
-                rows={rows.map((r) => ({
-                  cells: {
-                    cards: <ScoreText score={r.cards} />,
-                    chapter: groupName(r.group, r.chapterName),
-                    date: formatDate(r.startedAt),
-                    menu: <AgainMenu onAgain={() => again(r)} />,
-                    quiz: <ScoreText score={r.quiz} />,
-                    workspace: (
-                      <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
-                    ),
-                  },
-                  key: r.id,
-                }))}
-                sorting={sorting}
-              />
-            </div>
-            <div className="hidden overflow-hidden rounded-card border border-line xl:block">
-              <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(10rem,1.6fr)_minmax(10rem,1.6fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(8.5rem,1fr)_40px] items-center bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
-                {(
-                  [
-                    ['date', m.quiz_col_date()],
-                    ['workspace', m.quiz_col_workspace()],
-                    ['chapter', m.past_col_chapter()],
-                    ['quiz', m.past_col_quiz()],
-                    ['cards', m.past_col_cards()],
-                    ['time', m.past_col_time()],
-                    ['status', m.past_col_status()],
-                  ] as const
-                ).map(([value, label]) => (
-                  <div
-                    aria-sort={ariaSort(sortDirection(sorting, value))}
-                    className="min-w-0"
-                    key={value}
-                    role="columnheader"
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <h3 className="font-bold text-fg-muted text-sm">
+          {m.learning_tab_past()}
+        </h3>
+        <FilterPopover
+          filters={[
+            {
+              emptyLabel: m.create_filter_no_workspaces(),
+              key: 'workspace',
+              label: m.files_filter_workspace(),
+              onToggle: (value) =>
+                setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
+              options: (overview?.workspaces ?? []).map((ws) => ({
+                label: ws.name,
+                value: ws.workspaceId,
+              })),
+              selected: workspaceIds,
+            },
+            {
+              key: 'has',
+              label: m.past_filter_has(),
+              onToggle: (value) =>
+                setSearch({ has: csv(toggleValue(has, value)) }),
+              options: [
+                { label: m.past_has_quiz(), value: 'quiz' },
+                { label: m.past_has_cards(), value: 'flashcards' },
+              ],
+              selected: has,
+            },
+          ]}
+          onResetFilters={() =>
+            setSearch({ has: undefined, workspace: undefined })
+          }
+        />
+      </div>
+      {waitsForConnection(fetchStatus, data) ? (
+        <QueryPausedState />
+      ) : isLoading ? (
+        <SkeletonList count={6} rowHeight={52} />
+      ) : rows.length === 0 ? (
+        <p className="py-8 text-center text-fg-muted">{m.past_empty()}</p>
+      ) : (
+        <div className="flex flex-col gap-3" ref={revealRef}>
+          {/* Billing's plain table, scrolling sideways; Time and Status
+           * from xl. */}
+          <BillingTable
+            columns={[
+              { id: 'date', label: m.quiz_col_date(), sort: 'date' },
+              {
+                clamp: true,
+                id: 'workspace',
+                label: m.quiz_col_workspace(),
+                sort: 'workspace',
+              },
+              {
+                clamp: true,
+                id: 'chapter',
+                label: m.past_col_chapter(),
+                sort: 'chapter',
+              },
+              { id: 'quiz', label: m.past_col_quiz(), sort: 'quiz' },
+              { id: 'cards', label: m.past_col_cards(), sort: 'cards' },
+              {
+                className: 'max-xl:hidden',
+                id: 'time',
+                label: m.past_col_time(),
+                sort: 'time',
+              },
+              {
+                className: 'max-xl:hidden',
+                id: 'status',
+                label: m.past_col_status(),
+                sort: 'status',
+              },
+              { align: 'right', id: 'menu', label: '' },
+            ]}
+            rows={rows.map((r) => ({
+              cells: {
+                cards: <ScoreText score={r.cards} />,
+                chapter: groupName(r.group, r.chapterName),
+                date: (
+                  <Link
+                    className="after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
+                    params={{ sessionId: r.id }}
+                    to="/learning/reviews/$sessionId"
                   >
-                    <SortHeader label={label} sorting={sorting} value={value} />
-                  </div>
-                ))}
-                <div />
-              </div>
-              {rows.map((r) => (
-                <Row key={r.id} onAgain={() => again(r)} review={r} />
-              ))}
-            </div>
-            <ListEnd
-              fetchNextPage={fetchNextPage}
-              hasNextPage={hasNextPage}
-              isFetchingNextPage={isFetchingNextPage}
-              isFetchNextPageError={isFetchNextPageError}
-            />
-          </div>
-        )}
-      </PageBody>
-    </>
+                    {formatDate(r.startedAt)}
+                  </Link>
+                ),
+                menu: (
+                  <RowMenu
+                    onAgain={() => again(r)}
+                    onResult={() =>
+                      navigate({
+                        params: { sessionId: r.id },
+                        to: '/learning/reviews/$sessionId',
+                      })
+                    }
+                  />
+                ),
+                quiz: <ScoreText score={r.quiz} />,
+                status: <Status review={r} />,
+                time: m.past_minutes({ count: minutes(r) }),
+                workspace: (
+                  <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
+                ),
+              },
+              className: 'relative hover:bg-surface-hover-bg',
+              key: r.id,
+            }))}
+            sorting={sorting}
+          />
+          <ListEnd
+            fetchNextPage={fetchNextPage}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+          />
+        </div>
+      )}
+    </section>
   );
 }
 
-function Row({
-  review: r,
-  onAgain,
-}: {
-  review: PastReview;
-  onAgain: () => void;
-}) {
-  const minutes = Math.max(
+const minutes = (r: PastReview) =>
+  Math.max(
     1,
     Math.round(
       (new Date(r.lastAnswerAt).getTime() - new Date(r.startedAt).getTime()) /
         60_000
     )
   );
-  const stopped =
-    r.answered < r.total &&
-    m.past_stopped({ answered: r.answered, total: r.total });
+
+/** Completed, or Incomplete with "Stopped after N of M" under it. */
+function Status({ review: r }: { review: PastReview }) {
+  if (r.answered >= r.total) return m.past_status_completed();
   return (
-    <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(10rem,1.6fr)_minmax(10rem,1.6fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(8.5rem,1fr)_40px] items-center border-divider border-t pr-2 pl-4 text-sm">
-      <p className="whitespace-nowrap py-3 pr-4">{formatDate(r.startedAt)}</p>
-      <div className="py-3 pr-4">
-        <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
-      </div>
-      <p className="wrap-break-word line-clamp-2 py-3 pr-4">
-        {groupName(r.group, r.chapterName)}
+    <>
+      <p>{m.past_status_incomplete()}</p>
+      <p className="text-fg-muted text-xs">
+        {m.past_stopped({ answered: r.answered, total: r.total })}
       </p>
-      <p className="whitespace-nowrap py-3 pr-4">
-        <ScoreText score={r.quiz} />
-      </p>
-      <p className="whitespace-nowrap py-3 pr-4">
-        <ScoreText score={r.cards} />
-      </p>
-      <p className="whitespace-nowrap py-3 pr-4">
-        {m.past_minutes({ count: minutes })}
-      </p>
-      <div className="min-w-0 whitespace-nowrap py-3 pr-4">
-        <p>
-          {stopped ? m.past_status_incomplete() : m.past_status_completed()}
-        </p>
-        {stopped && <p className="truncate text-fg-muted text-xs">{stopped}</p>}
-      </div>
-      <AgainMenu onAgain={onAgain} />
-    </div>
+    </>
   );
 }
 
@@ -247,11 +224,20 @@ const formatDate = (iso: string) =>
     new Date(iso)
   );
 
-function AgainMenu({ onAgain }: { onAgain: () => void }) {
+function RowMenu({
+  onAgain,
+  onResult,
+}: {
+  onAgain: () => void;
+  onResult: () => void;
+}) {
   return (
     <div className="relative z-10 -my-2 flex justify-end">
       <Menu
-        items={[{ icon: 'refresh', label: m.review_again(), onClick: onAgain }]}
+        items={[
+          { icon: 'list', label: m.quiz_check_result(), onClick: onResult },
+          { icon: 'refresh', label: m.review_again(), onClick: onAgain },
+        ]}
       />
     </div>
   );

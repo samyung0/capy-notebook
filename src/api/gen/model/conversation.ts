@@ -8,8 +8,10 @@
 export interface Conversation {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  archivedAt?: string;
   createdAt: string;
   id: string;
+  pinnedAt?: string;
   title: string;
   updatedAt: string;
   workspaceId: string;

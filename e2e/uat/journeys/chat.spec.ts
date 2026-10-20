@@ -12,6 +12,7 @@
 // parse and index; resolve_source_change, which needs pending Office images.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { showPanelView } from '../../helpers/panelView';
 import { m } from '../../i18n';
 import { citations, type Frame, scripted, send } from './chat';
 import {
@@ -116,9 +117,7 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
   await processed(run, text, [marker]);
 
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
-    .click();
+  await showPanelView(page, m.workspace_tab_chat());
   const library = page.getByRole('button', {
     exact: true,
     name: m.chat_library(),

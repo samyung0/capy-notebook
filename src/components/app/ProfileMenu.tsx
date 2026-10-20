@@ -7,23 +7,29 @@ import { Avatar } from '@/components/ui/Avatar';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
-import { Menu } from '@/components/ui/Menu';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { OwnAvatarButton } from './MemberAvatars';
 import { ProfilePillButton } from './ProfilePillButton';
 import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-type Trigger = 'pill' | 'avatar';
+type Trigger = 'pill' | 'avatar' | 'own';
 
 /** The account menu (Settings, Billing, Theme, Log out) behind the profile
- * pill in the top bar or the phone avatar. */
+ * pill in the top bar, the phone avatar or your avatar in the workspace
+ * panel's foot (which opens it upwards, under the workspace's own section). */
 type ProfileMenuProps = {
   dot?: boolean;
-  /** Adds a Notifications item first (the phone avatar, which has no bell). */
+  /** Adds a Notifications item first (the phone avatar and the workspace
+   * panel's foot, which have no bell). */
   notifications?: boolean;
   trigger?: Trigger;
+  /** A section above the account items, titled with the workspace name;
+   * the account items then sit under a Profile heading. */
+  workspace?: { items: MenuItem[]; name: string };
 };
 
 export function ProfileMenu(props: ProfileMenuProps) {
@@ -42,57 +48,85 @@ function ProfileMenuInner({
   onLogout,
   notifications,
   trigger = 'pill',
+  workspace,
 }: ProfileMenuProps & { onLogout?: () => void }) {
   const { data: me, isPending } = useMe({ errorBoundary: false });
   const navigate = useNavigate();
   const [themeOpen, setThemeOpen] = useState(false);
 
+  const account: MenuItem[] = [
+    ...(notifications
+      ? [
+          {
+            dot,
+            icon: 'bell' as const,
+            label: m.notifications_title(),
+            onClick: () => navigate({ to: '/notifications' }),
+          },
+        ]
+      : []),
+    {
+      icon: 'settings',
+      label: m.profile_menu_settings(),
+      onClick: () => navigate({ to: '/settings' }),
+    },
+    {
+      icon: 'chart',
+      label: m.profile_menu_billing(),
+      onClick: () => navigate({ to: '/billing' }),
+    },
+    {
+      icon: 'palette',
+      label: m.settings_theme(),
+      onClick: () => setThemeOpen(true),
+    },
+    {
+      danger: true,
+      icon: 'logout',
+      label: m.profile_menu_logout(),
+      onClick: onLogout,
+      separated: !!workspace?.items.length,
+    },
+  ];
+  const items: MenuItem[] = workspace?.items.length
+    ? [
+        ...workspace.items.map((item, i) =>
+          i === 0 ? { ...item, heading: workspace.name } : item
+        ),
+        ...account.map((item, i) =>
+          i === 0
+            ? { ...item, heading: m.profile_menu_profile(), separated: true }
+            : item
+        ),
+      ]
+    : account;
+
   return (
     <>
       <Menu
-        align="end"
-        alignWidthToTrigger={trigger !== 'avatar'}
-        items={[
-          ...(notifications
-            ? [
-                {
-                  dot,
-                  icon: 'bell' as const,
-                  label: m.notifications_title(),
-                  onClick: () => navigate({ to: '/notifications' }),
-                },
-              ]
-            : []),
-          {
-            icon: 'settings',
-            label: m.profile_menu_settings(),
-            onClick: () => navigate({ to: '/settings' }),
-          },
-          {
-            icon: 'chart',
-            label: m.profile_menu_billing(),
-            onClick: () => navigate({ to: '/billing' }),
-          },
-          {
-            icon: 'palette',
-            label: m.settings_theme(),
-            onClick: () => setThemeOpen(true),
-          },
-          {
-            danger: true,
-            icon: 'logout',
-            label: m.profile_menu_logout(),
-            onClick: onLogout,
-          },
-        ]}
+        align={trigger === 'own' ? 'start' : 'end'}
+        alignWidthToTrigger={trigger === 'pill'}
+        className={trigger === 'own' ? 'min-w-56' : undefined}
+        items={items}
+        side={trigger === 'own' ? 'top' : undefined}
         trigger={
-          <ProfilePillButton
-            avatarUrl={me?.avatarUrl}
-            dot={dot}
-            name={me?.name}
-            pending={isPending}
-            variant={trigger}
-          />
+          trigger === 'own' ? (
+            <OwnAvatarButton
+              aria-label={m.workspace_account_menu()}
+              avatarUrl={me?.avatarUrl}
+              dot={dot}
+              name={me?.name}
+              pending={isPending}
+            />
+          ) : (
+            <ProfilePillButton
+              avatarUrl={me?.avatarUrl}
+              dot={dot}
+              name={me?.name}
+              pending={isPending}
+              variant={trigger}
+            />
+          )
         }
       />
       <ThemeSwitchDrawer onOpenChange={setThemeOpen} open={themeOpen} />

@@ -51,6 +51,7 @@ import type {
   ResourceEffectOperation as GenResourceEffectOperation,
   ReviewAnswer as GenReviewAnswer,
   ReviewItem as GenReviewItem,
+  ReviewResult as GenReviewResult,
   ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
   StudySummary as GenStudySummary,
@@ -154,6 +155,7 @@ export type {
   TopUpReq,
   TransferWorkspaceReq,
   UpdateChapterReq,
+  UpdateConversationReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardSetReq,
@@ -343,6 +345,11 @@ export type ReviewAnswer = Omit<GenReviewAnswer, 'question' | 'answers'> & {
   question?: Question;
   answers?: Answers;
 };
+/** A session's result page: its Past reviews row, every answered item and
+ * how many did better than before the session. */
+export type ReviewResult = Omit<GenReviewResult, 'items'> & {
+  items: ReviewAnswer[];
+};
 export type ReviewSession = Omit<GenReviewSession, 'items' | 'done'> & {
   items: ReviewItem[];
   done: ReviewAnswer[];
@@ -421,6 +428,7 @@ export type {
   AttemptCard,
   CreateAttemptReq,
   ItemAttempts,
+  PreviousAttempt,
 } from './gen/model';
 
 export type CreateMaterialReq = Omit<GenCreateMaterialReq, 'content'> & {

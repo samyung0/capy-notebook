@@ -376,6 +376,9 @@ function Label({ all, text }: { all: string[]; text: string }) {
 }
 
 export interface QuestionViewProps {
+  /** False where the question's marks already show beside it, as in a
+   * review result's row; parts keep theirs. */
+  headerMarks?: boolean;
   question: Question | LearnerQuestion;
   questionNumber?: number;
   /** Returns grid items for the part row; an answer spans `col-[2/-1]`. */
@@ -398,6 +401,7 @@ export function QuestionView({
   questionNumber,
   review = false,
   showTotalMarks = true,
+  headerMarks = true,
   renderAnswer,
   renderBlock,
   renderMarks,
@@ -458,12 +462,13 @@ export function QuestionView({
             )}
         </div>
         <span className="@max-[36rem]/question:col-start-3 @max-[36rem]/question:row-start-1 flex items-center gap-1 whitespace-nowrap pl-1.5 text-fg-muted text-xs md:pl-2">
-          {lone && renderMarks
-            ? renderMarks(question.parts[0])
-            : showTotalMarks &&
-              (total === 1
-                ? m.question_ui_one_mark()
-                : m.question_ui_marks({ count: total }))}
+          {headerMarks &&
+            (lone && renderMarks
+              ? renderMarks(question.parts[0])
+              : showTotalMarks &&
+                (total === 1
+                  ? m.question_ui_one_mark()
+                  : m.question_ui_marks({ count: total })))}
           {titleAside?.()}
         </span>
       </header>
@@ -591,9 +596,11 @@ export function QuestionReview({
   renderAnswer,
   renderBlock,
   questionNumber,
+  headerMarks,
 }: Omit<QuestionViewProps, 'question' | 'review'> & { question: Question }) {
   return (
     <QuestionView
+      headerMarks={headerMarks}
       question={question}
       questionNumber={questionNumber}
       renderAnswer={(part) => {

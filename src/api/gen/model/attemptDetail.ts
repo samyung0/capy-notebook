@@ -8,6 +8,7 @@ import type { AttemptCard } from './attemptCard.ts';
 import type { AttemptDetailAnswers } from './attemptDetailAnswers.ts';
 import type { AttemptDetailKind } from './attemptDetailKind.ts';
 import type { AttemptDetailQuestionsItem } from './attemptDetailQuestionsItem.ts';
+import type { PreviousAttempt } from './previousAttempt.ts';
 
 export interface AttemptDetail {
   /** A URL to the JSON Schema for this object. */
@@ -22,6 +23,7 @@ export interface AttemptDetail {
   /** @nullable */
   materialId: string | null;
   pct: number;
+  previous?: PreviousAttempt;
   questions: AttemptDetailQuestionsItem[];
   quizName: string;
   /** @nullable */

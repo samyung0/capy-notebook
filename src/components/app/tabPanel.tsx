@@ -10,14 +10,22 @@ export function TabContent({
   children,
   centered,
   fill,
+  wide,
 }: {
   children: ReactNode;
   centered?: boolean;
   fill?: boolean;
+  /** Result pages: a step wider than the reading width. */
+  wide?: boolean;
 }) {
   return (
     <div className="page-px-wide relative flex-1 pt-5 pb-8 sm:pt-8">
-      <div className={cn(!fill && 'max-w-3xl', centered && 'mx-auto')}>
+      <div
+        className={cn(
+          !fill && (wide ? 'max-w-4xl' : 'max-w-3xl'),
+          centered && 'mx-auto'
+        )}
+      >
         {children}
       </div>
     </div>

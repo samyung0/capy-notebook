@@ -13,7 +13,8 @@ export interface PastReview {
   cards?: SessionScore;
   chapterId?: string;
   chapterName?: string;
-  finishedAt: string;
+  /** Omitted on the result page of a session not finished yet */
+  finishedAt?: string;
   group: PastReviewGroup;
   iconId: string;
   id: string;

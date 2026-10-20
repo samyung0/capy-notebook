@@ -12,6 +12,7 @@ import {
   useRateReviewItem,
   useResumeReviewSession,
   useReviewOverview,
+  useReviewResult,
   useWorkspace,
   useWorkspaceReview,
 } from '@/api/hooks';
@@ -20,29 +21,27 @@ import type {
   ReviewItem,
   ReviewSessionRef,
   ReviewStart,
+  ReviewSuggestion,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
-import { relativeTime } from '@/features/materials/MaterialListCard';
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { CheckedQuestion, QuestionItem } from '@/features/study/ReviewQuestion';
-import {
-  type ReviewRecord,
-  ReviewSummary,
-} from '@/features/study/ReviewSummary';
+import { ReviewResultBody } from '@/features/study/ReviewResult';
 import { ratingQueue, reviewCard } from '@/features/study/ratings';
 import type { ReviewSearch } from '@/features/study/reviewSearch';
+import { groupName, itemCount, REVIEW_MODE } from '@/features/study/reviewText';
 import { StepNav } from '@/features/study/StepNav';
 import {
   currentStep,
-  recordOf,
   type Step,
   type Steps,
   useSteps,
@@ -52,9 +51,16 @@ import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { SRS_RATINGS } from '@/lib/srs';
 
-/** A checked question's record keeps what it showed: the answers and the
- * graded question with its key. */
-type ItemRecord = ReviewRecord & { answers?: Answers; question?: Question };
+/** What an item recorded: a card's rating (1 Again to 4 Easy), or a checked
+ * question's marks with what it showed, the answers and the graded question
+ * with its key. */
+type ItemRecord = {
+  rating?: number;
+  correct?: number;
+  total?: number;
+  answers?: Answers;
+  question?: Question;
+};
 
 const keyOf = (it: { materialId: string; itemId: string }) =>
   `${it.materialId}/${it.itemId}`;
@@ -369,14 +375,7 @@ function Session({
         ) : session.order.length === 0 ? (
           <p className="t-card-title m-auto">{m.review_nothing()}</p>
         ) : (
-          <ReviewSummary
-            items={session.order.flatMap((key) => {
-              const it = itemOf(key);
-              return it
-                ? [{ item: it, record: recordOf(steps.steps, key) }]
-                : [];
-            })}
-            mode={session.ref.mode}
+          <SessionResult
             next={nextSuggestion}
             onMore={() => void more()}
             onNext={(s) =>
@@ -391,24 +390,74 @@ function Session({
                 to: '/learning/review/$workspaceId',
               })
             }
-            onOpen={(it) =>
-              navigate({
-                params: { workspaceId },
-                // The read view, where a question scrolls into view and a
-                // card opens in its preview.
-                search: {
-                  item: it.itemId,
-                  material: it.materialId,
-                  mode: 'view',
-                },
-                to: '/workspaces/$workspaceId',
-              })
-            }
-            title={ws?.name ?? ''}
-            when={relativeTime(new Date().toISOString())}
+            saved={answeredAny ? ratings.saved : undefined}
+            sessionId={session.ref.id}
           />
         )}
       </div>
     </PanelWithInvertedRadius>
+  );
+}
+
+/** The end of a session: its result once every answer is saved, with the
+ * next suggestion under it. A session with nothing answered has none. */
+function SessionResult({
+  sessionId,
+  saved,
+  next,
+  onMore,
+  onNext,
+}: {
+  sessionId: string;
+  saved?: () => Promise<unknown>;
+  next?: ReviewSuggestion;
+  onMore: () => void;
+  onNext: (suggestion: ReviewSuggestion) => void;
+}) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    void saved?.().then(() => setReady(true));
+  }, [saved]);
+  const { data } = useReviewResult(sessionId, { enabled: ready });
+  if (!saved)
+    return <p className="t-card-title m-auto">{m.review_nothing()}</p>;
+  if (!data) return <SkeletonList count={4} rowHeight={52} />;
+  return (
+    <div className="mx-auto w-full max-w-4xl">
+      <ReviewResultBody
+        footer={
+          next && (
+            <section className="mt-9">
+              <h3 className="mb-1.5 font-bold text-fg-muted text-sm">
+                {m.review_result_next()}
+              </h3>
+              <div className="flex items-center justify-between gap-4 border-divider border-y py-3">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold">
+                    {[
+                      next.workspaceName,
+                      groupName(next.group, next.chapterName),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </div>
+                  <div className="text-fg-muted text-xs">
+                    <span className={REVIEW_MODE[next.mode].className}>
+                      {REVIEW_MODE[next.mode].label()}
+                    </span>
+                    {` · ${itemCount(next.items)}`}
+                  </div>
+                </div>
+                <UnderlineLink onClick={() => onNext(next)}>
+                  {m.review_start()}
+                </UnderlineLink>
+              </div>
+            </section>
+          )
+        }
+        onAgain={onMore}
+        result={data}
+      />
+    </div>
   );
 }
