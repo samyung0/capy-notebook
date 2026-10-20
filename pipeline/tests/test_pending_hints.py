@@ -543,7 +543,9 @@ async def test_what_is_x_in_chinese_hints_only_notes_on_x(workspace):
 
     assert await ids("什么是光合作用？") == {"energy"}
     assert await ids("什么是细胞分裂？") == {"cell"}
-    assert await ids("光合成とは何ですか？") == {"ja"}
+    # A Japanese run counts once and matches by any pair, so the Chinese
+    # photosynthesis edit (光合) comes along.
+    assert await ids("光合成とは何ですか？") == {"ja", "energy"}
 
 
 def test_a_snippet_is_placed_by_the_longest_query_word():
