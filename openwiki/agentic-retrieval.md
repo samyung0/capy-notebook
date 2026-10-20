@@ -4141,6 +4141,20 @@ its text together, and a hint needs at least two distinct message words to
 match it, or every content word of a message with fewer (`MIN_MATCHED_WORDS`).
 Words are counted as distinct lexemes under the document's config, so "Cell"
 and "cell," (and under english "derivative" and "derivatives") are one word.
+A CJK message is not counted by its overlapping two-character pieces, which
+let 什么是光合作用 hint notes sharing only 什么+么是 or 合作+作用 (Epo
+2026-10-20, review S3; `message_units`). A Chinese run is split by longest
+match over the HSK 3.0 word list (`retrieval/hsk_words.tsv`, MIT, from
+complete-hsk-vocabulary), the level-1 words (什么, 是, 好) are dropped, each
+other list word ends a word and characters the list lacks join the next list
+word; each word matches by all its pairs, so 什么是光合作用 counts one word,
+光合作. A Japanese or Korean message (any kana or hangul) has no list here:
+each run counts once and matches by any of its pairs. Punctuation is not a
+word. On 18 Chinese messages (`bench/rag/fixtures/hints-eval/chinese.json`)
+the list rule found all 11 edit questions at precision 0.61 (0.89 counting
+edits on the question's subject) with 0.11 noise hints a message; the
+fallback, each run once by any pair, also found 11 but at 0.30 with 1.06
+noise, and the old pairs 0.48 with 0.28 noise.
 The query and each message word's lexemes are parsed once per config, not per
 candidate: a stopword sends the client a notice per parse, which per
 candidate was thousands of notices a match (`MIN_MATCHED_WORDS`;

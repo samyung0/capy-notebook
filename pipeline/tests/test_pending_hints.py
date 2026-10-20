@@ -481,6 +481,68 @@ async def test_a_hint_needs_two_message_words_and_a_message_three_hints(workspac
     )
 
 
+def test_a_cjk_message_counts_words_not_overlapping_pairs():
+    """Epo 2026-10-20 (review hints-round S3): Chinese splits by longest match
+    over the HSK words and drops level 1; Japanese and Korean count each run
+    once."""
+    units = pending_hints.message_units
+    # 什么 and 是 are level 1; 光 joins 合作 and 用 is level 1.
+    assert units("什么是光合作用？") == ["光合 合作"]
+    assert units("什么是细胞分裂？") == ["细胞", "分裂"]
+    assert units("减数分裂以后染色体有多少？") == [
+        "减数 数分 分裂",
+        "以后",
+        "染色 色体",
+    ]
+    assert units("谢谢！") == []
+    assert units("光合成とは何ですか？") == [
+        "光合 or 合成 or 成と or とは or は何 or 何で or です or すか"
+    ]
+    assert units("광합성 에너지?") == ["광합 or 합성", "에너 or 너지"]
+
+
+@pytest.mark.integration
+async def test_what_is_x_in_chinese_hints_only_notes_on_x(workspace):
+    """Review hints-round S3: overlapping pairs let 什么是光合作用 hint notes
+    sharing only 什么+么是 or 合作+作用."""
+    chinese = workspace.add_file("chinese.pdf")
+    _index_as(workspace, chinese, "zh")
+    sources = pending.PendingSources(
+        [
+            _file(
+                chinese,
+                _change(
+                    "add", after="光合作用把光变成能量，储存在葡萄糖里。", cid="energy"
+                ),
+                _change(
+                    "add",
+                    after="什么是细胞分裂：一个细胞分成两个细胞的过程。",
+                    cid="cell",
+                ),
+                _change(
+                    "add", after="合作与作用：这两个词在作文里常被用错。", cid="coop"
+                ),
+                name="生物笔记",
+            ),
+            _file(
+                "f_ja",
+                _change(
+                    "add", after="光合成は光のエネルギーを使う反応です。", cid="ja"
+                ),
+                name="ノート",
+            ),
+        ]
+    )
+    pool = await pending_hints.prepared(sources)
+
+    async def ids(query):
+        return {hint.change_id for hint in await pending_hints.match(query, pool)}
+
+    assert await ids("什么是光合作用？") == {"energy"}
+    assert await ids("什么是细胞分裂？") == {"cell"}
+    assert await ids("光合成とは何ですか？") == {"ja"}
+
+
 def test_a_snippet_is_placed_by_the_longest_query_word():
     # Review hints-r2 H3: function words and two-letter prefixes put the
     # window at the start of almost any text.

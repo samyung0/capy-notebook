@@ -15,6 +15,8 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, replace
+from functools import cache
+from importlib import resources
 from typing import Any
 
 from ..prompts.sources import source_block
@@ -25,7 +27,15 @@ from .chunking import (
     search_query_terms,
     tokenize_for_search,
 )
-from .lang import FUNCTION_WORDS, TS_CONFIG, UND, detect_lang, is_cjk
+from .lang import (
+    CJK_RUN_RE,
+    FUNCTION_WORDS,
+    TS_CONFIG,
+    UND,
+    detect_lang,
+    is_cjk,
+    is_kana_or_hangul,
+)
 
 # Bounds (the Editor, 2026-10-20): at most 3 snippets of about 200
 # characters (Epo, after the hints eval), about 400 tokens a message;
@@ -42,6 +52,7 @@ CANDIDATES_MAX = 2000
 CANDIDATE_CHARS = 500  # read per change for matching (Epo 2026-10-20)
 
 _VERBS = {"add": "added", "replace": "changed", "remove": "removed"}
+_WORD = re.compile(r"\w")
 
 KIND = "pending_hints"  # the hint message's _kind
 
@@ -202,28 +213,100 @@ async def prepared(sources: Any) -> list[_Prepared]:
     return sources.hint_pool
 
 
+@cache
+def _hsk_words() -> tuple[dict[str, int], int]:
+    """HSK 3.0 words by level (hsk_words.tsv, MIT) and the longest's length."""
+    text = resources.files("pipeline.retrieval").joinpath("hsk_words.tsv")
+    levels = {}
+    for line in text.read_text("utf-8").splitlines():
+        if line and not line.startswith("#"):
+            word, level = line.split("\t")
+            levels[word] = int(level)
+    return levels, max(map(len, levels))
+
+
+def _chinese_pieces(run: str) -> list[str]:
+    """A Chinese run's words as the two-word rule counts them: split by longest
+    match over the HSK words, the level-1 ones (什么, 是, 好) dropped, every
+    other list word ending a piece, and characters the list lacks joined to
+    the next list word. 什么是光合作用 gives 光合作 (光 joins 合作; 用 is
+    level 1), so a note on 合作与作用 shares only one of its pairs."""
+    levels, longest = _hsk_words()
+    pieces, piece, ended, i = [], "", False, 0
+    while i < len(run):
+        size = next(
+            (
+                n
+                for n in range(min(longest, len(run) - i), 1, -1)
+                if run[i : i + n] in levels
+            ),
+            1,
+        )
+        token, i = run[i : i + size], i + size
+        if levels.get(token) == 1:
+            pieces.append(piece)
+            piece, ended = "", False
+            continue
+        if ended:
+            pieces.append(piece)
+            piece = ""
+        piece, ended = piece + token, size > 1
+    return [p for p in [*pieces, piece] if len(p) > 1]
+
+
+def message_units(query: str) -> list[str]:
+    """The message's words as the two-word rule counts them, each a websearch
+    string. Latin words are search_query_terms' words. Overlapping CJK pairs
+    would let one word, or 什么是, count twice (Epo 2026-10-20, review S3), so
+    a Chinese run counts ``_chinese_pieces``, each matched by all of its
+    pairs; a Japanese or Korean run, with no word list here, counts once and
+    matches by any of its pairs. A one-character piece cannot match the pair
+    index and is left out, as is punctuation."""
+    words = [
+        w for w in search_query_terms(query).any_of.split(" or ") if _WORD.search(w)
+    ]
+    runs = CJK_RUN_RE.findall(query)
+    if not runs:
+        return words
+    units = [w for w in words if not CJK_RUN_RE.search(w)]
+    if any(is_kana_or_hangul(ch) for ch in query):
+        pieces, joiner = [run for run in runs if len(run) > 1], " or "
+    else:
+        pieces, joiner = [p for run in runs for p in _chinese_pieces(run)], " "
+    return units + [joiner.join(tokenize_for_search(p).split()) for p in pieces]
+
+
 async def match(
     query: str, pool: list[_Prepared], limit: int = HINT_LIMIT
 ) -> list[Hint]:
     """The best lexical matches of ``query`` among ``pool`` that match at
     least MIN_MATCHED_WORDS distinct words of it (every content word when it
-    has fewer): the search tokenizer (ligature, sub/superscript and CJK folds)
-    on both sides and each document's language's text search config. For a document under the
+    has fewer; ``message_units``): the search tokenizer (ligature,
+    sub/superscript and CJK folds) on both sides and each document's
+    language's text search config. For a document under the
     ``simple`` config (Chinese, Japanese, Korean or undetermined) the query's
     words on Postgres's English stopword list are dropped first (Epo
     2026-10-20): ``simple`` keeps every word, so "the" would match almost
     anything. Only English: the French, German and Spanish lists dropped
     English content words such as "war" and "die"."""
     any_of = search_query_terms(query).any_of
-    if not pool or not any_of:
+    units = message_units(query)
+    if not pool or not any_of or not units:
         return []
+    return await match_units(units, any_of, pool, limit)
+
+
+async def match_units(
+    units: list[str], any_of: str, pool: list[_Prepared], limit: int = HINT_LIMIT
+) -> list[Hint]:
+    """``match`` over given message units (the eval compares unit rules)."""
     db = await store.pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """WITH words AS (
                 SELECT DISTINCT w, ts_lexize('english_stem'::regdictionary, lower(w))
                     IS DISTINCT FROM '{}'::text[] AS content
-                FROM unnest(string_to_array(%(any)s, ' or ')) AS w),
+                FROM unnest(%(units)s::text[]) AS w),
             plain AS (
                 SELECT coalesce(string_agg(w, ' or '), '') AS q FROM words WHERE content),
             c AS (
@@ -262,6 +345,7 @@ async def match(
             ORDER BY ts_rank(m.v, m.q) DESC, m.ord LIMIT %(limit)s""",
             {
                 "any": any_of,
+                "units": units,
                 "texts": [p.tokens for p in pool],
                 "cfgs": [p.config for p in pool],
                 "simple": [p.simple for p in pool],
