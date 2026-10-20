@@ -965,10 +965,6 @@ const OFFICE_NOTICE_TOASTS: Record<
     once: false,
     title: () => m.files_office_copy_too_large(),
   },
-  'cut-peer-change': {
-    once: false,
-    title: () => m.files_office_cut_peer_change(),
-  },
   // Each refused edit is its own keystroke: every time.
   'edit-too-large': {
     once: false,

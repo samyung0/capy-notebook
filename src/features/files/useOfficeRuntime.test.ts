@@ -113,19 +113,13 @@ describe('the notices a frame shows', () => {
   it('toasts every refused spreadsheet clear, copy and cut', () => {
     const toast = vi.fn();
     const notices = officeNotices(toast);
-    const kinds = [
-      'edit-too-large',
-      'copy-too-large',
-      'copy-failed',
-      'cut-peer-change',
-    ] as const;
+    const kinds = ['edit-too-large', 'copy-too-large', 'copy-failed'] as const;
     for (let key = 0; key < 2; key += 1)
       for (const kind of kinds) notices.show(kind, 2_097_152);
     const titles = [
       m.files_office_edit_too_large(),
       m.files_office_copy_too_large(),
       m.files_office_copy_failed(),
-      m.files_office_cut_peer_change(),
     ];
     expect(toast.mock.calls).toEqual(
       [...titles, ...titles].map((title) => [title])

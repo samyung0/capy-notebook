@@ -1329,14 +1329,14 @@ while it reads, then clears the range it copied; past either ceiling, or when
 the write fails, it clears nothing. Before reading, a cut asks the engine
 (`checkClearContents`, from the count of the clear's filled cells) whether
 its clear fits the 64 MiB update cap: over it nothing is read, copied or
-cleared and the `edit-too-large` notice shows. That check also has the
-workbook worker watch the cut's selection: a peer's update whose changed
-cells (the engine's `changed` list) fall inside it marks the cut in the
-worker's own queue, and the cut's clear (`clearCut`) is then refused with
-the `cut-peer-change` notice, also when the change lands between the read
-and the clear; the clipboard keeps what was read. A peer's change outside
-the selection leaves the cut whole. A copy accepts the rare row a
-concurrent row insert or delete duplicates or skips. The latest copy or cut
+cleared and the `edit-too-large` notice shows. Once its read finishes a cut
+always clears its range, even when another person changed a cell inside it
+during the read (that change is lost; the read takes up to about 8 s at the
+5,000,000-cell ceiling). A copy reads, and a cut checks and clears, on its
+own sheet by id (the proxy's `inSheet`), so a sheet switch during the read
+changes nothing; a sheet removed meanwhile clears nothing, without a notice.
+A copy accepts the rare row a concurrent row insert or delete duplicates or
+skips. The latest copy or cut
 owns the clipboard: one still reading when a newer copy or cut starts stops
 reading and writes nothing, and such a cut clears nothing. A cell the keyboard reaches past the used range grows the scroll area
 to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under

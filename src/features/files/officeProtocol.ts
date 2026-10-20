@@ -167,8 +167,7 @@ export interface OfficeReadyTimings {
  * a PPTX equation, an inserted image over the payer's plan cap or of a type
  * the browser cannot decode (nothing is inserted), an XLSX edit past the
  * engine's 64 MiB update cap or a copy (or cut) past the copied-area or text
- * ceiling (nothing changes), an XLSX clipboard write the browser refused, or
- * a cut that saw a peer's change while it read (copied, not cleared).
+ * ceiling (nothing changes), or an XLSX clipboard write the browser refused.
  */
 export const OFFICE_NOTICES = [
   'equation-text',
@@ -177,7 +176,6 @@ export const OFFICE_NOTICES = [
   'edit-too-large',
   'copy-too-large',
   'copy-failed',
-  'cut-peer-change',
 ] as const;
 export type OfficeNotice = (typeof OFFICE_NOTICES)[number];
 
