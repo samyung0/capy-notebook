@@ -1979,6 +1979,8 @@ test('closing DOCX header editing gives the document the focus back', async ({
   };
   await openHeader();
   await options.click();
+  // Remove would change only this editor's copy (Epo 2026-10-20).
+  await expect(frame.getByRole('button', { name: /^Remove / })).toHaveCount(0);
   await frame.getByRole('button', { name: 'Close header editing' }).click();
   await expect(frame.getByLabel('Document input')).toBeFocused();
 
@@ -2190,6 +2192,13 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
   // The vertical ruler starts at the first page's top.
   const vertical = await frame.locator('.docx-vertical-ruler').boundingBox();
   expect(vertical?.y).toBeCloseTo(firstPage?.y ?? -1, 0);
+  // The margins show but do not drag: they would change only this editor's
+  // copy (Epo 2026-10-20).
+  const margins = frame.locator('[data-ruler-margin]');
+  await expect(margins).toHaveCount(4);
+  await expect(
+    margins.and(frame.locator('[data-draggable="true"]'))
+  ).toHaveCount(0);
 
   // View mode draws no ruler and offers no toggle; edit opens with the choice.
   const mode = page.getByRole('button', { name: m.material_mode() });

@@ -1153,8 +1153,12 @@ clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too),
 over body paragraphs only (not tables, headers, footers or notes). The fork's
 Page setup and Watermark commands are left out of the menus (Epo 2026-10-13):
 they change only the open editor's document model, outside the Yjs state Capy
-saves, so neither would reach the saved file or co-editors; the ruler's margin
-drags still change the open copy only (DOCX parity checklist).
+saves, so neither would reach the saved file or co-editors. For the same
+reason the rulers' margins do not drag and a header or footer's Options menu
+offers no Remove (Epo 2026-10-20): the host passes the fork's
+`finalSectionEditable={false}`, and each margin zone and marker carries
+`data-draggable`. Shared final-section settings, which would let all of these
+save, come after the security todo.
 
 Format › Table ▸ (Google Docs' place) has Vertical alignment ▸
 Top/Middle/Bottom and Table alignment ▸ Left/Center/Right (radio items ticked
