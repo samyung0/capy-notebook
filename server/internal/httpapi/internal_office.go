@@ -112,15 +112,15 @@ func normalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			if c.Wrap != nil {
 				style["textWrapping"] = map[bool]string{true: "wrap", false: "overflow"}[*c.Wrap]
 			}
-			normalized = map[string]any{"sheet": c.Sheet, "range": c.Range, "style": style}
 			if name, ok := namedNumberFormats[c.NumberFormat]; ok {
-				normalized["numberFormat"] = map[string]any{"type": name}
+				style["numberFormat"] = map[string]any{"type": name}
 			} else if c.NumberFormat != "" {
-				normalized["numberFormat"] = map[string]any{"type": "custom", "pattern": c.NumberFormat}
+				style["numberFormat"] = map[string]any{"type": "custom", "pattern": c.NumberFormat}
 			}
-			if len(style) == 0 && normalized["numberFormat"] == nil {
+			if len(style) == 0 {
 				return nil, refusal(agenttools.ErrInvalidInput, "format_cells needs at least one format to set")
 			}
+			normalized = map[string]any{"sheet": c.Sheet, "range": c.Range, "style": style}
 		case "add_sheet":
 			normalized = map[string]any{"name": c.Name}
 			if c.After != "" {

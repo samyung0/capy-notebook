@@ -2201,8 +2201,9 @@ def _render_scoped(body: dict[str, Any], scoped: dict[str, Any]) -> str:
             used = sheet.get("usedRange") or "empty"
             lines.append(f"[{sheet.get('id')}] {sheet.get('name')} {used}")
     else:
+        sheet = scoped.get("sheet") or {}
         head += (
-            f"\ncells of {scoped.get('name')}!{scoped.get('range')} "
+            f"\ncells of {sheet.get('name')}!{scoped.get('range')} "
             "(empty cells left out):"
         )
         for cell in scoped.get("cells") or []:

@@ -3757,8 +3757,7 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                 "format": "xlsx",
                 "title": "grades.xlsx",
                 "scoped": {
-                    "sheet": "0",
-                    "name": "Grades",
+                    "sheet": {"id": "0", "name": "Grades", "usedRange": "A1:H2001"},
                     "range": "A1:B2",
                     "cells": [
                         {"address": "A1", "input": "Name", "value": "Name"},

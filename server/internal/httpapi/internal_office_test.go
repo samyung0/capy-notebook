@@ -17,10 +17,10 @@ func TestNormalizeOfficeCommands(t *testing.T) {
 			`{"expected":[["","x"]],"range":"A1:B1","sheet":"Grades","type":"set_range","values":[["=SUM(C1:C3)","y"]]}`},
 		{"xlsx", `{"type":"format_cells","sheet":"0","range":"A1:H1","bold":true,"italic":false,"font_family":"Arial","font_size":12,` +
 			`"text_color":"#1F4E79","fill_color":"#FFF2CC","horizontal_alignment":"center","vertical_alignment":"middle","wrap":true,"number_format":"plain_text"}`,
-			`{"numberFormat":{"type":"plainText"},"range":"A1:H1","sheet":"0","style":{"bold":true,"fillColor":"#FFF2CC","fontFamily":"Arial",` +
-				`"fontSize":12,"horizontalAlignment":"center","italic":false,"textColor":"#1F4E79","textWrapping":"wrap","verticalAlignment":"middle"},"type":"format_cells"}`},
+			`{"range":"A1:H1","sheet":"0","style":{"bold":true,"fillColor":"#FFF2CC","fontFamily":"Arial",` +
+				`"fontSize":12,"horizontalAlignment":"center","italic":false,"numberFormat":{"type":"plainText"},"textColor":"#1F4E79","textWrapping":"wrap","verticalAlignment":"middle"},"type":"format_cells"}`},
 		{"xlsx", `{"type":"format_cells","sheet":"0","range":"B2:B9","number_format":"0.0%"}`,
-			`{"numberFormat":{"pattern":"0.0%","type":"custom"},"range":"B2:B9","sheet":"0","style":{},"type":"format_cells"}`},
+			`{"range":"B2:B9","sheet":"0","style":{"numberFormat":{"pattern":"0.0%","type":"custom"}},"type":"format_cells"}`},
 		{"xlsx", `{"type":"add_sheet","name":"Summary","after":"Grades"}`, `{"after":"Grades","name":"Summary","type":"add_sheet"}`},
 		{"xlsx", `{"type":"add_sheet","name":"Summary"}`, `{"name":"Summary","type":"add_sheet"}`},
 		{"xlsx", `{"type":"rename_sheet","sheet":"0","expected_name":"Sheet1","name":"Grades"}`,
