@@ -1472,6 +1472,12 @@ never edits the table. The output chain's parser rule is §7.4.
 
 `pipeline/tests/test_host_hardening.py` keeps all of this in the playbooks.
 
+**Ptrace, both hosts.** Both playbooks set `kernel.yama.ptrace_scope=1` in
+`/etc/sysctl.d/60-capy-ptrace.conf`: a process can trace only its own
+descendants. On the app host the task carries the `sysctl` tag, so
+`ansible-playbook playbook.yml --tags sysctl` applies it alone; check it with
+`sysctl kernel.yama.ptrace_scope`.
+
 **Applying, lockout-safe.** Run from the playbook's directory with its ignored
 `inventory.yml` (the README lists the values). The `ssh` and `firewall` tags
 apply only these tasks. Use them on hosts that already run: a full ingest-host
@@ -2241,7 +2247,10 @@ the host:
   directory, which is also LibreOffice's `TMPDIR` and holds its IPC pipe
   (`-env:OSL_SOCKET_PATH`), so a killed conversion's files go when the slot is
   wiped. LibreOffice puts the pipe in `/tmp` or `/var/tmp` whenever it may
-  write there, so the image leaves both unwritable for the parser user. Its
+  write there, so the image leaves both unwritable for the parser user. A
+  socket path holds 107 bytes, so the parser refuses to start when
+  `CAPY_PARSE_WORK_DIR` is too long for the pipe's path in a job folder (the
+  default leaves a few bytes spare). Its
   `registrymodifications.xcu` blocks links from documents outside trusted
   locations (there are none), disables macros at the highest security level and
   sets Writer and Calc link updates to never. LibreOffice starts as
@@ -2369,12 +2378,15 @@ threads.
 
 **What the parents read back.** A child's answer can come from a compromised
 decoder, so its parent bounds and checks it. The launcher reads a child's
-stdout only up to the cap its caller sets and keeps the last 64 KiB of its
-stderr; past the cap it kills the group. The decode helper's cap is 32 MiB:
+stdout only up to the cap its caller sets, counting what is still in the pipe
+when the child exits, and keeps the last 64 KiB of its stderr; past the cap it
+kills the group, as it does when it cannot start the threads that read the
+child. The decode helper's cap is 32 MiB:
 the largest real answer measured, a 1,475-page PDF's page texts, is 4 MiB, and
 the densest page, 22 KiB, fits 1,400 times. The worker accepts only the JSON
 shape each mode answers (page texts as strings, heading indices as integers,
-images as base64); anything else, like an answer past the cap, fails the
+images as base64, a pixel limit as which limit applied, logged with the
+worker's own message); anything else, like an answer past the cap, fails the
 decode as an ordinary error, retried as the job's policy says. The parse child
 may write its slot folder, so the API writes a document's transfer file only
 through the descriptor it created and opens a result there only as a regular
