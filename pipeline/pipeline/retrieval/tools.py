@@ -1165,9 +1165,6 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         summary, listing = questions.refusal(fences)
         return _refused(summary, detail=listing)
     books, credited = prepared
-    resolved = await _material_scope(ctx, args, books)
-    if isinstance(resolved, ToolResult):
-        return resolved
     images = await figures.render()
     if isinstance(images, ToolResult):
         return images
@@ -1176,7 +1173,6 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         ctx,
         call_id,
         args,
-        resolved,
         books,
         {"kind": kind, "cards": args.get("cards") or [], "content": content},
         images=images,
@@ -1186,34 +1182,18 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     return with_repairs(figures.noted(result), fences)
 
 
-async def _material_scope(
-    ctx: ToolContext, args: dict[str, Any], books: list[dict[str, Any]]
-) -> ResolvedScope | ToolResult:
-    """The scope a new material is written from. A material written from the
-    library is grounded in the library, so it needs no indexed workspace
-    content."""
-    resolved = await _resolve_scope(ctx, args.get("scope", _MISSING))
-    if isinstance(resolved, ToolResult):
-        return resolved
-    if not resolved.indexed and not books:
-        return _refused(
-            "The requested scope has no indexed content.", code="unavailable_target"
-        )
-    return resolved
-
-
 async def _post_material(
     ctx: ToolContext,
     call_id: str,
     args: dict[str, Any],
-    resolved: ResolvedScope,
     books: list[dict[str, Any]],
     content: dict[str, Any],
     *,
     images: dict[str, bytes] | None = None,
 ) -> ToolResult:
     """Create a material through the gateway: its kind and content, with the
-    call's title, chapter, scope and provenance."""
+    call's title, chapter, sources and provenance. The sources are the model's
+    made-from line, sent as written: Go stores them as names."""
     payload = {
         "workspaceId": ctx.workspace_id,
         "userId": ctx.user_id,
@@ -1223,8 +1203,7 @@ async def _post_material(
         # duplicates and only reserves room for its own suffix.
         "title": str(args.get("title") or "").strip()[:MATERIAL_TITLE_MAX].strip(),
         **content,
-        "fileIds": resolved.file_ids,
-        "chapterIds": resolved.chapter_ids,
+        "sources": list(args.get("sources") or []),
         "chapterId": str(args.get("chapter_id") or ""),
     }
     if books:
@@ -1725,8 +1704,6 @@ def _response_details(resp: requests.Response) -> dict[str, Any]:
 _GATEWAY_CODES = {
     "storage_quota_exceeded": "quota_rejected",
     "account_over_quota": "lifecycle_rejected",
-    "invalid_scope": "unavailable_target",
-    "scope_has_no_indexed_content": "unavailable_target",
 }
 
 
@@ -2281,11 +2258,8 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
         return body if isinstance(body, ToolResult) else quiz_questions(quiz_id, body)
 
     async def create(args, written, books):
-        resolved = await _material_scope(ctx, args, books)
-        if isinstance(resolved, ToolResult):
-            return resolved
         return await _post_material(
-            ctx, call_id, args, resolved, books, {"kind": "quiz", "questions": written}
+            ctx, call_id, args, books, {"kind": "quiz", "questions": written}
         )
 
     async def edit(quiz_id, commands, books, images):
@@ -2543,6 +2517,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         **_chat_context(ctx, call_id),
         "name": deck.file_name(record),
         "chapterId": record["chapter_id"],
+        "sources": record["sources"],
         "content": base64.b64encode(pptx.read_bytes()).decode(),
     }
     if record["provenance"]:

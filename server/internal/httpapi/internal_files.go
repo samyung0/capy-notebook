@@ -24,6 +24,8 @@ type internalFileReq struct {
 	ChapterID          string            `json:"chapterId"`
 	Content            []byte            `json:"content"`
 	Provenance         *store.Provenance `json:"provenance"`
+	// Sources is the deck's made-from line, as for a material.
+	Sources []string `json:"sources"`
 }
 
 // internalCreateFile stores an agent's file the way an upload lands: the
@@ -66,6 +68,10 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if !validSources(req.Sources) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": sourcesBounds})
+		return
+	}
 	if req.Provenance != nil {
 		// The pipeline merged this record over many calls, so the stored
 		// bounds apply, not one call's.
@@ -92,7 +98,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	sum := sha256.Sum256(req.Content)
 	hash, err := store.RequestHash(map[string]any{
 		"name": name, "chapterId": req.ChapterID, "provenance": req.Provenance,
-		"contentSha256": hex.EncodeToString(sum[:]),
+		"contentSha256": hex.EncodeToString(sum[:]), "sources": req.Sources,
 	})
 	if err != nil {
 		a.fail(w, err)
@@ -121,6 +127,11 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		}
 		chapterID = &req.ChapterID
 	}
+	sourceNames, err := a.resolveSources(ctx, req.WorkspaceID, req.Sources)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	kind := kindFromName(name)
 	parseMode := sourceupload.DefaultParseMode(name, kind)
 	maxBytes, err := a.sourceMaxBytes(ctx, req.UserID)
@@ -141,7 +152,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	op, created, err := a.s.CreateAgentFileOperation(ctx, store.AgentFileDraft{
 		WorkspaceID: req.WorkspaceID, ActorUserID: req.UserID, Name: name, Kind: kind,
 		ChapterID: chapterID, SizeBytes: size, BlobPath: blobPath, Parser: a.parser,
-		ParseMode: parseMode, Provenance: req.Provenance,
+		ParseMode: parseMode, Provenance: req.Provenance, ScopeFileNames: sourceNames,
 	}, store.AgentOperation{
 		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, ConversationID: convID,

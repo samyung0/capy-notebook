@@ -408,7 +408,9 @@ async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
     assert read.text() == tools._INVALID_SCOPE
 
 
-async def test_create_material_persists_resolved_scope(monkeypatch):
+async def test_create_material_sends_its_sources_as_written(monkeypatch):
+    # Sources are a made-from line Go resolves to names (Epo 2026-10-21): sent
+    # as written, with nothing indexed in the workspace and no library books.
     ctx = ToolContext(
         workspace_id="ws_1",
         user_id="u1",
@@ -416,8 +418,8 @@ async def test_create_material_persists_resolved_scope(monkeypatch):
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [{"id": "ch_1", "name": "Chapter one"}],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": "ch_1", "chunks": 1}],
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -447,19 +449,20 @@ async def test_create_material_persists_resolved_scope(monkeypatch):
         return _Resp()
 
     monkeypatch.setattr(tools.requests, "post", _post)
+    sources = ["f_1", "Cells quiz", "Lecture 3, 14 Oct"]
     result = await tools._create_material(
         {
             "kind": "note",
             "content": "body",
-            "scope": {"chapter_ids": ["ch_1"]},
+            "sources": sources,
             "_tool_call_id": "call_1",
         },
         ctx,
     )
 
     assert not result.refused
-    assert seen["fileIds"] == ["f_1"]
-    assert seen["chapterIds"] == ["ch_1"]
+    assert seen["sources"] == sources
+    assert "fileIds" not in seen and "chapterIds" not in seen
     assert seen["assistantMessageId"] == "m_1"
     assert seen["toolCallId"] == "call_1"
 
@@ -514,28 +517,6 @@ async def test_create_material_clamps_model_title(monkeypatch):
     )
 
     assert len(seen["title"]) == tools.MATERIAL_TITLE_MAX
-
-
-async def test_create_material_rejects_scope_without_indexed_content(monkeypatch):
-    ctx = ToolContext(
-        workspace_id="ws_1",
-        user_id="u1",
-        operations=frozenset(contract.OPERATIONS),
-        assistant_message_id="m_1",
-    )
-    ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
-    }
-    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
-    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
-
-    result = await tools._create_material(
-        {"kind": "note", "_tool_call_id": "call_1"}, ctx
-    )
-
-    assert result.refused
-    assert "no indexed content" in result.text()
 
 
 async def test_create_material_refuses_an_unknown_chapter_before_sending(monkeypatch):
@@ -2535,7 +2516,7 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
         "_tool_call_id": "c1",
     }
     assert tools.without_blanks(
-        "create_material", {"kind": "note", "scope": [], "title": "null", "cards": {}}
+        "create_material", {"kind": "note", "sources": [], "title": "null", "cards": {}}
     ) == {"kind": "note"}
 
     # Dispatch hands the handler the cleaned arguments.

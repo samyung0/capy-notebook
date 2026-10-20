@@ -95,6 +95,7 @@ async def _outline(ctx: ToolContext, slides: int = 2) -> str:
         {
             "title": "Tangents",
             "chapter_id": "ch_1",
+            "sources": ["Lecture 3, 14 Oct", "f_1"],
             "slides": [
                 {"title": f"Slide {n}", "brief": "b"} for n in range(1, slides + 1)
             ],
@@ -178,6 +179,8 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     payload = post["payload"]
     assert payload["name"] == "Tangents.pptx" and payload["chapterId"] == "ch_1"
     assert payload["toolCallId"] == "c_2" and "provenance" not in payload
+    # The deck's made-from line goes to Go as written (Epo 2026-10-21).
+    assert payload["sources"] == ["Lecture 3, 14 Oct", "f_1"]
     assert last.effects[0]["resource"] == {
         "kind": "source_file",
         "id": "f_deck",
