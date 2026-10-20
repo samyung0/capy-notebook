@@ -376,8 +376,12 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   Workspaces already over the cap (after a downgrade) are kept.
 - An over-quota owner (grace or frozen) may still transfer because giving away
   bytes is a recovery action; the recipient must be able to edit.
-- Invite email delivery is intentionally independent of later workspace
-  deletion. A message already queued may still send; its link is the authority.
+- The emailed invite link's token is minted when the email is sent
+  (`MintInviteLink`), so no raw token is ever stored: the outbox payload holds
+  only the invite id and the current token hash, and each send rotates the
+  invite's hash. A queued email whose invite was accepted, cancelled, expired,
+  re-sent or deleted with its workspace is cancelled at send instead of
+  carrying a dead link; acceptance stays the authority.
   A live account without a nonblank email still receives the in-app invite
   notification, but no email-outbox row is created. Role changes and removals
   are in-app notifications only; they never email. An acceptance tells the
@@ -389,8 +393,11 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   frozen, suspended, deletion-pending, deleted, expired, revoked, or
   otherwise invalid invite uses the same non-disclosing unavailable-workspace
   response as a missing shared workspace. A frozen recipient is refused with
-  `account_over_quota`, since joining is an edit. There is no separate
-  email-job retraction mechanism.
+  `account_over_quota`, since joining is an edit. An invite that belongs to
+  another account answers the same 404 as a missing one, by invite id or by
+  token, so neither is an existence oracle.
+- Role changes and removals refuse an empty actor rather than reading it as the
+  owner.
 - Acceptance locks the workspace first, then locks the owner and recipient
   accounts in canonical ID order. Reciprocal invitations therefore cannot take
   the same two account rows in opposite order.
@@ -998,7 +1005,11 @@ Clerk profile retrieval and local identity provisioning are separate gates. A
 temporary profile-read failure skips synchronization for an existing local
 account, preserving its stored name, email, and avatar. If profile retrieval or
 upsert fails while the identity is still unknown locally, the request fails
-retryably with `503 account_state_unavailable`. Starter-workspace completion is
+retryably with `503 account_state_unavailable`. An address another live local
+account still holds (`users_email_active_uidx`, for example a row that has not
+yet seen its owner's address change) is reported to Sentry
+(`clerk_email_collision`) and the account is written without an email, instead
+of failing provisioning on every request. Starter-workspace completion is
 stored separately on the user row. A failed workspace insert also returns the
 retryable 503, and the next authenticated request retries it, without a
 profile read. Once marked complete, deleting every workspace does not recreate

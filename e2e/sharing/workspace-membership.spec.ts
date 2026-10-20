@@ -85,7 +85,8 @@ test.describe('workspace invitations', () => {
     const wrongAccount = await otherApi.post(
       `/api/workspace-invites/${reference}/accept`
     );
-    expect(wrongAccount.status()).toBe(403);
+    // Someone else's invite answers like a missing one.
+    expect(wrongAccount.status()).toBe(404);
 
     await viewerPage.goto('/workspaces');
     // Phone and desktop bars both link to the notifications page; click the
