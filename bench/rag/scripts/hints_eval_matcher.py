@@ -1,7 +1,9 @@
 """Part 1 of the pending-hints eval: the matcher's signal and noise, no model.
 
 Runs production pending_hints (candidates, _prepare, match, snippet, message
-with its 400-token cap) for every message in
+with its 400-token cap; since 2026-10-20 match keeps hints matching two
+message words of the document's name and change text, top 3, so the `name`
+candidate text is production's and "production (shown)" scores what it showed) for every message in
 bench/rag/fixtures/hints-eval/messages.json against the fixture's pending
 changes, and labels each shown hint relevant, topical or noise from the
 message's labels. It also asks Postgres which of the message's words each
@@ -206,14 +208,7 @@ async def run_pool(pool_name: str, text_kind: str, messages: list[dict[str, Any]
         any_of = search_query_terms(text).any_of
         matched = await pending_hints.match(text, prepared)
         rendered = pending_hints.message([(h, pending_hints.snippet(h, text)) for h in matched])
-        if text_kind == "change":
-            # The same as the agent's path.
-            produced = await pending_hints.for_message(text, sources, skip=set())
-            assert [h.change_id for h, _ in produced] == [h.change_id for h in matched]
         matches = await matches_for(db, prepared, text, any_of)
-        assert [m["change"] for m in matches[: pending_hints.HINT_LIMIT]] == [
-            h.change_id for h in matched
-        ], message["id"]
         relevant, topical = labels(message, pool_name)
         rows.append(
             {
@@ -321,7 +316,7 @@ def min_words_specific(k: int, n: int = 5) -> Rule:
 
 
 RULES: dict[str, Rule] = {
-    "production (top 5)": top(5),
+    "any word, top 5 (production before 2026-10-20)": top(5),
     "top 3": top(3),
     "top 1": top(1),
     "rank >= 0.02": min_rank(0.02),
@@ -380,9 +375,9 @@ def report(result: dict[str, Any]) -> dict[str, Any]:
     docs = fx.load(busy=result["pool"] == "busy")
     pool = {h.change_id: h for h in pending_hints.candidates(fx.pending_sources(docs))}
     rows = result["messages"]
-    for row in rows:
-        assert capped(row, top(5)(row), pool) == row["shown"], row["id"]
-    table = {
+    # What production showed: since 2026-10-20 the two-word rule on the
+    # name and change text, top 3 (the `name` candidate text is production's).
+    table = {"production (shown)": score(rows, lambda row: row["shown"])} | {
         name: score(rows, lambda row, rule=rule: capped(row, rule(row), pool))
         for name, rule in RULES.items()
     }
