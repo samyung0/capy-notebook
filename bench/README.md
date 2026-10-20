@@ -229,6 +229,21 @@ official parser and local recovery checks. Add `--model deepseek` or `--model gl
 to limit the live sample to one provider. These are format samples, not
 production failure-rate measurements or retrieval-quality tests.
 
+The pending-hints eval (`rag/scripts/hints_eval_*.py`, fixtures in
+`rag/fixtures/hints-eval/`, findings in
+[`rag/reports/2026-10-20-hints-eval.md`](rag/reports/2026-10-20-hints-eval.md))
+measures the hints `pipeline/retrieval/pending_hints.py` attaches for unindexed
+edits:
+- `hints_eval_matcher.py` scores the matcher's precision, recall and noise on
+  70 labelled messages without a model.
+- `hints_eval_agent.py` runs chat turns through `lab/playground`'s Turn on GLM
+  and DeepSeek, with real hints, injected junk hints and rule variants, and
+  scores correctness, reads, junk quotes, tokens, latency and cost.
+
+Both run against a scratch `pgvector/pgvector:pg16` container that
+`hints_eval_db.py` migrates and loads with real embeddings. Keys are read in
+memory from `.env.local`.
+
 `rag/scripts/rag_eval.py` is a live retrieval diagnostic that
 runs the production `search()` against a real workspace inside the pipeline
 image. Its question sets in `rag/fixtures/` are keyed to `CHUNKER_VERSION` and to
