@@ -130,27 +130,6 @@ func (s *Store) effectiveSubscriptionStateForUser(
 	return tier, status, err
 }
 
-// WorkspaceOwnerID names the account that pays for the workspace.
-func (s *Store) WorkspaceOwnerID(ctx context.Context, workspaceID string) (string, error) {
-	var ownerID string
-	err := s.pool.QueryRow(ctx, `
-		SELECT w.user_id FROM workspaces w WHERE w.id=$1`, workspaceID).Scan(&ownerID)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
-	return ownerID, err
-}
-
-// WorkspaceOwnerPlan is the plan of the account that pays for the workspace.
-// Per-file upload caps follow this, not the editor who is uploading.
-func (s *Store) WorkspaceOwnerPlan(ctx context.Context, workspaceID string) (PlanTier, error) {
-	ownerID, err := s.WorkspaceOwnerID(ctx, workspaceID)
-	if err != nil {
-		return "", err
-	}
-	return s.effectivePlanTierForUser(ctx, s.pool, ownerID)
-}
-
 func storageJSONSizeTx(ctx context.Context, tx pgx.Tx, content string) (int64, error) {
 	var size int64
 	err := tx.QueryRow(
@@ -177,12 +156,15 @@ func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID strin
 // lockWorkspaceMutationTx is the common final-admission boundary for an
 // authenticated workspace mutation. It makes ownership immutable, then locks
 // the actor and storage owner in stable ID order so suspension/deletion cannot
-// commit while the mutation is still in flight. A locked owner's workspace is
-// not found for any other actor (ownerHidden).
+// commit while the mutation is still in flight. also names further accounts
+// the write charges (an item's payer, uploader pays) for the same ordered
+// batch. A locked owner's workspace is not found for any other actor
+// (HideOtherAccountLock).
 func (s *Store) lockWorkspaceMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, actorID string,
+	also ...string,
 ) (string, error) {
 	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
 	if err != nil {
@@ -191,25 +173,43 @@ func (s *Store) lockWorkspaceMutationTx(
 	if actorID == "" {
 		actorID = ownerID
 	}
-	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
-		return "", ownerHidden(err, ownerID, actorID)
+	if err := s.lockAccountSessionsTx(ctx, tx, append([]string{ownerID, actorID}, also...)...); err != nil {
+		return "", HideOtherAccountLock(err, actorID)
+	}
+	return ownerID, nil
+}
+
+// lockWorkspacePayerTx admits a payer trashing or purging an item it pays for
+// in wsID, which it need not be able to open (Sam 2026-10-18, also while the
+// workspace owner is suspended or being deleted, Sam 2026-10-19). Only the
+// payer's own account must be live; the workspace row serializes it with the
+// owner's purge, which deletes the workspace.
+func (s *Store) lockWorkspacePayerTx(ctx context.Context, tx pgx.Tx, workspaceID, payerID string) (string, error) {
+	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if err := s.lockAccountSessionsTx(ctx, tx, payerID); err != nil {
+		return "", err
 	}
 	return ownerID, nil
 }
 
 // lockWorkspaceEditorMutationTx adds the content permission check required by
-// workspace mutations, and refuses the edit when the actor or the owner is
-// frozen (or otherwise cannot edit).
+// workspace mutations, and refuses the edit when the actor is frozen (or
+// otherwise cannot edit). The owner's frozen state narrows only what the
+// owner pays for (uploader pays, Sam 2026-10-18).
 func (s *Store) lockWorkspaceEditorMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, actorID string,
+	also ...string,
 ) (string, error) {
-	ownerID, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, workspaceID, actorID)
+	ownerID, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, workspaceID, actorID, also...)
 	if err != nil {
 		return "", err
 	}
-	if err := s.assertEditableTx(ctx, tx, ownerID, actorID); err != nil {
+	if err := s.assertEditableTx(ctx, tx, actorID); err != nil {
 		return "", err
 	}
 	return ownerID, nil
@@ -223,11 +223,12 @@ func (s *Store) lockWorkspaceEditorRecoveryTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	workspaceID, actorID string,
+	also ...string,
 ) (string, error) {
 	if actorID == "" {
 		return "", ErrNotFound
 	}
-	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID)
+	ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID, also...)
 	if err != nil {
 		return "", err
 	}

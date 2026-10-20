@@ -19,14 +19,15 @@ Authorization is the intersection of four independent questions:
 4. **Storage ownership:** whose quota is charged if the operation adds bytes?
 
 Passing one layer does not bypass another. For example, an editor has permission
-to upload, but the upload is still refused when the workspace owner's quota
-cannot accept it.
+to upload, but the upload is still refused when the uploader's own quota
+cannot accept it (uploader pays, Sam 2026-10-18).
 
 ## Permission matrix
 
 Membership roles are `owner`, `editor`, `viewer`. A link/public workspace also
 carries a `shareRole` of `editor` or `viewer` that applies to every signed-in
-nonmember. A caller's **effective role** is the more permissive of their
+nonmember of a public workspace, and to a nonmember of a link workspace once
+it has presented the signed link (see Link and public workspaces). A caller's **effective role** is the more permissive of their
 membership and the share role. Content authority follows the effective role;
 workspace settings and membership follow persisted membership only. Migration
 `0032_workspace_editor_viewer_roles.sql` applies these role constraints and ACL
@@ -56,11 +57,13 @@ responses. On a workspace response `role` is the persisted membership (absent
 for a share-role visitor) while `capabilities` follow the effective role, so a
 client keys settings on `role` and content controls on `capabilities`. A
 frozen account turns `canEdit` off: the requester's own (everywhere, and
-`canClone` with it) and the storage owner's (for every role in that
-workspace); quiz and flashcard `canEdit` follow the same rule.
+`canClone` with it), and on a material the frozen (or suspended) payer's;
+quiz and flashcard `canEdit` follow the same rule. A material's
 `canEditContent` (edit mode, comments, annotations, quiz and card edits) is
-`canEdit` narrowed further by a storage owner at or over its limit (usage
-`full`, grace included), so organizing stays on while content is view-only.
+`canEdit` narrowed further by its payer at or over its limit (usage `full`,
+grace included), so organizing stays on while content is view-only; the
+workspace's `canEditContent` equals its `canEdit` (uploader pays: storage
+narrows items, not workspaces).
 The client has no frozen or storage-limit logic of its own for these.
 
 Sources: [role definitions](../server/internal/store/enums.go#L62),
@@ -71,8 +74,9 @@ Sources: [role definitions](../server/internal/store/enums.go#L62),
 
 ### Anonymous workspace summaries
 
-`GET /api/public/workspaces/{id}/summary` reads live metadata for link/public
-workspaces. `HEAD` checks the same visibility without returning a body. The
+`GET /api/public/workspaces/{token}/summary` reads live metadata for
+link/public workspaces; it takes the share token `{id}.{signature}` and
+verifies it again, so a bare id answers 404 (Sam 2026-10-18). `HEAD` checks the same visibility without returning a body. The
 browser link is `/w/{id}.{signature}`, returned as `sharePath` on every workspace
 response: a 12-byte HMAC-SHA256 of `share:v1:{id}` under `SHARE_LINK_SECRET`,
 base64url-encoded ([Go](../server/internal/store/share_link.go),
@@ -243,8 +247,27 @@ resource exists.
 
 ### Link and public workspaces
 
-Signed-in users with the URL can read link and public workspaces. Only public
-workspaces are listed in Explore, which also requires authentication. Files and
+Public workspaces are open to every signed-in user and listed in Explore,
+which also requires authentication. Link sharing copies Google's "anyone with
+the link" plus resource key (Sam 2026-10-18): a signed-in nonmember reaches a
+link workspace, or a standalone link material, only after presenting its signed
+link once (`/w/{id}.{signature}`, the summary's Open going through
+`/open/{token}`, a share page's signed-in attempt or rating, or a public
+page's Clone, which carries the token as `?clone=<kind>:<token>`). `POST
+/api/share/redeem` verifies the token, checks the resource is link or public
+now, and records the grant (`workspace_link_grants`, `material_link_grants`,
+migration 0096); later calls use the bare id. Members and owners never need it.
+Making the workspace or material private deletes every grant, so sharing it
+again needs the link again; so does filing a standalone material into a
+workspace, which turns it private from a BEFORE trigger (the clearing triggers
+are plain `AFTER UPDATE` with a `WHEN` on the final row, since `UPDATE OF
+privacy` would miss that). The checks are `workspaceRoles`,
+`materialEffectiveAccess`, `linkReachSQL` (source access, chat), the comment
+lock, the collaboration server's `live_access` and the pipeline's source
+refresh fences. Logs and telemetry keep share and invite tokens out
+(`stripUrlTokens`, `obs.LogPath`), and the SPA moves an arriving token out of
+the address bar into sessionStorage before anything records the page
+(`urlTokenStash.ts`; see the observability doc). Files and
 materials inherit their workspace visibility, but reading their content requires
 a session. Anonymous visitors receive only the minimal workspace summary below.
 
@@ -255,8 +278,8 @@ Important boundaries:
 
 - A share-role editor holds the same content authority as an editor member:
   document body, comments, chapters, files, material metadata and deletion,
-  generation and clone. Bytes are charged to the workspace owner, inference
-  credits to the actor. This is deliberate so users can predict what an edit
+  generation and clone. Bytes and inference credits are charged to the actor
+  (uploader pays). This is deliberate so users can predict what an edit
   link grants.
 - A share role never reaches workspace settings or membership. Renaming,
   tagging, changing privacy or `shareRole`, reading statistics,
@@ -382,12 +405,14 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   reorder, move, and delete chapters.
 - Owner and effective editors can add/upload, rename, move, and trash source
   files and editor assets. Deleting a file moves it to the workspace trash for
-  30 days; only the current workspace owner lists, restores or permanently
-  deletes trash, whoever trashed it.
+  30 days; the current workspace owner and the item's payer list, restore or
+  permanently delete trash, whoever trashed it. A payer who left the workspace
+  still trashes and purges what it pays for but cannot open or restore it.
 - Viewers can read files when workspace visibility permits, but cannot mutate
   workspace structure or files.
-- Upload reservations and finalized bytes are charged to the workspace owner,
-  not the editor who uploaded them.
+- Upload reservations and finalized bytes are charged to the editor who
+  uploaded them (uploader pays), and only that editor completes its
+  reservation.
 - Direct cloud-source inspection treats DNS and connection failures as
   retryable provider outages. Request cancellation remains cancellation.
 - Short-lived read links (a file's `/links`, an editor asset's resolve, the
@@ -462,8 +487,8 @@ and [material editor checks](../server/internal/store/share.go#L209).
   contributor who has since left the workspace stays attributed and a reader
   without a roster still sees who wrote what.
 - Collaboration tokens encode `write` or `read` access; a `read` token exists
-  only as the downgrade an editor receives when the storage owner's account is
-  frozen or at its storage limit (`full`, grace included), or the editor's own
+  only as the downgrade an editor receives when the material's payer is frozen,
+  locked or at its storage limit (`full`, grace included), or the editor's own
   account is frozen. A deleted, deletion-pending or suspended owner's material
   gets no token (`404`), and the collaboration server refuses its room as not
   found to everyone but the owner. The collaboration
@@ -530,8 +555,8 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - Comment creation, replies, edits, and deletion also lock the
   workspace and re-evaluate actor lifecycle and effective role in the database
   transaction that writes the row. Comments count as editing: creating,
-  replying and editing are refused when the actor or the storage owner is
-  frozen (`account_over_quota`) or the owner is at its storage limit
+  replying and editing are refused when the actor or the material's payer is
+  frozen (`account_over_quota`) or the payer is at its storage limit
   (`storage_quota_exceeded`); deleting is not.
 
 Sources: [collaboration token access](../server/internal/httpapi/huma_collaboration.go#L109),
@@ -639,8 +664,8 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   are not unique. Clone spins and the dialog stays open while pending (Escape,
   an outside click and the hidden close button do nothing then); any other
   refusal shows in the dialog (`FormAlert`), not as a toast: a storage refusal
-  names the destination owner's storage when the owner pays, a file past the
-  payer's cap the upload's size message, an exhausted cloner the credits
+  is the cloner's own (the cloner pays), a file past the cloner's cap the
+  upload's size message, an exhausted cloner the credits
   message. The workspace clone dialog behaves the same way.
 - A copied note keeps a mention live only for a member (or the owner) of its
   destination; any other mention becomes plain `@Name` text, as does every
@@ -728,7 +753,7 @@ Details live in [study-progress.md](study-progress.md).
   deleted by `PurgeUser`. Published bank questions are retracted by the bank
   owner, never deleted. Copying bank questions into a quiz (`POST
   /api/bank/copy`) is a content write: it needs edit access to the workspace,
-  and frozen accounts and full storage owners are refused.
+  and frozen accounts and full payers of the quiz are refused.
 - Signed-out visitors keep their study in the browser only (see Anonymous
   quizzes and flashcards); they record nothing on the bank.
 
@@ -762,8 +787,8 @@ Sources: [study routes](../server/internal/httpapi/huma_study.go) and
   only to actors whose effective role can edit, so viewers never see the
   notice. Manual and automatic reprocessing (`RequestSourceRefresh`) are
   owner-only; editors see the label without the process-now button.
-- Generated material storage is charged to the workspace owner. The actor is
-  recorded as author but does not become storage owner.
+- Generated material storage is charged to the actor, who is its author and
+  payer (uploader pays).
 - Inference credits are billed to the actor (`BeginProviderSession` /
   `llm_credits_exhausted`). Ingest claim-time checks owner lifecycle/storage
   and actor lifecycle/credits separately. Ordinary ingest also requires the
@@ -818,7 +843,7 @@ E2E identities.
 | `active`            | Yes                | Yes                  | Yes, subject to role and hard quota                                    | Yes                                                                                  | Yes                                | Full write                                         |
 | `active` at `full`  | Yes                | Yes                  | Storage growth fails the hard quota                                    | Organizing and sharing yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
 | `over_quota_grace`  | Yes                | Yes                  | Yes, but storage growth fails the hard quota against the Free limit    | Organizing and sharing yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
-| `over_quota_frozen` | Yes                | Yes                  | No                                                                     | No, nowhere for the actor, and for nobody where this account pays                    | Yes, subject to role               | Read only, as actor or as storage owner            |
+| `over_quota_frozen` | Yes                | Yes                  | No                                                                     | No, nowhere for the actor, and for nobody where this account pays                    | Yes, subject to role               | Read only, as actor or as payer                    |
 | `deletion_pending`  | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 | `suspended`         | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 | `deleted`           | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
@@ -834,7 +859,15 @@ sources, and a copy into that owner's workspace. The answer comes before
 anything that could reveal the owner's state: the role read
 (`workspaceRoles`, `materialEffectiveAccess`, `sourceActorsAllowed`) leaves the
 workspace out, and a write that locks accounts before reading roles maps the
-owner's locked account to not found (`ownerHidden`). Becoming locked evicts
+owner's locked account to not found (`HideOtherAccountLock`). The same holds
+for the other accounts a user-facing write checks (review C2): an item's
+payer on material and file writes (`lockWorkspaceMutationTx` with its extra
+accounts, `assertContentEditableTx`, `UpdateMaterial`, `UpdateFile`, the
+source edit lock, editor assets, the bank's copy into a quiz) and a
+transfer's recipient. The caller gets a plain not found, never that
+account's lifecycle state or suspension reason; the caller's own lock and a
+frozen payer (view-only, no reason) still read as such. The collaboration
+server's internal checkpoint keeps the payer's lock, as it reaches no person. Becoming locked evicts
 the owner's note and source rooms with `discard` (`user_acl_eviction_trigger`,
 source rooms since migration 0090), so open viewers reconnect through that
 check. A member's unsynced edits in that owner's notes and files are dropped
@@ -897,12 +930,13 @@ subscription already sent "Pro cancelled" and gets none. Notifications and
 emails already sent stay sent when an account recovers.
 
 Store-level enforcement sits in the workspace edit lock
-(`lockWorkspaceEditorMutationTx`, which checks both actor and owner; trash and
-chapter deletion use `lockWorkspaceEditorRecoveryTx` without the check), the
+(`lockWorkspaceEditorMutationTx`, which checks the actor; trash and chapter
+deletion use `lockWorkspaceEditorRecoveryTx` without the check; a frozen owner
+narrows only what it pays for), the
 settings and sharing writes, standalone material updates (privacy narrowing
 excepted), comment writes, source sessions and the storage gate. Content
 admission (`assertContentEditableTx`: material content, comments, PDF marks,
-source edits) adds the owner's storage limit to the frozen check. Handlers use
+source edits) checks the item's payer: frozen, locked or at its storage limit. Handlers use
 `requireAccountEdit` for the actor's own create/edit routes and
 `requireAccountMutate` for the actions a frozen account keeps.
 
@@ -1025,21 +1059,19 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
 
 ### Who pays
 
-- All files, editor assets, uploads, and materials inside a workspace are
-  charged to the **workspace owner**.
-- A standalone material is charged to its creator/owner.
-- Editors can therefore add bytes to another user's bill only while that
-  owner's account and quota permit it.
-- An editor in grace can still add to a healthy owner's workspace, since the
-  owner's quota pays. A frozen editor edits nowhere, and nobody edits a frozen
-  owner's workspace. Nobody edits the content of an owner at or over its limit
-  either, though organizing it still works.
+- Every file, editor asset, upload, and material is charged to the account that
+  uploaded, imported, cloned or created it, in any workspace (uploader pays,
+  Sam 2026-10-18; see backend-storage-quota.md).
+- Nobody adds bytes to another user's bill, and an owner's transfer moves none.
+- A frozen account edits nowhere, and nobody edits what a frozen account pays
+  for. Nobody edits the content of an account at or over its limit either,
+  though organizing it still works; the rest of the workspace stays editable.
 
 ### What the gate checks
 
 Every storage-**creating** transaction checks both conditions:
 
-1. the storage owner's lifecycle permits editing (active or grace); and
+1. the payer's (the actor's) lifecycle permits editing (active or grace); and
 2. `used bytes + reserved bytes + requested bytes <= plan limit`, where a
    lapsed Pro account's limit is the Free one.
 
@@ -1079,7 +1111,7 @@ live row references them.
 
 | Stage                                | Database/storage effect                                                                                                                                                                                            | Bucket effect                                                                        | Background cleanup                                                                   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Upload reserved                      | Creates a pending `upload_sessions` row and reserves the declared bytes against the workspace owner                                                                                                                | Browser receives a presigned PUT for an `incoming/` or `editor-assets/incoming/` key | Pending session is eligible for expiry after its presigned deadline                  |
+| Upload reserved                      | Creates a pending `upload_sessions` row and reserves the declared bytes against the uploader                                                                                                                       | Browser receives a presigned PUT for an `incoming/` or `editor-assets/incoming/` key | Pending session is eligible for expiry after its presigned deadline                  |
 | Upload finalized                     | Creates the source file or editor asset, converts reserved bytes into used bytes, and marks the session completed                                                                                                  | Incoming object is promoted to its stable `sources/` or `editor-assets/` key         | Completed session remains temporarily as an idempotency record                       |
 | Upload abandoned/expired             | Marks the session expired and releases its storage reservation                                                                                                                                                     | Both incoming and possible promoted paths are queued, with a 24-hour presign grace   | Upload sweeper runs at startup and every minute, up to 100 expired sessions per pass |
 | File/asset deleted                   | Logical row is deleted; workspace deletion and account purge do this through foreign-key cascades too. Pending/running parse, ingest, import, and provider reservations are cancelled at the same boundary.        | The path is queued only when its last database reference disappears                  | Blob reaper runs at startup and every minute                                         |
@@ -1110,8 +1142,7 @@ while processing continues; the viewer shows progress above the preview.
 
 Source uploads and editor assets share the `upload_sessions` table but use
 different targets. Reserving an upload immediately reserves its declared bytes
-against the workspace owner, or for a standalone material's editor asset
-against the material owner. Editor assets upload through their material, so
+against the uploader. Editor assets upload through their material, so
 only that material's editors can reserve them, and every asset names it. The
 presigned PUT signs the declared size as its Content-Length (`blob.PresignPut`),
 so B2 refuses a body of any other size with a 403 (checked on the UAT bucket
@@ -1140,6 +1171,15 @@ appearing after cleanup has already run. Independently, bucket lifecycle rules
 expire `incoming/` and `editor-assets/incoming/` objects after one day. The
 database sweep repairs quota/accounting state; the bucket rule is the final
 backstop for temporary objects that never obtained a database session.
+
+Object keys name their blob with 128 random bits (`store.ObjectKeyID`): the
+`final_path` uniqueness lasts only as long as the session row, and a deck's
+`Put` has no guard, so the key itself must not collide. A source key keeps the
+filename's extension only when it matches `^\.[a-z0-9]{1,11}$`
+(`keyExtension`), so no control or space character reaches the bucket. The
+import worker, which holds full-bucket credentials, writes only under
+`incoming/` and refuses any other path the gateway hands it. Entity and share
+ids keep their shorter length.
 
 Upload-session records are later pruned: completed sessions after 30 days and
 expired sessions seven days after their expiry deadline. Deleting a session
@@ -1241,15 +1281,21 @@ per-item endpoints sequentially, stop at the first failure, and remove only
 successful items from the selection. The error toast explains the failed
 operation; remaining items stay selected for a manual retry.
 
-`GET /api/files` and `GET /api/materials` list what the caller owns by
-default: files and materials in their own workspaces plus their standalone
-materials, which is what Files and Create show. `scope=member` adds every
-workspace where the caller is an explicit member, under the workspace list's
-rule that a deleted, deletion-pending or suspended owner hides the workspace. Link or
-public workspaces the caller has only opened never appear, and neither do other
-users' standalone materials. The dashboard's Recent Files uses member scope and
-offers Rename/Properties/Delete only where the workspace's `capabilities` allow
-editing; a standalone material there is always the caller's own.
+Listing scopes outside a workspace (Sam 2026-10-19). `GET /api/files`,
+`GET /api/materials` and `GET /api/trash` list by default what the caller pays
+for, wherever it sits: the Files page is the storage breakdown. Other people's
+uploads in a workspace the caller owns show inside the workspace (its trash
+with `workspaceId`, owner only), not there. `scope=member` lists instead what
+the caller can open: its own workspaces, those where it is an explicit member
+under a live owner (the workspace list's rule), and its standalone materials,
+never a row it only pays for; the dashboard's Recent uses it and offers
+Rename/Properties/Delete only where the workspace's `capabilities` allow
+editing. Global search (`Store.Search`) follows the same rule for workspaces,
+files and flashcard sets. Link or public workspaces the caller has only opened
+never appear in either. Past reviews and notifications keep the caller's
+history but blank the live workspace (and chapter) name once the caller can no
+longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
+and a notice's own snapshot (a removal's `workspaceName`) still shows.
 
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),

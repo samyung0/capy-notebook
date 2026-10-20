@@ -139,10 +139,6 @@ export const mockScenarioOptions = [
     id: 'note-storage-full-while-editing',
     label: 'Note: storage full while editing',
   },
-  {
-    id: 'workspace-owner-near',
-    label: 'Member: owner almost out of storage',
-  },
   { id: 'workspace-owner-full', label: "Member: owner's storage full" },
   { id: 'workspace-owner-grace', label: "Member: owner's grace period" },
   { id: 'workspace-owner-frozen', label: "Member: owner's account frozen" },
@@ -199,7 +195,6 @@ export const permanentScenarios: readonly string[] = [
   'account-storage-near-dashboard',
   'account-storage-full',
   'account-storage-full-dashboard',
-  'workspace-owner-near',
   'workspace-owner-full',
   'workspace-owner-grace',
   'workspace-owner-frozen',
@@ -447,15 +442,7 @@ export function getMockScenarioHandlers(
     case 'account-deletion-pending':
       return [
         // The account lifecycle rides on /me, as it does on the server.
-        ...(scenario.startsWith('account-grace')
-          ? [
-              ownWorkspaces({
-                storageOwnerState: 'over_quota_grace',
-                storageOwnerUsage: 'full',
-              }),
-              ...viewOnlyContent('own'),
-            ]
-          : []),
+        ...(scenario.startsWith('account-grace') ? viewOnlyContent('own') : []),
         http.get('/api/me', () =>
           HttpResponse.json({
             ...user,
@@ -478,8 +465,8 @@ export function getMockScenarioHandlers(
     case 'account-storage-full':
     case 'account-storage-full-dashboard':
     case 'note-storage-full-while-editing': {
-      // The viewer's own account on /me, and the same level as the owner of
-      // the workspaces they own.
+      // The viewer's own account on /me; at the limit what it pays for is
+      // view-only.
       const storageUsage = scenario.includes('storage-full')
         ? 'full'
         : 'near_limit';
@@ -499,17 +486,15 @@ export function getMockScenarioHandlers(
             },
           })
         ),
-        ownWorkspaces({ storageOwnerUsage: storageUsage }),
         ...(storageUsage === 'full' ? viewOnlyContent('own') : []),
       ];
     }
-    case 'workspace-owner-near':
     case 'workspace-owner-full':
     case 'workspace-owner-grace':
     case 'workspace-owner-frozen': {
-      // The viewer as an editor member of someone else's workspace.
+      // The viewer as a healthy editor member of someone else's workspace:
+      // the owner's items are view-only, what the viewer adds is its own.
       const frozen = scenario === 'workspace-owner-frozen';
-      const near = scenario === 'workspace-owner-near';
       return [
         http.get('/api/workspaces/:id', ({ params }) => {
           const workspace = workspaces.find((row) => row.id === params.id);
@@ -518,26 +503,15 @@ export function getMockScenarioHandlers(
             ...workspace,
             capabilities: {
               ...workspace.capabilities,
-              canEdit: !frozen,
-              canEditContent: near,
               canManageMembers: false,
             },
             isOwner: false,
             role: 'editor',
-            storageOwnerState: frozen
-              ? 'over_quota_frozen'
-              : scenario === 'workspace-owner-grace'
-                ? 'over_quota_grace'
-                : 'active',
-            storageOwnerUsage:
-              scenario === 'workspace-owner-near' ? 'near_limit' : 'full',
           });
         }),
         ...(frozen
           ? [...frozenMaterialHandlers(), frozenWrites('owner')]
-          : near
-            ? []
-            : viewOnlyContent('member')),
+          : viewOnlyContent('member')),
       ];
     }
     case 'import-rejected':
@@ -686,8 +660,6 @@ export function getMockScenarioHandlers(
             capabilities: { ...readOnly.capabilities, canManageMembers: false },
             isOwner: false,
             role: 'editor',
-            storageOwnerState: 'active',
-            storageOwnerUsage: 'ok',
           });
         }),
         ...frozenAccount(),
@@ -794,13 +766,7 @@ function frozenAccount(): RequestHandler[] {
     http.get('/api/workspaces/:id', ({ params }) => {
       const workspace = workspaces.find((row) => row.id === params.id);
       if (!workspace) return new HttpResponse(null, { status: 404 });
-      return HttpResponse.json({
-        ...readOnlyWorkspace(workspace),
-        ...(workspace.isOwner && {
-          storageOwnerState: 'over_quota_frozen',
-          storageOwnerUsage: 'full',
-        }),
-      });
+      return HttpResponse.json(readOnlyWorkspace(workspace));
     }),
     ...frozenMaterialHandlers(),
     frozenWrites('account'),
@@ -856,30 +822,6 @@ function frozenWrites(scope: 'account' | 'owner'): RequestHandler {
   });
 }
 
-/** The viewer's own storage status on the workspaces they own; at the limit
- * their content is view-only. */
-function ownWorkspaces(owner: {
-  storageOwnerState?: 'over_quota_grace';
-  storageOwnerUsage: 'full' | 'near_limit';
-}) {
-  return http.get('/api/workspaces/:id', ({ params }) => {
-    const workspace = workspaces.find((row) => row.id === params.id);
-    if (!workspace) return new HttpResponse(null, { status: 404 });
-    return HttpResponse.json(
-      workspace.isOwner
-        ? {
-            ...workspace,
-            ...owner,
-            capabilities: {
-              ...workspace.capabilities,
-              canEditContent: owner.storageOwnerUsage !== 'full',
-            },
-          }
-        : workspace
-    );
-  });
-}
-
 // What the server refuses with the storage code while the owner is at or over
 // its limit, with the workspace that pays for the target (null: standalone):
 // content edits, comments and PDF marks. Organizing (rename, move, reorder,
@@ -911,12 +853,12 @@ const contentWrites: [RegExp, (id: string) => string | null][] = [
   ],
 ];
 
-/** An owner at or over its storage limit (full, grace included) as the server
- * answers: what it pays for is view-only while organizing works, and creating
- * or uploading into it fails the quota. `own` is the viewer's own workspaces,
- * standalone items and clones (charged to the viewer, who then gets the
- * numbers), `member` every workspace (the viewer as a member of the owner's,
- * who gets the code alone). */
+/** An account at or over its storage limit (full, grace included) as the
+ * server answers: what it pays for is view-only under the storage strip while
+ * organizing works. `own` is the viewer (its own workspaces' and standalone
+ * items, and everything it creates, uploads or clones fails the quota with
+ * the numbers); `member` is another account paying for every workspace item
+ * the viewer opens (the code alone, and the viewer's own additions go on). */
 function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
   const limit = PLAN_LIMITS.free.storageLimitBytes;
   const detail =
@@ -941,6 +883,7 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
       return HttpResponse.json({
         ...learnerMaterial(material),
         capabilities: { ...material.capabilities, canEditContent: false },
+        storageFull: scope === 'own' ? 'self' : 'payer',
       });
     }),
     http.get('/api/quizzes/:id', ({ params }) => {
@@ -979,23 +922,16 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
           return match && { workspaceId: target(match[1] ?? match[2]) };
         })
         .find(Boolean);
+      // Whatever the viewer creates is charged to the viewer (uploader pays).
       const refused =
         (!!content && paysFor(content.workspaceId)) ||
-        (into !== undefined && paysFor(into)) ||
-        (embedded !== undefined && paysFor(find(embedded)?.workspaceId)) ||
-        (standalone &&
-          paysFor(
-            (
-              (await request
-                .clone()
-                .json()
-                .catch(() => null)) as { workspaceId?: string } | null
-            )?.workspaceId
-          )) ||
         (scope === 'own' &&
-          /^POST \/api\/(workspaces|files|materials)\/[^/]+\/clone$/.test(
-            route
-          ));
+          (into !== undefined ||
+            embedded !== undefined ||
+            standalone ||
+            /^POST \/api\/(workspaces|files|materials)\/[^/]+\/clone$/.test(
+              route
+            )));
       if (!refused) return;
       return HttpResponse.json(
         humaCodedError(

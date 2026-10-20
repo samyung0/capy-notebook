@@ -14,6 +14,7 @@ import {
   localQuizAttempts,
   saveLocalQuizAttempt,
 } from '@/lib/localDb';
+import { redeemShareToken } from '@/lib/shareRedeem';
 import { signedIn, useSignedIn } from './session';
 
 function Frame({
@@ -57,7 +58,7 @@ export function SharedQuiz({
       value={(assetId) => anonymousAssetUrl(token, assetId)}
     >
       <AttemptBody
-        actions={<PublicActionMenu id={quiz.id} kind="quiz" />}
+        actions={<PublicActionMenu kind="quiz" token={token} />}
         byline={
           <PublicByline author={quiz.author} updatedAt={quiz.updatedAt} />
         }
@@ -88,6 +89,8 @@ export function SharedQuiz({
         frame={Frame}
         grade={async (answers) => {
           if (await signedIn()) {
+            // A signed-in visitor presents the link once, then reads by id.
+            await redeemShareToken(token);
             const attempt = await api.post<AttemptDetail>(
               `/quizzes/${quiz.id}/attempts`,
               { answers }

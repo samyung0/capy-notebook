@@ -907,7 +907,13 @@ func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewPara
 		args = append(args, p.Workspaces)
 		where = append(where, "rs.workspace_id = ANY($"+strconv.Itoa(len(args))+")")
 	}
-	q := `WITH s AS (SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind, COALESCE(c.name, '') AS chapter,
+	// The caller's history stays, but names it can no longer reach are blank
+	// (Sam 2026-10-19), as on the Files page.
+	lost := lostAccessSQL("rs.workspace_id", "$1")
+	q := `WITH s AS (SELECT rs.id, rs.workspace_id,
+			CASE WHEN ` + lost + ` THEN '' ELSE w.name END AS name,
+			CASE WHEN ` + lost + ` THEN '' ELSE w.icon_id END AS icon_id,
+			rs.group_kind, CASE WHEN ` + lost + ` THEN '' ELSE COALESCE(c.name, '') END AS chapter,
 			rs.mode, rs.chapter_id, rs.started_at, rs.finished_at, rs.last_answer_at, jsonb_array_length(rs.items) AS served,
 			(SELECT count(*) FROM review_answers WHERE session_id=rs.id) AS answered,
 			(SELECT sum(correct) FROM review_answers WHERE session_id=rs.id AND kind='question') AS qc,

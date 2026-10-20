@@ -1,6 +1,8 @@
 package obs
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -38,7 +40,7 @@ func AccessLog(next http.Handler) http.Handler {
 			ctx := r.Context()
 			attrs := []any{
 				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
+				slog.String("path", LogPath(r.URL.Path)),
 				slog.Int("status", ww.Status()),
 				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 				slog.Int("bytes", ww.BytesWritten()),
@@ -60,6 +62,35 @@ func AccessLog(next http.Handler) http.Handler {
 
 		next.ServeHTTP(ww, r)
 	})
+}
+
+// tokenSegments names, per path prefix, the segment index (in the path split
+// on "/") that carries a bearer token: a share token ({id}.{signature}) or an
+// invite token. Either opens what it names, so the log keeps only a hash.
+var tokenSegments = []struct {
+	prefix string
+	index  int
+}{
+	{"/api/public/", 4},            // /api/public/{kind}/{token}/...
+	{"/api/workspace-invites/", 3}, // /api/workspace-invites/{token}/accept
+}
+
+// LogPath is the request path as logs and telemetry record it: token
+// segments become "h_" plus 12 hex of their SHA-256, stable enough to
+// correlate one link's requests and useless to open it.
+func LogPath(path string) string {
+	for _, t := range tokenSegments {
+		if !strings.HasPrefix(path, t.prefix) {
+			continue
+		}
+		parts := strings.Split(path, "/")
+		if len(parts) > t.index && parts[t.index] != "" {
+			sum := sha256.Sum256([]byte(parts[t.index]))
+			parts[t.index] = "h_" + hex.EncodeToString(sum[:6])
+		}
+		return strings.Join(parts, "/")
+	}
+	return path
 }
 
 // ClientIP resolves the real client address behind Cloudflare.

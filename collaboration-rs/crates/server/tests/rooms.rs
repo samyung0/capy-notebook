@@ -728,6 +728,194 @@ async fn a_suspended_owners_note_is_not_found_for_its_readers() {
     }
 }
 
+/// Security regression (uploader-pays review M4, N4): an agent edit charges
+/// the note's payer (its creator), so it stops once only the payer is being
+/// deleted, the workspace owner and the actor staying healthy. Fails if the
+/// edit lands or records an inverse on the deleting payer.
+#[tokio::test]
+async fn an_agent_edit_stops_for_a_deleting_payer() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let client = db(&env).await;
+    let (owner, payer) = (user(&env).await, user(&env).await);
+    let workspace = format!("ws_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name) VALUES ($1,$2,'IT')",
+            &[&workspace, &owner],
+        )
+        .await
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')",
+            &[&workspace, &payer],
+        )
+        .await
+        .expect("member");
+    let material = format!("m_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": "hello world" }] }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'IT', $4)",
+            &[&material, &payer, &workspace, &content],
+        )
+        .await
+        .expect("material");
+    let room = format!("material:{material}:schema:1");
+    let edit = |id: &str, expected: &str, text: &str| {
+        serde_json::json!({
+            "actorUserId": owner,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": expected, "text": text }],
+            "operation": { "id": format!("{id}_{material}"), "requestHash": id, "toolVersion": 1 },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        })
+    };
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit("op1", "world", "there"),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        charged_inverses(&client, &material, &payer).await,
+        1,
+        "the inverse is charged to the payer"
+    );
+    // The deletion request holds the payer's row while the edit arrives: the
+    // edit waits on that row (lock_boundary locks the payer), then sees the
+    // payer locked. Without the lock it would land and charge the payer while
+    // the deletion commits.
+    let deleting = db(&env).await;
+    deleting.batch_execute("BEGIN").await.expect("begin");
+    deleting
+        .execute(
+            "UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1",
+            &[&payer],
+        )
+        .await
+        .expect("deletion");
+    let late = edit("op2", "there", "again");
+    let port = server.port;
+    let edited =
+        tokio::spawn(async move { internal(port, "/internal/documents/edit", &late).await });
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    deleting.batch_execute("COMMIT").await.expect("commit");
+    let (status, refusal) = edited.await.expect("edit");
+    assert_ne!(status, 200, "{refusal}");
+    assert_eq!(
+        charged_inverses(&client, &material, &payer).await,
+        1,
+        "nothing more is charged"
+    );
+}
+
+/// `viewer` presented the link of a link-shared standalone material once
+/// (POST /api/share/redeem): a link reaches a signed-in nonmember only then
+/// (Sam 2026-10-18).
+async fn redeem(env: &Env, material: &str, viewer: &str) {
+    db(env)
+        .await
+        .execute(
+            "INSERT INTO material_link_grants (material_id, user_id) VALUES ($1, $2)",
+            &[&material, &viewer],
+        )
+        .await
+        .expect("link grant");
+}
+
+/// Security regression (uploader-pays review N4, B5): a locked owner, payer or
+/// actor refuses an agent edit before it waits on the material row, which a
+/// purge of that account holds while it waits on the account's row. With the
+/// material row held elsewhere, the refusal still answers at once. Fails if the
+/// check moves after the material lock (the edit would wait for the holder).
+#[tokio::test]
+async fn a_locked_account_refuses_before_the_material_lock() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let client = db(&env).await;
+    for locked in ["payer", "actor"] {
+        let (owner, payer, editor) = (user(&env).await, user(&env).await, user(&env).await);
+        let workspace = format!("ws_it_{}", uuid_like());
+        client
+            .execute(
+                "INSERT INTO workspaces (id,user_id,name) VALUES ($1,$2,'IT')",
+                &[&workspace, &owner],
+            )
+            .await
+            .expect("workspace");
+        client
+            .execute(
+                "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor'),($1,$3,'editor')",
+                &[&workspace, &payer, &editor],
+            )
+            .await
+            .expect("members");
+        let material = format!("m_it_{}", uuid_like());
+        let content = serde_json::json!({
+            "schemaVersion": 1,
+            "value": [{ "type": "p", "id": "b1", "children": [{ "text": "hello world" }] }],
+        });
+        client
+            .execute(
+                "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'IT', $4)",
+                &[&material, &payer, &workspace, &content],
+            )
+            .await
+            .expect("material");
+        let account = if locked == "payer" { &payer } else { &editor };
+        client
+            .execute(
+                "UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1",
+                &[account],
+            )
+            .await
+            .expect("deletion");
+        let holder = db(&env).await;
+        holder.batch_execute("BEGIN").await.expect("begin");
+        holder
+            .execute(
+                "SELECT 1 FROM materials WHERE id=$1 FOR UPDATE",
+                &[&material],
+            )
+            .await
+            .expect("hold the material");
+        let edit = serde_json::json!({
+            "actorUserId": editor,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": format!("op_{material}"), "requestHash": "h", "toolVersion": 1 },
+            "room": format!("material:{material}:schema:1"),
+            "target": { "id": material, "kind": "material" },
+        });
+        let answered = tokio::time::timeout(
+            Duration::from_secs(5),
+            internal(server.port, "/internal/documents/edit", &edit),
+        )
+        .await;
+        holder.batch_execute("ROLLBACK").await.expect("release");
+        let (status, refusal) =
+            answered.unwrap_or_else(|_| panic!("{locked}: the edit waited on the material"));
+        assert_ne!(status, 200, "{locked}: {refusal}");
+    }
+}
+
+/// Agent edit inverses on `material` charged to `payer`.
+async fn charged_inverses(client: &tokio_postgres::Client, material: &str, payer: &str) -> i64 {
+    client
+        .query_one(
+            "SELECT count(*) FROM agent_edit_inverses WHERE resource_id=$1 AND owner_user_id=$2",
+            &[&material, &payer],
+        )
+        .await
+        .expect("inverses")
+        .get(0)
+}
+
 /// Security regression (cutover-reset REVIEW1 L1): a material without a Yjs
 /// row lives at room schema 1 + trash_restores. A token naming an older room
 /// (minted before a trash and restore, or before the cutover reset raised the
@@ -3139,6 +3327,7 @@ async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
         .expect("link share");
     let set = flashcard_set(&env, &owner, Some(&note), &[("c1", "Cell", "")]).await;
     let viewer = user(&env).await;
+    redeem(&env, &note, &viewer).await;
     let set_room = format!("material:{set}:schema:1");
 
     let mut refused = Client::open(server.port).await;
@@ -3564,6 +3753,7 @@ async fn neither_keys_nor_typing_order_reach_a_reader() {
     let owner = user(&env).await;
     let viewer = user(&env).await;
     let quiz = quiz_material(&env, &owner, "link").await;
+    redeem(&env, &quiz, &viewer).await;
     let content_room = format!("material:{quiz}:schema:1");
     let keys_room = format!("keys:{quiz}:schema:1");
     for access in ["read", "write"] {
@@ -3850,6 +4040,7 @@ async fn a_viewer_watches_a_note_live_and_its_writes_never_land() {
         .await
         .expect("link share");
     let viewer = user(&env).await;
+    redeem(&env, &note, &viewer).await;
     let room = format!("material:{note}:schema:1");
 
     let mut refused = Client::open(server.port).await;

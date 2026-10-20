@@ -94,21 +94,24 @@ func validatePDFAnnotation(in PDFAnnotationBody) error {
 }
 
 // annotationLock admits any reader of the file. Saving or deleting a mark
-// (write) is a content edit, refused when the actor or the storage owner is
-// frozen or the owner is at its storage limit.
+// (write) is a content edit, refused when the actor or the file's payer is
+// frozen or the payer is at its storage limit.
 func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file string, write bool) (string, error) {
-	_, owner, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false)
-	if err != nil {
+	if _, _, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false); err != nil {
 		return "", err
 	}
 	if write {
-		if err := s.assertContentEditableTx(ctx, tx, owner, actor); err != nil {
+		payer, err := filePayer(ctx, tx, file)
+		if err != nil {
+			return "", err
+		}
+		if err := s.assertContentEditableTx(ctx, tx, payer, actor); err != nil {
 			return "", err
 		}
 	}
 	var kind string
 	var revision int64
-	if err = tx.QueryRow(ctx, `SELECT kind,revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, file).Scan(&kind, &revision); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT kind,revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, file).Scan(&kind, &revision); err != nil {
 		return "", err
 	}
 	if kind != "pdf" {

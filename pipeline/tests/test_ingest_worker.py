@@ -144,6 +144,9 @@ def test_heartbeat_closes_a_skipped_lifecycle_claim(source, accounts, expected):
                 self.result = ("ingest", payload)
             elif "FROM workspaces WHERE id=" in statement:
                 self.result = ("u_owner",)
+            elif statement.startswith("SELECT user_id FROM files"):
+                # The payer read: the source's uploader, when it exists.
+                self.result = source and (source[1],)
             elif "FROM files WHERE id=" in statement:
                 self.result = source
             elif "FROM users" in statement:

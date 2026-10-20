@@ -644,8 +644,8 @@ document authority, which writes the merged credits with the content. A quiz a
 note embeds is such a quiz: the credits join that quiz's own record and its
 embed shows them, never the note's record or another embed's. The
 caller needs the bank's read access and edit access to the workspace (viewers
-get 404); frozen accounts and storage owners at their limit are refused like
-other content writes.
+get 404); frozen accounts and a quiz whose payer (its creator) is at its
+limit are refused like other content writes.
 
 Published questions are retracted, never deleted, so progress ids stay valid.
 Bank migration `0003_retracted.sql` adds `questions.retracted_at`, which only

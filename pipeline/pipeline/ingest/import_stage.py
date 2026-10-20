@@ -221,7 +221,14 @@ def _run(job: dict) -> None:
     max_bytes = int(acquired.get("maxBytes") or 0)
     if state != "acquired" or not token or not object_path or max_bytes <= 0:
         raise ImportRetry("acquire_invalid", "acquire response is incomplete")
+    # Held first, so a refusal below reports its failure under the lease.
     job[_TOKEN_KEY] = token
+    # The worker holds full-bucket credentials, so it writes only where an
+    # upload may land: the incoming/ prefix (one-day lifecycle), no traversal.
+    if not object_path.startswith("incoming/") or ".." in object_path.split("/"):
+        raise ImportFailure(
+            "invalid_payload", "import object path is outside incoming/"
+        )
 
     if acquired.get("resumeComplete"):
         actual = int(acquired.get("declaredSize") or 0)

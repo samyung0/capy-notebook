@@ -10,6 +10,7 @@ import type { MaterialEmbedCredits } from './materialEmbedCredits.ts';
 import type { MaterialKind } from './materialKind.ts';
 import type { Privacy } from './privacy.ts';
 import type { Provenance } from './provenance.ts';
+import type { StorageFullBy } from './storageFullBy.ts';
 import type { UserColor } from './userColor.ts';
 import type { WorkspaceRole } from './workspaceRole.ts';
 
@@ -40,6 +41,7 @@ export interface Material {
   scopeChapters: string[];
   scopeFileNames: string[];
   sharePath?: string;
+  storageFull?: StorageFullBy;
   title: string;
   updatedAt: string;
   workspaceId: string;

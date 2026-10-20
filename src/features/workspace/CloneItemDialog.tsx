@@ -67,10 +67,8 @@ export function copyName(name: string, keepExtension = false) {
 
 /** A refused clone as its dialog shows it. */
 export function cloneErrorMessage(error: unknown) {
+  // The cloner pays (Sam 2026-10-18), so a quota refusal is its own.
   if (isStorageQuotaError(error)) {
-    // The numbers come only for the account charged: without them the
-    // destination's owner pays, and it is their storage that is full.
-    if (!error.body?.ownerUserId) return m.clone_owner_quota_body();
     trackQuotaBlocked(error, 'clone');
     return m.clone_quota_body();
   }

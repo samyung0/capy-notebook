@@ -186,7 +186,7 @@ func reject(w http.ResponseWriter, r *http.Request, retry time.Duration, code st
 		seconds = 1
 	}
 	obs.Log(r.Context()).Warn("rate limited",
-		"path", r.URL.Path,
+		"path", obs.LogPath(r.URL.Path),
 		"code", code,
 		"retry_after_s", seconds,
 	)

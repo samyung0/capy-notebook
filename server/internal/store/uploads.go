@@ -118,13 +118,11 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		return UploadSession{}, err
 	}
 	defer tx.Rollback(ctx)
-	ownerID, err := s.lockWorkspaceEditorMutationTx(
-		ctx, tx, in.WorkspaceID, in.CreatedBy,
-	)
-	if err != nil {
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, in.WorkspaceID, in.CreatedBy); err != nil {
 		return UploadSession{}, err
 	}
-	if err := s.reserveStorageTx(ctx, tx, ownerID, in.DeclaredSize); err != nil {
+	// The uploader pays (Sam 2026-10-18).
+	if err := s.reserveStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
 		return UploadSession{}, err
 	}
 	if err := s.gateWorkspaceFilesTx(ctx, tx, in.WorkspaceID, 1); err != nil {
@@ -135,7 +133,7 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		 object_path, final_path, name, kind, content_type, declared_size, reserved_size, parse_mode,
 		 expires_at, batch_id)
 		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
-		in.ID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
+		in.ID, in.WorkspaceID, in.CreatedBy, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
 		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
 		in.ExpiresAt, nullStr(in.BatchID))
@@ -176,46 +174,32 @@ func (s *Store) GetUploadSession(ctx context.Context, id string) (UploadSession,
 // B2 promotion happens before this transaction and is safe to retry.
 // sourceSHA256 is the stored object's SHA-256 as the gateway hashed it ("" for
 // a file without source sessions); a replayed completion ignores it.
-func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag, sourceSHA256, parser string) (File, error) {
+//
+// Only the account that reserved the upload completes it (Sam 2026-10-18);
+// anyone else gets ErrNotFound.
+func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, sourceETag, sourceSHA256, parser string) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, err
 	}
 	defer tx.Rollback(ctx)
 
-	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id`+uploadSessionFrom+`id=$1`, uploadID).
-		Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return File{}, ErrNotFound
-		}
-		return File{}, err
-	}
-	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
-	if err != nil {
-		return File{}, err
-	}
+	var workspaceID, payerID string
 	var createdBy *string
-	var storedOwnerID string
-	if err := tx.QueryRow(ctx, `SELECT user_id, created_by`+uploadSessionFrom+`id=$1`, uploadID).
-		Scan(&storedOwnerID, &createdBy); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id, created_by`+uploadSessionFrom+`id=$1`, uploadID).
+		Scan(&workspaceID, &payerID, &createdBy); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
 		return File{}, err
 	}
-	if storedOwnerID != ownerID {
-		return File{}, ErrUploadState
+	if actorID == "" || createdBy == nil || *createdBy != actorID {
+		return File{}, ErrNotFound
 	}
-	actorID := ""
-	if createdBy != nil {
-		actorID = *createdBy
-	}
-	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
-	if err != nil {
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID); err != nil {
 		return File{}, err
 	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 		return File{}, err
 	}
 

@@ -402,11 +402,12 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
 const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function trashItem(
-  base: Omit<TrashItem, 'episodeId' | 'trashedAt' | 'purgeAfter'>
+  base: Omit<TrashItem, 'canRestore' | 'episodeId' | 'trashedAt' | 'purgeAfter'>
 ): TrashItem {
   const now = Date.now();
   return {
     ...base,
+    canRestore: true,
     episodeId: uid('trash'),
     purgeAfter: new Date(now + TRASH_RETENTION_MS).toISOString(),
     trashedAt: new Date(now).toISOString(),
@@ -1251,8 +1252,6 @@ export const handlers = [
       role: 'owner',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, id),
       shareRole: 'viewer',
-      storageOwnerState: db.accountStatus.state,
-      storageOwnerUsage: db.accountStatus.storageUsage,
       tags: resolveTags('workspace', body.tags),
     };
     db.workspaces.unshift(ws);
@@ -1525,6 +1524,23 @@ export const handlers = [
     const i = db.workspaces.findIndex((w) => w.id === params.id);
     if (i >= 0) db.workspaces.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
+  }),
+  // A share link presented once (the server remembers the grant).
+  http.post('/api/share/redeem', async ({ request }) => {
+    const { token } = (await request.json()) as { token: string };
+    const id = token.split('.')[0];
+    if (db.workspaces.some((row) => row.id === id))
+      return HttpResponse.json({ id, kind: 'workspace' });
+    const material = db.materials.find(
+      (row) => row.id === id && !row.workspaceId
+    );
+    return material
+      ? HttpResponse.json({
+          id,
+          kind: 'material',
+          materialKind: material.kind,
+        })
+      : new HttpResponse(null, { status: 404 });
   }),
   http.post('/api/workspaces/:id/clone', async ({ params, request }) => {
     const body = (await request.json()) as CreateWorkspaceReq;

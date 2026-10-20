@@ -305,6 +305,7 @@ function ActiveFiles({
                   <FileItem
                     file={file}
                     key={file.id}
+                    onDelete={setDeleteTargets}
                     selected={selection.isSelected(file)}
                     view={view}
                     workspace={workspaces.find(
@@ -343,34 +344,57 @@ function ActiveFiles({
  * whose selection changed. */
 const FileItem = memo(function FileItem({
   file,
+  onDelete,
   selected,
   view,
   workspace,
 }: {
   file: SourceFile;
+  /** A file in a workspace the viewer lost access to can only be deleted. */
+  onDelete: (files: SourceFile[]) => void;
   selected: boolean;
   view: ListView;
   workspace?: Workspace;
 }) {
+  const busy = !!useContext(ItemPick)?.busy;
   return (
     <ItemCard
       actions={
-        <ContentActions
-          canClone={file.status === 'ready' && !!workspace?.canClone}
-          chapters={[]}
-          content={toFileActionTarget(file)}
-          display="menu"
-          menuAlign="end"
-          menuTriggerIcon="moreHorizontal"
-          renameFieldLabel={m.files_file_name()}
-          renameTitle={m.files_rename()}
-          showMove={false}
-          workspaceId={file.workspaceId}
-        />
+        file.lostAccess ? (
+          <Menu
+            items={[
+              {
+                danger: true,
+                disabled: busy,
+                icon: 'trash',
+                label: m.action_delete(),
+                onClick: () => onDelete([file]),
+              },
+            ]}
+            triggerIcon="moreHorizontal"
+          />
+        ) : (
+          <ContentActions
+            canClone={file.status === 'ready' && !!workspace?.canClone}
+            chapters={[]}
+            content={toFileActionTarget(file)}
+            display="menu"
+            menuAlign="end"
+            menuTriggerIcon="moreHorizontal"
+            renameFieldLabel={m.files_file_name()}
+            renameTitle={m.files_rename()}
+            showMove={false}
+            workspaceId={file.workspaceId}
+          />
+        )
       }
       details={formatFileSize(file.sizeBytes)}
       icon={fileIconName(file)}
-      link={{ params: { fileId: file.id }, to: '/files/$fileId' }}
+      link={
+        file.lostAccess
+          ? undefined
+          : { params: { fileId: file.id }, to: '/files/$fileId' }
+      }
       meta={relativeTime(file.addedAt)}
       pickKey={file.id}
       selected={selected}
@@ -381,8 +405,9 @@ const FileItem = memo(function FileItem({
       }}
       title={file.name}
       view={view}
-      workspace={workspace?.name ?? ''}
+      workspace={workspace?.name ?? file.workspaceName ?? ''}
       workspaceIconId={workspace?.iconId}
+      workspaceLost={file.lostAccess}
     />
   );
 });
@@ -409,12 +434,17 @@ const TrashCard = memo(function TrashCard({
       actions={
         <Menu
           items={[
-            {
-              disabled: busy,
-              icon: 'undo',
-              label: m.trash_restore(),
-              onClick: () => onRestore(item),
-            },
+            // Restoring needs edit access to its workspace.
+            ...(item.canRestore
+              ? [
+                  {
+                    disabled: busy,
+                    icon: 'undo' as const,
+                    label: m.trash_restore(),
+                    onClick: () => onRestore(item),
+                  },
+                ]
+              : []),
             {
               danger: true,
               disabled: busy,
@@ -441,6 +471,7 @@ const TrashCard = memo(function TrashCard({
       view={view}
       workspace={item.workspaceName}
       workspaceIconId={workspaceIconId}
+      workspaceLost={item.lostAccess}
     />
   );
 });
@@ -543,7 +574,11 @@ function TrashTab({
               icon="undo"
               label={m.trash_restore()}
               onClick={() =>
-                void selection.run([...selection.selected], restore)
+                void selection.run(
+                  // Restoring needs edit access to its workspace.
+                  selection.selected.filter((item) => item.canRestore),
+                  restore
+                )
               }
             />
             <SelectionAction

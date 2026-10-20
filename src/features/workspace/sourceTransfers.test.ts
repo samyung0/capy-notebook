@@ -41,8 +41,10 @@ describe('source transfers', () => {
       ({ file }: { batchId: string; batchTotal: number; file: File }) => {
         if (file.name === 'full.pdf') {
           return Promise.reject(
+            // The uploader pays, so the refusal carries its own numbers.
             new ApiError(413, 'Payload Too Large', '', {
               code: 'storage_quota_exceeded',
+              ownerUserId: 'u_me',
             })
           );
         }
