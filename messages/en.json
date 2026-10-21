@@ -1424,7 +1424,7 @@
   "workspace_change_failed": "Couldn't process",
   "workspace_change_process": "Process",
   "workspace_change_process_all": "Process all",
-  "workspace_pending_notes": "Notes waiting to be indexed",
+  "workspace_note_change_auto": "Indexes automatically once enough changes build up, or after 10 minutes.",
   "workspace_auto_process": "Auto process edits",
   "pdf_highlight": "Highlight",
   "pdf_rectangle": "Rectangle",

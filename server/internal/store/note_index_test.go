@@ -130,7 +130,7 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 // Every way a note index job ends releases the note through the trigger on
 // jobs (migrations 0082, 0083 and 0098). A job that failed with no edit since
 // its admission leaves the note due, retried at most twice: the third such
-// failure parks it (dirty, index_error, counted in pendingNotes) until its
+// failure parks it (dirty, index_error, listed as failed) until its
 // next edit (Epo 2026-10-20). An edit made while the job ran keeps the note
 // due, whether the job failed or finished, so it is admitted again.
 func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
@@ -223,8 +223,12 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stats.PendingNotes != 1 {
-				t.Fatalf("pendingNotes = %d, want the released note counted", stats.PendingNotes)
+			want := "waiting"
+			if tc.parked {
+				want = "failed"
+			}
+			if len(stats.NoteChanges) != 1 || stats.NoteChanges[0].State != want {
+				t.Fatalf("noteChanges = %+v, want the released note %s", stats.NoteChanges, want)
 			}
 			if tc.parked {
 				if _, err := s.RequestMaterialIndex(ctx, note.ID); !errors.Is(err, ErrConflict) {
@@ -241,6 +245,133 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 				t.Fatalf("a due note is admitted again: job=%s err=%v", next, err)
 			}
 		})
+	}
+}
+
+// The Indexing tab lists notes whose index is behind their content with their
+// state, and the owner's Process queues a note's index job at once, below the
+// token threshold, with auto process off, and for a parked note (Epo
+// 2026-10-21). Like a file's Process it is the owner's alone.
+func TestNoteChangesListAndProcessNow(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	ownerID := newBlobTestUser(t, s, "u_note_process")
+	editorID := newBlobTestUser(t, s, "u_note_process_editor")
+	viewerID := newBlobTestUser(t, s, "u_note_process_viewer")
+	strangerID := newBlobTestUser(t, s, "u_note_process_stranger")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Process now", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
+		VALUES ($1,$2,'editor'),($1,$3,'viewer')`, ws.ID, editorID, viewerID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET auto_process=false WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Process me",
+		Content: materialTestContent(t, "# Heading\n\nbody"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := func(want string) {
+		t.Helper()
+		stats, err := s.WorkspaceStats(ctx, ownerID, ws.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want == "" {
+			if len(stats.NoteChanges) != 0 {
+				t.Fatalf("noteChanges = %+v, want none", stats.NoteChanges)
+			}
+			return
+		}
+		if len(stats.NoteChanges) != 1 || stats.NoteChanges[0].MaterialID != note.ID ||
+			stats.NoteChanges[0].Title != "Process me" || stats.NoteChanges[0].State != want {
+			t.Fatalf("noteChanges = %+v, want the note %s", stats.NoteChanges, want)
+		}
+	}
+	listed("waiting")
+
+	for _, tc := range []struct {
+		actor string
+		want  error
+	}{{strangerID, ErrNotFound}, {viewerID, ErrForbidden}, {editorID, ErrForbidden}} {
+		if _, err := s.ProcessNoteChanges(ctx, tc.actor, note.ID); !errors.Is(err, tc.want) {
+			t.Fatalf("Process by %s = %v, want %v", tc.actor, err, tc.want)
+		}
+	}
+	standalone, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: ownerID, Kind: "note", Title: "Standalone", Content: materialTestContent(t, "body"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ProcessNoteChanges(ctx, ownerID, standalone.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a standalone note is never indexed, got %v", err)
+	}
+
+	// Fresh, small and auto process off: the scheduler's path refuses it.
+	if _, err := s.RequestMaterialIndex(ctx, note.ID); !errors.Is(err, ErrConflict) {
+		t.Fatalf("automatic admission = %v, want not due", err)
+	}
+	jobID, err := s.ProcessNoteChanges(ctx, ownerID, note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var automatic bool
+	var reservation string
+	if err := s.pool.QueryRow(ctx, `SELECT (payload->>'automatic')::boolean, payload->>'reservationId'
+		FROM jobs WHERE id=$1 AND type='ingest' AND payload->>'materialId'=$2`, jobID, note.ID).
+		Scan(&automatic, &reservation); err != nil {
+		t.Fatal(err)
+	}
+	if automatic || reservation == "" {
+		t.Fatalf("job automatic=%v reservation=%q, want a reserved manual job", automatic, reservation)
+	}
+	listed("queued")
+	if _, err := s.ProcessNoteChanges(ctx, ownerID, note.ID); !errors.Is(err, ErrProcessingStarted) {
+		t.Fatalf("a queued note = %v, want processing_started", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='running', attempts=1 WHERE id=$1`, jobID); err != nil {
+		t.Fatal(err)
+	}
+	listed("processing")
+	if _, err := s.pool.Exec(ctx, `UPDATE jobs SET status='done' WHERE id=$1`, jobID); err != nil {
+		t.Fatal(err)
+	}
+	listed("")
+	if _, err := s.ProcessNoteChanges(ctx, ownerID, note.ID); !errors.Is(err, ErrNothingToProcess) {
+		t.Fatalf("an indexed note = %v, want nothing_to_process", err)
+	}
+
+	// A parked note waits for its next edit, or for Process.
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET index_dirty_at=now(), index_error='boom', index_failures=3 WHERE id=$1`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	listed("failed")
+	if _, err := s.ProcessNoteChanges(ctx, ownerID, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	listed("queued")
+
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET index_job_id=NULL, index_dirty_at=now() WHERE id=$1`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.TrashMaterial(ctx, ownerID, note.ID, "", AgentOperation{}); err != nil {
+		t.Fatal(err)
+	}
+	listed("")
+	if _, err := s.ProcessNoteChanges(ctx, ownerID, note.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a trashed note = %v, want not found", err)
 	}
 }
 

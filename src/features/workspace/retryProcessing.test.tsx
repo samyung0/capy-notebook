@@ -115,9 +115,9 @@ const surfaces = {
           {
             fileChanges: [],
             indexed: 1,
+            noteChanges: [],
             notIndexable: 0,
             notIndexed: 0,
-            pendingNotes: 0,
           } as unknown as WorkspaceStats
         }
         workspace={{ autoProcess: true, id: WS, isOwner: true } as Workspace}

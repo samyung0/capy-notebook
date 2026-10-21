@@ -333,13 +333,75 @@ func (s *Store) RequestMaterialIndex(ctx context.Context, materialID string) (st
 			return "", ErrConflict
 		}
 	}
+	jobID, err := s.queueNoteIndexTx(ctx, tx, ownerID, workspaceID, materialID, revision, true)
+	if err != nil {
+		return "", err
+	}
+	return jobID, tx.Commit(ctx)
+}
+
+// ProcessNoteChanges is a note's Process in the Indexing tab: it queues the
+// note's index job now, whatever its threshold or the auto process switch
+// (Epo 2026-10-21), also for a note parked after failed jobs. Owner-only and
+// paid by the owner, like a file's Process. ErrProcessingStarted means a job
+// is already queued or running; ErrNothingToProcess, that the index is current.
+func (s *Store) ProcessNoteChanges(ctx context.Context, actor, materialID string) (string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM materials
+		WHERE id=$1 AND kind='note' AND workspace_id IS NOT NULL AND trashed_at IS NULL`, materialID).
+		Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	// Workspace, accounts, then material, as RequestMaterialIndex.
+	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actor)
+	if err != nil {
+		return "", err
+	}
+	if actor != ownerID {
+		return "", ErrForbidden
+	}
+	var dirty, queued bool
+	var revision int64
+	if err := tx.QueryRow(ctx, `SELECT index_dirty_at IS NOT NULL, index_job_id IS NOT NULL, revision
+		FROM materials WHERE id=$1 AND workspace_id=$2 AND kind='note' AND trashed_at IS NULL FOR UPDATE`,
+		materialID, workspaceID).Scan(&dirty, &queued, &revision); err != nil {
+		if isNoRows(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if queued {
+		return "", ErrProcessingStarted
+	}
+	if !dirty {
+		return "", ErrNothingToProcess
+	}
+	jobID, err := s.queueNoteIndexTx(ctx, tx, ownerID, workspaceID, materialID, revision, false)
+	if err != nil {
+		return "", err
+	}
+	return jobID, tx.Commit(ctx)
+}
+
+// queueNoteIndexTx reserves ingest credits on the workspace owner and queues
+// the note's index job. Admission clears the dirty mark and any parked
+// error; a failed job sets them again (release_note_index_job).
+func (s *Store) queueNoteIndexTx(ctx context.Context, tx pgx.Tx, ownerID, workspaceID, materialID string, revision int64, automatic bool) (string, error) {
 	reservation, err := s.beginIngestSpendTx(ctx, tx, ownerID, workspaceID)
 	if err != nil {
 		return "", err
 	}
 	payload, err := s.ingestJobPayload(ctx, tx, ownerID, map[string]any{
 		"materialId": materialID, "workspaceId": workspaceID, "revision": revision,
-		"reservationId": reservation, "automatic": true,
+		"reservationId": reservation, "automatic": automatic,
 	})
 	if err != nil {
 		return "", err
@@ -348,9 +410,9 @@ func (s *Store) RequestMaterialIndex(ctx context.Context, materialID string) (st
 	if _, err := tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,'ingest',$2)`, jobID, payload); err != nil {
 		return "", err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE materials SET index_job_id=$2, index_dirty_at=NULL WHERE id=$1`,
+	if _, err := tx.Exec(ctx, `UPDATE materials SET index_job_id=$2, index_dirty_at=NULL, index_error=NULL WHERE id=$1`,
 		materialID, jobID); err != nil {
 		return "", err
 	}
-	return jobID, tx.Commit(ctx)
+	return jobID, nil
 }

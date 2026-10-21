@@ -4043,9 +4043,27 @@ refuse answers 422 `material_content_unreadable`, which parks it. A due note get
 ingest credits reserved on the workspace owner and one `ingest` job carrying
 `materialId`, recorded in `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
-`pendingNotes` in workspace settings until the note changes again; transient
-failures retry on the next tick. Notes have no Process: with `auto_process`
-off, dirty notes wait until it is on again.
+failed in the settings Indexing tab until the note changes again; transient
+failures retry on the next tick. With `auto_process` off, dirty notes wait
+until it is on again, or until the owner's Process.
+
+The workspace stats (`noteChanges`) list every workspace note whose index is
+behind its content, as the Indexing tab shows them beside the file changes
+(Epo 2026-10-21): waiting (dirty), queued (its `ingest` job not yet claimed:
+pending with no attempts), processing, or failed (parked with `index_error`).
+Embedded quizzes and flashcard sets index inside their note and chapter-level
+ones are not indexed, so only notes are listed. `POST
+/api/materials/{id}/process-changes` (`ProcessNoteChanges`) is a note's
+Process: it queues the index job at once, below the token threshold, before
+the idle wait, with `auto_process` off, and for a parked note, through the same
+admission as the scheduler (ingest credits reserved on the workspace owner;
+the payload's `automatic` is false). It is the owner's alone, like a file's
+Process: a non-member gets 404, any other member 403. A trashed or standalone
+note is 404, a note with a job 409 `processing_started`, and a note whose
+index is current 409 `nothing_to_process`. A queued note job has no Cancel.
+Admission clears a parked `index_error`; a failed manual job counts in
+`index_failures` like any other, so a parked note that fails again parks
+again.
 
 When the job ends, whatever ended it (the worker, the lease reaper,
 `cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
@@ -4059,8 +4077,8 @@ since its admission counts one in `index_failures` and leaves the note dirty
 with no error, so the scheduler admits it again: a note is retried at most
 twice (Epo 2026-10-20). The third such failure parks it: it stays dirty with
 `index_error` set (the job's error, or `index job failed` when it has none)
-and counts in `pendingNotes`, and nothing admits it again until its next edit
-clears the error and the count. The one wait inside a job
+and is listed as failed in the Indexing tab, and nothing admits it again
+until its next edit clears the error, or the owner's Process. The one wait inside a job
 is a busy embedding provider: like a file's job, a note job that finds it busy
 re-pends without spending an attempt (once, `PROVIDER_WAITS_MAX`, decided
 2026-10-15 in place of the five waits of 2026-10-14; Retry-After or 30 s) and
@@ -4221,8 +4239,8 @@ The workspace owner funds automatic refresh: provider calls only, since the
 parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
 gates every automatic Office reparse, text reindex and note index; off, file
-edits wait for the owner's Process, and notes, which have no Process, wait
-until the switch is on again.
+edits wait for the owner's Process, and notes wait for the owner's Process in
+the Indexing tab (Epo 2026-10-21) or until the switch is on again.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
 tokens count those excerpts. Net tokens measure editing, not context size: the
@@ -4482,8 +4500,9 @@ no answer keys, so neither does any of this (2026-10-18). The read is of the
 stored content, as of the last projection; the live room comes with the Office
 live route. The notes' published index identities, read before the changes,
 are checked with the files'; a failed read keeps the turn going, with the
-outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
-omitted note change waits for its reindex.
+outdated notice once the agent reads a note. Notes have no overflow
+notification (their Process is in the Indexing tab only): an omitted note
+change waits for its reindex.
 
 A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`, Epo 2026-10-20)
 are omitted: the read says the document's pending edits are larger than a

@@ -669,9 +669,20 @@ or that it could not start with the reason (`useProcessFileChanges`).
 Processing shows no progress anywhere else; the workspace settings Indexing
 tab lists every file with unprocessed edits as waiting, queued, processing
 (a spinner) or failed (an alert icon), polling the stats every 3 s while any
-is queued or processing. The owner processes a waiting or failed file, or all
+file or note is queued or processing. The owner processes a waiting or failed file, or all
 of them, and cancels a queued one; a file whose processing started refuses
-with `processing_started`. Editors see the list without actions.
+with `processing_started`. Editors see the list without actions. Workspace
+notes whose index is behind their content are listed in the same rows with
+the note icon and title (Epo 2026-10-21), since a note can wait up to 10
+minutes to index: a waiting note says it indexes automatically once enough
+changes build up or after 10 minutes while Auto process edits is on, and a
+failed one is a note parked after its failed jobs, shown like a failed file
+(the job's own error text never renders). The owner's Process (Retry when
+failed, and Process all) indexes the note at once, also with auto process
+off; a queued or processing note shows no action, and there is no Cancel for
+a note. The source coverage bar counts files only. Chapter-level quizzes and
+flashcard sets are not indexed and not listed; an embedded one's edits show
+under its note.
 
 A source file whose processing failed (`files.status='failed'`) is processed
 again only by its owner: automatic processing never picks it, even with Auto

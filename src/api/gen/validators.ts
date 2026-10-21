@@ -3637,6 +3637,16 @@ export const UpdateMaterialResponse = zod.object({
 
 
 /**
+ * @summary Index a workspace note's changes now
+ */
+export const ProcessNoteChangesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ProcessNoteChangesResponse = zod.void()
+
+
+/**
  * @summary Update standalone material sharing
  */
 export const UpdateMaterialSharingParams = zod.object({
@@ -7255,7 +7265,12 @@ export const GetWorkspaceStatsResponse = zod.object({
   "indexed": zod.int(),
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
-  "pendingNotes": zod.int(),
+  "noteChanges": zod.array(zod.object({
+  "lastEditedAt": zod.iso.datetime({"offset":true}),
+  "materialId": zod.string(),
+  "state": zod.enum(['waiting', 'queued', 'processing', 'failed']),
+  "title": zod.string()
+})),
   "quizzes": zod.int()
 })
 

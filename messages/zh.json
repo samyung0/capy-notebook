@@ -1424,7 +1424,7 @@
   "workspace_change_failed": "无法处理",
   "workspace_change_process": "处理",
   "workspace_change_process_all": "全部处理",
-  "workspace_pending_notes": "等待索引的笔记",
+  "workspace_note_change_auto": "累积足够的更改或 10 分钟后会自动索引。",
   "workspace_auto_process": "自动处理编辑",
   "pdf_highlight": "高亮",
   "pdf_rectangle": "矩形",

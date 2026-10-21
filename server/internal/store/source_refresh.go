@@ -591,9 +591,31 @@ func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *Work
 	if stats.FileChanges, err = s.workspaceFileChanges(ctx, ws); err != nil {
 		return err
 	}
-	return s.pool.QueryRow(ctx, `SELECT count(*) FROM materials
-		WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
-		  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL)`, ws).Scan(&stats.PendingNotes)
+	stats.NoteChanges, err = s.workspaceNoteChanges(ctx, ws)
+	return err
+}
+
+// workspaceNoteChanges lists workspace notes whose index is behind their
+// content: dirty (waiting, or failed once parked with index_error) or with an
+// index job, queued until its first claim (Epo 2026-10-21). Embedded quizzes
+// and flashcard sets index inside their note, and chapter-level ones are not
+// indexed, so only notes are listed.
+func (s *Store) workspaceNoteChanges(ctx context.Context, ws string) ([]NoteChange, error) {
+	rows, err := s.pool.Query(ctx, `SELECT m.id,m.title,m.updated_at,
+		CASE WHEN m.index_job_id IS NOT NULL THEN CASE WHEN j.status='pending' AND j.attempts=0 THEN 'queued' ELSE 'processing' END
+		  WHEN m.index_error IS NOT NULL THEN 'failed' ELSE 'waiting' END
+		FROM materials m LEFT JOIN jobs j ON j.id=m.index_job_id
+		WHERE m.workspace_id=$1 AND m.kind='note' AND m.trashed_at IS NULL
+		  AND (m.index_dirty_at IS NOT NULL OR m.index_job_id IS NOT NULL)
+		ORDER BY m.updated_at,m.id`, ws)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (NoteChange, error) {
+		var change NoteChange
+		err := row.Scan(&change.MaterialID, &change.Title, &change.LastEditedAt, &change.State)
+		return change, err
+	})
 }
 
 // workspaceFileChanges lists files with unprocessed saved edits (the
