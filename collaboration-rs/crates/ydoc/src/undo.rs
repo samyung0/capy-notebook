@@ -15,7 +15,8 @@ use std::sync::{Arc, Mutex};
 use yrs::block::ItemContent;
 use yrs::branch::BranchPtr;
 use yrs::undo::{Options, StackItem, UndoManager};
-use yrs::{Doc, IdSet, Origin, Out, ReadTxn, Transact, TransactionMut, Update, WriteTxn};
+use yrs::updates::encoder::{Encode, Encoder, EncoderV1};
+use yrs::{Doc, ID, IdSet, Origin, Out, ReadTxn, Transact, TransactionMut, Update, WriteTxn};
 
 use crate::CONTRIBUTORS_ROOT;
 
@@ -114,6 +115,60 @@ pub fn revert_len(doc: &Doc, change: &Change) -> usize {
         return usize::MAX;
     }
     revert(&copy, change.clone()).map_or(0, |reverted| reverted.update.len())
+}
+
+/// What a copy's header may take beyond its content: its info, two origins
+/// and a parent named by a short root (its map key is added).
+const COPY_HEADER: usize = 96;
+
+/// The most reverting `change` in `doc` may send, read off the room's store
+/// without a copy, so it costs the change's deleted items and not the room:
+/// each item the change deleted that the room still holds comes back as a
+/// copy (its content and a header), and what it inserted goes as a delete
+/// set.
+pub fn revert_bound(doc: &Doc, change: &Change) -> usize {
+    let txn = doc.transact();
+    let store = txn.store();
+    let mut bound = 32 + change.insertions().encode_v1().len();
+    for (client, ranges) in change.deletions().iter() {
+        for range in ranges.iter() {
+            let mut clock = range.start;
+            while clock < range.end {
+                let Some((block, item)) = store.get_block_range(&ID::new(*client, clock)) else {
+                    break;
+                };
+                if let Some(item) = item {
+                    let mut encoder = EncoderV1::new();
+                    item.content().encode(&mut encoder);
+                    bound += encoder.to_vec().len()
+                        + COPY_HEADER
+                        + item.parent_sub().map_or(0, |key| key.len());
+                }
+                clock = (block.clock + block.len).max(clock + 1);
+            }
+        }
+    }
+    bound
+}
+
+/// How [judge] sized a revert.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Judged {
+    /// Its [revert_bound] fits: no copy was made.
+    Bounded,
+    /// Measured on a copy of the room ([revert_len]).
+    Measured(usize),
+}
+
+/// Sizes the revert of `change` in `doc` for `fits` (whether an update of
+/// that many bytes may go out): by [revert_bound], and only when the bound
+/// does not fit by a copy of the room ([revert_len], O(state) while the room
+/// waits), so the copy runs only near a cap (review r3 M1).
+pub fn judge(doc: &Doc, change: &Change, fits: impl Fn(usize) -> bool) -> Judged {
+    if fits(revert_bound(doc, change)) {
+        return Judged::Bounded;
+    }
+    Judged::Measured(revert_len(doc, change))
 }
 
 /// A manager over every root of `doc` but the contributor markers, holding
@@ -338,6 +393,39 @@ mod tests {
         assert!(len > 100_000, "{len}");
         assert_eq!(text(&room), "");
         assert_eq!(revert(&room, change).unwrap().update.len(), len);
+    }
+
+    /// Review r3 M1: a small edit's Undo on a large room is judged by its
+    /// bound, with no copy of the room; a removal whose bound does not fit is
+    /// measured on a copy, and its bound is at least what it sends.
+    #[test]
+    fn judge_copies_the_room_only_when_the_bound_does_not_fit() {
+        let room = crate::scratch_doc();
+        {
+            let cells = room.get_or_insert_map("cells");
+            let mut txn = room.transact_mut();
+            for n in 0..50_000 {
+                cells.insert(&mut txn, format!("A{n}"), "a value of some length");
+            }
+        }
+        let small = agent_edit(&room, |txn| {
+            txn.get_or_insert_map("cells").insert(txn, "A7", "changed");
+        });
+        let bound = revert_bound(&room, &small);
+        assert!(bound < 1024, "{bound}");
+        assert_eq!(judge(&room, &small, |len| len <= 1024), Judged::Bounded);
+
+        room.get_or_insert_text("source")
+            .insert(&mut room.transact_mut(), 0, &"a".repeat(100_000));
+        let removal = agent_edit(&room, |txn| {
+            txn.get_or_insert_text("source")
+                .remove_range(txn, 0, 100_000);
+        });
+        let Judged::Measured(len) = judge(&room, &removal, |len| len <= 50_000) else {
+            panic!("a removal over the bound was not measured");
+        };
+        assert!(len > 100_000, "{len}");
+        assert!(revert_bound(&room, &removal) >= len);
     }
 
     /// Once a person removed everything the agent wrote, there is nothing

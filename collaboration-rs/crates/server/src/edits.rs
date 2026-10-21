@@ -1475,9 +1475,13 @@ fn put_back(asked: Vec<(crate::app::RoomHandle, String)>, step: &str, actor: &st
     for (handle, id) in asked {
         let (step, actor) = (step.to_owned(), actor.to_owned());
         tokio::spawn(async move {
-            if let Err(error) = ask_room(&handle, &id, &step, &actor).await {
+            // Anything but done leaves the room reverted while the chat says
+            // the Undo failed (review r3 L1): a reverse too large to keep is
+            // missing, so such an Undo is not put back.
+            let answer = ask_room(&handle, &id, &step, &actor).await;
+            if !matches!(answer, Ok(Reverted::Done(_))) {
                 observe::capture(
-                    &format!("{error:?}"),
+                    &format!("agent Undo not put back: {answer:?}"),
                     None,
                     &[("stage", "agent_undo_put_back")],
                 );

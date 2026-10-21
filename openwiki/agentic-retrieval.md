@@ -3730,10 +3730,15 @@ estimate. A room under a publication handoff or a forced unload refuses it
 kept as the next step under the Undo's own operation id, so the same endpoint
 called with that id is Redo, for any number of steps.
 
-An Undo is judged by its revert's measured size (Epo 2026-10-21): the room
-reverts the step on a copy of its document that keeps deleted content
-(`ydoc::undo::revert_len`) when it keeps the step, an edit's when it lands and
-a reverse when its Undo lands. A step whose revert would be over the 8 MiB
+An Undo is judged by its revert's size (Epo 2026-10-21) when the room keeps
+the step (an edit's when it lands, after the editors got it; a reverse when
+its Undo lands) and again when the Undo is asked. `ydoc::undo::judge` first
+bounds the revert off the room's store (`revert_bound`: each deleted item the
+room still holds comes back as a copy, its content plus a header, and the
+insertions go as a delete set), which costs the change, not the room; only
+when that bound does not fit does it measure on a copy of the room that keeps
+deleted content (`revert_len`, O(state) while the room waits, so near a cap
+only; review r3 M1). A step whose revert would be over the 8 MiB
 update cap, or would take a source room past its admission cap by the room's
 running estimate, is not kept: the edit's receipt gets no Undo ref, and an
 Undo's answer says `reversible: false`, so Go records its receipt without a
@@ -3743,8 +3748,9 @@ leave the cells in Yjs, and their Undo measures tens of bytes whatever the
 sheet holds (measured 2026-10-21). The room checks again when an
 Undo is asked, against the room as it is then (a person may have filled a
 source room since), and refuses one too large with `undo_unavailable`,
-dropping the step. The copy costs O(state) in the room per agent edit and per
-Undo. Go names the step's
+dropping the step. A timed-out Undo whose reverse was too large to keep is not
+put back (the room no longer holds it); every put-back answer other than done
+is captured (`agent_undo_put_back`, review r3 L1). Go names the step's
 document (`target`) and the room cross-checks that every room holding the
 step is that document's. Go records each Undo's receipt (`agent_operations`,
 kind `undo_edit`) with `undo_of` naming the step it reversed (unique, so a

@@ -220,6 +220,7 @@ pub struct AgentUndo {
 }
 
 /// What an Undo or Redo of an agent step came to in one room.
+#[derive(Debug)]
 pub enum Reverted {
     /// Reverted (stored, or its store retrying), the step that reverses it
     /// kept under this id: the request's, or an earlier request's whose
@@ -466,9 +467,8 @@ pub struct Room {
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
-    /// items of, by operation id (`ydoc::undo`), with the measured size of
-    /// each one's revert; gone with the room.
-    agent_changes: HashMap<String, (Change, usize)>,
+    /// items of, by operation id (`ydoc::undo`); gone with the room.
+    agent_changes: HashMap<String, Change>,
     /// Steps this room reverted, by the id their reverse is kept under, so a
     /// request repeated after a lost answer gets the same answer.
     agent_reverted: HashMap<String, String>,
@@ -1568,16 +1568,19 @@ impl Room {
         if let Kindly::Source(source) = &mut self.kind {
             source.estimate.applied(update.len() as u64, 0);
         }
+        // The editors get the edit first; its Undo is judged after.
+        let changed = !update.is_empty();
+        self.broadcast_update(None, update);
         // A room that loaded after the edit committed holds its items already,
         // without what it deleted: no Undo there. Nor where its revert would
         // be too large to send (Epo 2026-10-21).
         let mut taken = false;
         if let Some((id, items)) = edit.step
-            && !update.is_empty()
+            && changed
         {
             let change = items.change(&self.doc);
-            if let Some(revert) = self.revert_size(&change) {
-                self.agent_changes.insert(id.clone(), (change, revert));
+            if self.revert_fits(&change) {
+                self.agent_changes.insert(id.clone(), change);
                 self.app.agent_steps.hold(&id, &self.name);
                 taken = true;
             }
@@ -1585,7 +1588,6 @@ impl Room {
         if let Some(reply) = edit.taken {
             let _ = reply.send(taken);
         }
-        self.broadcast_update(None, update);
         self.durable.union(&edit.durable);
         self.app
             .stats
@@ -1625,7 +1627,7 @@ impl Room {
             actor,
             reply,
         } = undo;
-        let Some((change, len)) = self.agent_changes.remove(&step) else {
+        let Some(change) = self.agent_changes.remove(&step) else {
             let answer = match self.agent_reverted.get(&step) {
                 Some(kept) => Reverted::Done(kept.clone()),
                 None => Reverted::Missing,
@@ -1656,17 +1658,17 @@ impl Room {
                 .then_some(("unavailable_target", "integration test refusal"))
         });
         if let Some((code, message)) = refused {
-            self.agent_changes.insert(step, (change, len));
+            self.agent_changes.insert(step, change);
             let _ = reply.send(Ok(Reverted::Refused {
                 code,
                 message: message.into(),
             }));
             return;
         }
-        // A revert too large to send is no Undo (Epo 2026-10-21), measured
-        // when the step was kept; a source room may have grown toward its cap
-        // since. The step goes.
-        if !self.revert_fits(len) {
+        // A revert too large to send is no Undo (Epo 2026-10-21), judged again
+        // now: a source room may have grown toward its cap since. The step
+        // goes.
+        if !self.revert_fits(&change) {
             self.app.agent_steps.release(&step, &self.name);
             let _ = reply.send(Ok(Reverted::Refused {
                 code: "undo_unavailable",
@@ -1701,7 +1703,7 @@ impl Room {
                         self.broadcast_update(None, restored.update);
                         match restored.next {
                             Some(again) => {
-                                self.agent_changes.insert(step, (again, len));
+                                self.agent_changes.insert(step, again);
                             }
                             None => self.app.agent_steps.release(&step, &self.name),
                         }
@@ -1761,9 +1763,9 @@ impl Room {
         self.agent_reverted.insert(step, next.clone());
         // Its reverse is kept only when it could go out, as an edit's is.
         if let Some(back) = back
-            && let Some(revert) = self.revert_size(&back)
+            && self.revert_fits(&back)
         {
-            self.agent_changes.insert(next.clone(), (back, revert));
+            self.agent_changes.insert(next.clone(), back);
             self.app.agent_steps.hold(&next, &self.name);
         }
         // The next store's snapshot holds the revert.
@@ -1772,9 +1774,9 @@ impl Room {
         self.start_store().await;
     }
 
-    /// Whether a revert of `len` bytes may go out (Epo 2026-10-21): within
+    /// Whether an update of `len` bytes may go out (Epo 2026-10-21): within
     /// the 8 MiB update cap and, in a source room, its admission cap.
-    fn revert_fits(&self, len: usize) -> bool {
+    fn update_fits(&self, len: usize) -> bool {
         len <= ydoc::MAX_UPDATE_BYTES
             && match &self.kind {
                 Kindly::Source(source) => {
@@ -1784,12 +1786,15 @@ impl Room {
             }
     }
 
-    /// The measured size of `change`'s revert when it may go out; none means
-    /// no Undo for it.
-    fn revert_size(&self, change: &Change) -> Option<usize> {
+    /// Whether `change`'s revert may go out, judged by its bound and only
+    /// near a cap by a copy of the room (`ydoc::undo::judge`).
+    fn revert_fits(&self, change: &Change) -> bool {
         let doc = self.doc.clone();
-        let len = tokio::task::block_in_place(|| ydoc::undo::revert_len(&doc, change));
-        self.revert_fits(len).then_some(len)
+        let fits = |len| self.update_fits(len);
+        match tokio::task::block_in_place(|| ydoc::undo::judge(&doc, change, fits)) {
+            ydoc::undo::Judged::Bounded => true,
+            ydoc::undo::Judged::Measured(len) => fits(len),
+        }
     }
 
     /// Sends `notification` (if any) and CLOSED, and forgets the channel.
