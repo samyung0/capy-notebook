@@ -2167,7 +2167,8 @@ each with its own rPr (its run style and direct formatting), so a style
 changed in Word later restyles them and runs the seed resolves alike (an
 explicit automatic colour under a coloured heading, character shading,
 `w:snapToGrid w:val="0"`, `w:cs`) are neither merged nor given each other's
-properties. In any other paragraph a run whose formatting is what the seed
+properties, while adjacent runs with the same rPr (Word's rsid splits) save
+as one. In any other paragraph a run whose formatting is what the seed
 resolved for its source paragraph's runs saves their rPr when they all have
 the same one, and resolved values otherwise; a run the session reformatted
 saves resolved values. What the seed resolved is computed under the
