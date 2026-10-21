@@ -3,14 +3,15 @@
 //! merges it, lands in the room keeping what it deleted, and reverting it
 //! there restores the content. An XLSX formula reading the edited cell
 //! computes from the restored value, as an editor's engine recalculates it;
-//! structural XLSX commands (a row delete, a sheet delete) undo the same way.
+//! structural XLSX commands (a row delete, a sheet delete) and DOCX and PPTX
+//! paragraph inserts and deletes undo the same way.
 
 #![allow(clippy::unwrap_used)]
 
 use std::path::PathBuf;
 
 use betteroffice_xlsx::{CalculationOptions, CellRef, CellValue, Workbook};
-use office_service::{Checkpoint, Command, Format, InspectQuery};
+use office_service::{Checkpoint, Command, Determinism, Format, InspectQuery};
 use ydoc::undo::{Captured, Change};
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, ReadTxn, StateVector, Transact, Update};
@@ -24,7 +25,10 @@ struct File {
 impl File {
     fn open(format: Format, path: &str) -> Self {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let base = std::fs::read(root.join(path)).unwrap();
+        Self::of(format, std::fs::read(root.join(path)).unwrap())
+    }
+
+    fn of(format: Format, base: Vec<u8>) -> Self {
         let sha = office_service::sha256_hex(&base);
         File { format, base, sha }
     }
@@ -68,11 +72,26 @@ impl File {
         office_service::inspect(&self.base, self.checkpoint(&state(room))).unwrap()
     }
 
+    /// The file the room saves.
+    fn export(&self, room: &Doc) -> Vec<u8> {
+        let determinism = Determinism {
+            seed: &"0".repeat(64),
+            now: "2026-10-21T00:00:00.000Z",
+        };
+        office_service::export(&self.base, self.checkpoint(&state(room)), determinism).unwrap()
+    }
+
+    /// Whether `commands` land on the room's state (the room unchanged).
+    fn lands(&self, room: &Doc, commands: &[Command]) -> bool {
+        office_service::apply_commands(&self.base, self.checkpoint(&state(room)), commands).is_ok()
+    }
+
     /// The agent's scoped XLSX read: the sheet list, or a range's cells.
     fn read(&self, room: &Doc, sheet: Option<&str>, range: Option<&str>) -> serde_json::Value {
         let query = InspectQuery {
             sheet: sheet.map(str::to_owned),
             range: range.map(str::to_owned),
+            ..InspectQuery::default()
         };
         office_service::inspect_scoped(&self.base, self.checkpoint(&state(room)), &query).unwrap()
     }
@@ -103,6 +122,54 @@ impl File {
 }
 
 const GRADES: &str = "e2e/fixtures/files/basic/grades.xlsx";
+const LESSON_DOCX: &str = "e2e/fixtures/files/basic/lesson.docx";
+const LESSON_PPTX: &str = "e2e/fixtures/files/basic/lesson.pptx";
+
+/// lesson.docx with its first paragraph ending a section, its second a
+/// bulleted list item and, after its table, a paragraph and a closing one,
+/// the body's last (a paragraph right after a table is not one the agent
+/// edits).
+fn lesson_docx() -> File {
+    let lesson = File::open(Format::Docx, LESSON_DOCX);
+    let parts: Vec<(String, Vec<u8>)> = ooxml_opc::unzip_parts(&lesson.base)
+        .unwrap()
+        .into_iter()
+        .map(|(name, bytes)| {
+            if name != "word/document.xml" {
+                return (name, bytes);
+            }
+            let xml = String::from_utf8(bytes)
+                .unwrap()
+                .replacen(
+                    "<w:p><w:r><w:t>Owner sentence",
+                    r#"<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr><w:r><w:t>Owner sentence"#,
+                    1,
+                )
+                .replacen(
+                    "<w:p><w:r><w:t>Collaborator sentence",
+                    r#"<w:p><w:pPr><w:pStyle w:val="ListBullet"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Collaborator sentence"#,
+                    1,
+                )
+                .replacen(
+                    "</w:tbl><w:sectPr",
+                    "</w:tbl><w:p><w:r><w:t>After the table.</w:t></w:r></w:p><w:p><w:r><w:t>Closing line.</w:t></w:r></w:p><w:sectPr",
+                    1,
+                );
+            (name, xml.into_bytes())
+        })
+        .collect();
+    File::of(Format::Docx, ooxml_opc::rezip_parts(&parts).unwrap())
+}
+
+/// An insert_paragraph naming its anchor by `key` (`afterId` or `beforeId`).
+fn insert(key: &str, anchor: &str, text: &str, style: Option<&str>) -> Command {
+    let mut value = serde_json::json!({ "type": "insert_paragraph", "text": text });
+    value[key] = anchor.into();
+    if let Some(style) = style {
+        value["style"] = style.into();
+    }
+    command(value)
+}
 
 fn set_range(sheet: &str, range: &str, expected: &[&[&str]], values: &[&[&str]]) -> Command {
     let grid = |rows: &[&[&str]]| {
@@ -286,6 +353,70 @@ fn undo_restores_a_deleted_sheet_and_the_formula_reading_it() {
     assert_eq!(read(&room), before);
 }
 
+/// DOCX and PPTX `insert_paragraph` and `delete_paragraph` (Epo
+/// 2026-10-21): Undo takes an inserted paragraph out and puts a deleted one
+/// back, the file saving as it did before the edit. That holds for the
+/// inserts the engine gives no inverse too: one at a section's end, whose
+/// split moves the section mark to the new paragraph as Enter does, and an
+/// append.
+#[test]
+fn undo_reverts_paragraph_inserts_and_deletes() {
+    for file in [lesson_docx(), File::open(Format::Pptx, LESSON_PPTX)] {
+        let room = file.room();
+        let saved = file.export(&room);
+        let entries = file.entries(&room);
+        let id = |text: &str| {
+            entries
+                .iter()
+                .find(|entry| entry.value.starts_with(text))
+                .unwrap_or_else(|| panic!("no paragraph reads {text:?}"))
+                .id
+                .clone()
+        };
+        let owner = id("Owner sentence");
+        let text = |id: &str| {
+            let entry = entries.iter().find(|entry| entry.id == id).unwrap();
+            entry.value.clone()
+        };
+        let mut cases = vec![
+            // DOCX: the section's end; PPTX: its shape's last paragraph.
+            vec![insert("afterId", &owner, "Coda", None)],
+            vec![insert("beforeId", &owner, "Preface", None)],
+            // A delete of the paragraph an insert made not its story's last.
+            vec![
+                insert("afterId", &owner, "Extra", None),
+                Command::DeleteParagraph {
+                    target_id: owner.clone(),
+                    expected_text: text(&owner),
+                },
+            ],
+        ];
+        if file.format == Format::Docx {
+            // The list goes on.
+            let item = id("Collaborator sentence");
+            cases.push(vec![insert("afterId", &item, "Next item", None)]);
+            cases.push(vec![insert(
+                "afterId",
+                &id("Closing line."),
+                "Appendix",
+                None,
+            )]);
+            cases.push(vec![insert("beforeId", &owner, "Title", Some("Heading1"))]);
+            let collaborator = id("Collaborator sentence");
+            cases.push(vec![Command::DeleteParagraph {
+                expected_text: text(&collaborator),
+                target_id: collaborator,
+            }]);
+        }
+        for case in cases {
+            let change = file.agent_edit(&room, &case);
+            assert_ne!(file.export(&room), saved, "{case:?}");
+            ydoc::undo::revert(&room, change).unwrap();
+            assert!(file.export(&room) == saved, "{case:?} undoes");
+        }
+    }
+}
+
 /// What an edit's Undo and its Redo send, measured on copies of the room
 /// (`ydoc::undo::revert_len`), the room left undone.
 fn undo_and_redo(room: &Doc, change: Change) -> (usize, usize) {
@@ -458,11 +589,11 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
         covers(&mut short, case, cost, undo_and_redo(&room, change));
     }
 
-    for (format, path) in [
-        (Format::Docx, "e2e/fixtures/files/basic/lesson.docx"),
-        (Format::Pptx, "e2e/fixtures/files/basic/lesson.pptx"),
+    for (file, path) in [
+        (lesson_docx(), LESSON_DOCX),
+        (File::open(Format::Pptx, LESSON_PPTX), LESSON_PPTX),
     ] {
-        let file = File::open(format, path);
+        let format = file.format;
         let room = file.room();
         for entry in file
             .entries(&room)
@@ -483,6 +614,42 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 cost,
                 undo_and_redo(&room, change),
             );
+        }
+        let long = "a new paragraph from the agent, ".repeat(8);
+        let style = (format == Format::Docx).then_some("Heading1");
+        for entry in file
+            .entries(&room)
+            .into_iter()
+            .filter(|entry| format == Format::Pptx || entry.id.starts_with("body:"))
+            .take(4)
+        {
+            let mut cases = vec![
+                (
+                    "insert_paragraph",
+                    insert("afterId", &entry.id, &long, None),
+                ),
+                ("insert_paragraph", insert("afterId", &entry.id, "", None)),
+                ("insert_paragraph", insert("beforeId", &entry.id, "", style)),
+            ];
+            let delete = Command::DeleteParagraph {
+                target_id: entry.id.clone(),
+                expected_text: entry.value.clone(),
+            };
+            if !file.lands(&room, std::slice::from_ref(&delete)) {
+                // Its story's last paragraph: one more after it, kept.
+                file.agent_edit(&room, &[insert("afterId", &entry.id, "kept", None)]);
+            }
+            cases.push(("delete_paragraph", delete));
+            for (name, case) in cases {
+                let cost = sources::undo_cost::office(&case);
+                let change = file.agent_edit(&room, &[case]);
+                covers(
+                    &mut short,
+                    &format!("{path} {name}"),
+                    cost,
+                    undo_and_redo(&room, change),
+                );
+            }
         }
     }
 

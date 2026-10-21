@@ -1,5 +1,5 @@
 {
-  "version": 34,
+  "version": 35,
   "operations": [
     "source.read",
     "material.read",
@@ -1273,7 +1273,7 @@
     {
       "name": "inspect_office_document",
       "version": 1,
-      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: paragraphs with their target ids and text, count from start. PPTX: without slide, shapes with their target ids and text, count from start; with slide, that slide's shapes.",
+      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: paragraphs with their target ids and text, count from start, the first page with the file's paragraph styles. PPTX: without slide, shapes with their target ids and text, count from start; with slide, that slide's shapes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1747,6 +1747,63 @@
                     "target_id",
                     "expected_text",
                     "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX, PPTX: insert one paragraph right after after_id or right before before_id (exactly one); DOCX paragraphs go in the document body.",
+                  "properties": {
+                    "after_id": {
+                      "description": "The paragraph it follows, a target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "before_id": {
+                      "description": "The paragraph it precedes; the first paragraph's id inserts at the start.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "style": {
+                      "description": "DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "Plain text without line breaks.",
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "insert_paragraph"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX, PPTX: delete one paragraph, never its story's or shape's last.",
+                  "properties": {
+                    "expected_text": {
+                      "description": "The paragraph's whole text as inspect_office_document shows it.",
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "description": "The paragraph's target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_paragraph"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target_id",
+                    "expected_text"
                   ],
                   "type": "object"
                 }

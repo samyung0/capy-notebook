@@ -273,6 +273,10 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case format == "xlsx":
 			query = &store.OfficeQuery{Sheet: req.Office.Sheet, Range: req.Office.Range}
+		case format == "docx":
+			// A page of its paragraphs, the first with the file's paragraph
+			// styles (Epo 2026-10-21).
+			query = &store.OfficeQuery{Start: max(req.Office.Start, 0), Count: pageCount(req.Office.Count)}
 		case format == "pptx" && req.Office.Slide > 0:
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 				"code": "unsupported_operation", "message": "Reading one slide is not available yet; read the deck's shapes with start and count.",
@@ -294,11 +298,14 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 		case query != nil && len(inspection.Scoped) == 0:
 			// A collaboration server without the engine's scoped reads.
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
-				"code": "unsupported_operation", "message": "Reading a workbook is not available yet.",
+				"code": "unsupported_operation", "message": "Reading this file is not available yet.",
 			})
 			return
 		case query != nil:
 			body["scoped"] = inspection.Scoped
+			if format == "docx" {
+				body["supportedOperations"] = paragraphCommands
+			}
 		case inspection.Format == "text":
 			lines := textLines(deref(inspection.Text))
 			total := len(lines)
@@ -307,13 +314,13 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			body["total"], body["nextStart"] = total, nextStart(end, total)
 			body["supportedOperations"] = textOperations
 		default:
-			// DOCX and PPTX read as their paragraph and shape entries until
-			// the engine's scoped reads land.
+			// PPTX reads as its paragraph entries until the engine's scoped
+			// read lands.
 			total := len(inspection.Entries)
 			end := min(req.Start+req.Count, total)
 			body["entries"] = inspection.Entries[min(req.Start, total):end]
 			body["total"], body["nextStart"] = total, nextStart(end, total)
-			body["supportedOperations"] = textOperations
+			body["supportedOperations"] = paragraphCommands
 		}
 		writeJSON(w, http.StatusOK, body)
 	default:
@@ -367,7 +374,8 @@ func utf16Len(s string) int {
 	return n
 }
 
-// textOperations are the edit commands a text or Office source supports.
+// textOperations are the edit commands a text source supports; a DOCX or
+// PPTX one supports paragraphCommands.
 var textOperations = []string{"replace_text"}
 
 // materialOperations are the edit commands a material kind supports: the

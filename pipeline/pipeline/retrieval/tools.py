@@ -2053,6 +2053,13 @@ def _render_inspection(
         lines.append(f"{line.get('start')}: {line.get('text')}")
     for entry in body.get("entries") or []:
         lines.append(f"[{entry.get('id')}] {entry.get('label')}: {entry.get('value')}")
+    if body.get("styles"):
+        more = body.get("stylesMore")
+        lines.append(
+            "paragraph styles as id (name): "
+            + ", ".join(f"{st.get('id')} ({st.get('name')})" for st in body["styles"])
+            + (f" and {more} more" if more else "")
+        )
     if source:
         lines = [source_block("\n".join(lines))]
     if body.get("nextStart") is not None:
@@ -2387,6 +2394,9 @@ async def _inspect_office_document(
         return body
     ctx.pending_sources.read(rid)
     scoped = body.get("scoped")
+    if isinstance(scoped, dict) and "entries" in scoped:
+        # A DOCX page: its paragraphs, the first with the paragraph styles.
+        return _result(_render_inspection({**body, **scoped}, source=True))
     if isinstance(scoped, dict):
         return _result(_render_scoped(body, scoped))
     return _result(_render_inspection(body, source=True))

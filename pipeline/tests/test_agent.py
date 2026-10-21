@@ -5157,10 +5157,29 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "docx",
                 "title": "essay.docx",
+                "supportedOperations": [
+                    "replace_text",
+                    "insert_paragraph",
+                    "delete_paragraph",
+                ],
+                "scoped": {
+                    "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
+                    "total": 80,
+                    "nextStart": 60,
+                    "styles": [
+                        {"id": "Normal", "name": "Normal"},
+                        {"id": "Heading1", "name": "heading 1"},
+                    ],
+                    "stylesMore": 3,
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
                 "supportedOperations": ["replace_text"],
-                "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
-                "total": 80,
-                "nextStart": 60,
+                "entries": [{"id": "s1", "label": "Slide 1, Title", "value": "Cells"}],
+                "total": 1,
+                "nextStart": None,
             },
         ]
     )
@@ -5194,11 +5213,22 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
     cells = await inspect(sheet="Grades", range="A1:B2")
     assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
     assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
+    # A DOCX page is the engine's scoped read, its first page listing the
+    # paragraph styles, at most 50 and a count of the rest (Epo 2026-10-21).
     paragraphs = (await inspect(start=0, count=60)).text()
-    assert (
-        "[p1] Paragraph 1: Intro" in paragraphs
-        and "(next start = 60 of 80)" in paragraphs
+    assert paragraphs == (
+        "essay.docx format=docx\n"
+        "supported: replace_text, insert_paragraph, delete_paragraph\n"
+        + source_block(
+            "[p1] Paragraph 1: Intro\n"
+            "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
+            " and 3 more"
+        )
+        + "\n(next start = 60 of 80)"
     )
+    assert sent[2]["office"] == {"start": 0, "count": 60}
+    shapes = (await inspect(start=0, count=60)).text()
+    assert "[s1] Slide 1, Title: Cells" in shapes and "styles" not in shapes
 
 
 async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatch):

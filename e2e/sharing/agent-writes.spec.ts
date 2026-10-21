@@ -136,7 +136,14 @@ async function entries(
   format: OfficeFormat
 ): Promise<Entry[]> {
   const target = { id, kind: 'source_file' } as const;
-  if (format !== 'xlsx')
+  // A DOCX page is the engine's scoped read (Epo 2026-10-21).
+  if (format === 'docx')
+    return (
+      await inspect<{ scoped: { entries: Entry[] } }>(api, target, {
+        count: 200,
+      })
+    ).scoped.entries;
+  if (format === 'pptx')
     return (await inspect<{ entries: Entry[] }>(api, target, { count: 200 }))
       .entries;
   const listed = await inspect<{ scoped: { sheets: Sheet[] } }>(
