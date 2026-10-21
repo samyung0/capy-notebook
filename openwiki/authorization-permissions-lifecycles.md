@@ -360,7 +360,10 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.
 - **Owner only** can invite a member, change a member's role, remove a member,
-  and delete the workspace.
+  delete the workspace, and switch Auto process edits (Epo 2026-10-21): a
+  workspace update carrying `autoProcess` from anyone else is refused whole
+  with the non-disclosing `404` (`ErrForbidden`), and the Indexing tab shows
+  editors the switch disabled. Editors keep every other field of that update.
 - Frozen owners cannot create invitations or promote an existing member,
   because either action widens exposure. They may demote or remove members as
   recovery-safe mutations. Grace owners invite and promote normally.
@@ -1023,9 +1026,10 @@ identity that was never provisioned.
 
 The stored `name` belongs to the user. The Clerk name (first plus last, else
 username, else the email's local part before the `@`, else a localized
-fallback, cut to 60 runes) seeds the row only when the local account is
-inserted, by the request-time sync or the `user.created` webhook, whichever
-runs first. An unnamed account never shows its whole address (Epo
+fallback, trimmed and cut to 60 runes; a whitespace-only name counts as none)
+seeds the row only when the local account is inserted, by the request-time
+sync or the `user.created` webhook, whichever runs first; both read it through
+`auth.ProfileName`. An unnamed account never shows its whole address (Epo
 2026-10-21): every place a name shows (profile, members, mentions, presence
 and cursors through the collaboration token's `name` claim) reads
 `users.name`, and migration `0103_unnamed_user_names.sql` renamed rows created

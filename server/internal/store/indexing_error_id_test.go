@@ -1,7 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
@@ -69,11 +73,21 @@ func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The id leads to a log line with the file and the failure.
+	logs := &lockedBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	traced := obs.WithTrace(ctx, "trace-export-"+job.JobID, "span")
 	if err := s.FailSourceRefresh(traced, file.ID, job.JobID, candidate.LeaseToken, "engine export failed", false); err != nil {
 		t.Fatal(err)
 	}
+	slog.SetDefault(previous)
 	fileRow("failed", "trace-export-"+job.JobID)
+	if line := logs.String(); !strings.Contains(line, `"trace_id":"trace-export-`+job.JobID+`"`) ||
+		!strings.Contains(line, `"file_id":"`+file.ID+`"`) || !strings.Contains(line, `"detail":"engine export failed"`) {
+		t.Fatalf("no log line names the export failure's id, file and detail: %s", line)
+	}
 
 	// A note parked by its third failed index job: that job's attempt.
 	note, err := s.CreateMaterial(ctx, Material{
@@ -99,41 +113,85 @@ func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 		t.Fatalf("noteChanges = %+v, want the failed note with its attempt's trace", got)
 	}
 
-	// A file whose first processing failed (Failed files): the trace of the
-	// last attempt of a job naming it, on the file rows, cleared by a retry.
+	// A file whose first processing failed (Failed files): the last
+	// unsuccessful attempt of a job for its revision, never an earlier
+	// successful run or another revision's, sent to the owner and editors
+	// only, and cleared by a retry.
+	editor := newBlobTestUser(t, s, "u_error_id_editor")
+	viewer := newBlobTestUser(t, s, "u_error_id_viewer")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
+		VALUES ($1,$2,'editor'),($1,$3,'viewer')`, ws.ID, editor, viewer); err != nil {
+		t.Fatal(err)
+	}
 	upload, err := s.createReadyFile(ctx, ws.ID, owner, "scan.pdf", "pdf", nil, "", 100, "sources/"+uid("upload"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	parseJob := uid("job_parse")
-	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs(id,type,payload,status) VALUES($1,'parse',jsonb_build_object('fileId',$2::text),'failed')`, parseJob, upload.ID); err != nil {
-		t.Fatal(err)
+	parse := func(status, trace string) {
+		t.Helper()
+		jobID := uid("job_parse")
+		if _, err := s.pool.Exec(ctx, `INSERT INTO jobs(id,type,payload,status) VALUES($1,'parse',jsonb_build_object('fileId',$2::text,'sourceRevision',1),'failed')`, jobID, upload.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `INSERT INTO ingest_job_attempts(job_id,operation_id,attempt,job_type,environment,host_id,worker_instance_id,trace_id,status,queued_at,claimed_at) VALUES($1,$1,1,'parse','test','test','test',$2,$3,now(),now())`, jobID, trace, status); err != nil {
+			t.Fatal(err)
+		}
 	}
-	attempt(parseJob, 1, "trace-upload-"+parseJob)
-	fileErrorID := func(status string) string {
+	errorIDAs := func(userID, status string) string {
 		t.Helper()
 		if _, err := s.pool.Exec(ctx, `UPDATE files SET status=$2 WHERE id=$1`, upload.ID, status); err != nil {
 			t.Fatal(err)
 		}
-		got, err := s.GetFile(ctx, upload.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		listed, err := s.ListFiles(ctx, owner, ws.ID)
+		listed, err := s.ListFiles(ctx, userID, ws.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, f := range listed {
-			if f.ID == upload.ID && f.ErrorID != got.ErrorID {
-				t.Fatalf("listed error id %q, got %q", f.ErrorID, got.ErrorID)
+			if f.ID == upload.ID {
+				return f.ErrorID
 			}
 		}
-		return got.ErrorID
+		t.Fatalf("%s does not list the file", userID)
+		return ""
 	}
-	if got := fileErrorID("failed"); got != "trace-upload-"+parseJob {
-		t.Fatalf("failed file error id = %q, want its attempt's trace", got)
+	parse("failed", "trace-upload-failed")
+	for _, tc := range []struct{ user, status, want string }{
+		{owner, "failed", "trace-upload-failed"},
+		{editor, "failed", "trace-upload-failed"},
+		{viewer, "failed", ""},
+		{owner, "pending", ""},
+	} {
+		if got := errorIDAs(tc.user, tc.status); got != tc.want {
+			t.Fatalf("%s, %s file: error id %q, want %q", tc.user, tc.status, got, tc.want)
+		}
 	}
-	if got := fileErrorID("pending"); got != "" {
-		t.Fatalf("retried file error id = %q, want none", got)
+	parse("succeeded", "trace-upload-succeeded")
+	if got := errorIDAs(owner, "failed"); got != "trace-upload-failed" {
+		t.Fatalf("after a later successful run: error id %q, want the failed attempt's", got)
 	}
+	errorIDAs(owner, "pending")
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET revision=2 WHERE id=$1`, upload.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := errorIDAs(owner, "failed"); got != "" {
+		t.Fatalf("a revision with no attempt: error id %q, want none", got)
+	}
+}
+
+// lockedBuffer collects log lines written from any goroutine.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

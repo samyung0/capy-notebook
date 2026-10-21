@@ -382,9 +382,10 @@ export function IndexingTab({
       <FailedFiles owner={workspace.isOwner} workspaceId={workspace.id} />
       <label className="flex items-center justify-between gap-5">
         <span className="font-medium">{m.workspace_auto_process()}</span>
+        {/* Owner-only, like the actions above; the server refuses editors. */}
         <Switch
           checked={workspace.autoProcess}
-          disabled={saving}
+          disabled={saving || !workspace.isOwner}
           onCheckedChange={(autoProcess) => {
             void update({ autoProcess, id: workspace.id }).catch(() => {});
           }}

@@ -43,13 +43,21 @@ CREATE TRIGGER materials_index_trace
   EXECUTE FUNCTION note_index_trace();
 
 -- A file whose processing failed (Failed files) keeps the trace of the last
--- ingest attempt of a job naming it, the one that failed it or left it
--- partial; leaving 'failed' clears it.
+-- unsuccessful ingest attempt of a job for its revision: the one that failed
+-- it or left it partial (OLD.revision, since a refresh publication moves the
+-- revision in the statement that fails the file). A failure with no such
+-- attempt stores none, never an earlier successful run's; leaving 'failed'
+-- clears it. The index serves this lookup.
+CREATE INDEX jobs_file_idx ON jobs ((payload->>'fileId'));
+
 CREATE FUNCTION file_failure_trace() RETURNS trigger AS $$
 BEGIN
   NEW.failure_trace_id := CASE WHEN NEW.status = 'failed' THEN
-    (SELECT a.trace_id FROM ingest_job_attempts a JOIN jobs j ON j.id = a.job_id
-      WHERE j.payload->>'fileId' = NEW.id ORDER BY a.id DESC LIMIT 1) END;
+    (SELECT a.trace_id FROM jobs j JOIN ingest_job_attempts a ON a.job_id = j.id
+      WHERE j.payload->>'fileId' = NEW.id
+        AND j.payload->>'sourceRevision' = OLD.revision::text
+        AND a.status <> 'succeeded'
+      ORDER BY a.id DESC LIMIT 1) END;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
 REVOKE EXECUTE ON FUNCTION file_failure_trace() FROM PUBLIC;

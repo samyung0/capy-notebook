@@ -409,6 +409,7 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 }
 
 func (s *Store) upsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
+	name = strings.TrimSpace(name)
 	if name == "" {
 		// Named after the address's local part, never the whole address
 		// (human authorization, 2026-10-21); migration 0103 renamed earlier rows.

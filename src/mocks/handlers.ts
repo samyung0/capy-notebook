@@ -1315,6 +1315,11 @@ export const handlers = [
       tags?: TagInput[];
       clearCover?: boolean;
     };
+    // Auto process is the owner's alone; the gateway answers others 404.
+    if (body.autoProcess !== undefined) {
+      if (!ws.isOwner) return new HttpResponse(null, { status: 404 });
+      ws.autoProcess = body.autoProcess;
+    }
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
     if (body.description !== undefined) ws.description = body.description;

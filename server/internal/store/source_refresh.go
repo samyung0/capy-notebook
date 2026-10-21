@@ -150,6 +150,7 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 		if err = tx.Commit(ctx); err != nil {
 			return out, err
 		}
+		logRefreshFailure(ctx, fileID, jobID, detail)
 		return out, ErrConflict
 	}
 	out.LeaseToken = uid("srclease")
@@ -561,7 +562,20 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 	if _, err = tx.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'failed','source_refresh','source_refresh_failed',$2)`, jobID, detail); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if !stale {
+		logRefreshFailure(ctx, fileID, jobID, detail)
+	}
+	return nil
+}
+
+// logRefreshFailure writes the line an operator finds by the error id a
+// failed row shows for an export failure the gateway recorded: obs.Log adds
+// this request's trace, the id stored with the failure.
+func logRefreshFailure(ctx context.Context, fileID, jobID, detail string) {
+	obs.Log(ctx).Warn("source refresh failed", "file_id", fileID, "job_id", jobID, "detail", detail)
 }
 
 // WorkspaceIndexCounts partitions logical files by their current searchable

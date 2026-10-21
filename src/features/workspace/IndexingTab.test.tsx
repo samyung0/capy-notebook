@@ -83,6 +83,8 @@ function render(workspace: Partial<Workspace>, files: SourceFile[] = []) {
   );
 }
 
+const SWITCH_TAG = /<span[^>]*role="switch"[^>]*>/;
+
 const rowOf = (html: string, name: string) =>
   html.split('<li').find((item) => item.includes(name));
 
@@ -185,5 +187,15 @@ describe('IndexingTab note changes', () => {
       expect(rowOf(html, name)).toContain(status.replaceAll("'", '&#x27;'));
     }
     expect(buttons).toEqual([]);
+  });
+
+  it('gives only the owner the Auto process switch; editors see it disabled', () => {
+    const autoSwitch = (html: string) => html.match(SWITCH_TAG)?.[0];
+    expect(autoSwitch(render({ isOwner: true }))).not.toContain(
+      ' data-disabled=""'
+    );
+    expect(autoSwitch(render({ isOwner: false }))).toContain(
+      ' data-disabled=""'
+    );
   });
 });

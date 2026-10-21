@@ -676,7 +676,8 @@ tab lists every file with unprocessed edits as waiting, queued, processing
 file or note is queued or processing. The owner processes a waiting or failed file, or all
 of them, and cancels a queued one; a file whose processing started refuses
 with `processing_started`. Editors see the same rows and status as the owner
-(state, "Edited …", error id) without any action (Epo 2026-10-21). Workspace
+(state, "Edited …", error id) without any action, and the Auto process edits
+switch disabled, since only the owner may change it (Epo 2026-10-21). Workspace
 notes whose index is behind their content are listed in the same rows with
 the note icon and title (Epo 2026-10-21), since a note can wait up to 10
 minutes to index; a note row reads like a file row, with no auto-processing
@@ -690,15 +691,21 @@ is `source_documents.refresh_trace_id` or `materials.index_trace_id`
 logs and Sentry events), and clearing the error clears the id. An export
 failure the gateway records for the collaboration service
 (`FailSourceRefresh`, and `ClaimSourceRefresh` past two attempts) stores that
-request's trace instead, since the export records no attempt; a refusal before
-any job (the scheduler's 4xx when queuing) stores none and its row shows no
-id. A file under Failed files carries its id on the file rows (`errorId`,
-sent while `status='failed'`): `files.failure_trace_id`, which a trigger sets
-when the status turns `failed` from the last ingest attempt of a job naming
-the file (the one that failed it or left it partial) and clears when the
-status moves on. An operator finds the failure by its id in the logs and
-Sentry, or with `WHERE refresh_trace_id=…` / `index_trace_id=…` /
-`failure_trace_id=…`, whose row keeps the error text where one is stored. The owner's Process (Retry when
+request's trace instead, since the export records no attempt, and the gateway
+logs one `source refresh failed` warning under that trace with the file id,
+job id and failure detail, so the id is found in the gateway logs. A refusal
+before any job (the scheduler's 4xx when queuing) stores none and its row
+shows no id. A file under Failed files carries its id as `errorId` on the
+workspace file list (`GET /api/workspaces/{id}/files`), sent while the file is
+failed and only to the owner and editors, who see the Indexing tab; other
+file rows never carry it. It is `files.failure_trace_id`, which a trigger sets
+when the status turns `failed`: the trace of the last unsuccessful ingest
+attempt of a job for the file's revision (the one that failed it or left it
+partial; never an earlier successful run's or another revision's), found
+through the `jobs ((payload->>'fileId'))` index, and cleared when the status
+moves on. An ingest failure's id tags the worker's logs and Sentry events; any
+id also finds its row with `WHERE refresh_trace_id=…` / `index_trace_id=…` /
+`failure_trace_id=…`, which keeps the error text where one is stored. The owner's Process (Retry when
 failed, and Process all) indexes the note at once, also with auto process
 off; a `processing_started` answer (queued meanwhile by the scheduler or
 another tab) counts as started, and `nothing_to_process` toasts that there

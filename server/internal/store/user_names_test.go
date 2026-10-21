@@ -20,13 +20,17 @@ func TestClerkProfileSyncNamesAnUnnamedAccountAfterItsEmailLocalPart(t *testing.
 		t.Fatal(err)
 	}
 	s.SetModelRegistry(reg)
-	for _, local := range []string{"Ada.Lovelace+notes", strings.Repeat("a", 70)} {
+	for _, tc := range []struct{ name, local string }{
+		{"", "Ada.Lovelace+notes"},
+		{"  ", "Grace"}, // a whitespace-only Clerk name counts as none
+		{"", strings.Repeat("a", 70)},
+	} {
 		userID := uid("u_local_name")
 		t.Cleanup(func() {
 			_, _ = s.pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 		})
-		local += "." + userID
-		if _, err := s.UpsertUserFromClerk(ctx, userID, "", local+"@example.test", ""); err != nil {
+		local := tc.local + "." + userID
+		if _, err := s.UpsertUserFromClerk(ctx, userID, tc.name, local+"@example.test", ""); err != nil {
 			t.Fatal(err)
 		}
 		var name string

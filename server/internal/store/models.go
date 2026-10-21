@@ -204,8 +204,8 @@ type File struct {
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
 	// ErrorID is a failed file's error id for the Indexing tab's Failed files:
-	// the trace of the ingest attempt that failed it (migration 0104). Absent
-	// unless status is failed and one was recorded.
+	// the trace of the ingest attempt that failed it (migration 0104). Only the
+	// workspace file list sends it, and only to the owner and editors.
 	ErrorID string `json:"errorId,omitempty"`
 	// WorkspaceName and LostAccess: owned-list rows only (ListOwnedFiles).
 	WorkspaceName string `json:"workspaceName,omitempty"`
