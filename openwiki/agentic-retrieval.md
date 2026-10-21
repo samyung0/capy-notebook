@@ -3869,28 +3869,31 @@ counts both sides:
 - XLSX structure: a `PIECE` per inserted or deleted row or column (a delete
   writes an axis change; the cells stay in Yjs), a new sheet's name and 4
   `PIECE`s, a rename's two names and 1;
-- what an Office command's Undo re-creates (the Editor's design,
-  2026-10-22): the engine measures the command's target before it applies
+- what an Office command's Undo re-creates (the Editor's rule,
+  2026-10-22): the engine measures it before the command applies
   (`office_service::Touched`, one per applied command in
-  `CommandResult::touched`, from `touched.rs` in the fork): the target's
-  live Yjs items (text runs, format markers, embeds, map entries, nested
-  types whole) and their content's bytes. The target is the paragraph a
-  DOCX or PPTX `replace_text`, `delete_paragraph`, `format_text` or
-  `set_alignment` names, each paragraph of a `set_list`, a deleted table's
-  embed and cell stories (with the tables in its cells), and a deleted
-  sheet's key in the sheet order; a command whose Undo only deletes what it
-  wrote measures nothing. `undo_cost::office` takes those bytes times
-  `CONTENT` and a `PIECE` an item, plus what the command writes itself: a
-  paragraph insert's text and style times `CONTENT` and 8 `PIECE`s (the new
-  mark, a copy of its anchor's properties: a list item's measured 837
-  bytes, and the run it splits), a replacement's text and 2, `format_text`'s
-  format JSON and 6, `set_list` 3 a paragraph, `set_alignment` 2,
-  `insert_table` its cells' text, 3 a cell and 8, a paragraph or table
-  delete 2. On the fixtures (lesson.docx and .pptx, paragraphs of
-  5-character runs and of one run a character, 1x1 to 10x10 tables) inserts,
-  formats and table deletes over-estimate 1.5 to 8 times; a `replace_text`,
-  `set_alignment` or paragraph delete on a run-heavy paragraph up to 170
-  times, since its Undo leaves the paragraph's format markers where they are.
+  `CommandResult::touched`, from `touched.rs` in the fork) as live Yjs items
+  and their content's bytes: the text a DOCX or PPTX `replace_text` takes
+  out (the changed span), the text and format markers a `format_text` span
+  covers, the mark entries `set_alignment` (`alignment`) and `set_list`
+  (`numPr`, `listIsBullet`, `listNumFmt`, `listMarker`) write, a deleted
+  paragraph's text and mark (its format markers stay where they are), a
+  deleted table's embed and cell stories whole (with the tables in its
+  cells), and a deleted sheet's key in the sheet order; a command whose
+  Undo only deletes what it wrote measures nothing. `undo_cost::office`
+  takes those bytes times `CONTENT` and an `ITEM` (33 bytes: the most the
+  fixtures sent beyond content was 22 bytes an item, plus half again) an
+  item, plus what the command writes itself: a replacement's text and 3
+  items (its run and the two it splits), `format_text`'s format JSON and 2,
+  `set_alignment` its entry, `set_list` 80 bytes and 4 entries a
+  paragraph, a paragraph or table delete 1; a paragraph insert's text and
+  style times `CONTENT` and 8 `PIECE`s (the new mark, a copy of its
+  anchor's properties: a list item's measured 837 bytes, and the run it
+  splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8. On the
+  fixtures (lesson.docx and .pptx, paragraphs of 5-character runs and of
+  one run a character, 1x1 to 10x10 tables) every DOCX and PPTX command
+  over-estimates 1.5 to 7.4 times, and the calibration fails one past 10
+  times (`CEILING`), so an ordinary 50-command call keeps its Undo.
 
 A new command adds its rule there; both matches are exhaustive, so it does
 not compile without one. The factors were
@@ -3909,7 +3912,7 @@ case: a small update whose Undo brings the removed content back. XLSX
 `delete_sheet` and `delete_rows` are not: they leave the cells in Yjs, and
 their Undo measures tens of bytes whatever the sheet holds (measured
 2026-10-21; 2026-10-22 on a sheet of 10,000 written cells and the large
-gradebook's 16,000-cell sheet: 32 to 54 bytes). The room checks the estimate again when an Undo is asked,
+gradebook's 16,000-cell sheet: 32 to 57 bytes). The room checks the estimate again when an Undo is asked,
 against the room as it is then (a person may have filled a source room
 since), and refuses one that no longer fits with `undo_unavailable`,
 dropping the step. A timed-out Undo whose reverse was too large to keep is not
@@ -4120,7 +4123,7 @@ format, which `limits.rs` reads (`include_str!`) and Go's `cmd/openapi
 so description and engine cannot drift. It holds 50 commands and, per
 format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
-cells), 1,000 inserted rows and columns and 20 sheets added, renamed or
+cells), 1,000 inserted rows and columns and 5 sheets added, renamed or
 deleted; DOCX 20 inserted and 20 deleted paragraphs, 400 table cells
 inserted or deleted, 30 formatted spans and 200 paragraphs given a list or
 an alignment; PPTX 20 inserted and 20 deleted paragraphs (`replace_text`
