@@ -65,6 +65,7 @@ export function TopicSummary({
         <ResultScore
           awarded={results.reduce((sum, r) => sum + (r.awarded ?? 0), 0)}
           max={results.reduce((sum, r) => sum + r.marks, 0)}
+          percent
         />
         <ResultSquares onOpen={onOpen} results={results} />
       </div>

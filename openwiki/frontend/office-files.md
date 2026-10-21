@@ -2631,7 +2631,35 @@ and 1 background process, UAT 1 and 1 (`COLLABORATION_ENGINE_*`, rendered by
 `scripts/env/config.py`). Within a lane a room's calls go to one process; each
 process runs one call at a time, with its own data cap
 (`COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES`, 4 GiB production, 3 GiB UAT) and
-`oom_score_adj` 1000. A call running past 120 s kills its process; a process
+`oom_score_adj` 1000. Engines run sandboxed under the shared decoder policy
+(Epo 2026-10-20, `collaboration-rs/crates/sources/src/engine/sandbox.rs`): an
+engine starts with an empty environment plus `CAPY_ENGINE_*`, `MALLOC_*`,
+`APP_ENV` and `LOG_FORMAT` (no database URL, secrets or `SENTRY_DSN`, so no
+Sentry in the engine), in its own process group, from a pool thread that
+outlives it so its parent-death signal kills it when the pool goes; the
+server that runs the pool is not dumpable, so an engine of the same uid
+cannot read the server's environment or memory through `/proc`; a panic on
+that spawner thread aborts the server, which restarts. Before its engine
+thread starts, an engine closes any descriptor it inherited above stderr,
+keeps 64 descriptors and no core file (no file-size cap: its stderr may be
+a file), sets no_new_privs, takes Landlock
+(reads only under its own `/proc/self`, no TCP, and with its signal and
+abstract Unix-socket scoping no signal or abstract socket reaches outside
+its own sandbox) and seccomp filters that
+refuse non-Unix sockets and exec (EACCES), cross-process calls
+(`ptrace`, `process_vm_*`, `pidfd_getfd` and the like), `setsid`/`setpgid`,
+new processes and `prctl` changes to its parent-death signal or dumpability
+(EPERM), io_uring and `clone3` (ENOSYS, so glibc starts threads with
+`clone`, which the filter lets through only with `CLONE_THREAD`), and on
+x86_64 every x32 call (EPERM; the other filters match x86_64 numbers only).
+An engine that cannot take its sandbox does not serve. A
+production server (`APP_ENV=production`, UAT included) on a host without
+Landlock's scoping (ABI 6, Linux 6.12) does not start; elsewhere it logs the
+gap once (`office engine sandbox incomplete`) and engines run with seccomp,
+their limits and whatever Landlock the kernel has, and off Linux (Windows
+development) with the cleared environment only. The engine
+sandbox has no CPU limit: the per-call timeout bounds it. A call running past
+120 s kills its process group; a process
 that dies (a crash, an abort at its cap) fails its call as transient and the
 next call starts a new process, and the same call crashing a fresh process
 again is refused at once (Epo, 2026-10-07). Engine refusals such as
@@ -2641,6 +2669,24 @@ clients with unsaved edits enter recovery with them. An engine timeout or a
 lost process is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
+
+The chat agent reads Office files with `inspect_office_document` and edits
+them with `edit_office_document` (since agent contract v32, 2026-10-20; see
+[agentic retrieval](../agentic-retrieval.md), Office tools). Go turns its
+commands into the engine's (`normalizeOfficeCommands`): `replace_text` for
+DOCX and PPTX, and for XLSX `set_range`, `format_cells`, `add_sheet`,
+`rename_sheet`, row and column inserts and deletes and `delete_sheet`, which
+the engine applies in one session per call (the fork's
+`crates/office-service/src/xlsx.rs`: one `edit_cells` per `set_range`, a
+format without a full recalculation). Go no longer sends `set_cell`, which the
+engine keeps. The collaboration server's inspect route answers an XLSX
+`office` query with the engine's scoped read (the sheet list, or at most
+2,000 cells), and `/internal/documents/create` builds a new XLSX from the
+committed starter (`crates/office-service/starters/blank.xlsx`); DOCX create
+and the DOCX and PPTX scoped reads are phases 2 and 3. A command the engine
+returns no inverse for (`format_cells`, `add_sheet`, `delete_sheet`, row and
+column deletes) leaves its edit without Undo until the live-room Undo (Epo,
+2026-10-20) lands.
 
 An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
 as a substring that occurs exactly once in the paragraph, counted as note

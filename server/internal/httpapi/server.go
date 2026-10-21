@@ -34,17 +34,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// corsOrigins falls back to "*" when no allowlist is configured. Bearer tokens
-// are sent explicitly rather than as cookies and AllowCredentials is false, so
-// the wildcard is not a session-theft vector; it is still narrowed in
-// production so a hostile page cannot drive the API from a user's browser.
-func corsOrigins(configured []string) []string {
-	if len(configured) == 0 {
-		return []string{"*"}
-	}
-	return configured
-}
-
 // Config holds gateway settings for auth and billing. Provider OAuth
 // (Google/Microsoft) is managed entirely by Clerk.
 type Config struct {
@@ -70,10 +59,13 @@ type Config struct {
 	EmailUnsubscribeSecret string
 	CollaborationSecret    string
 	CollaborationURL       string
-	// AllowedOrigins is the CORS allowlist. Empty means "*", which is what dev
-	// and e2e run with; production sets it once the SPA and API live on
-	// different hostnames.
+	// AllowedOrigins is the CORS allowlist. Empty answers no cross-origin
+	// request at all (never "*"): development and e2e reach the API through a
+	// same-origin proxy, and deployed gateways refuse to boot without a list.
 	AllowedOrigins []string
+	// AuthorizedParties are the origins whose Clerk session tokens are accepted
+	// (COLLABORATION_ALLOWED_ORIGINS, Epo 2026-10-21).
+	AuthorizedParties []string
 	// RateLimit governs per-user and per-IP request limits. The zero value
 	// disables limiting entirely.
 	RateLimit ratelimit.Config
@@ -118,6 +110,10 @@ type api struct {
 	stripeSubscription func(string) (*stripe.Subscription, error)
 	stripeEntitlements func(string) ([]*stripe.Subscription, error)
 	stripeInvoices     func(string) ([]*stripe.Invoice, error)
+	// Subscription Checkout calls, faked in tests.
+	stripeNewCheckout    func(customerID, priceID, userID, successURL, cancelURL, reservationID, key string) (billing.CheckoutSession, error)
+	stripeGetCheckout    func(sessionID string) (billing.CheckoutSession, error)
+	stripeExpireCheckout func(sessionID string) error
 	// Credit top-up and auto-reload calls, replaced by tests.
 	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
 	stripeSetupMethod   func(string) (store.PaymentMethod, error)
@@ -131,6 +127,9 @@ type api struct {
 	// (treeLive says whether that LISTEN is attached); see fanout.go.
 	broker   *channelBroker
 	treeLive atomic.Bool
+	// operations hold an agent edit's or create's retry until its first
+	// attempt ends (internal_documents.go).
+	operations operationLocks
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and, in
@@ -156,6 +155,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeSubscription: billing.RetrieveSubscription,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
 		stripeInvoices:     billing.ListInvoices,
+
+		stripeNewCheckout:    billing.CreateCheckoutSession,
+		stripeGetCheckout:    billing.GetCheckoutSession,
+		stripeExpireCheckout: billing.ExpireCheckoutSession,
 
 		stripeTopUpMethod:   billing.TopUpPaymentMethod,
 		stripeSetupMethod:   billing.SetupPaymentMethod,
@@ -194,17 +197,20 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Use(obs.AccessLog)
 	r.Use(recoverer)
 	r.Use(obs.SentryMiddleware)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: corsOrigins(cfg.AllowedOrigins),
-		AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{
-			"Content-Type", "Authorization", obs.HeaderTraceparent,
-			auth.HeaderE2EUserID, auth.HeaderE2ESecret,
-		},
-		ExposedHeaders:   []string{obs.HeaderRequestID},
-		AllowCredentials: false,
-		MaxAge:           600,
-	}))
+	// go-chi/cors reads an empty origin list as "*", so no list means no handler.
+	if len(cfg.AllowedOrigins) > 0 {
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins: cfg.AllowedOrigins,
+			AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders: []string{
+				"Content-Type", "Authorization", obs.HeaderTraceparent,
+				auth.HeaderE2EUserID, auth.HeaderE2ESecret,
+			},
+			ExposedHeaders:   []string{obs.HeaderRequestID},
+			AllowCredentials: false,
+			MaxAge:           600,
+		}))
+	}
 	// Public failures must not be cached either: visibility is read live, and
 	// only the site Worker caches public responses.
 	r.Use(func(next http.Handler) http.Handler {
@@ -217,14 +223,15 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	})
 	r.Use(a.internalSecretFirst)
 	r.Use(auth.Middleware(auth.Config{
-		SecretKey:    cfg.ClerkSecretKey,
-		Disabled:     cfg.AuthDisabled,
-		DevUserID:    cfg.DevUserID,
-		E2EAuth:      cfg.E2EAuth,
-		E2ESecret:    cfg.E2ESecret,
-		E2EUserIDs:   cfg.E2EUserIDs,
-		Store:        s,
-		PublicPrefix: publicPrefix,
+		SecretKey:         cfg.ClerkSecretKey,
+		Disabled:          cfg.AuthDisabled,
+		DevUserID:         cfg.DevUserID,
+		E2EAuth:           cfg.E2EAuth,
+		E2ESecret:         cfg.E2ESecret,
+		E2EUserIDs:        cfg.E2EUserIDs,
+		AuthorizedParties: cfg.AuthorizedParties,
+		Store:             s,
+		PublicPrefix:      publicPrefix,
 		PublicReadPrefix: []string{
 			"/api/public/",
 		},
@@ -270,6 +277,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/documents/list", a.internalListDocuments)
 		r.Post("/api/internal/documents/inspect", a.internalInspectDocument)
 		r.Post("/api/internal/documents/edit", a.internalEditDocument)
+		r.Post("/api/internal/documents/office/create", a.internalCreateOfficeDocument)
 		r.Post("/api/internal/provider-calls", a.internalSettleProviderCall)
 		r.Post("/api/internal/import/acquire", a.internalAcquireSourceImport)
 		r.Post("/api/internal/import/complete", a.internalCompleteSourceImport)
@@ -348,7 +356,9 @@ var errAgentFailed = errors.New("the chat agent hit an internal error")
 // blank mindmap is not reported as the retrieval process being down.
 var errGenerateEmpty = errors.New("the model returned no usable material")
 
-var errScopeNoIndexedContent = errors.New("the requested scope has no indexed content")
+// errScopeNoIndexedContent: nothing in a Generate scope has text to work from.
+var errScopeNoIndexedContent = errors.New("None of the chosen sources has any text to generate from yet: " +
+	"they are still being indexed, or they are quizzes or flashcard sets, which hold no source text.")
 var errContextTooLarge = errors.New("source context exceeds the selected model's input limit")
 var errSourceChanged = errors.New("sources changed while this request was running; please try again")
 

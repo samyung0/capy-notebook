@@ -1077,8 +1077,8 @@ export const EMBED_CATALOG = {
   ],
   "limits": {
     "BLOCK_CAPTION_MAX": 300,
-    "CARD_BACK_MAX": 2000,
-    "CARD_FRONT_MAX": 4000,
+    "CARD_BACK_MAX": 1000,
+    "CARD_FRONT_MAX": 200,
     "HTML_EMBED_MAX_BYTES": 65536,
     "HTML_EMBED_MAX_COUNT": 10,
     "LIST_INDENT_MAX": 8,

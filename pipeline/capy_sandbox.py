@@ -223,21 +223,22 @@ def _collect(
     threads = [*readers, threading.Thread(target=wait)]
     if input is not None:
         threads.append(threading.Thread(target=feed))
-    for thread in threads:
-        thread.daemon = True
-        thread.start()
     try:
+        for thread in threads:
+            thread.daemon = True
+            thread.start()
         finished = done.wait(timeout_s)
     finally:
         _kill_group(process)
     if not finished:
         raise subprocess.TimeoutExpired(process.args, timeout_s)
-    if over.is_set():
-        raise OutputLimit(f"the child wrote more than {max_output} bytes")
     for reader in readers:
         reader.join(max(0.0, deadline - time.monotonic()))
         if reader.is_alive():
             raise subprocess.TimeoutExpired(process.args, timeout_s)
+    # After the joins: what the child left in its pipe counts too.
+    if over.is_set():
+        raise OutputLimit(f"the child wrote more than {max_output} bytes")
     return bytes(out), bytes(err)
 
 

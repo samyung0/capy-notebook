@@ -71,6 +71,7 @@ export function QuestionRunner({
   renderBlock,
   frameAnswer,
   titleAside,
+  headerMarks,
 }: {
   /** Learner questions (no answer key) only render without `review`, which
    * shows a question graded on the server: its key and each part's `awarded`. */
@@ -87,6 +88,7 @@ export function QuestionRunner({
   /** The question dialog: wraps each part's answer controls to select them. */
   frameAnswer?: (partId: string, answer: ReactNode) => ReactNode;
   titleAside?: QuestionViewProps['titleAside'];
+  headerMarks?: boolean;
 }) {
   // A gaps part's text carries its own fields, one per numbered blank.
   const gapBlock: QuestionViewProps['renderBlock'] = (
@@ -145,6 +147,7 @@ export function QuestionRunner({
     );
   return (
     <QuestionReview
+      headerMarks={headerMarks}
       question={question as Question}
       questionNumber={questionNumber}
       renderAnswer={answer}

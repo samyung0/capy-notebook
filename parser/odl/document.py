@@ -37,6 +37,12 @@ SOFFICE = "/usr/lib/libreoffice/program/soffice.bin"
 # soffice.bin exits with this once it has set up a fresh profile (every job's
 # is fresh); its launcher would start it again, so the conversion runs again.
 _PROFILE_CREATED_EXIT = 81
+# Each conversion's job folder in its parse child's slot folder; short, so its
+# IPC pipe's path fits a Unix socket address (``check_pipe_path``).
+_JOB_PREFIX = "lo-"
+# A Unix socket path holds 107 bytes; LibreOffice names its pipe
+# OSL_PIPE_<uid>_SingleOfficeIPC_<MD5 hex, at most 32 characters>.
+_SOCKET_PATH_MAX = 107
 # What LibreOffice reads besides its job folder: libraries, configuration,
 # fonts and the random device.
 READ = (
@@ -127,9 +133,8 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
     # The profile, LibreOffice's own temporary files and its IPC pipe live in
     # the job directory, so they go with the job. LibreOffice puts the pipe in
     # /tmp or /var/tmp when it may write there (the image lets it write
-    # neither), else in OSL_SOCKET_PATH. A socket path holds 107 bytes and the
-    # pipe's name about 64, hence the short folder name.
-    with tempfile.TemporaryDirectory(prefix="lo-", dir=work_dir) as tmp_name:
+    # neither), else in OSL_SOCKET_PATH (``check_pipe_path``).
+    with tempfile.TemporaryDirectory(prefix=_JOB_PREFIX, dir=work_dir) as tmp_name:
         tmp = Path(tmp_name)
         source = tmp / f"source{suffix}"
         source.write_bytes(data)
@@ -185,6 +190,27 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
         suffix.lstrip("."),
         preview_pdf=pdf,
     )
+
+
+def check_pipe_path(work_dir: Path) -> None:
+    """Refuse a work folder whose job folders cannot hold LibreOffice's IPC
+    pipe. It goes there (OSL_SOCKET_PATH) only when LibreOffice may write
+    neither /tmp nor /var/tmp, as in the parser image."""
+    if os.access("/tmp", os.W_OK) or os.access("/var/tmp", os.W_OK):
+        return
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    pipe = (
+        work_dir
+        / f"{_JOB_PREFIX}{'x' * 8}"
+        / f"OSL_PIPE_{uid}_SingleOfficeIPC_{'0' * 32}"
+    )
+    excess = len(os.fsencode(pipe)) - _SOCKET_PATH_MAX
+    if excess > 0:
+        raise RuntimeError(
+            f"CAPY_PARSE_WORK_DIR is {excess} bytes too long: LibreOffice's IPC "
+            f"pipe in a job folder there would pass the {_SOCKET_PATH_MAX}-byte "
+            "Unix socket path"
+        )
 
 
 def _convert(

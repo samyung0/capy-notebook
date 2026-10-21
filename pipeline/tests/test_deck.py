@@ -95,6 +95,7 @@ async def _outline(ctx: ToolContext, slides: int = 2) -> str:
         {
             "title": "Tangents",
             "chapter_id": "ch_1",
+            "sources": ["Lecture 3, 14 Oct", "f_1"],
             "slides": [
                 {"title": f"Slide {n}", "brief": "b"} for n in range(1, slides + 1)
             ],
@@ -132,8 +133,8 @@ async def test_deck_tools_are_always_offered_and_need_the_deck_skill(monkeypatch
     unread = await tools.run(
         "create_deck", {"title": "t", "slides": [{"title": "a", "brief": "b"}]}, ctx
     )
-    assert unread.error == skills.refusal([skills.DECK_BUILDING])
-    assert "\n\n# Skill: deck_building\n" in unread.text()
+    assert unread.error == skills.refusal([skills.DECK_BUILDING], write=True)
+    assert "# Skill:" not in unread.text()
 
 
 async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(decks):
@@ -178,6 +179,8 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     payload = post["payload"]
     assert payload["name"] == "Tangents.pptx" and payload["chapterId"] == "ch_1"
     assert payload["toolCallId"] == "c_2" and "provenance" not in payload
+    # The deck's made-from line goes to Go as written (Epo 2026-10-21).
+    assert payload["sources"] == ["Lecture 3, 14 Oct", "f_1"]
     assert last.effects[0]["resource"] == {
         "kind": "source_file",
         "id": "f_deck",
@@ -187,7 +190,7 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
 
     # The stored PPTX is the document now.
     again = await _write(ctx, rid, 1, _slide(), call="c_again")
-    assert again.refused and "replace_text" in again.text()
+    assert again.refused and "edit_office_document" in again.text()
     assert len(posts) == 1
 
 

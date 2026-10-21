@@ -107,6 +107,8 @@ services:
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:?set LLM_CREDENTIALS_KEY}
       APP_URL: ${APP_URL:?set APP_URL}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS}
+      # Clerk session tokens are accepted only from these origins (their azp).
+      COLLABORATION_ALLOWED_ORIGINS: ${COLLABORATION_ALLOWED_ORIGINS:-${APP_URL:?set APP_URL}}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-cloudflare}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       CLOUDFLARE_EMAIL_TOKEN: ${CLOUDFLARE_EMAIL_TOKEN:-}
@@ -205,6 +207,11 @@ services:
       nofile:
         soft: 524288
         hard: 524288
+    # Its Office engine children read uploaded files (Epo 2026-10-20): no
+    # capabilities and no privilege gain; the server (nobody) needs neither.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:1234/healthz"]
       interval: 5s

@@ -290,24 +290,24 @@ fn shapes_no_editor_writes_are_refused() {
 }
 
 #[test]
-fn a_back_past_two_thousand_characters_is_refused_at_once_or_bit_by_bit() {
+fn a_back_past_its_cap_is_refused_at_once_or_bit_by_bit() {
     // One update past the cap.
     refused(
         |doc| {
-            face(doc, "c1", "back").insert(&mut doc.transact_mut(), 0, &"é".repeat(2000));
+            face(doc, "c1", "back").insert(&mut doc.transact_mut(), 0, &"é".repeat(1000));
         },
-        "a flashcard back holds at most 2000 characters",
+        "a flashcard back holds at most 1000 characters",
     );
     // Up to the cap in one update, past it in the next: the bound sends the
     // second to the exact check, which refuses it.
     let (room_doc, client) = room(&set_value(&[("c1", "Front", "")]));
     let mut check = validator(&room_doc);
-    face(&client, "c1", "back").insert(&mut client.transact_mut(), 0, &"a".repeat(2000));
+    face(&client, "c1", "back").insert(&mut client.transact_mut(), 0, &"a".repeat(1000));
     let (result, _) = admit(&mut check, &room_doc, &diff(&client, &room_doc));
     assert_eq!(result.unwrap(), Admission::Accepted);
     face(&client, "c1", "back").insert(&mut client.transact_mut(), 0, "b");
     let (result, _) = admit(&mut check, &room_doc, &diff(&client, &room_doc));
-    assert!(result.unwrap_err().to_string().contains("at most 2000"));
+    assert!(result.unwrap_err().to_string().contains("at most 1000"));
 }
 
 #[test]

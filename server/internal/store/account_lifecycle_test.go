@@ -316,23 +316,25 @@ func TestClerkProfileSyncDoesNotRefreshLockedAccountPII(t *testing.T) {
 	}
 }
 
-func TestClerkProfileSyncPreservesEmailWhenPayloadOmitsIt(t *testing.T) {
+// Security regression (human authorization, 2026-10-21): a refresh whose
+// Clerk profile has no verified primary address clears users.email rather
+// than keeping an address the account may no longer prove it holds.
+func TestClerkProfileSyncClearsEmailWithoutAVerifiedPrimary(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newBlobTestUser(t, s, "u_profile_email_omitted")
-	const storedEmail = "stored@example.test"
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET email=$2 WHERE id=$1`, userID, storedEmail); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET email=$2 WHERE id=$1`, userID, userID+"@example.test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.UpsertUserFromClerk(ctx, userID, "Refreshed Name", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	var email string
+	var email *string
 	if err := s.pool.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, userID).Scan(&email); err != nil {
 		t.Fatal(err)
 	}
-	if email != storedEmail {
-		t.Fatalf("email after omitted refresh = %q, want %q", email, storedEmail)
+	if email != nil {
+		t.Fatalf("email after a refresh without a verified primary = %q, want none", *email)
 	}
 }
 

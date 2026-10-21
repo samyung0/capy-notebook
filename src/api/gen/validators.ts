@@ -215,6 +215,11 @@ export const GetAttemptResponse = zod.object({
   "kind": zod.enum(['quiz', 'flashcards']),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
+  "previous": zod.object({
+  "correct": zod.number(),
+  "takenAt": zod.iso.datetime({"offset":true}),
+  "total": zod.number()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "quizName": zod.string(),
   "startedAt": zod.iso.datetime({"offset":true}).nullable(),
@@ -1175,6 +1180,35 @@ export const DeleteConversationParams = zod.object({
 })
 
 export const DeleteConversationResponse = zod.void()
+
+
+/**
+ * @summary Rename, pin or archive a conversation
+ */
+export const UpdateConversationParams = zod.object({
+  "id": zod.string().describe('Conversation id')
+})
+
+export const updateConversationBodyTitleMax = 60;
+
+
+
+export const UpdateConversationBody = zod.object({
+  "archived": zod.boolean().optional().describe('true archives and unpins; false puts the thread back in the list'),
+  "pinned": zod.boolean().optional(),
+  "title": zod.string().min(1).max(updateConversationBodyTitleMax).optional()
+})
+
+export const UpdateConversationResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
+  "title": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string()
+})
 
 
 /**
@@ -4745,6 +4779,11 @@ export const CreateAttemptResponse = zod.object({
   "kind": zod.enum(['quiz', 'flashcards']),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
+  "previous": zod.object({
+  "correct": zod.number(),
+  "takenAt": zod.iso.datetime({"offset":true}),
+  "total": zod.number()
+}).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "quizName": zod.string(),
   "startedAt": zod.iso.datetime({"offset":true}).nullable(),
@@ -5159,7 +5198,7 @@ export const ListPastReviewsResponse = zod.object({
 }).optional(),
   "chapterId": zod.string().optional(),
   "chapterName": zod.string().optional(),
-  "finishedAt": zod.iso.datetime({"offset":true}),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional().describe('Omitted on the result page of a session not finished yet'),
   "group": zod.enum(['chapter', 'others', 'workspace']),
   "iconId": zod.string(),
   "id": zod.string(),
@@ -5242,6 +5281,62 @@ export const FinishReviewSessionParams = zod.object({
 })
 
 export const FinishReviewSessionResponse = zod.void()
+
+
+/**
+ * @summary A review session's result: its scores and every answered item
+ */
+export const GetReviewResultParams = zod.object({
+  "id": zod.uuid()
+})
+
+export const getReviewResultResponseItemsItemRatingMax = 4;
+
+
+
+export const GetReviewResultResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "better": zod.int(),
+  "items": zod.array(zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).optional(),
+  "back": zod.string().optional(),
+  "correct": zod.number().optional(),
+  "front": zod.string().optional(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
+  "itemId": zod.string(),
+  "kind": zod.enum(['card', 'question']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "rating": zod.int().min(1).max(getReviewResultResponseItemsItemRatingMax),
+  "total": zod.number().optional()
+})),
+  "session": zod.object({
+  "answered": zod.int(),
+  "cards": zod.object({
+  "correct": zod.number(),
+  "total": zod.number()
+}).optional(),
+  "chapterId": zod.string().optional(),
+  "chapterName": zod.string().optional(),
+  "finishedAt": zod.iso.datetime({"offset":true}).optional().describe('Omitted on the result page of a session not finished yet'),
+  "group": zod.enum(['chapter', 'others', 'workspace']),
+  "iconId": zod.string(),
+  "id": zod.string(),
+  "lastAnswerAt": zod.iso.datetime({"offset":true}),
+  "mode": zod.enum(['tricky', 'fading', 'learned']).optional(),
+  "quiz": zod.object({
+  "correct": zod.number(),
+  "total": zod.number()
+}).optional(),
+  "startedAt": zod.iso.datetime({"offset":true}),
+  "total": zod.int(),
+  "workspaceId": zod.string(),
+  "workspaceName": zod.string()
+})
+})
 
 
 /**
@@ -6201,10 +6296,16 @@ export const ListConversationsParams = zod.object({
   "id": zod.string().describe('Workspace id')
 })
 
+export const ListConversationsQueryParams = zod.object({
+  "archived": zod.boolean().optional().describe('true lists the archived threads instead of the live list')
+})
+
 export const ListConversationsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string()
@@ -6229,12 +6330,34 @@ export const CreateConversationBody = zod.object({
 
 export const CreateConversationResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "archivedAt": zod.iso.datetime({"offset":true}).optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
+  "pinnedAt": zod.iso.datetime({"offset":true}).optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string()
 })
+
+
+/**
+ * @summary Delete every archived conversation
+ */
+export const DeleteArchivedConversationsParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const DeleteArchivedConversationsResponse = zod.void()
+
+
+/**
+ * @summary Put every archived conversation back in the list
+ */
+export const UnarchiveConversationsParams = zod.object({
+  "id": zod.string().describe('Workspace id')
+})
+
+export const UnarchiveConversationsResponse = zod.void()
 
 
 /**
@@ -6348,6 +6471,22 @@ export const GenerateResponse = zod.record(zod.string(), zod.unknown())
 
 
 /**
+ * @summary List pending workspace invites
+ */
+export const ListWorkspaceInvitesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ListWorkspaceInvitesResponseItem = zod.object({
+  "address": zod.string(),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "sentAt": zod.iso.datetime({"offset":true})
+})
+export const ListWorkspaceInvitesResponse = zod.array(ListWorkspaceInvitesResponseItem)
+
+
+/**
  * @summary Privately invite a workspace member
  */
 export const CreateWorkspaceInviteParams = zod.object({
@@ -6364,6 +6503,17 @@ export const CreateWorkspaceInviteBody = zod.object({
 })
 
 export const CreateWorkspaceInviteResponse = zod.void()
+
+
+/**
+ * @summary Cancel a pending workspace invite
+ */
+export const CancelWorkspaceInviteParams = zod.object({
+  "id": zod.string(),
+  "inviteId": zod.string()
+})
+
+export const CancelWorkspaceInviteResponse = zod.void()
 
 
 /**

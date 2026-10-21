@@ -19,6 +19,13 @@ type workspaceCollaboratorsOutput struct {
 	Body []apimodel.WorkspaceCollaborator `nullable:"false"`
 }
 
+type pendingWorkspaceInvitesOutput struct {
+	Body []apimodel.PendingWorkspaceInvite `nullable:"false"`
+}
+type workspaceInviteInput struct {
+	ID       string `path:"id"`
+	InviteID string `path:"inviteId"`
+}
 type createWorkspaceInviteInput struct {
 	ID   string `path:"id"`
 	Body apimodel.CreateWorkspaceInviteReq
@@ -48,6 +55,8 @@ func (a *api) registerMembership(api huma.API) {
 	reg(api, http.MethodDelete, "/api/workspaces/{id}/members/{memberId}", "removeWorkspaceMember", tag, "Remove a workspace member", http.StatusNoContent, a.removeWorkspaceMember)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/transfer", "transferWorkspace", tag, "Transfer workspace ownership to another member", http.StatusOK, a.transferWorkspace)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/invites", "createWorkspaceInvite", tag, "Privately invite a workspace member", http.StatusAccepted, a.createWorkspaceInvite)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/invites", "listWorkspaceInvites", tag, "List pending workspace invites", http.StatusOK, a.listWorkspaceInvites)
+	reg(api, http.MethodDelete, "/api/workspaces/{id}/invites/{inviteId}", "cancelWorkspaceInvite", tag, "Cancel a pending workspace invite", http.StatusNoContent, a.cancelWorkspaceInvite)
 	reg(api, http.MethodPost, "/api/workspace-invites/{token}/accept", "acceptWorkspaceInvite", tag, "Accept a workspace invite", http.StatusOK, a.acceptWorkspaceInvite)
 }
 
@@ -122,15 +131,38 @@ func (a *api) createWorkspaceInvite(ctx context.Context, in *createWorkspaceInvi
 	return &Empty{}, nil
 }
 
+// listWorkspaceInvites is the owner's pending list: every typed address, as
+// typed, whether or not it reaches an account.
+func (a *api) listWorkspaceInvites(ctx context.Context, in *workspaceIDInput) (*pendingWorkspaceInvitesOutput, error) {
+	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
+		return nil, collaborationError(err)
+	}
+	invites, err := a.s.ListWorkspaceInvites(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &pendingWorkspaceInvitesOutput{Body: invites}, nil
+}
+
+func (a *api) cancelWorkspaceInvite(ctx context.Context, in *workspaceInviteInput) (*Empty, error) {
+	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
+		return nil, collaborationError(err)
+	}
+	if err := a.s.CancelWorkspaceInvite(ctx, userID(ctx), in.ID, in.InviteID); err != nil {
+		return nil, collaborationError(err)
+	}
+	return &Empty{}, nil
+}
+
 func (a *api) acceptWorkspaceInvite(ctx context.Context, in *acceptWorkspaceInviteInput) (*workspaceMemberOutput, error) {
 	accepted, err := a.s.AcceptWorkspaceInviteWithResult(ctx, in.Token, userID(ctx))
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if accepted.RemovedNotificationID != "" {
+	if len(accepted.RemovedNotificationIDs) > 0 {
 		a.publishNotificationEvent(ctx, userID(ctx), notificationEvent{
 			Type: "removed",
-			IDs:  []string{accepted.RemovedNotificationID},
+			IDs:  accepted.RemovedNotificationIDs,
 		})
 	}
 	if n := accepted.InviterNotification; n != nil {

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { officeEditMenu } from '../helpers/office';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // A press in an Office document with no edit is no pending input: the header
@@ -14,9 +15,7 @@ for (const [format, name] of [
   }) => {
     test.setTimeout(120_000);
     await page.goto('/workspaces/ws_bio');
-    await page
-      .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-      .click();
+    await showPanelView(page, m.workspace_tab_files());
     await page
       .locator(
         `[data-workspace-file-tree] a[href*="file=bio-office-${format}"]`

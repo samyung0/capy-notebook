@@ -227,7 +227,7 @@ func TestTrashReleasesAvailableUndo(t *testing.T) {
 	doc := sourceTestSeed(t, s, owner, file.ID)
 	edit := SourceCheckpointOperation{
 		Receipt: SourceCheckpointReceipt{ID: "op_trash_" + file.ID[:8], ToolVersion: 1, RequestHash: "h1", ActorUserID: owner},
-		Inverse: json.RawMessage(`{"commands":[]}`), Guards: json.RawMessage(`[]`),
+		Inverse: json.RawMessage(`{"commands":[{"type":"replace_text","expectedText":"new","text":"old"}]}`), Guards: json.RawMessage(`[]`),
 	}
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
 		ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint, Update: []byte("new"),
@@ -241,5 +241,32 @@ func TestTrashReleasesAvailableUndo(t *testing.T) {
 	inv, _, err := s.GetEditInverse(ctx, edit.Receipt.ID)
 	if err != nil || inv.UndoStatus != agenttools.UndoUnavailable || inv.UndoReason == "" {
 		t.Fatalf("inverse after trash = %+v err = %v", inv, err)
+	}
+}
+
+// An edit the engine returned no inverse for lands without an Undo: no step
+// row and no Undo ref on its receipt (Epo 2026-10-20, agent Undo moves to the
+// live room).
+func TestSourceEditWithoutInverseKeepsNoUndo(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "edit_owner")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	edit := SourceCheckpointOperation{
+		Receipt: SourceCheckpointReceipt{ID: "op_noinv_" + file.ID[:8], ToolVersion: 1, RequestHash: "h1", ActorUserID: owner},
+	}
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
+		ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint, Update: []byte("new"),
+		PendingEffects: json.RawMessage(`[]`), Operation: &edit, SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e := saved.Operation.Effect; e == nil || e.Operation != agenttools.EffectEdited || e.Undo != nil {
+		t.Fatalf("receipt effect = %+v", e)
+	}
+	if _, _, err := s.GetEditInverse(ctx, edit.Receipt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("step row: %v", err)
 	}
 }

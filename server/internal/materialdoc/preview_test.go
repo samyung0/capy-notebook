@@ -101,10 +101,6 @@ func TestPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	longFront, err := FlashcardsDocument([]Card{{ID: "c1", Front: strings.Repeat("前", 250), Back: "b"}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	flow, err := MermaidDocument("flowchart LR\n  A --> B", "")
 	if err != nil {
 		t.Fatal(err)
@@ -268,12 +264,6 @@ func TestPreview(t *testing.T) {
 			kind:    "flashcards",
 			content: cards,
 			want:    `{"kind":"flashcards","cardCount":2,"first":{"front":"Mitosis","hasImage":true}}`,
-		},
-		{
-			name:    "a long front is clipped",
-			kind:    "flashcards",
-			content: longFront,
-			want:    `{"kind":"flashcards","cardCount":1,"first":{"front":"` + strings.Repeat("前", 200) + `","hasImage":false}}`,
 		},
 		{
 			name:    "diagram source",

@@ -55,8 +55,8 @@ services:
       # 5432 for the usual case; 5433 is an escape hatch for hosts that already
       # run a native Postgres on 5432 (which would otherwise shadow this one for
       # host-side tools like the pytest suite — see pipeline/tests/README.md).
-      - "5432:5432"
-      - "5433:5432"
+      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - capy_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -68,7 +68,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -100,7 +100,7 @@ services:
     volumes:
       - capy_collaboration_sources:/var/lib/capy/sources
     ports:
-      - "1234:1234"
+      - "127.0.0.1:1234:1234"
     # Every client socket, gateway call and database connection is a
     # descriptor; Docker's default soft limit of 1024 held the server near
     # 1,000 connections (prod Phase B). The server also raises its soft limit
@@ -109,6 +109,11 @@ services:
       nofile:
         soft: 524288
         hard: 524288
+    # Its Office engine children read uploaded files (Epo 2026-10-20): no
+    # capabilities and no privilege gain, as on UAT and production.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:1234/healthz"]
       interval: 5s
@@ -158,6 +163,8 @@ services:
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       APP_URL: ${APP_URL:-http://localhost:5173}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # Clerk session tokens are accepted only from these origins (their azp).
+      COLLABORATION_ALLOWED_ORIGINS: ${COLLABORATION_ALLOWED_ORIGINS:-${APP_URL:-http://localhost:5173}}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
       CLOUDFLARE_EMAIL_TOKEN: ${CLOUDFLARE_EMAIL_TOKEN:-}
@@ -183,7 +190,7 @@ services:
       CAPY_PARSE_MAX_PAGES: ${CAPY_PARSE_MAX_PAGES:?set CAPY_PARSE_MAX_PAGES}
       CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:?set CAPY_PARSE_OCR_PAGE_CAP}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
       interval: 5s

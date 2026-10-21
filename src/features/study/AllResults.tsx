@@ -18,7 +18,7 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
 import { materialKindLabel } from '@/features/materials/MaterialListCard';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
 import { csv, sortSearch } from '@/lib/listSearch';
 import { waitsForConnection } from '@/lib/online';
@@ -162,6 +162,7 @@ export function AllResults() {
             <div className="md:hidden">
               <BillingTable
                 columns={[
+                  { id: 'date', label: m.quiz_col_date(), sort: 'date' },
                   {
                     clamp: true,
                     id: 'quiz',
@@ -175,7 +176,6 @@ export function AllResults() {
                     sort: 'workspace',
                   },
                   { id: 'score', label: m.quiz_col_score(), sort: 'score' },
-                  { id: 'date', label: m.quiz_col_date(), sort: 'date' },
                   { align: 'right', id: 'menu', label: '' },
                 ]}
                 rows={rows.map((a) => ({
@@ -195,13 +195,13 @@ export function AllResults() {
               />
             </div>
             <div className="hidden overflow-hidden rounded-card border border-line md:block">
-              <div className="grid grid-cols-[minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(7rem,1fr)_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
+              <div className="grid grid-cols-[minmax(10rem,1fr)_minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
                 {(
                   [
+                    ['date', m.quiz_col_date()],
                     ['quiz', m.list_col_name()],
                     ['workspace', m.quiz_col_workspace()],
                     ['score', m.quiz_col_score()],
-                    ['date', m.quiz_col_date()],
                   ] as const
                 ).map(([value, label]) => (
                   <div
@@ -217,9 +217,12 @@ export function AllResults() {
               </div>
               {rows.map((a) => (
                 <div
-                  className="relative grid grid-cols-[minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(7rem,1fr)_2.25rem] items-center border-divider border-t pr-2 pl-4 text-sm hover:bg-surface-hover-bg"
+                  className="relative grid grid-cols-[minmax(10rem,1fr)_minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_2.25rem] items-center border-divider border-t pr-2 pl-4 text-sm hover:bg-surface-hover-bg"
                   key={a.id}
                 >
+                  <div className="whitespace-nowrap py-3 pr-4">
+                    {formatDate(a)}
+                  </div>
                   <div className="py-3 pr-4">
                     <ResultLink attempt={a} />
                   </div>
@@ -228,9 +231,6 @@ export function AllResults() {
                   </div>
                   <div className="whitespace-nowrap py-3 pr-4">
                     {scoreText(a)}
-                  </div>
-                  <div className="whitespace-nowrap py-3 pr-4">
-                    {formatDate(a)}
                   </div>
                   {menu(a)}
                 </div>
@@ -264,4 +264,8 @@ function ResultLink({ attempt: a }: { attempt: Attempt }) {
   );
 }
 
-const formatDate = (a: Attempt) => new Date(a.takenAt).toLocaleDateString();
+const formatDate = (a: Attempt) =>
+  new Intl.DateTimeFormat(getLocale(), {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(a.takenAt));

@@ -1,0 +1,58 @@
+{
+  "about": "The busy pool for the pending-hints eval: a revision guide drafted since the last index (auto processing off), each paragraph an added block. Added to workspace.json's documents to see how the hint noise grows with the number of pending changes. Not part of the Part 2 workspace.",
+  "documents": [
+    {
+      "id": "m_guide",
+      "kind": "material",
+      "format": "note",
+      "name": "Revision guide (draft)",
+      "chapter": "ch_bio",
+      "blocks": [
+        {"id": "g0", "type": "h1", "text": "Revision guide"}
+      ],
+      "chunks": [["g0"]],
+      "added": [
+        "Aerobic respiration releases energy from glucose in the mitochondria and produces carbon dioxide and water.",
+        "Anaerobic respiration in muscles makes lactic acid, which causes an oxygen debt after exercise.",
+        "DNA is a double helix of two antiparallel strands held together by hydrogen bonds between complementary bases.",
+        "Transcription copies a gene into mRNA in the nucleus; translation at the ribosome builds the polypeptide.",
+        "A mutation is a change in the base sequence; a substitution may change one amino acid or none at all.",
+        "Monohybrid crosses: a cross between two heterozygous parents gives a 3:1 ratio of dominant to recessive phenotypes.",
+        "Natural selection: individuals with advantageous alleles survive and reproduce, so those alleles become more common.",
+        "The heart has four chambers; the left ventricle has the thickest wall because it pumps blood around the whole body.",
+        "Arteries carry blood away from the heart at high pressure; veins have valves to stop backflow.",
+        "White blood cells: phagocytes engulf pathogens, and lymphocytes make antibodies specific to an antigen.",
+        "Vaccination gives memory cells, so the secondary response is faster and larger than the primary response.",
+        "Osmosis is the net movement of water across a partially permeable membrane from a dilute to a concentrated solution.",
+        "Active transport moves substances against their concentration gradient and needs ATP from respiration.",
+        "In a food chain only about 10% of the energy passes to the next trophic level; the rest is lost as heat.",
+        "The carbon cycle: photosynthesis removes carbon dioxide from the air, respiration and combustion return it.",
+        "Hormones: insulin lowers blood glucose and glucagon raises it; both are made in the pancreas.",
+        "A reflex arc goes from receptor to sensory neurone, relay neurone, motor neurone and effector, without the brain deciding.",
+        "Kidneys filter the blood; ADH makes the collecting duct more permeable so more water is reabsorbed.",
+        "Plant hormones: auxin makes shoots grow towards light (phototropism) by elongating cells on the shaded side.",
+        "Transpiration is the loss of water vapour from the leaves through the stomata; it is faster when it is hot, dry and windy.",
+        "Ionic bonding transfers electrons from a metal to a non-metal, forming oppositely charged ions in a giant lattice.",
+        "Covalent bonds share a pair of electrons; simple molecular substances have low melting points.",
+        "The rate of reaction increases with temperature, concentration, surface area and a catalyst.",
+        "Le Chatelier's principle: if a system at equilibrium is changed, the equilibrium shifts to oppose the change.",
+        "Electrolysis of brine gives chlorine at the anode, hydrogen at the cathode and sodium hydroxide in solution.",
+        "Moles: number of moles = mass divided by relative formula mass; one mole contains 6.02 × 10²³ particles.",
+        "Exothermic reactions give out heat, so the temperature of the surroundings rises; endothermic ones take it in.",
+        "Group 1 metals get more reactive down the group because the outer electron is further from the nucleus.",
+        "Crude oil is separated by fractional distillation; short-chain fractions have lower boiling points.",
+        "Ohm's law: voltage = current × resistance, for a resistor at constant temperature.",
+        "Waves: wave speed = frequency × wavelength; all electromagnetic waves travel at the same speed in a vacuum.",
+        "Specific heat capacity is the energy needed to raise 1 kg of a substance by 1 °C.",
+        "Exam technique: read the command word first; 'evaluate' needs a judgement, 'describe' does not.",
+        "Six-mark questions need a clear line of reasoning; plan the answer in bullet points before writing.",
+        "Past papers: do the 2022 and 2023 papers under timed conditions and mark them with the mark scheme.",
+        "Revision timetable: biology on Monday and Thursday, chemistry on Tuesday, physics on Wednesday, history at the weekend.",
+        "Flashcards for key terms; test myself every three days with spaced repetition.",
+        "Ask Ms Patel which required practicals are most likely to come up this year.",
+        "Remember to bring two black pens, a calculator, a ruler and a protractor to every exam.",
+        "Mock exam results: biology 6, chemistry 5, physics 6; chemistry calculations need the most work."
+      ]
+    }
+  ]
+}

@@ -249,9 +249,10 @@ func (s *Store) AbortOrphanedStreams(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("abort orphaned streams: %w", err)
 	}
-	// A crashed stream never saved its activity, but any mutation it committed
-	// left a receipt. Rebuild the tool blocks from those receipts so history
-	// shows the created material and its actions instead of a blank turn.
+	// A crashed stream kept only its last turn checkpoint (activity and
+	// evidence, CheckpointAssistantMessage), but any mutation it committed left
+	// a receipt. Merge the receipts into that activity so history shows the
+	// created material and its actions; the patch leaves the evidence as saved.
 	for _, o := range orphans {
 		var meta msgMetadata
 		_ = json.Unmarshal(o.meta, &meta)

@@ -474,6 +474,8 @@ components:
         pct:
           format: int64
           type: integer
+        previous:
+          $ref: "#/components/schemas/PreviousAttempt"
         questions:
           items:
             additionalProperties: {}
@@ -1343,10 +1345,16 @@ components:
           format: uri
           readOnly: true
           type: string
+        archivedAt:
+          format: date-time
+          type: string
         createdAt:
           format: date-time
           type: string
         id:
+          type: string
+        pinnedAt:
+          format: date-time
           type: string
         title:
           type: string
@@ -3633,6 +3641,7 @@ components:
         chapterName:
           type: string
         finishedAt:
+          description: Omitted on the result page of a session not finished yet
           format: date-time
           type: string
         group:
@@ -3673,7 +3682,6 @@ components:
         - iconId
         - group
         - startedAt
-        - finishedAt
         - lastAnswerAt
         - answered
         - total
@@ -3715,11 +3723,47 @@ components:
       required:
         - type
       type: object
+    PendingWorkspaceInvite:
+      additionalProperties: false
+      properties:
+        address:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        sentAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - address
+        - sentAt
+        - expiresAt
+      type: object
     PlanTier:
       enum:
         - free
         - pro
       type: string
+    PreviousAttempt:
+      additionalProperties: false
+      properties:
+        correct:
+          format: double
+          type: number
+        takenAt:
+          format: date-time
+          type: string
+        total:
+          format: double
+          type: number
+      required:
+        - correct
+        - total
+        - takenAt
+      type: object
     Privacy:
       enum:
         - private
@@ -4633,6 +4677,29 @@ components:
         - suggestions
         - unfinished
         - workspaces
+      type: object
+    ReviewResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ReviewResult.json
+          format: uri
+          readOnly: true
+          type: string
+        better:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/ReviewAnswer"
+          type: array
+        session:
+          $ref: "#/components/schemas/PastReview"
+      required:
+        - session
+        - items
+        - better
       type: object
     ReviewSession:
       additionalProperties: false
@@ -6393,6 +6460,25 @@ components:
       required:
         - contentRich
       type: object
+    UpdateConversationReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateConversationReq.json
+          format: uri
+          readOnly: true
+          type: string
+        archived:
+          description: true archives and unpins; false puts the thread back in the list
+          type: boolean
+        pinned:
+          type: boolean
+        title:
+          maxLength: 60
+          minLength: 1
+          type: string
+      type: object
     UpdateEventReq:
       additionalProperties: false
       properties:
@@ -8037,6 +8123,38 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Delete a conversation
+      tags:
+        - Chat
+    patch:
+      operationId: updateConversation
+      parameters:
+        - description: Conversation id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Conversation id
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConversationReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Rename, pin or archive a conversation
       tags:
         - Chat
   /api/conversations/{id}/messages:
@@ -10615,6 +10733,32 @@ paths:
       summary: End a review session before its last item
       tags:
         - Study
+  /api/review/sessions/{id}/result:
+    get:
+      operationId: getReviewResult
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: "A review session's result: its scores and every answered item"
+      tags:
+        - Study
   /api/search:
     get:
       operationId: search
@@ -11440,6 +11584,13 @@ paths:
           schema:
             description: Workspace id
             type: string
+        - description: true lists the archived threads instead of the live list
+          explode: false
+          in: query
+          name: archived
+          schema:
+            description: true lists the archived threads instead of the live list
+            type: boolean
       responses:
         "200":
           content:
@@ -11488,6 +11639,52 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Start a new chat conversation
+      tags:
+        - Chat
+  /api/workspaces/{id}/conversations/archived:
+    delete:
+      operationId: deleteArchivedConversations
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete every archived conversation
+      tags:
+        - Chat
+  /api/workspaces/{id}/conversations/unarchive:
+    post:
+      operationId: unarchiveConversations
+      parameters:
+        - description: Workspace id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Workspace id
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Put every archived conversation back in the list
       tags:
         - Chat
   /api/workspaces/{id}/files:
@@ -11550,6 +11747,32 @@ paths:
       tags:
         - Generate
   /api/workspaces/{id}/invites:
+    get:
+      operationId: listWorkspaceInvites
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/PendingWorkspaceInvite"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List pending workspace invites
+      tags:
+        - Workspace collaboration
     post:
       operationId: createWorkspaceInvite
       parameters:
@@ -11574,6 +11797,32 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Privately invite a workspace member
+      tags:
+        - Workspace collaboration
+  /api/workspaces/{id}/invites/{inviteId}:
+    delete:
+      operationId: cancelWorkspaceInvite
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: inviteId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Cancel a pending workspace invite
       tags:
         - Workspace collaboration
   /api/workspaces/{id}/materials:

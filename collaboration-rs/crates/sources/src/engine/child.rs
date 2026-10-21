@@ -59,10 +59,13 @@ pub fn serve() -> io::Result<()> {
 pub const ENGINE_STACK_BYTES: usize = 256 << 20;
 
 /// Serves frames with `call` until stdin closes, on a thread with
-/// [`ENGINE_STACK_BYTES`] of stack. A panic outside the engines' own guard
-/// (in the glue) answers as an engine panic and keeps serving.
+/// [`ENGINE_STACK_BYTES`] of stack, inside the sandbox ([`super::sandbox`];
+/// a process that cannot take it does not serve). A panic outside the
+/// engines' own guard (in the glue) answers as an engine panic and keeps
+/// serving.
 pub fn serve_with(call: impl FnMut(&Frame) -> Answer + Send + 'static) -> io::Result<()> {
     apply_limits();
+    super::sandbox::confine()?;
     std::thread::Builder::new()
         .name("engine".into())
         .stack_size(ENGINE_STACK_BYTES)

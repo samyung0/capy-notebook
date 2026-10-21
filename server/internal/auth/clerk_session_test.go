@@ -59,10 +59,15 @@ func startFakeClerk(t *testing.T) *fakeClerk {
 				return
 			}
 			first := "Clerk"
+			primary := "idn_" + id
 			_ = json.NewEncoder(w).Encode(clerk.User{
-				ID:             id,
-				FirstName:      &first,
-				EmailAddresses: []*clerk.EmailAddress{{EmailAddress: id + "@example.test"}},
+				ID:                    id,
+				FirstName:             &first,
+				PrimaryEmailAddressID: &primary,
+				EmailAddresses: []*clerk.EmailAddress{{
+					ID: primary, EmailAddress: id + "@example.test",
+					Verification: &clerk.Verification{Status: "verified"},
+				}},
 			})
 		default:
 			http.NotFound(w, r)

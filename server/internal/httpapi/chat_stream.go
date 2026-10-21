@@ -70,7 +70,8 @@ func chatQueryTooLong(text string) bool {
 
 // pipeChatEvent is one event line from the Python retrieval service.
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
-// tool_end | citations | checkpoint | pending_sources | done | error.
+// tool_end | citations | checkpoint | turn_checkpoint | pending_sources | done |
+// error.
 type pipeChatEvent struct {
 	Type              string                      `json:"type"`
 	SentryEventID     string                      `json:"sentryEventId,omitempty"`
@@ -241,6 +242,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	// library.read is granted per turn with the Library switch, to any role
 	// that can chat; writing from it still needs the role's write operations.
 	operations := agenttools.OperationsForRole(string(access.role))
+	turn.role = string(access.role)
 	if access.readOnly || access.full {
 		// A frozen actor or owner keeps reading and deleting, not creating,
 		// editing or restoring. An owner at its storage limit loses creating
@@ -267,6 +269,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				EstimatedTokens:  ev.EstimatedTokens,
 			}); err != nil {
 				log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
+			}
+			cpCancel()
+		case "turn_checkpoint":
+			// The turn so far, kept for any ending and saved on the streaming row
+			// so a crash of this process keeps it too (Epo 2026-10-21).
+			activity, toolEvidence = ev.Activity, ev.ToolEvidence
+			cpCtx, cpCancel := obs.Detach(ctx, 5*time.Second)
+			if err := a.s.CheckpointAssistantMessage(cpCtx, assistant.ID, activity, toolEvidence); err != nil {
+				log.Printf("persist turn checkpoint msg=%s: %v", assistant.ID, err)
 			}
 			cpCancel()
 		case "block_start":
@@ -306,6 +317,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			if len(ev.Activity) > 0 {
 				activity = ev.Activity
 			}
+			if len(ev.ToolEvidence) > 0 {
+				toolEvidence = ev.ToolEvidence
+			}
 			if !ev.Usage.empty() {
 				usage = ev.Usage
 			}
@@ -320,7 +334,6 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				answer.WriteString(ev.Answer)
 			}
 			genID = ev.GenerationID
-			toolEvidence = ev.ToolEvidence
 		}
 	})
 
@@ -371,7 +384,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 // title), whether study progress is on for the requester here, and their
 // study preferences.
 type chatTurn struct {
-	library          bool
+	library bool
+	// The requester's workspace role, said on the turn context's open line.
+	role             string
 	openResource     map[string]string
 	studyProgress    bool
 	studyPreferences store.StudyPreferences
@@ -458,8 +473,10 @@ func (a *api) relayChat(
 		"locale":             a.userLocale(ctx, userID),
 		"library":            turn.library,
 		"openResource":       turn.openResource,
+		"role":               turn.role,
 		"studyProgress":      turn.studyProgress,
 		"studyPreferences":   turn.studyPreferences,
+		"officeTools":        prompt.OfficeTools,
 	}
 	if prompt.Checkpoint != nil {
 		body["checkpoint"] = prompt.Checkpoint

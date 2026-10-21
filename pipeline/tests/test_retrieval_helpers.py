@@ -43,7 +43,7 @@ async def test_unscoped_context_resolves_to_every_workspace_file():
         ],
     }
 
-    resolved = await tools._resolve_scope(ctx, tools._MISSING)
+    resolved = await tools._resolve_scope(ctx, [])
 
     assert isinstance(resolved, tools.ResolvedScope)
     assert resolved.file_ids == ["f_1", "f_2"]
@@ -60,10 +60,14 @@ async def test_agent_cannot_widen_a_scope_the_user_narrowed():
         ],
     }
 
-    resolved = await tools._resolve_scope(ctx, {"file_ids": ["f_2", "f_99"]})
+    resolved = await tools._resolve_scope(ctx, ["f_2", "f_99"])
 
     assert isinstance(resolved, tools.ToolResult)
     assert resolved.refused
+    assert resolved.text() == (
+        '"f_99" is outside the sources chosen for this chat, and the chat cannot '
+        "widen that choice."
+    )
 
 
 async def test_fully_out_of_scope_request_is_rejected_not_widened():
@@ -76,7 +80,7 @@ async def test_fully_out_of_scope_request_is_rejected_not_widened():
         ],
     }
 
-    resolved = await tools._resolve_scope(ctx, {"file_ids": ["f_99"]})
+    resolved = await tools._resolve_scope(ctx, ["f_99"])
 
     assert isinstance(resolved, tools.ToolResult)
     assert resolved.refused
@@ -144,7 +148,7 @@ def test_restricted_empty_scope_stays_empty():
     import asyncio
 
     resolved = asyncio.get_event_loop().run_until_complete(
-        tools._resolve_scope(ctx, tools._MISSING)
+        tools._resolve_scope(ctx, [])
     )
     assert isinstance(resolved, tools.ResolvedScope)
     assert resolved.file_ids == []
@@ -502,7 +506,7 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     body = rendered["content"]
 
     assert rendered["_kind"] == "turn_context"
-    assert "Open: Cells.pdf (file f_1)." in body
+    assert "Open: Cells.pdf (file f_1). The learner owns this workspace." in body
     assert "key points first" in body, "brief writing"
     assert "a deck explains each chapter" in body
     assert "a quiz of 5 questions and a set of 10 flashcards" in body
@@ -515,8 +519,11 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
-    empty = turn_context.message(_library_ctx())["content"]
-    assert "Open: nothing." in empty and "Library excerpts" not in empty
+    viewer = _library_ctx()
+    viewer.role = "viewer"
+    empty = turn_context.message(viewer)["content"]
+    assert "Open: nothing. The learner can only view this workspace." in empty
+    assert "Library excerpts" not in empty
     assert (
         "a quiz of 5 questions; make no standalone flashcards unless asked." in empty
     ), "default preferences: quiz less, flashcards off said off"
@@ -899,6 +906,7 @@ async def test_pipeline_chat_defense_rejects_query_character_overflow(character)
         contractVersion=contract.VERSION,
         operations=[],
         spendSessionId="cr_1",
+        role="editor",
     )
 
     chunk = await anext(service._chat_events(req, None))
@@ -1306,6 +1314,7 @@ def test_chat_request_requires_enabled_thinking():
         "contractVersion": contract.VERSION,
         "operations": [],
         "spendSessionId": "cr_1",
+        "role": "editor",
     }
     for thinking in ("instant", "", "off", None):
         with pytest.raises(ValidationError):
@@ -1315,6 +1324,7 @@ def test_chat_request_requires_enabled_thinking():
 
 def test_one_prompt_adds_the_library_rules_only_with_library_on():
     from pipeline.prompts import chat as chat_prompts
+    from pipeline.prompts import skills
     from pipeline.retrieval import limits
 
     off = chat_prompts.system_prompt("en")
@@ -1324,10 +1334,20 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
     # Without a write tool (a viewer) the model is told it cannot write.
     assert chat_prompts.READ_ONLY_RULE in chat_prompts.system_prompt("en", writes=False)
     assert chat_prompts.READ_ONLY_RULE not in off
+    # The first-turn note or deck offer is for a learner who can write
+    # (Epo 2026-10-20).
+    assert chat_prompts.FIRST_TURN_OFFER in off and chat_prompts.FIRST_TURN_OFFER in on
+    assert chat_prompts.FIRST_TURN_OFFER not in chat_prompts.system_prompt(
+        "en", writes=False
+    )
+    assert "lacks the learning scope or the learner's level" in skills.editing(
+        library=False
+    )
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt
-        assert "lacks the learning scope or the learner's level" in prompt
+        # Only a turn that writes needs the scope question (Epo 2026-10-21).
+        assert "lacks the learning scope or the learner's level" not in prompt
         assert (
             f"Until its first successful write a turn has "
             f"{limits.PLANNING_RESPONSES} responses" in prompt

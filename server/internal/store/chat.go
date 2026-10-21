@@ -19,6 +19,18 @@ type Conversation struct {
 	Title       string    `json:"title"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+	// Set while the thread sits at the top of the list.
+	PinnedAt *time.Time `json:"pinnedAt,omitempty"`
+	// Set while the thread is out of the list, in the archived dialog.
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+}
+
+const conversationCols = `id, workspace_id, COALESCE(title,''), created_at, updated_at, pinned_at, archived_at`
+
+func scanConversation(row pgx.Row) (Conversation, error) {
+	var c Conversation
+	err := row.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &c.PinnedAt, &c.ArchivedAt)
+	return c, err
 }
 
 // Message is one turn in a conversation. Status tracks the streaming lifecycle
@@ -136,6 +148,9 @@ type ConversationCheckpoint struct {
 type ConversationPrompt struct {
 	Checkpoint *ConversationCheckpoint `json:"checkpoint,omitempty"`
 	History    []Message               `json:"history"`
+	// OfficeTools says an earlier turn of the conversation, compacted or not,
+	// was offered the Office tools, which then stay offered (Epo 2026-10-15).
+	OfficeTools bool `json:"officeTools,omitempty"`
 }
 
 // Region locates one source block inside its page. Stored and shipped ahead of
@@ -164,26 +179,32 @@ type msgMetadata struct {
 
 /* --------------------------------------------------------- conversations */
 
-// ListConversations returns a workspace's conversations for a user, newest
-// activity first. Ownership is enforced via the user_id + workspace_id pair.
-// Chat is open to any effective role (membership raised by link/public
-// privacy), so shared viewers get their own private threads.
-func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]Conversation, error) {
+// ListConversations returns a workspace's conversations for a user: the live
+// list (pinned first, then newest activity) or, with archived, the archived
+// ones, most recently archived first. Ownership is enforced via the user_id +
+// workspace_id pair. Chat is open to any effective role (membership raised by
+// link/public privacy), so shared viewers get their own private threads.
+func (s *Store) ListConversations(ctx context.Context, userID, wsID string, archived bool) ([]Conversation, error) {
 	if _, err := s.WorkspaceEffectiveRole(ctx, userID, wsID); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
-		   FROM conversations WHERE user_id=$1 AND workspace_id=$2
-		   ORDER BY updated_at DESC`, userID, wsID)
+	query := `SELECT ` + conversationCols + ` FROM conversations
+		WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NULL
+		ORDER BY pinned_at DESC NULLS LAST, updated_at DESC`
+	if archived {
+		query = `SELECT ` + conversationCols + ` FROM conversations
+			WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL
+			ORDER BY archived_at DESC`
+	}
+	rows, err := s.pool.Query(ctx, query, userID, wsID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := make([]Conversation, 0)
 	for rows.Next() {
-		var c Conversation
-		if err := rows.Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		c, err := scanConversation(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -205,13 +226,11 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 		return Conversation{}, err
 	}
 	id := uid("conv")
-	var c Conversation
-	err = tx.QueryRow(ctx,
+	c, err := scanConversation(tx.QueryRow(ctx,
 		`INSERT INTO conversations (id, user_id, workspace_id, title)
 		   VALUES ($1,$2,$3,NULLIF($4,''))
-		   RETURNING id, workspace_id, COALESCE(title,''), created_at, updated_at`,
-		id, userID, wsID, title).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
+		   RETURNING `+conversationCols,
+		id, userID, wsID, title))
 	if err != nil {
 		return Conversation{}, err
 	}
@@ -225,11 +244,8 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 // streaming/history requests). Returns ErrNotFound when absent, not owned, or
 // when the user no longer holds any effective role in the workspace.
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
-	var c Conversation
-	err := s.pool.QueryRow(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
-		   FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
+	c, err := scanConversation(s.pool.QueryRow(ctx,
+		`SELECT `+conversationCols+` FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID))
 	if isNoRows(err) {
 		return Conversation{}, ErrNotFound
 	}
@@ -323,6 +339,84 @@ func (s *Store) RenameConversation(ctx context.Context, userID, convID, title st
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
+// ConversationUpdate is the user's edit of one thread; nil fields stay. None
+// of them counts as activity, so the list order by updated_at holds.
+type ConversationUpdate struct {
+	Title    *string
+	Pinned   *bool
+	Archived *bool
+}
+
+// UpdateConversation renames, pins or archives a thread the user owns.
+// Archiving clears the pin; unarchiving puts the thread back unpinned.
+func (s *Store) UpdateConversation(ctx context.Context, userID, convID string, u ConversationUpdate) (Conversation, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Conversation{}, err
+	}
+	defer tx.Rollback(ctx)
+	var workspaceID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM conversations
+		WHERE id=$1 AND user_id=$2`, convID, userID).Scan(&workspaceID); err != nil {
+		if isNoRows(err) {
+			return Conversation{}, ErrNotFound
+		}
+		return Conversation{}, err
+	}
+	if err := s.lockWorkspaceChatTx(ctx, tx, workspaceID, userID); err != nil {
+		return Conversation{}, err
+	}
+	c, err := scanConversation(tx.QueryRow(ctx,
+		`UPDATE conversations SET
+		   title = COALESCE($3, title),
+		   pinned_at = CASE WHEN $5::boolean THEN NULL
+		                    WHEN $4::boolean IS NULL THEN pinned_at
+		                    WHEN $4 THEN COALESCE(pinned_at, now()) ELSE NULL END,
+		   archived_at = CASE WHEN $5::boolean IS NULL THEN archived_at
+		                      WHEN $5 THEN COALESCE(archived_at, now()) ELSE NULL END
+		 WHERE id=$1 AND user_id=$2
+		 RETURNING `+conversationCols,
+		convID, userID, u.Title, u.Pinned, u.Archived))
+	if isNoRows(err) {
+		return Conversation{}, ErrNotFound
+	}
+	if err != nil {
+		return Conversation{}, err
+	}
+	return c, tx.Commit(ctx)
+}
+
+// UnarchiveConversations puts every archived thread of the user's in a
+// workspace back in the list.
+func (s *Store) UnarchiveConversations(ctx context.Context, userID, wsID string) error {
+	return s.archivedConversationsTx(ctx, userID, wsID,
+		`UPDATE conversations SET archived_at=NULL
+		  WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL`)
+}
+
+// DeleteArchivedConversations deletes every archived thread of the user's in a
+// workspace (messages cascade).
+func (s *Store) DeleteArchivedConversations(ctx context.Context, userID, wsID string) error {
+	return s.archivedConversationsTx(ctx, userID, wsID,
+		`DELETE FROM conversations
+		  WHERE user_id=$1 AND workspace_id=$2 AND archived_at IS NOT NULL`)
+}
+
+func (s *Store) archivedConversationsTx(ctx context.Context, userID, wsID, stmt string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := s.lockWorkspaceChatTx(ctx, tx, wsID, userID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, stmt, userID, wsID); err != nil {
+		return err
 	}
 	return tx.Commit(ctx)
 }
@@ -532,6 +626,21 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 	return err
 }
 
+// CheckpointAssistantMessage saves a streaming turn's activity and evidence so
+// far, so a crash keeps them for AbortOrphanedStreams. A finalized row is left
+// alone.
+func (s *Store) CheckpointAssistantMessage(ctx context.Context, msgID string, activity []ActivityBlock, toolEvidence json.RawMessage) error {
+	meta, err := json.Marshal(msgMetadata{Activity: activity, ToolEvidence: toolEvidence})
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx,
+		`UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+		  WHERE id=$1 AND status='streaming'`,
+		msgID, meta)
+	return err
+}
+
 // ConversationPrompt loads the rolling checkpoint (if any) and every completed
 // historical message after that pin. Call this before inserting the current
 // user row so the question is not sent twice.
@@ -584,7 +693,13 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 	if throughID != nil {
 		out.Checkpoint = &cp
 	}
-	return out, nil
+	// The retrieval service marks a turn's evidence officeTools once it read
+	// the office_building skill; a checkpoint drops that turn from History.
+	err = s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM messages
+		 WHERE conversation_id=$1 AND status='complete'
+		   AND metadata->'toolEvidence'->>'officeTools' = 'true')`, convID).Scan(&out.OfficeTools)
+	return out, err
 }
 
 // PersistCheckpoint writes or advances the rolling pin. A later pin wins; an

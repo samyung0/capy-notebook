@@ -3,7 +3,6 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import type { AddSourceMode } from './AddSourceDialog';
 import { addSourceMenuItems } from './addSourceMenuItems';
 
@@ -15,21 +14,19 @@ export interface TabAction {
 }
 
 /**
- * The row above a workspace panel: the Files / Chat / Generate tabs (or a
- * plain title when Files is pinned as its own panel) and, on the right, the
- * active tab's own actions, the plus menu and the settings gear. Below sm the
- * actions and the gear fold into a dots menu so only two icons stay in view.
+ * The row above a workspace panel: its title (a PanelTitleMenu where the
+ * panel switches views) and, on the right, the view's own actions, the plus
+ * menu and the settings gear. Below sm the actions and the gear fold into a
+ * dots menu so only two icons stay in view.
  */
 export function PanelTabRow({
-  tabs,
   title,
   actions,
   onAddSource,
   onAddChapter,
   onOpenSettings,
 }: {
-  tabs?: ReactNode;
-  title?: string;
+  title: ReactNode;
   actions: TabAction[];
   onAddSource?: (mode: AddSourceMode) => void;
   onAddChapter?: () => void;
@@ -51,22 +48,13 @@ export function PanelTabRow({
       : []),
   ];
   return (
-    <div
-      className={cn(
-        'relative flex shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5 sm:pl-4.5',
-        title
-          ? 'h-12'
-          : 'before:pointer-events-none before:absolute before:right-2 before:bottom-0 before:left-1.5 before:h-px before:bg-divider sm:before:left-4.5'
-      )}
-    >
-      {title ? (
+    <div className="relative flex h-12 shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5 sm:pl-4.5">
+      {typeof title === 'string' ? (
         <h2 className="t-subtitle ml-1 min-w-0 flex-1 truncate">{title}</h2>
       ) : (
-        tabs
+        <div className="min-w-0 flex-1">{title}</div>
       )}
-      <div
-        className={cn('flex shrink-0 items-center gap-0', !title && 'mb-1.5')}
-      >
+      <div className="flex shrink-0 items-center gap-0">
         <div className="hidden items-center sm:flex">
           {actions.map((action) => (
             <ToolbarButton

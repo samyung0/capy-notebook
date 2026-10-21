@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,6 +68,7 @@ func (fx deckFileFixture) body(msgID, userID string) map[string]any {
 	return map[string]any{
 		"workspaceId": fx.ws, "userId": userID, "assistantMessageId": msgID, "toolCallId": "call_last_slide",
 		"name": "Tangents.pptx", "chapterId": fx.ch, "content": []byte("PK\x03\x04 a deck"),
+		"sources": []string{fx.ch, "Lecture 3, 14 Oct"},
 		"provenance": map[string]any{"books": []map[string]any{{
 			"id": "b_circles", "title": "Circles", "authors": []string{"A. Author"},
 			"license": "CC BY-SA 4.0", "excerptIds": []string{"exc_1"}, "version": 1,
@@ -83,7 +86,8 @@ func (fx deckFileFixture) blobs(t *testing.T) int {
 }
 
 // The deck lands like an upload: charged to the owner, filed in its chapter,
-// with its provenance and a parse job, and a replay returns the same file.
+// with its provenance, its sources as names and a parse job, and a replay
+// returns the same file.
 func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	fx := openDeckFiles(t)
 	ctx := context.Background()
@@ -112,8 +116,13 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 		t.Fatalf("provenance = %+v", file.Provenance)
 	}
 	var payer, jobType, blobPath string
-	if err := fx.st.Pool().QueryRow(ctx, `SELECT user_id, blob_path FROM files WHERE id=$1`, fileID).Scan(&payer, &blobPath); err != nil {
+	var sources []string
+	if err := fx.st.Pool().QueryRow(ctx, `SELECT user_id, blob_path, scope_file_names FROM files WHERE id=$1`, fileID).
+		Scan(&payer, &blobPath, &sources); err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Equal(sources, []string{"Circles", "Lecture 3, 14 Oct"}) {
+		t.Fatalf("sources = %#v", sources)
 	}
 	// The deck's Put has no reservation guarding its key, so the key itself
 	// carries 128 random bits.
@@ -138,6 +147,24 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	}
 	if files != 1 || fx.blobs(t) != 1 {
 		t.Fatalf("files = %d blobs = %d after a replay", files, fx.blobs(t))
+	}
+}
+
+// The route stores decks only; edit_office_document's create stores its file
+// itself (Epo 2026-10-20, review finding 9).
+func TestInternalFileTakesDecksOnly(t *testing.T) {
+	fx := openDeckFiles(t)
+	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)
+	for _, name := range []string{"Grades.xlsx", "Essay.docx"} {
+		body := fx.body(msgID, fx.editor)
+		body["name"] = name
+		rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/files", pipeSecret, body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "an agent file is a non-empty .pptx") {
+			t.Fatalf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if fx.blobs(t) != 0 {
+		t.Fatal("a refused file left a blob behind")
 	}
 }
 

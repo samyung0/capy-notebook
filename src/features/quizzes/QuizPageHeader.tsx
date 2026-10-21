@@ -36,6 +36,7 @@ export function QuizPageHeader({
   trail,
   title,
   meta,
+  metaClassName = 't-meta text-fg-muted',
   byline,
   actions,
   topBar,
@@ -49,6 +50,8 @@ export function QuizPageHeader({
   trail: Crumb[];
   title: ReactNode;
   meta?: ReactNode;
+  /** The meta line's type, muted meta text unless a page matches its own. */
+  metaClassName?: string;
   /** The owner on public pages, between the title and the meta line. */
   byline?: ReactNode;
   actions?: ReactNode;
@@ -133,9 +136,7 @@ export function QuizPageHeader({
         {/* Under a byline the meta belongs to the content below, so it sits
             further from the owner than the owner from the title. */}
         {meta && (
-          <p className={cn('t-meta text-fg-muted', byline ? 'mt-2' : '-mt-1')}>
-            {meta}
-          </p>
+          <p className={cn(metaClassName, byline ? 'mt-2' : '-mt-1')}>{meta}</p>
         )}
       </div>
       {topBar}

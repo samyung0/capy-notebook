@@ -80,10 +80,23 @@ func (s *Store) EnqueueStripeCompensation(
 	return err
 }
 
+// OpenCheckoutError reports the user's earlier subscription Checkout that is
+// still open locally. The caller asks Stripe for it and reuses or expires it
+// (Epo 2026-10-21); a new reservation can start once it is recorded expired.
+type OpenCheckoutError struct {
+	ReservationID string
+	SessionID     string
+	CustomerID    string
+	PriceID       string
+}
+
+func (e *OpenCheckoutError) Error() string { return "a subscription checkout is already open" }
+
 // ReserveStripeCheckout commits a per-user creation slot before any Stripe
 // request. Its delayed recovery job can replay the provider calls with the same
 // idempotency key if the process dies after Stripe creates a session but before
-// the provider id is bound locally.
+// the provider id is bound locally. A Checkout still being created answers
+// ErrCheckoutStarting and one already open answers *OpenCheckoutError.
 func (s *Store) ReserveStripeCheckout(
 	ctx context.Context,
 	userID, customerID, priceID, successURL, cancelURL string,
@@ -118,13 +131,28 @@ func (s *Store) ReserveStripeCheckout(
 	if subscribed {
 		return "", status, ErrSubscriptionExists
 	}
+	var open OpenCheckoutError
+	var openStatus string
+	err = tx.QueryRow(ctx, `SELECT id,status,COALESCE(provider_session_id,''),customer_id,price_id
+		FROM stripe_checkout_sessions
+		WHERE user_id=$1 AND status IN ('creating','open')`, userID).
+		Scan(&open.ReservationID, &openStatus, &open.SessionID, &open.CustomerID, &open.PriceID)
+	if err == nil {
+		if openStatus == "creating" {
+			return "", status, ErrCheckoutStarting
+		}
+		return "", status, &open
+	}
+	if !isNoRows(err) {
+		return "", AccountStatus{}, err
+	}
 	reservationID := uid("checkout")
 	if _, err := tx.Exec(ctx, `INSERT INTO stripe_checkout_sessions
 		(id,user_id,customer_id,price_id,success_url,cancel_url,status)
 		VALUES ($1,$2,$3,$4,$5,$6,'creating')`, reservationID, userID,
 		customerID, priceID, successURL, cancelURL); err != nil {
 		if isUniqueViolation(err) {
-			return "", status, ErrSubscriptionExists
+			return "", status, ErrCheckoutStarting
 		}
 		return "", AccountStatus{}, err
 	}
@@ -220,7 +248,8 @@ func (s *Store) RecordStripeCheckoutSession(
 }
 
 // RecordStripeCheckoutSessionExpired converges local state after the request
-// successfully expires a provider session whose bind returned an error. It is
+// successfully expires a provider session whose bind returned an error, or
+// finds an open one expired or replaced by another plan's Checkout. It is
 // safe after an unknown commit outcome: a committed open row becomes expired,
 // while an uncommitted creating row is bound and expired in one transaction.
 // The customer mapping is committed before recovery is suppressed.

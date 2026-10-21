@@ -23,7 +23,7 @@ import {
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
 import { USE_MSW } from './auth';
-import { api, qk } from './client';
+import { api, isApiError, qk } from './client';
 import {
   type IngestEvent,
   type NotificationStreamEvent,
@@ -91,6 +91,7 @@ import type {
   OperationReceipt,
   PastReview,
   PastReviewParams,
+  PendingWorkspaceInvite,
   Privacy,
   PublicFlashcardSet,
   PublicQuiz,
@@ -100,6 +101,7 @@ import type {
   RequestAccountDeletionReq,
   RetryProcessingReq,
   ReviewOverview,
+  ReviewResult,
   ReviewSession,
   ReviewStart,
   SaveCanvasReq,
@@ -121,6 +123,7 @@ import type {
   UndoEditReq,
   UpdateChapterReq,
   UpdateCommentReq,
+  UpdateConversationReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardSetReq,
@@ -1694,11 +1697,60 @@ export const messagesQuery = (convId: string | null) =>
 export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
   useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });
 
-export function useDeleteConversation(wsId: string) {
+export const useArchivedConversations = (
+  wsId: string,
+  enabled: boolean,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    enabled: enabled && !!wsId,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<Conversation[]>(
+        `/workspaces/${wsId}/conversations?archived=true`
+      ),
+    queryKey: qk.archivedConversations(wsId),
+  });
+
+/** Rename, pin or archive one thread; the live and archived lists refetch. */
+export function useUpdateConversation(
+  wsId: string,
+  options?: MutationUiOptions
+) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: ({ id, ...body }: UpdateConversationReq & { id: string }) =>
+      api.patch<Conversation>(`/conversations/${id}`, body),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
+  });
+}
+
+export function useDeleteConversation(
+  wsId: string,
+  options?: MutationUiOptions
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (convId: string) => api.del<void>(`/conversations/${convId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
+  });
+}
+
+/** Unarchive all or delete all of the archived threads. */
+export function useArchivedConversationsAction(
+  wsId: string,
+  options?: MutationUiOptions
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: (action: 'unarchive' | 'delete') =>
+      action === 'unarchive'
+        ? api.post<void>(`/workspaces/${wsId}/conversations/unarchive`)
+        : api.del<void>(`/workspaces/${wsId}/conversations/archived`),
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
   });
 }
 export function useGenerate(wsId: string, options?: MutationUiOptions) {
@@ -2001,10 +2053,39 @@ export const useWorkspaceCollaborators = (
     meta: queryMeta(options),
   });
 
+/** The owner's pending invites: every typed address, as typed. */
+export const useWorkspaceInvites = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    enabled: !!workspaceId,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<PendingWorkspaceInvite[]>(`/workspaces/${workspaceId}/invites`),
+    queryKey: qk.workspaceInvites(workspaceId),
+  });
+
+// Invite and cancel failures render inside the form, not as toasts.
 export function useCreateWorkspaceInvite(workspaceId: string) {
+  const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: (body: CreateWorkspaceInviteReq) =>
       api.post<void>(`/workspaces/${workspaceId}/invites`, body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.workspaceInvites(workspaceId) }),
+  });
+}
+
+export function useCancelWorkspaceInvite(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (inviteId: string) =>
+      api.del<void>(`/workspaces/${workspaceId}/invites/${inviteId}`),
+    onSettled: () =>
+      qc.invalidateQueries({ queryKey: qk.workspaceInvites(workspaceId) }),
   });
 }
 
@@ -2553,6 +2634,19 @@ export const useResumeReviewSession = (
     staleTime: 0,
   });
 
+/** A session's result page, finished or just ended. */
+export const useReviewResult = (
+  sessionId: string,
+  options?: QueryUiOptions & { enabled?: boolean }
+) =>
+  useQuery({
+    enabled: options?.enabled,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<ReviewResult>(`/review/sessions/${sessionId}/result`),
+    queryKey: qk.reviewResult(sessionId),
+  });
+
 /** Ends a session before its last item (Done). */
 export function useFinishReviewSession() {
   return useMutation({
@@ -2663,7 +2757,15 @@ export function useUpdateLabel() {
 export function useDeleteLabel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/labels/${id}`),
+    // A label that is already gone counts as deleted: no toast, the list
+    // refreshes (Epo 2026-10-21).
+    mutationFn: async (id: string) => {
+      try {
+        await api.del<void>(`/labels/${id}`);
+      } catch (error) {
+        if (!(isApiError(error) && error.status === 404)) throw error;
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.labels });
       qc.invalidateQueries({ queryKey: qk.events });

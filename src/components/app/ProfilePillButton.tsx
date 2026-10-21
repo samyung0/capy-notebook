@@ -21,7 +21,7 @@ export function ProfilePillButton({
   ...props
 }: ComponentProps<'button'> & {
   avatarUrl?: string;
-  /** Unread notifications, on the `avatar` variant's top right. */
+  /** Unread notifications, on the avatar's top right (`avatar`). */
   dot?: boolean;
   name?: string;
   pending?: boolean;

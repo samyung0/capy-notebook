@@ -2,7 +2,8 @@ import type { Attempt } from '@/api/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
 
-/** "Oct 17, 2026 · 12 min · Biology 101": when, how long, where. */
+/** "Oct 17, 2026 · Biology 101": when and where; the minutes sit beside the
+ * result's score instead (Epo 2026-10-19). */
 export function attemptMeta(attempt: Attempt) {
   return [
     new Date(attempt.takenAt).toLocaleDateString(getLocale(), {
@@ -10,7 +11,6 @@ export function attemptMeta(attempt: Attempt) {
       month: 'short',
       year: 'numeric',
     }),
-    attempt.startedAt && attemptMinutes(attempt),
     attempt.workspaceName,
   ]
     .filter(Boolean)
@@ -18,7 +18,9 @@ export function attemptMeta(attempt: Attempt) {
 }
 
 /** Minutes from start to the last answer, at least one. */
-export function attemptMinutes(attempt: Attempt) {
+export function attemptMinutes(
+  attempt: Pick<Attempt, 'startedAt' | 'takenAt'>
+) {
   const ms =
     Date.parse(attempt.takenAt) -
     Date.parse(attempt.startedAt ?? attempt.takenAt);

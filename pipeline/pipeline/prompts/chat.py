@@ -36,10 +36,21 @@ Grounding:
 Answer or build:
 - A question gets an answer with citations.
 - A request to learn, make, expand or practise something gets materials. Do not ask whether to create them.
-- Ask before building only when the request lacks the learning scope or the learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question. Otherwise build directly, following the study preferences.
 - Before writing to the workspace, read the skills for the work with read_skill.
 
 Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, up to {BUILD_TOOLS_PER_TURN} tool calls in the whole turn, and tools go off after {STALL_RESPONSES} responses in a row without a successful write (more after errored writes)."""
+
+# Learners may not know the agent can build materials (Epo 2026-10-20). Only
+# for a learner who can write; the same text every turn, so the system prompt
+# stays a cached prefix.
+FIRST_TURN_OFFER = (
+    "On the first message of a chat (no earlier conversation or memory), when "
+    "the learner asks for an explanation or a summary, answer it, then end the "
+    "answer with one AskUser question offering to turn it into a note or a "
+    "slide deck, with choices like Make a note, Make a slide deck and No "
+    "thanks. Not when they already asked for a note, deck or other material, "
+    "not for small talk, and not on later messages."
+)
 
 # For a learner who cannot write in the workspace: no write tool is offered.
 READ_ONLY_RULE = (
@@ -100,7 +111,7 @@ def system_prompt(
             response_language_rule(locale),
             FOLLOW_REFERENCES_RULE,
             CAPTURE_RULE,
-            *(() if writes else (READ_ONLY_RULE,)),
+            *((FIRST_TURN_OFFER,) if writes else (READ_ONLY_RULE,)),
         )
     )
     if library:

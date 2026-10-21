@@ -44,7 +44,21 @@ def tools_off(messages: list[dict[str, Any]]) -> bool:
     )
 
 
-def _open_line(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
+# What the learner may do in this workspace, said with the open item.
+_ROLE_LINES = {
+    "owner": "The learner owns this workspace.",
+    "editor": "The learner can edit this workspace.",
+    "viewer": "The learner can only view this workspace.",
+}
+
+
+def _open_line(
+    resource: dict[str, Any], chapters: list[dict[str, Any]], role: str
+) -> str:
+    return f"{_open_item(resource, chapters)} {_ROLE_LINES[role]}"
+
+
+def _open_item(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
     if not resource.get("id"):
         return "Open: nothing."
     title = str(resource.get("title") or "").strip() or "untitled"
@@ -73,7 +87,7 @@ def message(
 ) -> dict[str, Any]:
     lines = [
         HEADER,
-        _open_line(ctx.open_resource, ctx.chapters),
+        _open_line(ctx.open_resource, ctx.chapters, ctx.role),
         *_chapter_lines(ctx.chapters),
         "\nStudy preferences:",
     ]

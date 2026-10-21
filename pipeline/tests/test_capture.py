@@ -82,7 +82,7 @@ async def test_capture_refuses_files_outside_the_scope(rendered):
         {"file_id": "f_2", "page": 2, "_tool_call_id": "c1"}, ctx
     )
     assert result.refused
-    assert result.text() == tools._INVALID_SCOPE
+    assert '"f_2" is outside the sources chosen for this chat' in result.text()
 
 
 async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
@@ -667,6 +667,7 @@ async def test_capture_refuses_a_note_as_a_note():
                 "chapter_id": None,
                 "chunks": 1,
                 "kind": "material",
+                "material_kind": "note",
             }
         ],
     }

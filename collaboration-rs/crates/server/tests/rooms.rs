@@ -6085,6 +6085,156 @@ async fn two_editors_converge_across_a_quizs_content_and_keys() {
     assert!(key_rows >= 1);
 }
 
+/// Stored update rows of a material's document (`material_yjs_updates`, or
+/// a quiz's `material_yjs_key_updates`).
+async fn update_rows(env: &Env, table: &str, material: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            &format!("SELECT count(*) FROM {table} WHERE material_id=$1"),
+            &[&material],
+        )
+        .await
+        .expect("rows")
+        .get(0)
+}
+
+/// An agent edit that only removes (a deletion moves no state vector) is
+/// committed and fanned into the live room like any other: a quiz's
+/// `remove_child` stores both its documents and the open editor loses the
+/// question; the stored quiz projects without it.
+#[tokio::test]
+async fn a_removal_only_agent_edit_of_a_quiz_is_stored_and_reaches_the_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let room = format!("material:{quiz}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(
+        client
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    let content_rows = update_rows(&env, "material_yjs_updates", &quiz).await;
+    let key_rows = update_rows(&env, "material_yjs_key_updates", &quiz).await;
+    let edit = serde_json::json!({
+        "actorUserId": owner,
+        "commands": [{ "type": "remove_child", "parentType": "quiz", "nodeId": "q2" }],
+        "operation": { "id": format!("op_{quiz}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": quiz, "kind": "material" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(update_rows(&env, "material_yjs_updates", &quiz).await > content_rows);
+    assert!(update_rows(&env, "material_yjs_key_updates", &quiz).await > key_rows);
+    assert!(
+        client
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_none())
+            .await,
+        "the room kept q2"
+    );
+    let (status, body) = internal(
+        server.port,
+        &format!("/internal/materials/{quiz}/project"),
+        &serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let stored: serde_json::Value = db(&env)
+        .await
+        .query_one("SELECT content FROM materials WHERE id=$1", &[&quiz])
+        .await
+        .expect("content")
+        .get(0);
+    let ids: Vec<&str> = stored["value"][0]["children"]
+        .as_array()
+        .expect("questions")
+        .iter()
+        .filter_map(|question| question["id"].as_str())
+        .collect();
+    assert_eq!(ids, ["q1"], "{stored}");
+}
+
+/// A set's removal-only change is stored and reaches the open editor, by an
+/// agent edit (`remove_child`) and by the content save API (a replace-block
+/// holding fewer cards).
+#[tokio::test]
+async fn a_removal_only_change_of_a_flashcard_set_is_stored_and_reaches_the_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let set = flashcard_set(
+        &env,
+        &owner,
+        None,
+        &[
+            ("c1", "Cell", ""),
+            ("c2", "Nucleus", ""),
+            ("c3", "Ribosome", ""),
+        ],
+    )
+    .await;
+    let room = format!("material:{set}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(client.settle(|c| c.cards().len() == 3).await);
+    let rows = update_rows(&env, "material_yjs_updates", &set).await;
+    let edit = serde_json::json!({
+        "actorUserId": owner,
+        "commands": [{ "type": "remove_child", "parentType": "flashcards", "nodeId": "c3" }],
+        "operation": { "id": format!("op_{set}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": set, "kind": "material" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(update_rows(&env, "material_yjs_updates", &set).await > rows);
+    let two = vec![
+        ("c1".to_owned(), "Cell".to_owned()),
+        ("c2".to_owned(), "Nucleus".to_owned()),
+    ];
+    assert!(
+        client.settle(|c| c.cards() == two).await,
+        "{:?}",
+        client.cards()
+    );
+
+    // replace-block answers once the projection landed, so it needs the API.
+    if env.api.is_none() {
+        return;
+    }
+    let card = |id: &str, front: &str| {
+        items::flashcards::card_node(&items::flashcards::Card {
+            id: id.into(),
+            order: String::new(),
+            front: front.into(),
+            back: String::new(),
+            image: None,
+        })
+    };
+    let rows = update_rows(&env, "material_yjs_updates", &set).await;
+    let command = serde_json::json!({
+        "actorUserId": owner,
+        "expectedBlock": {},
+        "materialId": set,
+        "replacementBlock": { "type": "flashcards", "id": "flashcards", "children": [card("c1", "Cell")] },
+        "room": room,
+        "type": "replace-block",
+    });
+    let (status, answer) = internal(server.port, "/internal/commands", &command).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(update_rows(&env, "material_yjs_updates", &set).await > rows);
+    let one = vec![("c1".to_owned(), "Cell".to_owned())];
+    assert!(
+        client.settle(|c| c.cards() == one).await,
+        "{:?}",
+        client.cards()
+    );
+}
+
 /// The `quiz-items` messages a channel heard so far (taken from its inbox),
 /// as JSON, in order.
 fn quiz_items(client: &mut Client) -> Vec<serde_json::Value> {
