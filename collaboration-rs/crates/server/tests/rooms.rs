@@ -3999,6 +3999,43 @@ async fn an_agent_edit_counts_toward_a_source_rooms_cap() {
     closed_for_size(client.until(4).await);
 }
 
+/// A text source the agent edited before its room ever saved: the edit's
+/// checkpoint carried the seed, so the room's own first save (a person typing
+/// inside the agent's text) must not carry it again. Fails if the room still
+/// counts itself unsaved: that save merges the seed, refers to the edit's
+/// items the seed lacks and discards the room, so no receipt comes.
+#[tokio::test]
+async fn a_text_sources_first_save_after_an_agent_edit_carries_no_seed() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c) == "hello world").await);
+    let edit = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{ "type": "replace_text", "expectedText": "world", "text": "there" }],
+        "operation": { "id": format!("op_{file}"), "requestHash": "h1" },
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(client.settle(|c| source_text(c) == "hello there").await);
+    let before = client.doc.transact().state_vector();
+    client
+        .doc
+        .get_or_insert_text("source")
+        .insert(&mut client.doc.transact_mut(), 8, "X");
+    let update = client.doc.transact().encode_state_as_update_v1(&before);
+    client.send(5, &sync(2, &update)).await;
+    source_receipt(&mut client, "inside")
+        .await
+        .expect("the room's first save stored");
+    assert_eq!(source_text(&client), "hello thXere");
+}
+
 /// Sends a checkpoint request and waits for the receipt naming it.
 async fn source_receipt(client: &mut Client, id: &str) -> Option<serde_json::Value> {
     let request = serde_json::json!({ "flush": true, "id": id, "type": "checkpoint-request" });
