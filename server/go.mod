@@ -1,6 +1,6 @@
 module github.com/samyung0/capy-notebook/server
 
-go 1.25.0
+go 1.26.10
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.0
@@ -20,9 +20,9 @@ require (
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/stripe/stripe-go/v82 v82.5.1
 	github.com/svix/svix-webhooks v1.96.1
-	golang.org/x/image v0.44.0
+	golang.org/x/image v0.45.0
 	golang.org/x/sync v0.22.0
-	golang.org/x/text v0.40.0
+	golang.org/x/text v0.41.0
 )
 
 require (

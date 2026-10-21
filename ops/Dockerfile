@@ -16,14 +16,14 @@ ENV VITE_APP_ENV=$VITE_APP_ENV
 ENV VITE_RELEASE_SHA=$VITE_RELEASE_SHA
 RUN pnpm --filter @capy-notebook/ops build
 
-FROM golang:1.25-alpine AS backend
+FROM golang:1.26.10-alpine3.24@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca AS backend
 WORKDIR /src
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server .
 RUN CGO_ENABLED=0 go build -trimpath -o /out/ops ./cmd/ops
 
-FROM alpine:3.20
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 RUN apk add --no-cache ca-certificates && adduser -D -u 10001 app
 WORKDIR /app
 COPY --from=backend /out/ops /app/ops
