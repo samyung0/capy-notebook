@@ -957,15 +957,14 @@ async def rerank(
     spec: ModelConfig,
     query: str,
     documents: list[str],
-    *,
-    timeout: float,
 ) -> dict[str, Any]:
     """Score documents against one query on DeepInfra's inference route.
 
     The route pairs ``queries[i]`` with ``documents[i]``, so the query repeats
     once per document. It accepts an ``instruction`` field but ignores it
     (bench/rag/rerank/reports/2026-09-25-library-rerank.md), so none is sent.
-    The answer carries ``scores`` in document order and ``input_tokens``.
+    The answer carries ``scores`` in document order and ``input_tokens``. The
+    request has the whole-call bound of any non-streaming call.
     """
     if (
         spec.provider_slug != "deepinfra"
@@ -981,7 +980,6 @@ async def rerank(
         DEEPINFRA_INFERENCE_URL + spec.model_slug,
         _bearer(key),
         {"queries": [query] * len(documents), "documents": documents},
-        timeout=timeout,
     )
 
 

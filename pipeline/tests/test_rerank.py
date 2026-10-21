@@ -84,17 +84,53 @@ async def test_a_provider_error_keeps_fused_order(deepinfra, caplog):
     assert "keeping fused order" in caplog.text
 
 
-async def test_a_call_past_the_bound_keeps_fused_order(deepinfra, monkeypatch, caplog):
-    async def slow(request):
-        await asyncio.sleep(1)
+async def test_reranks_answering_past_the_bound_keep_fused_order_and_settle(
+    deepinfra, monkeypatch, caplog
+):
+    """Parallel searches whose reranks answer after the bound: each search
+    keeps fused order at the bound, and every opened call still posts its
+    receipt with the provider's usage instead of being cut off unsettled."""
+    answer = asyncio.Event()
+
+    async def late(request):
+        await answer.wait()
         return _scores(request)
 
-    deepinfra(slow)
+    deepinfra(late)
     monkeypatch.setattr(models, "RERANK_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    opened: list[str] = []
+    settled: list[tuple[str, int]] = []
+    all_settled = asyncio.Event()
 
-    with caplog.at_level(logging.WARNING, logger="capy.search"):
-        assert await search.rerank("q", ROWS) == (ROWS, False)
-    assert "keeping fused order" in caplog.text
+    async def open_call(call_id, **_kwargs):
+        opened.append(call_id)
+
+    async def no_lease(_call_id):
+        return None
+
+    async def post_settlement(payload, **_kwargs):
+        settled.append((payload["callId"], payload["inputTokens"]))
+        if len(settled) == 4:
+            all_settled.set()
+        return {}
+
+    monkeypatch.setattr(accounting, "open_call", open_call)
+    monkeypatch.setattr(accounting, "release_call", no_lease)
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    token = accounting.bind("cr_search")
+    try:
+        with caplog.at_level(logging.WARNING, logger="capy.search"):
+            searches = [search.rerank("q", ROWS) for _ in range(4)]
+            assert await asyncio.gather(*searches) == [(ROWS, False)] * 4
+        assert "keeping fused order" in caplog.text
+        answer.set()
+        await asyncio.wait_for(all_settled.wait(), 5)
+    finally:
+        accounting.reset(token)
+    assert len(opened) == 4
+    assert sorted(settled) == sorted((call_id, 300) for call_id in opened)
 
 
 async def test_scores_return_before_the_settlement_finishes(deepinfra, monkeypatch):

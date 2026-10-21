@@ -2032,9 +2032,12 @@ always point at document passages.
    The 5-second bound (`models.RERANK_TIMEOUT_S`) covers the whole wait a
    search sees: admission and the provider request, busy retry included; the
    zero-credit `rerank` settlement finishes in the background once the
-   scores arrive. An error, a busy provider or the bound keeps fused order
-   and logs a `capy.search` warning, so search never fails because of the
-   reranker. An unassigned rerank slot skips the call: it is the operator off
+   scores arrive. The bound ends only the search's wait: the request runs on
+   under the whole-call bound of any non-streaming call (15 s) and settles its
+   measured usage when it answers (`models._detached` holds it), so a slow
+   rerank is metered rather than cut off without a receipt. An error, a busy
+   provider or the bound keeps fused order and logs a `capy.search` warning,
+   so search never fails because of the reranker. An unassigned rerank slot skips the call: it is the operator off
    switch, and the only slot whose missing default is not an error. Library
    search (`search_knowledge`) runs the same step before the excerpt fold,
    holding no pooled library connection while the reranker runs. When a
@@ -2783,7 +2786,11 @@ adds "[This reply was stopped before it finished.]" (a stop or a crash) or
 "[This reply failed
 before it finished.]" to an `aborted` or `error` assistant row (an empty one
 replays the line alone), and its tool results and passages replay like a
-finished turn's, under the same compaction. A turn that fails before any tool
+finished turn's, under the same compaction. Since no answer says what such a
+turn did, and search and read results replay only as cited passages, Go also
+sends an `aborted` or `error` row's tool calls from its activity (name,
+detail, outcome; the calls added after a stop included), and
+`history_turns` replays them as one historical-data message after the turn. A turn that fails before any tool
 call keeps its empty tool record (empty lists).
 
 | Ending | Where handled | Tool calls saved | Results saved | Status |
