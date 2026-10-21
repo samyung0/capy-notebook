@@ -111,12 +111,12 @@ import (
 // commands up to its per-call limits (its limits.json, which Marshal writes
 // into the description) and returns the rest unapplied by index (Epo
 // 2026-10-21, 2026-10-22).
-// v38: inspect_office_document reads a PPTX by slide (its slides with their
+// v37: inspect_office_document reads a PPTX by slide (its slides with their
 // layouts and shapes, the deck's layouts; a slide's shapes and paragraphs);
 // edit_office_document's set_shape_text, add_slide, delete_slide,
 // move_slide and add_text_box edit PowerPoint files, and format_text and
 // set_alignment take PPTX paragraphs too (Epo 2026-10-20).
-const ContractVersion = 38
+const ContractVersion = 37
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string

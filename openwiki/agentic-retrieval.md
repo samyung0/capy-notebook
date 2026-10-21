@@ -3566,7 +3566,7 @@ read's paragraph styles. Version 36 (2026-10-21) creates Word files, makes
 `insert_table`, `delete_table`, `format_text` and `set_alignment`, reads
 headers, footers and notes with lists, table cells and `locked` marks, and
 lists in its description the engine's per-call limits (one table, a
-limit per command kind), the rest returned unapplied. Version 38 (2026-10-22)
+limit per command kind), the rest returned unapplied. Version 37 (2026-10-22)
 reads a PPTX by slide (its slides with their layouts and shapes; one slide's
 shapes and paragraphs) and adds `set_shape_text`, `add_slide`,
 `delete_slide`, `move_slide` and `add_text_box`, with PPTX `format_text` and
