@@ -319,9 +319,18 @@ check); it applies at the first promotion.
   `style: none`) comes back on save; a table with no `w:tblBorders` gains
   `w:tblBorders` holding its first cell's top side on save.
 - **DOCX run properties the model drops** (pre-existing, found by the fix 9
-  re-review 2026-10-21): `w:webHidden` and `w:noProof` are not modelled, so a
-  run that the save rebuilds loses them; TOC page numbers commonly carry
+  re-reviews 2026-10-21): `w:webHidden`, `w:noProof`, `w:bdr`,
+  `w:eastAsianLayout` and `w14:*` run properties are not modelled, so a run
+  that the save rebuilds loses them; TOC page numbers commonly carry
   `w:webHidden`.
+- **DOCX explicit off on save** (pre-existing, found by the fix 9 re-review
+  r3 2026-10-21): a run the session unbolds under a bold paragraph style
+  (Heading 1), un-italicises under Quote or un-underlines under Hyperlink saves
+  resolved values, which never write an off, so Word shows the style's bold,
+  italic or underline again. Lazy fix: when the resolved save writes a run
+  under a paragraph or character style that turns a toggle on and the run's
+  attributes have it off, write the explicit off (`w:b w:val="0"`). Fix 9 keeps
+  an off only when a source run of the paragraph had that same off.
 - **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
   where the run inherits its size from the placeholder gets an explicit 24 pt
   (`pptx-parity/shots/slide-bulleted.png`, "Nested item").
