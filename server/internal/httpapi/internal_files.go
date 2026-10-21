@@ -24,6 +24,8 @@ type internalFileReq struct {
 	ChapterID          string            `json:"chapterId"`
 	Content            []byte            `json:"content"`
 	Provenance         *store.Provenance `json:"provenance"`
+	// Sources is the deck's made-from line, as for a material.
+	Sources []string `json:"sources"`
 }
 
 // internalCreateFile stores an agent's file the way an upload lands: the
@@ -64,6 +66,10 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if !validSources(req.Sources) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": sourcesBounds})
+		return
+	}
 	if req.Provenance != nil {
 		// The pipeline merged this record over many calls, so the stored
 		// bounds apply, not one call's.
@@ -79,7 +85,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	sum := sha256.Sum256(req.Content)
 	op, ok := a.agentFileOperation(w, r, req.UserID, req.WorkspaceID, req.AssistantMessageID, req.ToolCallID, map[string]any{
 		"name": name, "chapterId": req.ChapterID, "provenance": req.Provenance,
-		"contentSha256": hex.EncodeToString(sum[:]),
+		"contentSha256": hex.EncodeToString(sum[:]), "sources": req.Sources,
 	})
 	if !ok {
 		return
@@ -88,8 +94,14 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	sourceNames, err := a.resolveSources(r.Context(), req.WorkspaceID, req.Sources)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	receipt, ok := a.storeAgentFile(w, r.Context(), agentFile{
-		name: name, chapterID: chapterID, content: req.Content, provenance: req.Provenance, op: op,
+		name: name, chapterID: chapterID, content: req.Content, provenance: req.Provenance,
+		sourceNames: sourceNames, op: op,
 	})
 	if ok {
 		writeJSON(w, http.StatusOK, receipt)
@@ -157,7 +169,9 @@ type agentFile struct {
 	chapterID  *string
 	content    []byte
 	provenance *store.Provenance
-	op         store.AgentOperation
+	// sourceNames is its made-from line (resolveSources); nil stores none.
+	sourceNames []string
+	op          store.AgentOperation
 }
 
 // storeAgentFile lands an agent's file like an upload (the upload's size
@@ -188,7 +202,7 @@ func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agent
 	op, created, err := a.s.CreateAgentFileOperation(ctx, store.AgentFileDraft{
 		WorkspaceID: f.op.WorkspaceID, ActorUserID: f.op.ActorUserID, Name: f.name, Kind: kind,
 		ChapterID: f.chapterID, SizeBytes: size, BlobPath: blobPath, Parser: a.parser,
-		ParseMode: parseMode, Provenance: f.provenance,
+		ParseMode: parseMode, Provenance: f.provenance, ScopeFileNames: f.sourceNames,
 	}, f.op)
 	// Uncancelled: a pipeline timeout or disconnect that failed the insert
 	// must not also cancel the delete, or the object stays with no row.

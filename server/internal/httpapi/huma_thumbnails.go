@@ -80,9 +80,14 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 	}
 	if err := a.blob.PutObjectOnce(ctx, key, in.RawBody, "image/webp", thumbnailCacheControl); err != nil {
 		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", in.ID, "error", err)
-		// A put that failed may still have written the object.
-		if err := a.s.EnqueueBlobDeletion(ctx, key); err != nil {
+		// A put that failed may still have written the object, also when the
+		// browser left mid-put and cancelled the request.
+		if err := a.s.EnqueueBlobDeletion(context.WithoutCancel(ctx), key); err != nil {
 			obs.Log(ctx).Warn("thumbnail capture not queued for deletion", "file_id", in.ID, "key", key, "error", err)
+		}
+		// A browser that left is not a storage failure.
+		if ctx.Err() != nil {
+			return nil, hErr(ctx.Err())
 		}
 		return nil, huma.Error503ServiceUnavailable("thumbnail storage is unavailable")
 	}

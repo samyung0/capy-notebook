@@ -346,7 +346,11 @@ func TestInternalMaterialConcurrentSameIDConverges(t *testing.T) {
 	}
 }
 
-func TestInternalGeneratedQuizAndFlashcardSetPersistResolvedScope(t *testing.T) {
+// An agent's sources are its made-from line (Epo 2026-10-21): the id or exact
+// name of a workspace item of any kind, or of a chapter, is stored as its
+// current name and any other string as written. Nothing in the private
+// workspace's quiz, flashcard set or note is indexed, and none is refused.
+func TestInternalMaterialStoresItsSourcesAsNames(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
 
@@ -379,8 +383,11 @@ func TestInternalGeneratedQuizAndFlashcardSetPersistResolvedScope(t *testing.T) 
 			body := map[string]any{
 				"workspaceId": "ws_e2e_private", "userId": "u_editor",
 				"assistantMessageId": msgID, "toolCallId": "call_1",
-				"kind": tt.kind, "title": "Scoped " + tt.kind,
-				"fileIds": []string{"f_e2e_private"}, "chapterIds": []string{"ch_e2e_private"},
+				"kind": tt.kind, "title": "Sourced " + tt.kind,
+				"sources": []string{
+					"note_e2e_private", "E2E Private Quiz", "dk_e2e_private", "ch_e2e_private",
+					" Lecture 3, 14 Oct ", "https://example.org/cells", "Secret private title",
+				},
 			}
 			for key, value := range tt.body {
 				body[key] = value
@@ -398,13 +405,119 @@ func TestInternalGeneratedQuizAndFlashcardSetPersistResolvedScope(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(material.ScopeChapters, []string{"Private chapter"}) {
-				t.Errorf("scope chapters = %#v", material.ScopeChapters)
+			want := []string{
+				"Secret private title", "E2E Private Quiz", "E2E Private Flashcards", "Private chapter",
+				"Lecture 3, 14 Oct", "https://example.org/cells",
 			}
-			if !slices.Equal(material.ScopeFileNames, []string{"secret-notes.md"}) {
-				t.Errorf("scope file names = %#v", material.ScopeFileNames)
+			if !slices.Equal(material.ScopeFileNames, want) || len(material.ScopeChapters) != 0 {
+				t.Errorf("sources = %#v, chapters = %#v", material.ScopeFileNames, material.ScopeChapters)
 			}
 		})
+	}
+}
+
+// A material the agent names no sources for records none: the chat's scope
+// is not filled in for it.
+func TestInternalMaterialWithoutSourcesStoresNone(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	id := store.ChatMaterialID(msgID, "call_1")
+	cleanupMaterial(t, st, id)
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_1", "Unsourced "+msgID, "body"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	material, err := st.GetMaterial(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(material.ScopeFileNames) != 0 || len(material.ScopeChapters) != 0 {
+		t.Fatalf("sources = %#v, chapters = %#v", material.ScopeFileNames, material.ScopeChapters)
+	}
+}
+
+// The only refusal sources can get is their format: at most 20 distinct ones
+// of 1 to 200 characters each.
+func TestInternalMaterialRefusesSourcesOverTheirBounds(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	tooMany := make([]string, 21)
+	for i := range tooMany {
+		tooMany[i] = fmt.Sprintf("Lecture %d", i)
+	}
+	for name, sources := range map[string][]string{
+		"too many":  tooMany,
+		"too long":  {strings.Repeat("é", 201)},
+		"blank one": {"Lecture 1", "  "},
+	} {
+		body := noteBody(msgID, "call_bounds", "Bounded "+name, "body")
+		body["sources"] = sources
+		rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+		if rec.Code != http.StatusBadRequest ||
+			!strings.Contains(rec.Body.String(), "sources: send at most 20 sources of 1 to 200 characters each.") {
+			t.Fatalf("%s: status = %d body=%s", name, rec.Code, rec.Body.String())
+		}
+	}
+	var count int
+	if err := st.Pool().QueryRow(context.Background(), `SELECT count(*) FROM materials WHERE id=$1`,
+		store.ChatMaterialID(msgID, "call_bounds")).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("materials = %d, %v", count, err)
+	}
+
+	// A repeat counts once: 25 strings naming 15 sources are within the bound.
+	repeated := make([]string, 25)
+	for i := range repeated {
+		repeated[i] = fmt.Sprintf("Lecture %d", i%15)
+	}
+	id := store.ChatMaterialID(msgID, "call_repeats")
+	cleanupMaterial(t, st, id)
+	body := noteBody(msgID, "call_repeats", "Repeated sources "+msgID, "body")
+	body["sources"] = repeated
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("repeats: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	material, err := st.GetMaterial(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(material.ScopeFileNames) != 15 {
+		t.Fatalf("sources = %#v", material.ScopeFileNames)
+	}
+}
+
+// Only an untrashed item of the material's own workspace resolves to its name
+// (security regression: any-item-sources review F1): an id from another
+// workspace or of a trashed item is stored as written, so a made-from line
+// never shows a name its readers could not see.
+func TestInternalMaterialKeepsForeignAndTrashedIDsAsWritten(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+	if _, err := st.Pool().Exec(ctx, `UPDATE materials SET trashed_at=now(), trash_episode_id='trash_sources',
+		purge_after=now() + interval '1 day' WHERE id='qz_e2e_private'`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `UPDATE materials SET trashed_at=NULL,
+			trash_episode_id=NULL, purge_after=NULL WHERE id='qz_e2e_private'`)
+	})
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	id := store.ChatMaterialID(msgID, "call_1")
+	cleanupMaterial(t, st, id)
+	body := noteBody(msgID, "call_1", "Foreign sources "+msgID, "body")
+	body["sources"] = []string{"f_e2e_public", "note_e2e_public", "ch_e2e_public", "qz_e2e_private", "note_e2e_private"}
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	material, err := st.GetMaterial(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"f_e2e_public", "note_e2e_public", "ch_e2e_public", "qz_e2e_private", "Secret private title"}
+	if !slices.Equal(material.ScopeFileNames, want) {
+		t.Fatalf("sources = %#v, want %#v", material.ScopeFileNames, want)
 	}
 }
 

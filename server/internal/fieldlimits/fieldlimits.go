@@ -19,8 +19,12 @@ const (
 	ChapterName          = 60
 	FileName             = 120
 	MaterialTitle        = FileName
-	ConversationTitle    = 60
-	ChatMessage          = 5_000
+	// An agent-made material's or file's made-from line: at most
+	// MaterialSources entries of at most MaterialSource characters.
+	MaterialSources   = 20
+	MaterialSource    = 200
+	ConversationTitle = 60
+	ChatMessage       = 5_000
 	// Comment bounds the plain text of one note comment (its paragraphs joined).
 	Comment           = 3_000
 	LLMAPIKey         = 512

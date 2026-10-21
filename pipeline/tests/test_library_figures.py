@@ -11,12 +11,15 @@ import secrets
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
+import pytest
 import test_library
 from psycopg.types.json import Jsonb
 from test_library import CURRENT, OLDER
 
 from pipeline.retrieval import library, tools
 from pipeline.retrieval.tools import ToolContext
+
+pytestmark = pytest.mark.integration
 
 # The seeded library and the loader module of test_library.py.
 library_db = test_library.library_db
