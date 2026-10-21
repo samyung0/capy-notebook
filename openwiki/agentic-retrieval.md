@@ -3829,7 +3829,15 @@ what it inserted, so each rule counts both sides:
   splits; a list item's mark alone measured 837 bytes); a paragraph delete:
   its expected text times `CONTENT` plus 8 `PIECE`s (its runs' formatting
   and its mark come back). On lesson.docx (given a section end and a list
-  item) and lesson.pptx they over-estimate 1.5 to 11 times.
+  item) and lesson.pptx they over-estimate 1.5 to 11 times;
+- the DOCX-only commands: `set_list` 3 `PIECE`s a paragraph and
+  `set_alignment` 2 (the mark keys written and their old values),
+  `format_text` its expected text times `CONTENT` plus 6 `PIECE`s,
+  `insert_table` its cells' text times `CONTENT` plus 3 `PIECE`s a cell and
+  8 more, `delete_table` its expected cells' text times `CONTENT` plus 8
+  `PIECE`s a cell and 16 more (the cells' and table's properties come back:
+  lesson.docx's 2x2 table sent 4,906 bytes); on lesson.docx they
+  over-estimate 1.6 to 11 times.
 
 A new command adds its rule there; both matches are exhaustive, so it does
 not compile without one. The factors were
