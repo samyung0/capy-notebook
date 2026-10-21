@@ -125,9 +125,10 @@ const GRADES: &str = "e2e/fixtures/files/basic/grades.xlsx";
 const LESSON_DOCX: &str = "e2e/fixtures/files/basic/lesson.docx";
 const LESSON_PPTX: &str = "e2e/fixtures/files/basic/lesson.pptx";
 
-/// lesson.docx with its first paragraph ending a section and, after its
-/// table, a paragraph and a closing one, the body's last (a paragraph right
-/// after a table is not one the agent edits).
+/// lesson.docx with its first paragraph ending a section, its second a
+/// bulleted list item and, after its table, a paragraph and a closing one,
+/// the body's last (a paragraph right after a table is not one the agent
+/// edits).
 fn lesson_docx() -> File {
     let lesson = File::open(Format::Docx, LESSON_DOCX);
     let parts: Vec<(String, Vec<u8>)> = ooxml_opc::unzip_parts(&lesson.base)
@@ -142,6 +143,11 @@ fn lesson_docx() -> File {
                 .replacen(
                     "<w:p><w:r><w:t>Owner sentence",
                     r#"<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr><w:r><w:t>Owner sentence"#,
+                    1,
+                )
+                .replacen(
+                    "<w:p><w:r><w:t>Collaborator sentence",
+                    r#"<w:p><w:pPr><w:pStyle w:val="ListBullet"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Collaborator sentence"#,
                     1,
                 )
                 .replacen(
@@ -386,6 +392,9 @@ fn undo_reverts_paragraph_inserts_and_deletes() {
             ],
         ];
         if file.format == Format::Docx {
+            // The list goes on.
+            let item = id("Collaborator sentence");
+            cases.push(vec![insert("afterId", &item, "Next item", None)]);
             cases.push(vec![insert(
                 "afterId",
                 &id("Closing line."),
@@ -580,11 +589,11 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
         covers(&mut short, case, cost, undo_and_redo(&room, change));
     }
 
-    for (format, path) in [
-        (Format::Docx, "e2e/fixtures/files/basic/lesson.docx"),
-        (Format::Pptx, "e2e/fixtures/files/basic/lesson.pptx"),
+    for (file, path) in [
+        (lesson_docx(), LESSON_DOCX),
+        (File::open(Format::Pptx, LESSON_PPTX), LESSON_PPTX),
     ] {
-        let file = File::open(format, path);
+        let format = file.format;
         let room = file.room();
         for entry in file
             .entries(&room)
@@ -619,6 +628,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                     "insert_paragraph",
                     insert("afterId", &entry.id, &long, None),
                 ),
+                ("insert_paragraph", insert("afterId", &entry.id, "", None)),
                 ("insert_paragraph", insert("beforeId", &entry.id, "", style)),
             ];
             let delete = Command::DeleteParagraph {

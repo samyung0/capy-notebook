@@ -3816,11 +3816,12 @@ what it inserted, so each rule counts both sides:
 - formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
 - XLSX structure (rows, columns, sheets): a `PIECE` per row, column or sheet
   entry, since the cells stay in Yjs;
-- a DOCX or PPTX paragraph insert: its text and style times `CONTENT` plus 4
-  `PIECE`s (the new mark, a copy of its neighbour's properties, and the run
-  it splits); a paragraph delete: its expected text times `CONTENT` plus 4
-  `PIECE`s (its runs' formatting and its mark come back). On lesson.docx and
-  lesson.pptx they over-estimate 1.4 to 5.8 times.
+- a DOCX or PPTX paragraph insert: its text and style times `CONTENT` plus 8
+  `PIECE`s (the new mark, a copy of its anchor's properties, and the run it
+  splits; a list item's mark alone measured 837 bytes); a paragraph delete:
+  its expected text times `CONTENT` plus 8 `PIECE`s (its runs' formatting
+  and its mark come back). On lesson.docx (given a section end and a list
+  item) and lesson.pptx they over-estimate 1.5 to 11 times.
 
 A new command adds its rule there; both matches are exhaustive, so it does
 not compile without one. The factors were
@@ -3953,9 +3954,14 @@ Paragraphs (Epo 2026-10-21; the other Word and PowerPoint commands wait):
 5,000 characters, at most 20 inserts a call) right after `after_id` or right
 before `before_id`, exactly one of them; the first paragraph's id with
 `before_id` inserts at the start. A DOCX paragraph goes in the document body
-only, takes `style`, a paragraph style id of the file (an unknown one is
-`invalid_input`; the read's labels name each paragraph's style unless it is
-the default), and none of its neighbour's formatting; a PPTX paragraph takes
+only. Without `style` it continues its anchor as Enter at the anchor's end
+does (Epo 2026-10-21): the anchor's paragraph properties (list, indent) and
+its style's `w:next` style, else that style; the anchor is the `after_id`
+paragraph, else the paragraph before the new one, at the body's start the
+one it goes before. With `style`, a paragraph style id of the file (an
+unknown one is `invalid_input`; the read's labels name each paragraph's
+style unless it is the default), it takes that style and no direct
+formatting. Its runs are plain either way. A PPTX paragraph takes
 the paragraph properties (level, bullet, alignment) of the paragraph it goes
 after or before and the style of that paragraph's character next to it, and
 `style` is refused. Several inserts after one paragraph land in call order,

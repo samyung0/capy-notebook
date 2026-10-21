@@ -2734,8 +2734,9 @@ new pilcrow with the paragraph's level, bullet and alignment), and a delete
 is `remove_paragraph`, which removes the paragraph's content and mark where a
 delete across a mark would join two paragraphs and the survivor adopt the
 first mark. A DOCX paragraph's leading blocks (a page or column break, a
-table) stay, opening the next paragraph. A new DOCX paragraph keeps only its
-id and the section its neighbour ended, plus the style named.
+table) stay, opening the next paragraph. A new DOCX paragraph keeps its id
+and the section its neighbour ended; without a style it then takes its
+anchor's properties and next style (Enter), with one only that style.
 
 An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
 as a substring that occurs exactly once in the paragraph, counted as note

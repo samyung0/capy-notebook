@@ -1765,7 +1765,7 @@
                       "type": "string"
                     },
                     "style": {
-                      "description": "DOCX: a paragraph style id inspect_office_document lists; omit for the default style.",
+                      "description": "DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does.",
                       "minLength": 1,
                       "type": "string"
                     },

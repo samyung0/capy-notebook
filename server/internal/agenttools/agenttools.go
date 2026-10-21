@@ -574,7 +574,7 @@ func officeCommandSchema() map[string]any {
 				"after_id":  str("The paragraph it follows, a target id from inspect_office_document."),
 				"before_id": str("The paragraph it precedes; the first paragraph's id inserts at the start."),
 				"text":      map[string]any{"type": "string", "description": "Plain text without line breaks."},
-				"style":     str("DOCX: a paragraph style id inspect_office_document lists; omit for the default style."),
+				"style":     str("DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does."),
 			}, "text"),
 			variant("delete_paragraph", "DOCX, PPTX: delete one paragraph, never its story's or shape's last.", map[string]any{
 				"target_id":     str("The paragraph's target id from inspect_office_document."),
