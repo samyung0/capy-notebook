@@ -204,7 +204,7 @@ type File struct {
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
 	// ErrorID is a failed file's error id for the Indexing tab's Failed files:
-	// the trace of the ingest attempt that failed it (migration 0105). Absent
+	// the trace of the ingest attempt that failed it (migration 0104). Absent
 	// unless status is failed and one was recorded.
 	ErrorID string `json:"errorId,omitempty"`
 	// WorkspaceName and LostAccess: owned-list rows only (ListOwnedFiles).
@@ -699,7 +699,7 @@ type FileChange struct {
 	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
 	LastEditedAt time.Time `json:"lastEditedAt"`
 	// ErrorID is a failed row's error id: the trace id of its failed attempt
-	// (migration 0105), so a reported failure can be traced; the failure's
+	// (migration 0104), so a reported failure can be traced; the failure's
 	// text stays hidden. Absent on other rows and when none was recorded.
 	ErrorID string `json:"errorId,omitempty"`
 }

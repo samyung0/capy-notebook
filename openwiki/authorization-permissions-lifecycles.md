@@ -1028,7 +1028,7 @@ inserted, by the request-time sync or the `user.created` webhook, whichever
 runs first. An unnamed account never shows its whole address (Epo
 2026-10-21): every place a name shows (profile, members, mentions, presence
 and cursors through the collaboration token's `name` claim) reads
-`users.name`, and migration `0104_unnamed_user_names.sql` renamed rows created
+`users.name`, and migration `0103_unnamed_user_names.sql` renamed rows created
 earlier whose name was their email (any case, cut to 60). Every later sync,
 including `user.updated`, refreshes email and avatar only. `PATCH /api/me`
 stores the name the user typed, trimmed, 1 to 60 runes, rejected with `422`

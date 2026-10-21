@@ -12,7 +12,7 @@ import (
 // error-handling, 2026-10-21): the trace of the failed job's last ingest
 // attempt, or of the gateway request that recorded an export failure; a row
 // that is not failed carries none, and a save or a retry clears it
-// (migration 0105). Failed files carry theirs on the file rows.
+// (migration 0104). Failed files carry theirs on the file rows.
 func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
