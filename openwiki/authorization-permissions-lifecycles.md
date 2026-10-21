@@ -1455,9 +1455,11 @@ Once requested, the account enters `deletion_pending`, sessions are revoked,
 live collaboration rooms are evicted, and queued or running imports, ingest,
 parse, and provider reservations are cancelled. The owner's workspaces
 and materials immediately disappear from member lists, Explore, direct shared
-reads, and clone endpoints. Long-running chat, generate, editor-AI, and ingest
+reads, and clone endpoints. Long-running generate, editor-AI, and ingest
 streams recheck both the actor session and workspace access and cancel when
-either boundary closes. A suspension hides them the same way while it lasts
+either boundary closes. A chat turn runs no periodic check (Epo 2026-10-21):
+each of its tool calls checks the actor, and a write refused for lost
+permission tells the agent to stop editing and end the turn. A suspension hides them the same way while it lasts
 (see "What everyone else sees" under Account lifecycle gates). Clerk revocation reads explicit pages into a complete sweep before it
 revokes them, then repeats until no active session remains. A page or sweep
 safety limit is a retryable failure, never success. A confirmed empty active

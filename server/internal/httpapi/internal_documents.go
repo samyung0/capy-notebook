@@ -61,6 +61,10 @@ func (a *api) internalDocumentsActor(w http.ResponseWriter, r *http.Request, use
 	}
 	if edit {
 		err = a.s.AssertWorkspaceEditor(r.Context(), userID, workspaceID)
+		if errors.Is(err, store.ErrForbidden) || errors.Is(err, store.ErrNotFound) {
+			permissionRefusal(w)
+			return false
+		}
 	} else {
 		_, err = a.s.WorkspaceEffectiveRole(r.Context(), userID, workspaceID)
 	}
@@ -69,6 +73,16 @@ func (a *api) internalDocumentsActor(w http.ResponseWriter, r *http.Request, use
 		return false
 	}
 	return true
+}
+
+// permissionRefusal answers a chat write whose actor may no longer edit the
+// turn's workspace (a role change, a removed membership). Chat turns run no
+// periodic access check: the pipeline tells the model to stop editing
+// (Epo 2026-10-21).
+func permissionRefusal(w http.ResponseWriter) {
+	writeJSON(w, http.StatusForbidden, map[string]string{
+		"code": "permission_denied", "message": "You no longer have permission to edit this workspace, so nothing was changed.",
+	})
 }
 
 func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {

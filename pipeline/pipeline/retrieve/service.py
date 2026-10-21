@@ -331,15 +331,13 @@ def healthz():
     return {"ok": True}
 
 
-async def _relay_until_disconnect(
-    request: Request,
-    agen,
-    client: ClientDrop,
-):
-    """Write SSE while the client is here. Never cancel the agent pump.
+async def _relay_until_disconnect(agen, client: ClientDrop):
+    """Write SSE until the agent ends. Never cancel the agent pump.
 
-    On disconnect we stop writing and wait for the current provider call to
-    settle. The agent sees ``client.dropped`` and does not start another call.
+    There is no periodic disconnect check (Epo 2026-10-21): when Go hangs up,
+    Starlette cancels this generator, the client is marked and the current
+    provider call settles. The agent sees ``client.dropped`` and does not
+    start another call.
     """
     queue: asyncio.Queue[object] = asyncio.Queue()
 
@@ -357,13 +355,7 @@ async def _relay_until_disconnect(
     pump = asyncio.create_task(_pump())
     try:
         while True:
-            if await request.is_disconnected():
-                client.mark()
-                break
-            try:
-                item = await asyncio.wait_for(queue.get(), timeout=0.2)
-            except TimeoutError:
-                continue
+            item = await queue.get()
             if item is None:
                 return
             if isinstance(item, BaseException):
@@ -395,7 +387,7 @@ async def chat_stop(req: ChatStopReq):
     return {"stopped": True}
 
 
-async def _chat_events(req: ChatStreamReq, request: Request):
+async def _chat_events(req: ChatStreamReq):
     if (
         len(req.query) > CHAT_CHARACTER_LIMIT
         or len(req.query.encode("utf-8")) > QUERY_MAX_BYTES
@@ -463,7 +455,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             client=client,
             script=script,
         )
-        async for chunk in _relay_until_disconnect(request, agen, client):
+        async for chunk in _relay_until_disconnect(agen, client):
             yield chunk
     except models.UserKeyError as exc:
         if not client.dropped:
@@ -481,9 +473,9 @@ async def _chat_events(req: ChatStreamReq, request: Request):
 
 
 @app.post("/chat/stream")
-async def chat_stream(req: ChatStreamReq, request: Request):
+async def chat_stream(req: ChatStreamReq):
     return StreamingResponse(
-        _chat_events(req, request),
+        _chat_events(req),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

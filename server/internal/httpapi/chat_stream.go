@@ -139,12 +139,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
-	// A turn outlives its browser connection: only a stop request, lost
-	// authorization or the pipeline's own bounds end it early (Epo 2026-10-21).
+	// A turn outlives its browser connection, and runs no periodic check:
+	// only a stop request or the pipeline's own bounds end it early, and lost
+	// permission surfaces through each tool call's own check (Epo 2026-10-21).
 	ctx := context.WithoutCancel(r.Context())
 	userID := uid(r)
-	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
-	defer cancelLiveAuthorization()
 
 	llm, err := a.resolveLLM(ctx, userID, models.SlotChat)
 	if err != nil {
@@ -306,11 +305,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	status := "complete"
-	switch {
-	case ctx.Err() != nil:
-		// The live authorization check ended the turn.
-		status = "aborted"
-	case streamErr != nil:
+	if streamErr != nil {
 		status = "error"
 	}
 	run.mu.Lock()
@@ -337,7 +332,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 	charge.settle(saveCtx)
 
-	if stopped || ctx.Err() != nil {
+	if stopped {
 		return
 	}
 	if streamErr != nil {

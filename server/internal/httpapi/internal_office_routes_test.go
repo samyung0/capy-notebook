@@ -213,8 +213,8 @@ func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
 		name, user, ws, chapter string
 		status                  int
 	}{
-		{"viewer", fx.viewer, fx.ws, "", http.StatusNotFound},
-		{"editor of another workspace", fx.editor, elsewhere.ID, "", http.StatusNotFound},
+		{"viewer", fx.viewer, fx.ws, "", http.StatusForbidden},
+		{"editor of another workspace", fx.editor, elsewhere.ID, "", http.StatusForbidden},
 		{"chapter not in the workspace", fx.editor, fx.ws, "ch_elsewhere", http.StatusBadRequest},
 	} {
 		msgID := seedAssistantMessage(t, fx.st, tc.user, tc.ws)

@@ -909,7 +909,7 @@ async def test_pipeline_chat_defense_rejects_query_character_overflow(character)
         role="editor",
     )
 
-    chunk = await anext(service._chat_events(req, None))
+    chunk = await anext(service._chat_events(req))
     payload = json.loads(chunk.removeprefix("data: "))
 
     assert payload["code"] == "query_too_long"

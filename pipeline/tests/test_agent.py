@@ -497,6 +497,49 @@ async def test_create_material_sends_its_sources_as_written(monkeypatch):
     assert seen["toolCallId"] == "call_1"
 
 
+@pytest.mark.parametrize(
+    "status, code, told",
+    [
+        (403, "permission_denied", True),
+        (403, "account_suspended", True),
+        (404, "", False),
+    ],
+)
+async def test_a_write_refused_for_permission_tells_the_model_to_stop(
+    monkeypatch, status, code, told
+):
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+    )
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    class _Resp:
+        status_code = status
+
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
+        def json(self):
+            return (
+                {"code": code, "message": "refused"}
+                if code
+                else {"message": "not found"}
+            )
+
+    monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
+    result = await tools._create_material(
+        {"kind": "note", "content": "body", "_tool_call_id": "call_1"}, ctx
+    )
+
+    assert result.refused
+    assert (tools.NO_PERMISSION in agent._result_text(result, [])) is told
+    assert tools.NO_PERMISSION not in result.error_payload()["message"]
+
+
 async def test_create_material_clamps_model_title(monkeypatch):
     ctx = ToolContext(
         workspace_id="ws_1",
@@ -1766,8 +1809,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
     assert not any(e.get("type") == "error" for e in events)
 
 
-@pytest.mark.asyncio
-async def test_relay_stops_sse_and_waits_for_agent():
+async def test_a_go_hang_up_marks_the_client_and_lets_the_running_call_finish():
     from pipeline.retrieve import service as retrieve_service
 
     released = asyncio.Event()
@@ -1779,33 +1821,23 @@ async def test_relay_stops_sse_and_waits_for_agent():
         finished["n"] += 1
         yield {"type": "done"}
 
-    class _Req:
-        def __init__(self) -> None:
-            self.gone = False
-
-        async def is_disconnected(self) -> bool:
-            return self.gone
-
-    req = _Req()
     client = agent.ClientDrop()
-    chunks: list[str] = []
+    first = asyncio.Event()
 
     async def _consume() -> None:
-        async for chunk in retrieve_service._relay_until_disconnect(
-            req, _agen(), client
-        ):
-            chunks.append(chunk)
-            req.gone = True
+        async for _chunk in retrieve_service._relay_until_disconnect(_agen(), client):
+            first.set()
 
     task = asyncio.create_task(_consume())
-    await asyncio.sleep(0.05)
-    assert finished["n"] == 0
-    assert client.dropped
+    await first.wait()
+    task.cancel()  # Starlette cancels the response when Go hangs up
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert client.dropped and finished["n"] == 0
     released.set()
-    await task
+    with pytest.raises(asyncio.CancelledError):
+        await task
     assert finished["n"] == 1
-    assert any("planning" in c for c in chunks)
-    assert not any("done" in c for c in chunks)
 
 
 # ------------------------------------- turn saves, however it ends (Epo 2026-10-21)
@@ -2185,10 +2217,6 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
         yield {"type": "phase", "phase": "planning"}
         raise RuntimeError("citation regions unavailable")
 
-    class _Request:
-        async def is_disconnected(self) -> bool:
-            return False
-
     monkeypatch.setattr(service, "run_agent", _agent)
     monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
     monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
@@ -2206,7 +2234,7 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
         spendSessionId="cr_1",
         role="editor",
     )
-    chunks = [chunk async for chunk in service._chat_events(req, _Request())]
+    chunks = [chunk async for chunk in service._chat_events(req)]
 
     last = json.loads(chunks[-1].removeprefix("data: "))
     assert last["code"] == "agent_failed"
@@ -2221,10 +2249,6 @@ async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
     async def _agent(*, client, **_kwargs):
         registered.append(service._running.get("m_turn") is client)
         yield {"type": "done"}
-
-    class _Request:
-        async def is_disconnected(self) -> bool:
-            return False
 
     monkeypatch.setattr(service, "run_agent", _agent)
     monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
@@ -2244,7 +2268,7 @@ async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
         spendSessionId="cr_1",
         role="editor",
     )
-    _chunks = [chunk async for chunk in service._chat_events(req, _Request())]
+    _chunks = [chunk async for chunk in service._chat_events(req)]
 
     assert registered == [True] and "m_turn" not in service._running
 

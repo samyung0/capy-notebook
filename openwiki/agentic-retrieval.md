@@ -2647,11 +2647,22 @@ current pending changes applied. Embedded source instructions remain untrusted.
    the user is charged for neither. A browser that disconnects without Stop
    does not end the turn: Go relays on a context detached from the browser
    request and finishes, saves and settles the turn as usual (Epo 2026-10-21;
-   it keeps the user's AI request slot until then). Only Stop (below), lost
-   authorization (Go's 5-second live check) or the pipeline's own bounds end a
-   turn early. If the Go hop itself goes away, Python stops writing SSE but
-   finishes the in-flight provider call, settles usage when it arrives, and
-   does not start another planning step.
+   it keeps the user's AI request slot until then). Only Stop (below) or the
+   pipeline's own bounds end a turn early. A chat stream and its connections
+   run no periodic check (Epo 2026-10-21): no access re-check in Go and no
+   disconnect polling in the pipeline. Permission lost mid-turn (a role
+   change, a removed membership, a frozen or locked account) surfaces through
+   each tool call's own check: Go refuses the write as `permission_denied`
+   (`permissionRefusal` in `internal_documents.go`, used by the document,
+   Office, file and material writes) or with the account's lock code, and the
+   pipeline (`tools._gateway_refused`, one place for every gateway refusal)
+   adds, after the error the chat shows, an instruction to stop editing and
+   tell the user, so the agent ends the turn. Reads the pipeline makes from
+   the database itself (search) have no such check and run until the turn
+   ends. If the Go hop itself goes away, Starlette cancels the response
+   generator, which marks the client: Python stops writing SSE but finishes
+   the in-flight provider call, settles usage when it arrives, and does not
+   start another planning step.
 9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
    `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
@@ -2758,8 +2769,8 @@ the latest `activity` and `toolEvidence` from `turn_checkpoint`, `error` and
 merged with the mutation receipts, on a context detached from the request.
 Every finalized row replays into later turns (`ConversationPrompt`, `status <>
 'streaming'`, each row with its status; Epo 2026-10-21): `evidence.history_turns`
-adds "[This reply was stopped before it finished.]" (a stop, lost
-authorization or a crash) or "[This reply failed
+adds "[This reply was stopped before it finished.]" (a stop or a crash) or
+"[This reply failed
 before it finished.]" to an `aborted` or `error` assistant row (an empty one
 replays the line alone), and its tool results and passages replay like a
 finished turn's, under the same compaction. A turn that fails before any tool
@@ -2772,7 +2783,7 @@ call keeps its empty tool record (empty lists).
 | Turn time cap | none exists; a provider call past its deadline is a provider error | — | — | — |
 | User stop | `chat_stop.go` saves the row at once; `chat_stream.go` adds the late calls (`store.AddStoppedTurnCalls`) | all, the calls running at the stop included, plus receipts | all, nothing cited | `aborted` |
 | Browser disconnect without Stop | the turn runs on (`chat_stream.go` on a detached context) | as the turn's own ending | as the turn's own ending | the turn's |
-| Lost authorization mid-turn | `chat_stream.go`: the live check cancels the pipeline request | last checkpoint, plus receipts | last checkpoint | `aborted` |
+| Permission lost mid-turn | the refused tool call tells the agent to stop editing (`permission_denied`, account lock codes) | as the turn's own ending | as the turn's own ending | the turn's |
 | Tool exception | `tools.run`: a failed result, the turn goes on | its failed row | its error text | the turn's |
 | `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | all, nothing cited | `error` |
 | Exception outside the step (loop code) | `service._chat_events` `error` with state | all | all, nothing cited | `error` |
@@ -2780,7 +2791,7 @@ call keeps its empty tool record (empty lists).
 | Pipeline dies | `relayChat` EOF → `chat_stream.go` | last checkpoint, plus receipts | last checkpoint | `error` |
 | Go dies | `AbortOrphanedStreams` at the next boot | last checkpoint on the row, plus receipts | last checkpoint | `aborted` |
 
-A lost hop (lost authorization, a pipeline that dies) ends what Go hears at
+A lost hop (a pipeline that dies, a stop that falls back to hanging up) ends what Go hears at
 the last checkpoint: calls of the batch that was running then keep only their
 receipts. The boot sweep marks every `streaming` row, so with several API
 replicas a restart would abort another replica's live turn.
