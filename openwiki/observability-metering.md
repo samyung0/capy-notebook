@@ -1518,8 +1518,9 @@ Missing capacity raises an explicit configuration error before a call row or
 provider request is created. A full gate polls with jitter within the call budget,
 then fails as `provider_busy`. Leases use the call id and receipt deadline and are
 released when the call ends. The VLM read of text-less document pages has a
-gate of its own: its leases use the fixed key `vlm_page` with a limit of 20
-across every worker (`models.VLM_PAGE_CAPACITY`) in place of the GLM row, so those
+gate of its own: its leases use the fixed key `vlm_page` with a limit of
+`CAPY_VLM_PAGE_CAPACITY` across every worker (64 in production, 20 in UAT and
+local) in place of the captioning row, so those
 reads need no `model_capacities` row and do not count against GLM's ingest
 share.
 

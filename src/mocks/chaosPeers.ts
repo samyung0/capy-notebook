@@ -12,7 +12,13 @@ import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { WorkspaceMember } from '@/api/types';
 import { MaterialKit } from '@/features/notes/plugins';
-import { checkpointRoom, join, type Room, rooms } from './collaboration';
+import {
+  checkpointRoom,
+  join,
+  type MockIdentity,
+  type Room,
+  rooms,
+} from './collaboration';
 import * as db from './db';
 import { mockWorkspaceMembers } from './handlers';
 
@@ -118,6 +124,7 @@ class ChaosPeer {
   readonly participant: {
     awareness?: Awareness;
     document: Y.Doc;
+    identity: MockIdentity;
     origin: object;
   };
   readonly slot: number;
@@ -136,6 +143,8 @@ class ChaosPeer {
       awareness:
         room.target.kind === 'material' ? new Awareness(document) : undefined,
       document,
+      // An editor in the room's presence, as its token would name it.
+      identity: { avatar: null, name: this.name, person: 1000 + slot },
       origin: this,
     };
     this.schedule(() => this.join(), slot * 250);

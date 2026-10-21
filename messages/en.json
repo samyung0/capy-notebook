@@ -1285,6 +1285,8 @@
   "editor_unknown_user": "Unknown user",
   "editor_deleted_comment": "Deleted comment",
   "editor_collaborator": "Collaborator",
+  "presence_group": "Also in this document",
+  "presence_more": "{count} more",
   "editor_task_complete": "Mark task complete",
   "editor_task_incomplete": "Mark task incomplete",
   "editor_mermaid_source": "Mermaid diagram source",

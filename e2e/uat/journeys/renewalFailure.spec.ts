@@ -509,16 +509,21 @@ test('a failed Pro renewal keeps Pro while Stripe retries, recovers when paid, a
   const declining = [ownerA, ownerB];
   const steps: Record<string, unknown>[] = [];
   for (;;) {
-    const subscriptions = await Promise.all(
-      declining.map((owner) =>
-        stripeRequest(run.env, `/v1/subscriptions/${owner.subscriptionId}`)
-      )
-    );
-    const invoices = await Promise.all(
-      declining.map((owner) =>
-        stripeRequest(run.env, `/v1/invoices/${renewals.get(owner)}`)
-      )
-    );
+    // One read at a time: three lanes share the sandbox's request rate, and
+    // this loop's parallel reads met Stripe 429s in uat-quality.
+    const subscriptions: Record<string, unknown>[] = [];
+    const invoices: Record<string, unknown>[] = [];
+    for (const owner of declining) {
+      subscriptions.push(
+        await stripeRequest(
+          run.env,
+          `/v1/subscriptions/${owner.subscriptionId}`
+        )
+      );
+      invoices.push(
+        await stripeRequest(run.env, `/v1/invoices/${renewals.get(owner)}`)
+      );
+    }
     const now = Number(
       (await stripeRequest(run.env, `/v1/test_helpers/test_clocks/${clockId}`))
         .frozen_time

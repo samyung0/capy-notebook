@@ -895,6 +895,11 @@ adds about 1.2 GiB, mostly its JVM. Seven 1,400-page books at once took
 round (293 s). Office files are light: three 705-page workbooks, two decks and
 two handbooks beside a book peaked at 4.3 GiB, LibreOffice at 0.88 GiB of its
 2 GiB address-space cap. The host is shared with the UAT stack, which is light.
+The v19 parser (flattening plus the decoder sandbox) peaked at 12.2 of 14 GiB
+with the same seven books, which left the host 1.1 GiB; releasing the
+flattening memory before Java brought it to 11.5 GiB (3.6 GiB left), and
+production keeps seven children until it has its own ingest host (decision
+2026-10-21).
 
 A new document upload lands `files.status=pending` with a pending `parse` row.
 Eight coordinator children claim only parse rows and flip the file to
@@ -1001,11 +1006,13 @@ The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
 `PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java starts with it lifted,
 its heap bounded by `-Xmx` (decision 2026-10-15) and the rest by a 2 GiB data
 cap. The
-container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice with
-it too, so the multithreaded LibreOffice and JVM reserve far less address
-space: LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to
-0.52 GiB, and without the setting that workbook fails to convert under the
-limit. A parse child reached 0.64 GiB on a 1,400-page book. A parse that needs more address space fails in the child (Python's
+container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice and
+Java with it too (their sandbox environments name it, decision 2026-10-21), so
+the multithreaded LibreOffice and JVM reserve far less address space:
+LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to 0.52 GiB, and
+without the setting that workbook fails to convert under the limit; a JVM keeps
+1-2 arenas instead of 27-36 and peaks at about 2.8 GiB of address space instead
+of 4.9. A parse child reached 0.64 GiB on a 1,400-page book. A parse that needs more address space fails in the child (Python's
 `MemoryError`, an OS call refused with `ENOMEM`, or MuPDF's failed `malloc`)
 and answers `parse_oom`: its fingerprint is quarantined and the child replaced
 before the next document. LibreOffice past the limit fails its conversion,
@@ -1027,7 +1034,12 @@ itself non-dumpable at startup, so no other process of the parser user can
 trace it or read its memory and environment; PID 1 is the image's
 execute-only `tini`, which the kernel runs non-dumpable as well. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
-1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work
+1.4 GiB of retained heap back to about 0.55 GiB. A PDF parse also does this
+(`odl/memory.py` `release_memory`) between flattening and Java (decision
+2026-10-21): font repair and flattening leave about 0.5 GiB freed but held on a
+1,400-page book, 0.2 GiB after the release, which seven children would
+otherwise hold beside their JVMs (container anonymous memory 12.0 → 10.5 GiB,
+output unchanged). Startup empties the work
 directory: abandoned transfer, document and slot files, and the temporary
 files of anything using `TMPDIR`, which the image points there. Cancelling an executing caller leaves the
 runtime-owned future, admission slot and deadline active. Cancelling waiting
@@ -1458,11 +1470,17 @@ past its budget raises `ProviderBusy` instead and the job re-pends once; pages
 already read are cached. On the re-claim (`last_wait`: the job's
 `provider_waits` at `PROVIDER_WAITS_MAX`) a page still busy is unread instead,
 so the file ends partial rather than failing `provider_busy` (parts design
-§6). One job reads at most 10 pages
-at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
-its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
-flight (`VLM_PAGE_CAPACITY`), taken in place of the captioning model's `model_capacities` row,
-so page reads neither need that row nor count against its ingest share.
+§6). One job reads at most `CAPY_VLM_PAGES_PER_JOB` pages at once, and all
+ingest workers share a gate of its own: capacity leases under the fixed key
+`vlm_page`, at most `CAPY_VLM_PAGE_CAPACITY` calls in flight, taken in place of
+the captioning model's `model_capacities` row, so page reads neither need that
+row nor count against its ingest share. Both are per-environment settings
+(decision 2026-10-21): production allows 64 in flight and 40 per job
+(`docker-compose.ingest-host.yml`, a production input in the env manifest),
+UAT and local keep 20 and 10 (fixed in their Compose files, and the code's
+fallback); the per-job limit must be between 1 and the overall one. A scan's
+reads take far longer than its parse (a 500-page scan renders in about 13 s),
+so these gates, not the parser, bound scan-heavy ingest.
 
 On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`; a
 slot pointed at GLM uses `ZAI_API_KEY`, the one Z.AI key chat also uses
@@ -4514,6 +4532,7 @@ current chunk, with full coverage in the large-document reduction path.
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the ZAI GLM-5.3-Flash row (served by Z.AI) captions at `reasoning_effort: low`. |
+| VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |

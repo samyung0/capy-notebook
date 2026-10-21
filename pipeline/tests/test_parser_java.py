@@ -100,7 +100,10 @@ from pathlib import Path
 libc = ctypes.CDLL(None, use_errno=True)
 pdf = Path(sys.argv[sys.argv.index("capy.odl.CapyMain") + 1])
 out_dir = Path(sys.argv[sys.argv.index("--output-dir") + 1])
-out = {{"env": sorted(k for k in os.environ if k != "LC_CTYPE")}}
+out = {{
+    "env": sorted(k for k in os.environ if k != "LC_CTYPE"),
+    "arenas": os.environ.get("MALLOC_ARENA_MAX"),
+}}
 
 def attempt(name, action):
     try:
@@ -136,9 +139,10 @@ out["limits"] = {{
 )
 def test_java_runs_sandboxed_with_only_its_allowlisted_env(tmp_path, monkeypatch):
     """(security regression: S1 Java) The JVM starts through the sandbox: an
-    explicit environment (no parser secret), a 2 GiB data cap with the parse
-    child's soft address-space limit lifted, no network, no new processes or
-    groups, and no file outside its PDF and output folder."""
+    explicit environment (no parser secret; two malloc arenas, as LibreOffice
+    gets), a 2 GiB data cap with the parse child's soft address-space limit
+    lifted, no network, no new processes or groups, and no file outside its PDF
+    and output folder."""
     import os
     import resource
 
@@ -170,7 +174,8 @@ def test_java_runs_sandboxed_with_only_its_allowlisted_env(tmp_path, monkeypatch
         report = json.loads(answer.read())
     os.waitpid(pid, 0)
 
-    assert set(report["env"]) <= {"PATH", "HOME", "LANG"}
+    assert set(report["env"]) <= {"PATH", "HOME", "LANG", "MALLOC_ARENA_MAX"}
+    assert report["arenas"] == "2"
     assert report["limits"] == {
         "AS": [-1, -1],
         "DATA": [2 << 30] * 2,
@@ -241,6 +246,24 @@ def test_reader_retry_preserves_source_encryption_in_a_fresh_directory(
         assert repaired.get_toc() == original.get_toc()
         assert repaired[0].get_text() == original[0].get_text()
         assert repaired[0].get_pixmap().samples == original[0].get_pixmap().samples
+
+
+def test_the_parse_releases_freed_memory_before_java(tmp_path, monkeypatch, source):
+    """Font repair and flattening hand back what they freed before the JVM
+    starts beside the parse child (decision 2026-10-21)."""
+    steps = []
+    monkeypatch.setattr(
+        refine.memory, "release_memory", lambda: steps.append("release")
+    )
+
+    def run(pdf, out_dir, *, timeout_s):
+        steps.append("java")
+        raise RuntimeError("stop after Java")
+
+    monkeypatch.setattr(java, "run", run)
+    with pytest.raises(RuntimeError, match="stop after Java"):
+        refine.parse_pdf(source, tmp_path, java_timeout_s=60)
+    assert steps == ["release", "java"]
 
 
 @pytest.mark.parametrize(

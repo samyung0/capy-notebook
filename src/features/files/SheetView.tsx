@@ -46,7 +46,8 @@ export default function SheetView({
     sourceHeaderStatus(runtime.status, {
       busy: runtime.saving || runtime.handoff,
       editing: runtime.mode === 'edit',
-    })
+    }),
+    runtime.slowed
   );
 
   if (runtime.unavailable)
@@ -87,7 +88,6 @@ export default function SheetView({
         readOnly={runtime.readOnly}
         reloading={runtime.discarding}
         replaced={runtime.replaced}
-        slowed={runtime.slowed}
         storageFull={runtime.storageFull}
       />
       <OfficeHeader

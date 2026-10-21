@@ -10,6 +10,10 @@ import {
   itemSaveState,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
+import {
+  type PresenceConnection,
+  useReportPresence,
+} from '@/features/collaboration/presence';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
@@ -31,12 +35,15 @@ export function QuizEditor({
   quizId,
   title,
   action,
+  onPresenceChange,
   onStatusChange,
 }: {
   quizId: string;
   title: string;
   /** Sits right of the title. */
   action?: ReactNode;
+  /** The room's other editors, for the header's avatar group. */
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
   const rooms = useQuizRooms(quizId, { edit: true });
@@ -49,6 +56,7 @@ export function QuizEditor({
     onStatusChange?.(saveState ? { saveState } : null);
   }, [rooms.status, rooms.recovery, rooms.offline, onStatusChange]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
+  useReportPresence(onPresenceChange, rooms.presence);
 
   if (rooms.status === 'unavailable')
     return <p role="alert">{m.material_ref_unavailable()}</p>;
