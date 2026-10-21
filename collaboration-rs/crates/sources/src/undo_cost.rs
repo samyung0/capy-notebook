@@ -100,6 +100,15 @@ pub fn office(command: &Command) -> usize {
         | Command::DeleteRows { count, .. }
         | Command::InsertColumns { count, .. }
         | Command::DeleteColumns { count, .. } => (0, *count as usize),
+        // A new paragraph: its text and style, its mark (a copy of its
+        // anchor's properties: a list item's measured 837 bytes) and the run
+        // it splits.
+        Command::InsertParagraph { text, style, .. } => {
+            (text.len() + style.as_ref().map_or(0, String::len), 8)
+        }
+        // A deleted paragraph comes back with its runs' formatting and its
+        // mark's properties (a list item's: 950 bytes with its text).
+        Command::DeleteParagraph { expected_text, .. } => (expected_text.len(), 8),
     };
     content
         .saturating_mul(CONTENT)

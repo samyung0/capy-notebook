@@ -403,16 +403,20 @@ async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
 # search keeps fused order.
 RERANK_TIMEOUT_S = 5.0
 
+# Rerank requests a search stopped waiting for, held until they settle.
+_detached: set[asyncio.Future[Any]] = set()
+
 
 async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list[float]:
     """Relevance of each document to ``query``, in document order.
 
     Settles as kind ``rerank`` at zero credits, labeled with ``spec``'s catalog
-    row. The scores return as soon as they arrive and the settlement finishes
-    in the background, so :data:`RERANK_TIMEOUT_S` bounds admission and the
-    provider request, which is timed out itself rather than cancelled from
-    outside; a timed-out call stays open for its receipt window like any other
-    uncertain call.
+    row. The search waits at most :data:`RERANK_TIMEOUT_S` for the scores,
+    admission and busy retry included. The provider request is not cut off
+    there: it keeps the whole-call bound of any non-streaming call, so one that
+    answers after the search moved on, or after the search was cancelled, still
+    settles its measured usage. The settlement always finishes in the
+    background.
     """
     bound = time.monotonic() + RERANK_TIMEOUT_S
 
@@ -423,9 +427,7 @@ async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list
             spec=spec,
             deadline=min(deadline, bound),
         ) as call_id:
-            raw = await elitellm.rerank(
-                spec, query, documents, timeout=bound - time.monotonic()
-            )
+            raw = await elitellm.rerank(spec, query, documents)
             accounting.settle_in_background(
                 call_id=call_id,
                 kind=accounting.KIND_RERANK,
@@ -436,7 +438,12 @@ async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list
             )
         return raw
 
-    raw = await _call_with_retry(_one)
+    request = asyncio.ensure_future(_call_with_retry(_one))
+    _detached.add(request)
+    request.add_done_callback(_detached.discard)
+    raw = await asyncio.wait_for(
+        asyncio.shield(request), max(0.0, bound - time.monotonic())
+    )
     scores = raw.get("scores") if isinstance(raw, dict) else None
     if (
         not isinstance(scores, list)

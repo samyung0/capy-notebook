@@ -33,7 +33,7 @@ def run(monkeypatch, tmp_path):
     async def outline(_workspace_id):
         return {"chapters": [], "files": []}
 
-    async def reload_pending(_ctx):
+    async def reload_pending(_ctx, _file_id):
         return None
 
     monkeypatch.setattr(cfg, "gateway_url", "http://playground.invalid")

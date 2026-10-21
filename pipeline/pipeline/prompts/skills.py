@@ -65,18 +65,19 @@ _OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and
 
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, count at a time from start. PPTX: shapes with their target ids and text, the same way.
+- DOCX: paragraphs with their target ids, count at a time from start; the first page lists the paragraph styles. PPTX: shapes with their target ids and text, the same way.
 
 Edit, one file a call; one stale expectation refuses the whole call:
 - set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
 - format_cells sets fonts, colours, alignment, wrapping and number formats on a range; fields left out stay as they are.
 - add_sheet, rename_sheet and delete_sheet change sheets; insert_rows, delete_rows, insert_columns and delete_columns change rows and columns. A delete names what it removes: the sheet's name, or the rows' or columns' inputs as rows of cells like set_range's expected (a row's cells from column A; for columns, rows from row 1 holding the deleted columns' cells), trailing empty cells and rows left out.
 - replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
+- insert_paragraph (DOCX, PPTX) adds one paragraph of plain text right after after_id or right before before_id (the first paragraph's id to start); in DOCX it goes in the body and continues the paragraph before it as Enter does (a list goes on, a heading's next style follows) unless it names a style id from the read (a label names its paragraph's style); in PPTX it takes the level and bullet of the paragraph it goes after or before. Several after one paragraph land in call order. delete_paragraph removes one paragraph naming its whole text, never a story's or shape's last.
 - Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
 
 Create: a new Excel file is a create command first, without file_id, followed by the commands that fill it. Word files cannot be created yet. A deck is made with create_deck (the deck_building skill).
 
-Limits: a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits into several calls."""
+Limits: a call's commands up to 256 KB, writing up to 10,000 cells or inserting up to 20 paragraphs of up to 5,000 characters; split larger edits into several calls."""
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""

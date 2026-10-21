@@ -347,12 +347,14 @@ async fn scoped_reads_and_creates_go_through_the_pool() {
     let range = InspectQuery {
         sheet: Some(first.clone()),
         range: Some("A1:C3".into()),
+        ..InspectQuery::default()
     };
     let cells = pool.inspect_scoped(on, &seed, &range).await.unwrap();
     assert!(!cells["cells"].as_array().unwrap().is_empty());
     let too_big = InspectQuery {
         sheet: Some(first),
         range: Some("A1:Z1000".into()),
+        ..InspectQuery::default()
     };
     match pool.inspect_scoped(on, &seed, &too_big).await {
         Err(EngineError::Refused(failure)) => {

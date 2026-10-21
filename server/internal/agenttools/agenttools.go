@@ -99,11 +99,14 @@ import (
 // v34: the live Undo (Epo 2026-10-20): an edit receipt carries effect.undo
 // only when a loaded room holds the edit's Undo, and edit_document and
 // edit_office_document no longer promise one.
-// v35: edit_document loses set_mermaid (a mindmap's or diagram's Mermaid
+// v35: edit_office_document inserts and deletes DOCX and PPTX paragraphs
+// (insert_paragraph, delete_paragraph), and a DOCX read names each
+// paragraph's style and lists the file's paragraph styles (Epo 2026-10-21).
+// v36: edit_document loses set_mermaid (a mindmap's or diagram's Mermaid
 // block changes through replace_block), may remove or replace any note
 // block, media included, and replace_card takes expected_front and
 // expected_back, required with the side it replaces (Epo 2026-10-21).
-const ContractVersion = 35
+const ContractVersion = 36
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -569,6 +572,16 @@ func officeCommandSchema() map[string]any {
 				"expected_text": map[string]any{"type": "string", "description": "Exact text to replace as inspect_office_document shows it; must occur once in the target."},
 				"text":          map[string]any{"type": "string", "description": "Plain replacement text; empty deletes the expected text."},
 			}, "target_id", "expected_text", "text"),
+			variant("insert_paragraph", "DOCX, PPTX: insert one paragraph right after after_id or right before before_id (exactly one); DOCX paragraphs go in the document body.", map[string]any{
+				"after_id":  str("The paragraph it follows, a target id from inspect_office_document."),
+				"before_id": str("The paragraph it precedes; the first paragraph's id inserts at the start."),
+				"text":      map[string]any{"type": "string", "description": "Plain text without line breaks."},
+				"style":     str("DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does."),
+			}, "text"),
+			variant("delete_paragraph", "DOCX, PPTX: delete one paragraph, never its story's or shape's last.", map[string]any{
+				"target_id":     str("The paragraph's target id from inspect_office_document."),
+				"expected_text": map[string]any{"type": "string", "description": "The paragraph's whole text as inspect_office_document shows it."},
+			}, "target_id", "expected_text"),
 		},
 	}
 }
@@ -1048,7 +1061,8 @@ func Definitions() []Definition {
 			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
-				"cells a read. DOCX: paragraphs with their target ids and text, count from start. " +
+				"cells a read. DOCX: paragraphs with their target ids and text, count from start, " +
+				"the first page with the file's paragraph styles. " +
 				"PPTX: without slide, shapes with their target ids and text, count from start; " +
 				"with slide, that slide's shapes.",
 			InputSchema: obj(map[string]any{

@@ -2704,19 +2704,39 @@ editable, until five minutes pass without a successful save (see
 The chat agent reads Office files with `inspect_office_document` and edits
 them with `edit_office_document` (since agent contract v32, 2026-10-20; see
 [agentic retrieval](../agentic-retrieval.md), Office tools). Go turns its
-commands into the engine's (`normalizeOfficeCommands`): `replace_text` for
-DOCX and PPTX, and for XLSX `set_range`, `format_cells`, `add_sheet`,
+commands into the engine's (`normalizeOfficeCommands`): `replace_text`,
+`insert_paragraph` and `delete_paragraph` for DOCX and PPTX (the fork's
+`crates/office-service/src/docx/agent.rs` and `pptx.rs`, since contract v34,
+2026-10-21), and for XLSX `set_range`, `format_cells`, `add_sheet`,
 `rename_sheet`, row and column inserts and deletes and `delete_sheet`, which
 the engine applies in one session per call (the fork's
 `crates/office-service/src/xlsx.rs`: one `edit_cells` per `set_range`, a
 format without a full recalculation). Go no longer sends `set_cell`, which the
 engine keeps. The collaboration server's inspect route answers an XLSX
 `office` query with the engine's scoped read (the sheet list, or at most
-2,000 cells), and `/internal/documents/create` builds a new XLSX from the
-committed starter (`crates/office-service/starters/blank.xlsx`); DOCX create
-and the DOCX and PPTX scoped reads are phases 2 and 3. Every command's edit,
-structural ones included, gets the live Undo while its room is loaded
+2,000 cells), and a DOCX one (`start`, `count`) with a page of the editable
+paragraphs, each label naming the paragraph's style unless it is the
+default, the first page with the file's shown paragraph styles (at most 50,
+no hidden or semi-hidden ones; `stylesMore` counts the rest);
+`/internal/documents/create` builds a new XLSX from the committed starter
+(`crates/office-service/starters/blank.xlsx`); DOCX create and the PPTX
+scoped read are phases 2 and 3. Every command's edit, structural ones
+included, gets the live Undo while its room is loaded
 ([agentic retrieval](../agentic-retrieval.md), Undo chain).
+
+A paragraph insert or delete leaves the paragraphs around it as they were,
+ids and properties included: an insert after a paragraph is split off its
+end (Enter there; at a section's end the section mark goes to the new
+paragraph, as in Word), one before a paragraph is the engines'
+`insert_paragraph_before` (a new mark copying that paragraph's under a fresh
+id, its DOCX section left out: docx-edit's split before a block, pptx-edit's
+new pilcrow with the paragraph's level, bullet and alignment), and a delete
+is `remove_paragraph`, which removes the paragraph's content and mark where a
+delete across a mark would join two paragraphs and the survivor adopt the
+first mark. A DOCX paragraph's leading blocks (a page or column break, a
+table) stay, opening the next paragraph. A new DOCX paragraph keeps its id
+and the section its neighbour ended; without a style it then takes its
+anchor's properties and next style (Enter), with one only that style.
 
 An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
 as a substring that occurs exactly once in the paragraph, counted as note

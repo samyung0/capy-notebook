@@ -144,7 +144,7 @@ func commandTypes(def *Definition) []string {
 
 // Office files have their own tools, last in the contract (the retrieval
 // service appends them once office_building is read); edit_document keeps no
-// Office command (Epo 2026-10-15, 2026-10-20).
+// Office command (Epo 2026-10-15, 2026-10-20, 2026-10-21).
 func TestOfficeFilesHaveTheirOwnTools(t *testing.T) {
 	defs := Definitions()
 	names := []string{defs[len(defs)-2].Name, defs[len(defs)-1].Name}
@@ -160,7 +160,8 @@ func TestOfficeFilesHaveTheirOwnTools(t *testing.T) {
 	}
 	want := []string{
 		"create", "set_range", "format_cells", "add_sheet", "rename_sheet", "insert_rows", "delete_rows",
-		"insert_columns", "delete_columns", "delete_sheet", "replace_text",
+		"insert_columns", "delete_columns", "delete_sheet", "replace_text", "insert_paragraph",
+		"delete_paragraph",
 	}
 	if got := commandTypes(edit); !slices.Equal(got, want) {
 		t.Fatalf("office commands = %v", got)

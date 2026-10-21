@@ -78,7 +78,8 @@ type Citation struct {
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on
-// the assistant row. It is shown in the UI and never sent back as LLM history.
+// the assistant row. It is shown in the UI; only a stopped or failed turn's
+// tool calls go back into later prompts (Epo 2026-10-21).
 // Tool blocks carry the shared agent-tool result contract: a terminal outcome,
 // a safe typed error and the durable resource effects the call committed.
 type ActivityBlock struct {
@@ -678,6 +679,7 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
 		m.ToolEvidence = meta.ToolEvidence
+		m.Activity = meta.Activity
 		history = append(history, m)
 	}
 	if err := rows.Err(); err != nil {

@@ -22,6 +22,7 @@ from pipeline.retrieval import (
     contract,
     pending,
     scripted,
+    search,
     skills,
     tools,
 )
@@ -2013,6 +2014,60 @@ async def test_a_stop_during_a_write_starts_no_further_call_of_its_batch(monkeyp
     assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
 
 
+async def test_a_stop_during_a_search_lets_its_rerank_finish_and_settle(monkeypatch):
+    """A provider call running inside a tool at Stop is billed with the turn."""
+    client = agent.ClientDrop()
+    running, answer = asyncio.Event(), asyncio.Event()
+    opened: list[str] = []
+    settled: list[str] = []
+
+    async def _open(call_id, **_kwargs):
+        opened.append(call_id)
+
+    async def _no_lease(_call_id):
+        return None
+
+    async def _post(payload, **_kwargs):
+        settled.append(payload["callId"])
+        return {}
+
+    async def _rerank(_spec, _query, documents):
+        running.set()
+        await answer.wait()
+        return {"scores": [1.0] * len(documents), "input_tokens": 30}
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        rows = [{"id": "a", "indexed_text": "a"}, {"id": "b", "indexed_text": "b"}]
+        _, reranked = await search.rerank("q", rows)
+        return ToolResult(text_parts=[f"reranked={reranked}"])
+
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting, "open_call", _open)
+    monkeypatch.setattr(accounting, "release_call", _no_lease)
+    monkeypatch.setattr(accounting, "_post_settlement", _post)
+    monkeypatch.setattr(agent.models.elitellm, "rerank", _rerank)
+    monkeypatch.setattr(search, "_rerank_spec", lambda: _model())
+    search_call = _call("search_knowledge", '{"query":"q"}', "c1")
+    _stop_turn(monkeypatch, [_assembled("", [search_call])], _run)
+    token = accounting.bind("cr_stop")
+    try:
+        turn = asyncio.create_task(
+            _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+        )
+        await running.wait()
+        client.stop()
+        answer.set()
+        events = await turn
+        await asyncio.gather(*list(accounting._background))
+    finally:
+        accounting.reset(token)
+
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+    assert len(opened) == 1 and settled == opened
+
+
 async def test_a_model_call_failing_after_a_stop_is_not_reported(monkeypatch):
     client = agent.ClientDrop()
 
@@ -2060,9 +2115,19 @@ async def test_stopped_and_failed_turns_replay_marked_unfinished():
             "toolEvidence": evidence,
         }
 
+    # The stopped row's calls as Go merged them: the last finished after Stop.
+    calls = [
+        {
+            "name": "search_knowledge",
+            "detail": "Searching cells",
+            "outcome": "succeeded",
+        },
+        {"name": "list_sources", "detail": "Listing sources", "outcome": "succeeded"},
+        {"name": "read_document", "detail": "Reading Biology", "outcome": "succeeded"},
+    ]
     history = [
         {"id": "u1", "role": "user", "content": "make a note", "status": "complete"},
-        _turn("a1", "aborted", "Working on it", "stopped listing"),
+        _turn("a1", "aborted", "Working on it", "stopped listing") | {"calls": calls},
         {"id": "u2", "role": "user", "content": "try again", "status": "complete"},
         _turn("a2", "error", "", "failed listing"),
     ]
@@ -2072,6 +2137,9 @@ async def test_stopped_and_failed_turns_replay_marked_unfinished():
     assert texts[1] == "Working on it\n\n" + agent.evidence.UNFINISHED["aborted"]
     assert agent.evidence.UNFINISHED["error"] in texts
     assert sum("stopped listing" in t or "failed listing" in t for t in texts) == 2
+    replayed = [t for t in texts if t.startswith("Historical tool calls")]
+    assert len(replayed) == 1 and texts.index(replayed[0]) == 2
+    assert json.loads(replayed[0].split("\n", 1)[1]) == calls
 
 
 async def test_an_answer_that_fails_after_recording_does_not_record_again(
@@ -4717,10 +4785,29 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "docx",
                 "title": "essay.docx",
+                "supportedOperations": [
+                    "replace_text",
+                    "insert_paragraph",
+                    "delete_paragraph",
+                ],
+                "scoped": {
+                    "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
+                    "total": 80,
+                    "nextStart": 60,
+                    "styles": [
+                        {"id": "Normal", "name": "Normal"},
+                        {"id": "Heading1", "name": "heading 1"},
+                    ],
+                    "stylesMore": 3,
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
                 "supportedOperations": ["replace_text"],
-                "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
-                "total": 80,
-                "nextStart": 60,
+                "entries": [{"id": "s1", "label": "Slide 1, Title", "value": "Cells"}],
+                "total": 1,
+                "nextStart": None,
             },
         ]
     )
@@ -4754,11 +4841,22 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
     cells = await inspect(sheet="Grades", range="A1:B2")
     assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
     assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
+    # A DOCX page is the engine's scoped read, its first page listing the
+    # paragraph styles, at most 50 and a count of the rest (Epo 2026-10-21).
     paragraphs = (await inspect(start=0, count=60)).text()
-    assert (
-        "[p1] Paragraph 1: Intro" in paragraphs
-        and "(next start = 60 of 80)" in paragraphs
+    assert paragraphs == (
+        "essay.docx format=docx\n"
+        "supported: replace_text, insert_paragraph, delete_paragraph\n"
+        + source_block(
+            "[p1] Paragraph 1: Intro\n"
+            "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
+            " and 3 more"
+        )
+        + "\n(next start = 60 of 80)"
     )
+    assert sent[2]["office"] == {"start": 0, "count": 60}
+    shapes = (await inspect(start=0, count=60)).text()
+    assert "[s1] Slide 1, Title: Cells" in shapes and "styles" not in shapes
 
 
 async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatch):

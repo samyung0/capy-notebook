@@ -3149,6 +3149,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "betteroffice-office-service",
+ "betteroffice-opc",
  "betteroffice-xlsx",
  "cpu-time",
  "deadpool-postgres",

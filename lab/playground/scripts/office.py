@@ -67,6 +67,8 @@ ONE_SLIDE = (
     "Reading one slide is not available yet; read the deck's shapes with start "
     "and count."
 )
+# internal_office.go paragraphCommands.
+PARAGRAPH_COMMANDS = ["replace_text", "insert_paragraph", "delete_paragraph"]
 TITLE_UNSAFE = re.compile(r"[\\/\x00-\x1f]+")
 
 
@@ -275,16 +277,22 @@ async def _inspect(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
         scoped = {k: query[k] for k in ("sheet", "range") if query.get(k)}
         body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, scoped)
         return body
-    if fmt == "pptx" and int(query.get("slide") or 0) > 0:
+    start = max(int(query.get("start") or 0), 0)
+    if fmt == "docx":
+        page = {"start": start, "count": _page_count(query.get("count"))}
+        body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, page)
+        body["supportedOperations"] = PARAGRAPH_COMMANDS
+        return body
+    if int(query.get("slide") or 0) > 0:
         raise Refusal("unsupported_operation", ONE_SLIDE)
     entries = await call("inspectOffice", base, checkpoint)
-    start, total = max(int(query.get("start") or 0), 0), len(entries)
+    total = len(entries)
     end = min(start + _page_count(query.get("count")), total)
     body.update(
         entries=entries[min(start, total) : end],
         total=total,
         nextStart=end if end < total else None,
-        supportedOperations=["replace_text"],
+        supportedOperations=PARAGRAPH_COMMANDS,
     )
     return body
 

@@ -44,6 +44,12 @@ func TestNormalizeOfficeCommands(t *testing.T) {
 			`{"expectedText":"old","targetId":"body:paragraph:p1","text":"new","type":"replace_text"}`},
 		{"pptx", `{"type":"replace_text","target_id":"slide:1:shape:2","expected_text":"old","text":""}`,
 			`{"expectedText":"old","targetId":"slide:1:shape:2","text":"","type":"replace_text"}`},
+		{"docx", `{"type":"insert_paragraph","after_id":"body:paragraph:p1","text":"Method","style":"Heading1"}`,
+			`{"afterId":"body:paragraph:p1","style":"Heading1","text":"Method","type":"insert_paragraph"}`},
+		{"pptx", `{"type":"insert_paragraph","before_id":"para:s:0","text":""}`,
+			`{"beforeId":"para:s:0","text":"","type":"insert_paragraph"}`},
+		{"docx", `{"type":"delete_paragraph","target_id":"body:paragraph:p1","expected_text":"Old"}`,
+			`{"expectedText":"Old","targetId":"body:paragraph:p1","type":"delete_paragraph"}`},
 	} {
 		out, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		if err != nil {
@@ -67,6 +73,8 @@ func TestNormalizeOfficeCommandsRefusesTheWrongFormat(t *testing.T) {
 			agenttools.ErrUnsupportedOperation, "set_range applies to XLSX files, not DOCX"},
 		{"xlsx", `{"type":"replace_text","target_id":"x","expected_text":"a","text":"b"}`,
 			agenttools.ErrUnsupportedOperation, "replace_text applies to DOCX and PPTX files; write cells with set_range"},
+		{"xlsx", `{"type":"insert_paragraph","after_id":"x","text":"b"}`,
+			agenttools.ErrUnsupportedOperation, "insert_paragraph applies to DOCX and PPTX files; write cells with set_range"},
 		{"xlsx", `{"type":"create","format":"xlsx","title":"Book"}`,
 			agenttools.ErrInvalidInput, "create must be the call's first command, without file_id"},
 		{"xlsx", `{"type":"format_cells","sheet":"0","range":"A1"}`,
