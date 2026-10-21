@@ -96,8 +96,7 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	operations := `"supportedOperations":["replace_text","insert_paragraph","delete_paragraph"]`
 	rec = inspect(docx, map[string]any{"start": 1, "count": 1})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
-		!strings.Contains(rec.Body.String(), strings.TrimSuffix(operations, "]")+
-			`,"set_list","insert_table","delete_table","format_text","set_alignment"]`) {
+		strings.Contains(rec.Body.String(), "supportedOperations") {
 		t.Fatalf("docx read = %d %s", rec.Code, rec.Body.String())
 	}
 	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || string(sent[1]["office"]) != `{"start":1,"count":1}` {

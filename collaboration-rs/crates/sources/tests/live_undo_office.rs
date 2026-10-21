@@ -295,9 +295,20 @@ fn many_runs_docx() -> (File, String, String) {
         ));
         five_text.push_str(&text);
     }
-    let mut mixed = String::new();
-    let mut mixed_text = String::new();
-    for n in 0..ONE_CHARACTER_RUNS {
+    let (mixed, mixed_text) = one_character_runs(ONE_CHARACTER_RUNS);
+    (
+        lesson_docx_with(&format!("<w:p>{five}</w:p><w:p>{mixed}</w:p>")),
+        five_text,
+        mixed_text,
+    )
+}
+
+/// `count` runs of one Chinese or Latin letter in turn, each with its
+/// fonts and language: the XML and its text.
+fn one_character_runs(count: usize) -> (String, String) {
+    let mut xml = String::new();
+    let mut text = String::new();
+    for n in 0..count {
         let (letter, props) = if n % 2 == 0 {
             (
                 ['中', '文', '字', '体'][n / 2 % 4],
@@ -309,15 +320,42 @@ fn many_runs_docx() -> (File, String, String) {
                 r#"<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:lang w:val="en-US"/>"#,
             )
         };
-        mixed.push_str(&format!(
+        xml.push_str(&format!(
             "<w:r><w:rPr>{props}</w:rPr><w:t>{letter}</w:t></w:r>"
         ));
-        mixed_text.push(letter);
+        text.push(letter);
     }
+    (xml, text)
+}
+
+/// The fork's stories.docx with its header's and its footnote's text each
+/// [`ONE_CHARACTER_RUNS`] runs (review r2 H1): the file and that text.
+fn stories_docx() -> (File, String) {
+    let stories = File::open(
+        Format::Docx,
+        "vendor/betteroffice/crates/office-service/tests/fixtures/stories.docx",
+    );
+    let (runs, text) = one_character_runs(ONE_CHARACTER_RUNS);
+    let parts: Vec<(String, Vec<u8>)> = ooxml_opc::unzip_parts(&stories.base)
+        .unwrap()
+        .into_iter()
+        .map(|(name, bytes)| {
+            let old = match name.as_str() {
+                "word/header1.xml" => "Header",
+                "word/footnotes.xml" => "A note",
+                _ => return (name, bytes),
+            };
+            let xml = String::from_utf8(bytes).unwrap().replacen(
+                &format!(r#"<w:r><w:t xml:space="preserve">{old}</w:t></w:r>"#),
+                &runs,
+                1,
+            );
+            (name, xml.into_bytes())
+        })
+        .collect();
     (
-        lesson_docx_with(&format!("<w:p>{five}</w:p><w:p>{mixed}</w:p>")),
-        five_text,
-        mixed_text,
+        File::of(Format::Docx, ooxml_opc::rezip_parts(&parts).unwrap()),
+        text,
     )
 }
 
@@ -833,6 +871,13 @@ fn docx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
             })),
         ),
         (
+            "insert_table (empty cells)",
+            command(serde_json::json!({
+                "type": "insert_table", "afterId": first["id"],
+                "rows": vec![vec![""; 4]; 5],
+            })),
+        ),
+        (
             "delete_table",
             command(serde_json::json!({
                 "type": "delete_table", "id": table_id, "expected": table,
@@ -1166,6 +1211,70 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
             );
         }
     }
+
+    // Review r2 H1: a header's and a footnote's text replaced whole, each
+    // one run a character (apply finds them outside the body).
+    let (stories, text) = stories_docx();
+    let room = stories.room();
+    for part in ["header", "footnote"] {
+        let id = stories
+            .paragraphs(&room)
+            .into_iter()
+            .find(|p| {
+                p["part"]
+                    .as_str()
+                    .is_some_and(|label| label.starts_with(part))
+            })
+            .map(|p| p["id"].as_str().unwrap().to_owned())
+            .unwrap();
+        let (cost, change) = stories.costed_edit(
+            &room,
+            &[Command::ReplaceText {
+                target_id: id,
+                expected_text: text.clone(),
+                text: "x".into(),
+            }],
+        );
+        covers_closely(
+            &mut short,
+            &format!("{part} replace_text, one-character runs"),
+            cost,
+            undo_and_redo(&room, change),
+        );
+    }
+
+    // Review r2 M1: every format on a 2-character paragraph of a file with
+    // no default run properties, so the span holds no markers to measure:
+    // the Redo is a start and an end marker a key.
+    let file = File::of(
+        Format::Docx,
+        ooxml_opc::rezip_parts(&[(
+            "word/document.xml".to_owned(),
+            br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>ab</w:t></w:r></w:p><w:p><w:r><w:t>End</w:t></w:r></w:p></w:body></w:document>"#.to_vec(),
+        )])
+        .unwrap(),
+    );
+    let room = file.room();
+    let id = file
+        .paragraphs(&room)
+        .into_iter()
+        .find(|p| p["text"] == "ab")
+        .map(|p| p["id"].clone())
+        .unwrap();
+    let (cost, change) = file.costed_edit(
+        &room,
+        &[command(serde_json::json!({
+            "type": "format_text", "targetId": id, "expectedText": "ab",
+            "bold": true, "italic": true, "underline": true, "strikethrough": true,
+            "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
+        }))],
+    );
+    covers_closely(
+        &mut short,
+        "format_text, every format on 2 characters",
+        cost,
+        undo_and_redo(&room, change),
+    );
 
     // Tables of several sizes (review M1): 1x1, 10x10 of three formatted
     // paragraphs a cell, 3x3 of 20 list items a cell, deleted.

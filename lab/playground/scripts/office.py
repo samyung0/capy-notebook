@@ -67,9 +67,8 @@ ONE_SLIDE = (
     "Reading one slide is not available yet; read the deck's shapes with start "
     "and count."
 )
-# internal_office.go paragraphCommands and docxCommands.
+# internal_office.go paragraphCommands.
 PARAGRAPH_COMMANDS = ["replace_text", "insert_paragraph", "delete_paragraph"]
-DOCX_COMMANDS = ["set_list", "insert_table", "delete_table", "format_text", "set_alignment"]
 TITLE_UNSAFE = re.compile(r"[\\/\x00-\x1f]+")
 
 
@@ -282,7 +281,6 @@ async def _inspect(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
     if fmt == "docx":
         page = {"start": start, "count": _page_count(query.get("count"))}
         body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, page)
-        body["supportedOperations"] = PARAGRAPH_COMMANDS + DOCX_COMMANDS
         return body
     if int(query.get("slide") or 0) > 0:
         raise Refusal("unsupported_operation", ONE_SLIDE)

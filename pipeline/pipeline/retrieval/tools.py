@@ -2344,7 +2344,8 @@ def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
     first one not shown."""
     head += (
         "\nparagraphs as [id] (style unless the default, list, table cell, content control, "
-        "locked: why replace_text, delete_paragraph and format_text refuse it) text; "
+        "locked: why replace_text and format_text refuse it, and delete_paragraph unless "
+        "it only follows a table) text; "
         "after the body, headers, footers and notes under == part == lines, which "
         "take replace_text only:"
     )
