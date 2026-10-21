@@ -3665,8 +3665,9 @@ async fn an_ambiguous_text_source_edit_lists_its_lines() {
 
 // ------------------------------------------------------------ source rooms
 
-/// A stand-in for the Go API's internal source routes, text files only: the
-/// session, access, the base bytes and the delta-save checkpoint.
+/// A stand-in for the Go API's internal source routes: the session, access,
+/// the base bytes and the delta-save checkpoint (an Office save's seed SHA
+/// too).
 #[derive(Clone)]
 struct Gateway {
     database: String,
@@ -3765,7 +3766,7 @@ async fn gateway_post(
     .await
     .expect("row");
     txn.execute(
-        "UPDATE source_documents SET checkpoint=$2,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$5,log_rows=log_rows+1,seed_bytes=COALESCE($6,seed_bytes),base_source_sha256=COALESCE($7,base_source_sha256),last_edited_at=now() WHERE file_id=$1",
+        "UPDATE source_documents SET checkpoint=$2,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$5,log_rows=log_rows+1,seed_bytes=COALESCE($6,seed_bytes),base_source_sha256=COALESCE($7,base_source_sha256),state_seed_sha256=COALESCE($8,state_seed_sha256),last_edited_at=now() WHERE file_id=$1",
         &[
             &id,
             &next,
@@ -3774,6 +3775,7 @@ async fn gateway_post(
             &(update.len() as i64),
             &body["seedBytes"].as_i64(),
             &body["baseSourceSHA256"].as_str(),
+            &body["stateSeedSHA256"].as_str(),
         ],
     )
     .await
