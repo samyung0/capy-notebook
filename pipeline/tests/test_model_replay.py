@@ -18,11 +18,11 @@ from pipeline.elitellm.client import (
     DEEPSEEK_CHAT_URL,
     OPENAI_CHAT_URL,
     OPENAI_RESPONSES_URL,
-    ZAI_CHAT_URL,
+    OPENROUTER_CHAT_URL,
     anthropic_request,
     deepseek_request,
     openai_responses_request,
-    zai_request,
+    openrouter_request,
 )
 from pipeline.model_replay_cert import two_turn_cassette_ok
 from pipeline.registry import ModelConfig, bind_request_llm
@@ -163,13 +163,13 @@ async def _turn(
 
 # The hosts each provider's certification must have been recorded against. A
 # cassette recorded on a retired transport (the zai pin moved from Tencent
-# TokenHub to Relace, then to Z.AI itself) is not a certification of the live
-# route.
+# TokenHub to Relace, to Z.AI itself, then to OpenRouter) is not a
+# certification of the live route.
 LIVE_ROUTE_HOSTS = {
     "anthropic": {ANTHROPIC_URL.split("/")[2]},
     "deepseek": {DEEPSEEK_CHAT_URL.split("/")[2]},
     "openai": {OPENAI_CHAT_URL.split("/")[2], OPENAI_RESPONSES_URL.split("/")[2]},
-    "zai": {ZAI_CHAT_URL.split("/")[2]},
+    "zai": {OPENROUTER_CHAT_URL.split("/")[2]},
 }
 
 
@@ -235,7 +235,7 @@ def test_certified_request_shape(provider_slug: str, model_id: str):
         return
     if spec.provider_slug == "zai":
         assert uses_responses(spec, tools=True) is False
-        body = zai_request(
+        body = openrouter_request(
             spec,
             [{"role": "user", "content": "q"}],
             temperature=0.0,
@@ -246,8 +246,8 @@ def test_certified_request_shape(provider_slug: str, model_id: str):
             stream=True,
             tool_choice="auto",
         )
-        assert body["model"] == model_id
-        assert body["reasoning_effort"] == "max"
+        assert body["model"] == f"z-ai/{model_id}"
+        assert body["reasoning"] == {"effort": "max"}
         assert "thinking" not in body
         assert body["stream"] is True
         return
@@ -319,6 +319,13 @@ async def test_certified_two_turn_replay(
     if os.environ.get("CAPY_TEST_RECORD", "none") == "none":
         recorded = replay_cassette.read_text()
         assert recorded.count("\n    method:") >= 2 or recorded.count("method:") >= 2
+
+
+def test_no_cassette_keeps_a_response_cookie():
+    """The recorder drops response cookies (conftest `_scrub_response`):
+    `filter_headers` covers request headers only."""
+    for path in (REPO / "pipeline/tests/cassettes").rglob("*.yaml"):
+        assert "set-cookie" not in path.read_text().lower(), path.name
 
 
 def test_missing_certified_cassette_fails():

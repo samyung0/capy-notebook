@@ -203,8 +203,11 @@ func (c *EliteLLMProviders) CredentialEnv(slug string) string {
 	return spec.PlatformEnv
 }
 
+// IsFirstPartyProvider reports a provider that serves its own models, so a
+// user's key for it can be held. GLM-5.3-Flash keeps its zai identity but is
+// served through OpenRouter (decision 2026-10-21), so no Z.AI key is held.
 func IsFirstPartyProvider(slug string) bool {
-	return slug == "anthropic" || slug == "openai" || slug == "deepseek" || slug == "zai"
+	return slug == "anthropic" || slug == "openai" || slug == "deepseek"
 }
 
 func IsSeededHopException(providerSlug, modelSlug string) bool {

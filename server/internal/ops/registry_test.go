@@ -839,7 +839,7 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 }
 
 func TestBindEliteLLMDraftAllowsOnlyPlatformGLM(t *testing.T) {
-	t.Setenv("ZAI_API_KEY", "sk-test")
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
 	glm := gridDraft{
 		ProviderSlug:    "zai",
 		ModelSlug:       "glm-5.3-flash",
