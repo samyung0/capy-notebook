@@ -175,7 +175,8 @@ type Definition struct {
 	Concurrency        string         `json:"concurrency" enum:"search,read,mutate"`
 	AllowedSlots       []Slot         `json:"allowedSlots"`
 	RequiredOperations []Operation    `json:"requiredOperations"`
-	// Retention applies after the answer completes; live tool results stay exact.
+	// Retention applies between user messages; until a turn's answer is
+	// finished every result stays whole (Epo 2026-10-21).
 	Retention ResultRetention `json:"retention" enum:"full,cited_passages,used_excerpts,none"`
 }
 
@@ -823,7 +824,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "read_study_progress",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read the learner's study progress in this workspace: files and " +
 				"materials done or started, recent quiz results, and the chapters they retain least.",
 			InputSchema:        obj(map[string]any{}),
@@ -1035,7 +1036,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "inspect_document",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read a document's current content as editable targets with stable " +
 				"ids. Inspect before editing; never take edit positions from search results. A quiz's " +
 				"answers, solutions and marking schemes appear only when the user may edit it.",
@@ -1085,7 +1086,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "list_trashed_files",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "List the trashed source files and study materials of this " +
 				"workspace with their ids, names and expiry. Use it before restore_file " +
 				"so you never guess an id.",
@@ -1111,7 +1112,7 @@ func Definitions() []Definition {
 		// of the request's prefix.
 		chatTool(Definition{
 			Name:      "inspect_office_document",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
