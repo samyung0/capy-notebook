@@ -25,9 +25,13 @@
 -- OpenRouter DeepSeek V4.1 Flash 1017 (InferenceNet, then Cloudflare, since
 -- 2026-10-21) reads pages and images for captioning, so it has no interactive
 -- reserve either. InferenceNet answered 128 page reads at once (p95 8.6 s) and
--- Cloudflare 64 (p95 10.1 s), so the gate is 64 (decision 2026-10-21). Page
--- reads lease their own vlm_page gate instead of this row, so it gates
--- standalone image captions only.
+-- Cloudflare 64 (p95 10.1 s), so this row's gate is 64 (decision 2026-10-21).
+-- Page reads lease the vlm_page gate instead of this row (CAPY_VLM_PAGE_CAPACITY:
+-- 64 in production, 20 in UAT and local), so it gates standalone image
+-- captions only. The two gates add up: production can hold 128 calls in flight
+-- on this route, which InferenceNet held, but Cloudflare, the fallback, was
+-- measured only at 64, so an InferenceNet outage during a burst may leave
+-- reads slow or busy on Cloudflare.
 -- Interactive reserves: 83% GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never

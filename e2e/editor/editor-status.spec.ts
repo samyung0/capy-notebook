@@ -146,3 +146,42 @@ test('a slowed reconnect says so under the sync indicator', async ({
   await expect(status).toHaveAttribute('data-save-state', 'saved');
   await expect(line).toHaveCount(0);
 });
+
+// Co-editors show as an avatar group in the header (Epo 2026-10-20): one
+// avatar per person from the room's presence, at most three, then +N; gone
+// when they leave.
+test('the header lists co-editors as an avatar group', async ({ page }) => {
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  await expect(
+    page.locator('[data-slate-editor="true"][contenteditable="true"]')
+  ).toBeVisible({ timeout: 30_000 });
+  const group = page.getByTestId('room-presence');
+  await expect(group).toHaveCount(0);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { mockPresencePeer } = (await import(
+      path
+    )) as typeof import('../../src/mocks/collaboration');
+    const leaves = ['Ann', 'Ben', 'Cy', 'Dee', 'Eve'].map((name, index) =>
+      mockPresencePeer('mat_e2e_editor', {
+        avatar: null,
+        name,
+        person: index + 1,
+      })
+    );
+    Object.assign(window, {
+      leavePeers: () => {
+        for (const leave of leaves) leave();
+      },
+    });
+  });
+  await expect(group.locator('[data-presence-person]')).toHaveCount(3);
+  await expect(group.locator('[data-presence-more]')).toHaveAttribute(
+    'data-presence-more',
+    '2'
+  );
+  await page.evaluate(() => {
+    (window as unknown as { leavePeers: () => void }).leavePeers();
+  });
+  await expect(group).toHaveCount(0);
+});

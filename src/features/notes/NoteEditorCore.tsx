@@ -43,6 +43,11 @@ import {
 } from '@/features/collaboration/CollaborationHold';
 import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import '@/features/collaboration/platePlugin';
+import {
+  createPresenceStore,
+  type PresenceConnection,
+  type PresenceStore,
+} from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { FileLoading } from '@/features/files/FileStates';
 import {
@@ -327,10 +332,13 @@ function hideSelectionFromReact(root: HTMLElement) {
  */
 const NoteEditorContent = memo(function NoteEditorContent({
   discussions,
+  presence,
   readOnly,
   shouldShowStats,
 }: {
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
+  /** The room's presence: co-editors' cursor labels come from it. */
+  presence: PresenceStore;
   /** Offline past what this device may hold: no more edits until reconnect. */
   readOnly: boolean;
   shouldShowStats: boolean;
@@ -349,7 +357,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
       current.api.isElementStateEmpty(firstNode)
     );
   }, []);
-  const remotePeers = useRemotePeers(editor);
+  const remotePeers = useRemotePeers(editor, presence);
   // Read through refs so `decorate` keeps one identity: Plate treats a new
   // decorate function as new editable props and re-renders the whole document.
   const latest = useRef({ discussions, remotePeers });
@@ -444,11 +452,11 @@ export function NoteEditorCore({
   allowExternalAssets,
   discussions,
   currentUserId,
-  currentUserName,
   collaborationToken,
   draftKey,
   restored,
   onEditorStatusChange,
+  onPresenceChange,
   onDocumentRejected,
   onOffline,
   onOutdated,
@@ -460,7 +468,6 @@ export function NoteEditorCore({
   allowExternalAssets: boolean;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
   currentUserId: string;
-  currentUserName: string;
   collaborationToken: MaterialCollaborationToken;
   /** Where this editor's unsaved work is stored (editDrafts). */
   draftKey: string;
@@ -468,6 +475,9 @@ export function NoteEditorCore({
    * before the room connects, then synced and saved like any edit. */
   restored: EditDraft[];
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** The room's other editors, for the header's avatar group (null once
+   * the editor unmounts). */
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   /** The room refused this editor's copy for good (a limit, an invalid
    * document, or an update from a writer who lost access): the caller
    * remounts onto the last saved version. Unsaved edits are `kept` as a
@@ -555,7 +565,18 @@ export function NoteEditorCore({
   // The room's answer waits on the user's open budget (Epo 2026-10-20):
   // loading, not offline, until it syncs.
   const [slowed, setSlowed] = useState(false);
-  const name = currentUserName;
+  // The room's presence (Epo 2026-10-20): cursor labels read its verified
+  // names, and the header shows its avatar group.
+  const [presence] = useState(createPresenceStore);
+  const presenceChange = useRef(onPresenceChange);
+  presenceChange.current = onPresenceChange;
+  const reportPresence = useCallback(
+    (connections: PresenceConnection[]) => {
+      presence.getState().report(connections);
+      presenceChange.current?.(connections);
+    },
+    [presence]
+  );
 
   // Re-announcing a status the header already shows re-renders it for nothing.
   const reportedStatus = useRef<NoteEditorStatus['saveState'] | null>(null);
@@ -880,10 +901,9 @@ export function NoteEditorCore({
         options: {
           cursors: {
             autoSend: true,
-            data: {
-              color: cursorColor(currentUserId),
-              name,
-            },
+            // No name: peers label a cursor with the verified name the
+            // room's presence gives its client id (Epo 2026-10-20).
+            data: { color: cursorColor(currentUserId) },
           },
           onConnect: connecting,
           onDisconnect: () => {
@@ -930,6 +950,7 @@ export function NoteEditorCore({
                     materialId: material.id,
                     name: collaborationToken.room,
                     onAuthenticationFailed,
+                    onPresence: reportPresence,
                     onSlowed: (slowed: boolean) =>
                       slowed ? slowedNow.current() : markSlowed(false),
                     onStateless: ({ payload }: { payload: string }) => {
@@ -949,6 +970,7 @@ export function NoteEditorCore({
                         socketOpen(roomProvider(editorRef.current)?.provider)
                       );
                     },
+                    onPresence: reportPresence,
                     onSlowed: (slowed: boolean) =>
                       slowed ? slowedNow.current() : markSlowed(false),
                     onStateless: ({ payload }: { payload: string }) => {
@@ -1010,8 +1032,8 @@ export function NoteEditorCore({
     markSlowed,
     material.id,
     material.workspaceId,
-    name,
     qc,
+    reportPresence,
     saveDelay,
     setStatus,
     ydoc,
@@ -1133,6 +1155,7 @@ export function NoteEditorCore({
       seat.attach(null);
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
       onEditorStatusChange?.(null);
+      presenceChange.current?.(null);
       // The next mount (a moved room, recovery, Reload) starts clean.
       reportOffline.current?.(null);
       reportSaveDelayed.current?.(false);
@@ -1307,6 +1330,7 @@ export function NoteEditorCore({
                           <CollaborationHold>
                             <NoteEditorContent
                               discussions={discussions}
+                              presence={presence}
                               readOnly={offlineLimit || outdated}
                               shouldShowStats={shouldShowDocumentStats(
                                 documentStats

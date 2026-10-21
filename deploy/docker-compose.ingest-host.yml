@@ -241,6 +241,9 @@ services:
       CAPY_TABULAR_TEXT_VERSION: ${CAPY_TABULAR_TEXT_VERSION:-v2}
       CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
       CAPY_PARSE_SPOOL_TTL_HOURS: ${CAPY_PARSE_SPOOL_TTL_HOURS:-2}
+      # VLM page reads in flight: across the workers, and within one job.
+      CAPY_VLM_PAGE_CAPACITY: ${CAPY_VLM_PAGE_CAPACITY:-64}
+      CAPY_VLM_PAGES_PER_JOB: ${CAPY_VLM_PAGES_PER_JOB:-40}
     command: ["python", "-m", "pipeline.ingest.worker"]
     mem_limit: ${CAPY_INGEST_WORKER_MEMORY_LIMIT:-1g}
     memswap_limit: ${CAPY_INGEST_WORKER_MEMORY_SWAP_LIMIT:-1280m}

@@ -51,7 +51,7 @@ export default function MermaidSourceDialog({
       action={
         phone && (
           <div className="flex items-center gap-1">
-            {status && <EditorSaveStatus layout="office" store={status} />}
+            {status && <EditorSaveStatus labelled store={status} />}
             <UndoButtons manager={history.target} />
           </div>
         )
@@ -60,7 +60,7 @@ export default function MermaidSourceDialog({
         !phone && (
           <div className="mr-auto flex items-center gap-2">
             <UndoButtons footer manager={history.target} />
-            {status && <EditorSaveStatus layout="office" store={status} />}
+            {status && <EditorSaveStatus labelled store={status} />}
           </div>
         )
       }

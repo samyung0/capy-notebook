@@ -364,6 +364,14 @@
       "targets": ["ingest-queue"],
       "environments": ["uat"]
     },
+    "CAPY_VLM_PAGE_CAPACITY": {
+      "kind": "variable",
+      "targets": ["ingest-production"]
+    },
+    "CAPY_VLM_PAGES_PER_JOB": {
+      "kind": "variable",
+      "targets": ["ingest-production"]
+    },
     "CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
       "targets": ["workflow", "ops", "quality"],

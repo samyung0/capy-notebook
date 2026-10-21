@@ -316,6 +316,34 @@ class ConfigTest(unittest.TestCase):
                 coolify = json.loads(Path(temp, "coolify.json").read_text())
                 self.assertEqual(coolify["COLLABORATION_SOURCE_DISK_BYTES"], str(cap))
 
+    def test_render_gives_only_production_its_page_read_gates(self):
+        """Production's page-read gates (64/40, Epo 2026-10-21) come from its
+        configuration; UAT's ingest Compose fixes its own 20/10."""
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+            CAPY_VLM_PAGE_CAPACITY="64",
+            CAPY_VLM_PAGES_PER_JOB="40",
+        )
+        gates = {"CAPY_VLM_PAGE_CAPACITY": "64", "CAPY_VLM_PAGES_PER_JOB": "40"}
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "production", temp, "a" * 40)
+            prod = config.parse_dotenv(Path(temp, "prod.env").read_text())
+            self.assertEqual({key: prod[key] for key in gates}, gates)
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "uat", temp, "a" * 40)
+            for name in ("nonprod.env", "uat.queue.env"):
+                rendered = config.parse_dotenv(Path(temp, name).read_text())
+                self.assertFalse(gates.keys() & rendered.keys(), name)
+
     def test_render_requires_the_embed_frame_origin_for_the_build(self):
         values = {
             key: "explicit"

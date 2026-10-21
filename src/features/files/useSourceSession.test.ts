@@ -29,6 +29,8 @@ const hooks = vi.hoisted(() => {
 vi.mock('react', async (load) => ({
   ...(await load<typeof import('react')>()),
   useCallback: <T>(callback: T) => hooks.slot(() => callback)[1],
+  // No provider: the header's presence slot is absent.
+  useContext: () => null,
   useEffect: (effect: () => undefined | (() => void), deps?: unknown[]) => {
     const [at, last] = hooks.slot<unknown[] | null>(() => null);
     if (last && deps?.every((dep, i) => Object.is(dep, last[i]))) return;
@@ -38,7 +40,10 @@ vi.mock('react', async (load) => ({
   },
   useRef: <T>(current: T) => hooks.slot(() => ({ current }))[1],
   useState: <T>(initial: T) => {
-    const [at, value] = hooks.slot(() => initial);
+    // React calls an initializer function once.
+    const [at, value] = hooks.slot(() =>
+      typeof initial === 'function' ? (initial as () => T)() : initial
+    );
     const set = (update: T | ((previous: T) => T)) =>
       hooks.set(
         at,
