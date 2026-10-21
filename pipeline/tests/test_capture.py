@@ -3,6 +3,7 @@ image transport. The provider call itself is covered by the agent tests."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -129,6 +130,39 @@ async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     )
     # A 200x300 pt box rendered to a 200 px long edge.
     assert list(record["pixels"]) == [134, 200]
+
+
+async def test_a_message_allows_twelve_page_captures(monkeypatch, rendered):
+    """capture_page and capture_knowledge_page share 12 captures per message:
+    the 12th returns its image with the limit sentence and later calls are
+    refused, also when a response's captures run side by side (Epo 2026-10-21)."""
+    real = capture.render_file
+
+    async def _side_by_side(*args):
+        await asyncio.sleep(0)
+        return await real(*args)
+
+    monkeypatch.setattr(capture, "render_file", _side_by_side)
+    ctx = _ctx(2)
+    results = await asyncio.gather(
+        *(
+            tools._capture_page(
+                {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+            )
+            for n in range(1, 14)
+        )
+    )
+    taken = [r for r in results if not r.refused]
+    assert len(taken) == 12 == len(ctx.pending_images)
+    assert [r.text().endswith(tools.CAPTURE_LIMIT) for r in taken] == [False] * 11 + [
+        True
+    ]
+    knowledge = await tools._capture_knowledge_page(
+        {"excerpt_id": "e_1", "page": 1, "_tool_call_id": "k14"}, ctx
+    )
+    for refused in [*(r for r in results if r.refused), knowledge]:
+        assert refused.error_code == "limit_reached"
+        assert refused.text() == tools.CAPTURE_LIMIT
 
 
 async def test_capture_rejects_a_page_past_the_end_and_a_bad_box(rendered):
@@ -302,11 +336,39 @@ def test_context_measurement_counts_images_by_pixels_not_base64():
         {"callId": "k2", "estimatedImageTokens": 5},
     ]
     assert capture.image_tokens(captures) == 15
-    # k1's exchange folded into the turn note: its image no longer rides along.
-    folded = [{"role": "user", "content": "note", "_kind": "turn_note"}] + [
-        {"role": "tool", "tool_call_id": "k2", "content": "Captured page 2."}
+
+
+def test_a_folded_capture_stays_attached_after_the_turn_note():
+    """Live compaction folded k1's exchange into the turn note: its image rides
+    right after the note until the answer (Epo 2026-10-21)."""
+    messages = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "q", "_kind": "query"},
+        {"role": "user", "content": "note", "_kind": "turn_note"},
+        {"role": "assistant", "content": "", "tool_calls": []},
+        {"role": "tool", "tool_call_id": "k2", "content": "Captured page 2."},
     ]
-    assert capture.image_tokens(captures, folded) == 5
+    images = {
+        "k1": ("capture 1", "data:image/jpeg;base64,AA=="),
+        "k2": ("capture 2", "data:image/jpeg;base64,BB=="),
+    }
+
+    out = capture.inject_images(messages, images, "zai")
+
+    assert [m.get("_kind") or m["role"] for m in out] == [
+        "system",
+        "query",
+        "turn_note",
+        "user",
+        "assistant",
+        "tool",
+        "user",
+    ]
+    assert (
+        out[3]["content"][0]["text"] == "Images from the tool calls this note folded:"
+    )
+    assert out[3]["content"][2]["image_url"]["url"].endswith("AA==")
+    assert out[6]["content"][2]["image_url"]["url"].endswith("BB==")
 
 
 async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):
@@ -418,13 +480,6 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
     assert url.startswith("data:image/jpeg;base64,")
     assert rendered == [("books/aaa.pdf", 1024, 341)]
     assert ctx.captures[0]["fileId"] == "e_1" and ctx.captures[0]["page"] == 341
-
-    # There is no per-turn capture cap: a capture is dropped when its
-    # exchange folds into the turn note anyway.
-    again = await tools._capture_knowledge_page(
-        {"excerpt_id": "e_1", "page": 338, "_tool_call_id": "c"}, ctx
-    )
-    assert not again.refused and len(ctx.captures) == 2
 
 
 async def test_knowledge_pdf_cache_is_keyed_by_the_object_key(tmp_path, monkeypatch):

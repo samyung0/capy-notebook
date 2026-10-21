@@ -7,7 +7,7 @@ import io
 import itertools
 import json
 import re
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime
 
 import pytest
@@ -160,8 +160,6 @@ def _script_stream(responses: list[AssembledResponse]):
 
 
 async def test_completed_tool_evidence_is_reused_in_the_next_turn(monkeypatch):
-    from dataclasses import asdict
-
     passage = _passage()
     stream, seen = _script_stream(
         [
@@ -2115,19 +2113,9 @@ async def test_stopped_and_failed_turns_replay_marked_unfinished():
             "toolEvidence": evidence,
         }
 
-    # The stopped row's calls as Go merged them: the last finished after Stop.
-    calls = [
-        {
-            "name": "search_knowledge",
-            "detail": "Searching cells",
-            "outcome": "succeeded",
-        },
-        {"name": "list_sources", "detail": "Listing sources", "outcome": "succeeded"},
-        {"name": "read_document", "detail": "Reading Biology", "outcome": "succeeded"},
-    ]
     history = [
         {"id": "u1", "role": "user", "content": "make a note", "status": "complete"},
-        _turn("a1", "aborted", "Working on it", "stopped listing") | {"calls": calls},
+        _turn("a1", "aborted", "Working on it", "stopped listing"),
         {"id": "u2", "role": "user", "content": "try again", "status": "complete"},
         _turn("a2", "error", "", "failed listing"),
     ]
@@ -2137,9 +2125,196 @@ async def test_stopped_and_failed_turns_replay_marked_unfinished():
     assert texts[1] == "Working on it\n\n" + agent.evidence.UNFINISHED["aborted"]
     assert agent.evidence.UNFINISHED["error"] in texts
     assert sum("stopped listing" in t or "failed listing" in t for t in texts) == 2
-    replayed = [t for t in texts if t.startswith("Historical tool calls")]
-    assert len(replayed) == 1 and texts.index(replayed[0]) == 2
-    assert json.loads(replayed[0].split("\n", 1)[1]) == calls
+
+
+# ---------------------------- result retention between messages (Epo 2026-10-21)
+
+
+async def _ran(name, args, ctx):
+    del args, ctx
+    return ToolResult(text_parts=[f"ran {name}"])
+
+
+async def test_an_answered_turn_replays_its_edit_receipt_not_its_inspection(
+    monkeypatch,
+):
+    stream, _seen = _script_stream(
+        [
+            _assembled("", [_call("inspect_document", '{"material_id":"m"}', "c1")]),
+            _assembled("", [_call("edit_document", '{"material_id":"m"}', "c2")]),
+            _assembled(_answer(("Edited.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _ran)
+    done = (await _collect("Fix my note", ToolContext(workspace_id="ws_1")))[-1]
+
+    assert done["type"] == "done"
+    assert [n["name"] for n in done["toolEvidence"]["tools"]] == ["edit_document"]
+    history = [
+        {"id": "u1", "role": "user", "content": "Fix my note", "status": "complete"},
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": "Edited.",
+            "status": "complete",
+            "toolEvidence": done["toolEvidence"],
+        },
+    ]
+    out = await agent.evidence.history_turns(history, ToolContext(workspace_id="ws_1"))
+    replayed = "\n".join(m["content"] for m in out)
+    assert "ran edit_document" in replayed and "ran inspect_document" not in replayed
+
+
+_SEARCHED = _passage(chunk_id="s1", text="Mitosis has four phases.")
+_READ = _passage(chunk_id="r1", chunk_idx=3, text="Prophase comes first.")
+
+
+async def _stopped_evidence(monkeypatch) -> dict:
+    """A turn stopped while its listing, search and read ran: the evidence its
+    stopped checkpoint carries."""
+    client = agent.ClientDrop()
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        if name == "search_workspace":
+            return ToolResult(passages=[_SEARCHED], text_parts=["1 passage matched."])
+        if name == "read_document":
+            client.stop()  # the user stops while the reads run
+            return ToolResult(
+                passages=[_READ], paged=True, text_parts=["(next start = 4)"]
+            )
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    calls = [
+        _call("list_sources", "{}", "c1"),
+        _call("search_workspace", '{"query":"mitosis"}', "c2"),
+        _call("read_document", '{"file_id":"f_1"}', "c3"),
+    ]
+    _stop_turn(monkeypatch, [_assembled("", calls)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    assert sorted(_stopped_calls(events[-1])) == [
+        ("c1", "succeeded"),
+        ("c2", "succeeded"),
+        ("c3", "succeeded"),
+    ]
+    return events[-1]["toolEvidence"]
+
+
+def _current(monkeypatch) -> None:
+    async def _rows(workspace, ids):
+        assert workspace == "ws_1"
+        return [
+            {**asdict(p), "id": p.chunk_id}
+            for p in (_SEARCHED, _READ)
+            if p.chunk_id in ids
+        ]
+
+    monkeypatch.setattr(agent.evidence.store, "history_passages", _rows)
+
+
+def _after_stop(evidence: dict, *later: dict) -> list[dict]:
+    return [
+        {
+            "id": "u1",
+            "role": "user",
+            "content": "Explain mitosis",
+            "status": "complete",
+        },
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": "",
+            "status": "aborted",
+            "toolEvidence": evidence,
+        },
+        *later,
+    ]
+
+
+async def test_a_stopped_turn_carries_its_search_and_read_whole_into_the_next(
+    monkeypatch,
+):
+    evidence = await _stopped_evidence(monkeypatch)
+    _current(monkeypatch)
+    ctx = ToolContext(workspace_id="ws_1")
+    out = await agent.evidence.history_turns(_after_stop(evidence), ctx)
+    texts = [m["content"] for m in out]
+
+    assert any('"name":"search_workspace"' in t for t in texts)
+    assert any("(next start = 4)" in t for t in texts)
+    # Both passages, citable in the next answer with current numbers.
+    assert any("[1] bio.pdf\nMitosis has four phases." in t for t in texts)
+    assert any("[2] bio.pdf\nProphase comes first." in t for t in texts)
+    assert [p.chunk_id for p in ctx.citations] == ["s1", "r1"]
+    assert {"s1", "r1"} <= ctx.evidence_passage_ids
+
+
+async def test_once_the_next_message_is_answered_the_stopped_turn_is_trimmed(
+    monkeypatch,
+):
+    evidence = await _stopped_evidence(monkeypatch)
+    _current(monkeypatch)
+    answered = [
+        {"id": "u2", "role": "user", "content": "go on", "status": "complete"},
+        {"id": "a2", "role": "assistant", "content": "Four.", "status": "complete"},
+    ]
+    ctx = ToolContext(workspace_id="ws_1")
+    out = await agent.evidence.history_turns(_after_stop(evidence, *answered), ctx)
+    replayed = "\n".join(m["content"] for m in out)
+
+    assert "ran list_sources" in replayed  # a full result stays
+    assert "search_workspace" not in replayed and "next start" not in replayed
+    assert "Mitosis has four phases." not in replayed and not ctx.citations
+
+
+async def test_the_office_tools_stay_offered_after_a_dropped_office_inspection(
+    monkeypatch,
+):
+    _gateway(monkeypatch)
+    run = agent.tools.run
+
+    async def _run(name, args, ctx):
+        if name == "inspect_office_document":
+            return ToolResult(text_parts=["Sheet1!A1 = 3"])
+        return await run(name, args, ctx)
+
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("read_skill", '{"name": "office_building"}', "c1")]),
+            _assembled(
+                "", [_call("inspect_office_document", '{"file_id":"f_1"}', "c2")]
+            ),
+            _assembled(_answer(("A1 is 3.", []))),
+            _assembled(_answer(("Still 3.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    done = (await _collect("What is in A1?", _owner_ctx()))[-1]
+    evidence = done["toolEvidence"]
+    assert evidence["officeTools"] is True and evidence["tools"] == []
+
+    # The next message, as the gateway sends it (store.ConversationPrompt).
+    later = _owner_ctx()
+    later.office_tools = evidence["officeTools"]
+    history = [
+        {"id": "u1", "role": "user", "content": "What is in A1?", "status": "complete"},
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": "A1 is 3.",
+            "status": "complete",
+            "toolEvidence": evidence,
+        },
+    ]
+    async for _event in agent.run_agent(
+        query="And now?", ctx=later, history=history, model=_model()
+    ):
+        pass
+    offered = [t["function"]["name"] for t in seen[3]["tools"]]
+    assert offered[-2:] == list(tools.OFFICE_TOOLS)
+    assert not any("Sheet1!A1" in str(m["content"]) for m in seen[3]["messages"])
 
 
 async def test_an_answer_that_fails_after_recording_does_not_record_again(
@@ -2152,7 +2327,7 @@ async def test_an_answer_that_fails_after_recording_does_not_record_again(
     async def _record(events):
         calls.append(events)
 
-    def _pack(_ctx, _order):
+    def _pack(_ctx, _order, **_kwargs):
         raise RuntimeError("pack failed")
 
     monkeypatch.setattr(agent.store, "record_search_events", _record)
@@ -2254,26 +2429,25 @@ async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
         "c1",
         "c2",
     }
-    assert done["toolEvidence"] == {
-        "tools": [
-            {
-                "name": "list_sources",
-                "detail": "listing sources",
-                "outcome": "succeeded",
-                "text": "ran list_sources",
-            },
-            {
-                "name": "list_trashed_files",
-                "detail": "",
-                "outcome": "succeeded",
-                "text": "ran list_trashed_files",
-            },
-        ],
-        "passages": [],
-        "skills": [],
+    listing = {
+        "name": "list_sources",
+        "detail": "listing sources",
+        "outcome": "succeeded",
+        "text": "ran list_sources",
     }
+    # Until the answer every result is kept, in call order; the answer keeps
+    # what each tool's retention says (Epo 2026-10-21).
     checkpoint = next(e for e in events if e["type"] == "turn_checkpoint")
-    assert checkpoint["toolEvidence"] == done["toolEvidence"]
+    assert checkpoint["toolEvidence"]["tools"] == [
+        listing,
+        {
+            "name": "list_trashed_files",
+            "detail": "",
+            "outcome": "succeeded",
+            "text": "ran list_trashed_files",
+        },
+    ]
+    assert done["toolEvidence"] == {"tools": [listing], "passages": [], "skills": []}
 
 
 async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypatch):
@@ -3281,6 +3455,78 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
     stripped, _ = agent.capture.split_images(seen[2]["messages"])
     without = agent.models.measure_request_context(stripped, model=_model())
     assert with_image.total_tokens - without.total_tokens == 2
+
+
+async def test_a_compacted_turn_still_sends_every_capture(monkeypatch):
+    """Live compaction folds the capture's exchange into the turn note; its
+    image still rides with every later request of the turn, and the budget
+    still counts it (Epo 2026-10-21)."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (56, 28), "white").save(buffer, "JPEG")
+    jpeg = buffer.getvalue()
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("capture_page", '{"file_id":"f_1","page":1}', "k1")]),
+            _assembled("", [_call("list_sources", "{}", "r1")]),
+            _assembled("", [_call("list_sources", "{}", "r2")]),
+            _assembled("", [_call("list_sources", "{}", "r3")]),
+            _assembled(_answer(("Seen.", []))),
+        ]
+    )
+
+    async def _run(name, args, ctx):
+        if name == "capture_page":
+            call_id = args["_tool_call_id"]
+            ctx.captures.append(
+                agent.capture.record(
+                    call_id=call_id,
+                    file_id="f_1",
+                    page=1,
+                    box=[0, 0, 1000, 1000],
+                    jpeg=jpeg,
+                    size=(56, 28),
+                    started=0.0,
+                )
+                | {"estimatedImageTokens": 5000}
+            )
+            ctx.pending_images[call_id] = (
+                "capture_page result 1",
+                agent.capture.data_url(jpeg),
+            )
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    def _full(messages, *_args, **_kwargs):
+        """The request is too large once three exchanges are in, until folded."""
+        kinds = [m.get("_kind") for m in messages]
+        return (
+            "turn_note" not in kinds and sum(m["role"] == "tool" for m in messages) == 3
+        )
+
+    async def _note(**_kwargs):
+        return "Captured page 1 of f_1; listed sources."
+
+    extras: list[int] = []
+    compact = agent.compact.compact_messages
+
+    async def _compact(messages, spec, *, extra=0, **kwargs):
+        extras.append(extra)
+        return await compact(messages, spec, extra=extra, **kwargs)
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    monkeypatch.setattr(agent.compact, "needs_compact", _full)
+    monkeypatch.setattr(agent.compact, "summarize_checkpoint", _note)
+    monkeypatch.setattr(agent.compact, "compact_messages", _compact)
+    await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    # The fourth request folded k1's exchange; the fifth runs on the folded turn.
+    for request in seen[3:]:
+        messages = request["messages"]
+        assert not any(m.get("tool_call_id") == "k1" for m in messages)
+        note = next(i for i, m in enumerate(messages) if m.get("_kind") == "turn_note")
+        assert messages[note + 1]["content"][-2]["type"] == "image_url"
+    # The budget of the request after the fold still holds the capture.
+    assert 4950 < extras[4] - extras[0] < 5050
 
 
 @pytest.mark.parametrize(

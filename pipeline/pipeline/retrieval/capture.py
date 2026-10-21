@@ -395,28 +395,42 @@ def inject_images(
     Every tool result of one assistant step must stay contiguous, so the images
     ride in one user message placed after the last tool message of that step.
     Each image is a page of a source, so it sits in a <source> block
-    (prompts/sources.py) after its label.
+    (prompts/sources.py) after its label. Live compaction only folds exchanges
+    into the turn note, so the captures of folded exchanges ride right after
+    the note: every capture stays until the answer (Epo 2026-10-21).
     """
     if not images:
         return messages
+    live = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+    folded = [image for call_id, image in images.items() if call_id not in live]
     out: list[dict[str, Any]] = []
     pending: list[tuple[str, str]] = []
     for i, message in enumerate(messages):
         out.append(message)
+        if message.get("_kind") == "turn_note" and folded:
+            out.append(
+                _images_message(
+                    "the tool calls this note folded", folded, provider_slug
+                )
+            )
         if message.get("role") == "tool" and message.get("tool_call_id") in images:
             pending.append(images[message["tool_call_id"]])
         following = messages[i + 1] if i + 1 < len(messages) else None
         if pending and (following is None or following.get("role") != "tool"):
-            content: list[dict[str, Any]] = [
-                {"type": "text", "text": "Images from the tool calls above:"}
-            ]
-            for label, url in pending:
-                content.append({"type": "text", "text": f"{label}\n<source>"})
-                content.append(image_part(url, provider_slug))
-                content.append({"type": "text", "text": "</source>"})
-            out.append({"role": "user", "content": content})
+            out.append(_images_message("the tool calls above", pending, provider_slug))
             pending = []
     return out
+
+
+def _images_message(
+    source: str, images: list[tuple[str, str]], provider_slug: str
+) -> dict[str, Any]:
+    content: list[dict[str, Any]] = [{"type": "text", "text": f"Images from {source}:"}]
+    for label, url in images:
+        content.append({"type": "text", "text": f"{label}\n<source>"})
+        content.append(image_part(url, provider_slug))
+        content.append({"type": "text", "text": "</source>"})
+    return {"role": "user", "content": content}
 
 
 def _image_bytes(part: dict[str, Any]) -> bytes | None:
@@ -469,18 +483,9 @@ def split_images(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], 
     return out, tokens
 
 
-def image_tokens(
-    captures: list[dict[str, Any]], messages: list[dict[str, Any]] | None = None
-) -> int:
-    """Tokens the turn's captures add to the next request.
-
-    A capture rides after its tool result, so once live compaction folds that
-    exchange into the turn note the image leaves the request. Only captures
-    whose tool result is still in ``messages`` count; no ``messages`` counts all.
-    """
-    if messages is not None:
-        live = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
-        captures = [record for record in captures if record["callId"] in live]
+def image_tokens(captures: list[dict[str, Any]]) -> int:
+    """Tokens the turn's captures add to every later request of the turn: all
+    of them, since a folded exchange's capture rides after the turn note."""
     return sum(int(record["estimatedImageTokens"]) for record in captures)
 
 

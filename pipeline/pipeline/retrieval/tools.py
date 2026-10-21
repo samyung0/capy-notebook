@@ -229,6 +229,8 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # capture_page and capture_knowledge_page calls that rendered this turn.
+    page_captures: int = 0
     # Decks this turn outlined (deck.py records, by deck id) and the working
     # directory their figures and exports go to; the agent removes it at turn end.
     decks: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -645,6 +647,29 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
     return passage.page_start <= page <= (passage.page_end or passage.page_start)
 
 
+# A user message allows this many page captures, capture_page and
+# capture_knowledge_page together, so the images every request of the turn
+# carries stay bounded (Epo 2026-10-21).
+MAX_PAGE_CAPTURES = 12
+CAPTURE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
+
+
+def _capture_limit(ctx: ToolContext) -> ToolResult | None:
+    """The refusal once the message's captures are used; checked again after
+    the render, since captures of one response run side by side."""
+    if ctx.page_captures >= MAX_PAGE_CAPTURES:
+        return _refused(CAPTURE_LIMIT, code="limit_reached")
+    return None
+
+
+def _captured(ctx: ToolContext, text: str) -> ToolResult:
+    """Count a capture; the last one allowed says so with its image."""
+    ctx.page_captures += 1
+    if ctx.page_captures == MAX_PAGE_CAPTURES:
+        text += "\n\n" + CAPTURE_LIMIT
+    return _result(text)
+
+
 async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """Render a cited page (or a box on it) and attach it to the next request.
 
@@ -652,8 +677,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     browse the document by pixels, and a capture adds no citation of its own:
     the tool result names the numbers already covering that page.
     """
-    # No per-turn cap: a capture is dropped when its exchange folds into the
-    # turn note anyway, and a whole set of materials can be one turn.
+    if (limit := _capture_limit(ctx)) is not None:
+        return limit
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
     refused = await _refuse_material_as_file(ctx, file_id)
     if refused is not None:
@@ -679,6 +704,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_page: {exc}")
+    if (limit := _capture_limit(ctx)) is not None:
+        return limit
     changes = ctx.pending_sources.for_read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
@@ -701,10 +728,11 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         capture.data_url(jpeg),
     )
     numbers = "".join(f"[{i}]" for i in existing)
-    result = _result(
+    result = _captured(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
-        f"{numbers}; cite those numbers for what the capture shows."
+        f"{numbers}; cite those numbers for what the capture shows.",
     )
     result.pending = changes
     return result
@@ -962,6 +990,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     reprinted text the library does not reproduce). Like ``capture_page`` it adds no
     citation: the attribution lives on the material.
     """
+    if (limit := _capture_limit(ctx)) is not None:
+        return limit
     excerpt_id, page, bbox = args["excerpt_id"], args["page"], args.get("bbox")
     try:
         target = await library.capture_target(excerpt_id)
@@ -986,6 +1016,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         return _refused(f"capture_knowledge_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_knowledge_page: {exc}")
+    if (limit := _capture_limit(ctx)) is not None:
+        return limit
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
     label = f"{target.book_title} page {page}" + (
@@ -1008,9 +1040,10 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         f"capture_knowledge_page result {n}: {label}",
         capture.data_url(jpeg),
     )
-    return _result(
+    return _captured(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next "
-        "message; read it directly."
+        "message; read it directly.",
     )
 
 

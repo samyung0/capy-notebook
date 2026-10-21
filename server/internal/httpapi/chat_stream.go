@@ -426,18 +426,9 @@ func (a *api) relayChat(
 			row["citations"] = m.Citations
 		}
 		if len(m.ToolEvidence) > 0 {
+			// An unfinished turn's evidence holds every result, carried whole
+			// into the next message (Epo 2026-10-21).
 			row["toolEvidence"] = m.ToolEvidence
-		}
-		if m.Status == "aborted" || m.Status == "error" {
-			// No answer says what an unfinished turn did, so it replays every
-			// call on its row, late ones included; results keep their retention.
-			calls := []map[string]any{}
-			for _, b := range m.Activity {
-				if b.Kind == "tool" {
-					calls = append(calls, map[string]any{"name": b.Name, "detail": b.Detail, "outcome": b.Outcome})
-				}
-			}
-			row["calls"] = calls
 		}
 		history = append(history, row)
 	}

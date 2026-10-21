@@ -17,7 +17,7 @@ import json
 import logging
 import shutil
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -514,12 +514,9 @@ async def _run_turn(
                 budget.completion_calls += 1
                 budget.compaction_calls += 1
 
-            # Captures ride outside ``messages``; the budget still has to hold the
-            # ones whose exchange is still live. ponytail: the post-fold fit check
-            # inside compact_messages reuses this count, so the step that folds an
-            # exchange over-counts its captures once; recompute inside compaction
-            # if a turn ever fails on that margin.
-            image_tokens = capture.image_tokens(ctx.captures, messages)
+            # Captures ride outside ``messages``, every one until the answer, so
+            # the budget holds them all.
+            image_tokens = capture.image_tokens(ctx.captures)
             if ctx.library:
                 ctx.library_evidence.activate(messages, ctx.library_reads)
             allowance = ""
@@ -999,7 +996,11 @@ async def _run_turn(
         activity,
         answer,
     )
-    done["toolEvidence"] = evidence.pack(ctx, cited_order)
+    # An answer that finished after Stop was never shown whole: the stopped
+    # turn keeps every result.
+    done["toolEvidence"] = evidence.pack(
+        ctx, cited_order, answered=not _client_gone(client)
+    )
     usage = obs.current_usage()
     if usage is not None and not usage.is_empty():
         done["usage"] = usage.as_dict()
@@ -1246,22 +1247,36 @@ async def _run_tools(
         return _tool_start(call, name, runs[call.id])
 
     def _keep_evidence(call: ToolCall, result: ToolResult) -> None:
-        """A call's evidence is kept as it finishes, so a batch cut short keeps
-        its finished calls. Full-retention tools return no passages, so their
-        text does not wait for the batch's citation numbers."""
+        """A call's result is kept whole as it finishes, so a batch cut short
+        keeps its finished calls and a turn that ends without its answer
+        carries every result into the next message; the answer keeps what each
+        tool's retention says (evidence.pack, Epo 2026-10-21). Passages ride
+        beside the text, so a replay numbers them afresh."""
         definition = tools.contract.definition(call.name)
         if not definition:
             return
         if definition["retention"] in ("full", "cited_passages"):
             ctx.evidence_passage_ids.update(p.chunk_id for p in result.passages)
-        if definition["retention"] == "full":
-            notes[call.id] = {
-                "name": call.name,
-                "detail": runs[call.id].detail,
-                "outcome": result.outcome,
-                "text": _result_text(result, []),
-            }
-            ctx.evidence_notes.append(notes[call.id])
+        if call.name == "read_skill":
+            return  # its skill replays by name (toolEvidence.skills)
+        image = ctx.pending_images.get(call.id)
+        note: dict[str, Any] = {
+            "name": call.name,
+            "detail": runs[call.id].detail,
+            "outcome": result.outcome,
+            # A capture keeps its page and box; its image never outlives the turn.
+            "text": f"{image[0]}; the image is not kept, capture it again to see it."
+            if image
+            else _result_text(result, []),
+        }
+        if result.passages:
+            note["passages"] = [
+                asdict(p)
+                | ({"unindexed": n} if (n := ctx.passage_flags.get(p.chunk_id)) else {})
+                for p in result.passages
+            ]
+        notes[call.id] = note
+        ctx.evidence_notes.append(note)
 
     for call in calls:
         args = _parse_args(call.arguments)
