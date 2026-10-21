@@ -74,7 +74,7 @@ errors (`FormAlert`), for an unexpected failure (`unexpectedErrorId` in
 `frontend/error-handling.md`). A failed row in the workspace Indexing tab
 shows the trace of its failed ingest attempt instead, stored with the failure
 (`source_documents.refresh_trace_id`, `materials.index_trace_id`,
-`files.failure_trace_id`, migration 0104).
+`files.failure_trace_id`, migration 0105).
 
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as

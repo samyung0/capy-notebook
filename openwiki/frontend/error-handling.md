@@ -685,7 +685,7 @@ hint (Epo 2026-10-21). A failed note is one parked after its failed jobs,
 shown like a failed file. A failed row shows its error id and never the
 job's own error text: the stats payload's `errorId`, sent on failed rows only,
 is `source_documents.refresh_trace_id` or `materials.index_trace_id`
-(migration 0104). Triggers keep it with its failure: when `refresh_error` or
+(migration 0105). Triggers keep it with its failure: when `refresh_error` or
 `index_error` is set they take the trace id of the failed job's last
 `ingest_job_attempts` row (the ingest worker's per-claim trace, which tags its
 logs and Sentry events), and clearing the error clears the id. An export
