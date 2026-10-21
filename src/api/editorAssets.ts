@@ -2,6 +2,7 @@ import { fitImage } from '@/lib/fitImage';
 import { api } from './client';
 import { materialQuery } from './hooks';
 import { queryClient } from './queryClient';
+import { takeUploadTurn } from './uploadTurn';
 
 /** A note's media are images and audio only (Epo 2026-10-15). */
 export type EditorAssetPurpose = 'image' | 'audio';
@@ -49,8 +50,8 @@ export async function editorImageMaxBytes(materialId: string) {
   return imageMaxBytes;
 }
 
-// Streams the file through the gateway, which stores it and returns only
-// stable metadata (Epo 2026-10-22). Plate documents should persist assetId,
+// Streams the file through the gateway once its ticket's turn comes, and the
+// gateway stores it and returns only stable metadata (Epo 2026-10-22). Plate documents should persist assetId,
 // never a resolved short-lived URL. An image over the plan cap is shrunk first.
 export async function uploadEditorAsset(
   materialId: string,
@@ -62,21 +63,24 @@ export async function uploadEditorAsset(
     purpose === 'image'
       ? await fitImage(picked, await editorImageMaxBytes(materialId))
       : picked;
+  const metadata = {
+    contentType: file.type,
+    name: file.name,
+    purpose,
+    sizeBytes: file.size,
+  };
+  const path = await takeUploadTurn(
+    uploadsPath(materialId),
+    metadata,
+    options.signal
+  );
   // The metadata part comes first: the gateway reserves storage from it
   // before it reads the file part.
   const form = new FormData();
-  form.append(
-    'metadata',
-    JSON.stringify({
-      contentType: file.type,
-      name: file.name,
-      purpose,
-      sizeBytes: file.size,
-    })
-  );
+  form.append('metadata', JSON.stringify(metadata));
   form.append('file', file);
   return api.upload<EditorAsset>(
-    uploadsPath(materialId),
+    path,
     form,
     options.onProgress,
     options.signal

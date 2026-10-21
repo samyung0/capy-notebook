@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { APIRequestContext, FrameLocator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { seed, users } from '../fixtures/seed';
+import { uploadSourceFile } from '../helpers/api';
 import { expectEditorLive } from '../helpers/editor';
 import { type OfficeFormat, officeEditMenu } from '../helpers/office';
 import { openWorkspaceMaterial } from '../helpers/workspace';
@@ -1085,27 +1086,17 @@ async function uploadOffice(api: APIRequestContext, format: OfficeFormat) {
   const { contentType, name } = OFFICE[format];
   const bytes = readFileSync(`e2e/fixtures/files/basic/${name}`);
   const uploadName = `${randomUUID().slice(0, 8)}-${name}`;
-  // One streamed request: the metadata part, then the file part. A FormData
-  // keeps that order (a sorted object would send the file first).
-  const form = new FormData();
-  form.append(
-    'metadata',
-    JSON.stringify({
+  const uploaded = await uploadSourceFile(
+    api,
+    workspaceId,
+    {
       batchId: `agent-writes-${randomUUID()}`,
       batchTotal: 1,
       contentType,
       name: uploadName,
       sizeBytes: bytes.length,
-    })
-  );
-  form.append(
-    'file',
-    new Blob([new Uint8Array(bytes)], { type: contentType }),
-    uploadName
-  );
-  const uploaded = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads`,
-    { multipart: form }
+    },
+    bytes
   );
   expect(uploaded.status(), await uploaded.text()).toBe(201);
   const { id } = (await uploaded.json()) as { id: string };

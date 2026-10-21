@@ -3,11 +3,11 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"mime"
-	"mime/multipart"
 	"net/http"
 	"path"
 	"path/filepath"
@@ -124,6 +124,51 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, limits: limits}, true
 }
 
+// editorAssetUploadTicket checks an editor asset's metadata and its payer's
+// room, the checks its upload repeats, and takes the upload's ticket
+// (upload_queue.go), so a refused upload never waits in line.
+func (a *api) editorAssetUploadTicket(w http.ResponseWriter, r *http.Request) {
+	scope, ok := a.editorAssetScopeFor(w, r)
+	if !ok {
+		return
+	}
+	turn, err := a.takeEditorAssetTicket(w, r, scope)
+	if err != nil {
+		answerError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, turn)
+}
+
+func (a *api) takeEditorAssetTicket(w http.ResponseWriter, r *http.Request, scope editorAssetScope) (uploadTurn, error) {
+	var in reserveEditorAssetRequest
+	r.Body = http.MaxBytesReader(w, r.Body, uploadMetadataMaxBytes)
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		return uploadTurn{}, bodyError(err, "invalid upload metadata")
+	}
+	if _, _, _, err := a.checkEditorAsset(in, scope); err != nil {
+		return uploadTurn{}, err
+	}
+	if err := a.s.AssertEditorAssetRoom(r.Context(), scope.workspaceID, scope.materialID, uid(r), in.SizeBytes); err != nil {
+		return uploadTurn{}, err
+	}
+	return a.uploads.take(uid(r), editorAssetTarget(scope.materialID))
+}
+
+// checkEditorAsset checks an editor asset's metadata for its ticket and again
+// for its upload.
+func (a *api) checkEditorAsset(in reserveEditorAssetRequest, scope editorAssetScope) (name, ext, contentType string, err error) {
+	freeLimits, err := a.s.PlanLimits(store.PlanFree)
+	if err != nil {
+		return "", "", "", err
+	}
+	name, ext, contentType, err = validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.limits)
+	if err != nil {
+		return "", "", "", huma.Error400BadRequest(err.Error())
+	}
+	return name, ext, contentType, nil
+}
+
 // uploadEditorAsset streams one image or audio file for a material through
 // the gateway (Epo 2026-10-22; see uploads.go). The material's payer is
 // charged (Sam 2026-10-19), and the bytes must open with their type's
@@ -143,23 +188,24 @@ func (a *api) uploadEditorAsset(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope editorAssetScope) (store.EditorAsset, error) {
 	ctx := r.Context()
+	release, err := a.uploads.start(r.URL.Query().Get("ticket"), uid(r), editorAssetTarget(scope.materialID))
+	if err != nil {
+		return store.EditorAsset{}, err
+	}
+	defer release()
 	// Audio, at the payer's per-file cap, is the largest asset.
 	r.Body = http.MaxBytesReader(w, r.Body, scope.limits.EditorAssetBytes("audio")+uploadMetadataMaxBytes)
 	if a.blob == nil {
 		return store.EditorAsset{}, errors.New("blob store not configured")
 	}
 	var in reserveEditorAssetRequest
-	form, err := readUploadMetadata(r, &in)
+	stream, err := readUploadMetadata(w, r, &in)
 	if err != nil {
 		return store.EditorAsset{}, err
 	}
-	freeLimits, err := a.s.PlanLimits(store.PlanFree)
+	name, ext, contentType, err := a.checkEditorAsset(in, scope)
 	if err != nil {
 		return store.EditorAsset{}, err
-	}
-	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.limits)
-	if err != nil {
-		return store.EditorAsset{}, huma.Error400BadRequest(err.Error())
 	}
 
 	assetID := randID("asset")
@@ -172,7 +218,7 @@ func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope e
 	}); err != nil {
 		return store.EditorAsset{}, err
 	}
-	asset, err := a.storeEditorAssetBytes(ctx, form, uploadID, key, in.Purpose, ext, contentType, in.SizeBytes)
+	asset, err := a.storeEditorAssetBytes(ctx, stream, uploadID, key, in.Purpose, ext, contentType, in.SizeBytes)
 	if err != nil {
 		// Discarding the pending asset releases the reservation and queues
 		// the key for the reaper, which deletes it once nothing references it.
@@ -187,9 +233,9 @@ func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope e
 // storeEditorAssetBytes spools the file part, checks its signature, writes it
 // in one PUT and finalizes the reserved asset.
 func (a *api) storeEditorAssetBytes(
-	ctx context.Context, form *multipart.Reader, uploadID, key, purpose, ext, contentType string, size int64,
+	ctx context.Context, stream *uploadBody, uploadID, key, purpose, ext, contentType string, size int64,
 ) (store.EditorAsset, error) {
-	spool, _, err := spoolUpload(form, size, contentType)
+	spool, _, err := spoolUpload(stream, size, contentType)
 	if err != nil {
 		return store.EditorAsset{}, err
 	}

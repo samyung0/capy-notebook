@@ -339,6 +339,40 @@ body streamed answers 410 or 409. A refusal (400, 413, 403/404) is answered
 without reading the rest of the body, with `Connection: close`. The upload's
 parse download is its only B2 egress.
 
+An upload first takes a ticket in the gateway's line (Epo 2026-10-22,
+`server/internal/httpapi/upload_queue.go`): `POST …/sources/uploads/tickets`
+or `POST …/editor-assets/uploads/tickets` with the upload's metadata as JSON.
+The ticket runs the checks its upload repeats (editor access, the metadata's
+bounds, size, type, parse pages and credit headroom) and the reservation's
+gates in a rolled-back transaction (`AssertSourceUploadRoom`: the uploader's
+account and storage and the workspace's file cap; `AssertEditorAssetRoom`:
+the scope's locks and the payer's storage), so an upload that would be
+refused never waits. The reservation itself still happens when the upload
+starts, and gates again; a ticket holds none. At most 32 uploads run at once:
+a ticket that finds a free slot answers `{ticketId, position: 0}` (its turn),
+else it waits with its place (1 is next). The line holds 128 waiting tickets
+and 20 of one user's; past either the ticket is refused with a typed 503,
+`upload_queue_full` (busy, try again). The browser long-polls
+`GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
+turn comes, when the ticket's place differs from N but no sooner than 2 s
+after the ask (so a fast line costs a browser one poll per 2 s, inside the
+per-user rate limit), and otherwise after 25 s, under Cloudflare's 100 s. A
+turn holds its slot for 30 s; an upload that has not started by then passes
+the slot to the next ticket, and its own upload is refused. The upload carries
+`?ticket=` and is refused before its body is read when the ticket is missing,
+unknown, another user's or another route's, spent or passed (410), or still
+waiting (409). Its slot frees when the upload request ends. The upload has
+5 minutes from the gateway's first read of its body to send it (the
+connection's read deadline, lifted once the body is read so it never cuts the
+PUT); past that it answers 408 and releases its reservation like any failure.
+The line lives in the API process, which runs as one instance; a scaled-out
+API would need it in Redis. A restart forgets it: a waiting browser's next
+poll is refused 410 and the user tries again. A source upload refused for its
+ticket is not counted in its batch at once, since the body that names the
+batch is never read; the batch's idle sweep (`SourceBatchIdle`, 1 h) settles
+it. The transfer panel shows a waiting file as "Waiting to upload (position
+N)"; an editor asset's placeholder waits without a place.
+
 A drive import keeps its own completion (`internalCompleteSourceImport`): the
 import worker writes an `incoming/` object, and the gateway checks its size and
 type by HEAD (a missing type is a mismatch: the worker writes it), promotes it

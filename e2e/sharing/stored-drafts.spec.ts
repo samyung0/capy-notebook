@@ -7,6 +7,7 @@ import type {
 } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { users } from '../fixtures/seed';
+import { uploadSourceFile } from '../helpers/api';
 import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 import { m } from '../i18n';
@@ -82,27 +83,17 @@ async function uploadText(
   text: string
 ) {
   const bytes = Buffer.from(text);
-  // One streamed request: the metadata part, then the file part. A FormData
-  // keeps that order (a sorted object would send the file first).
-  const form = new FormData();
-  form.append(
-    'metadata',
-    JSON.stringify({
+  const uploaded = await uploadSourceFile(
+    api,
+    workspaceId,
+    {
       batchId: `stored-drafts-${randomUUID()}`,
       batchTotal: 1,
       contentType: 'text/markdown',
       name,
       sizeBytes: bytes.length,
-    })
-  );
-  form.append(
-    'file',
-    new Blob([new Uint8Array(bytes)], { type: 'text/markdown' }),
-    name
-  );
-  const uploaded = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads`,
-    { multipart: form }
+    },
+    bytes
   );
   expect(uploaded.status(), await uploaded.text()).toBe(201);
   return ((await uploaded.json()) as { id: string }).id;

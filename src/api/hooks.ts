@@ -149,6 +149,7 @@ import type {
   WorkspaceRecent,
   WorkspaceStats,
 } from './types';
+import { takeUploadTurn } from './uploadTurn';
 
 export interface QueryUiOptions {
   errorBoundary?: false | 'unlessMissing';
@@ -1594,6 +1595,7 @@ export function useUploadSource(wsId: string) {
       pageCount,
       batchId,
       batchTotal,
+      onQueued,
       onUploadProgress,
       signal,
     }: {
@@ -1616,36 +1618,38 @@ export function useUploadSource(wsId: string) {
       /** The analysed page count of a fast-parse document; the gateway
        * refuses one past the policy's maxPages. */
       pageCount?: number;
+      /** The upload's place in the gateway's line while it waits, 0 once
+       * its turn comes (takeUploadTurn). */
+      onQueued?: (position: number) => void;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
     }) => {
+      const metadata = {
+        batchId,
+        batchTotal,
+        chapterId: chapterId ?? null,
+        chapterName: chapterName ?? null,
+        contentType: file.type || 'application/octet-stream',
+        estimatedCreditMicros: estimatedCreditMicros || undefined,
+        kind,
+        name: file.name,
+        pageCount: pageCount || undefined,
+        parseMode,
+        sizeBytes: file.size,
+      };
+      const path = await takeUploadTurn(
+        `/workspaces/${wsId}/sources/uploads`,
+        metadata,
+        signal,
+        onQueued
+      );
       if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
       // The metadata part comes first: the gateway reserves storage from it
       // before it reads the file part.
       const form = new FormData();
-      form.append(
-        'metadata',
-        JSON.stringify({
-          batchId,
-          batchTotal,
-          chapterId: chapterId ?? null,
-          chapterName: chapterName ?? null,
-          contentType: file.type || 'application/octet-stream',
-          estimatedCreditMicros: estimatedCreditMicros || undefined,
-          kind,
-          name: file.name,
-          pageCount: pageCount || undefined,
-          parseMode,
-          sizeBytes: file.size,
-        })
-      );
+      form.append('metadata', JSON.stringify(metadata));
       form.append('file', file);
-      return api.upload<SourceFile>(
-        `/workspaces/${wsId}/sources/uploads`,
-        form,
-        onUploadProgress,
-        signal
-      );
+      return api.upload<SourceFile>(path, form, onUploadProgress, signal);
     },
     onSuccess: (file, vars) => {
       track('source_uploaded', {

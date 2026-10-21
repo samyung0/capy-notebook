@@ -62,7 +62,8 @@ var keyExtensionPattern = regexp.MustCompile(`^\.[a-z0-9]{1,11}$`)
 // whose first part, "metadata", is the upload's JSON and whose second part,
 // "file", is its bytes. The gateway reserves the payer's storage, spools and
 // hashes the bytes, writes them to their final key in one bounded PUT and
-// finalizes the row, all in that request.
+// finalizes the row, all in that request. The request carries a ticket whose
+// turn has come (upload_queue.go) and has uploadBodyDeadline to send its body.
 
 // uploadMetadataMaxBytes bounds the metadata part and the multipart framing
 // around the file part.
@@ -78,9 +79,20 @@ const uploadSessionTTL = time.Hour
 // 2026-10-22); tests shorten it.
 var uploadPutBound = 60 * time.Second
 
-// readUploadMetadata decodes the metadata part into v and returns the reader
-// positioned for the file part. The caller has capped r.Body.
-func readUploadMetadata(r *http.Request, v any) (*multipart.Reader, error) {
+// uploadBody is an upload's multipart body on its clock.
+type uploadBody struct {
+	form *multipart.Reader
+	conn *http.ResponseController
+}
+
+// readUploadMetadata starts the body's clock, decodes the metadata part into
+// v and returns the body positioned for the file part. The caller has capped
+// r.Body.
+func readUploadMetadata(w http.ResponseWriter, r *http.Request, v any) (*uploadBody, error) {
+	conn := http.NewResponseController(w)
+	if err := conn.SetReadDeadline(time.Now().Add(uploadBodyDeadline)); err != nil {
+		return nil, err
+	}
 	form, err := r.MultipartReader()
 	if err != nil {
 		return nil, huma.Error400BadRequest("an upload is a multipart body")
@@ -90,9 +102,9 @@ func readUploadMetadata(r *http.Request, v any) (*multipart.Reader, error) {
 		return nil, bodyError(err, "an upload starts with its metadata part")
 	}
 	if err := json.NewDecoder(io.LimitReader(part, uploadMetadataMaxBytes)).Decode(v); err != nil {
-		return nil, huma.Error400BadRequest("invalid upload metadata")
+		return nil, bodyError(err, "invalid upload metadata")
 	}
-	return form, nil
+	return &uploadBody{form: form, conn: conn}, nil
 }
 
 // spoolUpload reads the file part into a temporary file, hashing it as it
@@ -100,7 +112,8 @@ func readUploadMetadata(r *http.Request, v any) (*multipart.Reader, error) {
 // anything follows. The PUT reads the rewound file, so its 60 s bound covers
 // B2 alone, never the browser's upload. The caller removes the file with
 // dropSpool.
-func spoolUpload(form *multipart.Reader, size int64, contentType string) (*os.File, string, error) {
+func spoolUpload(body *uploadBody, size int64, contentType string) (*os.File, string, error) {
+	form := body.form
 	part, err := form.NextPart()
 	if err != nil || part.FormName() != "file" {
 		return nil, "", bodyError(err, "an upload carries its file part after the metadata")
@@ -115,17 +128,22 @@ func spoolUpload(form *multipart.Reader, size int64, contentType string) (*os.Fi
 		return nil, "", err
 	}
 	hash := sha256.New()
-	body := &bodyReader{r: io.LimitReader(part, size+1)}
-	n, err := io.Copy(io.MultiWriter(spool, hash), body)
+	read := &bodyReader{r: io.LimitReader(part, size+1)}
+	n, err := io.Copy(io.MultiWriter(spool, hash), read)
 	switch {
-	case body.err != nil:
-		err = bodyError(body.err, "the upload ended early")
+	case read.err != nil:
+		err = bodyError(read.err, "the upload ended early")
 	case err == nil && n != size:
 		err = huma.Error400BadRequest("uploaded size does not match the upload's metadata")
 	case err == nil:
 		if _, next := form.NextPart(); !errors.Is(next, io.EOF) {
 			err = bodyError(next, "an upload carries nothing after its file part")
 		}
+	}
+	// The body is read: its clock stops, so it never cuts the PUT, whose
+	// context the connection's next read would cancel.
+	if err == nil {
+		err = body.conn.SetReadDeadline(time.Time{})
 	}
 	if err == nil {
 		_, err = spool.Seek(0, io.SeekStart)
@@ -152,12 +170,16 @@ func (b *bodyReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// bodyError refuses a body the client sent wrong: past the cap is 413, and
-// anything else (a cut-off, malformed or misordered body) a 400 with msg.
+// bodyError refuses a body the client sent wrong: past the cap is 413, past
+// its deadline 408, and anything else (a cut-off, malformed or misordered
+// body) a 400 with msg.
 func bodyError(err error, msg string) error {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {
 		return huma.Error413RequestEntityTooLarge("the upload is larger than the per-file limit")
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return huma.NewError(http.StatusRequestTimeout, "the upload took longer than 5 minutes to send")
 	}
 	return huma.Error400BadRequest(msg)
 }
@@ -188,11 +210,16 @@ func putUpload(ctx context.Context, objects blob.Store, uploadID, key string, bo
 	return etag, err
 }
 
-// failUpload answers a refused upload as the JSON operations answer errors
-// (reportHandlerError). What is left of the body is not read: the connection
-// closes after the answer. It returns the status sent.
+// failUpload answers a refused upload. What is left of the body is not read:
+// the connection closes after the answer. It returns the status sent.
 func (a *api) failUpload(w http.ResponseWriter, r *http.Request, err error) int {
 	w.Header().Set("Connection", "close")
+	return answerError(w, r, err)
+}
+
+// answerError answers err as the JSON operations answer errors
+// (reportHandlerError) and returns the status sent.
+func answerError(w http.ResponseWriter, r *http.Request, err error) int {
 	var status huma.StatusError
 	if !errors.As(err, &status) {
 		err = hErr(err)

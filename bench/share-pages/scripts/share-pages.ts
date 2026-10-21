@@ -219,21 +219,27 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
     const bytes = await readFile(
       path.join(directory, '../../../e2e/fixtures/files/basic', upload.name)
     );
-    // Store only: nothing is parsed, embedded or sent to a model. One
-    // request streams the metadata, then the bytes, through the gateway.
+    // Store only: nothing is parsed, embedded or sent to a model. A ticket
+    // whose turn comes (the gateway lines up uploads past 32 at once), then
+    // one request streams the metadata, then the bytes, through the gateway.
+    const metadata = {
+      batchId,
+      batchTotal: UPLOADS.length,
+      chapterName: upload.chapter,
+      contentType: 'application/octet-stream',
+      name: upload.name,
+      parseMode: 'none',
+      sizeBytes: bytes.length,
+    };
+    const uploads = `/api/workspaces/${workspace.id}/sources/uploads`;
+    let turn = await api(page, `${uploads}/tickets`, 'POST', metadata);
+    while (Number(turn.position) > 0)
+      turn = await api(
+        page,
+        `/api/uploads/tickets/${String(turn.ticketId)}?position=${String(turn.position)}`
+      );
     const form = new FormData();
-    form.append(
-      'metadata',
-      JSON.stringify({
-        batchId,
-        batchTotal: UPLOADS.length,
-        chapterName: upload.chapter,
-        contentType: 'application/octet-stream',
-        name: upload.name,
-        parseMode: 'none',
-        sizeBytes: bytes.length,
-      })
-    );
+    form.append('metadata', JSON.stringify(metadata));
     form.append(
       'file',
       new Blob([bytes], { type: 'application/octet-stream' }),
@@ -241,7 +247,7 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
     );
     await api(
       page,
-      `/api/workspaces/${workspace.id}/sources/uploads`,
+      `${uploads}?ticket=${encodeURIComponent(String(turn.ticketId))}`,
       'POST',
       form
     );

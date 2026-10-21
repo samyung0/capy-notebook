@@ -231,6 +231,12 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_bank_unavailable_body(),
         title: m.error_bank_unavailable_title(),
       };
+    case 'upload_queue_full':
+      return {
+        action: 'retry',
+        description: m.error_upload_queue_full_body(),
+        title: m.error_upload_queue_full_title(),
+      };
     default:
       return null;
   }
@@ -382,6 +388,7 @@ const TYPED_SERVER_CODES = new Set([
   'bank_unavailable',
   'generate_empty',
   'provider_busy',
+  'upload_queue_full',
 ]);
 
 /** The trace id an error that stays on screen shows (a boundary, FormAlert,

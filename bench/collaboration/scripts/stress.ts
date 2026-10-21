@@ -160,8 +160,6 @@ interface Room {
 interface Target {
   /** The app origin the collaboration service admits. */
   origin: string;
-  /** Replaces the origin of presigned upload URLs, when they are not
-   * reachable from here as given. */
   setup(): Promise<void>;
   createRooms(kinds: Kind[]): Promise<Room[]>;
   /** Collaboration error lines logged since setup. */
@@ -203,8 +201,10 @@ async function request(
 }
 
 /**
- * The app's upload: one request streams the metadata, then the bytes, through
- * the gateway, which writes them to the bucket (the fake S3 locally).
+ * The app's upload: a ticket whose turn comes (the gateway runs 32 uploads at
+ * once and lines up the rest), then one request streaming the metadata and
+ * the bytes through the gateway, which writes them to the bucket (the fake S3
+ * locally).
  */
 async function uploadSource(
   call: Call,
@@ -214,20 +214,25 @@ async function uploadSource(
   fields: Record<string, string>
 ) {
   const contentType = name.endsWith('.txt') ? 'text/plain' : 'application/octet-stream';
+  const metadata = {
+    batchId: `stress_${randomBytes(6).toString('hex')}`,
+    batchTotal: 1,
+    contentType,
+    name,
+    sizeBytes: bytes.byteLength,
+    ...fields,
+  };
+  const uploads = `/api/workspaces/${workspace}/sources/uploads`;
+  let turn = await call('POST', `${uploads}/tickets`, undefined, metadata);
+  while (Number(turn.position) > 0)
+    turn = await call(
+      'GET',
+      `/api/uploads/tickets/${String(turn.ticketId)}?position=${String(turn.position)}`
+    );
   const form = new FormData();
-  form.append(
-    'metadata',
-    JSON.stringify({
-      batchId: `stress_${randomBytes(6).toString('hex')}`,
-      batchTotal: 1,
-      contentType,
-      name,
-      sizeBytes: bytes.byteLength,
-      ...fields,
-    })
-  );
+  form.append('metadata', JSON.stringify(metadata));
   form.append('file', new Blob([bytes], { type: contentType }), name);
-  return call('POST', `/api/workspaces/${workspace}/sources/uploads`, form);
+  return call('POST', `${uploads}?ticket=${encodeURIComponent(String(turn.ticketId))}`, form);
 }
 
 /** Lines of plain text up to `bytes`, the same on every run. */

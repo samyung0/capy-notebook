@@ -30,6 +30,10 @@ export const editorAssetHandlers = [
     if (!asset) return new HttpResponse(null, { status: 404 });
     return new HttpResponse(await (await fetch(asset.url)).blob());
   }),
+  // The mock gateway always has a free slot: every ticket's turn is now.
+  http.post('/api/materials/:id/editor-assets/uploads/tickets', () =>
+    HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
+  ),
   // Mirrors the streamed upload: one multipart request, metadata then file.
   http.post('/api/materials/:id/editor-assets/uploads', async ({ request }) => {
     const form = await request.formData();

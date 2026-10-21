@@ -1253,7 +1253,9 @@ reserves, spools and hashes the bytes, writes them to the stable key in one
 bounded PUT and finalizes in the same request, so no browser ever holds a
 bucket URL it could write with and only its own uploader can finish an upload.
 A failure in that request releases the reservation and queues the key for the
-reaper.
+reaper. The upload first takes a ticket in the gateway's line, which only the
+same editors can take and only its own user can spend, on its own route
+([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
 A drive import completes separately (`internalCompleteSourceImport`):
 finalization promotes the object from a temporary `incoming/` key, creates the
 durable resource row, and marks the upload session completed. Finalization is

@@ -1201,7 +1201,8 @@ covers 1 and 2 with the service token):
    without opening the writer database pool.
 
 **Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
-chat streams. Parser traffic stays on WireGuard and does not cross Cloudflare.
+chat streams. An upload ticket's long poll answers within 25 s, under it.
+Parser traffic stays on WireGuard and does not cross Cloudflare.
 Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
 raise that on `api.capynotebook.com` if streams die around a minute.
 
@@ -1559,7 +1560,10 @@ playbook revision.
    the browser fetches as soon as they land). Browser uploads no longer use a
    presigned PUT: they stream through the API host (Epo 2026-10-22), whose
    Cloudflare proxy accepts request bodies up to 100 MB, above the 30 MiB
-   largest per-file cap.
+   largest per-file cap. At most 32 run at once, behind a line of tickets
+   the API keeps in its process: run one API instance, or move the line to
+   Redis before scaling it out
+   ([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
 4. **CORS rules on the bucket.** The browser reads B2 through presigned GETs,
    so B2 itself must allow the SPA origin. Apply the file for the bucket's
    environment rather than hand-writing rules:

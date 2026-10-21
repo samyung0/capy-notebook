@@ -179,7 +179,7 @@ then run Caddy and `pnpm dev:uat`:
 | Sign in on `https://local.uat.capynotebook.com` | Trusted local HTTPS and matching UAT Clerk instance |
 | Open a note and type | Collaboration WebSocket accepted the shared local origin |
 | Open an Office document | Office Worker permits the shared local parent origin |
-| Upload a file | The upload request (metadata, then file) answered 201 and the file row names its object |
+| Upload a file | The upload's ticket, then its request (metadata, then file), answered 201 and the file row names its object |
 | Open a citation preview | Gateway-served preview path and B2 read credentials |
 
 A `401` on every API call with sign-in working means the browser key belongs to

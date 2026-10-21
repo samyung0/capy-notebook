@@ -77,7 +77,13 @@ function TransferRow({
       {/* One fixed-height line, so a row keeps its height when its progress
           bar turns into a status. */}
       <div className="flex h-5 items-center gap-2">
-        {status.kind === 'progress' || status.kind === 'indeterminate' ? (
+        {status.kind === 'queued' ? (
+          // Its place in line, on the whole line: too long for the progress
+          // label beside a bar.
+          <span className="t-meta truncate pl-6 text-fg-muted">
+            {status.label}
+          </span>
+        ) : status.kind === 'progress' || status.kind === 'indeterminate' ? (
           <div className="flex w-full items-center pl-6">
             <ProgressBar
               className="flex-1"
@@ -211,7 +217,8 @@ export function SourceTransferPanel() {
   }, [allDone]);
   if (transfers.length === 0) return null;
   const finished = kinds.filter(
-    (kind) => kind !== 'progress' && kind !== 'indeterminate'
+    (kind) =>
+      kind !== 'progress' && kind !== 'indeterminate' && kind !== 'queued'
   ).length;
 
   return createPortal(

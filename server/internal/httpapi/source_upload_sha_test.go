@@ -313,21 +313,18 @@ func TestUploadBodiesStopAtTheCap(t *testing.T) {
 	ws := uploadWorkspace(t, th)
 	limit := sourceCap(t, th)
 	note := uploadNote(t, th, ws)
-	padded := func(meta map[string]any) formPart {
+	padded := func(route string, meta map[string]any) (string, formPart) {
 		part := metadataPart(t, meta)
 		part.body = append(part.body, bytes.Repeat([]byte{' '}, limit+4<<20)...)
-		return part
+		return ticketed(t, th.h, route, "u_owner", meta), part
 	}
 	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	sourceRoute, sourceMetadata := padded(sourceUploads(ws), sourceMeta("notes.pdf", "application/pdf", 4))
+	assetRoute, assetMetadata := padded("/api/materials/"+note+"/editor-assets/uploads",
+		map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"})
 	for route, parts := range map[string][]formPart{
-		sourceUploads(ws): {
-			padded(sourceMeta("notes.pdf", "application/pdf", 4)),
-			{name: "file", contentType: "application/pdf", body: []byte("%PDF")},
-		},
-		"/api/materials/" + note + "/editor-assets/uploads": {
-			padded(map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"}),
-			{name: "file", contentType: "image/png", body: png},
-		},
+		sourceRoute: {sourceMetadata, {name: "file", contentType: "application/pdf", body: []byte("%PDF")}},
+		assetRoute:  {assetMetadata, {name: "file", contentType: "image/png", body: png}},
 	} {
 		rec, body := postForm(t, th.h, route, "u_owner", parts...)
 		if rec.Code != http.StatusRequestEntityTooLarge || body.read > int64(limit+1<<20) {
@@ -372,7 +369,8 @@ func TestSourceUploadRefusesAMalformedForm(t *testing.T) {
 		{"a batch id out of its pattern", []formPart{meta(func(m map[string]any) { m["batchId"] = "bad id" }), file}, http.StatusUnprocessableEntity},
 		{"a name past its limit", []formPart{meta(func(m map[string]any) { m["name"] = strings.Repeat("n", 121) + ".pdf" }), file}, http.StatusUnprocessableEntity},
 	} {
-		rec, _ := postForm(t, th.h, sourceUploads(ws), "u_owner", tc.parts...)
+		route := ticketed(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("notes.pdf", "application/pdf", len(body)))
+		rec, _ := postForm(t, th.h, route, "u_owner", tc.parts...)
 		expectStatus(t, rec, tc.status, "an upload with "+tc.what)
 	}
 	if held, keys := leftovers(t, th, bucket, ws); held != 0 || len(keys) != 0 {
@@ -380,9 +378,11 @@ func TestSourceUploadRefusesAMalformedForm(t *testing.T) {
 	}
 }
 
-// A workspace viewer and a stranger are refused on both upload routes before
-// the gateway reads a byte of the body or reserves anything (security
-// regression: human backend-storage-quota 2026-10-22 gateway uploads).
+// A workspace viewer and a stranger are refused a ticket on both upload
+// routes, and an upload carrying another user's ticket is refused before the
+// gateway reads a byte of its body or reserves anything (security
+// regression: human backend-storage-quota 2026-10-22 gateway uploads and
+// their queue).
 func TestUploadsRefuseViewersAndStrangersUnread(t *testing.T) {
 	bucket := blob.NewMemory()
 	th := openThumbnailHarnessWith(t, bucket)
@@ -391,19 +391,27 @@ func TestUploadsRefuseViewersAndStrangersUnread(t *testing.T) {
 	note := uploadNote(t, th, "ws_e2e_private")
 	body := []byte("%PDF-1.7")
 	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}
+	pdfMeta := sourceMeta("notes.pdf", "application/pdf", len(body))
+	pngMeta := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"}
 	for _, user := range []string{"u_viewer", "u_other"} {
-		for route, parts := range map[string][]formPart{
-			sourceUploads("ws_e2e_private"): {
-				metadataPart(t, sourceMeta("notes.pdf", "application/pdf", len(body))),
-				{name: "file", contentType: "application/pdf", body: body},
-			},
-			"/api/materials/" + note + "/editor-assets/uploads": {
-				metadataPart(t, map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"}),
-				{name: "file", contentType: "image/png", body: png},
-			},
+		for route, upload := range map[string]struct {
+			meta  map[string]any
+			parts []formPart
+		}{
+			sourceUploads("ws_e2e_private"): {pdfMeta, []formPart{
+				metadataPart(t, pdfMeta), {name: "file", contentType: "application/pdf", body: body},
+			}},
+			"/api/materials/" + note + "/editor-assets/uploads": {pngMeta, []formPart{
+				metadataPart(t, pngMeta), {name: "file", contentType: "image/png", body: png},
+			}},
 		} {
-			rec, read := postForm(t, th.h, route, user, parts...)
-			if (rec.Code != http.StatusForbidden && rec.Code != http.StatusNotFound) || read.read != 0 {
+			if rec, _ := takeTicket(t, th.h, route, user, upload.meta); rec.Code != http.StatusForbidden && rec.Code != http.StatusNotFound {
+				t.Fatalf("%s ticket on %s: status %d", user, route, rec.Code)
+			}
+			owners := ticketed(t, th.h, route, "u_owner", upload.meta)
+			rec, read := postForm(t, th.h, owners, user, upload.parts...)
+			if (rec.Code != http.StatusForbidden && rec.Code != http.StatusNotFound && rec.Code != http.StatusGone) ||
+				read.read != 0 {
 				t.Fatalf("%s on %s: status %d, read %d bytes", user, route, rec.Code, read.read)
 			}
 		}

@@ -481,7 +481,8 @@ func TestShareHTTPReadersRecordReviewRatings(t *testing.T) {
 }
 
 // Editor assets upload through the material: a link viewer of a standalone
-// quiz cannot reserve bytes on its owner's quota.
+// quiz cannot take an upload ticket, let alone reserve bytes on its owner's
+// quota.
 func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
 	h := openShareHTTP(t)
 	body := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": 10, "contentType": "image/png"}
@@ -489,7 +490,7 @@ func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
 		user   string
 		status int
 	}{{"", 401}, {"u_other", 403}} {
-		rec := doReq(t, h, http.MethodPost, "/api/materials/qz_e2e_link/editor-assets/uploads", tc.user, body)
+		rec := doReq(t, h, http.MethodPost, "/api/materials/qz_e2e_link/editor-assets/uploads/tickets", tc.user, body)
 		if rec.Code != tc.status {
 			t.Fatalf("%q upload → %d body=%s, want %d", tc.user, rec.Code, rec.Body.String(), tc.status)
 		}

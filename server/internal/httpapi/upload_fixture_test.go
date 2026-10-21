@@ -92,15 +92,60 @@ func postForm(t *testing.T, h http.Handler, path, userID string, parts ...formPa
 	req.Header.Set(auth.HeaderE2EUserID, userID)
 	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+	h.ServeHTTP(deadlineRecorder{rec}, req)
 	return rec, body
 }
 
-// postUpload streams body to an upload route as the browser does: the
-// metadata part, then the file part of partType.
+// deadlineRecorder takes the deadline an upload sets on its body as the
+// server's connection does; TestUploadBodyIsCutOffAfterItsDeadline runs the
+// real one.
+type deadlineRecorder struct{ *httptest.ResponseRecorder }
+
+func (deadlineRecorder) SetReadDeadline(time.Time) error { return nil }
+
+// ticketTurn is an upload ticket's answer.
+type ticketTurn struct {
+	TicketID string `json:"ticketId"`
+	Position int    `json:"position"`
+}
+
+// takeTicket asks the upload route at path for a ticket for meta.
+func takeTicket(t *testing.T, h http.Handler, path, userID string, meta map[string]any) (*httptest.ResponseRecorder, ticketTurn) {
+	t.Helper()
+	rec := doReq(t, h, http.MethodPost, path+"/tickets", userID, meta)
+	var turn ticketTurn
+	if rec.Code == http.StatusCreated {
+		if err := json.Unmarshal(rec.Body.Bytes(), &turn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rec, turn
+}
+
+// ticketed is path with a ticket for meta whose turn has come.
+func ticketed(t *testing.T, h http.Handler, path, userID string, meta map[string]any) string {
+	t.Helper()
+	rec, turn := takeTicket(t, h, path, userID, meta)
+	if rec.Code != http.StatusCreated || turn.Position != 0 {
+		t.Fatalf("ticket for %s: %d %s", path, rec.Code, rec.Body.String())
+	}
+	return path + "?ticket=" + turn.TicketID
+}
+
+// postUpload uploads body as the browser does: it takes the upload's ticket,
+// whose refusal it returns, then streams the metadata part and the file part
+// of partType.
 func postUpload(t *testing.T, h http.Handler, path, userID string, meta map[string]any, partType string, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
-	rec, _ := postForm(t, h, path, userID, metadataPart(t, meta), formPart{name: "file", contentType: partType, body: body})
+	rec, turn := takeTicket(t, h, path, userID, meta)
+	if rec.Code != http.StatusCreated {
+		return rec
+	}
+	if turn.Position != 0 {
+		t.Fatalf("ticket for %s waits at %d", path, turn.Position)
+	}
+	rec, _ = postForm(t, h, path+"?ticket="+turn.TicketID, userID,
+		metadataPart(t, meta), formPart{name: "file", contentType: partType, body: body})
 	return rec
 }
 

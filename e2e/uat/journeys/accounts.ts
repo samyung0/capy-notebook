@@ -163,8 +163,7 @@ function actorFor(
       await run.record('trace', trace, { actorId: id, method, path });
       const response = await context.request
         .fetch(new URL(path, run.env.apiUrl).toString(), {
-          // A FormData body is a streamed upload (metadata, then file).
-          ...(body instanceof FormData ? { multipart: body } : { data: body }),
+          data: body,
           headers: {
             Authorization: `Bearer ${token}`,
             traceparent: `00-${trace}-${randomBytes(8).toString('hex')}-01`,

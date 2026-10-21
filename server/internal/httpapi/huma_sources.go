@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"mime"
-	"mime/multipart"
 	"net/http"
 	"regexp"
 	"strings"
@@ -146,6 +145,45 @@ type sourceImportStatusOutput struct {
 	Body apimodel.SourceImportStatus
 }
 
+// sourceUploadTicket checks a source upload's metadata and the uploader's
+// room, the checks its upload repeats, and takes the upload's ticket
+// (upload_queue.go), so a refused upload never waits in line.
+func (a *api) sourceUploadTicket(w http.ResponseWriter, r *http.Request) {
+	var batch string
+	turn, err := a.takeSourceTicket(w, r, &batch)
+	if err != nil {
+		if status := answerError(w, r, err); batch != "" && status != http.StatusTooManyRequests {
+			a.failSourceBatchFile(r.Context(), batch)
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, turn)
+}
+
+func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *string) (uploadTurn, error) {
+	ctx := r.Context()
+	wsID := id(r)
+	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
+	if err != nil {
+		return uploadTurn{}, err
+	}
+	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+		return uploadTurn{}, err
+	}
+	var body apimodel.CreateSourceUploadReq
+	r.Body = http.MaxBytesReader(w, r.Body, uploadMetadataMaxBytes)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return uploadTurn{}, bodyError(err, "invalid upload metadata")
+	}
+	if _, _, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch); err != nil {
+		return uploadTurn{}, err
+	}
+	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), body.SizeBytes); err != nil {
+		return uploadTurn{}, err
+	}
+	return a.uploads.take(uid(r), sourceUploadTarget(wsID))
+}
+
 // uploadSource streams one source file through the gateway (Epo 2026-10-22;
 // see uploads.go): it reserves the uploader's storage, spools and hashes the
 // bytes, writes them to their final key in one bounded PUT, and creates the
@@ -189,10 +227,16 @@ func errorStatus(err error) int {
 var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // receiveSource stores one streamed source upload; batch names the upload's
-// batch once it is open.
+// batch once it is open. An upload refused for its ticket, before its body
+// is read, is settled by its batch's idle sweep (store.SourceBatchIdle).
 func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *string) (store.File, error) {
 	ctx := r.Context()
 	wsID := id(r)
+	release, err := a.uploads.start(r.URL.Query().Get("ticket"), uid(r), sourceUploadTarget(wsID))
+	if err != nil {
+		return store.File{}, err
+	}
+	defer release()
 	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
 	if err != nil {
 		return store.File{}, err
@@ -205,57 +249,13 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 		return store.File{}, err
 	}
 	var body apimodel.CreateSourceUploadReq
-	form, err := readUploadMetadata(r, &body)
+	stream, err := readUploadMetadata(w, r, &body)
 	if err != nil {
 		return store.File{}, err
 	}
-	// The bounds the JSON schema applied when the metadata was its own request.
-	if !batchIDPattern.MatchString(body.BatchID) || body.BatchTotal < 1 || body.BatchTotal > 10000 ||
-		body.EstimatedCreditMicros < 0 ||
-		utf8.RuneCountInString(string(body.Name)) > fieldlimits.FileName ||
-		utf8.RuneCountInString(string(body.ChapterName)) > fieldlimits.ChapterName {
-		return store.File{}, huma.Error422UnprocessableEntity("validation failed")
-	}
-	if err := a.openSourceBatch(ctx, wsID, "upload", body.BatchID, body.BatchTotal); err != nil {
+	name, chapterName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)
+	if err != nil {
 		return store.File{}, err
-	}
-	*batch = body.BatchID
-	name := strings.TrimSpace(string(body.Name))
-	chapterName := strings.TrimSpace(string(body.ChapterName))
-	if name == "" {
-		return store.File{}, huma.Error400BadRequest("file name is required")
-	}
-	if body.ChapterID != nil && chapterName != "" {
-		return store.File{}, huma.Error400BadRequest("chapterId and chapterName cannot both be set")
-	}
-	if body.Kind == "" {
-		body.Kind = kindFromName(name)
-	}
-	if body.ParseMode == "" {
-		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
-	}
-	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
-		return store.File{}, huma.Error400BadRequest(err.Error())
-	}
-	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
-		return store.File{}, err
-	}
-	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
-		if err := a.s.AssertCreditsForEstimate(ctx, uid(r), body.EstimatedCreditMicros); err != nil {
-			return store.File{}, err
-		}
-	}
-	if body.ChapterID != nil {
-		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *body.ChapterID)
-		if err != nil || chapterWorkspace != wsID {
-			return store.File{}, huma.Error400BadRequest("chapter does not belong to this workspace")
-		}
-	}
-	if body.ContentType == "" {
-		body.ContentType = "application/octet-stream"
-	}
-	if _, _, err := mime.ParseMediaType(body.ContentType); err != nil || strings.ContainsAny(body.ContentType, "\r\n") {
-		return store.File{}, huma.Error400BadRequest("invalid content type")
 	}
 
 	uploadID := randID("up")
@@ -270,7 +270,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	}); err != nil {
 		return store.File{}, err
 	}
-	file, err := a.storeSourceBytes(ctx, form, uploadID, key, body.ContentType, body.SizeBytes)
+	file, err := a.storeSourceBytes(ctx, stream, uploadID, key, body.ContentType, body.SizeBytes)
 	if err != nil {
 		// A failed upload is charged nothing; the release also queues the key
 		// for the reaper, which deletes it once nothing references it.
@@ -284,12 +284,70 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	return file, nil
 }
 
+// checkSourceUpload checks a source upload's metadata for its ticket and
+// again for its upload, filling in the inferred kind and parse mode and the
+// default content type, and returns the trimmed file and chapter names.
+// batch names the upload's batch once it is open.
+func (a *api) checkSourceUpload(
+	ctx context.Context, wsID string, maxBytes int64, body *apimodel.CreateSourceUploadReq, batch *string,
+) (name, chapterName string, err error) {
+	// The bounds the JSON schema applied when the metadata was its own request.
+	if !batchIDPattern.MatchString(body.BatchID) || body.BatchTotal < 1 || body.BatchTotal > 10000 ||
+		body.EstimatedCreditMicros < 0 ||
+		utf8.RuneCountInString(string(body.Name)) > fieldlimits.FileName ||
+		utf8.RuneCountInString(string(body.ChapterName)) > fieldlimits.ChapterName {
+		return "", "", huma.Error422UnprocessableEntity("validation failed")
+	}
+	if err := a.openSourceBatch(ctx, wsID, "upload", body.BatchID, body.BatchTotal); err != nil {
+		return "", "", err
+	}
+	*batch = body.BatchID
+	name = strings.TrimSpace(string(body.Name))
+	chapterName = strings.TrimSpace(string(body.ChapterName))
+	if name == "" {
+		return "", "", huma.Error400BadRequest("file name is required")
+	}
+	if body.ChapterID != nil && chapterName != "" {
+		return "", "", huma.Error400BadRequest("chapterId and chapterName cannot both be set")
+	}
+	if body.Kind == "" {
+		body.Kind = kindFromName(name)
+	}
+	if body.ParseMode == "" {
+		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
+	}
+	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
+		return "", "", huma.Error400BadRequest(err.Error())
+	}
+	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
+		return "", "", err
+	}
+	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
+		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
+			return "", "", err
+		}
+	}
+	if body.ChapterID != nil {
+		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *body.ChapterID)
+		if err != nil || chapterWorkspace != wsID {
+			return "", "", huma.Error400BadRequest("chapter does not belong to this workspace")
+		}
+	}
+	if body.ContentType == "" {
+		body.ContentType = "application/octet-stream"
+	}
+	if _, _, err := mime.ParseMediaType(body.ContentType); err != nil || strings.ContainsAny(body.ContentType, "\r\n") {
+		return "", "", huma.Error400BadRequest("invalid content type")
+	}
+	return name, chapterName, nil
+}
+
 // storeSourceBytes spools the file part, writes it in one PUT and finalizes the
 // reserved upload. Once the bytes are stored, finalize runs to its end even if
 // the browser leaves, so a committed file is never reported (and released) as
 // failed.
-func (a *api) storeSourceBytes(ctx context.Context, form *multipart.Reader, uploadID, key, contentType string, size int64) (store.File, error) {
-	spool, sha, err := spoolUpload(form, size, contentType)
+func (a *api) storeSourceBytes(ctx context.Context, stream *uploadBody, uploadID, key, contentType string, size int64) (store.File, error) {
+	spool, sha, err := spoolUpload(stream, size, contentType)
 	if err != nil {
 		return store.File{}, err
 	}

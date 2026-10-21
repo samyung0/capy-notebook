@@ -24,8 +24,7 @@ export type Actor = {
   email: string;
   page: Page;
   context: BrowserContext;
-  /** An event stream's body is its text; a FormData body is sent as a
-   * multipart upload. `timeout` overrides the 30 s default. */
+  /** An event stream's body is its text. `timeout` overrides the 30 s default. */
   request(
     path: string,
     method?: string,

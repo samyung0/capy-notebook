@@ -289,8 +289,8 @@ func TestUploadRefusesActorCreditsAndStorageSeparately(t *testing.T) {
 		"ballast.pdf", mustPlanLimits(t, fx2.store, store.PlanFree).StorageBytes-1024, "sources/"+fx2.actorID); err != nil {
 		t.Fatal(err)
 	}
-	storage := postUpload(t, fx2.handler,
-		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body, "application/pdf", pdf)
+	// The ticket refuses it, before the upload waits in line.
+	storage, _ := takeTicket(t, fx2.handler, "/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body)
 	if storage.Code != http.StatusForbidden || errorCode(t, storage) != "storage_quota_exceeded" {
 		t.Fatalf("uploader storage: %d %s", storage.Code, storage.Body.String())
 	}

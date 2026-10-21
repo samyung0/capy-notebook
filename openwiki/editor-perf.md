@@ -268,8 +268,9 @@ also uses, replaces the memory blob store (which the API serves under
 [`fake-s3.mjs`](../bench/collaboration/scripts/fake-s3.mjs) on the stock Node
 image, served over TLS under a `*.backblazeb2.com` name the server accepts with
 a throwaway certificate. The owner uploads `exchange-plan.docx` as the app
-does: one request (`POST .../sources/uploads`) streams the metadata, then the
-bytes, through the gateway, which writes them to the fake. It
+does: a ticket whose turn comes, then one request (`POST .../sources/uploads`)
+streams the metadata, then the bytes, through the gateway, which writes them
+to the fake. It
 also creates a Plate note, then `STRESS_PEERS` peers (20) per room, with API
 tokens, type
 unique markers for `STRESS_MINUTES` (3), about one per `STRESS_EDIT_MS`

@@ -2346,6 +2346,10 @@ export const handlers = [
   http.get('/api/source-upload-policy', async () =>
     HttpResponse.json(sourceUploadPolicy)
   ),
+  // The mock gateway always has a free slot: every ticket's turn is now.
+  http.post('/api/workspaces/:id/sources/uploads/tickets', () =>
+    HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
+  ),
   // Mirrors the streamed upload: one multipart request, metadata then file.
   http.post(
     '/api/workspaces/:id/sources/uploads',

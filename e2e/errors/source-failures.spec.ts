@@ -20,44 +20,55 @@ async function sourceResponses(
   await page.route('**/api/workspaces/' + workspaceId + '/files', (route) =>
     route.fulfill({ json: files })
   );
-  // One streamed request per source: its metadata part, then its file part.
-  await page.route('**' + endpoint, async (route) => {
-    const request = route.request();
-    const raw = new Uint8Array(request.postDataBuffer() ?? []);
-    const form = await new Response(raw, {
-      headers: { 'content-type': request.headers()['content-type'] },
-    }).formData();
-    const metadata = JSON.parse(String(form.get('metadata'))) as Record<
-      string,
-      unknown
-    >;
-    uploads.push(metadata);
-    bodies.push(Buffer.from(await (form.get('file') as Blob).arrayBuffer()));
-    if (failure === 'upload' && uploads.length === 1) {
-      await route.fulfill({
-        json: { detail: 'Injected upload failure', status: 503 },
-        status: 503,
-      });
-      return;
+  // Every ticket's turn comes at once; the gateway's line is not under test.
+  await page.route('**' + endpoint + '/tickets', (route) =>
+    route.fulfill({
+      json: { position: 0, ticketId: 'utk_e2e' },
+      status: 201,
+    })
+  );
+  // One streamed request per source (with its ticket): its metadata part,
+  // then its file part.
+  await page.route(
+    (url) => url.pathname === endpoint,
+    async (route) => {
+      const request = route.request();
+      const raw = new Uint8Array(request.postDataBuffer() ?? []);
+      const form = await new Response(raw, {
+        headers: { 'content-type': request.headers()['content-type'] },
+      }).formData();
+      const metadata = JSON.parse(String(form.get('metadata'))) as Record<
+        string,
+        unknown
+      >;
+      uploads.push(metadata);
+      bodies.push(Buffer.from(await (form.get('file') as Blob).arrayBuffer()));
+      if (failure === 'upload' && uploads.length === 1) {
+        await route.fulfill({
+          json: { detail: 'Injected upload failure', status: 503 },
+          status: 503,
+        });
+        return;
+      }
+      const failed = failure === 'ingest' && files.length === 0;
+      const file = {
+        addedAt: new Date().toISOString(),
+        chapterId: null,
+        hasBytes: true,
+        id: 'f_upload_' + uploads.length,
+        indexed: !failed,
+        kind: 'txt',
+        name: String(metadata.name),
+        position: files.length + 1,
+        revision: 1,
+        sizeBytes: Number(metadata.sizeBytes),
+        status: failed ? 'processing' : 'ready',
+        workspaceId,
+      };
+      files.push(file);
+      await route.fulfill({ json: file, status: 201 });
     }
-    const failed = failure === 'ingest' && files.length === 0;
-    const file = {
-      addedAt: new Date().toISOString(),
-      chapterId: null,
-      hasBytes: true,
-      id: 'f_upload_' + uploads.length,
-      indexed: !failed,
-      kind: 'txt',
-      name: String(metadata.name),
-      position: files.length + 1,
-      revision: 1,
-      sizeBytes: Number(metadata.sizeBytes),
-      status: failed ? 'processing' : 'ready',
-      workspaceId,
-    };
-    files.push(file);
-    await route.fulfill({ json: file, status: 201 });
-  });
+  );
   return { bodies, files, uploads };
 }
 
