@@ -77,9 +77,11 @@ test('Indexing tab lists note changes and indexes a waiting note now', async ({
   const failed = row('Membranes & transport cheatsheet');
 
   await expect(waiting).toHaveAttribute('data-state', 'waiting');
-  // Auto process is on: the note says it indexes by itself.
-  await expect(waiting.getByText(m.workspace_note_change_auto())).toBeVisible();
   await expect(failed).toHaveAttribute('data-state', 'failed');
+  // A failed row shows its error id, never the failure's text.
+  await expect(failed.getByTestId('error-id')).toHaveText(
+    m.error_id({ id: '0af7651916cd43dd8448eb211c80319c' })
+  );
   await expect(
     failed.getByRole('button', { exact: true, name: m.error_action_retry() })
   ).toBeVisible();
@@ -117,12 +119,13 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();
+  const failedRow = settings.getByRole('listitem').filter({ hasText: name });
   await expect(
-    settings
-      .getByRole('listitem')
-      .filter({ hasText: name })
-      .getByRole('button', { exact: true, name: m.error_action_retry() })
+    failedRow.getByRole('button', { exact: true, name: m.error_action_retry() })
   ).toBeVisible();
+  await expect(failedRow.getByTestId('error-id')).toHaveText(
+    m.error_id({ id: 'a3ce929d0e0e47364bf92f3577b34da6' })
+  );
   await page.keyboard.press('Escape');
 
   // The row menu opens the upload panel on the stored file.

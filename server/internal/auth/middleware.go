@@ -320,24 +320,30 @@ func profileFromSession(ctx context.Context, userID string) (name, email, avatar
 	if u == nil {
 		return "", "", "", errors.New("Clerk profile unavailable")
 	}
-	if u.FirstName != nil || u.LastName != nil {
-		parts := []string{}
-		if u.FirstName != nil {
-			parts = append(parts, *u.FirstName)
-		}
-		if u.LastName != nil {
-			parts = append(parts, *u.LastName)
-		}
-		name = strings.TrimSpace(strings.Join(parts, " "))
-	}
-	if u.Username != nil && name == "" {
-		name = *u.Username
-	}
+	name = ProfileName(u.FirstName, u.LastName, u.Username)
 	email = PrimaryVerifiedEmail(u.PrimaryEmailAddressID, u.EmailAddresses)
 	if u.HasImage && u.ImageURL != nil {
 		avatar = *u.ImageURL
 	}
 	return name, email, avatar, nil
+}
+
+// ProfileName is a Clerk profile's name for a new account, the same for the
+// sign-in sync and the webhook: first and last name, else the username, else
+// "" so the store names the account after its email's local part (human
+// authorization, 2026-10-21).
+func ProfileName(first, last, username *string) string {
+	parts := []string{}
+	for _, part := range []*string{first, last} {
+		if part != nil {
+			parts = append(parts, *part)
+		}
+	}
+	name := strings.TrimSpace(strings.Join(parts, " "))
+	if name == "" && username != nil {
+		name = strings.TrimSpace(*username)
+	}
+	return name
 }
 
 // PrimaryVerifiedEmail is the account's primary address when Clerk has

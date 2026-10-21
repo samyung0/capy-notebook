@@ -4324,6 +4324,12 @@ compares the captured candidate with the latest state and retains later edits.
 The transient candidate still fixes one export while editing continues. The
 internal checkpoint request carries `baseSourceSHA256` (and, for text,
 `seedBytes`) only on the first save from a NULL state; ordinary saves omit them.
+An agent edit's checkpoint counts as that first save: once it commits, the
+loaded room's record is marked saved (`Sources::not_seeded`), so the room's
+own next save carries no seed (a text room's first row merges the seed, and
+merging it again under a change that touches the edit's items, such as a
+person typing inside the agent's text, left content pending and discarded the
+room).
 The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`
 holds its source, seed, parse artifacts, canonical index and consumed
