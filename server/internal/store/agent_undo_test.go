@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 )
@@ -42,8 +43,9 @@ func undoTestEdit(t *testing.T, s *Store, owner, fileID string) AgentOperation {
 }
 
 // undoTestAuthority answers the collaboration service's Undo routes: every
-// Undo lands under the id `kept` gives (the request's when it gives ""), and
-// undo-status names the steps in `live`. It counts the Undos it was asked.
+// Undo lands under the id `kept` gives (the request's when it gives ""), its
+// reverse kept, and undo-status names the steps in `live`. It counts the
+// Undos it was asked.
 func undoTestAuthority(t *testing.T, s *Store, live func() []string, asked *[]string) *int {
 	t.Helper()
 	return undoTestAuthorityKeeping(t, s, live, asked, func(string) string { return "" })
@@ -66,7 +68,7 @@ func undoTestAuthorityKeeping(t *testing.T, s *Store, live func() []string, aske
 			if id == "" {
 				id = body.Operation.ID
 			}
-			_ = json.NewEncoder(w).Encode(map[string]string{"operationId": id})
+			_ = json.NewEncoder(w).Encode(map[string]any{"operationId": id, "reversible": true})
 		case "/internal/documents/undo-status":
 			var body struct {
 				OperationIDs []string `json:"operationIds"`
@@ -151,6 +153,63 @@ func TestDocumentUndoRecordsTheRoomsSteps(t *testing.T) {
 	s.ConfigureCollaboration(gone.URL, "undo-secret")
 	if _, err := s.UndoDocumentEdit(ctx, owner, redo, DocumentOperation{ID: uid("op"), RequestHash: "u3"}); !errors.Is(err, ErrUndoUnavailable) {
 		t.Fatalf("step the room no longer holds: %v", err)
+	}
+}
+
+// An Undo whose reverse the room does not keep (its revert would be too
+// large to send, Epo 2026-10-21) records a receipt with no Undo ref, so the
+// chat offers no Redo.
+func TestAnUndoTheRoomCannotReverseOffersNoRedo(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "undo_oversized")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	edit := undoTestEdit(t, s, owner, file.ID)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Operation DocumentOperation `json:"operation"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewEncoder(w).Encode(map[string]any{"operationId": body.Operation.ID, "reversible": false})
+	}))
+	t.Cleanup(srv.Close)
+	s.ConfigureCollaboration(srv.URL, "undo-secret")
+	undo, err := s.UndoDocumentEdit(ctx, owner, edit, DocumentOperation{ID: uid("op"), RequestHash: "u1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if undo.Effect.Operation != agenttools.EffectEditUndone || undo.Effect.Undo != nil {
+		t.Fatalf("undo = %+v", undo.Effect)
+	}
+}
+
+// A conversation load asks undo-status for at most undoStatusWait: a hung
+// collaboration server leaves the receipts without Undo instead of holding
+// the load for the client's 20 s.
+func TestChatHistoryShowsNoUndoWhenUndoStatusHangs(t *testing.T) {
+	s := openAccessTestStore(t)
+	owner := newBlobTestUser(t, s, "undo_hung")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	edit := undoTestEdit(t, s, owner, file.ID)
+	hung := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
+		_ = json.NewEncoder(w).Encode(map[string][]string{"live": {edit.ID}})
+	}))
+	t.Cleanup(hung.Close)
+	s.ConfigureCollaboration(hung.URL, "undo-secret")
+	messages := []Message{{Activity: []ActivityBlock{{Effects: []agenttools.ResourceEffect{*edit.Effect}}}}}
+	started := time.Now()
+	if err := s.refreshUndoStatuses(context.Background(), messages); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*undoStatusWait {
+		t.Fatalf("the load waited %v on undo-status", elapsed)
+	}
+	if undo := messages[0].Activity[0].Effects[0].Undo; undo != nil {
+		t.Fatalf("a hung undo-status kept the Undo: %+v", undo)
 	}
 }
 

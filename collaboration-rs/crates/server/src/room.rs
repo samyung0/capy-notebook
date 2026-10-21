@@ -402,10 +402,15 @@ struct Store {
     retry_delay: Duration,
     failed_event: Option<String>,
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
-    /// Agent Undos waiting on the store that takes them, with the id their
-    /// reverse is kept under.
-    undo_waiters: Vec<(String, oneshot::Sender<Result<Reverted, String>>)>,
+    /// Stores that took their snapshot so far.
+    snapshots: u64,
+    /// Agent Undos waiting on the store that takes them: the id their reverse
+    /// is kept under and the snapshot that holds the revert.
+    undo_waiters: Vec<(String, u64, UndoReply)>,
 }
+
+/// Where an agent Undo's answer goes.
+type UndoReply = oneshot::Sender<Result<Reverted, String>>;
 
 /// See `sync_message`: not a valid update, so a release build refuses it.
 #[cfg(debug_assertions)]
@@ -461,8 +466,9 @@ pub struct Room {
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
-    /// items of, by operation id (`ydoc::undo`); gone with the room.
-    agent_changes: HashMap<String, Change>,
+    /// items of, by operation id (`ydoc::undo`), with the measured size of
+    /// each one's revert; gone with the room.
+    agent_changes: HashMap<String, (Change, usize)>,
     /// Steps this room reverted, by the id their reverse is kept under, so a
     /// request repeated after a lost answer gets the same answer.
     agent_reverted: HashMap<String, String>,
@@ -857,6 +863,7 @@ async fn run(
             retry_delay: RETRY_FIRST / 2,
             failed_event: None,
             waiters: Vec::new(),
+            snapshots: 0,
             undo_waiters: Vec::new(),
         },
         idle_at: None,
@@ -1543,26 +1550,8 @@ impl Room {
                 }
                 .map_err(|error| error.to_string())
             });
-        let applied_bytes = match applied {
-            Ok(update) => {
-                // A room that loaded after the edit committed holds its items
-                // already, without what it deleted: no Undo there.
-                let mut taken = false;
-                if let Some((id, items)) = edit.step
-                    && !update.is_empty()
-                {
-                    self.agent_changes
-                        .insert(id.clone(), items.change(&self.doc));
-                    self.app.agent_steps.hold(&id, &self.name);
-                    taken = true;
-                }
-                if let Some(reply) = edit.taken {
-                    let _ = reply.send(taken);
-                }
-                let bytes = update.len() as u64;
-                self.broadcast_update(None, update);
-                bytes
-            }
+        let update = match applied {
+            Ok(update) => update,
             Err(error) => {
                 observe::capture(
                     &error,
@@ -1575,6 +1564,28 @@ impl Room {
                 return;
             }
         };
+        // An agent's growth counts toward the cap as a writer's does.
+        if let Kindly::Source(source) = &mut self.kind {
+            source.estimate.applied(update.len() as u64, 0);
+        }
+        // A room that loaded after the edit committed holds its items already,
+        // without what it deleted: no Undo there. Nor where its revert would
+        // be too large to send (Epo 2026-10-21).
+        let mut taken = false;
+        if let Some((id, items)) = edit.step
+            && !update.is_empty()
+        {
+            let change = items.change(&self.doc);
+            if let Some(revert) = self.revert_size(&change) {
+                self.agent_changes.insert(id.clone(), (change, revert));
+                self.app.agent_steps.hold(&id, &self.name);
+                taken = true;
+            }
+        }
+        if let Some(reply) = edit.taken {
+            let _ = reply.send(taken);
+        }
+        self.broadcast_update(None, update);
         self.durable.union(&edit.durable);
         self.app
             .stats
@@ -1589,8 +1600,6 @@ impl Room {
                 note.log_bytes += edit.row_bytes as i64;
             }
             Kindly::Source(source) => {
-                // An agent's growth counts toward the cap as a writer's does.
-                source.estimate.applied(applied_bytes, 0);
                 source.checkpoint = source.checkpoint.max(edit.version);
                 source.log_rows += 1;
                 source.log_bytes += edit.row_bytes as i64;
@@ -1604,8 +1613,9 @@ impl Room {
     /// stay; a note the store would refuse is put back at once. The result
     /// goes out like a writer's update under the actor's contributor marker
     /// (the store checks the actor's access), and the reply waits for the
-    /// store (a store that failed and retries still answers done: the revert
-    /// stays in the room). The step that reverses it stays as `next`. A step
+    /// first store that holds it, even when people typed on meanwhile (a store
+    /// that failed and retries still answers done: the revert stays in the
+    /// room). The step that reverses it stays as `next`. A step
     /// this room reverted already answers done again, with the id its reverse
     /// is kept under, so a request whose answer was lost can be repeated.
     async fn agent_undo(&mut self, undo: AgentUndo) {
@@ -1615,7 +1625,7 @@ impl Room {
             actor,
             reply,
         } = undo;
-        let Some(change) = self.agent_changes.remove(&step) else {
+        let Some((change, len)) = self.agent_changes.remove(&step) else {
             let answer = match self.agent_reverted.get(&step) {
                 Some(kept) => Reverted::Done(kept.clone()),
                 None => Reverted::Missing,
@@ -1646,10 +1656,21 @@ impl Room {
                 .then_some(("unavailable_target", "integration test refusal"))
         });
         if let Some((code, message)) = refused {
-            self.agent_changes.insert(step, change);
+            self.agent_changes.insert(step, (change, len));
             let _ = reply.send(Ok(Reverted::Refused {
                 code,
                 message: message.into(),
+            }));
+            return;
+        }
+        // A revert too large to send is no Undo (Epo 2026-10-21), measured
+        // when the step was kept; a source room may have grown toward its cap
+        // since. The step goes.
+        if !self.revert_fits(len) {
+            self.app.agent_steps.release(&step, &self.name);
+            let _ = reply.send(Ok(Reverted::Refused {
+                code: "undo_unavailable",
+                message: "this edit is too large to undo".into(),
             }));
             return;
         }
@@ -1680,7 +1701,7 @@ impl Room {
                         self.broadcast_update(None, restored.update);
                         match restored.next {
                             Some(again) => {
-                                self.agent_changes.insert(step, again);
+                                self.agent_changes.insert(step, (again, len));
                             }
                             None => self.app.agent_steps.release(&step, &self.name),
                         }
@@ -1710,6 +1731,7 @@ impl Room {
             user_id: actor.clone(),
             viewer: false,
             parent: None,
+            identity: Default::default(),
         };
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
@@ -1737,12 +1759,37 @@ impl Room {
         self.broadcast_update(None, update);
         self.app.agent_steps.revert(&step, &self.name);
         self.agent_reverted.insert(step, next.clone());
-        if let Some(back) = back {
-            self.agent_changes.insert(next.clone(), back);
+        // Its reverse is kept only when it could go out, as an edit's is.
+        if let Some(back) = back
+            && let Some(revert) = self.revert_size(&back)
+        {
+            self.agent_changes.insert(next.clone(), (back, revert));
             self.app.agent_steps.hold(&next, &self.name);
         }
-        self.store.undo_waiters.push((next, reply));
+        // The next store's snapshot holds the revert.
+        let snapshot = self.store.snapshots + 1;
+        self.store.undo_waiters.push((next, snapshot, reply));
         self.start_store().await;
+    }
+
+    /// Whether a revert of `len` bytes may go out (Epo 2026-10-21): within
+    /// the 8 MiB update cap and, in a source room, its admission cap.
+    fn revert_fits(&self, len: usize) -> bool {
+        len <= ydoc::MAX_UPDATE_BYTES
+            && match &self.kind {
+                Kindly::Source(source) => {
+                    source.estimate.bytes + len as u64 <= sources::admission_cap(source.state_cap)
+                }
+                Kindly::Note(_) => true,
+            }
+    }
+
+    /// The measured size of `change`'s revert when it may go out; none means
+    /// no Undo for it.
+    fn revert_size(&self, change: &Change) -> Option<usize> {
+        let doc = self.doc.clone();
+        let len = tokio::task::block_in_place(|| ydoc::undo::revert_len(&doc, change));
+        self.revert_fits(len).then_some(len)
     }
 
     /// Sends `notification` (if any) and CLOSED, and forgets the channel.
@@ -3240,6 +3287,7 @@ impl Room {
         };
         let claimed = self.receipts.clone();
         self.store.dirty = false;
+        self.store.snapshots += 1;
         self.store.first_change = None;
         let started = Instant::now();
         // Checked (and repaired) first: the row holds what a repair wrote.
@@ -3436,6 +3484,7 @@ impl Room {
             }
         };
         self.store.dirty = false;
+        self.store.snapshots += 1;
         self.store.first_change = None;
         let mut actors: Vec<String> = Vec::new();
         for contributor in &contributors {
@@ -3563,6 +3612,7 @@ impl Room {
             }
         }
         self.project_on_cadence();
+        self.answer_stored_undos();
         if self.store.dirty || markers::pending(&self.doc) {
             if self.store.again {
                 self.store.again = false;
@@ -3763,7 +3813,22 @@ impl Room {
         for waiter in self.store.waiters.drain(..) {
             let _ = waiter.send(result.clone());
         }
-        for (kept, waiter) in self.store.undo_waiters.drain(..) {
+        for (kept, _, waiter) in self.store.undo_waiters.drain(..) {
+            let _ = waiter.send(Ok(Reverted::Done(kept)));
+        }
+    }
+
+    /// Answers the agent Undos whose revert the store that just ended held,
+    /// though the room is dirty again: people typing on would otherwise keep
+    /// an Undo waiting until it times out (review r2 M2). Only one store runs
+    /// at a time, so the one that ended took the latest snapshot.
+    fn answer_stored_undos(&mut self) {
+        let stored = self.store.snapshots;
+        let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.store.undo_waiters)
+            .into_iter()
+            .partition(|(_, snapshot, _)| *snapshot <= stored);
+        self.store.undo_waiters = waiting;
+        for (kept, _, waiter) in done {
             let _ = waiter.send(Ok(Reverted::Done(kept)));
         }
     }
@@ -3771,7 +3836,7 @@ impl Room {
     /// The room drops what it holds (a discard, a store refused for good):
     /// the agent Undos waiting on it did not land.
     fn fail_undo_waiters(&mut self, error: &str) {
-        for (_, waiter) in self.store.undo_waiters.drain(..) {
+        for (_, _, waiter) in self.store.undo_waiters.drain(..) {
             let _ = waiter.send(Err(error.to_owned()));
         }
     }

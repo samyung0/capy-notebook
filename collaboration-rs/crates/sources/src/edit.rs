@@ -326,6 +326,7 @@ impl Sources {
             .gateway()
             .file(&input.file_id, "checkpoint", Some(&body), None, None)
             .await?;
+        self.not_seeded(&name);
         let receipt = saved
             .operation
             .ok_or_else(|| SourceError::Other("checkpoint did not return a receipt".into()))?;

@@ -95,6 +95,27 @@ pub fn revert(doc: &Doc, change: Change) -> Option<Reverted> {
     Some(Reverted { update, next })
 }
 
+/// The size of the update reverting `change` in `doc` would send, measured
+/// by reverting it on a copy that keeps deleted content as the room does
+/// (0 when nothing of it is left). A copy that cannot be made counts as too
+/// large: the room's own state always decodes.
+pub fn revert_len(doc: &Doc, change: &Change) -> usize {
+    let mut options = crate::doc_options(0);
+    options.client_id = doc.client_id();
+    options.guid = doc.guid();
+    options.skip_gc = true;
+    let copy = Doc::with_options(options);
+    let state = doc
+        .transact()
+        .encode_state_as_update_v1(&yrs::StateVector::default());
+    let copied =
+        crate::decode(&state).is_ok_and(|update| copy.transact_mut().apply_update(update).is_ok());
+    if !copied {
+        return usize::MAX;
+    }
+    revert(&copy, change.clone()).map_or(0, |reverted| reverted.update.len())
+}
+
 /// A manager over every root of `doc` but the contributor markers, holding
 /// `stack` to undo. A root no code typed yet gets its type from its content
 /// first: yrs reports no change of an untyped root, and the manager skips a
@@ -299,6 +320,24 @@ mod tests {
             "{after}"
         );
         assert!(!after.contains("there"), "{after}");
+    }
+
+    /// The measure of an Undo (Epo 2026-10-21 judges it by its size) is the
+    /// update the revert sends: a removal's Undo brings its content back, and
+    /// measuring leaves the room as it was.
+    #[test]
+    fn revert_len_is_what_the_revert_sends() {
+        let room = crate::scratch_doc();
+        room.get_or_insert_text("source")
+            .insert(&mut room.transact_mut(), 0, &"a".repeat(100_000));
+        let change = agent_edit(&room, |txn| {
+            txn.get_or_insert_text("source")
+                .remove_range(txn, 0, 100_000);
+        });
+        let len = revert_len(&room, &change);
+        assert!(len > 100_000, "{len}");
+        assert_eq!(text(&room), "");
+        assert_eq!(revert(&room, change).unwrap().update.len(), len);
     }
 
     /// Once a person removed everything the agent wrote, there is nothing

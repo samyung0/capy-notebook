@@ -2711,10 +2711,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    later steps on that file fold into its strip. After an edit's Undo the strip
    reads "Undid the edit to X", muted, with Redo (ghost-hover). The receipt's effect replaces the block's effect and the
    button reads Undo or Redo from the operation; a refused step shows an error
-   toast and disables its button for the session. An edit without an Undo ref
-   (no loaded room took it, or a reload after its room unloaded) keeps its
-   strip without the button; a reopened conversation shows created files
-   without Undo or Redo (Epo 2026-10-20).
+   toast and disables its button for the session, while a refusal for a
+   moment (`office_editing_paused`, `unavailable_target`) only toasts. An
+   edit without an Undo ref (no loaded room took it, its Undo would be too
+   large to send, or a reload after its room unloaded) keeps its strip without
+   the button; a reopened conversation shows created files without Undo or
+   Redo (Epo 2026-10-20).
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
@@ -3440,8 +3442,10 @@ an option by its letter or position. Version 32 (2026-10-20) adds
 Office targets out of `edit_document`. Version 33 (2026-10-21) gives
 `create_material`, `add_questions` (a new quiz) and `create_deck` a `sources`
 made-from line of plain strings instead of an id scope, and lets
-`search_workspace`'s `file_ids` take any workspace item. Go and the pipeline
-deploy together. `cmd/openapi -agent-tools`
+`search_workspace`'s `file_ids` take any workspace item. Version 34 (the live
+Undo) gives an edit receipt `effect.undo` only when a loaded room holds the
+edit's Undo, and drops the Undo promises from `edit_document` and
+`edit_office_document`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3710,8 +3714,10 @@ people's later typing stays, in the edited block too. XLSX needs nothing
 more: Yjs holds cell inputs and every engine recalculates values from them.
 The revert goes out like a writer's update under the chat actor's
 contributor marker (the store rechecks the actor's access); the room stores
-at once and answers when that store ends (an Undo arriving during a store
-answers when it ends, its revert storing next). A store that fails and
+at once and answers when the first store holding the revert ends, even if
+people typed on meanwhile and the room is dirty again (review r2 M2; each
+store's snapshot is counted, and an Undo arriving during a store waits for
+the next one). A store that fails and
 retries still answers done, the revert staying in the room; a store the room
 gives up on (a discard) answers the error. Once the rooms answer, a
 material's room projects at once (`RoomCmd::Project`), as the edit it reverts
@@ -3722,7 +3728,23 @@ store would refuse (`validate`) is put back at once and the Undo answers
 estimate. A room under a publication handoff or a forced unload refuses it
 (`unavailable_target`), keeping the step. The redo item the revert leaves is
 kept as the next step under the Undo's own operation id, so the same endpoint
-called with that id is Redo, for any number of steps. Go names the step's
+called with that id is Redo, for any number of steps.
+
+An Undo is judged by its revert's measured size (Epo 2026-10-21): the room
+reverts the step on a copy of its document that keeps deleted content
+(`ydoc::undo::revert_len`) when it keeps the step, an edit's when it lands and
+a reverse when its Undo lands. A step whose revert would be over the 8 MiB
+update cap, or would take a source room past its admission cap by the room's
+running estimate, is not kept: the edit's receipt gets no Undo ref, and an
+Undo's answer says `reversible: false`, so Go records its receipt without a
+Redo ref. A removal is the usual case: a small update whose Undo brings the
+removed content back. XLSX `delete_sheet` and `delete_rows` are not: they
+leave the cells in Yjs, and their Undo measures tens of bytes whatever the
+sheet holds (measured 2026-10-21). The room checks again when an
+Undo is asked, against the room as it is then (a person may have filled a
+source room since), and refuses one too large with `undo_unavailable`,
+dropping the step. The copy costs O(state) in the room per agent edit and per
+Undo. Go names the step's
 document (`target`) and the room cross-checks that every room holding the
 step is that document's. Go records each Undo's receipt (`agent_operations`,
 kind `undo_edit`) with `undo_of` naming the step it reversed (unique, so a
@@ -3750,9 +3772,11 @@ click gets the first one's receipt. A quiz step reverts in its content room,
 then its keys room; when the second fails (or does not answer within 8 s), the
 first is put back (its revert reverted, the step under its old id), so both
 documents stay as they were and the step stays (review M2). In the chat a
-refused Undo (a 4xx) hides the button for the session; an unknown outcome (no
-answer, a 5xx) keeps it for a retry, and a second click while a request is out
-sends nothing.
+refused Undo (a 4xx) hides the button for the session, except a refusal for a
+moment that keeps the step (`office_editing_paused`, `unavailable_target`:
+the Office pause, a publication handoff or a room reset under way), which
+keeps it (review r2 L2); an unknown outcome (no answer, a 5xx) keeps it for a
+retry, and a second click while a request is out sends nothing.
 
 The Undo of an earlier edit after a later one (the agent's or a person's)
 rewrote the same span keeps both, as the editor's undo does: the earlier
@@ -3772,7 +3796,8 @@ History (`ListMessages` → `refreshUndoStatuses`) follows each receipt's
 effect. It keeps the ref only on an edit step a loaded room still holds
 (`/internal/documents/undo-status`), so a reopened conversation shows created
 files and edits whose room unloaded without Undo or Redo (Epo 2026-10-20 Q2);
-when the collaboration service cannot answer, no ref stays. A retried Undo
+when the collaboration service cannot answer within 2 s (`undoStatusWait`),
+no ref stays, so a hung collaboration server cannot hold a conversation load. A retried Undo
 request answers with its receipt even after the step was used. Refusals keep
 their codes: `undo_unavailable`, `invalid_input`, `quota_rejected`,
 `lifecycle_rejected`, `office_editing_paused`. After a material edit
@@ -4297,6 +4322,11 @@ compares the captured candidate with the latest state and retains later edits.
 The transient candidate still fixes one export while editing continues. The
 internal checkpoint request carries `baseSourceSHA256` (and, for text,
 `seedBytes`) only on the first save from a NULL state; ordinary saves omit them.
+An agent edit's checkpoint counts as that first save: once it commits, the
+loaded room's record is marked saved (`Sources::not_seeded`), so the room's
+own next save carries no seed (a text room's first row merges the seed, and
+merging it again under a change that touches the edit's items, such as its
+Undo, left content pending and discarded the room).
 The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`
 holds its source, seed, parse artifacts, canonical index and consumed

@@ -264,8 +264,9 @@ const undoing = new Set<string>();
 
 /** Undo on created, edited and restored effects; Redo once undone. Hidden
  * unless the server says the step is available. A refusal hides it for the
- * session; an unknown outcome (no answer, a server error) keeps it, and the
- * server answers a retry with the step's receipt if the first one landed. */
+ * session; an unknown outcome (no answer, a server error) or a refusal for a
+ * moment (the Office pause, a busy room) keeps it, and the server answers a
+ * retry with the step's receipt if the first one landed. */
 function UndoButton({
   effect,
   handlers,

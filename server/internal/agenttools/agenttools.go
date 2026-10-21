@@ -96,7 +96,10 @@ import (
 // v33: create_material, add_questions (a new quiz) and create_deck take
 // sources, a made-from line of plain strings, instead of an id scope;
 // search_workspace's file_ids take any workspace item (Epo 2026-10-21).
-const ContractVersion = 33
+// v34: the live Undo (Epo 2026-10-20): an edit receipt carries effect.undo
+// only when a loaded room holds the edit's Undo, and edit_document and
+// edit_office_document no longer promise one.
+const ContractVersion = 34
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -981,7 +984,7 @@ func Definitions() []Definition {
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly; replace_block rewrites a note " +
 				"block with formatting or math. Uploaded media and PDFs cannot be edited; a library " +
-				"figure placed in a note is removed only by the learner's Undo. Quiz questions are " +
+				"figure placed in a note is removed only by the learner. Quiz questions are " +
 				"added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),

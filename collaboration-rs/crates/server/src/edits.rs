@@ -1402,7 +1402,9 @@ async fn ask_room(
 /// room fails, the rooms asked before it (and the failing one, whose answer
 /// may still come) are put back, so the document is as it was and the step
 /// stays. Refused once no room holds it, or when nothing of it is left. Go
-/// records the receipt under the answered id.
+/// records the receipt under the answered id, offering the step that
+/// reverses it only when every room that reverted keeps that step (one whose
+/// revert would be too large to send is not kept, Epo 2026-10-21).
 async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     let request: UndoRequest = serde_json::from_slice(body)
         .map_err(|_| DocumentError::Invalid("invalid undo request".into()))?;
@@ -1424,11 +1426,13 @@ async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     let (step, actor) = (&request.undo_of, &request.actor_user_id);
     let mut kept: Option<String> = None;
     let mut asked: Vec<(crate::app::RoomHandle, String)> = Vec::new();
-    for handle in handles {
+    let mut reverted: Vec<&String> = Vec::new();
+    for (room, handle) in rooms.iter().zip(handles) {
         match ask_room(&handle, step, &request.operation.id, actor).await {
             Ok(Reverted::Done(id)) => {
                 kept.get_or_insert_with(|| id.clone());
                 asked.push((handle, id));
+                reverted.push(room);
             }
             Ok(Reverted::Nothing) => {}
             failure => {
@@ -1460,7 +1464,9 @@ async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
             });
         }
     }
-    Ok(json!({ "operationId": kept }))
+    let holding = app.agent_steps.rooms(&kept);
+    let reversible = reverted.iter().all(|room| holding.contains(room));
+    Ok(json!({ "operationId": kept, "reversible": reversible }))
 }
 
 /// Reverts each room's revert again (its step under `step` once more), in

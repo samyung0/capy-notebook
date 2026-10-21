@@ -505,11 +505,23 @@ export function foldSegments(rows: readonly TraceRow[]): TraceRow[][] {
   return out;
 }
 
+/** Refusals that keep the step: the Office maintenance pause and a room busy
+ * for a moment (a publication handoff, a reset under way). */
+const temporaryUndoRefusals = new Set([
+  'office_editing_paused',
+  'unavailable_target',
+]);
+
 /** Whether a failed Undo or Redo was refused (its step is gone: hide the
- * button) rather than of unknown outcome (no answer, a server error), which
- * keeps the button: a retry gets the step's receipt if the first landed. */
+ * button) rather than of unknown outcome (no answer, a server error) or
+ * refused for a moment, which keep the button: a retry gets the step's
+ * receipt if the first landed, or lands once the room takes it. */
 export function undoRefused(error: unknown): boolean {
-  return isApiError(error) && error.status < 500;
+  return (
+    isApiError(error) &&
+    error.status < 500 &&
+    !temporaryUndoRefusals.has(error.code ?? '')
+  );
 }
 
 /** Undo reverses created, edited and restored; Redo reverses an Undo. */

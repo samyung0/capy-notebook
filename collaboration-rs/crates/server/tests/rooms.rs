@@ -3687,6 +3687,189 @@ async fn a_source_undo_reverts_in_the_room_and_stores_after_a_running_store() {
     assert!(stored, "the Undo did not store after the running store");
 }
 
+/// Review r2 M2: an Undo answers once the first store holding its revert
+/// ended, though a person keeps typing and every store ends with the room
+/// dirty again. Fails if the Undo waits for a clean room (503 after 8 s,
+/// its revert put back).
+#[tokio::test]
+async fn a_source_undo_answers_while_a_person_keeps_typing() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c) == "hello world").await);
+    let edit = format!("e_{file}");
+    let commands = serde_json::json!([
+        { "type": "replace_text", "expectedText": "world", "text": "there" }
+    ]);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &source_edit(&user, &file, &edit, commands),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(client.settle(|c| source_text(c) == "hello there").await);
+
+    // Each store takes 700 ms, and a key comes every 150 ms throughout.
+    gateway.checkpoint_delay.store(700, Relaxed);
+    let (port, body) = (
+        server.port,
+        undo_of_target(&user, &edit, &format!("u_{file}"), "source_file", &file),
+    );
+    let undo = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        internal(port, "/internal/documents/undo", &body).await
+    });
+    let started = std::time::Instant::now();
+    while !undo.is_finished() && started.elapsed() < Duration::from_secs(15) {
+        type_at_start(&mut client, "x").await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    let (status, answer) = undo.await.expect("the Undo request");
+    gateway.checkpoint_delay.store(0, Relaxed);
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        client
+            .settle(|c| source_text(c).trim_start_matches('x') == "hello world")
+            .await,
+        "{}",
+        source_text(&client)
+    );
+}
+
+/// A text source the agent edited before the room ever saved: the edit's
+/// checkpoint carried the seed, so the room's own first save (here the
+/// Undo's, beside a person's unsaved key) must not carry it again. Fails if
+/// the room still counts itself unsaved: that save merges the seed, refers
+/// to the edit's items the seed lacks and discards the room (503).
+#[tokio::test]
+async fn a_text_sources_first_save_after_an_agent_edit_carries_no_seed() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c) == "hello world").await);
+    let edit = format!("e_{file}");
+    let commands = serde_json::json!([
+        { "type": "replace_text", "expectedText": "world", "text": "there" }
+    ]);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &source_edit(&user, &file, &edit, commands),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(client.settle(|c| source_text(c) == "hello there").await);
+    type_at_start(&mut client, "x").await;
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_of_target(&user, &edit, &format!("u_{file}"), "source_file", &file),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        client.settle(|c| source_text(c) == "xhello world").await,
+        "{}",
+        source_text(&client)
+    );
+    assert!(stored_checkpoint(&env, &file).await >= 2);
+}
+
+/// Epo 2026-10-21 (review r2 M1): an agent edit whose Undo would send more
+/// than the room may take offers no Undo, judged by the revert's measured
+/// size. A removal is a small update whose Undo brings the text back: here
+/// past a source room's admission cap (a revert over 8 MiB is refused the
+/// same way). An edit whose Undo fitted when it landed is refused once a
+/// person filled the room; one that no longer fits when it lands gets no Undo
+/// ref and is not live. Fails if the revert's size is not judged at the
+/// edit or at the Undo.
+#[tokio::test]
+async fn an_undo_too_large_for_the_room_is_not_offered() {
+    let Some(env) = env() else { return };
+    let _cap = ExportCap::lower(&env).await;
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    // 300 KiB of room past the write reserve; the agent removes a 150 KB span,
+    // then a 100 KB one.
+    let first = format!("<{}>", "x".repeat(150_000));
+    let second = format!("{{{}}}", "y".repeat(100_000));
+    let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 300 * 1024;
+    let rest = LOWERED_EXPORT_CAP as usize
+        - sources::STATE_GROWTH_MARGIN_BYTES as usize
+        - growth
+        - first.len()
+        - second.len();
+    let base = format!("{first}{second}{}", "a".repeat(rest));
+    let (user, file) = text_file(&env, &gateway, &base).await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c).len() == base.len()).await);
+    let remove = |id: &str, span: &str| {
+        let commands = serde_json::json!([
+            { "type": "replace_text", "expectedText": span, "text": "" }
+        ]);
+        source_edit(&user, &file, id, commands)
+    };
+    let edit = format!("e1_{file}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &remove(&edit, &first),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        receipt["effect"]["undo"]["operationId"],
+        edit.as_str(),
+        "{receipt}"
+    );
+    // A person's 220 KiB fits the room and leaves about 80 KiB.
+    type_at_start(&mut client, &"p".repeat(220 * 1024)).await;
+    source_receipt(&mut client, "filled")
+        .await
+        .expect("the person's text stored");
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_of_target(&user, &edit, &format!("u_{file}"), "source_file", &file),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{refusal}"
+    );
+    let late = format!("e2_{file}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &remove(&late, &second),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(receipt["effect"]["undo"].is_null(), "{receipt}");
+    assert_eq!(
+        live_steps(server.port, &[&edit, &late]).await,
+        serde_json::json!([])
+    );
+    assert!(
+        client
+            .settle(|c| source_text(c).trim_start_matches('p').len() == rest)
+            .await
+    );
+}
+
 /// Review M1: a source room under a publication handoff refuses an Undo, as
 /// it refuses drafts, and keeps the step for after.
 #[tokio::test]
@@ -3882,8 +4065,7 @@ async fn an_office_undo_reverts_in_the_room_and_waits_out_the_pause() {
 
 /// Review M2: a quiz edit's Undo reverts in the content and the keys room
 /// together; when the keys room refuses (a debug-only refusal), the content
-/// room is put back and both keep the step, which then undoes in both. (The
-/// edit inserts a question: a removal alone writes nothing, as on main.)
+/// room is put back and both keep the step, which then undoes in both.
 #[tokio::test]
 async fn a_quiz_undo_refused_in_one_room_puts_the_other_back() {
     let Some(env) = env() else { return };

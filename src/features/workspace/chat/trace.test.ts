@@ -251,3 +251,11 @@ it('keeps Undo after an unknown outcome and hides it after a refusal', () => {
   expect(undoRefused(new ApiError(503, 'Service Unavailable'))).toBe(false);
   expect(undoRefused(new TypeError('Failed to fetch'))).toBe(false);
 });
+
+it('keeps Undo after a refusal for a moment (review r2 L2)', () => {
+  const refusal = (code: string) =>
+    undoRefused(new ApiError(409, 'Conflict', undefined, { code }));
+  expect(refusal('office_editing_paused')).toBe(false);
+  expect(refusal('unavailable_target')).toBe(false);
+  expect(refusal('undo_unavailable')).toBe(true);
+});

@@ -1,5 +1,5 @@
 {
-  "version": 33,
+  "version": 34,
   "operations": [
     "source.read",
     "material.read",
@@ -878,7 +878,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner's Undo. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

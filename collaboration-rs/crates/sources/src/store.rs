@@ -744,6 +744,17 @@ impl Sources {
         ))
     }
 
+    /// A loaded room's file got a row from outside its own saves (an agent
+    /// edit's checkpoint, which carries the seed when it is the first): the
+    /// room's next save is not its first, so it carries no seed. With it, a
+    /// save whose change touches the edit's items (an Undo of it) would refer
+    /// to content the seed lacks and discard the room.
+    pub(crate) fn not_seeded(&self, room: &str) {
+        if let Some(record) = lock(&self.rooms).get_mut(room) {
+            record.seeded = false;
+        }
+    }
+
     /// The durable checkpoint this instance knows for a loaded room.
     pub fn known_checkpoint(&self, room: &SourceRoom) -> Option<u64> {
         lock(&self.rooms)
