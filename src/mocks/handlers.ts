@@ -4,6 +4,7 @@ import {
   createMaterialBodyTitleMax,
   createSourceUploadBodyNameMax,
   ReportEditIncidentBody,
+  SetCustomizationBody,
 } from '@/api/gen/validators';
 import type {
   Attempt,
@@ -801,6 +802,17 @@ export const handlers = [
     if (!incident.success)
       return HttpResponse.json({ detail: 'invalid incident' }, { status: 422 });
     db.editIncidents.push(incident.data);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  // Sync: stores the look; MSW opens no event stream, so no tab hears it.
+  http.put('/api/me/customization', async ({ request }) => {
+    const body = SetCustomizationBody.strict().safeParse(await request.json());
+    if (!body.success)
+      return HttpResponse.json(
+        { detail: 'invalid customization' },
+        { status: 422 }
+      );
+    db.user.customization = body.data;
     return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/me/study-preferences', async ({ request }) => {

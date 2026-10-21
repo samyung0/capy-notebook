@@ -96,7 +96,7 @@ part of adding development tools.
   billing/usage, model selection, tag suggestions, member roster and chat history have consumers
   that opt out of boundaries and omit a local error state. Depending on cache
   state they can show empty, disabled or apparently healthy content. See
-  `src/routes/Dashboard.tsx`, `src/components/app/TopInsetBar.tsx`,
+  `src/routes/Dashboard.tsx`, `src/components/app/Sidebar.tsx`,
   `src/features/billing/UsageTab.tsx`,
   `src/features/settings/ModelPicker.tsx`,
   `src/features/workspace/WorkspaceMemberManager.tsx` and

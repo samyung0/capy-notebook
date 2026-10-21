@@ -13,9 +13,8 @@ import {
   useWorkspace,
 } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -70,9 +69,9 @@ function Study({ setId }: { setId: string }) {
 
   if (setFetchStatus === 'paused' || cardsFetchStatus === 'paused') {
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   }
   // Other failures without data go to the error boundary.
@@ -82,11 +81,11 @@ function Study({ setId }: { setId: string }) {
     );
   if (!set || !cards || !setFetched || !cardsFetched)
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
 
   return (
@@ -122,7 +121,7 @@ function Study({ setId }: { setId: string }) {
         )
       }
       cards={liveCards}
-      frame={PanelWithInvertedRadius}
+      frame={PagePanel}
       name={set.name}
       onBack={() =>
         canGoBack
@@ -154,7 +153,6 @@ function Study({ setId }: { setId: string }) {
         )
       }
       provenance={set.provenance}
-      topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
       trail={[blockHomeCrumb(set)]}
       usePrevious={
         set.workspaceId && !set.parentMaterialId

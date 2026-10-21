@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useMediaQuery } from 'usehooks-ts';
 import {
   Drawer,
   DrawerClose,
@@ -20,6 +21,7 @@ import { Card } from '../ui/Card';
 import { IconButton } from '../ui/IconButton';
 import { InputTitle } from '../ui/Input';
 import { PanelHeader } from './layout';
+import { PageFrameSection } from './PageFrameSection';
 
 const ThemeChooser = ({
   style,
@@ -188,6 +190,9 @@ export function ThemeDrawer({
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const { theme, style, setTheme, setStyle } = useTheme();
+  // Phones get a bottom sheet, so the page's top stays in view while the
+  // frame changes.
+  const phone = useMediaQuery('(max-width: 639px)');
 
   return (
     <Drawer
@@ -195,7 +200,7 @@ export function ThemeDrawer({
       onOpenChange={setOpen}
       open={open}
       showSwipeHandle
-      swipeDirection="right"
+      swipeDirection={phone ? 'down' : 'right'}
     >
       {trigger != null && <DrawerTrigger render={trigger} />}
       <DrawerContent className="shadow-2xl">
@@ -258,6 +263,7 @@ export function ThemeDrawer({
                     />
                   </div>
                 </div>
+                <PageFrameSection />
               </div>
             </div>
           </aside>

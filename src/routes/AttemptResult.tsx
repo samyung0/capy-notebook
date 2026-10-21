@@ -6,9 +6,8 @@ import {
 } from '@tanstack/react-router';
 import { useAttempt, useFlashcardSet, useQuiz } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent } from '@/components/app/tabPanel';
 import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -52,25 +51,25 @@ export default function AttemptResult() {
 
   if (waitsForConnection(fetchStatus, attempt)) {
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   }
 
   if (isLoading) {
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   }
 
   if (isError || !attempt) {
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <ErrorState
           action={
             <ErrorAction asChild back>
@@ -83,7 +82,7 @@ export default function AttemptResult() {
           title={m.quiz_attempt_unavailable()}
           variant="page"
         />
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   }
 
@@ -91,7 +90,7 @@ export default function AttemptResult() {
   const hasBreakdown = attempt.questions.length > 0;
 
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <QuizPageHeader
           meta={attemptMeta(attempt)}
@@ -101,7 +100,6 @@ export default function AttemptResult() {
             void navigate({ search: { tab: 'results' }, to: '/learning' })
           }
           title={attempt.quizName}
-          topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
           trail={[
             { label: m.nav_learning(), link: linkOptions({ to: '/learning' }) },
             {
@@ -171,6 +169,6 @@ export default function AttemptResult() {
           provenance={(cards ? set : quiz)?.provenance}
         />
       </TabContent>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

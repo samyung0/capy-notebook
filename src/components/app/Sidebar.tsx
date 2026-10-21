@@ -11,7 +11,7 @@ import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
-import { ProfileMenu, ProfileRow } from './ProfileMenu';
+import { ProfileMenu } from './ProfileMenu';
 import { SearchDialog } from './SearchDialog';
 
 interface NavItem {
@@ -173,10 +173,9 @@ function SearchRow() {
 const NOTIFICATIONS = '/notifications';
 
 /**
- * The app nav. With `account` it also carries search, notifications and a
- * profile row with a log out button at its foot:
- * `below-xl` for the shell's sidebar, whose top bar sits in the page panel's
- * notch only from xl; `true` for the phone drawer.
+ * The app nav. With `account` it also carries search and notifications under
+ * the app name and, at its foot, your profile row, which opens the profile
+ * menu (Settings, Billing, Theme, Log out).
  *
  * `rail` is the 640–1023px sidebar: the same rows clipped to 70px, where a
  * row's icon already sits at the rail's centre, without section labels. On
@@ -189,7 +188,7 @@ export function Sidebar({
   className,
   onNavigate,
 }: {
-  account?: boolean | 'below-xl';
+  account?: boolean;
   rail?: boolean;
   className?: string;
   onNavigate?: () => void;
@@ -200,7 +199,6 @@ export function Sidebar({
   });
   const nav = items();
   const withAccount = rail || account;
-  const accountClass = account === 'below-xl' ? 'xl:hidden' : undefined;
 
   const body = (
     <nav aria-label={m.a11y_main_navigation()}>
@@ -238,7 +236,7 @@ export function Sidebar({
       )}
 
       {withAccount && (
-        <div className={cn('mb-4 flex flex-col gap-1', accountClass)}>
+        <div className="mb-4 flex flex-col gap-1">
           <SearchRow />
           <Row
             active={pathname === NOTIFICATIONS}
@@ -297,8 +295,8 @@ export function Sidebar({
           />
         ))}
         {withAccount && (
-          <div className={cn('flex flex-col', accountClass)}>
-            <ProfileRow />
+          <div className="flex flex-col">
+            <ProfileMenu trigger="row" />
           </div>
         )}
       </div>
@@ -326,6 +324,8 @@ export function Sidebar({
       </div>
     );
 
+  // Frosted over the page frame's paint in the shell (`.page-frame`); the
+  // phone drawer's copy is portalled outside it and stays opaque.
   return (
     <Card
       asChild
@@ -333,6 +333,7 @@ export function Sidebar({
         'm-2.5 mr-0 ml-1 flex w-56 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 pt-4 pb-2.5',
         className
       )}
+      data-frosted
       radius="card-xl"
       theme="page"
     >

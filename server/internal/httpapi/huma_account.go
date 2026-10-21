@@ -125,6 +125,7 @@ func (a *api) registerAccount(api huma.API) {
 	reg(api, http.MethodPatch, "/api/me", "updateMe", tag, "Update profile", http.StatusOK, a.updateMe)
 	reg(api, http.MethodPatch, "/api/me/locale", "setLocale", tag, "Set account locale", http.StatusNoContent, a.setLocale)
 	reg(api, http.MethodPatch, "/api/me/chat", "setChatPrefs", tag, "Set the chat settings", http.StatusNoContent, a.setChatPrefs)
+	reg(api, http.MethodPut, "/api/me/customization", "setCustomization", tag, "Sync the app's look to the account", http.StatusNoContent, a.setCustomization)
 	reg(api, http.MethodGet, "/api/search", "search", tag, "Global search", http.StatusOK, a.searchAll)
 	reg(api, http.MethodGet, "/api/notifications", "listNotifications", tag, "List notifications", http.StatusOK, a.listNotifications)
 	reg(api, http.MethodGet, "/api/notifications/unread-count", "getUnreadNotificationCount", tag, "Unread notification count", http.StatusOK, a.getUnreadNotificationCount)
@@ -230,6 +231,25 @@ func (a *api) setChatPrefs(ctx context.Context, in *chatPrefsInput) (*Empty, err
 		return nil, err
 	}
 	return &Empty{}, hErr(a.s.SetChatPrefs(ctx, userID(ctx), in.Body.Steps, in.Body.SendKey))
+}
+
+type customizationInput struct {
+	Body store.Customization
+}
+
+// setCustomization stores the look a device synced and tells the user's open
+// tabs, which refetch /api/me and adopt it. The sending tab hears it too and
+// finds nothing new.
+func (a *api) setCustomization(ctx context.Context, in *customizationInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	uid := userID(ctx)
+	if err := a.s.SetCustomization(ctx, uid, in.Body); err != nil {
+		return nil, hErr(err)
+	}
+	a.publishNotificationEvent(ctx, uid, notificationEvent{Type: "customization"})
+	return &Empty{}, nil
 }
 
 func (a *api) setLocale(ctx context.Context, in *localeInput) (*Empty, error) {
