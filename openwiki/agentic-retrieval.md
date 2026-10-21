@@ -3521,7 +3521,14 @@ made-from line of plain strings instead of an id scope, and lets
 `search_workspace`'s `file_ids` take any workspace item. Version 34 (the live
 Undo) gives an edit receipt `effect.undo` only when a loaded room holds the
 edit's Undo, and drops the Undo promises from `edit_document` and
-`edit_office_document`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+`edit_office_document`. Version 35 (2026-10-21) adds the DOCX and PPTX
+paragraph commands (`insert_paragraph`, `delete_paragraph`) and the DOCX
+read's paragraph styles. Version 36 (2026-10-21) creates Word files, makes
+`insert_paragraph`'s anchor optional with a `list`, adds `set_list`,
+`insert_table`, `delete_table`, `format_text` and `set_alignment`, reads
+headers, footers and notes with lists, table cells and `locked` marks, and
+caps a call at 50 commands, 10,000 cells and 20 inserted paragraphs, the
+rest returned unapplied. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
