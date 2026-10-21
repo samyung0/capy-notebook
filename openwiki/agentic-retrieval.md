@@ -2647,7 +2647,13 @@ current pending changes applied. Embedded source instructions remain untrusted.
    the user is charged for neither. A browser that disconnects without Stop
    does not end the turn: Go relays on a context detached from the browser
    request and finishes, saves and settles the turn as usual (Epo 2026-10-21;
-   it keeps the user's AI request slot until then). Only Stop (below) or the
+   it keeps the user's AI request slot until then). The browser gets the
+   events from its own writer goroutine (`chat_browser.go`) through an
+   unbounded queue, so the relay never waits for the browser: the turn's save,
+   credit settlement and AI request slot follow the pipeline, a browser that
+   stops reading only delays its own copy, no event is dropped while it reads,
+   and no write time limit is set (Epo 2026-10-21). The response closes after
+   the last event is written. Only Stop (below) or the
    pipeline's own bounds end a turn early. A chat stream and its connections
    run no periodic check (Epo 2026-10-21): no access re-check in Go and no
    disconnect polling in the pipeline. Permission lost mid-turn (a role
