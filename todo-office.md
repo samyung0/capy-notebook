@@ -304,10 +304,20 @@ check); it applies at the first promotion.
   version is a seed with direct formatting only: style resolution on read in
   docx-edit (bridge, read_state, TOC) and in the TS toolbar and style code,
   compact field and table data, a Word room reset on that deploy. Left by
-  the export-only fix: a paragraph made in the session (an Enter split) or a
-  run whose formatting matches none of its source paragraph's runs saves
-  resolved values, and a vMerge continuation cell still takes its restart
-  cell's `w:tcPr` (item above).
+  the export-only fix: a paragraph made in the session (an Enter split), a
+  run whose formatting matches none of its source paragraph's runs, and runs
+  matching source runs with different rPr in an edited paragraph save
+  resolved values; a paragraph restyled in the session saves its runs with
+  the old style's values (as the editor shows them); a vMerge continuation
+  cell still takes its restart cell's `w:tcPr` (item above); and after a row
+  is inserted above or the first row deleted, Word gives cells their new
+  place's first-row and banding borders while the editor keeps the seeded
+  look, and table-style shading is still written as direct shading.
+- **DOCX cell and table borders on save** (pre-existing, found by the fix 9
+  review 2026-10-21): a cell's own border side dropped with JSON `null`
+  (`set_cell_borders`; only API and agent callers, the toolbar sends
+  `style: none`) comes back on save; a table with no `w:tblBorders` gains
+  `w:tblBorders` holding its first cell's top side on save.
 - **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
   where the run inherits its size from the placeholder gets an explicit 24 pt
   (`pptx-parity/shots/slide-bulleted.png`, "Nested item").
