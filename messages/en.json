@@ -1518,6 +1518,7 @@
   "error_bank_unavailable_title": "Question bank unavailable",
   "error_bank_unavailable_body": "The question bank can't be changed right now. Please try again later.",
   "error_upload_queue_full_title": "Uploads are busy",
+  "error_upload_timeout": "The upload took longer than 5 minutes. Try again.",
   "error_upload_queue_full_body": "Too many uploads are waiting right now. Please try again in a minute.",
   "chat_context_too_large": "This conversation is too long for the selected model. Start a new chat to continue.",
   "chat_compaction_failed": "We couldn't condense this conversation. Start a new chat to continue.",

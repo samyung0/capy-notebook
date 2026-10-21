@@ -181,7 +181,7 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), body.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
-	return a.uploads.take(uid(r), sourceUploadTarget(wsID))
+	return a.uploads.take(uid(r), sourceUploadTarget(wsID), body.BatchID)
 }
 
 // uploadSource streams one source file through the gateway (Epo 2026-10-22;

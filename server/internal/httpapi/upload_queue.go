@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -16,7 +17,9 @@ import (
 // line, and its browser long-polls its place until its turn comes. A turn
 // holds a slot for uploadTurnTTL; an upload that has not started by then
 // passes the slot to the next ticket. The line lives in this process, since
-// the API runs as one instance; a scaled-out API would need it in Redis.
+// the API runs as one instance; a scaled-out API would need it in Redis. A
+// source ticket that ends without its upload (its turn passed, or the browser
+// cancelled it) settles as a failed file of its batch at once.
 const (
 	uploadSlots        = 32
 	uploadQueueMax     = 128
@@ -60,8 +63,8 @@ type uploadTurn struct {
 
 type uploadTicket struct {
 	// target is the route the ticket admits: a workspace's source uploads or
-	// a material's editor assets.
-	id, user, target string
+	// a material's editor assets. batch is a source upload's batch.
+	id, user, target, batch string
 	// turn is set when the ticket's turn comes; it frees the slot if the
 	// upload does not start in time.
 	turn *time.Timer
@@ -73,10 +76,15 @@ type uploadQueue struct {
 	line    []*uploadTicket          // waiting tickets, oldest first
 	tickets map[string]*uploadTicket // waiting and turn-holding tickets
 	moved   chan struct{}            // closed and replaced when the line moves
+	// settle counts a source ticket that ended without its upload as a
+	// failed file of its batch.
+	settle func(batch string)
 }
 
-func newUploadQueue() *uploadQueue {
-	return &uploadQueue{free: uploadSlots, tickets: map[string]*uploadTicket{}, moved: make(chan struct{})}
+func newUploadQueue(settle func(batch string)) *uploadQueue {
+	return &uploadQueue{
+		free: uploadSlots, tickets: map[string]*uploadTicket{}, moved: make(chan struct{}), settle: settle,
+	}
 }
 
 func sourceUploadTarget(workspaceID string) string { return "sources:" + workspaceID }
@@ -85,10 +93,10 @@ func editorAssetTarget(materialID string) string   { return "assets:" + material
 // take gives user a ticket for target: its turn at once when a slot is free,
 // else a place in line, or uploadQueueFull when the line, or the user's
 // share of it, is full.
-func (q *uploadQueue) take(user, target string) (uploadTurn, error) {
+func (q *uploadQueue) take(user, target, batch string) (uploadTurn, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	t := &uploadTicket{id: randID("utk"), user: user, target: target}
+	t := &uploadTicket{id: randID("utk"), user: user, target: target, batch: batch}
 	// A free slot means nobody waits: every move grants the line first.
 	if q.free > 0 {
 		q.tickets[t.id] = t
@@ -121,13 +129,49 @@ func (q *uploadQueue) grantLocked(t *uploadTicket) {
 // pass frees the slot of a turn its upload did not take.
 func (q *uploadQueue) pass(t *uploadTicket) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.tickets[t.id] != t {
-		return // the upload started
+	unused := q.tickets[t.id] == t // else the upload started
+	if unused {
+		q.dropLocked(t)
 	}
+	q.mu.Unlock()
+	if unused {
+		q.settleTicket(t)
+	}
+}
+
+// cancel drops the user's ticket whose upload the browser cancelled before it
+// started: its place in line, or its turn's slot, goes to the next ticket.
+func (q *uploadQueue) cancel(id, user string) error {
+	q.mu.Lock()
+	t, ok := q.tickets[id]
+	if ok && t.user == user {
+		q.dropLocked(t)
+	}
+	q.mu.Unlock()
+	if !ok || t.user != user {
+		return uploadTicketGone()
+	}
+	q.settleTicket(t)
+	return nil
+}
+
+// dropLocked removes a ticket that has not started, from the line or from
+// its turn.
+func (q *uploadQueue) dropLocked(t *uploadTicket) {
 	delete(q.tickets, t.id)
-	q.free++
+	if t.turn != nil {
+		t.turn.Stop()
+		q.free++
+	} else {
+		q.line = slices.DeleteFunc(q.line, func(waiting *uploadTicket) bool { return waiting == t })
+	}
 	q.advanceLocked()
+}
+
+func (q *uploadQueue) settleTicket(t *uploadTicket) {
+	if t.batch != "" {
+		q.settle(t.batch)
+	}
 }
 
 // advanceLocked grants free slots to the line, oldest first, and wakes the
@@ -188,7 +232,7 @@ func (q *uploadQueue) wait(ctx context.Context, id, user string, known int) (upl
 		}
 		moved := q.moved
 		q.mu.Unlock()
-		if turn.Position == 0 {
+		if turn.Position == 0 || known < 0 {
 			return turn, nil
 		}
 		var gap <-chan time.Time
@@ -238,4 +282,13 @@ func (a *api) waitUploadTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, turn)
+}
+
+// cancelUploadTicket gives up the caller's ticket whose upload was cancelled.
+func (a *api) cancelUploadTicket(w http.ResponseWriter, r *http.Request) {
+	if err := a.uploads.cancel(chi.URLParam(r, "ticketId"), uid(r)); err != nil {
+		answerError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

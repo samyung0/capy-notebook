@@ -152,7 +152,7 @@ func (a *api) takeEditorAssetTicket(w http.ResponseWriter, r *http.Request, scop
 	if err := a.s.AssertEditorAssetRoom(r.Context(), scope.workspaceID, scope.materialID, uid(r), in.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
-	return a.uploads.take(uid(r), editorAssetTarget(scope.materialID))
+	return a.uploads.take(uid(r), editorAssetTarget(scope.materialID), "")
 }
 
 // checkEditorAsset checks an editor asset's metadata for its ticket and again

@@ -358,19 +358,27 @@ turn comes, when the ticket's place differs from N but no sooner than 2 s
 after the ask (so a fast line costs a browser one poll per 2 s, inside the
 per-user rate limit), and otherwise after 25 s, under Cloudflare's 100 s. A
 turn holds its slot for 30 s; an upload that has not started by then passes
-the slot to the next ticket, and its own upload is refused. The upload carries
+the slot to the next ticket, and its own upload is refused. A browser that
+cancels an upload while it waits (a note placeholder's cancel, or the
+placeholder removed) sends `DELETE /api/uploads/tickets/{id}` (its owner
+only), which gives the ticket's place, or its turn's slot, to the next ticket
+at once; an abandoned tab sends nothing, and its ticket waits for its turn to
+pass. The upload carries
 `?ticket=` and is refused before its body is read when the ticket is missing,
 unknown, another user's or another route's, spent or passed (410), or still
 waiting (409). Its slot frees when the upload request ends. The upload has
 5 minutes from the gateway's first read of its body to send it (the
 connection's read deadline, lifted once the body is read so it never cuts the
-PUT); past that it answers 408 and releases its reservation like any failure.
+PUT); past that it answers 408 `upload_timeout`, which the browser shows as
+"The upload took longer than 5 minutes. Try again." (a connection dropped
+before the answer reads as a network error), and releases its reservation
+like any failure.
 The line lives in the API process, which runs as one instance; a scaled-out
 API would need it in Redis. A restart forgets it: a waiting browser's next
-poll is refused 410 and the user tries again. A source upload refused for its
-ticket is not counted in its batch at once, since the body that names the
-batch is never read; the batch's idle sweep (`SourceBatchIdle`, 1 h) settles
-it. The transfer panel shows a waiting file as "Waiting to upload (position
+poll is refused 410 and the user tries again. A source ticket that ends
+without its upload (its turn passed, or the browser cancelled it) counts at
+once as a failed file of its batch, so the batch's notification does not wait
+for the idle sweep (`SourceBatchIdle`, 1 h). The transfer panel shows a waiting file as "Waiting to upload (position
 N)"; an editor asset's placeholder waits without a place.
 
 A drive import keeps its own completion (`internalCompleteSourceImport`): the

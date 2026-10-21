@@ -179,7 +179,13 @@ func bodyError(err error, msg string) error {
 		return huma.Error413RequestEntityTooLarge("the upload is larger than the per-file limit")
 	}
 	if errors.Is(err, os.ErrDeadlineExceeded) {
-		return huma.NewError(http.StatusRequestTimeout, "the upload took longer than 5 minutes to send")
+		// Typed, for the browser's own copy.
+		return &huma.ErrorModel{
+			Status: http.StatusRequestTimeout,
+			Title:  http.StatusText(http.StatusRequestTimeout),
+			Detail: "the upload took longer than 5 minutes to send",
+			Errors: []*huma.ErrorDetail{{Message: "upload_timeout"}},
+		}
 	}
 	return huma.Error400BadRequest(msg)
 }

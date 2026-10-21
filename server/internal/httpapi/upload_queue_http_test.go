@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,18 +20,38 @@ import (
 )
 
 // fillUploadSlots takes the 32 tickets the gateway runs at once (Epo
-// 2026-10-22); each turn holds its slot until it is used or passes.
-func fillUploadSlots(t *testing.T, th thumbnailHarness, ws string) []string {
+// 2026-10-22); each turn holds its slot until it is used or passes. It
+// returns the tickets and their batches.
+func fillUploadSlots(t *testing.T, th thumbnailHarness, ws string) (tickets, batches []string) {
 	t.Helper()
-	var tickets []string
 	for range 32 {
-		rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("notes.pdf", "application/pdf", 8))
-		if rec.Code != http.StatusCreated || turn.Position != 0 {
-			t.Fatalf("ticket %d: %d %s", len(tickets)+1, rec.Code, rec.Body.String())
-		}
-		tickets = append(tickets, turn.TicketID)
+		ticket, batch := waitingTicket(t, th, ws, 0)
+		tickets, batches = append(tickets, ticket), append(batches, batch)
 	}
-	return tickets
+	return tickets, batches
+}
+
+// waitingTicket takes u_owner's ticket in a batch of its own and checks its
+// place; it returns the ticket and its batch.
+func waitingTicket(t *testing.T, th thumbnailHarness, ws string, position int) (string, string) {
+	t.Helper()
+	meta := sourceMeta("notes.pdf", "application/pdf", 8)
+	rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", meta)
+	if rec.Code != http.StatusCreated || turn.Position != position {
+		t.Fatalf("ticket at %d: %d %s", position, rec.Code, rec.Body.String())
+	}
+	return turn.TicketID, meta["batchId"].(string)
+}
+
+// batchNotified is whether a batch has settled every file and notified.
+func batchNotified(t *testing.T, th thumbnailHarness, batch string) bool {
+	t.Helper()
+	var notified bool
+	if err := th.st.Pool().QueryRow(context.Background(),
+		`SELECT notified_at IS NOT NULL FROM source_batches WHERE id=$1`, batch).Scan(&notified); err != nil {
+		t.Fatal(err)
+	}
+	return notified
 }
 
 // pollTicket long-polls a ticket from the place last seen.
@@ -63,7 +84,7 @@ func TestUploadQueueRunsThirtyTwoAndQueuesTheRest(t *testing.T) {
 	httpapi.SetUploadQueueTimings(t, 30*time.Second, 5*time.Minute, 10*time.Second)
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
-	running := fillUploadSlots(t, th, ws)
+	running, _ := fillUploadSlots(t, th, ws)
 	rec, waiting := takeTicket(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("notes.pdf", "application/pdf", 8))
 	if rec.Code != http.StatusCreated || waiting.Position != 1 {
 		t.Fatalf("33rd ticket: %d %s", rec.Code, rec.Body.String())
@@ -89,7 +110,7 @@ func TestUploadQueueRunsThirtyTwoAndQueuesTheRest(t *testing.T) {
 func TestUploadQueueRefusesAFullLine(t *testing.T) {
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
-	fillUploadSlots(t, th, ws)
+	_, _ = fillUploadSlots(t, th, ws)
 	for i := 1; i <= 20; i++ {
 		rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("notes.pdf", "application/pdf", 8))
 		if rec.Code != http.StatusCreated || turn.Position != i {
@@ -102,20 +123,29 @@ func TestUploadQueueRefusesAFullLine(t *testing.T) {
 	}
 }
 
-// A turn its upload does not take in time passes to the next ticket, and the
-// passed ticket's upload is refused unread (Epo 2026-10-22).
+// A turn its upload does not take in time passes to the next ticket, the
+// passed ticket's batch settles it as failed at once, and its upload is
+// refused unread (Epo 2026-10-22).
 func TestUploadTurnPassesOnWhenUnused(t *testing.T) {
 	// Long enough for the 33 tickets to be taken before the first turn passes.
 	httpapi.SetUploadQueueTimings(t, 2*time.Second, 5*time.Minute, 5*time.Second)
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
-	unused := fillUploadSlots(t, th, ws)
+	unused, batches := fillUploadSlots(t, th, ws)
 	_, waiting := takeTicket(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("notes.pdf", "application/pdf", 8))
 	if waiting.Position != 1 {
 		t.Fatalf("33rd ticket waits at %d", waiting.Position)
 	}
 	if turn := polledTurn(t, pollTicket(t, th, waiting.TicketID, 1)); turn.Position != 0 {
 		t.Fatalf("the waiting ticket is at %d after the turns passed", turn.Position)
+	}
+	// The pass settles the batch right after it frees the slot.
+	deadline := time.Now().Add(2 * time.Second)
+	for !batchNotified(t, th, batches[0]) {
+		if time.Now().After(deadline) {
+			t.Fatal("the passed ticket's batch did not settle")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	late, read := uploadPDF(t, th, ws, unused[0])
 	if late.Code != http.StatusGone || read.read != 0 {
@@ -207,11 +237,50 @@ func TestUploadBodyIsCutOffAfterItsDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the stalled upload got no answer: %v", err)
 	}
+	var answer struct {
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	_ = json.NewDecoder(res.Body).Decode(&answer)
 	_ = res.Body.Close()
-	if res.StatusCode != http.StatusRequestTimeout {
-		t.Fatalf("the stalled upload = %d, want 408", res.StatusCode)
+	if res.StatusCode != http.StatusRequestTimeout || len(answer.Errors) != 1 || answer.Errors[0].Message != "upload_timeout" {
+		t.Fatalf("the stalled upload = %d %+v, want 408 upload_timeout", res.StatusCode, answer)
 	}
 	if held, keys := leftovers(t, th, bucket, ws); held != 0 || len(keys) != 0 {
 		t.Fatalf("the cut-off upload left %d held sessions and objects %q", held, keys)
+	}
+}
+
+// A cancelled ticket gives up its place in line, or its turn's slot, to the
+// next ticket at once and settles its batch; only its owner can cancel it
+// (Epo 2026-10-22).
+func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
+	th := openThumbnailHarnessWith(t, blob.NewMemory())
+	ws := uploadWorkspace(t, th)
+	running, batches := fillUploadSlots(t, th, ws)
+	first, firstBatch := waitingTicket(t, th, ws, 1)
+	second, _ := waitingTicket(t, th, ws, 2)
+	cancel := func(user, ticket string) int {
+		return doReq(t, th.h, http.MethodDelete, "/api/uploads/tickets/"+ticket, user, nil).Code
+	}
+	if status := cancel("u_other", first); status != http.StatusGone {
+		t.Fatalf("another user's cancel = %d, want 410", status)
+	}
+	if status := cancel("u_owner", first); status != http.StatusNoContent || !batchNotified(t, th, firstBatch) {
+		t.Fatalf("cancel of a waiting ticket = %d", status)
+	}
+	if turn := polledTurn(t, pollTicket(t, th, second, -1)); turn.Position != 1 {
+		t.Fatalf("after the cancel the next ticket waits at %d", turn.Position)
+	}
+	if status := cancel("u_owner", running[0]); status != http.StatusNoContent || !batchNotified(t, th, batches[0]) {
+		t.Fatalf("cancel of a turn = %d", status)
+	}
+	if turn := polledTurn(t, pollTicket(t, th, second, -1)); turn.Position != 0 {
+		t.Fatalf("after the cancelled turn the next ticket waits at %d", turn.Position)
+	}
+	rec, read := uploadPDF(t, th, ws, running[0])
+	if rec.Code != http.StatusGone || read.read != 0 {
+		t.Fatalf("an upload with a cancelled ticket: %d, read %d bytes", rec.Code, read.read)
 	}
 }

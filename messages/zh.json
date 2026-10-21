@@ -1518,6 +1518,7 @@
   "error_bank_unavailable_title": "题库暂不可用",
   "error_bank_unavailable_body": "题库目前无法修改，请稍后再试。",
   "error_upload_queue_full_title": "上传繁忙",
+  "error_upload_timeout": "上传超过了 5 分钟，请重试。",
   "error_upload_queue_full_body": "当前等待上传的文件过多，请一分钟后再试。",
   "chat_context_too_large": "此对话对所选模型来说过长。请开始新对话以继续。",
   "chat_compaction_failed": "无法压缩此对话。请开始新对话以继续。",

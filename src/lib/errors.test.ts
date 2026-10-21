@@ -27,6 +27,18 @@ describe('frontend error normalization', () => {
     expect(errorKind(error)).toBe(kind);
   });
 
+  it('names an upload the gateway cut off after 5 minutes', () => {
+    const error = new ApiError(408, 'Request Timeout', undefined, {
+      code: 'upload_timeout',
+    });
+    expect(errorKind(error)).toBe('network');
+    expect(describeError(error)).toMatchObject({
+      description: m.error_upload_timeout(),
+      title: m.error_upload_timeout(),
+    });
+    expect(errorCopy(error, 'fallback')).toBe(m.error_upload_timeout());
+  });
+
   it('explains captured source changes as a manually retryable request', () => {
     const error = new ApiError(409, 'Conflict', undefined, {
       code: 'source_changed',

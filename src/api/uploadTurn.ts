@@ -12,8 +12,9 @@ interface UploadTurn {
  * The ticket request carries the upload's metadata, so a refused upload
  * never waits; a full line refuses it as busy (`upload_queue_full`). While
  * the ticket waits, each long poll answers once its place changes, and
- * `onQueued` hears every place, 0 when its turn comes. Returns the upload
- * path with its ticket. */
+ * `onQueued` hears every place, 0 when its turn comes. An upload cancelled
+ * while it waits gives its ticket back, so its place goes to the next one.
+ * Returns the upload path with its ticket. */
 export async function takeUploadTurn(
   uploadPath: string,
   metadata: object,
@@ -23,13 +24,20 @@ export async function takeUploadTurn(
   let turn = await api.post<UploadTurn>(`${uploadPath}/tickets`, metadata, {
     signal,
   });
+  const ticket = `/uploads/tickets/${encodeURIComponent(turn.ticketId)}`;
   onQueued?.(turn.position);
-  while (turn.position > 0) {
-    turn = await api.get<UploadTurn>(
-      `/uploads/tickets/${encodeURIComponent(turn.ticketId)}?position=${turn.position}`,
-      { signal }
-    );
-    onQueued?.(turn.position);
+  try {
+    while (turn.position > 0) {
+      turn = await api.get<UploadTurn>(`${ticket}?position=${turn.position}`, {
+        signal,
+      });
+      onQueued?.(turn.position);
+    }
+  } catch (error) {
+    // Without the cancel the ticket would hold its place until its turn
+    // passes; a failed cancel only leaves it to that.
+    if (signal?.aborted) api.del(ticket).catch(() => undefined);
+    throw error;
   }
   return `${uploadPath}?ticket=${encodeURIComponent(turn.ticketId)}`;
 }
