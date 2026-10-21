@@ -1022,12 +1022,18 @@ normal tombstone policy; it does not create a negative-identity row for an
 identity that was never provisioned.
 
 The stored `name` belongs to the user. The Clerk name (first plus last, else
-username, else email, else a localized fallback) seeds the row only when the
-local account is inserted, by the request-time sync or the `user.created`
-webhook, whichever runs first. Every later sync, including `user.updated`,
-refreshes email and avatar only. `PATCH /api/me` stores the name the user
-typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
-are created with that same name because no separate legal name is stored.
+username, else the email's local part before the `@`, else a localized
+fallback, cut to 60 runes) seeds the row only when the local account is
+inserted, by the request-time sync or the `user.created` webhook, whichever
+runs first. An unnamed account never shows its whole address (Epo
+2026-10-21): every place a name shows (profile, members, mentions, presence
+and cursors through the collaboration token's `name` claim) reads
+`users.name`, and migration `0102_unnamed_user_names.sql` renamed rows created
+earlier whose name was their email (any case, cut to 60). Every later sync,
+including `user.updated`, refreshes email and avatar only. `PATCH /api/me`
+stores the name the user typed, trimmed, 1 to 60 runes, rejected with `422`
+otherwise. Stripe customers are created with that same name because no
+separate legal name is stored.
 
 A Clerk session token is accepted only when its `azp` (the origin that minted
 it) is one of `COLLABORATION_ALLOWED_ORIGINS` (Epo 2026-10-21); a token without

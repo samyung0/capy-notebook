@@ -410,7 +410,9 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 
 func (s *Store) upsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
 	if name == "" {
-		name = email
+		// Named after the address's local part, never the whole address
+		// (human authorization, 2026-10-21); migration 0102 renamed earlier rows.
+		name, _, _ = strings.Cut(email, "@")
 	}
 	if name == "" {
 		var locale string
