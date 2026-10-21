@@ -1,5 +1,5 @@
 {
-  "version": 36,
+  "version": 38,
   "operations": [
     "source.read",
     "material.read",
@@ -1273,13 +1273,13 @@
     {
       "name": "inspect_office_document",
       "version": 1,
-      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, shapes with their target ids and text, count from start; with slide, that slide's shapes.",
+      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and shapes (id, kind, first line), the first page also listing the deck's layouts; with slide, that slide's shapes and count of its paragraphs from start with their target ids.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "count": {
             "default": 60,
-            "description": "DOCX, PPTX: targets to read.",
+            "description": "DOCX, PPTX: paragraphs or slides to read.",
             "maximum": 200,
             "minimum": 1,
             "type": "integer"
@@ -1299,13 +1299,13 @@
             "type": "string"
           },
           "slide": {
-            "description": "PPTX: one slide's number.",
+            "description": "PPTX: one slide's number, from 1.",
             "minimum": 1,
             "type": "integer"
           },
           "start": {
             "default": 0,
-            "description": "DOCX, PPTX: first target index.",
+            "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first paragraph; counting from 0.",
             "minimum": 0,
             "type": "integer"
           }
@@ -1910,7 +1910,7 @@
                 },
                 {
                   "additionalProperties": false,
-                  "description": "DOCX: format text inside one paragraph; fields left out stay as they are.",
+                  "description": "DOCX, PPTX: format text inside one paragraph; fields left out stay as they are.",
                   "properties": {
                     "bold": {
                       "type": "boolean"
@@ -1937,6 +1937,7 @@
                       "type": "number"
                     },
                     "highlight": {
+                      "description": "DOCX only.",
                       "enum": [
                         "none",
                         "yellow",
@@ -1985,7 +1986,7 @@
                 },
                 {
                   "additionalProperties": false,
-                  "description": "DOCX: align one paragraph.",
+                  "description": "DOCX, PPTX: align one paragraph.",
                   "properties": {
                     "alignment": {
                       "enum": [
@@ -2009,6 +2010,174 @@
                     "type",
                     "target_id",
                     "alignment"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: replace a shape's whole text; its paragraphs keep their level and bullet, added ones continue the last.",
+                  "properties": {
+                    "expected_text": {
+                      "description": "The shape's whole text as the slide read shows it, its paragraphs joined by line breaks.",
+                      "type": "string"
+                    },
+                    "paragraphs": {
+                      "description": "The new text, one string a paragraph without line breaks, at most 5,000 characters together; [\"\"] empties the shape.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "shape_id": {
+                      "description": "The shape's id from inspect_office_document's slide read.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "set_shape_text"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "shape_id",
+                    "expected_text",
+                    "paragraphs"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: add a slide with its layout's title and text placeholders, empty, right after after_slide or right before before_slide (at most one), last with neither.",
+                  "properties": {
+                    "after_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "before_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "layout": {
+                      "description": "A layout id the deck read lists; omit for the layout of the slide it follows (the first slide's when it goes first).",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "add_slide"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: delete a slide, never the deck's only one.",
+                  "properties": {
+                    "expected_text": {
+                      "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order; blank lines and the spaces around a line are not compared.",
+                      "type": "string"
+                    },
+                    "slide_id": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_slide"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "slide_id",
+                    "expected_text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: move a slide right after after_slide or right before before_slide (exactly one).",
+                  "properties": {
+                    "after_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "before_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "slide_id": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "move_slide"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "slide_id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: add a text box to a slide, its box in points from the slide's top left corner, inside the slide.",
+                  "properties": {
+                    "h": {
+                      "description": "Height in points.",
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "paragraphs": {
+                      "description": "The text, one string a paragraph without line breaks, at most 5,000 characters together.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "slide_id": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "add_text_box"
+                    },
+                    "w": {
+                      "description": "Width in points.",
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "x": {
+                      "description": "Points from the slide's left or top edge.",
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Points from the slide's left or top edge.",
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "slide_id",
+                    "paragraphs",
+                    "x",
+                    "y",
+                    "w",
+                    "h"
                   ],
                   "type": "object"
                 }

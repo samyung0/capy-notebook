@@ -3367,8 +3367,8 @@ build, and the knowledge library is one more source while the switch is on.
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX pages its paragraph entries as `inspect_document` paged them (its scoped read is phase 3), and a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX: `set_list`, `insert_table`, `delete_table`, `format_text`, `set_alignment`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (Epo 2026-10-21: 50 commands, 10,000 cells its XLSX commands name, 20 inserted paragraphs) only the commands before the first that would pass one are sent, and the result ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call with file_id …` (the refusal's detail, when the sent part is refused); the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (Epo 2026-10-21: 50 commands, 10,000 cells its XLSX commands name, 20 inserted paragraphs) only the commands before the first that would pass one are sent, and the result ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call with file_id …` (the refusal's detail, when the sent part is refused); the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3528,7 +3528,9 @@ read's paragraph styles. Version 36 (2026-10-21) creates Word files, makes
 `insert_table`, `delete_table`, `format_text` and `set_alignment`, reads
 headers, footers and notes with lists, table cells and `locked` marks, and
 caps a call at 50 commands, 10,000 cells and 20 inserted paragraphs, the
-rest returned unapplied. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+rest returned unapplied. Version 38 (2026-10-22) reads a PPTX by slide (its
+slides with their layouts and shapes; one slide's shapes and paragraphs) and
+adds `set_shape_text`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3953,7 +3955,7 @@ A read reaches Go's `/api/internal/documents/inspect` with an `office` query
 (`sheet`, `range`, `start`, `count`, `slide`); for XLSX Go forwards
 `{sheet, range}` and for DOCX `{start, count}` (Go's `pageCount` sends 60 for a count
 outside 1 to 200) as the collaboration inspect body's `office` and passes the engine's
-`scoped` answer through unchanged, and PPTX pages its existing entries. An edit reaches `/api/internal/documents/edit` with
+`scoped` answer through unchanged, and for PPTX `{start, count}` with `slide` when one is read. An edit reaches `/api/internal/documents/edit` with
 `office: true`, where only an Office source takes it and
 `normalizeOfficeCommands` turns each command into the engine's JSON (type
 snake_case, fields camelCase, `format_cells`' flat fields into its `style`
@@ -4017,17 +4019,56 @@ build and store.
 
 The collaboration server runs both on the engine's Background lane: its
 inspect route answers an `office` query with the engine's scoped read
-(`inspect_scoped`, XLSX and DOCX; a range over 2,000 cells or a DOCX count
-outside 1 to 200, which only a direct caller can send, is refused like an
-edit, with its sentence), and
+(`inspect_scoped`; a range over 2,000 cells, a DOCX or PPTX count outside 1
+to 200 or a slide number outside the deck, which only a direct caller can
+send, is refused like an edit, with its sentence), and
 `/internal/documents/create` seeds the committed starter
 (`crates/office-service/starters/blank.xlsx`, Excel's blank workbook, or
 `blank.docx`, python-docx's default template, in the fork), applies the
 commands and exports at a fixed time with a seed from the request, so a
 retried create gives the same bytes. The engine has every XLSX command above
 (`crates/office-service/src/xlsx.rs`) and every DOCX one
-(`crates/office-service/src/docx/agent.rs`); PPTX's scoped read and new
-commands are phase 3.
+(`crates/office-service/src/docx/agent.rs`), and every PPTX one
+(`crates/office-service/src/pptx/agent.rs`).
+
+Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
+expected_text, paragraphs}` replaces a shape's whole text, `expected_text`
+being its paragraphs joined by line breaks (`stale_target` with
+`details.block {type: "shape", text}` when it differs) and `paragraphs`
+the new text, 1 to 50 strings without line breaks, at most 5,000
+characters together; the paragraphs it keeps keep their properties (level,
+bullet, alignment) and take their first run's formatting, added ones
+continue the last, and fewer ones join into the last kept one. A table's
+cells are refused (they are edited by paragraph), as are a shape with no
+text (a picture, a shape without a text body) and an equation's text.
+`add_slide {after_slide?, before_slide?, layout?}` puts a slide right
+after or before a slide (at most one; neither: last) on `layout` (a layout
+part path the read lists; an unknown one is `unavailable_target`),
+by default the layout of the slide it follows, else of the one it
+precedes; it gives the slide its layout's title, subtitle, body and
+content placeholders (not date, footer, slide number, header, picture,
+chart, table or media ones) as empty text shapes tied to them by a copy of
+the layout's `p:ph` (type, orientation, size, index), at the layout's box,
+else the master's (a placeholder with neither is refused): pptx-edit
+`DeckSession::add_layout_placeholders`, saved by the PPTX writer's new
+`ShapeAdd.placeholder` (`p:nvPr/p:ph` on the added shape, with its box
+written out), so the shapes inherit the layout's text formatting in
+PowerPoint and in the editor. A deck made by `create_deck` has one blank
+layout, so its new slides are empty and `add_text_box {slide_id,
+paragraphs, x, y, w, h}` puts text on them: a text box at a box in points
+from the slide's top left corner, refused unless it lies on the slide
+with a positive size. `delete_slide {slide_id, expected_text}` names the
+slide's text, every paragraph one a line in the read's shape order,
+compared without blank lines and the spaces around a line
+(`stale_target` with `details.block {type: "slide", text}` in that
+form), and never deletes a deck's only slide; `move_slide {slide_id,
+after_slide | before_slide}` takes exactly one anchor. A PPTX
+`format_text` takes what DOCX's does but `highlight` (refused), writing
+the run's `b`, `i`, `u` (`sng`/`none`), `strike`
+(`sngStrike`/`noStrike`), colour, size and latin font, and
+`set_alignment` writes `algn` (`l`, `ctr`, `r`, `just`). New slides and
+shapes get ids the call cannot know, so the agent reads again before
+filling them.
 
 The other DOCX commands (Epo 2026-10-20, phase 2) edit through docx-edit's
 own ops in one session per call and set a paragraph's style id and direct

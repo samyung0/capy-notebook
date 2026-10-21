@@ -58,12 +58,14 @@ type documentRequest struct {
 
 // OfficeQuery scopes an Office read: for XLSX no range lists the sheets, a
 // sheet and a range read those cells; for DOCX a page of count paragraphs
-// from start.
+// from start; for PPTX no slide is a page of count slides from start, a
+// slide (its number) that slide's shapes and a page of its paragraphs.
 type OfficeQuery struct {
 	Sheet string `json:"sheet,omitempty"`
 	Range string `json:"range,omitempty"`
 	Start int    `json:"start,omitempty"`
 	Count int    `json:"count,omitempty"`
+	Slide int    `json:"slide,omitempty"`
 }
 
 // MaterialInspection is the authority's editable view of a material.
@@ -80,12 +82,11 @@ type MaterialInspection struct {
 
 // SourceInspection is the authority's editable view of a source.
 type SourceInspection struct {
-	Access     string            `json:"access"`
-	Checkpoint int64             `json:"checkpoint"`
-	Epoch      int64             `json:"epoch"`
-	Format     string            `json:"format"`
-	Text       *string           `json:"text,omitempty"`
-	Entries    []json.RawMessage `json:"entries,omitempty"`
+	Access     string  `json:"access"`
+	Checkpoint int64   `json:"checkpoint"`
+	Epoch      int64   `json:"epoch"`
+	Format     string  `json:"format"`
+	Text       *string `json:"text,omitempty"`
 	// Scoped is the engine's answer to an Office query, passed on unchanged.
 	Scoped json.RawMessage `json:"scoped,omitempty"`
 }

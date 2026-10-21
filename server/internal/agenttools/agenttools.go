@@ -109,7 +109,11 @@ import (
 // headers, footers and notes after the body; a call applies at most 50
 // commands, 10,000 cells and 20 inserted paragraphs and returns the rest
 // unapplied by index (Epo 2026-10-21).
-const ContractVersion = 36
+// v38: inspect_office_document reads a PPTX by slide (its slides with their
+// layouts and shapes, the deck's layouts; a slide's shapes and paragraphs)
+// and edit_office_document's set_shape_text replaces a PPTX shape's text
+// (Epo 2026-10-20).
+const ContractVersion = 38
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -515,6 +519,8 @@ func officeCommandSchema() map[string]any {
 	paragraph := str("A paragraph's target id from inspect_office_document.")
 	after := str("The body paragraph it follows; several inserts after one paragraph keep their order. Omit to add it at the end of the document.")
 	flag := map[string]any{"type": "boolean"}
+	slideID := str("A slide's id from inspect_office_document.")
+	points := map[string]any{"type": "number", "minimum": 0, "description": "Points from the slide's left or top edge."}
 	return map[string]any{
 		"oneOf": []any{
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
@@ -603,7 +609,7 @@ func officeCommandSchema() map[string]any {
 				"id":       str("The table's id from inspect_office_document."),
 				"expected": band("The table's cells' text as inspect_office_document shows them, one array per row; a cell's paragraphs joined by line breaks."),
 			}, "id", "expected"),
-			variant("format_text", "DOCX: format text inside one paragraph; fields left out stay as they are.", map[string]any{
+			variant("format_text", "DOCX, PPTX: format text inside one paragraph; fields left out stay as they are.", map[string]any{
 				"target_id":     paragraph,
 				"expected_text": str("The exact text to format as inspect_office_document shows it; must occur once in the paragraph."),
 				"bold":          flag,
@@ -611,17 +617,49 @@ func officeCommandSchema() map[string]any {
 				"underline":     flag,
 				"strikethrough": flag,
 				"color":         str(`A hex colour, like "#1F4E79".`),
-				"highlight": map[string]any{"type": "string", "enum": []string{
+				"highlight": map[string]any{"type": "string", "description": "DOCX only.", "enum": []string{
 					"none", "yellow", "green", "cyan", "magenta", "blue", "red", "darkBlue", "darkCyan",
 					"darkGreen", "darkMagenta", "darkRed", "darkYellow", "darkGray", "lightGray", "black", "white",
 				}},
 				"font_size":   map[string]any{"type": "number", "minimum": 1, "maximum": 1638, "description": "Points."},
 				"font_family": str(`A font name, like "Arial".`),
 			}, "target_id", "expected_text"),
-			variant("set_alignment", "DOCX: align one paragraph.", map[string]any{
+			variant("set_alignment", "DOCX, PPTX: align one paragraph.", map[string]any{
 				"target_id": paragraph,
 				"alignment": map[string]any{"type": "string", "enum": []string{"left", "center", "right", "justify"}},
 			}, "target_id", "alignment"),
+			variant("set_shape_text", "PPTX: replace a shape's whole text; its paragraphs keep their level and bullet, added ones continue the last.", map[string]any{
+				"shape_id":      str("The shape's id from inspect_office_document's slide read."),
+				"expected_text": map[string]any{"type": "string", "description": "The shape's whole text as the slide read shows it, its paragraphs joined by line breaks."},
+				"paragraphs": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": 50, "items": map[string]any{"type": "string"},
+					"description": `The new text, one string a paragraph without line breaks, at most 5,000 characters together; [""] empties the shape.`,
+				},
+			}, "shape_id", "expected_text", "paragraphs"),
+			variant("add_slide", "PPTX: add a slide with its layout's title and text placeholders, empty, right after after_slide or right before before_slide (at most one), last with neither.", map[string]any{
+				"after_slide":  slideID,
+				"before_slide": slideID,
+				"layout":       str("A layout id the deck read lists; omit for the layout of the slide it follows (the first slide's when it goes first)."),
+			}),
+			variant("delete_slide", "PPTX: delete a slide, never the deck's only one.", map[string]any{
+				"slide_id":      slideID,
+				"expected_text": map[string]any{"type": "string", "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order; blank lines and the spaces around a line are not compared."},
+			}, "slide_id", "expected_text"),
+			variant("move_slide", "PPTX: move a slide right after after_slide or right before before_slide (exactly one).", map[string]any{
+				"slide_id":     slideID,
+				"after_slide":  slideID,
+				"before_slide": slideID,
+			}, "slide_id"),
+			variant("add_text_box", "PPTX: add a text box to a slide, its box in points from the slide's top left corner, inside the slide.", map[string]any{
+				"slide_id": slideID,
+				"paragraphs": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": 50, "items": map[string]any{"type": "string"},
+					"description": "The text, one string a paragraph without line breaks, at most 5,000 characters together.",
+				},
+				"x": points, "y": points,
+				"w": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Width in points."},
+				"h": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Height in points."},
+			}, "slide_id", "paragraphs", "x", "y", "w", "h"),
 		},
 	}
 }
@@ -1103,15 +1141,16 @@ func Definitions() []Definition {
 				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
 				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
 				"only; the first page also lists the file's paragraph styles. " +
-				"PPTX: without slide, shapes with their target ids and text, count from start; " +
-				"with slide, that slide's shapes.",
+				"PPTX: without slide, count slides from start with their layouts and shapes (id, kind, " +
+				"first line), the first page also listing the deck's layouts; with slide, that slide's " +
+				"shapes and count of its paragraphs from start with their target ids.",
 			InputSchema: obj(map[string]any{
 				"file_id": str(""),
 				"sheet":   str("XLSX: the sheet's id or name."),
 				"range":   str(`XLSX: an A1 range on that sheet, like "A1:H40".`),
-				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX, PPTX: first target index."},
-				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX, PPTX: targets to read."},
-				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number."},
+				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first paragraph; counting from 0."},
+				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX, PPTX: paragraphs or slides to read."},
+				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number, from 1."},
 			}, "file_id"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},

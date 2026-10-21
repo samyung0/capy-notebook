@@ -2076,6 +2076,7 @@ _OFFICE_TARGETS = {
     "sheet": "Sheet {id} now reads:",
     "paragraph": "Paragraph {id} now reads:",
     "shape": "Shape {id} now reads:",
+    "slide": "Slide {id} now reads:",
 }
 
 
@@ -2400,12 +2401,137 @@ def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
     return _fitting(page, len(lines))[1]
 
 
+def _points(value: Any) -> str:
+    return f"{value:g}" if isinstance(value, int | float) else str(value)
+
+
+def _pptx_shape(shape: dict[str, Any], *, boxed: bool = False) -> str:
+    """``[id] kind "name" (placeholder, equation, in a group) at x, y size w x h``,
+    the name and box in a slide read only."""
+    line = f"[{shape.get('id')}] {shape.get('kind')}"
+    if boxed:
+        line += f' "{shape.get("name") or ""}"'
+    marks = [f"{shape['placeholder']} placeholder"] if shape.get("placeholder") else []
+    if shape.get("equation"):
+        marks.append("equation, not editable")
+    if shape.get("inGroup"):
+        marks.append("in a group")
+    if marks:
+        line += f" ({', '.join(marks)})"
+    if boxed and isinstance(shape.get("box"), list):
+        x, y, w, h = (_points(value) for value in shape["box"])
+        line += f" at {x}, {y} size {w} x {h}"
+    return line
+
+
+def _render_pptx_deck(head: str, scoped: dict[str, Any], start: int) -> str:
+    """A PPTX deck read: the first page's layouts as ``[id] name``, then its
+    slides from ``start`` as ``N. [id] (layout)``, each shape under one as
+    ``[id] kind (placeholder): first line``, inside the source fence, cut to
+    the slides that fit the tool output limit."""
+    head += (
+        f"\nslide size {_points(scoped.get('width'))} x {_points(scoped.get('height'))} "
+        "points; slides as N. [id] (layout), each shape as [id] kind (placeholder): its "
+        "first line of text (… when longer); read one slide by its number for its "
+        "paragraphs:"
+    )
+    layouts = scoped.get("layouts") or []
+    prelude = (
+        [
+            "layouts as [id] name: "
+            + ", ".join(
+                f"[{layout.get('id')}] {layout.get('name')}" for layout in layouts
+            )
+        ]
+        if layouts
+        else []
+    )
+    blocks = []
+    for slide in scoped.get("slides") or []:
+        lines = [f"{slide.get('number')}. [{slide.get('id')}] ({slide.get('layout')})"]
+        for shape in slide.get("shapes") or []:
+            text = f": {shape['text']}" if shape.get("text") else ""
+            lines.append(f"  {_pptx_shape(shape)}{text}")
+        blocks.append("\n".join(lines))
+    total = scoped.get("total")
+
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(prelude + blocks[:n]))
+        if n < len(blocks):
+            return body, (
+                "\n(page cut at the tool output limit; "
+                f"next start = {start + n} of {total} slides)"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, f"\n(next start = {scoped['nextStart']} of {total} slides)"
+        return body, ""
+
+    return _fitting(page, len(blocks))[1]
+
+
+def _render_pptx_slide(head: str, scoped: dict[str, Any], start: int) -> str:
+    """One PPTX slide: its shapes as ``[id] kind "name" (marks) at x, y size
+    w x h``, each followed by its paragraphs from ``start`` as ``[id] (level,
+    table cell) text``, inside the source fence, cut to the paragraphs that
+    fit the tool output limit."""
+    slide = scoped.get("slide") or {}
+    layout = slide.get("layout") or {}
+    head += (
+        f"\nslide size {_points(scoped.get('width'))} x {_points(scoped.get('height'))} "
+        'points; shapes as [id] kind "name" (marks) at x, y size w x h points from the '
+        "top left corner (shapes in a group show no box), each followed by its paragraphs "
+        "as [id] (level, table cell) text:"
+    )
+    title = f"slide {slide.get('number')} of {scoped.get('slides')} [{slide.get('id')}]"
+    if layout:
+        title += f", layout [{layout.get('id')}] {layout.get('name')}"
+    shapes = scoped.get("shapes") or []
+    paragraphs = scoped.get("paragraphs") or []
+    total = scoped.get("total")
+
+    def paragraph_line(paragraph: dict[str, Any]) -> str:
+        marks = [f"level {paragraph['level']}"] if paragraph.get("level") else []
+        if paragraph.get("row") is not None:
+            marks.append(
+                f"row {int(paragraph['row']) + 1} "
+                f"column {int(paragraph.get('column') or 0) + 1}"
+            )
+        group = f" ({', '.join(marks)})" if marks else ""
+        return f"  [{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
+
+    def page(n: int) -> tuple[str, str]:
+        lines = [title]
+        for shape in shapes:
+            lines.append(_pptx_shape(shape, boxed=True))
+            lines.extend(
+                paragraph_line(paragraph)
+                for paragraph in paragraphs[:n]
+                if paragraph.get("shape") == shape.get("id")
+            )
+        body = head + "\n" + source_block("\n".join(lines))
+        if n < len(paragraphs):
+            return body, (
+                "\n(slide cut at the tool output limit; "
+                f"next start = {start + n} of {total} paragraphs)"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, f"\n(next start = {scoped['nextStart']} of {total} paragraphs)"
+        return body, ""
+
+    return _fitting(page, len(paragraphs))[1]
+
+
 def _render_scoped(body: dict[str, Any], scoped: dict[str, Any], start: int) -> str:
     """An XLSX read: its sheets as ``[id] name used-range``, or a range's
     cells as ``A1: input``, followed by ``→ shown value`` where that differs.
-    A DOCX read: a page of its paragraphs from ``start``."""
+    A DOCX read: a page of its paragraphs from ``start``. A PPTX read: a page
+    of its slides, or one slide's shapes and a page of its paragraphs."""
     head = f"{body.get('title') or ''} format={body.get('format')}"
     lines: list[str] = []
+    if "slide" in scoped:
+        return _render_pptx_slide(head, scoped, start)
+    if "slides" in scoped:
+        return _render_pptx_deck(head, scoped, start)
     if "paragraphs" in scoped:
         return _render_docx_page(head, scoped, start)
     if "sheets" in scoped:

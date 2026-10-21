@@ -4829,10 +4829,91 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "pptx",
                 "title": "deck.pptx",
-                "supportedOperations": ["replace_text"],
-                "entries": [{"id": "s1", "label": "Slide 1, Title", "value": "Cells"}],
-                "total": 1,
-                "nextStart": None,
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slides": [
+                        {
+                            "id": "slide:0:256",
+                            "number": 1,
+                            "layout": "Title Slide",
+                            "shapes": [
+                                {
+                                    "id": "slide:0:256:shape:0",
+                                    "kind": "text",
+                                    "placeholder": "ctrTitle",
+                                    "text": "Cells",
+                                },
+                                {"id": "slide:0:256:shape:1", "kind": "picture"},
+                            ],
+                        }
+                    ],
+                    "total": 12,
+                    "nextStart": 1,
+                    "layouts": [
+                        {
+                            "id": "ppt/slideLayouts/slideLayout1.xml",
+                            "name": "Title Slide",
+                        },
+                        {"id": "ppt/slideLayouts/slideLayout2.xml", "name": "Blank"},
+                    ],
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slide": {
+                        "id": "slide:1:257",
+                        "number": 2,
+                        "layout": {
+                            "id": "ppt/slideLayouts/slideLayout2.xml",
+                            "name": "Blank",
+                        },
+                    },
+                    "slides": 12,
+                    "shapes": [
+                        {
+                            "id": "slide:1:257:shape:0",
+                            "kind": "text",
+                            "name": "Title 1",
+                            "placeholder": "title",
+                            "box": [36.0, 20.5, 888.0, 90.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:1",
+                            "kind": "table",
+                            "name": "Table 2",
+                            "box": [36.0, 120.0, 400.0, 200.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:2",
+                            "kind": "text",
+                            "name": "Equation",
+                            "equation": True,
+                            "box": [36.0, 400.0, 100.0, 30.0],
+                        },
+                    ],
+                    "paragraphs": [
+                        {
+                            "id": "para:story:slide:1:257:shape:0:0:0",
+                            "shape": "slide:1:257:shape:0",
+                            "text": "Cells",
+                        },
+                        {
+                            "id": "para:story:slide:1:257:shape:1:table:0:1:0",
+                            "shape": "slide:1:257:shape:1",
+                            "text": "Nucleus",
+                            "level": 1,
+                            "row": 0,
+                            "column": 1,
+                        },
+                    ],
+                    "total": 3,
+                    "nextStart": 2,
+                },
             },
         ]
     )
@@ -4894,8 +4975,96 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
         ]
     )
     assert sent[2]["office"] == {"start": 0, "count": 60}
-    shapes = (await inspect(start=0, count=60)).text()
-    assert "[s1] Slide 1, Title: Cells" in shapes and "styles" not in shapes
+    # A PPTX read lists slides with their layouts and shapes, the first page
+    # the deck's layouts; a slide read its shapes and paragraphs (Epo
+    # 2026-10-20). What the file names sits inside the fence.
+    deck = (await inspect(count=1)).text()
+    assert deck == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                "slide size 960 x 540 points; slides as N. [id] (layout), each shape as "
+                "[id] kind (placeholder): its first line of text (… when longer); read "
+                "one slide by its number for its paragraphs:"
+            ),
+            source_block(
+                "layouts as [id] name: [ppt/slideLayouts/slideLayout1.xml] Title Slide, "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "1. [slide:0:256] (Title Slide)\n"
+                "  [slide:0:256:shape:0] text (ctrTitle placeholder): Cells\n"
+                "  [slide:0:256:shape:1] picture"
+            ),
+            "(next start = 1 of 12 slides)",
+        ]
+    )
+    slide = (await inspect(slide=2)).text()
+    assert sent[4]["office"] == {"slide": 2}
+    assert slide == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                'slide size 960 x 540 points; shapes as [id] kind "name" (marks) at x, y '
+                "size w x h points from the top left corner (shapes in a group show no "
+                "box), each followed by its paragraphs as [id] (level, table cell) text:"
+            ),
+            source_block(
+                "slide 2 of 12 [slide:1:257], layout "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                '[slide:1:257:shape:0] text "Title 1" (title placeholder) at 36, 20.5 '
+                "size 888 x 90\n"
+                "  [para:story:slide:1:257:shape:0:0:0] Cells\n"
+                '[slide:1:257:shape:1] table "Table 2" at 36, 120 size 400 x 200\n'
+                "  [para:story:slide:1:257:shape:1:table:0:1:0] (level 1, row 1 column 2) "
+                "Nucleus\n"
+                '[slide:1:257:shape:2] text "Equation" (equation, not editable) at 36, '
+                "400 size 100 x 30"
+            ),
+            "(next start = 2 of 3 paragraphs)",
+        ]
+    )
+
+
+async def test_a_long_pptx_read_shows_the_slides_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A deck page over the tool output limit is cut between slides, its next
+    start the first slide not shown."""
+    slides = [
+        {
+            "id": f"slide:{i}:{256 + i}",
+            "number": i + 1,
+            "layout": "Title and Content",
+            "shapes": [
+                {
+                    "id": f"slide:{i}:{256 + i}:shape:{j}",
+                    "kind": "text",
+                    "text": "word " * 16,
+                }
+                for j in range(12)
+            ],
+        }
+        for i in range(60)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {"width": 720.0, "height": 540.0, "slides": slides, "total": 60},
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "count": 60, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    shown = re.findall(r"^(\d+)\. \[slide:", text, re.MULTILINE)
+    assert 0 < len(shown) < 60 and shown == [str(i + 1) for i in range(len(shown))]
+    assert text.endswith(
+        "</source>\n(page cut at the tool output limit; "
+        f"next start = {len(shown)} of 60 slides)"
+    )
 
 
 async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on(

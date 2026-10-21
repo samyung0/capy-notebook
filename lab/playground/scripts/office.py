@@ -63,13 +63,22 @@ OFFICE_ONLY_EDIT = (
     "with edit_document."
 )
 PDF = "Cannot edit PDF files."
-ONE_SLIDE = (
-    "Reading one slide is not available yet; read the deck's shapes with start "
-    "and count."
-)
-# internal_office.go paragraphCommands and docxCommands.
-PARAGRAPH_COMMANDS = ["replace_text", "insert_paragraph", "delete_paragraph"]
-DOCX_COMMANDS = ["set_list", "insert_table", "delete_table", "format_text", "set_alignment"]
+# internal_office.go paragraphCommands, docxCommands and pptxCommands.
+PARAGRAPH_COMMANDS = [
+    "replace_text",
+    "insert_paragraph",
+    "delete_paragraph",
+    "format_text",
+    "set_alignment",
+]
+DOCX_COMMANDS = ["set_list", "insert_table", "delete_table"]
+PPTX_COMMANDS = [
+    "set_shape_text",
+    "add_slide",
+    "delete_slide",
+    "move_slide",
+    "add_text_box",
+]
 TITLE_UNSAFE = re.compile(r"[\\/\x00-\x1f]+")
 
 
@@ -284,17 +293,12 @@ async def _inspect(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
         body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, page)
         body["supportedOperations"] = PARAGRAPH_COMMANDS + DOCX_COMMANDS
         return body
+    # PPTX: a page of slides, or one slide's shapes and a page of its paragraphs.
+    page = {"start": start, "count": _page_count(query.get("count"))}
     if int(query.get("slide") or 0) > 0:
-        raise Refusal("unsupported_operation", ONE_SLIDE)
-    entries = await call("inspectOffice", base, checkpoint)
-    total = len(entries)
-    end = min(start + _page_count(query.get("count")), total)
-    body.update(
-        entries=entries[min(start, total) : end],
-        total=total,
-        nextStart=end if end < total else None,
-        supportedOperations=PARAGRAPH_COMMANDS,
-    )
+        page["slide"] = int(query["slide"])
+    body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, page)
+    body["supportedOperations"] = PARAGRAPH_COMMANDS + PPTX_COMMANDS
     return body
 
 
