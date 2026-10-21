@@ -3854,7 +3854,9 @@ what it inserted, so each rule counts both sides:
   grid): its bytes times `CONTENT` (3);
 - an insert (a replacement text, inserted blocks, a card or question): its
   text or JSON times `CONTENT`, plus a `PIECE` (160 bytes) for each run or
-  block it splits at either end;
+  block it splits at either end; a `replace_block` counts the replaced block
+  twice, since a rewrite as one block of its type also writes the old
+  block's caption and width;
 - formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
 - XLSX structure (rows, columns, sheets): a `PIECE` per row, column or sheet
   entry, since the cells stay in Yjs;

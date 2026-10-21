@@ -40,12 +40,16 @@ pub fn document(command: &DocumentCommand, touched: impl Fn(&str) -> usize) -> u
             block_id,
             expected_text,
         } => touched(block_id).max(expected_text.len()),
+        // A rewrite as one block of the same type also writes the old
+        // block's caption and width (`keep_caption`): the old block again at
+        // most.
         DocumentCommand::ReplaceBlock {
             block_id,
             expected_text,
             blocks,
         } => {
-            touched(block_id).max(expected_text.len()) + blocks.iter().map(json_len).sum::<usize>()
+            2 * touched(block_id).max(expected_text.len())
+                + blocks.iter().map(json_len).sum::<usize>()
         }
         DocumentCommand::ReplaceChild { node_id, node, .. } => touched(node_id) + json_len(node),
         DocumentCommand::InsertChild { node, .. } => json_len(node),
