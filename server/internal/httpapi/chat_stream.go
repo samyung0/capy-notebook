@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"log"
@@ -221,19 +220,12 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	// A browser that left misses the rest of the turn, which goes on.
-	browserGone := false
-	send := func(v any) {
-		if browserGone {
-			return
-		}
-		b, _ := json.Marshal(v)
-		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
-			browserGone = true
-			return
-		}
-		flusher.Flush()
-	}
+	// The browser reads the events on its own writer: the relay never waits
+	// for it, and a browser that left misses the rest of the turn, which goes
+	// on. The response closes after the last event is written.
+	browser := newBrowserWriter(w, flusher.Flush)
+	defer browser.finish()
+	send := browser.send
 
 	send(map[string]any{
 		"type":             "start",

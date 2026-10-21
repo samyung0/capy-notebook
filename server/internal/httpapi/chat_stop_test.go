@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -430,5 +431,92 @@ func TestStreamSendsEachHistoryRowsStatus(t *testing.T) {
 	}
 	if fmt.Sprint(history) != "[{user complete} {assistant aborted}]" {
 		t.Fatalf("history rows = %v", history)
+	}
+}
+
+// stuckBrowser is a browser that reads nothing: every write waits until the
+// test lets it through.
+type stuckBrowser struct {
+	header  http.Header
+	unblock chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	body    bytes.Buffer
+}
+
+func (b *stuckBrowser) Header() http.Header { return b.header }
+func (b *stuckBrowser) WriteHeader(int)     {}
+func (b *stuckBrowser) Flush()              {}
+func (b *stuckBrowser) Write(p []byte) (int, error) {
+	<-b.unblock
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.body.Write(p)
+}
+func (b *stuckBrowser) release() { b.once.Do(func() { close(b.unblock) }) }
+
+// A browser that never reads does not hold up the turn: it is saved, its
+// credits settle and its AI request slot is free, and the response closes
+// only after its last event (Epo 2026-10-21).
+func TestChatTurnIsSavedAndSettledWhileTheBrowserReadsNothing(t *testing.T) {
+	pipe := newStopPipe(func(io.Writer, string) {})
+	pipe.first = []string{turnToolStart, turnToolEnd, turnCheckpoint,
+		`{"type":"block_start","blockId":"b2"}`,
+		`{"type":"block_delta","blockId":"b2","text":"Saved answer"}`,
+		`{"type":"block_end","blockId":"b2","kind":"answer"}`,
+		`{"type":"done","activity":[{"id":"c1","kind":"tool","callId":"c1","name":"list_sources","outcome":"succeeded"}],"toolEvidence":{"tools":[{"name":"list_sources","text":"checkpoint listing"}],"passages":[],"skills":[]}}`,
+	}
+	close(pipe.release)
+	upstream := httptest.NewServer(pipe)
+	t.Cleanup(upstream.Close)
+	h, st, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(upstream.URL, ""))
+	convID := newTurnConversation(t, h, st)
+
+	raw, err := json.Marshal(map[string]any{"conversationId": convID, "text": "list my sources"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/ws_e2e_private/chat/stream", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.HeaderE2EUserID, "u_editor")
+	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
+	browser := &stuckBrowser{header: http.Header{}, unblock: make(chan struct{})}
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		h.ServeHTTP(browser, req)
+	}()
+	t.Cleanup(func() {
+		browser.release()
+		<-finished
+	})
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var status string
+		_ = st.Pool().QueryRow(t.Context(), `SELECT status FROM messages WHERE conversation_id=$1 AND role='assistant'`, convID).Scan(&status)
+		if status == "complete" && sessionStatus(t, st, pipe.spend()) == "settled" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the turn was not saved and settled while the browser read nothing (row %q)", status)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	select {
+	case <-finished:
+		t.Fatal("the response closed before its events were written")
+	default:
+	}
+
+	browser.release()
+	waitClosed(t, finished, "the response")
+	browser.mu.Lock()
+	defer browser.mu.Unlock()
+	body := strings.TrimSpace(browser.body.String())
+	first, _, _ := strings.Cut(body, "\n\n")
+	if !strings.Contains(first, `"type":"start"`) || !strings.Contains(body, "Saved answer") ||
+		!strings.HasSuffix(body, `"type":"done"}`) {
+		t.Fatalf("the browser did not get every event in order: %s", body)
 	}
 }
