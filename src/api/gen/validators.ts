@@ -1294,6 +1294,17 @@ export const ListMessagesResponse = zod.array(ListMessagesResponseItem)
 
 
 /**
+ * @summary Stop a conversation's running turn
+ */
+export const StopChatTurnParams = zod.object({
+  "id": zod.string().describe('Conversation id'),
+  "messageId": zod.string().describe('The turn\'s assistant message id')
+})
+
+export const StopChatTurnResponse = zod.void()
+
+
+/**
  * @summary Soft-delete a comment discussion
  */
 export const DeleteMaterialDiscussionParams = zod.object({
@@ -1672,6 +1683,7 @@ export const ListOwnedFilesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -1770,6 +1782,7 @@ export const GetFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -1857,6 +1870,7 @@ export const UpdateFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -2144,6 +2158,7 @@ export const CloneFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -6476,6 +6491,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -6898,6 +6914,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -7270,6 +7287,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -7350,6 +7368,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "avgScore": zod.int(),
   "chapters": zod.int(),
   "fileChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
   "fileId": zod.string(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
@@ -7362,6 +7381,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
   "noteChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
   "materialId": zod.string(),
   "state": zod.enum(['waiting', 'queued', 'processing', 'failed']),

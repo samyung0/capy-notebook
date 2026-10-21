@@ -1189,6 +1189,8 @@ export const handlers = [
     if (file.status !== 'failed') return codeError(409, 'conflict');
     const { parseMode } = (await request.json()) as { parseMode: string };
     file.status = 'pending';
+    // The server sends an error id on failed files only.
+    delete file.errorId;
     setTimeout(() => {
       file.status = 'ready';
       file.indexed = parseMode !== 'none' && file.kind !== 'audio';
@@ -1233,6 +1235,7 @@ export const handlers = [
       chapters: ws.chapterCount,
       fileChanges: advanceChanges(sourceFiles, db.fileChanges).map(
         ({ change, item }) => ({
+          ...(change.state === 'failed' && { errorId: change.errorId }),
           fileId: item.id,
           kind: item.kind,
           lastEditedAt: change.lastEditedAt,
@@ -1249,6 +1252,7 @@ export const handlers = [
         ),
         db.noteChanges
       ).map(({ change, item }) => ({
+        ...(change.state === 'failed' && { errorId: change.errorId }),
         lastEditedAt: change.lastEditedAt,
         materialId: item.id,
         state: change.state,
@@ -1311,6 +1315,11 @@ export const handlers = [
       tags?: TagInput[];
       clearCover?: boolean;
     };
+    // Auto process is the owner's alone; the gateway answers others 404.
+    if (body.autoProcess !== undefined) {
+      if (!ws.isOwner) return new HttpResponse(null, { status: 404 });
+      ws.autoProcess = body.autoProcess;
+    }
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
     if (body.description !== undefined) ws.description = body.description;
@@ -2540,6 +2549,11 @@ export const handlers = [
     );
     return HttpResponse.json(list);
   }),
+  // The mock stream ends when the browser stops reading after this.
+  http.post(
+    '/api/conversations/:id/messages/:messageId/stop',
+    () => new HttpResponse(null, { status: 204 })
+  ),
   http.delete('/api/conversations/:id', async ({ params }) => {
     const i = db.conversations.findIndex((c) => c.id === params.id);
     if (i >= 0) db.conversations.splice(i, 1);

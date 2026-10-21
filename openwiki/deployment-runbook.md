@@ -3808,6 +3808,21 @@ Steps:
    confirm quota and the `source_documents` rows (an Office edit stores a small
    `state` with `state_seed_sha256` set).
 
+**Seed-changing pins without a window.** While Capy has no users, a pin that
+changes seeds deploys without the window (decision of 2026-10-18): its
+migration is the template's reset with no guard, for the formats whose seeds
+changed (DOCX in
+[`0103_docx_engine_round_reset.sql`](../server/migrations/0103_docx_engine_round_reset.sql)),
+and it drops their unpublished edits. The old collaboration server must be
+stopped before that migration runs and must not outlive it. Otherwise an open
+room's next save fails on the new epoch, the browser reopens the room at that
+epoch, and the old engine seeds it. Its saves then name the old seed, which the
+new engine refuses (`SeedChanged`), and the file stays closed to editing until
+an operator acts. Nothing is corrupted. UAT's Coolify deploy stops the old
+stack before `migrate` runs, so this holds there. A deploy that keeps the old
+collaboration container up while the gateway migrates (a rolling update) must
+stop it first.
+
 **Migration 0043 (DOCX and PPTX rebases onto seed(export)).** It drops
 `source_documents.indexed_baseline` and requires every Office state to name
 its seed. A DOCX or PPTX state that a publication rebased on the earlier

@@ -2114,6 +2114,8 @@ components:
         chapterId:
           nullable: true
           type: string
+        errorId:
+          type: string
         hasBytes:
           type: boolean
         id:
@@ -2174,6 +2176,8 @@ components:
     FileChange:
       additionalProperties: false
       properties:
+        errorId:
+          type: string
         fileId:
           type: string
         kind:
@@ -3426,6 +3430,8 @@ components:
     NoteChange:
       additionalProperties: false
       properties:
+        errorId:
+          type: string
         lastEditedAt:
           format: date-time
           type: string
@@ -8299,6 +8305,36 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Load a conversation's message history
+      tags:
+        - Chat
+  /api/conversations/{id}/messages/{messageId}/stop:
+    post:
+      operationId: stopChatTurn
+      parameters:
+        - description: Conversation id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Conversation id
+            type: string
+        - description: The turn's assistant message id
+          in: path
+          name: messageId
+          required: true
+          schema:
+            description: The turn's assistant message id
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Stop a conversation's running turn
       tags:
         - Chat
   /api/discussions/{id}:

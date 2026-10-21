@@ -908,6 +908,86 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 	}
 }
 
+// The DOCX engine round's reset (migration 0103) drops every DOCX state under a
+// new epoch with no window: unpublished edits go and editing need not be
+// paused, the files end published, a refresh in flight is superseded, and a
+// pending rebuild ends on the published bytes, releasing the old base's cached
+// artifacts. Other formats keep their state.
+// The run rolls back.
+func TestDocxEngineRoundReset(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "docx_round_reset")
+	edited := maintenanceTestEdited(t, s, owner, "lesson.docx", false)
+	rebuilt := maintenanceTestEdited(t, s, owner, "report.docx", false)
+	_, deck := sourceTestFile(t, s, owner, "deck.pptx", "ppt")
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, deck.ID), "deck-state")
+	// An AI edit of lesson.docx, then its refresh.
+	agentEdit := sourceTestSave(sourceTestSeed(t, s, owner, edited), owner, "agent-state")
+	agentEdit.Operation = &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}}
+	if _, err := s.SaveSourceCheckpoint(ctx, edited, agentEdit); err != nil {
+		t.Fatal(err)
+	}
+	refresh, err := s.RequestSourceRefresh(ctx, owner, edited, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile("../../migrations/0103_docx_engine_round_reset.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	// A deferred publication of report.docx waits for its rebuild; its base
+	// (a hash of this test's own) has a cached artifact.
+	oldBase := uid("base")
+	if _, err = tx.Exec(ctx, `UPDATE files SET blob_path='sources/published',source_sha256='published' WHERE id=$1`, rebuilt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET base_source_sha256=$3,rebuild_pending=true,published_state='captured',published_state_seed_sha256=$2 WHERE file_id=$1`, rebuilt, sourceTestStateSeed, oldBase); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO artifact_cache (object_path,kind,source_sha256) VALUES ($1,'captions',$2)`, "captions/"+oldBase, oldBase); err != nil {
+		t.Fatal(err)
+	}
+	// 0106 dropped the AI edit Undo table this body still releases.
+	if _, err = tx.Exec(ctx, `CREATE TEMP TABLE agent_edit_inverses (resource_kind text, resource_id text, undo_status text, undo_reason text,
+		inverse jsonb, guards jsonb, inverse_bytes bigint, updated_at timestamptz) ON COMMIT DROP`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.Exec(ctx, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{edited, rebuilt} {
+		var epoch int64
+		var dropped bool
+		var base string
+		if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND seed_bytes=0 AND log_rows=0 AND pending_effects='[]'::jsonb AND checkpoint=indexed_checkpoint AND NOT rebuild_pending AND published_state IS NULL AND NOT EXISTS (SELECT 1 FROM source_document_updates u WHERE u.file_id=d.file_id),base_blob_path FROM source_documents d WHERE file_id=$1`, file).Scan(&epoch, &dropped, &base); err != nil {
+			t.Fatal(err)
+		}
+		if epoch != 2 || !dropped || (file == rebuilt) != (base == "sources/published") {
+			t.Fatalf("reset %s: epoch=%d dropped=%v base=%s", file, epoch, dropped, base)
+		}
+	}
+	var status, detail string
+	var running, refreshError *string
+	var candidates, cached int
+	if err = tx.QueryRow(ctx, `SELECT j.status,COALESCE(j.error,''),d.running_job_id,d.refresh_error,(SELECT count(*) FROM source_refresh_candidates c WHERE c.file_id=d.file_id),(SELECT count(*) FROM artifact_cache WHERE source_sha256=$2) FROM jobs j JOIN source_documents d ON d.file_id=j.payload->>'fileId' WHERE j.id=$1`, refresh.JobID, oldBase).Scan(&status, &detail, &running, &refreshError, &candidates, &cached); err != nil {
+		t.Fatal(err)
+	}
+	if status != "failed" || detail != "Editing moved to a new epoch" || running != nil || refreshError != nil || candidates != 0 || cached != 0 {
+		t.Fatalf("after the reset: job %s %q, running %v, refresh_error %v, %d candidates, %d cached artifacts of the old base", status, detail, running, refreshError, candidates, cached)
+	}
+	var kept bool
+	// Its saved edits are rows over a NULL state (migration 0075).
+	if err = tx.QueryRow(ctx, `SELECT epoch=1 AND EXISTS (SELECT 1 FROM source_document_updates u WHERE u.file_id=d.file_id) FROM source_documents d WHERE file_id=$1`, deck.ID).Scan(&kept); err != nil || !kept {
+		t.Fatalf("the PPTX state stays: %v %v", kept, err)
+	}
+}
+
 // OfficeSeeds names each (format, base, seed hash) a stored Office change was
 // taken over once, counting its files, including a refresh candidate's copy;
 // text and complete states name none. The claim hands the copy's kind over.

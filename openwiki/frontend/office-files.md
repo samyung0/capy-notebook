@@ -2160,7 +2160,38 @@ what the seed gave it (direct formatting, else the list level, else the style,
 with a table style's paragraph formatting in cells; `seededParagraphProperties`,
 shared by the projector and the save). Style, list and table values are never
 copied into a paragraph, so an untouched paragraph saves with the paragraph
-properties its source had. The pPr children the model has no field for
+properties its source had. Runs and cells follow the same rule (2026-10-21,
+export-only; seeds and live state are unchanged). A paragraph whose text and
+runs are still as its source had them saves its source runs as they were,
+each with its own rPr (its run style and direct formatting), so a style
+changed in Word later restyles them and runs the seed resolves alike (an
+explicit automatic colour under a coloured heading, character shading,
+`w:snapToGrid w:val="0"`, `w:cs`) are neither merged nor given each other's
+properties, while adjacent runs with the same rPr (Word's rsid splits) save
+as one. In any other paragraph a run whose formatting is what the seed
+resolved for its source paragraph's runs saves their rPr when they all have
+the same one and that rPr writes nothing the seed did not resolve (a pattern
+`w:shd`, `w:color auto` under a coloured style or a lone `w:cs` would spread
+to text that never had it; an explicit off such as `w:b w:val="0"` counts as
+resolved, since the seed holds only what is on), and resolved values
+otherwise; a run the session
+reformatted saves resolved values. What the seed resolved is computed under the
+paragraph's current style, so a paragraph restyled in the session saves the
+look the editor shows (its runs keep the old style's values; making them
+follow the new style is the seed-side todo). A source table cell saves its
+own tcPr plus only the border and margin sides that differ from what the
+seed resolved from its table and table style (a cell made in the session
+saves them all). Both save ports ask their own seed what it resolved
+(docx-edit `SeedResolution`, documentToYrs `seededRunAttrs` and
+`seededCellFrames`) and are held to one case file
+(`crates/office-service/tests/fixtures/source-formatting-cases.json`). An
+unedited save's document.xml is about the source's size: 5.6 MB for the
+1,400-page handbook whose source has 6.4 MB, 12.1 MB before. The native x40
+handbook export takes about 16 s against 13.3 s before; the TS projection
+of the x10 handbook 1.6 s against 1.36 s and of the 96-table ladder 6.9 s
+against 6.1 s. A paragraph made in the session still saves resolved values
+(`todo-office.md`).
+The pPr children the model has no field for
 (`w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`,
 `w:adjustRightInd`, `w:mirrorIndents`, `w:suppressOverlap`, `w:textDirection`,
 `w:textAlignment`, `w:textboxTightWrap`, `w:divId`, `w:cnfStyle`) ride the
@@ -2870,6 +2901,17 @@ Keeping paragraph properties the model doesn't hold (`w:kinsoku`,
 fields and links changes the seed of every DOCX holding them (the e2e sample
 `bo-corpus-1`; a golden test pins a file with unmodeled pPr children), so
 migration `0059_docx_kept_properties_seed_reset.sql` resets `'docx'` again.
+The DOCX engine round (export memory fixes, bookmarks anchored in one walk,
+yrs compacting its block list once per commit) also starts each seeded story
+without a placeholder paragraph mark, which changes every DOCX seed and the
+DOCX golden hashes. While Capy has no users such a pin deploys without the
+window (2026-10-18), so migration `0103_docx_engine_round_reset.sql` is the
+template's reset for `'docx'` without its guard: unpublished DOCX edits are
+dropped and the files end published, a DOCX refresh in flight is superseded as
+an epoch reset supersedes it, and a deferred publication's pending rebuild ends
+on the published bytes, releasing the old base's cached artifacts. The old
+collaboration server must be stopped before it runs (deployment runbook,
+"Seed-changing pins without a window").
 
 ## Private PDF annotations
 

@@ -38,7 +38,11 @@ it, through `ErrorState`'s `errorId`:
   the question bank, a review session, a quiz result, a file's download links
   or an Office file's view session (`FileError`'s `errorId`) and a note's
   collaboration token;
-- form errors (`FormAlert`'s `errorId`).
+- form errors (`FormAlert`'s `errorId`);
+- a failed row in the workspace settings Indexing tab (file or note
+  changes and Failed files, Epo 2026-10-21), under the row and aligned with
+  its name: the failure's id from the payload's `errorId` (below), never its
+  text.
 
 Typed refusals, exceptions without a request, toasts and status banners show
 none. The id comes from `ApiError.traceId` (see the trace id in
@@ -421,7 +425,19 @@ with copy that sends the user to Settings → LLM. A
 rejected or unclear user
 provider key (`invalid_llm_key` / `llm_key_failed`, or the matching stream
 `invalid_key` / `key_failed` frames) stays on that same chat/editor/quiz
-surface and asks the user to check the key. The one events stream
+surface and asks the user to check the key.
+
+Stop is a request, not a dropped connection (Epo 2026-10-21): the button calls
+`POST /api/conversations/{id}/messages/{messageId}/stop` (`useStopChatTurn`)
+and only then stops reading the stream (`turnStopper` in `useChatStream.ts`),
+so the turn shows "Stopped" and history already lists it aborted. Pressed
+before the `start` frame names the turn, the request goes once it does. A
+stop request the server refuses shows the default mutation toast and the
+stream keeps running, for another press; one that cannot reach the server
+(a network error, no HTTP status) toasts too but stops reading anyway, since
+the server finishes the turn regardless. Closing the tab or losing the network does not
+stop a turn: the server finishes and saves it, and reopening the conversation
+shows it once it ends. The one events stream
 (`useEventStream`, mounted by `AppShell`) updates cached connection status,
 reconnects with backoff, and raises the status banner while a connection
 attempt fails; the server's bounded stream lifetime ends cleanly and
@@ -676,13 +692,37 @@ tab lists every file with unprocessed edits as waiting, queued, processing
 (a spinner) or failed (an alert icon), polling the stats every 3 s while any
 file or note is queued or processing. The owner processes a waiting or failed file, or all
 of them, and cancels a queued one; a file whose processing started refuses
-with `processing_started`. Editors see the list without actions. Workspace
+with `processing_started`. Editors see the same rows and status as the owner
+(state, "Edited …", error id) without any action, and the Auto process edits
+switch disabled, since only the owner may change it (Epo 2026-10-21). Workspace
 notes whose index is behind their content are listed in the same rows with
 the note icon and title (Epo 2026-10-21), since a note can wait up to 10
-minutes to index: a waiting note says it indexes automatically once enough
-changes build up or after 10 minutes while Auto process edits is on, and a
-failed one is a note parked after its failed jobs, shown like a failed file
-(the job's own error text never renders). The owner's Process (Retry when
+minutes to index; a note row reads like a file row, with no auto-processing
+hint (Epo 2026-10-21). A failed note is one parked after its failed jobs,
+shown like a failed file. A failed row shows its error id and never the
+job's own error text: the stats payload's `errorId`, sent on failed rows only,
+is `source_documents.refresh_trace_id` or `materials.index_trace_id`
+(migration 0105). Triggers keep it with its failure: when `refresh_error` or
+`index_error` is set they take the trace id of the failed job's last
+`ingest_job_attempts` row (the ingest worker's per-claim trace, which tags its
+logs and Sentry events), and clearing the error clears the id. An export
+failure the gateway records for the collaboration service
+(`FailSourceRefresh`, and `ClaimSourceRefresh` past two attempts) stores that
+request's trace instead, since the export records no attempt, and the gateway
+logs one `source refresh failed` warning under that trace with the file id,
+job id and failure detail, so the id is found in the gateway logs. A refusal
+before any job (the scheduler's 4xx when queuing) stores none and its row
+shows no id. A file under Failed files carries its id as `errorId` on the
+workspace file list (`GET /api/workspaces/{id}/files`), sent while the file is
+failed and only to the owner and editors, who see the Indexing tab; other
+file rows never carry it. It is `files.failure_trace_id`, which a trigger sets
+when the status turns `failed`: the trace of the last unsuccessful ingest
+attempt of a job for the file's revision (the one that failed it or left it
+partial; never an earlier successful run's or another revision's), found
+through the `jobs ((payload->>'fileId'))` index, and cleared when the status
+moves on. An ingest failure's id tags the worker's logs and Sentry events; any
+id also finds its row with `WHERE refresh_trace_id=…` / `index_trace_id=…` /
+`failure_trace_id=…`, which keeps the error text where one is stored. The owner's Process (Retry when
 failed, and Process all) indexes the note at once, also with auto process
 off; a `processing_started` answer (queued meanwhile by the scheduler or
 another tab) counts as started, and `nothing_to_process` toasts that there

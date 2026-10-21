@@ -71,7 +71,10 @@ proxy) and shows it, small and copyable, only where the error stays on
 screen: boundary screens, a page or pane that failed with Retry, and form
 errors (`FormAlert`), for an unexpected failure (`unexpectedErrorId` in
 `src/lib/errors.ts`). Toasts and status banners show none (see
-`frontend/error-handling.md`).
+`frontend/error-handling.md`). A failed row in the workspace Indexing tab
+shows the trace of its failed ingest attempt instead, stored with the failure
+(`source_documents.refresh_trace_id`, `materials.index_trace_id`,
+`files.failure_trace_id`, migration 0105).
 
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as
@@ -1736,7 +1739,7 @@ Worth knowing before trusting a dashboard:
   LISTEN is detached, workspace streams are refused with 503 and `workspace
   tree listener stopped` is logged) — so the remaining ceiling is the
   container's open-file limit. Access is re-checked at the 25 s ping, not the
-  LLM streams' 5 s live context. A refusal logs `event stream refused at
+  generate and editor-AI streams' 5 s live context (chat turns run none). A refusal logs `event stream refused at
   capacity`; the browser shows the reconnecting banner and retries with
   backoff, with no polling fallback, so nothing else surfaces it.
 - **Reindexing a workspace into a different embedding model.** Not implemented,

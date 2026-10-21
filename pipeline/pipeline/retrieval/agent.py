@@ -186,18 +186,25 @@ CLIENT_ERROR_CODE = "agent_failed"
 
 @dataclass
 class ClientDrop:
-    """Set when the browser or Go hop is gone. The current provider call still
-    finishes and settles. The loop does not start another one.
+    """Set when the Go hop is gone (``dropped``) or the user pressed Stop
+    (``stopped``, Epo 2026-10-21). Either way the calls already running finish
+    and settle, and the loop starts no other model or tool call. Only a dropped
+    hop stops the stream: a stopped turn still sends Go what its running calls
+    did.
     """
 
     dropped: bool = False
+    stopped: bool = False
 
     def mark(self) -> None:
         self.dropped = True
 
+    def stop(self) -> None:
+        self.stopped = True
+
 
 def _client_gone(client: ClientDrop | None) -> bool:
-    return bool(client and client.dropped)
+    return bool(client and (client.dropped or client.stopped))
 
 
 def _with_usage(event: dict[str, Any]) -> dict[str, Any]:
@@ -295,6 +302,7 @@ async def run_agent(
     ``script`` is UAT's scripted turn (``scripted.py``): its steps stand in
     for the model.
     """
+    ended = False
     try:
         async for event in _run_turn(
             query=query,
@@ -308,7 +316,16 @@ async def run_agent(
         ):
             if event["type"] == "error":
                 with_turn_state(event, ctx)
+            ended = ended or event["type"] in ("done", "error")
             yield event
+        if client and client.stopped and not ended:
+            # Stop: what the calls running at the stop did goes to the stopped
+            # turn's record, never back to the model (Epo 2026-10-21).
+            yield _with_usage(
+                events.turn_checkpoint(
+                    list(ctx.activity), evidence.pack(ctx, []), stopped=True
+                )
+            )
     finally:
         # Before the await: a cancelled record must not leave the directory.
         if ctx.deck_dir:
@@ -607,6 +624,8 @@ async def _run_turn(
                     model=spec,
                     tools=active_schemas,
                     on_event=_on_event,
+                    # A stopped turn starts no retry of this call.
+                    stopped=lambda: _client_gone(client),
                     call_purpose=(
                         accounting.PURPOSE_TERMINAL
                         if terminal_call
@@ -697,10 +716,13 @@ async def _run_turn(
             budget.stop_reason = STOP_ERROR
             return
         except Exception as exc:
+            if _client_gone(client):
+                # A stop or a lost hop is not a failure of the turn.
+                log.info("agent step ended after the client left: %s", exc)
+                budget.stop_reason = STOP_CLIENT_GONE
+                return
             log.exception("agent step failed")
-            event = _flagged_error() if guard.flagged else _client_error(exc)
-            if not _client_gone(client):
-                yield event
+            yield _flagged_error() if guard.flagged else _client_error(exc)
             budget.stop_reason = STOP_ERROR
             return
 
@@ -825,7 +847,7 @@ async def _run_turn(
             results_from = len(messages)
             try:
                 async for event in _run_tools(
-                    calls, ctx, budget, messages, building=building
+                    calls, ctx, budget, messages, building=building, client=client
                 ):
                     if event.get("type") == "_tool_message":
                         continue
@@ -1210,6 +1232,7 @@ async def _run_tools(
     messages: list[dict[str, Any]],
     *,
     building: bool = False,
+    client: ClientDrop | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     accepted: list[tuple[ToolCall, dict[str, Any], str]] = []
     results: list[tuple[ToolCall, ToolResult]] = []
@@ -1285,6 +1308,8 @@ async def _run_tools(
             # A mutation keeps the whole response serial, so a create/edit/trash
             # never races a read of the same resource inside one response.
             for call, args, name in work:
+                if _client_gone(client):
+                    break  # after a stop the next call never starts
                 yield _start(call, name, args)
                 for event in _finish(call.id, await tools.run(name, args, ctx)):
                     yield event

@@ -133,6 +133,9 @@ type api struct {
 	// operations hold an agent edit's or create's retry until its first
 	// attempt ends (internal_documents.go).
 	operations operationLocks
+	// turns are the chat turns this process relays, by assistant message id,
+	// so a stop request reaches its relay (chat_stop.go).
+	turns sync.Map
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and, in

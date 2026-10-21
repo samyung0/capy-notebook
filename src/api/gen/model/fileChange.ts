@@ -8,6 +8,7 @@ import type { FileChangeState } from './fileChangeState.ts';
 import type { FileKind } from './fileKind.ts';
 
 export interface FileChange {
+  errorId?: string;
   fileId: string;
   kind: FileKind;
   lastEditedAt: string;
