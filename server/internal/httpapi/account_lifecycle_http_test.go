@@ -114,3 +114,30 @@ func TestAccountDeletionAllowsUnmappedCustomerWhenStripeIsDisabled(t *testing.T)
 		t.Fatalf("confirmation status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// A user with no stored email confirms deletion by typing "delete" (Epo
+// 2026-10-21); a user with an email still types the email, never the word.
+func TestAccountDeletionConfirmationWord(t *testing.T) {
+	confirm := func(handler http.Handler, typed string) int {
+		preflight := readDeletionPreflight(t, handler)
+		return doReq(t, handler, http.MethodPost, "/api/account/deletion", "", map[string]any{
+			"confirmEmail": typed, "lifecycleGeneration": preflight.LifecycleGeneration,
+		}).Code
+	}
+
+	withEmail, _, _, _ := deletionAPI(t, false)
+	if code := confirm(withEmail, "delete"); code != http.StatusBadRequest {
+		t.Fatalf("word from a user with an email: status = %d, want 400", code)
+	}
+
+	noEmail, pool, userID, _ := deletionAPI(t, false)
+	if _, err := pool.Exec(context.Background(), `UPDATE users SET email=NULL WHERE id=$1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if code := confirm(noEmail, "remove"); code != http.StatusBadRequest {
+		t.Fatalf("wrong word: status = %d, want 400", code)
+	}
+	if code := confirm(noEmail, "Delete"); code != http.StatusOK {
+		t.Fatalf("word from a user with no email: status = %d, want 200", code)
+	}
+}

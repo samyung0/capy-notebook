@@ -4596,6 +4596,56 @@ export const updateMaterial = async (id: string,
 
 
 
+export type processNoteChangesResponse202 = {
+  data: void
+  status: 202
+}
+
+export type processNoteChangesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type processNoteChangesResponseSuccess = (processNoteChangesResponse202) & {
+  headers: Headers;
+};
+export type processNoteChangesResponseError = (processNoteChangesResponseDefault) & {
+  headers: Headers;
+};
+
+export type processNoteChangesResponse = (processNoteChangesResponseSuccess | processNoteChangesResponseError)
+
+export const getProcessNoteChangesUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/process-changes`
+}
+
+/**
+ * @summary Index a workspace note's changes now
+ */
+export const processNoteChanges = async (id: string, options?: RequestInit): Promise<processNoteChangesResponse> => {
+
+  const res = await fetch(getProcessNoteChangesUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: processNoteChangesResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as processNoteChangesResponse
+}
+
+
+
 export type updateMaterialSharingResponse200 = {
   data: Material
   status: 200

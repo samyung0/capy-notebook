@@ -1437,16 +1437,17 @@ three attempts, a transient error retries, and a definitive client error (400,
 401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
 Caption calls never inherit a user's chat reasoning level. The captioning
-default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on DeepInfra
-with fallbacks and reasoning off (decision 2026-10-19, after GLM-5.3-Flash on
-Relace stopped reading its input; the provider pin is described in
+default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on InferenceNet
+then Cloudflare with fallbacks outside them and reasoning off (decision
+2026-10-19, after GLM-5.3-Flash on Relace stopped reading its input; DeepInfra
+until 2026-10-21; the provider pin is described in
 [Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
 Its catalog and capacity rows
 are UAT data. The caption prompt rides as the system message and the image as
 the user turn (decided 2026-10-15, when Relace, GLM's host then, refused image
 input with no conversation context).
-On the `zai/glm-5.3-flash` row (served by Z.AI), which cannot turn thinking
-off, captioning sends `reasoning_effort: low`.
+On the `zai/glm-5.3-flash` row (served through OpenRouter), which cannot turn
+thinking off, captioning sends `reasoning: {effort: "low"}`.
 
 ### VLM page read
 
@@ -1482,9 +1483,9 @@ fallback); the per-job limit must be between 1 and the overall one. A scan's
 reads take far longer than its parse (a 500-page scan renders in about 13 s),
 so these gates, not the parser, bound scan-heavy ingest.
 
-On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`; a
-slot pointed at GLM uses `ZAI_API_KEY`, the one Z.AI key chat also uses
-(decision 2026-10-20, replacing the second Relace account ingest had). GLM's
+Reads use the ingest worker's `OPENROUTER_API_KEY`, also when the slot points
+at GLM, since GLM is served through OpenRouter too (decision 2026-10-21; Z.AI's
+own key from 2026-10-20, a second Relace account before that). GLM's
 quality against RapidOCR on Relace, the 1,280 px render size, per-page speed
 and cost are in
 [`bench/parsers/reports/2026-10-15-glm-ocr.md`](../bench/parsers/reports/2026-10-15-glm-ocr.md).
@@ -2623,12 +2624,13 @@ current pending changes applied. Embedded source instructions remain untrusted.
    editor authorization and storage quota checks still apply.
 8. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
    encrypted reasoning items inside the current tool loop. DeepSeek,
-   Anthropic, and ZAI GLM (served by Z.AI,
-   `api.z.ai/api/paas/v4/chat/completions`, model `glm-5.3-flash`,
-   `ZAI_API_KEY`, no fallback route) use Chat
-   Completions-compatible paths. The GLM
-   adapter preserves `reasoning_content` on the assistant message immediately
-   before the matching tool result in the next request. Raw chain-of-thought
+   Anthropic, and ZAI GLM (served through OpenRouter as `z-ai/glm-5.3-flash`
+   on DigitalOcean, then Z.AI, `OPENROUTER_API_KEY`, decision 2026-10-21) use
+   Chat Completions-compatible paths. The stream assembler keeps reasoning on
+   the assistant message immediately before the matching tool result in the
+   next request: DeepSeek's `reasoning_content`, and OpenRouter's `reasoning`
+   under that name, which OpenRouter passes back to GLM (decision 2026-10-21;
+   without it GLM on DigitalOcean built materials nobody asked for). Raw chain-of-thought
    is never streamed to the browser. The user's reasoning policy applies to
    every agent model response. Chat always requires an enabled reasoning level, including checkpoint and in-turn compaction calls; an Instant request is rejected before model admission. A provider failure before the first response
    byte is retried once on a new call id inside a three-second budget, waiting
@@ -2636,7 +2638,13 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `abandoned` (absorbed, no charge). A busy provider or a full per-model gate
    past that budget ends the turn with a retryable `provider_busy` error
    carrying `retryAfterSeconds`. Any later provider or SSE failure is not
-   retried and the client gets the same generic `agent_failed` error. If the browser
+   retried and the client gets the same generic `agent_failed` error.
+   OpenRouter reports a provider failure inside a started stream as an `error`
+   chunk whose choice finishes with `error`; elitellm raises it as a provider
+   error, so a cut-off answer is never assembled as complete and an empty one
+   never reads as `invalid_answer`. A 200 stream that sends no data at all is a
+   provider error too (before any byte, so it takes the one pre-byte retry);
+   the user is charged for neither. If the browser
    disconnects, Python stops writing SSE but finishes the in-flight provider
    call, settles usage when it arrives, and does not start another planning
    step.
@@ -2712,20 +2720,22 @@ quota, retries POST, then GET. Same-id replay returns the original row. A
 confirmed 404 is a normal tool failure. An uncertain GET fails the turn
 without appending a failed tool result. Its optional `sources` (also on
 `add_questions` creating a quiz and on `create_deck`) is the made-from line:
-plain strings, at most 20 of 1 to 200 characters (`fieldlimits.MaterialSources`
+plain strings, at most 20 of at most 200 characters (`fieldlimits.MaterialSources`
 and `MaterialSource`), sent as written. Go (`resolveSources` in
 `internal_materials.go`) stores each as a name in `scope_file_names`: the id or
 exact name of an untrashed file, a top-level material of any kind or a chapter
 of the same workspace becomes its current name, anything else (a lecture, a
 handout, a web address, an id from another workspace or of a trashed item)
-stays as written, trimmed, duplicates once (Epo 2026-10-21). No sources stores
-none; the chat scope is not filled in. Over the bounds (more than 20 distinct
-after trimming, or one of 0 or over 200 characters) is the only refusal
-(`invalid_input`, "sources: send at most 20 sources of 1 to 200 characters
-each."); nothing is refused for a source's kind or index state, and agent
-creates no longer return `invalid_scope` or `scope_has_no_indexed_content`.
-A deck's PPTX keeps the same names in `files.scope_file_names` (migration
-`0100`), not exposed by the API.
+stays as written, trimmed, duplicates once (Epo 2026-10-21). A blank source
+(empty after trimming) is dropped silently, so the tool schema sets no minimum
+length. No sources stores none; the chat scope is not filled in. Over the
+bounds (more than 20 distinct non-blank sources after trimming, or one over 200
+characters) is the only refusal (`invalid_input`, "sources: send at most 20
+sources of at most 200 characters each."); nothing is refused for a source's
+kind or index state, and agent creates no longer return `invalid_scope` or
+`scope_has_no_indexed_content`. A deck's PPTX keeps the same names in
+`files.scope_file_names` (migration `0100`), not exposed by the API; a file
+copy (single or workspace clone) keeps them as a material copy does.
 
 ### How a turn's work is saved
 
@@ -3737,8 +3747,8 @@ offered after read_skill("office_building").` The two tools are offered only
 once the `office_building` skill is read (`ToolContext.office_tools`): its
 `read_skill` sets the flag, and after that response's tools ran the agent
 appends the two schemas to the turn's tool list, so the rest of the request
-keeps its provider-cached prefix (a tool list change misses Z.AI's whole
-cached prompt; accepted once per chat). They stay offered for the rest of the
+keeps its provider-cached prefix (a tool list change misses the provider's
+whole cached prompt; accepted once per chat). They stay offered for the rest of the
 conversation: `evidence.pack` marks the turn's `toolEvidence.officeTools`,
 and Go's `ConversationPrompt` sends `officeTools` with every later turn when
 any completed message of the conversation carries that mark, a turn a
@@ -3973,7 +3983,14 @@ its questions: the answer is the response's prose as `Md` followed by one
 `AskUser(question, choices)` per call that carries a question, at most three
 as the format allows (choices sent as JSON text are read as a list), so the
 panel below shows them as usual. A call with no question is refused as an
-unknown tool.
+unknown tool. Since GLM moved to OpenRouter (decision 2026-10-21) its requests
+list `AskUser` as a real tool (`agent.ASK_USER_SCHEMA`, appended after the
+registry's tools): DigitalOcean drops a call to a tool the request does not
+list, which left answers empty or ending on "a few questions:" with the
+questions gone. Other models get no such tool and keep writing `AskUser` in
+the answer. The credit guard's terminal call sends no tools, so AskUser is not
+listed there and a GLM call to it on DigitalOcean is still dropped; that needs
+exhausted credits and a question in the same turn.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,
@@ -4043,9 +4060,33 @@ refuse answers 422 `material_content_unreadable`, which parks it. A due note get
 ingest credits reserved on the workspace owner and one `ingest` job carrying
 `materialId`, recorded in `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
-`pendingNotes` in workspace settings until the note changes again; transient
-failures retry on the next tick. Notes have no Process: with `auto_process`
-off, dirty notes wait until it is on again.
+failed in the settings Indexing tab until the note changes again; transient
+failures retry on the next tick. With `auto_process` off, dirty notes wait
+until it is on again, or until the owner's Process.
+
+The workspace stats (`noteChanges`) list every workspace note whose index is
+behind its content, as the Indexing tab shows them beside the file changes
+(Epo 2026-10-21): waiting (dirty), queued (its `ingest` job not yet claimed:
+pending with no attempts), processing, or failed (parked with `index_error`).
+Embedded quizzes and flashcard sets index inside their note and chapter-level
+ones are not indexed, so only notes are listed. The list takes the cap that
+bounds the file list, the workspace owner's files per workspace (100 on both
+plans today; notes do not count toward it): notes with a job come first, then
+the oldest edit, and `moreNoteChanges` counts the notes past the cap, which
+the tab shows as one count line. `POST
+/api/materials/{id}/process-changes` (`ProcessNoteChanges`) is a note's
+Process: it queues the index job at once, below the token threshold, before
+the idle wait, with `auto_process` off, and for a parked note, with the same
+credit reservation as the scheduler (ingest credits on the workspace owner;
+the payload's `automatic` is false). Unlike the scheduler's path, and like a
+file's Process, it refuses a frozen owner. It is the owner's alone: a
+non-member gets 404, any other member 403. A trashed or standalone note is
+404, a note with a job 409 `processing_started` (the tab takes it as started:
+the scheduler or another tab queued it), and a note whose index is current
+409 `nothing_to_process`. A queued note job has no Cancel.
+Admission clears a parked `index_error`; a failed manual job counts in
+`index_failures` like any other, so a parked note that fails again parks
+again.
 
 When the job ends, whatever ended it (the worker, the lease reaper,
 `cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
@@ -4059,8 +4100,8 @@ since its admission counts one in `index_failures` and leaves the note dirty
 with no error, so the scheduler admits it again: a note is retried at most
 twice (Epo 2026-10-20). The third such failure parks it: it stays dirty with
 `index_error` set (the job's error, or `index job failed` when it has none)
-and counts in `pendingNotes`, and nothing admits it again until its next edit
-clears the error and the count. The one wait inside a job
+and is listed as failed in the Indexing tab, and nothing admits it again
+until its next edit clears the error, or the owner's Process. The one wait inside a job
 is a busy embedding provider: like a file's job, a note job that finds it busy
 re-pends without spending an attempt (once, `PROVIDER_WAITS_MAX`, decided
 2026-10-15 in place of the five waits of 2026-10-14; Retry-After or 30 s) and
@@ -4221,8 +4262,8 @@ The workspace owner funds automatic refresh: provider calls only, since the
 parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
 gates every automatic Office reparse, text reindex and note index; off, file
-edits wait for the owner's Process, and notes, which have no Process, wait
-until the switch is on again.
+edits wait for the owner's Process, and notes wait for the owner's Process in
+the Indexing tab (Epo 2026-10-21) or until the switch is on again.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
 tokens count those excerpts. Net tokens measure editing, not context size: the
@@ -4405,8 +4446,8 @@ The lines are source data, in a `<source>` block. Two paths use it:
   saved with the answer (`toolEvidence.pendingHints`, snippets only) and
   replayed after their user message word for word, under the one heading the
   live message uses (worded to stay true later), so earlier requests stay a
-  cached prefix; providers reuse any shared prefix (GLM on Z.AI measured
-  2026-10-20). After a checkpoint, an edit hinted before it may be hinted
+  cached prefix; providers reuse any shared prefix (GLM measured on Z.AI
+  2026-10-20 and on DigitalOcean 2026-10-21). After a checkpoint, an edit hinted before it may be hinted
   again. The turn's own hint message survives a turn-start checkpoint and a
   live fold of its older exchanges. Hints stay in context until the chat is
   condensed; condensing (a checkpoint, a live-history fold or a turn fold)
@@ -4482,8 +4523,9 @@ no answer keys, so neither does any of this (2026-10-18). The read is of the
 stored content, as of the last projection; the live room comes with the Office
 live route. The notes' published index identities, read before the changes,
 are checked with the files'; a failed read keeps the turn going, with the
-outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
-omitted note change waits for its reindex.
+outdated notice once the agent reads a note. Notes have no overflow
+notification (their Process is in the Indexing tab only): an omitted note
+change waits for its reindex.
 
 A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`, Epo 2026-10-20)
 are omitted: the read says the document's pending edits are larger than a
@@ -4517,7 +4559,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `ZAI_API_KEY`, `OPENROUTER_API_KEY` | The ingest queue env carries the same `ZAI_API_KEY` as chat and the `OPENROUTER_API_KEY` of the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
@@ -4529,7 +4571,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the ZAI GLM-5.3-Flash row (served by Z.AI) captions at `reasoning_effort: low`. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |

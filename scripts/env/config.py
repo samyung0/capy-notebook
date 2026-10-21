@@ -401,9 +401,11 @@ def apply_coolify(values):
         "EVO_QUERY_MODEL",
         "IMPORT_RELAY_ENQUEUE_URL",
         "IMPORT_RELAY_SECRET",
-        # GLM left Relace for Z.AI (Epo 2026-10-20); ZAI_API_KEY replaces both.
+        # GLM left Relace for Z.AI (Epo 2026-10-20), then Z.AI for OpenRouter
+        # (Epo 2026-10-21): OPENROUTER_API_KEY replaces all three.
         "RELACE_API_KEY",
         "RELACE_INGEST_API_KEY",
+        "ZAI_API_KEY",
     }
     obsolete = [
         row

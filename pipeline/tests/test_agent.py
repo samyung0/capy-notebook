@@ -3821,6 +3821,30 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     assert asked == ["Q1?", "Q2?", "Q3?"]
 
 
+@pytest.mark.parametrize(("provider", "offered"), [("zai", True), ("deepseek", False)])
+async def test_glm_is_offered_askuser_as_a_real_tool(monkeypatch, provider, offered):
+    """DigitalOcean drops calls to tools a request does not list, and GLM calls
+    AskUser as one, so GLM's requests list it (decision 2026-10-21)."""
+    stream, seen = _script_stream([_assembled(_answer(("Hello", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    model = ModelConfig(
+        version=1,
+        provider_name="Z.ai" if provider == "zai" else "DeepSeek",
+        model_name="GLM-5.3-Flash" if provider == "zai" else "Flash",
+        provider_slug=provider,
+        model_slug="glm-5.3-flash" if provider == "zai" else "deepseek-v4-flash",
+        thinking_levels=("low", "high", "max"),
+        default_thinking="high",
+        context_window_tokens=100_000,
+        slots=("chat",),
+    )
+    await _collect("hi", ToolContext(workspace_id="ws_1"), model=model)
+    names = [t["function"]["name"] for t in seen[0]["tools"]]
+    assert ("AskUser" in names) is offered
+    if offered:
+        assert names[-1] == "AskUser", "appended, so the cached prefix is unchanged"
+
+
 @pytest.mark.parametrize("writing", [True, False])
 async def test_results_before_the_last_tools_response_say_write_now(
     monkeypatch, writing

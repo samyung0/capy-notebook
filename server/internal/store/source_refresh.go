@@ -591,9 +591,46 @@ func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *Work
 	if stats.FileChanges, err = s.workspaceFileChanges(ctx, ws); err != nil {
 		return err
 	}
-	return s.pool.QueryRow(ctx, `SELECT count(*) FROM materials
-		WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
-		  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL)`, ws).Scan(&stats.PendingNotes)
+	// Notes take the cap that bounds the file list: the owner's files per
+	// workspace (notes do not count toward it).
+	var owner string
+	if err := s.pool.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`, ws).Scan(&owner); err != nil {
+		return err
+	}
+	limits, err := s.PayerPlanLimits(ctx, owner)
+	if err != nil {
+		return err
+	}
+	stats.NoteChanges, stats.MoreNoteChanges, err = s.workspaceNoteChanges(ctx, ws, limits.FilesPerWorkspace)
+	return err
+}
+
+// workspaceNoteChanges lists workspace notes whose index is behind their
+// content: dirty (waiting, or failed once parked with index_error) or with an
+// index job, queued until its first claim (Epo 2026-10-21). Embedded quizzes
+// and flashcard sets index inside their note, and chapter-level ones are not
+// indexed, so only notes are listed. At most limit notes, work in flight
+// first (the tab polls while it shows any), then oldest edit; more counts
+// the rest.
+func (s *Store) workspaceNoteChanges(ctx context.Context, ws string, limit int) (changes []NoteChange, more int, err error) {
+	rows, err := s.pool.Query(ctx, `SELECT m.id,m.title,m.updated_at,
+		CASE WHEN m.index_job_id IS NOT NULL THEN CASE WHEN j.status='pending' AND j.attempts=0 THEN 'queued' ELSE 'processing' END
+		  WHEN m.index_error IS NOT NULL THEN 'failed' ELSE 'waiting' END,
+		count(*) OVER ()
+		FROM materials m LEFT JOIN jobs j ON j.id=m.index_job_id
+		WHERE m.workspace_id=$1 AND m.kind='note' AND m.trashed_at IS NULL
+		  AND (m.index_dirty_at IS NOT NULL OR m.index_job_id IS NOT NULL)
+		ORDER BY m.index_job_id IS NULL,m.updated_at,m.id LIMIT $2`, ws, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := 0
+	changes, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (NoteChange, error) {
+		var change NoteChange
+		err := row.Scan(&change.MaterialID, &change.Title, &change.LastEditedAt, &change.State, &total)
+		return change, err
+	})
+	return changes, total - len(changes), err
 }
 
 // workspaceFileChanges lists files with unprocessed saved edits (the

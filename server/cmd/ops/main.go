@@ -160,7 +160,7 @@ func main() {
 		}
 	}
 	if !cfg.AuthDisabled {
-		clerkVerifier, err := ops.NewClerkVerifier(cfg.ClerkSecretKey)
+		clerkVerifier, err := ops.NewClerkVerifier(cfg.ClerkSecretKey, cfg.Origin)
 		if err != nil {
 			log.Fatalf("Clerk: %v", err)
 		}

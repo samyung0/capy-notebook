@@ -396,7 +396,9 @@ export function ChatPanel({
             {canReprocess && (
               <Button
                 disabled={processingChanges}
-                onClick={() => processChanges(pendingSources.fileIds)}
+                onClick={() =>
+                  processChanges({ fileIds: pendingSources.fileIds })
+                }
                 size="sm"
                 variant="ghost-hover"
               >

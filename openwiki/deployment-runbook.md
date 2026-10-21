@@ -498,7 +498,8 @@ The prod file runs `/migrate` once per deploy, starts the API with
    `0009_default_chat_model.sql` came with the OpenDataLoader release and
    apply on the next deploy of an existing database; `0009` also moves the
    catalog's chat slot default to `zai/glm-5.3-flash`, so the `zai` GLM
-   capacity row and `ZAI_API_KEY` must be in place before that deploy).
+   capacity row and `OPENROUTER_API_KEY`, which serves GLM since 2026-10-21,
+   must be in place before that deploy).
 6. **Domains** on the resource, after the first successful deploy (Coolify
    has to parse the compose file first). Enter **`http://`** — Cloudflare
    terminates TLS. Include the container port if the UI asks for one:
@@ -894,16 +895,18 @@ local setup sets `development` (`deploy/docker-compose.yml`, `deploy/.env.exampl
 120/minute editor class are not env-overridable. Configure model capacity in the
 Ops model catalog before allowing platform model calls. Each environment stores
 its own provider/model limits in `model_capacities`; new databases start
-without limits and missing capacity fails explicitly. GLM-5.3-Flash runs on
-Z.AI, which holds about 50 calls in flight per key; each environment uses its
-own `ZAI_API_KEY`, so each gets 48 total / 40 interactive reserve (migration
-0097 copied each environment's existing GLM limit under that cap). Production's
-Qwen embedding is 200 / 80.
+without limits and missing capacity fails explicitly. GLM-5.3-Flash keeps its
+`zai/glm-5.3-flash` capacity row but runs through OpenRouter on DigitalOcean,
+then Z.AI (decision 2026-10-21): production and UAT get 150 total / 125
+interactive reserve, local development 8 / 4. Rows already in a database keep
+their values (UAT had 48 / 40 from migration 0097), so raise them in Ops.
+Production's Qwen embedding is 200 / 80.
 UAT and full local development must use limits appropriate to their own
 provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
 only missing enabled platform-model capacities using the documented DeepSeek
-and DeepInfra concurrency limits, and Z.AI's measured GLM limit. Its source links and
+and DeepInfra concurrency limits, and the GLM and DeepSeek 1017 limits measured
+on OpenRouter on 2026-10-21. Its source links and
 allocation assumptions are in the SQL. Existing operator values are preserved.
 Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
@@ -958,6 +961,10 @@ CORS_ALLOWED_ORIGINS=https://app.capynotebook.com
 COLLABORATION_URL=wss://collab.capynotebook.com
 COLLABORATION_ALLOWED_ORIGINS=https://app.capynotebook.com
 ```
+
+Outside development and e2e the gateway refuses to boot when
+`CORS_ALLOWED_ORIGINS` is empty or contains a `*` anywhere (a bare `*` or a
+wildcard origin such as `https://*.example.com`): list exact origins.
 
 Ops uses one read/auth role and one shared admin-actions role. The admin pool
 opens lazily only after the application authorizes a registry Save or a
@@ -1025,6 +1032,18 @@ subject must continue to match `users.id` and `operators.user_id`. The Clerk
 webhook remains `https://api.capynotebook.com/webhooks/clerk`; ops does not accept
 webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 `allowedOrigins` is the SPA origin, not `api.` or `ops.`.
+
+Two-step verification is turned on and off on Clerk's hosted account page,
+not in Capy (Epo 2026-10-21). On the production instance, and the same on UAT
+(§12.3):
+
+1. Under multi-factor authentication, turn on the authenticator application
+   (TOTP, set up by QR code) factor and leave SMS verification codes off.
+2. Leave Clerk's new-device check off, so sign-in has no device-trust step.
+3. Keep the Account Portal on with its user profile page. Settings → Account
+   links its Two-step verification row to the URL Clerk's SDK builds for that
+   page (`buildUserProfileUrl()`). With the user profile turned off Clerk
+   builds no URL, and the row disappears from Settings without any error.
 
 ---
 
@@ -1790,12 +1809,19 @@ those services start.
    to the import
    worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
-   (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake) and the captioning pin (DeepSeek
-   V4.1 Flash 1017 held on DeepInfra: standalone-image captions and the VLM
-   read of text-less document pages; Ops reads the key too, to flag a missing
-   credential), and `ZAI_API_KEY` for GLM-5.3-Flash, the same Z.AI key the app
-   host's `retrieval` and `ops` containers carry. The `uat` environment has
-   `ZAI_API_KEY`; the `production` environment needs it before a production
+   (DeepSeek V4 Flash 0731 on Reka, DigitalOcean or StreamLake), the captioning pin (DeepSeek
+   V4.1 Flash 1017 on InferenceNet, then Cloudflare: standalone-image captions
+   and the VLM read of text-less document pages) and GLM-5.3-Flash, the same
+   key the app host's `retrieval` and `ops` containers carry (Ops reads it too,
+   to flag a missing credential). No Z.AI key is read since 2026-10-21. The
+   deploy workflows' Coolify step (`config.py apply-coolify` in
+   `deploy-environment.yml` and `deploy-ops.yml`) deletes a leftover
+   `ZAI_API_KEY` from Coolify. The GitHub environment secret `ZAI_API_KEY`
+   stays until someone deletes it by hand, and a `ZAI_API_KEY=` line left in a
+   local env file (`deploy/.env.uat`, `deploy/.env.prod`) makes `pnpm env:push`
+   and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
+   delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
+   `production` environment needs `OPENROUTER_API_KEY` before a production
    deploy, since the renderer writes an empty key without it. Those calls
    happen on this ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
@@ -2946,6 +2972,9 @@ In the Clerk dashboard:
    `CLERK_SECRET_KEY`. The GitHub authenticated tests receive the same values
    as `CLERK_PUBLISHABLE_KEY` and the protected `CLERK_SECRET_KEY` environment
    secret. Never put the secret key in a repository variable or browser build.
+6. Set up two-step verification as on production (§1.4): the authenticator
+   application factor on, SMS codes off, the new-device check off, and the
+   Account Portal user profile on.
 
 The gateway refuses startup when normal Clerk authentication has either a
 blank `CLERK_SECRET_KEY` or a blank `CLERK_WEBHOOK_SECRET`. Development with
@@ -3300,8 +3329,14 @@ so GitHub holds the run until someone with write access approves it on the
 run page.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
-file for the optional ops edge check. The UAT workflow and local review scripts
-use this name directly; there is no repository-level ops URL fallback.
+file. Deploy Ops requires it: the render passes it to the Ops container as
+`OPS_ORIGIN`, the only `azp` the Ops API accepts on a Clerk session token, and
+Ops refuses to start with Clerk on outside development without it, or when it
+is not spelled as a browser writes an origin. Write it as a bare `https` origin
+in lower case (`https://ops.capynotebook.com`): no trailing slash, path, user
+or `:443`. The UAT
+edge check and local review scripts use the same name; there is no
+repository-level ops URL fallback.
 
 ```bash
 pnpm env:check --file deploy/.env.uat

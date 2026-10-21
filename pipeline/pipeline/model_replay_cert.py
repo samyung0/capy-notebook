@@ -20,7 +20,8 @@ REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "pipeline" / "tests" / "model_replay_certifications.json"
 REPLAY_NODE = "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay"
 CASSETTE_DIR = Path("pipeline/tests/cassettes/replay")
-# Z.AI documents no model list: its slug is typed (--model).
+# The zai pin's slug is typed (--model): OpenRouter serves it under another
+# name (z-ai/glm-5.3-flash).
 MODEL_LIST_ENDPOINTS: dict[str, str | None] = {
     "anthropic": "https://api.anthropic.com/v1/models",
     "deepseek": "https://api.deepseek.com/models",

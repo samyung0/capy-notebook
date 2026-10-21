@@ -13,7 +13,7 @@ from pipeline.elitellm.client import (
     DEEPINFRA_EMBED_URL,
     OPENROUTER_CHAT_URL,
     OPENROUTER_ROUTING,
-    ZAI_CHAT_URL,
+    ZAI_OPENROUTER_MODELS,
     _as_obj,
     _thinking_for_call,
     anthropic_endpoint,
@@ -28,10 +28,9 @@ from pipeline.elitellm.client import (
     openai_chat_request,
     openai_reasoning_effort,
     openai_responses_request,
+    openrouter_reasoning,
     openrouter_request,
     uses_responses,
-    zai_request,
-    zai_thinking_body,
 )
 from pipeline.elitellm.client import (
     complete as elitellm_complete,
@@ -102,7 +101,7 @@ def test_a_tools_off_call_keeps_the_tools_and_forbids_calling_them():
         tool_choice="none",
     )
     assert anthropic["tools"] and anthropic["tool_choice"] == {"type": "none"}
-    zai = zai_request(
+    glm = openrouter_request(
         _spec(provider_slug="zai", model_slug="glm-5.3-flash"),
         message,
         temperature=None,
@@ -113,7 +112,7 @@ def test_a_tools_off_call_keeps_the_tools_and_forbids_calling_them():
         stream=True,
         tool_choice="none",
     )
-    assert zai["tools"] == [tool] and zai["tool_choice"] == "none"
+    assert glm["tools"] == [tool] and glm["tool_choice"] == "none"
 
 
 def test_anthropic_byok_uses_user_key():
@@ -161,12 +160,14 @@ def test_no_reasoning_uses_provider_off_or_lowest_setting():
     assert _thinking_for_call(zai_vision, None) == "max"
 
 
-def test_zai_request_sends_the_z_ai_model_name_and_low_reasoning():
+def test_glm_goes_to_openrouter_named_with_an_effort():
+    """GLM keeps its zai identity; OpenRouter serves it on DigitalOcean, then
+    Z.AI, and every request names an effort (decision 2026-10-21)."""
     spec = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
         thinking_levels=("low", "high", "max"),
-        default_thinking="max",
+        default_thinking="high",
         slots=("chat", "captioning"),
     )
     messages = [
@@ -181,7 +182,7 @@ def test_zai_request_sends_the_z_ai_model_name_and_low_reasoning():
             ],
         }
     ]
-    body = zai_request(
+    body = openrouter_request(
         spec,
         messages,
         temperature=0.2,
@@ -193,23 +194,30 @@ def test_zai_request_sends_the_z_ai_model_name_and_low_reasoning():
         tool_choice=None,
     )
 
-    assert body["model"] == "glm-5.3-flash"
+    assert body["model"] == "z-ai/glm-5.3-flash"
     assert body["messages"] == messages
-    assert "thinking" not in body
-    assert body["reasoning_effort"] == "low"
-    with pytest.raises(RegistryError, match="supports only low"):
-        zai_thinking_body("")
+    assert body["provider"] == {
+        "order": ["DigitalOcean", "Z.AI"],
+        "allow_fallbacks": False,
+    }
+    assert body["reasoning"] == {"effort": "low"}
+    assert "reasoning_effort" not in body and "thinking" not in body
+    # A request without an effort would reason as at max; there is no "off".
+    for level in ("", "instant", "mid"):
+        with pytest.raises(RegistryError, match="supports only low"):
+            openrouter_reasoning(spec, level)
 
 
 @pytest.mark.asyncio
-async def test_zai_complete_posts_to_z_ai_with_its_key(
+async def test_glm_complete_posts_to_openrouter_with_its_key(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
+        byok_enabled=False,
         thinking_levels=("low", "high", "max"),
-        default_thinking="max",
+        default_thinking="high",
         slots=("chat", "captioning"),
     )
     seen: dict[str, object] = {}
@@ -222,7 +230,7 @@ async def test_zai_complete_posts_to_z_ai_with_its_key(
         }
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("ZAI_API_KEY", "sk-zai")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
     monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
 
     response = await elitellm_complete(
@@ -231,15 +239,14 @@ async def test_zai_complete_posts_to_z_ai_with_its_key(
         reasoning=False,
     )
 
-    assert (
-        seen["url"] == ZAI_CHAT_URL == "https://api.z.ai/api/paas/v4/chat/completions"
-    )
+    assert seen["url"] == OPENROUTER_CHAT_URL
     assert seen["headers"] == {
-        "authorization": "Bearer sk-zai",
+        "authorization": "Bearer sk-or",
         "content-type": "application/json",
     }
-    assert seen["body"]["model"] == "glm-5.3-flash"
-    assert seen["body"]["reasoning_effort"] == "low"
+    assert seen["body"]["model"] == "z-ai/glm-5.3-flash"
+    # Reasoning off runs at GLM's low floor.
+    assert seen["body"]["reasoning"] == {"effort": "low"}
     assert response.choices[0].message.content == "caption"
 
 
@@ -248,7 +255,7 @@ async def test_zai_complete_posts_to_z_ai_with_its_key(
     ("model_slug", "providers"),
     [
         ("deepseek/deepseek-v4-flash-0731", ["Reka", "DigitalOcean", "StreamLake"]),
-        ("deepseek/deepseek-v4.1-flash-1017", ["DeepInfra"]),
+        ("deepseek/deepseek-v4.1-flash-1017", ["InferenceNet", "Cloudflare"]),
     ],
 )
 async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
@@ -285,7 +292,11 @@ async def test_openrouter_pins_send_their_slug_held_on_vetted_providers(
     assert seen["body"]["reasoning"] == {"enabled": False}
     assert seen["body"]["max_tokens"] == 400
     # Every slug an operator may register has a provider pin.
-    assert set(provider_spec("openrouter")["allowedModelSlugs"]) == set(
+    zai_models = {
+        ZAI_OPENROUTER_MODELS[slug]
+        for slug in provider_spec("zai")["allowedModelSlugs"]
+    }
+    assert set(provider_spec("openrouter")["allowedModelSlugs"]) | zai_models == set(
         OPENROUTER_ROUTING
     )
 
@@ -300,13 +311,14 @@ def test_an_openrouter_slug_without_a_provider_pin_is_refused():
             tools=None,
             response_format=None,
             max_tokens=None,
+            thinking="instant",
             stream=False,
             tool_choice=None,
         )
 
 
 @pytest.mark.asyncio
-async def test_zai_stream_posts_to_z_ai_at_max_by_default(
+async def test_glm_stream_sends_its_default_effort_to_openrouter(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
@@ -314,7 +326,7 @@ async def test_zai_stream_posts_to_z_ai_at_max_by_default(
         model_slug="glm-5.3-flash",
         byok_enabled=False,
         thinking_levels=("low", "high", "max"),
-        default_thinking="max",
+        default_thinking="high",
         slots=("chat", "captioning"),
     )
     seen: dict[str, object] = {}
@@ -324,7 +336,7 @@ async def test_zai_stream_posts_to_z_ai_at_max_by_default(
         yield {"choices": [{"delta": {"content": "ok"}}]}
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("ZAI_API_KEY", "sk-zai")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
     monkeypatch.setattr("pipeline.elitellm.client._stream_sse", stream_sse)
 
     chunks = [
@@ -333,10 +345,10 @@ async def test_zai_stream_posts_to_z_ai_at_max_by_default(
     ]
 
     assert len(chunks) == 1
-    assert seen["url"] == ZAI_CHAT_URL
-    assert seen["headers"]["authorization"] == "Bearer sk-zai"
-    assert seen["body"]["model"] == "glm-5.3-flash"
-    assert seen["body"]["reasoning_effort"] == "max"
+    assert seen["url"] == OPENROUTER_CHAT_URL
+    assert seen["headers"]["authorization"] == "Bearer sk-or"
+    assert seen["body"]["model"] == "z-ai/glm-5.3-flash"
+    assert seen["body"]["reasoning"] == {"effort": "high"}
     assert seen["body"]["stream"] is True
 
 
@@ -545,7 +557,8 @@ def test_anthropic_max_is_adaptive():
 def test_anthropic_platform_env_is_first_party():
     assert platform_env_name("anthropic") == "ANTHROPIC_API_KEY"
     assert platform_env_name("openai") == "OPENAI_API_KEY"
-    assert platform_env_name("zai") == "ZAI_API_KEY"
+    # GLM keeps its zai identity but is served through OpenRouter.
+    assert platform_env_name("zai") == "OPENROUTER_API_KEY"
 
 
 def test_platform_key_for_anthropic_reads_anthropic_env(monkeypatch):

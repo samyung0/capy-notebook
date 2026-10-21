@@ -67,6 +67,7 @@ class ChatCompletionsAssembler:
         self.status = "complete"
         self.error = ""
         self.reasoning_content_parts: list[str] = []
+        self.reasoning_parts: list[str] = []
         self.thinking_blocks: list[Any] = []
         self._last_message: dict[str, Any] = {}
 
@@ -96,6 +97,13 @@ class ChatCompletionsAssembler:
         reasoning = _get(delta, "reasoning_content")
         if reasoning:
             self.reasoning_content_parts.append(str(reasoning))
+            events.append(StreamEvent(kind="reasoning"))
+        # OpenRouter streams reasoning as `reasoning`; it goes back under that
+        # name, so GLM keeps its reasoning across a tool loop (decision
+        # 2026-10-21).
+        openrouter_reasoning = _get(delta, "reasoning")
+        if openrouter_reasoning:
+            self.reasoning_parts.append(str(openrouter_reasoning))
             events.append(StreamEvent(kind="reasoning"))
         blocks = _get(delta, "thinking_blocks")
         if blocks:
@@ -149,6 +157,8 @@ class ChatCompletionsAssembler:
         )
         if reasoning:
             provider_message["reasoning_content"] = reasoning
+        if self.reasoning_parts:
+            provider_message["reasoning"] = "".join(self.reasoning_parts)
         if self.thinking_blocks:
             provider_message["thinking_blocks"] = list(self.thinking_blocks)
         return AssembledResponse(

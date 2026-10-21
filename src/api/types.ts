@@ -126,6 +126,7 @@ export type {
   ModelOption,
   ModelsResponse,
   ModelThinking,
+  NoteChange,
   Notification as AppNotification,
   NotificationCountOutputBody as NotificationCount,
   NotificationPage,

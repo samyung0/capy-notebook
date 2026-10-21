@@ -233,3 +233,4 @@ Effects follow saves: 5 s after the last change, at most 30 s while typing
   open (link format, link-only vs embedded preview + link, cleanup, offline, limits). Report: private harness
   `2026-10-17-effects-misses/D-LINKED-IMAGES.md`. Parked by Epo 2026-10-17: images stay in the file with an
   insert-time budget.
+- Pending (Epo 2026-10-21): chapter-level quizzes and flashcard sets stay unindexed, but the agent should find them by title, question text and answers through the same cheap lexical match the per-message hints use (no chunking, no vectors).
