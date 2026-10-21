@@ -1,3 +1,5 @@
+import type { CursorChannel } from './officePresence';
+
 /** An editor's replica; the XLSX one answers from its workbook worker. */
 export interface OfficeReplica {
   applyUpdate(update: Uint8Array): unknown;
@@ -10,6 +12,8 @@ export interface OfficeReplica {
 }
 export interface OfficeCollaboration {
   clientId: number;
+  /** The co-editors' cursors and this editor's (Epo 2026-10-20). */
+  cursors: CursorChannel;
   initialUpdate: Uint8Array;
   onReplica: (replica: OfficeReplica | null) => void;
 }

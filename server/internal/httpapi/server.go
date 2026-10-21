@@ -34,17 +34,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// corsOrigins falls back to "*" when no allowlist is configured. Bearer tokens
-// are sent explicitly rather than as cookies and AllowCredentials is false, so
-// the wildcard is not a session-theft vector; it is still narrowed in
-// production so a hostile page cannot drive the API from a user's browser.
-func corsOrigins(configured []string) []string {
-	if len(configured) == 0 {
-		return []string{"*"}
-	}
-	return configured
-}
-
 // Config holds gateway settings for auth and billing. Provider OAuth
 // (Google/Microsoft) is managed entirely by Clerk.
 type Config struct {
@@ -70,10 +59,13 @@ type Config struct {
 	EmailUnsubscribeSecret string
 	CollaborationSecret    string
 	CollaborationURL       string
-	// AllowedOrigins is the CORS allowlist. Empty means "*", which is what dev
-	// and e2e run with; production sets it once the SPA and API live on
-	// different hostnames.
+	// AllowedOrigins is the CORS allowlist. Empty answers no cross-origin
+	// request at all (never "*"): development and e2e reach the API through a
+	// same-origin proxy, and deployed gateways refuse to boot without a list.
 	AllowedOrigins []string
+	// AuthorizedParties are the origins whose Clerk session tokens are accepted
+	// (COLLABORATION_ALLOWED_ORIGINS, Epo 2026-10-21).
+	AuthorizedParties []string
 	// RateLimit governs per-user and per-IP request limits. The zero value
 	// disables limiting entirely.
 	RateLimit ratelimit.Config
@@ -118,6 +110,10 @@ type api struct {
 	stripeSubscription func(string) (*stripe.Subscription, error)
 	stripeEntitlements func(string) ([]*stripe.Subscription, error)
 	stripeInvoices     func(string) ([]*stripe.Invoice, error)
+	// Subscription Checkout calls, faked in tests.
+	stripeNewCheckout    func(customerID, priceID, userID, successURL, cancelURL, reservationID, key string) (billing.CheckoutSession, error)
+	stripeGetCheckout    func(sessionID string) (billing.CheckoutSession, error)
+	stripeExpireCheckout func(sessionID string) error
 	// Credit top-up and auto-reload calls, replaced by tests.
 	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
 	stripeSetupMethod   func(string) (store.PaymentMethod, error)
@@ -160,6 +156,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
 		stripeInvoices:     billing.ListInvoices,
 
+		stripeNewCheckout:    billing.CreateCheckoutSession,
+		stripeGetCheckout:    billing.GetCheckoutSession,
+		stripeExpireCheckout: billing.ExpireCheckoutSession,
+
 		stripeTopUpMethod:   billing.TopUpPaymentMethod,
 		stripeSetupMethod:   billing.SetupPaymentMethod,
 		stripeVoidInvoice:   billing.VoidInvoice,
@@ -197,17 +197,20 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Use(obs.AccessLog)
 	r.Use(recoverer)
 	r.Use(obs.SentryMiddleware)
-	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: corsOrigins(cfg.AllowedOrigins),
-		AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{
-			"Content-Type", "Authorization", obs.HeaderTraceparent,
-			auth.HeaderE2EUserID, auth.HeaderE2ESecret,
-		},
-		ExposedHeaders:   []string{obs.HeaderRequestID},
-		AllowCredentials: false,
-		MaxAge:           600,
-	}))
+	// go-chi/cors reads an empty origin list as "*", so no list means no handler.
+	if len(cfg.AllowedOrigins) > 0 {
+		r.Use(cors.Handler(cors.Options{
+			AllowedOrigins: cfg.AllowedOrigins,
+			AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
+			AllowedHeaders: []string{
+				"Content-Type", "Authorization", obs.HeaderTraceparent,
+				auth.HeaderE2EUserID, auth.HeaderE2ESecret,
+			},
+			ExposedHeaders:   []string{obs.HeaderRequestID},
+			AllowCredentials: false,
+			MaxAge:           600,
+		}))
+	}
 	// Public failures must not be cached either: visibility is read live, and
 	// only the site Worker caches public responses.
 	r.Use(func(next http.Handler) http.Handler {
@@ -220,14 +223,15 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	})
 	r.Use(a.internalSecretFirst)
 	r.Use(auth.Middleware(auth.Config{
-		SecretKey:    cfg.ClerkSecretKey,
-		Disabled:     cfg.AuthDisabled,
-		DevUserID:    cfg.DevUserID,
-		E2EAuth:      cfg.E2EAuth,
-		E2ESecret:    cfg.E2ESecret,
-		E2EUserIDs:   cfg.E2EUserIDs,
-		Store:        s,
-		PublicPrefix: publicPrefix,
+		SecretKey:         cfg.ClerkSecretKey,
+		Disabled:          cfg.AuthDisabled,
+		DevUserID:         cfg.DevUserID,
+		E2EAuth:           cfg.E2EAuth,
+		E2ESecret:         cfg.E2ESecret,
+		E2EUserIDs:        cfg.E2EUserIDs,
+		AuthorizedParties: cfg.AuthorizedParties,
+		Store:             s,
+		PublicPrefix:      publicPrefix,
 		PublicReadPrefix: []string{
 			"/api/public/",
 		},

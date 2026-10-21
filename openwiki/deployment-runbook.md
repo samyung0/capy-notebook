@@ -1806,6 +1806,10 @@ those services start.
    Configure its platform model capacities through Ops (§1.4) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
+   So are the VLM page-read gates, `CAPY_VLM_PAGE_CAPACITY` (page reads in
+   flight across the workers) and `CAPY_VLM_PAGES_PER_JOB`: production 64 and
+   40 (the production ingest Compose's values when the GitHub variables are
+   blank), local/UAT Compose fixes 20 and 10.
    Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document
@@ -2363,7 +2367,7 @@ child confines itself right after its `setsid`.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Parse child (persistent) | the API's, without `PARSER_TOKEN` | 2 GiB soft address space | none (600 s per document) | 256 | 512 MiB | `setsid` | reads its code, the system trees and Java's jars; writes its slot folder |
 | LibreOffice (`soffice.bin`) | `PATH`, `LANG`, `HOME` and `TMPDIR` (its job folder), `MALLOC_ARENA_MAX=2` | the parse child's, inherited | 180 s | 256 | 256 MiB | `setsid`, `setpgid`, new processes | reads the system trees; writes its job folder, its IPC pipe included |
-| Java (OpenDataLoader) | `PATH`, `HOME`, `LANG`; `-XX:ActiveProcessorCount` from the container's CPU quota | 2 GiB data, address space lifted | 2,400 s behind the 600 s deadline | 256 | 512 MiB | `setsid`, `setpgid`, new processes | reads the system trees, its jars and its PDF; writes its output folder |
+| Java (OpenDataLoader) | `PATH`, `HOME`, `LANG`, `MALLOC_ARENA_MAX=2`; `-XX:ActiveProcessorCount` from the container's CPU quota | 2 GiB data, address space lifted | 2,400 s behind the 600 s deadline | 256 | 512 MiB | `setsid`, `setpgid`, new processes | reads the system trees, its jars and its PDF; writes its output folder |
 | Ingest decode helper (`pipeline/ingest/decode.py`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
 
 Core dumps are off for all of them. The ingest worker never imports MuPDF or
@@ -2969,8 +2973,9 @@ production instance's subdomain sessions. Set these in `deploy/.env`:
 `pk_live` in `VITE_CLERK_PUBLISHABLE_KEY`. `pnpm dev:uat` rejects other values.
 Add `https://local.uat.capynotebook.com` to both
 `COLLABORATION_ALLOWED_ORIGINS` and `OFFICE_ALLOWED_PARENT_ORIGINS` in GitHub UAT
-and the ignored UAT file. Deploy the collaboration service and Office Worker to
-apply those settings. `deploy/b2-cors.uat.json` already covers this origin with
+and the ignored UAT file. Deploy the gateway, the collaboration service and the
+Office Worker to apply those settings: the gateway accepts Clerk session tokens
+only from `COLLABORATION_ALLOWED_ORIGINS` (their `azp`). `deploy/b2-cors.uat.json` already covers this origin with
 `https://*.uat.capynotebook.com`. Clerk needs an additional allowlist entry only
 if its optional subdomain allowlist is enabled.
 

@@ -157,7 +157,7 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 pub const CLIENT_PROTOCOL: u32 = 7;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets).
-pub const MIN_MATERIAL: u32 = 6;
+pub const MIN_MATERIAL: u32 = 7;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
 pub const MIN_SOURCE: u32 = 7;

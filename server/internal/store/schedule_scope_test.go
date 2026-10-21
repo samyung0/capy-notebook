@@ -9,7 +9,9 @@ import (
 
 // Schedule rows carry no share model, so the owner id in the WHERE clause is
 // the only thing standing between a caller and someone else's calendar. These
-// mutations were previously keyed on the row id alone.
+// mutations were previously keyed on the row id alone. Security regression
+// (human error-handling, 2026-10-21): deleting someone else's row answers not
+// found instead of a false success.
 func TestScheduleMutationsAreScopedToTheOwner(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -51,14 +53,14 @@ func TestScheduleMutationsAreScopedToTheOwner(t *testing.T) {
 	if _, err := s.UpdateEvent(ctx, intruder, eventID, EventPatch{Title: &renamed}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("intruder renamed an event: %v", err)
 	}
-	if err := s.DeleteLabel(ctx, intruder, labelID); err != nil {
-		t.Fatal(err)
+	if err := s.DeleteLabel(ctx, intruder, labelID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("intruder label delete: %v, want not found", err)
 	}
-	if err := s.DeleteTask(ctx, intruder, taskID); err != nil {
-		t.Fatal(err)
+	if err := s.DeleteTask(ctx, intruder, taskID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("intruder task delete: %v, want not found", err)
 	}
-	if err := s.DeleteEvent(ctx, intruder, eventID); err != nil {
-		t.Fatal(err)
+	if err := s.DeleteEvent(ctx, intruder, eventID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("intruder event delete: %v, want not found", err)
 	}
 
 	labels, err := s.ListLabels(ctx, owner)
@@ -153,6 +155,16 @@ func TestOwnerEditsAndDeletesScheduleRows(t *testing.T) {
 	}
 	if len(tasks) != 0 {
 		t.Fatalf("task survived its own delete: %#v", tasks)
+	}
+	if err := s.DeleteEvent(ctx, owner, eventID); err != nil {
+		t.Fatal(err)
+	}
+	if events, err = s.ListEvents(ctx, owner); err != nil || len(events) != 0 {
+		t.Fatalf("event survived its own delete: %#v, %v", events, err)
+	}
+	// Deleting it again is a missing id.
+	if err := s.DeleteLabel(ctx, owner, labelID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second label delete: %v, want not found", err)
 	}
 }
 

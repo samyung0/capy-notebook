@@ -122,6 +122,7 @@ import type {
   PDFAnnotation,
   PDFAnnotationBody,
   PastReviewsOutputBody,
+  PendingWorkspaceInvite,
   ProjectMaterialReq,
   PublicFlashcardSet,
   PublicQuiz,
@@ -8662,6 +8663,56 @@ export const generate = async (id: string,
 
 
 
+export type listWorkspaceInvitesResponse200 = {
+  data: PendingWorkspaceInvite[]
+  status: 200
+}
+
+export type listWorkspaceInvitesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listWorkspaceInvitesResponseSuccess = (listWorkspaceInvitesResponse200) & {
+  headers: Headers;
+};
+export type listWorkspaceInvitesResponseError = (listWorkspaceInvitesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listWorkspaceInvitesResponse = (listWorkspaceInvitesResponseSuccess | listWorkspaceInvitesResponseError)
+
+export const getListWorkspaceInvitesUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/invites`
+}
+
+/**
+ * @summary List pending workspace invites
+ */
+export const listWorkspaceInvites = async (id: string, options?: RequestInit): Promise<listWorkspaceInvitesResponse> => {
+
+  const res = await fetch(getListWorkspaceInvitesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listWorkspaceInvitesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listWorkspaceInvitesResponse
+}
+
+
+
 export type createWorkspaceInviteResponse202 = {
   data: void
   status: 202
@@ -8709,6 +8760,58 @@ export const createWorkspaceInvite = async (id: string,
 
   const data: createWorkspaceInviteResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as createWorkspaceInviteResponse
+}
+
+
+
+export type cancelWorkspaceInviteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelWorkspaceInviteResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type cancelWorkspaceInviteResponseSuccess = (cancelWorkspaceInviteResponse204) & {
+  headers: Headers;
+};
+export type cancelWorkspaceInviteResponseError = (cancelWorkspaceInviteResponseDefault) & {
+  headers: Headers;
+};
+
+export type cancelWorkspaceInviteResponse = (cancelWorkspaceInviteResponseSuccess | cancelWorkspaceInviteResponseError)
+
+export const getCancelWorkspaceInviteUrl = (id: string,
+    inviteId: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/invites/${inviteId}`
+}
+
+/**
+ * @summary Cancel a pending workspace invite
+ */
+export const cancelWorkspaceInvite = async (id: string,
+    inviteId: string, options?: RequestInit): Promise<cancelWorkspaceInviteResponse> => {
+
+  const res = await fetch(getCancelWorkspaceInviteUrl(id,inviteId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelWorkspaceInviteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as cancelWorkspaceInviteResponse
 }
 
 

@@ -212,9 +212,149 @@ export function NewPasswordForm({
   );
 }
 
+type SecondFactor = 'totp' | 'phone_code' | 'email_code' | 'backup_code';
+
+/** The code step Clerk asks of a user who turned MFA on (Epo 2026-10-21):
+ * their authenticator code with a backup-code switch; a phone or email code
+ * only when Clerk reports no authenticator for them, sent as the step opens. */
+function SecondFactorCard({
+  finish,
+  onBack,
+}: {
+  finish: () => Promise<string | null>;
+  onBack: () => void;
+}) {
+  const { signIn } = useSignIn();
+  const supported = signIn.supportedSecondFactors.map(
+    (factor) => factor.strategy
+  );
+  const primary = (
+    ['totp', 'phone_code', 'email_code', 'backup_code'] as const
+  ).find((strategy) => supported.includes(strategy));
+  const backup = supported.includes('backup_code');
+  const [strategy, setStrategy] = useState<SecondFactor | undefined>(primary);
+  const [formError, setFormError] = useState<string | null>(
+    primary ? null : m.auth_error_generic()
+  );
+  const id = useId();
+  const schema = useMemo(() => z.object({ code: requiredField }), []);
+  const {
+    control,
+    formState: { isSubmitting },
+    handleSubmit,
+    reset,
+  } = useForm({ defaultValues: { code: '' }, resolver: zodResolver(schema) });
+  const sent = useRef(false);
+  useEffect(() => {
+    if (sent.current) return;
+    if (primary !== 'phone_code' && primary !== 'email_code') return;
+    sent.current = true;
+    const send =
+      primary === 'phone_code'
+        ? signIn.mfa.sendPhoneCode()
+        : signIn.mfa.sendEmailCode();
+    void send.then(({ error }) => {
+      if (error) setFormError(clerkMessage(error));
+    });
+  }, [primary, signIn]);
+
+  const verify = (code: string) => {
+    switch (strategy) {
+      case 'totp':
+        return signIn.mfa.verifyTOTP({ code });
+      case 'phone_code':
+        return signIn.mfa.verifyPhoneCode({ code });
+      case 'email_code':
+        return signIn.mfa.verifyEmailCode({ code });
+      default:
+        return signIn.mfa.verifyBackupCode({ code });
+    }
+  };
+  const hint = {
+    backup_code: m.auth_mfa_hint_backup,
+    email_code: m.auth_mfa_hint_email,
+    phone_code: m.auth_mfa_hint_phone,
+    totp: m.auth_mfa_hint_totp,
+  }[strategy ?? 'totp']();
+
+  return (
+    <AuthCard hint={hint} title={m.auth_mfa_title()}>
+      <form
+        className="relative flex flex-col gap-2"
+        onSubmit={handleSubmit(async ({ code }) => {
+          setFormError(null);
+          const { error } = await verify(code.trim());
+          if (error) {
+            setFormError(clerkMessage(error));
+            return;
+          }
+          setFormError(await finish());
+        })}
+      >
+        <Controller
+          control={control}
+          name="code"
+          render={({ field, fieldState }) => (
+            <InputField
+              error={fieldState.error}
+              id={`${id}-code`}
+              label={m.auth_code()}
+            >
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                autoComplete="one-time-code"
+                autoFocus
+                id={`${id}-code`}
+                inputMode={strategy === 'backup_code' ? 'text' : 'numeric'}
+              />
+            </InputField>
+          )}
+        />
+        <SubmitButton busy={isSubmitting}>{m.auth_mfa_submit()}</SubmitButton>
+        <FormAlert message={formError} />
+      </form>
+      <div className="mt-6 flex justify-between gap-4 text-sm">
+        {/* Lost device, another account, or a stale attempt: start over. */}
+        <button
+          className={cn(
+            BASE_BUTTON_STYLE,
+            'font-semibold text-link hover:text-link-hover'
+          )}
+          onClick={onBack}
+          type="button"
+        >
+          {m.auth_back_to_signin()}
+        </button>
+        {backup && primary !== 'backup_code' && (
+          <button
+            className={cn(
+              BASE_BUTTON_STYLE,
+              'font-semibold text-link hover:text-link-hover'
+            )}
+            onClick={() => {
+              setStrategy(strategy === 'backup_code' ? primary : 'backup_code');
+              setFormError(null);
+              reset({ code: '' });
+            }}
+            type="button"
+          >
+            {strategy === 'backup_code'
+              ? m.auth_mfa_use_code()
+              : m.auth_mfa_use_backup()}
+          </button>
+        )}
+      </div>
+    </AuthCard>
+  );
+}
+
 function SignInCard() {
   const { signIn } = useSignIn();
-  const [step, setStep] = useState<'form' | 'newPassword'>('form');
+  // An SSO sign-in that still needs the second factor comes back here.
+  const [step, setStep] = useState<'form' | 'newPassword' | 'secondFactor'>(
+    signIn.status === 'needs_second_factor' ? 'secondFactor' : 'form'
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const id = useId();
   const schema = useMemo(
@@ -235,6 +375,19 @@ function SignInCard() {
     return error ? clerkMessage(error) : null;
   };
 
+  if (step === 'secondFactor')
+    return (
+      <SecondFactorCard
+        finish={finish}
+        onBack={() => {
+          // Clears the local attempt and shows the form; a reload may still
+          // find Clerk's attempt waiting and open the code step again.
+          void signIn.reset();
+          setStep('form');
+        }}
+      />
+    );
+
   if (step === 'newPassword') {
     return (
       <AuthCard
@@ -246,6 +399,10 @@ function SignInCard() {
             const { error } =
               await signIn.resetPasswordEmailCode.submitPassword({ password });
             if (error) return clerkMessage(error);
+            if (signIn.status === 'needs_second_factor') {
+              setStep('secondFactor');
+              return null;
+            }
             return finish();
           }}
           submitLabel={m.auth_new_password_submit()}
@@ -270,6 +427,10 @@ function SignInCard() {
           }
           if (signIn.status === 'needs_new_password') {
             setStep('newPassword');
+            return;
+          }
+          if (signIn.status === 'needs_second_factor') {
+            setStep('secondFactor');
             return;
           }
           setFormError(await finish());

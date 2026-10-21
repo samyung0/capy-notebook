@@ -32,6 +32,35 @@ export type OfficeMode = 'view' | 'edit';
  */
 export type OfficeZoom = number | 'fit';
 
+export interface OfficeCell {
+  col: number;
+  row: number;
+}
+
+/**
+ * An editor's cursor as the room's awareness carries it (Epo 2026-10-20): a
+ * DOCX selection as the editor's encoded positions in a story, an XLSX cell
+ * range on a sheet, a PPTX slide and shape. The same shape goes between Capy
+ * and the frame.
+ */
+export type OfficeCursor =
+  | { story: string; anchor: number[]; head: number[] }
+  | { sheet: string; anchor: OfficeCell; head: OfficeCell }
+  | { slideId: string; shapeId?: string };
+
+/** A co-editor's cursor for the frame to draw, under the verified name the
+ * room's presence gives its client id (never a name from its awareness). */
+export interface OfficePeer {
+  clientId: number;
+  cursor: OfficeCursor;
+  name: string;
+}
+
+/** Bounds on what a cursor and the peers carry, as the fork's providers'. */
+export const MAX_CURSOR_TEXT = 1024;
+export const MAX_CURSOR_BYTES = 1024;
+export const MAX_PEERS = 256;
+
 export type OfficeAnalysis =
   | {
       format: 'docx';
@@ -108,6 +137,12 @@ export type OfficeHostMessage =
    * in the sheet would end it.
    */
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'focus-left' }
+  /** The room's other editors' cursors, sent whenever they change. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'peers';
+      peers: OfficePeer[];
+    }
   /**
    * The tab holds back its collaboration messages (Epo 2026-10-18): frames
    * wait for the update allowance, an update's pieces (over 2 MiB,
@@ -200,6 +235,19 @@ export type OfficeNotice = (typeof OFFICE_NOTICES)[number];
 
 export type OfficeRuntimeMessage =
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'initialized' }
+  /**
+   * Keyboard, pointer, touch or wheel input in the frame, at most once a
+   * minute (`reportInput`): Capy's idle close counts it as its page's own,
+   * since the frame's events never reach it.
+   */
+  | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'activity' }
+  /** The editor's own cursor moved (null: it has none), for the room. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'cursor';
+      cursor: OfficeCursor | null;
+      revision: number;
+    }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'update';
@@ -357,6 +405,12 @@ export function isOfficeHostMessage(
     return isCount(candidate.epoch) && typeof candidate.id === 'string';
   if (candidate.type === 'export') return typeof candidate.id === 'string';
   if (candidate.type === 'focus-left') return true;
+  if (candidate.type === 'peers')
+    return (
+      Array.isArray(candidate.peers) &&
+      candidate.peers.length <= MAX_PEERS &&
+      candidate.peers.every(isOfficePeer)
+    );
   if (candidate.type === 'sending')
     return typeof candidate.pending === 'boolean';
   if (candidate.type === 'set-appearance')
@@ -438,10 +492,15 @@ export function isOfficeRuntimeMessage(
     version?: unknown;
   };
   const raw = value as Record<string, unknown>;
-  if (raw.version === OFFICE_PROTOCOL_VERSION && raw.type === 'initialized')
+  if (
+    raw.version === OFFICE_PROTOCOL_VERSION &&
+    (raw.type === 'initialized' || raw.type === 'activity')
+  )
     return true;
   if (raw.version === OFFICE_PROTOCOL_VERSION && isCount(raw.revision)) {
     if (raw.type === 'checkpoint') return true;
+    if (raw.type === 'cursor')
+      return raw.cursor === null || isOfficeCursor(raw.cursor);
     if (raw.type === 'menus')
       return isOfficeMenus(raw.menus) && isOfficeHeaderActions(raw.actions);
     if (raw.type === 'rendered')
@@ -537,6 +596,45 @@ function isOfficeAnalysis(value: unknown): value is OfficeAnalysis {
     );
   }
   return false;
+}
+
+const isText = (value: unknown): value is string =>
+  typeof value === 'string' && value.length <= MAX_CURSOR_TEXT;
+
+const isBytes = (value: unknown): value is number[] =>
+  Array.isArray(value) &&
+  value.length <= MAX_CURSOR_BYTES &&
+  value.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255);
+
+const isCell = (value: unknown): value is OfficeCell =>
+  !!value &&
+  typeof value === 'object' &&
+  isCount((value as OfficeCell).row) &&
+  isCount((value as OfficeCell).col);
+
+/** A cursor in one of the three formats' shapes, within the bounds; read
+ * from awareness, which any peer writes, and from the frame. */
+export function isOfficeCursor(value: unknown): value is OfficeCursor {
+  if (!value || typeof value !== 'object') return false;
+  const cursor = value as Record<string, unknown>;
+  if ('story' in cursor)
+    return (
+      isText(cursor.story) && isBytes(cursor.anchor) && isBytes(cursor.head)
+    );
+  if ('sheet' in cursor)
+    return isText(cursor.sheet) && isCell(cursor.anchor) && isCell(cursor.head);
+  return (
+    isText(cursor.slideId) &&
+    (cursor.shapeId === undefined || isText(cursor.shapeId))
+  );
+}
+
+function isOfficePeer(value: unknown): value is OfficePeer {
+  if (!value || typeof value !== 'object') return false;
+  const peer = value as Record<string, unknown>;
+  return (
+    isCount(peer.clientId) && isText(peer.name) && isOfficeCursor(peer.cursor)
+  );
 }
 
 function isCount(value: unknown): value is number {

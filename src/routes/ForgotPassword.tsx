@@ -165,6 +165,11 @@ export default function ForgotPasswordPage() {
               setFormError(clerkMessage(passwordError));
               return;
             }
+            // A user with MFA on finishes on the sign-in page's code step.
+            if (signIn.status === 'needs_second_factor') {
+              router.history.push(`/sign-in${window.location.search}`);
+              return;
+            }
             const { error: finalizeError } = await signIn.finalize({
               navigate: async () => router.history.push('/'),
             });

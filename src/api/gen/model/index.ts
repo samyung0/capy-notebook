@@ -230,6 +230,7 @@ export * from './pDFAnnotationBodyKind.ts';
 export * from './pDFAnnotationKind.ts';
 export * from './pDFPoint.ts';
 export * from './pDFRect.ts';
+export * from './pendingWorkspaceInvite.ts';
 export * from './planTier.ts';
 export * from './previousAttempt.ts';
 export * from './privacy.ts';

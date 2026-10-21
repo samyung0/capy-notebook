@@ -133,7 +133,8 @@ export function SourceTextView({
     sourceHeaderStatus(source.status, {
       busy: leaving || source.handoff,
       editing,
-    })
+    }),
+    editing && source.slowed
   );
   const done = async () => {
     setLeaving(true);
@@ -191,7 +192,6 @@ export function SourceTextView({
         readOnly={source.readOnly}
         reloading={source.discarding}
         replaced={source.replaced}
-        slowed={editing && source.slowed}
         storageFull={source.session?.storageFull}
       />
       <div className="min-h-0 flex-1 overflow-auto">

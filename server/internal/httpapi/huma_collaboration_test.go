@@ -33,6 +33,7 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 	for _, expected := range []string{
 		"/api/workspaces/{id}/members:",
 		"/api/workspaces/{id}/invites:",
+		"/api/workspaces/{id}/invites/{inviteId}:",
 		"/api/workspace-invites/{token}/accept:",
 		"/api/materials/{id}/discussions:",
 		"/api/materials/{id}/collaboration-token:",
@@ -56,7 +57,6 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"/api/workspaces/{id}/invite-candidates:",
-		"/api/workspaces/{id}/invites/{inviteId}:",
 		"CreatedWorkspaceInvite",
 		"WorkspaceInviteCandidate",
 		"originalFragment:",

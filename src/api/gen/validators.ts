@@ -6471,6 +6471,22 @@ export const GenerateResponse = zod.record(zod.string(), zod.unknown())
 
 
 /**
+ * @summary List pending workspace invites
+ */
+export const ListWorkspaceInvitesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ListWorkspaceInvitesResponseItem = zod.object({
+  "address": zod.string(),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "sentAt": zod.iso.datetime({"offset":true})
+})
+export const ListWorkspaceInvitesResponse = zod.array(ListWorkspaceInvitesResponseItem)
+
+
+/**
  * @summary Privately invite a workspace member
  */
 export const CreateWorkspaceInviteParams = zod.object({
@@ -6487,6 +6503,17 @@ export const CreateWorkspaceInviteBody = zod.object({
 })
 
 export const CreateWorkspaceInviteResponse = zod.void()
+
+
+/**
+ * @summary Cancel a pending workspace invite
+ */
+export const CancelWorkspaceInviteParams = zod.object({
+  "id": zod.string(),
+  "inviteId": zod.string()
+})
+
+export const CancelWorkspaceInviteResponse = zod.void()
 
 
 /**

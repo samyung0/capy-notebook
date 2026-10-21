@@ -1518,8 +1518,9 @@ Missing capacity raises an explicit configuration error before a call row or
 provider request is created. A full gate polls with jitter within the call budget,
 then fails as `provider_busy`. Leases use the call id and receipt deadline and are
 released when the call ends. The VLM read of text-less document pages has a
-gate of its own: its leases use the fixed key `vlm_page` with a limit of 20
-across every worker (`models.VLM_PAGE_CAPACITY`) in place of the GLM row, so those
+gate of its own: its leases use the fixed key `vlm_page` with a limit of
+`CAPY_VLM_PAGE_CAPACITY` across every worker (64 in production, 20 in UAT and
+local) in place of the captioning row, so those
 reads need no `model_capacities` row and do not count against GLM's ingest
 share.
 
@@ -1770,7 +1771,8 @@ the likelihood grew every time the registry was reconfigured.
 | `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` | SPA | empty disables |
 | `LOG_FORMAT` | all | `json` \| `text` |
 | `LOG_LEVEL` | all | default `info` |
-| `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
+| `CORS_ALLOWED_ORIGINS` | gateway | comma separated; never `*`: empty answers no cross-origin request, and outside development and e2e the gateway refuses to boot without it |
+| `COLLABORATION_ALLOWED_ORIGINS` | gateway, collaboration | the gateway accepts a Clerk session token only when its `azp` is one of these; with Clerk on outside development and e2e it refuses to boot when the list is empty |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
 | `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls; default 15 |

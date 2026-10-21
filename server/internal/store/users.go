@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,6 +14,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 type BillingInfo struct {
@@ -391,7 +393,22 @@ func (s *Store) accountModelPrefs(ctx context.Context) (chat, editor models.Ref,
 // lifecycle change, and without the guard a stale Clerk token or a late event
 // could refresh PII after deletion was requested or while an operator
 // suspension was in force. Purged tombstones must never be repopulated either.
+//
+// An address another live account still holds (users_email_active_uidx, e.g.
+// a local row that has not seen its owner's address change yet) is reported
+// and the row is written without it, rather than failing provisioning on every
+// request.
 func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
+	needsDefaultWorkspace, err := s.upsertUserFromClerk(ctx, id, name, email, avatarURL)
+	if email != "" && uniqueConstraintName(err) == "users_email_active_uidx" {
+		obs.CaptureErr(ctx, fmt.Errorf("clerk email held by another live account, stored without email: %w", err),
+			map[string]string{"stage": "clerk_email_collision"})
+		return s.upsertUserFromClerk(ctx, id, name, "", avatarURL)
+	}
+	return needsDefaultWorkspace, err
+}
+
+func (s *Store) upsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
 	if name == "" {
 		name = email
 	}
@@ -416,9 +433,10 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 	}
 	var needsDefaultWorkspace bool
 	// name is user-owned once the row exists (PATCH /api/me); a refresh only
-	// carries email and avatar.
+	// carries email and avatar. A refresh without a verified primary address
+	// clears the stored one (human authorization, 2026-10-21).
 	err := s.pool.QueryRow(ctx, `UPDATE users SET
-			email=COALESCE(NULLIF($2,''), email),
+			email=NULLIF($2,''),
 			avatar_url=COALESCE(NULLIF($3,''), avatar_url),
             avatar_icon_id=COALESCE(avatar_icon_id, $4),
 			updated_at=now()

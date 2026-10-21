@@ -131,6 +131,7 @@ export type {
   NotificationPage,
   NotificationPrefs,
   PaymentMethod,
+  PendingWorkspaceInvite,
   PublicFlashcardSet,
   PublicWorkspace,
   Ref as ModelRef,

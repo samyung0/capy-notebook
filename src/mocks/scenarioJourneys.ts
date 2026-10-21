@@ -410,6 +410,8 @@ export async function runJourney(
     }
     if (id === 'auth-breached')
       return 'The normal sign-in flow requires a new password.';
+    if (id === 'auth-second-factor')
+      return 'The sign-in flow asks for the authenticator code.';
     if (id === 'auth-busy')
       return 'The sign-in request is pending for 15 seconds.';
     return;
@@ -660,6 +662,19 @@ export async function runJourney(
       await ui.fill('input[name="identifier"]', 'morgan@example.com');
       fail();
       await ui.click(m.members_invite());
+      return;
+    case 'invites-load':
+      fail();
+      await share();
+      return;
+    case 'invite-cancel':
+      await share();
+      await ui.fill('input[name="identifier"]', 'morgan@example.com');
+      await ui.click(m.members_invite());
+      fail();
+      await ui.click(
+        m.members_pending_cancel_label({ address: 'morgan@example.com' })
+      );
       return;
     case 'member-save':
     case 'member-remove':

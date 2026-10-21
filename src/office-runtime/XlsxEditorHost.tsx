@@ -1,3 +1,8 @@
+import {
+  type AwarenessPeer,
+  type CollaborationAwareness,
+  colorForClientId,
+} from '@betteroffice/xlsx/collaboration';
 import { SheetGoneError } from '@betteroffice/xlsx/editor';
 import { analyzeOpenWorkbook } from '@betteroffice/xlsx/viewer';
 import {
@@ -9,6 +14,7 @@ import {
   type PointerEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -23,6 +29,7 @@ import type {
   OfficeExporter,
   OfficeFlusher,
 } from './officeCollaboration';
+import { type CursorChannel, mappedPeers } from './officePresence';
 import type {
   OfficeCaptureScope,
   OfficeMenuReporter,
@@ -38,6 +45,35 @@ import {
   viewportPage,
 } from './xlsxRender';
 import './xlsx-runtime.css';
+
+/** The XLSX editor's presence over the frame's cursor channel: co-editors'
+ * cell ranges under the names Capy gives them. */
+function xlsxAwareness(channel: CursorChannel): CollaborationAwareness {
+  const peers = mappedPeers(channel, (peer): AwarenessPeer | null =>
+    'sheet' in peer.cursor
+      ? {
+          clientId: peer.clientId,
+          clock: 0,
+          cursor: peer.cursor,
+          cursorMovedAt: peer.movedAt,
+          lastSeen: peer.seenAt,
+          user: { color: colorForClientId(peer.clientId), name: peer.name },
+        }
+      : null
+  );
+  return {
+    // The editor reads the peers only from its listener: it hears them at
+    // once.
+    onAwareness: (listener) => {
+      listener(peers());
+      return channel.subscribe(() => listener(peers()));
+    },
+    get peers() {
+      return peers();
+    },
+    setCursor: (cursor) => channel.send(cursor),
+  };
+}
 
 export function XlsxEditorHost({
   bytes,
@@ -91,6 +127,13 @@ export function XlsxEditorHost({
   sending?: boolean;
 }) {
   const apiRef = useRef<XlsxEditorApi | null>(null);
+  const editorCollaboration = useMemo(
+    () => ({
+      ...collaboration,
+      provider: xlsxAwareness(collaboration.cursors),
+    }),
+    [collaboration]
+  );
   useEffect(() => {
     onExporter(async () => {
       if (!apiRef.current) throw new Error('Editor is still loading');
@@ -196,7 +239,7 @@ export function XlsxEditorHost({
     >
       <XlsxEditor
         className="office-editor-host"
-        collaboration={collaboration}
+        collaboration={editorCollaboration}
         file={bytes}
         fileName={fileName}
         i18n={xlsxStrings(locale)}

@@ -10,6 +10,10 @@ import {
 } from '@/features/collaboration/itemRoom';
 import { itemSaveState } from '@/features/collaboration/LiveItemControls';
 import type { InNote } from '@/features/collaboration/noteSeat';
+import {
+  type PresenceConnection,
+  useReportPresence,
+} from '@/features/collaboration/presence';
 import { SlowedOpenLine } from '@/features/collaboration/SlowedOpen';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
@@ -28,6 +32,7 @@ export function LiveFlashcards({
   title,
   action,
   onEmpty,
+  onPresenceChange,
   onStatusChange,
   showTitle,
   showUndo,
@@ -40,6 +45,8 @@ export function LiveFlashcards({
   /** Sits right of the title. */
   action?: ReactNode;
   onEmpty?: () => void;
+  /** The room's other editors, for the header's avatar group. */
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
   showTitle?: boolean;
   showUndo?: boolean;
@@ -68,6 +75,7 @@ export function LiveFlashcards({
     onStatusChange?.(saveState ? { saveState } : null);
   }, [snapshot.status, snapshot.recovery, snapshot.offline, onStatusChange]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
+  useReportPresence(onPresenceChange, snapshot.presence);
 
   if (snapshot.status === 'unavailable')
     return (

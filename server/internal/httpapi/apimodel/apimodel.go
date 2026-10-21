@@ -266,10 +266,11 @@ func FromMaterial(m store.Material) (Material, error) {
 }
 
 type (
-	WorkspaceMember       = store.WorkspaceMember
-	WorkspaceCollaborator = store.WorkspaceCollaborator
-	Discussion            = store.Discussion
-	Comment               = store.Comment
+	WorkspaceMember        = store.WorkspaceMember
+	PendingWorkspaceInvite = store.PendingWorkspaceInvite
+	WorkspaceCollaborator  = store.WorkspaceCollaborator
+	Discussion             = store.Discussion
+	Comment                = store.Comment
 )
 
 // Workspace is the response contract. Tags are object-wrapped for useFieldArray.
