@@ -1797,8 +1797,14 @@ those services start.
    V4.1 Flash 1017 on InferenceNet, then Cloudflare: standalone-image captions
    and the VLM read of text-less document pages) and GLM-5.3-Flash, the same
    key the app host's `retrieval` and `ops` containers carry (Ops reads it too,
-   to flag a missing credential). No Z.AI key is read since 2026-10-21; the
-   environment push deletes a leftover `ZAI_API_KEY` from Coolify. The
+   to flag a missing credential). No Z.AI key is read since 2026-10-21. The
+   deploy workflows' Coolify step (`config.py apply-coolify` in
+   `deploy-environment.yml` and `deploy-ops.yml`) deletes a leftover
+   `ZAI_API_KEY` from Coolify. The GitHub environment secret `ZAI_API_KEY`
+   stays until someone deletes it by hand, and a `ZAI_API_KEY=` line left in a
+   local env file (`deploy/.env.uat`, `deploy/.env.prod`) makes `pnpm env:push`
+   and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
+   delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
    `production` environment needs `OPENROUTER_API_KEY` before a production
    deploy, since the renderer writes an empty key without it. Those calls
    happen on this ingest host after it

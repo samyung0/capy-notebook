@@ -893,10 +893,37 @@ async def stream(
             stream=True,
             tool_choice=tool_choice,
         )
+        empty = True
         async for event in _stream_sse(OPENROUTER_CHAT_URL, _bearer(key), body):
+            failure = _openrouter_stream_error(event)
+            if failure is not None:
+                raise failure
+            empty = False
             yield _as_obj(event)
+        if empty:
+            # A 200 that sent no data at all (DigitalOcean once, 2026-10-21).
+            raise ProviderError("OpenRouter's stream ended without any data")
         return
     raise RegistryError(f"elitellm has no stream route for {spec.provider_slug}")
+
+
+def _openrouter_stream_error(event: dict[str, Any]) -> ProviderError | None:
+    """OpenRouter reports a provider failure inside a started stream as an
+    `error` object on a chunk whose choice finishes with "error". It is a
+    provider error, not the end of a complete (or empty) answer."""
+    error = event.get("error")
+    failed = any(
+        isinstance(choice, dict) and choice.get("finish_reason") == "error"
+        for choice in event.get("choices") or []
+    )
+    if not error and not failed:
+        return None
+    detail = error if isinstance(error, dict) else {}
+    code = detail.get("code")
+    return ProviderError(
+        str(detail.get("message") or "OpenRouter's stream ended with an error"),
+        status_code=code if isinstance(code, int) else None,
+    )
 
 
 async def embed_batch(

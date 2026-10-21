@@ -137,6 +137,54 @@ def test_chat_completions_returns_openrouter_reasoning_for_the_next_request():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "events",
+    [
+        [
+            {"choices": [{"delta": {"content": "Half an ans"}}]},
+            {
+                "error": {"code": 502, "message": "Upstream error"},
+                "choices": [{"delta": {"content": ""}, "finish_reason": "error"}],
+            },
+        ],
+        [],
+    ],
+    ids=["error-after-text", "empty-200"],
+)
+async def test_openrouter_stream_failures_are_provider_errors(
+    monkeypatch: pytest.MonkeyPatch, events: list[dict]
+):
+    """An error OpenRouter sends inside a started stream, or a 200 with no data
+    at all, is a provider error, not a complete or empty answer."""
+
+    async def fake_stream_sse(*_args, **_kwargs):
+        for event in events:
+            yield event
+
+    monkeypatch.setattr(elitellm_client, "_stream_sse", fake_stream_sse)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    bind_request_llm(paid_by="platform", thinking="high")
+    spec = retrieval_models.ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM-5.3-Flash",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        platform_enabled=True,
+        byok_enabled=False,
+        thinking_levels=("low", "high", "max"),
+        default_thinking="high",
+        slots=("chat",),
+    )
+
+    with pytest.raises(elitellm_client.ProviderError) as caught:
+        await _stream_via_adapter(
+            spec, [{"role": "user", "content": "hi"}], None, None, None
+        )
+    assert caught.value.status_code == (502 if events else None)
+
+
+@pytest.mark.asyncio
 async def test_anthropic_stream_preserves_tool_call_thinking_and_usage(
     monkeypatch: pytest.MonkeyPatch,
 ):

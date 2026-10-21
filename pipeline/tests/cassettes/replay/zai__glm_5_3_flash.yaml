@@ -117,10 +117,6 @@ interactions:
       - no-referrer, strict-origin-when-cross-origin
       server:
       - cloudflare
-      set-cookie:
-      - __cf_bm=iNiZABQCWtqEueB6GvI7dauLjP5mVPoBSNO_xWk5t5w-1792545832.0311966-1.0.1.1-VJv3_wlPQXRV0hn4f4Q5h9l.xQVUJ1MRXf6uPF56Q5BXh7Gd1BJmOdxglCsTG8bKeTsvvQBHK_umTmvmXMue34DCFrm2dgl0gBphcDmKeXfQ7twZg5ho1DXo62bmyd1X;
-        HttpOnly; SameSite=None; Secure; Path=/; Domain=openrouter.ai; Expires=Wed,
-        21 Oct 2026 01:53:54 GMT
       transfer-encoding:
       - chunked
       x-content-type-options:

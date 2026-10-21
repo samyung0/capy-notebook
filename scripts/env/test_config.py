@@ -531,6 +531,7 @@ class ConfigTest(unittest.TestCase):
                     "IMPORT_RELAY_SECRET",
                     "RELACE_API_KEY",
                     "RELACE_INGEST_API_KEY",
+                    "ZAI_API_KEY",
                 )
             )
         ]
@@ -557,7 +558,7 @@ class ConfigTest(unittest.TestCase):
             [
                 ("PATCH", "/envs/bulk"),
                 ("GET", "/envs"),
-                *[("DELETE", f"/envs/retired-{index}") for index in range(6)],
+                *[("DELETE", f"/envs/retired-{index}") for index in range(7)],
                 ("GET", "/envs"),
             ],
         )

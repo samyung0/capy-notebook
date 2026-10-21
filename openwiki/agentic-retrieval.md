@@ -2638,7 +2638,13 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `abandoned` (absorbed, no charge). A busy provider or a full per-model gate
    past that budget ends the turn with a retryable `provider_busy` error
    carrying `retryAfterSeconds`. Any later provider or SSE failure is not
-   retried and the client gets the same generic `agent_failed` error. If the browser
+   retried and the client gets the same generic `agent_failed` error.
+   OpenRouter reports a provider failure inside a started stream as an `error`
+   chunk whose choice finishes with `error`; elitellm raises it as a provider
+   error, so a cut-off answer is never assembled as complete and an empty one
+   never reads as `invalid_answer`. A 200 stream that sends no data at all is a
+   provider error too (before any byte, so it takes the one pre-byte retry);
+   the user is charged for neither. If the browser
    disconnects, Python stops writing SSE but finishes the in-flight provider
    call, settles usage when it arrives, and does not start another planning
    step.
@@ -3980,7 +3986,9 @@ list `AskUser` as a real tool (`agent.ASK_USER_SCHEMA`, appended after the
 registry's tools): DigitalOcean drops a call to a tool the request does not
 list, which left answers empty or ending on "a few questions:" with the
 questions gone. Other models get no such tool and keep writing `AskUser` in
-the answer.
+the answer. The credit guard's terminal call sends no tools, so AskUser is not
+listed there and a GLM call to it on DigitalOcean is still dropped; that needs
+exhausted credits and a question in the same turn.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,

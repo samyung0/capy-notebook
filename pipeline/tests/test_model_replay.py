@@ -321,6 +321,13 @@ async def test_certified_two_turn_replay(
         assert recorded.count("\n    method:") >= 2 or recorded.count("method:") >= 2
 
 
+def test_no_cassette_keeps_a_response_cookie():
+    """The recorder drops response cookies (conftest `_scrub_response`):
+    `filter_headers` covers request headers only."""
+    for path in (REPO / "pipeline/tests/cassettes").rglob("*.yaml"):
+        assert "set-cookie" not in path.read_text().lower(), path.name
+
+
 def test_missing_certified_cassette_fails():
     missing = REPO / "pipeline/tests/cassettes/replay/not-a-certified-model.yaml"
     assert not missing.exists()
