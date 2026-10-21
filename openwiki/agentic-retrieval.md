@@ -4126,7 +4126,11 @@ one table, `crates/office-service/limits.json` in the fork, keyed by
 format, which `limits.rs` reads (`include_str!`) and Go's `cmd/openapi
 -office-limits` writes into `edit_office_document`'s description
 (`agenttools/office_limits.go`; `pnpm gen:openapi` passes the vendor path),
-so description and engine cannot drift. It holds 50 commands and, per
+so description and engine cannot drift. A DOCX call reads each story's
+paragraphs once into an index (`ParaIndex` in `docx/agent.rs`) that
+`touched`, apply and the targets' lookup share; it follows the call's own
+replacements and formats, and any other commit drops it (review r2 L9).
+It holds 50 commands and, per
 format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
 cells), 1,000 inserted rows and columns and 5 sheets added, renamed or
