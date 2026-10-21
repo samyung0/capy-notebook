@@ -23,7 +23,8 @@ async function sourceResponses(
   // One streamed request per source: its metadata part, then its file part.
   await page.route('**' + endpoint, async (route) => {
     const request = route.request();
-    const form = await new Response(request.postDataBuffer(), {
+    const raw = new Uint8Array(request.postDataBuffer() ?? []);
+    const form = await new Response(raw, {
       headers: { 'content-type': request.headers()['content-type'] },
     }).formData();
     const metadata = JSON.parse(String(form.get('metadata'))) as Record<
