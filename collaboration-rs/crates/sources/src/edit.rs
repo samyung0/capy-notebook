@@ -49,6 +49,8 @@ pub struct EditResult {
     pub checkpoint: u64,
     pub row_bytes: usize,
     pub captured: Option<Captured>,
+    /// What its Undo may send ([crate::undo_cost]).
+    pub undo_cost: usize,
 }
 
 fn edit_error(code: &str, message: impl Into<String>) -> SourceError {
@@ -223,11 +225,16 @@ impl Sources {
         .await
         .map_err(|error| SourceError::Other(format!("source edit: {error}")))??;
         let mut notice = None;
+        let undo_cost: usize;
         let captured = match office(session.format) {
             None => {
                 let root = doc.get_or_insert_text(TEXT_ROOT);
                 let commands: Vec<DocumentCommand> =
                     parse(Value::Array(input.commands.clone()), "commands")?;
+                undo_cost = commands
+                    .iter()
+                    .map(|command| crate::undo_cost::document(command, |_| 0))
+                    .fold(0, usize::saturating_add);
                 let mut txn = doc.transact_mut();
                 notes::edit::apply_text_commands(&mut txn, &root, &commands)?;
                 Captured::of(&mut txn)
@@ -244,6 +251,10 @@ impl Sources {
                 };
                 let commands: Vec<Command> =
                     parse(Value::Array(input.commands.clone()), "commands")?;
+                undo_cost = commands
+                    .iter()
+                    .map(crate::undo_cost::office)
+                    .fold(0, usize::saturating_add);
                 let applied = self
                     .engines()
                     .apply_commands(on, &state, &commands)
@@ -343,6 +354,7 @@ impl Sources {
             checkpoint: saved.checkpoint,
             row_bytes: row.len(),
             captured: undoable.then_some(captured),
+            undo_cost,
         })
     }
 }

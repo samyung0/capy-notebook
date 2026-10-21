@@ -439,6 +439,37 @@ struct Computed {
     /// A quiz: every editor asset its documents reference (REVIEW1 S4).
     asset_ids: Option<Vec<String>>,
     outcome: EditOutcome,
+    /// What the edit's Undo may send ([undo_cost]).
+    undo_cost: usize,
+}
+
+/// What an edit's Undo may send (`sources::undo_cost`, Epo 2026-10-21): its
+/// commands read against the documents as they were (a quiz: both).
+fn undo_cost(commands: &[DocumentCommand], before: &[&[Value]]) -> usize {
+    commands
+        .iter()
+        .map(|command| sources::undo_cost::document(command, |id| touched(before, id)))
+        .fold(0, usize::saturating_add)
+}
+
+/// The JSON size of the nodes with id `id` in `documents` (a quiz question
+/// has one in each of its documents).
+fn touched(documents: &[&[Value]], id: &str) -> usize {
+    fn size(value: &Value, id: &str) -> usize {
+        match value {
+            Value::Object(map) if map.get("id").and_then(Value::as_str) == Some(id) => {
+                serde_json::to_string(value).map_or(0, |json| json.len())
+            }
+            Value::Object(map) => map.values().map(|value| size(value, id)).sum(),
+            Value::Array(values) => values.iter().map(|value| size(value, id)).sum(),
+            _ => 0,
+        }
+    }
+    documents
+        .iter()
+        .flat_map(|nodes| nodes.iter())
+        .map(|node| size(node, id))
+        .sum()
 }
 
 /// A document for a server edit: the durable state, then the live room
@@ -616,6 +647,7 @@ fn compute_quiz(
         value,
         asset_ids,
         outcome,
+        undo_cost: 0,
     })
 }
 
@@ -634,20 +666,29 @@ fn compute(
     if let Some(quiz) = quiz {
         let keys =
             Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref()).map_err(unknown)?;
-        return compute_quiz(&scratch, &keys, |content, keys| {
+        let cost = undo_cost(
+            &commands,
+            &[
+                &items::Kind::Quiz.document_value(&scratch.doc.transact()),
+                &items::Kind::QuizKeys.document_value(&keys.doc.transact()),
+            ],
+        );
+        let mut computed = compute_quiz(&scratch, &keys, |content, keys| {
             items::quiz::apply_commands(content, keys, &commands)?;
             Ok(EditOutcome::default())
-        });
+        })?;
+        computed.undo_cost = cost;
+        return Ok(computed);
     }
     let doc = &scratch.doc;
-    let (outcome, value, captured) = if let Model::Item(item) = Model::of(&kind) {
+    let (outcome, value, captured, cost) = if let Model::Item(item) = Model::of(&kind) {
         item_edit(doc, item, &kind, &commands)?
     } else {
         let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
         let mut txn = doc.transact_mut();
-        let previous = notes::limits::measure_value(
-            &notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?,
-        );
+        let before = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
+        let previous = notes::limits::measure_value(&before);
+        let cost = undo_cost(&commands, &[&before]);
         let outcome = notes::edit::apply_material_commands(&mut txn, &root, &commands)?;
         let value = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
         // A whole note the check refuses (an 11th interactive block across
@@ -667,7 +708,7 @@ fn compute(
         {
             return Err(DocumentError::Quota(code.as_str().into()));
         }
-        (outcome, value, Captured::of(&mut txn))
+        (outcome, value, Captured::of(&mut txn), cost)
     };
     // An agent edit always writes (its markers at least), as before.
     let hidden = markers::live_items(doc);
@@ -688,6 +729,7 @@ fn compute(
         value,
         asset_ids: None,
         outcome,
+        undo_cost: cost,
     })
 }
 
@@ -699,9 +741,11 @@ fn item_edit(
     item: items::Kind,
     kind: &str,
     commands: &[DocumentCommand],
-) -> Result<(EditOutcome, Vec<Value>, Captured), DocumentError> {
+) -> Result<(EditOutcome, Vec<Value>, Captured, usize), DocumentError> {
     let mut txn = doc.transact_mut();
-    let previous = notes::limits::measure_value(&item.document_value(&txn));
+    let before = item.document_value(&txn);
+    let previous = notes::limits::measure_value(&before);
+    let cost = undo_cost(commands, &[&before]);
     item.apply_commands(&mut txn, commands)?;
     item.check_caps(&txn)
         .map_err(|error| DocumentError::edit("invalid_input", &error))?;
@@ -715,7 +759,7 @@ fn item_edit(
         return Err(DocumentError::Quota(code.as_str().into()));
     }
     let value = item.value(&txn);
-    Ok((EditOutcome::default(), value, Captured::of(&mut txn)))
+    Ok((EditOutcome::default(), value, Captured::of(&mut txn), cost))
 }
 
 /// `receiptFromRow`.
@@ -943,7 +987,7 @@ pub async fn edit_material(
     }
     // The committed changes go to the live rooms, whose durable covers take
     // them, with the edit's items for its Undo.
-    let step = undoable.then_some(operation.id.as_str());
+    let step = undoable.then_some((operation.id.as_str(), computed.undo_cost));
     if send_writes(app, &room, &keys_room, computed.writes, &versions, step).await {
         offer_undo(app, &operation.id, &mut receipt).await;
     }
@@ -1130,7 +1174,7 @@ async fn send_writes(
     keys_room: &str,
     writes: Vec<Write>,
     versions: &[i64],
-    step: Option<&str>,
+    step: Option<(&str, usize)>,
 ) -> bool {
     let mut answers = Vec::new();
     let mut taken = step.is_some() && !writes.is_empty();
@@ -1143,7 +1187,7 @@ async fn send_writes(
             Some(handle) => {
                 let step = step
                     .zip(write.captured)
-                    .map(|(id, items)| (id.to_owned(), items));
+                    .map(|((id, cost), items)| (id.to_owned(), items, cost));
                 let (reply, answer) = oneshot::channel();
                 if step.is_some() {
                     answers.push(answer);
@@ -1259,6 +1303,7 @@ fn replace_on(
         value,
         asset_ids: None,
         outcome: EditOutcome::default(),
+        undo_cost: 0,
     }))
 }
 
@@ -1303,7 +1348,9 @@ pub async fn source_request(
         .await?;
     let mut taken = false;
     if let Some(handle) = app.rooms.get(&result.room) {
-        let step = result.captured.map(|items| (operation.id.clone(), items));
+        let step = result
+            .captured
+            .map(|items| (operation.id.clone(), items, result.undo_cost));
         let offered = step.is_some();
         let (reply, answer) = oneshot::channel();
         let edit = ServiceEdit {
@@ -1718,5 +1765,269 @@ mod tests {
                 crate::note_store::Doc::Keys
             ]
         );
+    }
+
+    /// What a computed write's Undo and Redo send at most in a room holding
+    /// `base` that took the write as a room takes it (`apply_kept`), measured
+    /// on copies of the room.
+    fn sent_by(base: &[u8], write: super::Write) -> usize {
+        let room = ydoc::scratch_doc();
+        ydoc::apply(&room, ydoc::decode(base).unwrap()).unwrap();
+        let update = write.live_update.unwrap();
+        ydoc::undo::apply_kept(&room, ydoc::decode(&update).unwrap()).unwrap();
+        let change = write.captured.unwrap().change(&room);
+        let undo = ydoc::undo::revert_len(&room, &change);
+        let redo = ydoc::undo::revert(&room, change)
+            .and_then(|reverted| reverted.next)
+            .map_or(0, |back| ydoc::undo::revert_len(&room, &back));
+        undo.max(redo)
+    }
+
+    /// `commands` computed as an agent edit of a loaded room (a quiz: with
+    /// its keys room): the edit's Undo cost and the most any of its rooms'
+    /// Undo or Redo sends; none when the commands are refused.
+    fn cost_and_sent(
+        kind: &str,
+        base: &[u8],
+        keys: Option<&[u8]>,
+        commands: Vec<notes::edit::DocumentCommand>,
+    ) -> Option<(usize, usize)> {
+        let quiz = keys.map(|keys| super::QuizInput {
+            keys: (keys.to_vec(), Vec::new()),
+            live_keys: Some(keys.to_vec()),
+        });
+        let live = Some(base.to_vec());
+        let computed =
+            compute(base.to_vec(), Vec::new(), live, kind.into(), commands, quiz).ok()?;
+        let cost = computed.undo_cost;
+        let sent = computed
+            .writes
+            .into_iter()
+            .map(|write| match write.doc {
+                crate::note_store::Doc::Keys => sent_by(keys.unwrap(), write),
+                crate::note_store::Doc::Content => sent_by(base, write),
+            })
+            .max()
+            .unwrap_or(0);
+        Some((cost, sent))
+    }
+
+    /// Every `id` in `node` made new, for a copy to insert beside it.
+    fn copy_of(node: &serde_json::Value) -> serde_json::Value {
+        match node {
+            serde_json::Value::Object(map) => map
+                .iter()
+                .map(|(key, value)| match (key.as_str(), value) {
+                    ("id", serde_json::Value::String(id)) => (key.clone(), json!(format!("{id}c"))),
+                    _ => (key.clone(), copy_of(value)),
+                })
+                .collect(),
+            serde_json::Value::Array(values) => values.iter().map(copy_of).collect(),
+            other => other.clone(),
+        }
+    }
+
+    /// Epo 2026-10-21: an agent edit's Undo is sized from its commands
+    /// (`sources::undo_cost`), never by reverting on a copy. On the notes
+    /// corpus's seeded notes (paragraphs, lists, tables, math), a card set
+    /// and a quiz, every material command's cost is at least what the edit's
+    /// Undo and Redo send in each of its rooms (measured on copies here). The
+    /// lowest and highest ratio per command print (STATE.md keeps them).
+    /// Fails if a rule under-estimates.
+    #[test]
+    fn every_material_command_costs_at_least_what_its_undo_and_redo_send() {
+        use base64::Engine;
+        use notes::edit::DocumentCommand;
+        use std::io::Read;
+        use yrs::Transact;
+        let mut ratios: std::collections::BTreeMap<&str, (f64, f64, usize)> = Default::default();
+        let mut short = Vec::new();
+        let mut check = |name: &'static str, result: Option<(usize, usize)>| {
+            let Some((cost, sent)) = result else { return };
+            if cost < sent {
+                short.push(format!("{name}: cost {cost} < sent {sent}"));
+            }
+            let ratio = cost as f64 / sent.max(1) as f64;
+            let entry = ratios.entry(name).or_insert((f64::MAX, 0.0, 0));
+            *entry = (entry.0.min(ratio), entry.1.max(ratio), entry.2 + 1);
+        };
+
+        let mut text = String::new();
+        flate2::read::GzDecoder::new(
+            std::fs::File::open(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../notes/tests/corpus/commands.json.gz"
+            ))
+            .unwrap(),
+        )
+        .read_to_string(&mut text)
+        .unwrap();
+        let corpus: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let mut seen = std::collections::HashSet::new();
+        for case in corpus.as_array().unwrap() {
+            let state = case["state"].as_str().unwrap();
+            if !seen.insert(state.to_owned()) {
+                continue;
+            }
+            let base = base64::engine::general_purpose::STANDARD
+                .decode(state)
+                .unwrap();
+            let doc = ydoc::scratch_doc();
+            ydoc::apply(&doc, ydoc::decode(&base).unwrap()).unwrap();
+            let blocks = notes::edit::inspect_material(&doc.transact()).unwrap();
+            let value = notes::plate::value(&doc.transact()).unwrap();
+            for block in blocks {
+                let Some(node) = value.iter().find(|node| node["id"] == block.id.as_str()) else {
+                    continue;
+                };
+                let (id, expected) = (block.id.clone(), block.text.clone());
+                let note = |commands| cost_and_sent("note", &base, None, commands);
+                check(
+                    "remove_block",
+                    note(vec![DocumentCommand::RemoveBlock {
+                        block_id: id.clone(),
+                        expected_text: expected.clone(),
+                    }]),
+                );
+                check(
+                    "replace_block",
+                    note(vec![DocumentCommand::ReplaceBlock {
+                        block_id: id.clone(),
+                        expected_text: expected.clone(),
+                        blocks: vec![copy_of(node)],
+                    }]),
+                );
+                check(
+                    "insert_block",
+                    note(vec![DocumentCommand::InsertBlock {
+                        after_block_id: Some(id.clone()),
+                        blocks: vec![copy_of(node)],
+                    }]),
+                );
+                if !expected.is_empty() {
+                    check(
+                        "replace_text",
+                        note(vec![DocumentCommand::ReplaceText {
+                            block_id: Some(id),
+                            text: format!("{expected} and a little more"),
+                            expected_text: expected,
+                        }]),
+                    );
+                }
+            }
+        }
+
+        // A front holds at most 200 characters and a back 1000.
+        let card = |id: &str, words: usize| {
+            json!({
+                "type": "flashcard", "id": id,
+                "children": [
+                    { "type": "flashcard_front", "children": [{ "text": "front ".repeat(words.min(30)) }] },
+                    { "type": "flashcard_back", "children": [{ "text": "back ".repeat(words) }] },
+                ],
+            })
+        };
+        let set = items::flashcards::state_from_value(
+            &[json!({
+                "type": "flashcards", "id": "flashcards_1",
+                "children": [card("c1", 3), card("c2", 40), card("c3", 190)],
+            })],
+            0,
+        );
+        let cards = |command| cost_and_sent("flashcards", &set, None, vec![command]);
+        for id in ["c1", "c2", "c3"] {
+            check(
+                "replace_child",
+                cards(DocumentCommand::ReplaceChild {
+                    parent_type: "flashcards".into(),
+                    node_id: id.into(),
+                    node: card(id, 60),
+                }),
+            );
+            check(
+                "remove_child",
+                cards(DocumentCommand::RemoveChild {
+                    parent_type: "flashcards".into(),
+                    node_id: id.into(),
+                }),
+            );
+            check(
+                "insert_child",
+                cards(DocumentCommand::InsertChild {
+                    parent_type: "flashcards".into(),
+                    after_node_id: Some(id.into()),
+                    node: card(&format!("{id}n"), 100),
+                }),
+            );
+        }
+
+        let question = |id: &str, words: usize| {
+            json!({
+                "type": "quiz_question", "id": id, "children": [{ "text": "" }],
+                "question": {
+                    "id": id, "labels": "letters", "layout": "paper",
+                    "stem": [{ "type": "text", "text": "Why is that so? ".repeat(words) }],
+                    "parts": [{
+                        "id": format!("{id}-p"), "marks": 2,
+                        "solution": [{ "type": "text", "text": "Because. ".repeat(words) }],
+                        "blocks": [{ "type": "text", "text": "True? ".repeat(words) }],
+                        "answer": { "type": "boolean", "correct": true },
+                    }],
+                },
+            })
+        };
+        let (content, keys) = items::quiz::states_from_value(
+            &[
+                json!({ "type": "quiz", "id": "quiz", "children": [question("q1", 2), question("q2", 80)] }),
+            ],
+            0,
+        );
+        let quiz = |command| cost_and_sent("quiz", &content, Some(&keys), vec![command]);
+        for id in ["q1", "q2"] {
+            check(
+                "quiz replace_child",
+                quiz(DocumentCommand::ReplaceChild {
+                    parent_type: "quiz".into(),
+                    node_id: id.into(),
+                    node: question(id, 50),
+                }),
+            );
+            check(
+                "quiz remove_child",
+                quiz(DocumentCommand::RemoveChild {
+                    parent_type: "quiz".into(),
+                    node_id: id.into(),
+                }),
+            );
+            check(
+                "quiz insert_child",
+                quiz(DocumentCommand::InsertChild {
+                    parent_type: "quiz".into(),
+                    after_node_id: Some(id.into()),
+                    node: question(&format!("{id}n"), 50),
+                }),
+            );
+        }
+
+        for (name, (lowest, highest, count)) in &ratios {
+            eprintln!(
+                "undo_cost {name}: {count} cases, cost/sent from {lowest:.1} to {highest:.1}"
+            );
+        }
+        for name in [
+            "remove_block",
+            "replace_block",
+            "insert_block",
+            "replace_text",
+            "replace_child",
+            "remove_child",
+            "insert_child",
+            "quiz replace_child",
+            "quiz remove_child",
+            "quiz insert_child",
+        ] {
+            assert!(ratios.contains_key(name), "no {name} case ran");
+        }
+        assert!(short.is_empty(), "{short:#?}");
     }
 }

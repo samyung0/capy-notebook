@@ -39,6 +39,8 @@ yrs.workspace = true
 rlimit = "0.10"
 
 [dev-dependencies]
+# Reads the notes corpus for the Undo cost calibration (`edits.rs`).
+flate2 = "1"
 sentry = { workspace = true, features = ["test"] }
 # Paused time for the send-stall test (`seats.rs`).
 tokio = { workspace = true, features = ["test-util"] }

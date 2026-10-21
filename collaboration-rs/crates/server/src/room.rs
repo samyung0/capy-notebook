@@ -204,7 +204,9 @@ pub struct ServiceEdit {
     pub durable: ydoc::Durable,
     pub version: u64,
     pub row_bytes: usize,
-    pub step: Option<(String, Captured)>,
+    /// The agent edit's id, its items and what its Undo may send
+    /// (`sources::undo_cost`).
+    pub step: Option<(String, Captured, usize)>,
     /// Answers whether this room kept `step` for its Undo.
     pub taken: Option<oneshot::Sender<bool>>,
 }
@@ -467,8 +469,9 @@ pub struct Room {
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
     /// The agent edits (and their Undo and Redo steps) this room keeps the
-    /// items of, by operation id (`ydoc::undo`); gone with the room.
-    agent_changes: HashMap<String, Change>,
+    /// items of, by operation id (`ydoc::undo`), with what each one's revert
+    /// may send (the edit's `sources::undo_cost`); gone with the room.
+    agent_changes: HashMap<String, (Change, usize)>,
     /// Steps this room reverted, by the id their reverse is kept under, so a
     /// request repeated after a lost answer gets the same answer.
     agent_reverted: HashMap<String, String>,
@@ -1572,18 +1575,17 @@ impl Room {
         let changed = !update.is_empty();
         self.broadcast_update(None, update);
         // A room that loaded after the edit committed holds its items already,
-        // without what it deleted: no Undo there. Nor where its revert would
-        // be too large to send (Epo 2026-10-21).
+        // without what it deleted: no Undo there. Nor where its Undo's
+        // estimate is too large to send (Epo 2026-10-21).
         let mut taken = false;
-        if let Some((id, items)) = edit.step
+        if let Some((id, items, cost)) = edit.step
             && changed
+            && self.update_fits(cost)
         {
-            let change = items.change(&self.doc);
-            if self.revert_fits(&change) {
-                self.agent_changes.insert(id.clone(), change);
-                self.app.agent_steps.hold(&id, &self.name);
-                taken = true;
-            }
+            self.agent_changes
+                .insert(id.clone(), (items.change(&self.doc), cost));
+            self.app.agent_steps.hold(&id, &self.name);
+            taken = true;
         }
         if let Some(reply) = edit.taken {
             let _ = reply.send(taken);
@@ -1627,7 +1629,7 @@ impl Room {
             actor,
             reply,
         } = undo;
-        let Some(change) = self.agent_changes.remove(&step) else {
+        let Some((change, cost)) = self.agent_changes.remove(&step) else {
             let answer = match self.agent_reverted.get(&step) {
                 Some(kept) => Reverted::Done(kept.clone()),
                 None => Reverted::Missing,
@@ -1658,17 +1660,16 @@ impl Room {
                 .then_some(("unavailable_target", "integration test refusal"))
         });
         if let Some((code, message)) = refused {
-            self.agent_changes.insert(step, change);
+            self.agent_changes.insert(step, (change, cost));
             let _ = reply.send(Ok(Reverted::Refused {
                 code,
                 message: message.into(),
             }));
             return;
         }
-        // A revert too large to send is no Undo (Epo 2026-10-21), judged again
-        // now: a source room may have grown toward its cap since. The step
-        // goes.
-        if !self.revert_fits(&change) {
+        // An Undo whose estimate no longer fits is refused (Epo 2026-10-21):
+        // a source room may have grown toward its cap since. The step goes.
+        if !self.update_fits(cost) {
             self.app.agent_steps.release(&step, &self.name);
             let _ = reply.send(Ok(Reverted::Refused {
                 code: "undo_unavailable",
@@ -1703,7 +1704,7 @@ impl Room {
                         self.broadcast_update(None, restored.update);
                         match restored.next {
                             Some(again) => {
-                                self.agent_changes.insert(step, again);
+                                self.agent_changes.insert(step, (again, cost));
                             }
                             None => self.app.agent_steps.release(&step, &self.name),
                         }
@@ -1761,11 +1762,12 @@ impl Room {
         self.broadcast_update(None, update);
         self.app.agent_steps.revert(&step, &self.name);
         self.agent_reverted.insert(step, next.clone());
-        // Its reverse is kept only when it could go out, as an edit's is.
+        // Its reverse (the same edit's other side) is kept only when its
+        // estimate fits, as an edit's is.
         if let Some(back) = back
-            && self.revert_fits(&back)
+            && self.update_fits(cost)
         {
-            self.agent_changes.insert(next.clone(), back);
+            self.agent_changes.insert(next.clone(), (back, cost));
             self.app.agent_steps.hold(&next, &self.name);
         }
         // The next store's snapshot holds the revert.
@@ -1784,17 +1786,6 @@ impl Room {
                 }
                 Kindly::Note(_) => true,
             }
-    }
-
-    /// Whether `change`'s revert may go out, judged by its bound and only
-    /// near a cap by a copy of the room (`ydoc::undo::judge`).
-    fn revert_fits(&self, change: &Change) -> bool {
-        let doc = self.doc.clone();
-        let fits = |len| self.update_fits(len);
-        match tokio::task::block_in_place(|| ydoc::undo::judge(&doc, change, fits)) {
-            ydoc::undo::Judged::Bounded => true,
-            ydoc::undo::Judged::Measured(len) => fits(len),
-        }
     }
 
     /// Sends `notification` (if any) and CLOSED, and forgets the channel.

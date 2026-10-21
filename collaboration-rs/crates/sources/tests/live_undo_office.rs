@@ -285,3 +285,250 @@ fn undo_restores_a_deleted_sheet_and_the_formula_reading_it() {
     ydoc::undo::revert(&room, change).unwrap();
     assert_eq!(read(&room), before);
 }
+
+/// What an edit's Undo and its Redo send, measured on copies of the room
+/// (`ydoc::undo::revert_len`), the room left undone.
+fn undo_and_redo(room: &Doc, change: Change) -> (usize, usize) {
+    let undo = ydoc::undo::revert_len(room, &change);
+    let redo = ydoc::undo::revert(room, change)
+        .and_then(|reverted| reverted.next)
+        .map_or(0, |back| ydoc::undo::revert_len(room, &back));
+    (undo, redo)
+}
+
+/// Prints the ratio of `cost` to what the Undo and Redo sent (STATE.md
+/// keeps them) and notes a cost that does not cover both.
+fn covers(short: &mut Vec<String>, name: &str, cost: usize, (undo, redo): (usize, usize)) {
+    let sent = undo.max(redo);
+    eprintln!(
+        "undo_cost {name}: cost {cost} B, Undo {undo} B, Redo {redo} B, ratio {:.1}",
+        cost as f64 / sent.max(1) as f64
+    );
+    if cost < sent {
+        short.push(format!("{name}: cost {cost} < Undo {undo} / Redo {redo}"));
+    }
+}
+
+fn command(value: serde_json::Value) -> Command {
+    serde_json::from_value(value).unwrap()
+}
+
+/// Epo 2026-10-21: an agent edit's Undo is sized from its commands
+/// (`sources::undo_cost`), never by reverting on a copy. On the fixtures every
+/// Office command type's rule, and the text source's, is at least what the
+/// edit's Undo and its Redo send. Fails if a rule under-estimates.
+#[test]
+fn every_command_costs_at_least_what_its_undo_and_redo_send() {
+    let mut short = Vec::new();
+    let xlsx = File::open(Format::Xlsx, GRADES);
+    let room = xlsx.room();
+    let (sheet, name) = xlsx.sheets(&room).remove(0);
+    let long = "a longer cell value, ".repeat(10);
+    let grid = |rows: usize, cols: usize, text: &str| -> Vec<Vec<String>> {
+        (0..rows)
+            .map(|r| (0..cols).map(|c| format!("{text}{r}.{c}")).collect())
+            .collect()
+    };
+    let empty = |rows: usize, cols: usize| vec![vec![String::new(); cols]; rows];
+    // Filled cells for the cases to overwrite, format and delete.
+    xlsx.agent_edit(
+        &room,
+        &[Command::SetRange {
+            sheet: sheet.clone(),
+            range: "AA1:AD40".into(),
+            expected: empty(40, 4),
+            values: grid(40, 4, &long),
+        }],
+    );
+    let cases = vec![
+        (
+            "set_cell (new)",
+            vec![command(serde_json::json!({
+                "type": "set_cell", "sheet": sheet, "cell": "Z5",
+                "expectedValue": "", "value": long,
+            }))],
+        ),
+        (
+            "set_cell (overwrite)",
+            vec![command(serde_json::json!({
+                "type": "set_cell", "sheet": sheet, "cell": "AA1",
+                "expectedValue": format!("{long}0.0"), "value": "short",
+            }))],
+        ),
+        (
+            "set_range (new)",
+            vec![Command::SetRange {
+                sheet: sheet.clone(),
+                range: "AF1:AH30".into(),
+                expected: empty(30, 3),
+                values: grid(30, 3, "v"),
+            }],
+        ),
+        (
+            "set_range (overwrite)",
+            vec![Command::SetRange {
+                sheet: sheet.clone(),
+                range: "AA2:AD40".into(),
+                expected: grid(40, 4, &long)[1..].to_vec(),
+                values: grid(39, 4, "x"),
+            }],
+        ),
+        (
+            "format_cells",
+            vec![command(serde_json::json!({
+                "type": "format_cells", "sheet": sheet, "range": "AA1:AD40",
+                "style": {
+                    "bold": true, "italic": true, "fillColor": "#ffcc00",
+                    "textColor": "#123456", "fontSize": 14, "fontFamily": "Georgia",
+                },
+            }))],
+        ),
+        (
+            "add_sheet",
+            vec![command(
+                serde_json::json!({ "type": "add_sheet", "name": "Calibration" }),
+            )],
+        ),
+        (
+            "rename_sheet",
+            vec![command(serde_json::json!({
+                "type": "rename_sheet", "sheet": sheet,
+                "expectedName": name, "name": "Renamed for calibration",
+            }))],
+        ),
+        (
+            "insert_rows",
+            vec![command(serde_json::json!({
+                "type": "insert_rows", "sheet": sheet, "at": 5, "count": 50,
+            }))],
+        ),
+        (
+            "insert_columns",
+            vec![command(serde_json::json!({
+                "type": "insert_columns", "sheet": sheet, "at": "B", "count": 20,
+            }))],
+        ),
+    ];
+    for (case, commands) in cases {
+        let cost = commands
+            .iter()
+            .map(sources::undo_cost::office)
+            .fold(0, usize::saturating_add);
+        let change = xlsx.agent_edit(&room, &commands);
+        covers(&mut short, case, cost, undo_and_redo(&room, change));
+    }
+    // Bands and a sheet to delete, filled first.
+    xlsx.agent_edit(
+        &room,
+        &[
+            command(serde_json::json!({ "type": "add_sheet", "name": "Data" })),
+            Command::SetRange {
+                sheet: "Data".into(),
+                range: "A1:C30".into(),
+                expected: empty(30, 3),
+                values: grid(30, 3, &long),
+            },
+        ],
+    );
+    for (case, removal) in [
+        (
+            "delete_rows",
+            command(serde_json::json!({
+                "type": "delete_rows", "sheet": "Data", "at": 1, "count": 10,
+                "expected": grid(10, 3, &long),
+            })),
+        ),
+        (
+            "delete_columns",
+            command(serde_json::json!({
+                "type": "delete_columns", "sheet": "Data", "at": "A", "count": 1,
+                "expected": grid(30, 3, &long).iter().map(|row| vec![row[0].clone()]).collect::<Vec<_>>(),
+            })),
+        ),
+        (
+            "delete_sheet",
+            command(serde_json::json!({
+                "type": "delete_sheet", "sheet": "Data", "expectedName": "Data",
+            })),
+        ),
+    ] {
+        // Each case leaves the room undone, so the next finds its band.
+        let cost = sources::undo_cost::office(&removal);
+        let change = xlsx.agent_edit(&room, &[removal]);
+        covers(&mut short, case, cost, undo_and_redo(&room, change));
+    }
+
+    for (format, path) in [
+        (Format::Docx, "e2e/fixtures/files/basic/lesson.docx"),
+        (Format::Pptx, "e2e/fixtures/files/basic/lesson.pptx"),
+    ] {
+        let file = File::open(format, path);
+        let room = file.room();
+        for entry in file
+            .entries(&room)
+            .into_iter()
+            .filter(|entry| !entry.value.is_empty())
+            .take(6)
+        {
+            let replace = Command::ReplaceText {
+                target_id: entry.id.clone(),
+                expected_text: entry.value.clone(),
+                text: format!("{} {}", entry.value, "and a longer replacement".repeat(3)),
+            };
+            let cost = sources::undo_cost::office(&replace);
+            let change = file.agent_edit(&room, &[replace]);
+            covers(
+                &mut short,
+                &format!("{path} replace_text"),
+                cost,
+                undo_and_redo(&room, change),
+            );
+        }
+    }
+
+    // A text source: `replace_text` on its text.
+    use yrs::{Text, WriteTxn};
+    let text = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../e2e/fixtures/files/basic/notes.txt"),
+    )
+    .unwrap();
+    let room = ydoc::scratch_doc();
+    room.get_or_insert_text(sources::text::TEXT_ROOT).insert(
+        &mut room.transact_mut(),
+        0,
+        &format!("{text}\n{}", "filler line\n".repeat(200)),
+    );
+    for (expected, replacement) in [
+        (
+            "Wetland plants absorb carbon",
+            "Marsh plants hold carbon".to_owned(),
+        ),
+        ("LARCH-17", "a much longer code ".repeat(40)),
+    ] {
+        let replace = notes::edit::DocumentCommand::ReplaceText {
+            block_id: None,
+            expected_text: expected.into(),
+            text: replacement,
+        };
+        let cost = sources::undo_cost::document(&replace, |_| 0);
+        let scratch = doc_of(&state(&room));
+        let captured = {
+            let mut txn = scratch.transact_mut();
+            let root = txn.get_or_insert_text(sources::text::TEXT_ROOT);
+            notes::edit::apply_text_commands(&mut txn, &root, &[replace]).unwrap();
+            Captured::of(&mut txn)
+        };
+        let update = scratch
+            .transact()
+            .encode_state_as_update_v1(&room.transact().state_vector());
+        ydoc::undo::apply_kept(&room, Update::decode_v1(&update).unwrap()).unwrap();
+        covers(
+            &mut short,
+            "text replace_text",
+            cost,
+            undo_and_redo(&room, captured.change(&room)),
+        );
+    }
+    assert!(short.is_empty(), "{short:#?}");
+}

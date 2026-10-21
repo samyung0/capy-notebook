@@ -2987,6 +2987,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "deadpool-postgres",
+ "flate2",
  "futures",
  "hmac 0.12.1",
  "items",

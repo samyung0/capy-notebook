@@ -3730,24 +3730,40 @@ estimate. A room under a publication handoff or a forced unload refuses it
 kept as the next step under the Undo's own operation id, so the same endpoint
 called with that id is Redo, for any number of steps.
 
-An Undo is judged by its revert's size (Epo 2026-10-21) when the room keeps
-the step (an edit's when it lands, after the editors got it; a reverse when
-its Undo lands) and again when the Undo is asked. `ydoc::undo::judge` first
-bounds the revert off the room's store (`revert_bound`: each deleted item the
-room still holds comes back as a copy, its content plus a header, and the
-insertions go as a delete set), which costs the change, not the room; only
-when that bound does not fit does it measure on a copy of the room that keeps
-deleted content (`revert_len`, O(state) while the room waits, so near a cap
-only; review r3 M1). A step whose revert would be over the 8 MiB
-update cap, or would take a source room past its admission cap by the room's
-running estimate, is not kept: the edit's receipt gets no Undo ref, and an
-Undo's answer says `reversible: false`, so Go records its receipt without a
-Redo ref. A removal is the usual case: a small update whose Undo brings the
-removed content back. XLSX `delete_sheet` and `delete_rows` are not: they
-leave the cells in Yjs, and their Undo measures tens of bytes whatever the
-sheet holds (measured 2026-10-21). The room checks again when an
-Undo is asked, against the room as it is then (a person may have filled a
-source room since), and refuses one too large with `undo_unavailable`,
+An agent edit's Undo is sized from its commands (Epo 2026-10-21), never by
+reverting on a copy of the document: `sources::undo_cost` holds one rule per
+command type, named after it and scaled by what it touches, and the edit's
+estimate is their sum. An Undo re-inserts what the edit removed and a Redo
+what it inserted, so each rule counts both sides:
+- removed or replaced content (an expected text or value, a removed or
+  replaced block or child read from the document before the edit, an XLSX
+  grid): its bytes times `CONTENT` (3);
+- an insert (a replacement text, inserted blocks, a card or question): its
+  text or JSON times `CONTENT`, plus a `PIECE` (160 bytes) for each run or
+  block it splits at either end;
+- formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
+- XLSX structure (rows, columns, sheets): a `PIECE` per row, column or sheet
+  entry, since the cells stay in Yjs.
+
+A new command (the DOCX and PPTX paragraph phase) adds its rule there; both
+matches are exhaustive, so it does not compile without one. The factors were
+calibrated to over-estimate the real revert on the fixtures
+(`every_command_costs_at_least_what_its_undo_and_redo_send` in
+`sources/tests/live_undo_office.rs`,
+`every_material_command_costs_at_least_what_its_undo_and_redo_send` in the
+server's `edits.rs` tests, both measuring with `ydoc::undo::revert_len` on
+copies, which only tests use). The edit is broadcast to the editors first;
+the room then keeps the step with its estimate only when the estimate fits
+(within the 8 MiB update cap and, in a source room, its admission headroom by
+the running estimate). A step that does not fit is not kept: the edit's
+receipt gets no Undo ref, and an Undo's answer says `reversible: false`, so
+Go records its receipt without a Redo ref. A removal is the usual large
+case: a small update whose Undo brings the removed content back. XLSX
+`delete_sheet` and `delete_rows` are not: they leave the cells in Yjs, and
+their Undo measures tens of bytes whatever the sheet holds (measured
+2026-10-21). The room checks the estimate again when an Undo is asked,
+against the room as it is then (a person may have filled a source room
+since), and refuses one that no longer fits with `undo_unavailable`,
 dropping the step. A timed-out Undo whose reverse was too large to keep is not
 put back (the room no longer holds it); every put-back answer other than done
 is captured (`agent_undo_put_back`, review r3 L1). Go names the step's

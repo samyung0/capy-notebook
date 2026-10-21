@@ -3785,25 +3785,26 @@ async fn a_text_sources_first_save_after_an_agent_edit_carries_no_seed() {
     assert!(stored_checkpoint(&env, &file).await >= 2);
 }
 
-/// Epo 2026-10-21 (review r2 M1): an agent edit whose Undo would send more
-/// than the room may take offers no Undo, judged by the revert's measured
-/// size. A removal is a small update whose Undo brings the text back: here
-/// past a source room's admission cap (a revert over 8 MiB is refused the
+/// Epo 2026-10-21: an agent edit whose Undo would send more than the room
+/// may take offers no Undo, judged by its commands' estimate
+/// (`sources::undo_cost`: three bytes per byte removed or inserted). A
+/// removal is a small update whose Undo brings the text back: here past a
+/// source room's admission headroom (an estimate over 8 MiB is refused the
 /// same way). An edit whose Undo fitted when it landed is refused once a
-/// person filled the room; one that no longer fits when it lands gets no Undo
-/// ref and is not live. Fails if the revert's size is not judged at the
-/// edit or at the Undo.
+/// person filled the room; one that does not fit when it lands gets no Undo
+/// ref and is not live. Fails if the estimate is not checked at the edit or
+/// at the Undo.
 #[tokio::test]
 async fn an_undo_too_large_for_the_room_is_not_offered() {
     let Some(env) = env() else { return };
     let _cap = ExportCap::lower(&env).await;
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
-    // 300 KiB of room past the write reserve; the agent removes a 150 KB span,
-    // then a 100 KB one.
+    // 600 KiB of room past the write reserve; the agent removes a 150 KB span
+    // (its Undo estimated at 450 KB), then a 140 KB one (420 KB).
     let first = format!("<{}>", "x".repeat(150_000));
-    let second = format!("{{{}}}", "y".repeat(100_000));
-    let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 300 * 1024;
+    let second = format!("{{{}}}", "y".repeat(140_000));
+    let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 600 * 1024;
     let rest = LOWERED_EXPORT_CAP as usize
         - sources::STATE_GROWTH_MARGIN_BYTES as usize
         - growth
@@ -3834,7 +3835,7 @@ async fn an_undo_too_large_for_the_room_is_not_offered() {
         edit.as_str(),
         "{receipt}"
     );
-    // A person's 220 KiB fits the room and leaves about 80 KiB.
+    // A person's 220 KiB fits the room and leaves about 380 KiB.
     type_at_start(&mut client, &"p".repeat(220 * 1024)).await;
     source_receipt(&mut client, "filled")
         .await
