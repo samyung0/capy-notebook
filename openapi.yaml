@@ -1789,6 +1789,33 @@ components:
         - spentThisMonthCents
         - reload
       type: object
+    Customization:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Customization.json
+          format: uri
+          readOnly: true
+          type: string
+        pageFrame:
+          $ref: "#/components/schemas/PageFrame"
+        style:
+          enum:
+            - classroom
+            - notion
+          type: string
+        theme:
+          enum:
+            - latte
+            - frappe
+            - mocha
+          type: string
+      required:
+        - style
+        - theme
+        - pageFrame
+      type: object
     DeletionPreflight:
       additionalProperties: false
       properties:
@@ -3656,6 +3683,71 @@ components:
         - "y"
         - width
         - height
+      type: object
+    PageFrame:
+      additionalProperties: false
+      properties:
+        colours:
+          enum:
+            - dusk
+            - sea
+            - meadow
+            - rose
+            - sunset
+            - wheat
+            - mist
+            - custom
+          type: string
+        dots:
+          items:
+            $ref: "#/components/schemas/PageFrameColor"
+          maxItems: 3
+          minItems: 1
+          nullable: true
+          type: array
+        grain:
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+        pattern:
+          enum:
+            - none
+            - arc
+            - mesh
+            - glow
+            - painted
+            - waves
+            - contours
+          type: string
+        strength:
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+        - pattern
+        - colours
+        - dots
+        - strength
+        - grain
+      type: object
+    PageFrameColor:
+      additionalProperties: false
+      properties:
+        x:
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+        "y":
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+        - x
+        - "y"
       type: object
     PastReview:
       additionalProperties: false
@@ -6886,6 +6978,8 @@ components:
           type: string
         classLabel:
           type: string
+        customization:
+          $ref: "#/components/schemas/Customization"
         editorModel:
           $ref: "#/components/schemas/Ref"
         email:
@@ -9726,6 +9820,27 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Set the chat settings
+      tags:
+        - Account
+  /api/me/customization:
+    put:
+      operationId: setCustomization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Customization"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Sync the app's look to the account
       tags:
         - Account
   /api/me/ingest-slots:

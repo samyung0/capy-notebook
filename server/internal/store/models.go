@@ -31,11 +31,42 @@ type User struct {
 	// ChatSteps is how much of a turn's tool work the chat shows.
 	ChatSteps string `json:"chatSteps" enum:"normal,verbose"`
 	// ChatSendKey is the key that sends a chat message; the other adds a line.
-	ChatSendKey        string             `json:"chatSendKey" enum:"enter,shift_enter"`
+	ChatSendKey string `json:"chatSendKey" enum:"enter,shift_enter"`
+	// Customization is the look last synced from one of the user's devices;
+	// nil until they first press Sync.
+	Customization      *Customization     `json:"customization,omitempty"`
 	ChatModel          models.Ref         `json:"chatModel"`
 	EditorModel        models.Ref         `json:"editorModel"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
+}
+
+// Customization is how the app looks for one account: the style, the theme
+// and the painted page frame (openwiki/frontend/appearance.md). Devices keep
+// it locally; Sync stores it here for the user's other devices. Every field is
+// required and bounded, and unknown fields are refused, so a stored value is
+// always one the app can apply.
+type Customization struct {
+	Style     string    `json:"style" enum:"classroom,notion"`
+	Theme     string    `json:"theme" enum:"latte,frappe,mocha"`
+	PageFrame PageFrame `json:"pageFrame"`
+}
+
+// PageFrame is the paint behind the page panel: a pattern drawn in a colour
+// preset or in up to three custom colours, each a point on the hue (x) and
+// saturation (y) field.
+type PageFrame struct {
+	Pattern  string           `json:"pattern" enum:"none,arc,mesh,glow,painted,waves,contours"`
+	Colours  string           `json:"colours" enum:"dusk,sea,meadow,rose,sunset,wheat,mist,custom"`
+	Dots     []PageFrameColor `json:"dots" minItems:"1" maxItems:"3"`
+	Strength float64          `json:"strength" minimum:"0" maximum:"1"`
+	Grain    float64          `json:"grain" minimum:"0" maximum:"1"`
+}
+
+// PageFrameColor is one custom colour as a point on the colour field.
+type PageFrameColor struct {
+	X float64 `json:"x" minimum:"0" maximum:"1"`
+	Y float64 `json:"y" minimum:"0" maximum:"1"`
 }
 
 // StudyPreferences are the learner's defaults for what the agent builds

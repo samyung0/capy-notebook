@@ -48,6 +48,19 @@
         if (noteFont === 'fustat' || noteFont === 'system') {
           root.dataset.noteFont = noteFont;
         }
+        // The page frame's resolved paint (src/theme/pageFrame.ts), so it
+        // shows with the first frame; shared pages read nothing else.
+        const frame = JSON.parse(
+          localStorage.getItem('capy.pageFrameCss') || 'null'
+        );
+        if (frame && typeof frame === 'object') {
+          for (const [name, value] of Object.entries(frame)) {
+            if (name.startsWith('--page-frame-') && typeof value === 'string') {
+              root.style.setProperty(name, value);
+            }
+          }
+          root.dataset.pageFrame = '';
+        }
       } catch {
         // ignore
       }

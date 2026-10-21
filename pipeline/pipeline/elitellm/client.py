@@ -22,16 +22,14 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
-# Z.AI serves its GLM-5.3-Flash pin itself, OpenAI-compatible (decision
-# 2026-10-20, replacing Relace).
-ZAI_CHAT_URL = "https://api.z.ai/api/paas/v4/chat/completions"
-# OpenRouter pins, each held on vetted providers with fallbacks off (OpenRouter
-# tries `order` in turn and nothing outside it), reasoning off. Default routing
-# moves between providers that differ on image input, so a slug with no entry is
-# refused, never routed. 0731 is the ingest descriptor model (decision
+# OpenRouter models, each held on vetted providers with fallbacks off
+# (OpenRouter tries `order` in turn and nothing outside it). Default routing
+# moves between providers that differ on image input, so a model with no entry
+# is refused, never routed. 0731 is the ingest descriptor model (decision
 # 2026-10-15), off Relace since its endpoint answered 429 for every summary
-# (decision 2026-10-20); 1017 reads pages and images for captioning (decision
-# 2026-10-19). OpenRouter bills each provider's listed price.
+# (decision 2026-10-20); 1017 reads pages and images for captioning (decisions
+# 2026-10-19 and 2026-10-21); GLM-5.3-Flash serves chat (decision 2026-10-21,
+# replacing Z.AI's own endpoint). OpenRouter bills each provider's listed price.
 OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
     "deepseek/deepseek-v4-flash-0731": {
@@ -39,10 +37,17 @@ OPENROUTER_ROUTING: dict[str, dict[str, Any]] = {
         "allow_fallbacks": False,
     },
     "deepseek/deepseek-v4.1-flash-1017": {
-        "order": ["DeepInfra"],
+        "order": ["InferenceNet", "Cloudflare"],
+        "allow_fallbacks": False,
+    },
+    "z-ai/glm-5.3-flash": {
+        "order": ["DigitalOcean", "Z.AI"],
         "allow_fallbacks": False,
     },
 }
+# The zai pin keeps its catalog identity; OpenRouter names the model with an
+# org prefix.
+ZAI_OPENROUTER_MODELS = {"glm-5.3-flash": "z-ai/glm-5.3-flash"}
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
@@ -223,12 +228,15 @@ def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
     return {"thinking": {"type": "enabled"}, "reasoning_effort": effort}
 
 
-def zai_thinking_body(thinking: str) -> dict[str, Any]:
+def openrouter_reasoning(spec: ModelConfig, thinking: str) -> dict[str, Any]:
+    """GLM cannot turn reasoning off, and a request without an effort reasons
+    as at max, so every GLM request names its effort (decision 2026-10-21).
+    The DeepSeek pins run with reasoning off."""
+    if spec.provider_slug != "zai":
+        return {"enabled": False}
     if thinking not in ("low", "high", "max"):
-        raise RegistryError(
-            "Z.ai GLM-5.3-Flash supports only low, high, or max reasoning"
-        )
-    return {"reasoning_effort": thinking}
+        raise RegistryError("GLM-5.3-Flash supports only low, high, or max reasoning")
+    return {"effort": thinking}
 
 
 def anthropic_endpoint(spec: ModelConfig) -> tuple[str, dict[str, str]]:
@@ -436,7 +444,7 @@ def deepseek_request(
     return body
 
 
-def zai_request(
+def openrouter_request(
     spec: ModelConfig,
     messages: list[dict[str, Any]],
     *,
@@ -448,47 +456,21 @@ def zai_request(
     stream: bool,
     tool_choice: Any | None,
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": spec.model_slug,
-        "messages": messages,
-    }
-    body.update(zai_thinking_body(thinking))
-    if temperature is not None:
-        body["temperature"] = temperature
-    if tools:
-        body["tools"] = tools
-        body["tool_choice"] = tool_choice if tool_choice is not None else "auto"
-    if response_format:
-        body["response_format"] = response_format
-    if max_tokens is not None:
-        body["max_tokens"] = max_tokens
-    if stream:
-        body["stream"] = True
-        body["stream_options"] = {"include_usage": True}
-    return body
-
-
-def openrouter_request(
-    spec: ModelConfig,
-    messages: list[dict[str, Any]],
-    *,
-    temperature: float | None,
-    tools: list[dict[str, Any]] | None,
-    response_format: dict[str, Any] | None,
-    max_tokens: int | None,
-    stream: bool,
-    tool_choice: Any | None,
-) -> dict[str, Any]:
-    routing = OPENROUTER_ROUTING.get(spec.model_slug)
+    model = (
+        ZAI_OPENROUTER_MODELS.get(spec.model_slug)
+        if spec.provider_slug == "zai"
+        else spec.model_slug
+    )
+    routing = OPENROUTER_ROUTING.get(model or "")
     if routing is None:
         raise RegistryError(
             f"elitellm has no OpenRouter provider pin for {spec.model_slug!r}"
         )
     body: dict[str, Any] = {
-        "model": spec.model_slug,
+        "model": model,
         "messages": messages,
         "provider": routing,
-        "reasoning": {"enabled": False},
+        "reasoning": openrouter_reasoning(spec, thinking),
     }
     if temperature is not None:
         body["temperature"] = temperature
@@ -805,20 +787,7 @@ async def complete(
             tool_choice=tool_choice,
         )
         return _as_obj(await _post_json(DEEPSEEK_CHAT_URL, _bearer(key), body))
-    if spec.provider_slug == "zai":
-        body = zai_request(
-            spec,
-            messages,
-            temperature=temperature,
-            tools=tools,
-            response_format=response_format,
-            max_tokens=max_tokens,
-            thinking=thinking,
-            stream=False,
-            tool_choice=tool_choice,
-        )
-        return _as_obj(await _post_json(ZAI_CHAT_URL, _bearer(key), body))
-    if spec.provider_slug == "openrouter":
+    if spec.provider_slug in ("zai", "openrouter"):
         body = openrouter_request(
             spec,
             messages,
@@ -826,6 +795,7 @@ async def complete(
             tools=tools,
             response_format=response_format,
             max_tokens=max_tokens,
+            thinking=thinking,
             stream=False,
             tool_choice=tool_choice,
         )
@@ -911,8 +881,8 @@ async def stream(
         async for event in _stream_sse(DEEPSEEK_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
-    if spec.provider_slug == "zai":
-        body = zai_request(
+    if spec.provider_slug in ("zai", "openrouter"):
+        body = openrouter_request(
             spec,
             messages,
             temperature=temperature,
@@ -923,24 +893,37 @@ async def stream(
             stream=True,
             tool_choice=tool_choice,
         )
-        async for event in _stream_sse(ZAI_CHAT_URL, _bearer(key), body):
-            yield _as_obj(event)
-        return
-    if spec.provider_slug == "openrouter":
-        body = openrouter_request(
-            spec,
-            messages,
-            temperature=temperature,
-            tools=tools,
-            response_format=response_format,
-            max_tokens=max_tokens,
-            stream=True,
-            tool_choice=tool_choice,
-        )
+        empty = True
         async for event in _stream_sse(OPENROUTER_CHAT_URL, _bearer(key), body):
+            failure = _openrouter_stream_error(event)
+            if failure is not None:
+                raise failure
+            empty = False
             yield _as_obj(event)
+        if empty:
+            # A 200 that sent no data at all (DigitalOcean once, 2026-10-21).
+            raise ProviderError("OpenRouter's stream ended without any data")
         return
     raise RegistryError(f"elitellm has no stream route for {spec.provider_slug}")
+
+
+def _openrouter_stream_error(event: dict[str, Any]) -> ProviderError | None:
+    """OpenRouter reports a provider failure inside a started stream as an
+    `error` object on a chunk whose choice finishes with "error". It is a
+    provider error, not the end of a complete (or empty) answer."""
+    error = event.get("error")
+    failed = any(
+        isinstance(choice, dict) and choice.get("finish_reason") == "error"
+        for choice in event.get("choices") or []
+    )
+    if not error and not failed:
+        return None
+    detail = error if isinstance(error, dict) else {}
+    code = detail.get("code")
+    return ProviderError(
+        str(detail.get("message") or "OpenRouter's stream ended with an error"),
+        status_code=code if isinstance(code, int) else None,
+    )
 
 
 async def embed_batch(

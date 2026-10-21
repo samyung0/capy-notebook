@@ -39,7 +39,6 @@ export function QuizPageHeader({
   metaClassName = 't-meta text-fg-muted',
   byline,
   actions,
-  topBar,
   gutter = 'wide',
 }: {
   className?: string;
@@ -55,7 +54,7 @@ export function QuizPageHeader({
   /** The owner on public pages, between the title and the meta line. */
   byline?: ReactNode;
   actions?: ReactNode;
-  /** The app's top bar, which from xl sits in PanelWithInvertedRadius's notch
+  /** The app's top bar, which from xl sits in PagePanel's notch
    * beside this header; public pages have their own header and pass none. */
   topBar?: ReactNode;
 }) {
@@ -139,7 +138,6 @@ export function QuizPageHeader({
           <p className={cn(metaClassName, byline ? 'mt-2' : '-mt-1')}>{meta}</p>
         )}
       </div>
-      {topBar}
     </header>
   );
 }

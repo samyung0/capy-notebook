@@ -62,7 +62,6 @@ export function StudyBody({
   onRate,
   provenance,
   usePrevious,
-  topBar,
   trail,
 }: {
   actions?: ReactNode;
@@ -85,8 +84,6 @@ export function StudyBody({
   /** A recorded run's result reads the set's attempt before it (a hook: the
    * app reads the run's attempt back; share pages pass none). */
   usePrevious?: (attemptId: string) => PreviousAttempt | undefined;
-  /** The app's top bar; public pages have their own header and pass none. */
-  topBar?: ReactNode;
   trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
@@ -169,7 +166,6 @@ export function StudyBody({
       className={byline ? 'pt-4 sm:pt-2' : undefined}
       onBack={onBack}
       title={name}
-      topBar={topBar}
       trail={trail}
     />
   );

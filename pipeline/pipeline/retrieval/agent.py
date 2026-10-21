@@ -369,6 +369,8 @@ async def _run_turn(
     ctx.pending_sources.read_ids = set()
     prior = await evidence.history_turns(history, ctx)
     schemas = tools.schemas_for(ctx)
+    if spec.provider_slug == "zai":
+        schemas = [*schemas, ASK_USER_SCHEMA]
     messages = chat_prompts.chat_messages(
         locale=locale,
         checkpoint=checkpoint,
@@ -1011,6 +1013,36 @@ TOOLS_OFF_RESULT = (
 
 # The answer component the model sometimes calls as a tool (GLM, 2026-10-14).
 ASK_USER = "AskUser"
+
+# GLM is offered AskUser as a real tool: it calls it as one, and DigitalOcean
+# drops calls to tools the request does not list (decision 2026-10-21). A call
+# still ends the turn on its question (ask_user_answer). The wording follows the
+# answer format's AskUser (prompts/openui_lang.txt).
+ASK_USER_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": ASK_USER,
+        "description": (
+            "Ask the user a question they answer before you continue, shown in "
+            "a question panel and answered in their next message; it ends your "
+            "turn. Use it only when you must have their input (which document, "
+            "which depth, what the material is for), never for simple follow-up "
+            "questions, and ask at most three."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "choices": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Two to five short options, or [] for a free-text answer.",
+                },
+            },
+            "required": ["question", "choices"],
+        },
+    },
+}
 
 
 # The answer format's limit on questions (prompts/openui_lang.txt).

@@ -105,9 +105,9 @@ class Config:
     )
     # Silence allowed once an interactive stream has started, restarting on
     # every event. Longer than the first-event bound because some providers
-    # (GLM-5.3-Flash, measured on Relace) send a tool call's arguments in one
-    # piece when they are complete: a large write streams nothing for 40 s or
-    # more.
+    # (GLM-5.3-Flash, measured on Relace and on DigitalOcean) send a tool
+    # call's arguments in one piece when they are complete: a large write
+    # streams nothing for 40 s or more.
     interactive_stream_idle_s: float = float(
         _env("CAPY_INTERACTIVE_STREAM_IDLE_S", "120")
     )

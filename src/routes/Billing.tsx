@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { TabContent } from '@/components/app/tabPanel';
 import { Tabs } from '@/components/ui/Tabs';
 import { DetailsTab } from '@/features/billing/DetailsTab';
@@ -13,7 +13,7 @@ export default function Billing() {
   const { tab = 'usage' } = useSearch({ from: '/auth-shell/billing' });
 
   return (
-    <PanelWithInvertedRadius header={<PageHeader title={m.billing_title()} />}>
+    <PagePanel header={<PageHeader title={m.billing_title()} />}>
       <Tabs
         className="page-tabs-px"
         onChange={(value) => {
@@ -39,6 +39,6 @@ export default function Billing() {
           <UsageTab />
         )}
       </TabContent>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }
