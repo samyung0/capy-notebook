@@ -203,6 +203,10 @@ type File struct {
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
+	// ErrorID is a failed file's error id for the Indexing tab's Failed files:
+	// the trace of the ingest attempt that failed it (migration 0105). Only the
+	// workspace file list sends it, and only to the owner and editors.
+	ErrorID string `json:"errorId,omitempty"`
 	// WorkspaceName and LostAccess: owned-list rows only (ListOwnedFiles).
 	WorkspaceName string `json:"workspaceName,omitempty"`
 	LostAccess    bool   `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
@@ -694,6 +698,10 @@ type FileChange struct {
 	Kind         FileKind  `json:"kind"`
 	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
 	LastEditedAt time.Time `json:"lastEditedAt"`
+	// ErrorID is a failed row's error id: the trace id of its failed attempt
+	// (migration 0105), so a reported failure can be traced; the failure's
+	// text stays hidden. Absent on other rows and when none was recorded.
+	ErrorID string `json:"errorId,omitempty"`
 }
 
 // NoteChange is one workspace note in the same list: its content is ahead of
@@ -705,6 +713,7 @@ type NoteChange struct {
 	Title        string    `json:"title"`
 	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
 	LastEditedAt time.Time `json:"lastEditedAt"`
+	ErrorID      string    `json:"errorId,omitempty"` // as FileChange.ErrorID
 }
 
 type WorkspaceStats struct {

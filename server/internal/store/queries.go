@@ -553,6 +553,11 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	if err != nil {
 		return Workspace{}, err
 	}
+	// Auto process is the owner's alone (human frontend error-handling,
+	// 2026-10-21); editors keep every other setting here.
+	if p.AutoProcess != nil && userID != ownerID {
+		return Workspace{}, ErrForbidden
+	}
 	if err := s.assertEditableTx(ctx, tx, ownerID, userID); err != nil {
 		return Workspace{}, err
 	}
@@ -986,13 +991,24 @@ func decodeProvenance(raw []byte) (*Provenance, error) {
 }
 
 func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, error) {
-	q := `SELECT ` + fileListCols + ` FROM files f WHERE f.trashed_at IS NULL`
-	args := []any{}
+	// A failed file's error id goes only to the members who see the Indexing
+	// tab, the owner and editors (human frontend error-handling, 2026-10-21).
+	errorIDs := false
+	if wsID != "" && userID != "" {
+		role, err := s.WorkspaceRole(ctx, userID, wsID)
+		if err != nil {
+			return nil, err
+		}
+		errorIDs = RoleCanEdit(role)
+	}
+	cols := fileListCols + `, CASE WHEN $1::bool AND f.status='failed' THEN COALESCE(f.failure_trace_id,'') ELSE '' END`
+	q := `SELECT ` + cols + ` FROM files f WHERE f.trashed_at IS NULL`
+	args := []any{errorIDs}
 	if wsID != "" {
-		q += ` AND f.workspace_id=$1`
+		q += ` AND f.workspace_id=$2`
 		args = append(args, wsID)
 	} else if userID != "" {
-		q = `SELECT ` + fileListCols + ` FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$1 AND f.trashed_at IS NULL`
+		q = `SELECT ` + cols + ` FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND f.trashed_at IS NULL`
 		args = append(args, userID)
 	}
 	q += ` ORDER BY f.position, f.added_at DESC`
@@ -1003,10 +1019,12 @@ func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, err
 	defer rows.Close()
 	out := []File{}
 	for rows.Next() {
-		f, err := scanFile(rows)
+		var errorID string
+		f, err := scanFile(withExtra{rows, []any{&errorID}})
 		if err != nil {
 			return nil, err
 		}
+		f.ErrorID = errorID
 		out = append(out, f)
 	}
 	return out, rows.Err()

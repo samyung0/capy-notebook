@@ -16,6 +16,7 @@ export interface File {
   addedAt: string;
   /** @nullable */
   chapterId: string | null;
+  errorId?: string;
   hasBytes: boolean;
   id: string;
   indexLimit?: FileIndexLimit;

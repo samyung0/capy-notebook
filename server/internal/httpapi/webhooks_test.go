@@ -430,6 +430,30 @@ func TestClerkWebhook_UserCreated(t *testing.T) {
 	}
 }
 
+// The webhook names a new account like the sign-in sync: first and last name,
+// else the username, else nothing, so the store takes the email's local part
+// (human authorization, 2026-10-21). A whitespace-only name counts as none.
+func TestClerkWebhookNamesLikeTheSignInSync(t *testing.T) {
+	for i, test := range []struct {
+		data map[string]any
+		want string
+	}{
+		{map[string]any{"first_name": " ", "last_name": nil, "username": "ada_l"}, "ada_l"},
+		{map[string]any{"first_name": " ", "last_name": " "}, ""},
+		{map[string]any{"first_name": "Ada", "username": "ada_l"}, "Ada"},
+	} {
+		f := newFakeStore()
+		srv := newTestServer(t, f, Config{ClerkWebhookSecret: testClerkSecret})
+		test.data["id"] = "user_named"
+		body := clerkBody(t, fmt.Sprintf("evt_named_%d", i), "user.created", test.data)
+		resp := post(t, srv.URL+"/webhooks/clerk", signSvix(t, testClerkSecret, body), body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || len(f.upserts) != 1 || f.upserts[0].name != test.want {
+			t.Fatalf("%v: status %d, upserts %+v, want name %q", test.data, resp.StatusCode, f.upserts, test.want)
+		}
+	}
+}
+
 // Security regression (human authorization, 2026-10-19 10a): users.email is
 // Clerk's primary address only when it is verified. Clerk verifies the
 // sign-up address, so the risky case is an unconfirmed second address listed

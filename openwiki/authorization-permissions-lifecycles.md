@@ -360,7 +360,10 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.
 - **Owner only** can invite a member, change a member's role, remove a member,
-  and delete the workspace.
+  delete the workspace, and switch Auto process edits (Epo 2026-10-21): a
+  workspace update carrying `autoProcess` from anyone else is refused whole
+  with the non-disclosing `404` (`ErrForbidden`), and the Indexing tab shows
+  editors the switch disabled. Editors keep every other field of that update.
 - Frozen owners cannot create invitations or promote an existing member,
   because either action widens exposure. They may demote or remove members as
   recovery-safe mutations. Grace owners invite and promote normally.
@@ -1022,12 +1025,19 @@ normal tombstone policy; it does not create a negative-identity row for an
 identity that was never provisioned.
 
 The stored `name` belongs to the user. The Clerk name (first plus last, else
-username, else email, else a localized fallback) seeds the row only when the
-local account is inserted, by the request-time sync or the `user.created`
-webhook, whichever runs first. Every later sync, including `user.updated`,
-refreshes email and avatar only. `PATCH /api/me` stores the name the user
-typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
-are created with that same name because no separate legal name is stored.
+username, else the email's local part before the `@`, else a localized
+fallback, trimmed and cut to 60 runes; a whitespace-only name counts as none)
+seeds the row only when the local account is inserted, by the request-time
+sync or the `user.created` webhook, whichever runs first; both read it through
+`auth.ProfileName`. An unnamed account never shows its whole address (Epo
+2026-10-21): every place a name shows (profile, members, mentions, presence
+and cursors through the collaboration token's `name` claim) reads
+`users.name`, and migration `0104_unnamed_user_names.sql` renamed rows created
+earlier whose name was their email (any case, cut to 60). Every later sync,
+including `user.updated`, refreshes email and avatar only. `PATCH /api/me`
+stores the name the user typed, trimmed, 1 to 60 runes, rejected with `422`
+otherwise. Stripe customers are created with that same name because no
+separate legal name is stored.
 
 A Clerk session token is accepted only when its `azp` (the origin that minted
 it) is one of `COLLABORATION_ALLOWED_ORIGINS` (Epo 2026-10-21); a token without
