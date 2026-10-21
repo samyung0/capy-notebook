@@ -2868,10 +2868,13 @@ The DOCX engine round (export memory fixes, bookmarks anchored in one walk,
 yrs compacting its block list once per commit) also starts each seeded story
 without a placeholder paragraph mark, which changes every DOCX seed and the
 DOCX golden hashes. While Capy has no users such a pin deploys without the
-window (2026-10-18), so migration `0100_docx_engine_round_reset.sql` is the
+window (2026-10-18), so migration `0102_docx_engine_round_reset.sql` is the
 template's reset for `'docx'` without its guard: unpublished DOCX edits are
-dropped, a DOCX refresh in flight is superseded as an epoch reset supersedes
-it, and a deferred publication's pending rebuild ends on the published bytes.
+dropped and the files end published, a DOCX refresh in flight is superseded as
+an epoch reset supersedes it, and a deferred publication's pending rebuild ends
+on the published bytes, releasing the old base's cached artifacts. The old
+collaboration server must be stopped before it runs (deployment runbook,
+"Seed-changing pins without a window").
 
 ## Private PDF annotations
 

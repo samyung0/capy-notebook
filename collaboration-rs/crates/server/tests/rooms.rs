@@ -639,11 +639,11 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 
 /// The version gate: a JOIN or draft send without the client protocol (a tab
 /// from before the gate), below its family's minimum (`MIN_MATERIAL`,
-/// `MIN_SOURCE`, read from `protocol.rs`), one below the server's own in
-/// source rooms (the DOCX engine round's pin raised only `MIN_SOURCE`, so a
-/// material room still admits it) or above it (a rollback) is refused as
-/// `collaboration-outdated` before any lookup; a refused draft send stores
-/// nothing and is counted by family.
+/// `MIN_SOURCE`, read from `protocol.rs`) or above the server's own (a
+/// rollback) is refused as `collaboration-outdated` before any lookup; one
+/// below the server's own still joins a material room (the DOCX engine round's
+/// pin raised only `MIN_SOURCE`). A refused draft send stores nothing and is
+/// counted by family.
 #[tokio::test]
 async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let Some(env) = env() else { return };
@@ -666,7 +666,6 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     for protocol in [
         None,
         Some(protocol_constant("MIN_SOURCE") - 1),
-        Some(client_protocol() - 1),
     ] {
         client
             .send(
@@ -677,6 +676,15 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
         let reason = text_payload(&client.until(2).await.expect("refused"));
         assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
     }
+    let mut previous = Client::open(server.port).await;
+    let protocol = client_protocol() - 1;
+    previous
+        .send(0, &join_payload(&room, &write, Some(protocol)))
+        .await;
+    assert!(
+        previous.until(1).await.is_some(),
+        "protocol {protocol} joins a material room"
+    );
     // The current protocol joins.
     assert_eq!(client.joined(&room, &write).await, 1);
     assert!(client.settle(|c| c.block_text() == "base").await);
@@ -704,7 +712,7 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let metrics = metrics_text(server.port).await;
     for line in [
         "capy_collaboration_outdated_refusals_total{family=\"material\"} 4",
-        "capy_collaboration_outdated_refusals_total{family=\"source\"} 3",
+        "capy_collaboration_outdated_refusals_total{family=\"source\"} 2",
         "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1",
     ] {
         assert!(
