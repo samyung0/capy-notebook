@@ -62,6 +62,11 @@ python3 build_agent.py .
 docker exec capy-rag-curated-retrieval-1 python /lab/broad/upload_agent.py
 ```
 
+`upload_agent.py` is frozen and broken: it uses `upload_corpus.py`'s
+reservation, object PUT and completion flow, which the gateway upload replaced
+on 2026-10-22 (and it predates `batchId`). Port it to the one multipart
+`POST .../sources/uploads` before running it again.
+
 Run index writers sequentially. Keep the index fixed throughout retrieval
 evaluation; start QA ingestion only after `retrieval-completion.json` exists.
 Analyze the lab retrieval tables before the retrieval freeze. The component

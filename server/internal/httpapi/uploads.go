@@ -69,7 +69,9 @@ var keyExtensionPattern = regexp.MustCompile(`^\.[a-z0-9]{1,11}$`)
 const uploadMetadataMaxBytes = 64 << 10
 
 // uploadSessionTTL outlasts the slowest body an upload request reads; the
-// sweeper releases a reservation that a crashed request left pending.
+// sweeper releases a reservation that a crashed request left pending. A
+// failed upload's object is left to the reaper, which checks references
+// before it deletes.
 const uploadSessionTTL = time.Hour
 
 // uploadPutBound bounds an upload's one B2 PUT (Epo 2026-10-21, kept
@@ -85,7 +87,7 @@ func readUploadMetadata(r *http.Request, v any) (*multipart.Reader, error) {
 	}
 	part, err := form.NextPart()
 	if err != nil || part.FormName() != "metadata" {
-		return nil, huma.Error400BadRequest("an upload starts with its metadata part")
+		return nil, bodyError(err, "an upload starts with its metadata part")
 	}
 	if err := json.NewDecoder(io.LimitReader(part, uploadMetadataMaxBytes)).Decode(v); err != nil {
 		return nil, huma.Error400BadRequest("invalid upload metadata")
@@ -94,13 +96,14 @@ func readUploadMetadata(r *http.Request, v any) (*multipart.Reader, error) {
 }
 
 // spoolUpload reads the file part into a temporary file, hashing it as it
-// streams, and refuses a part that is not size bytes of contentType. The PUT
-// reads the rewound file, so its 60 s bound covers B2 alone, never the
-// browser's upload. The caller removes the file with dropSpool.
+// streams, and refuses a part that is not size bytes of contentType or that
+// anything follows. The PUT reads the rewound file, so its 60 s bound covers
+// B2 alone, never the browser's upload. The caller removes the file with
+// dropSpool.
 func spoolUpload(form *multipart.Reader, size int64, contentType string) (*os.File, string, error) {
 	part, err := form.NextPart()
 	if err != nil || part.FormName() != "file" {
-		return nil, "", huma.Error400BadRequest("an upload carries its file part after the metadata")
+		return nil, "", bodyError(err, "an upload carries its file part after the metadata")
 	}
 	got, err := normalizeMediaType(part.Header.Get("Content-Type"))
 	want, _ := normalizeMediaType(contentType)
@@ -112,16 +115,19 @@ func spoolUpload(form *multipart.Reader, size int64, contentType string) (*os.Fi
 		return nil, "", err
 	}
 	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(spool, hash), io.LimitReader(part, size+1))
-	var tooLarge *http.MaxBytesError
+	body := &bodyReader{r: io.LimitReader(part, size+1)}
+	n, err := io.Copy(io.MultiWriter(spool, hash), body)
 	switch {
-	case errors.As(err, &tooLarge):
-		err = huma.Error413RequestEntityTooLarge("the upload is larger than the per-file limit")
-	case errors.Is(err, io.ErrUnexpectedEOF):
-		err = huma.Error400BadRequest("the upload ended early")
+	case body.err != nil:
+		err = bodyError(body.err, "the upload ended early")
 	case err == nil && n != size:
 		err = huma.Error400BadRequest("uploaded size does not match the upload's metadata")
 	case err == nil:
+		if _, next := form.NextPart(); !errors.Is(next, io.EOF) {
+			err = bodyError(next, "an upload carries nothing after its file part")
+		}
+	}
+	if err == nil {
 		_, err = spool.Seek(0, io.SeekStart)
 	}
 	if err != nil {
@@ -129,6 +135,31 @@ func spoolUpload(form *multipart.Reader, size int64, contentType string) (*os.Fi
 		return nil, "", err
 	}
 	return spool, hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// bodyReader keeps the error of the body it reads, so a failed spool tells a
+// body the client cut off from a write the gateway failed.
+type bodyReader struct {
+	r   io.Reader
+	err error
+}
+
+func (b *bodyReader) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err != nil && err != io.EOF {
+		b.err = err
+	}
+	return n, err
+}
+
+// bodyError refuses a body the client sent wrong: past the cap is 413, and
+// anything else (a cut-off, malformed or misordered body) a 400 with msg.
+func bodyError(err error, msg string) error {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return huma.Error413RequestEntityTooLarge("the upload is larger than the per-file limit")
+	}
+	return huma.Error400BadRequest(msg)
 }
 
 func dropSpool(spool *os.File) {
@@ -157,23 +188,11 @@ func putUpload(ctx context.Context, objects blob.Store, uploadID, key string, bo
 	return etag, err
 }
 
-// dropUploadObject deletes an upload's object after a failure past its PUT
-// started (a PUT that timed out may still land); the released reservation
-// also queues the key for the reaper.
-func dropUploadObject(ctx context.Context, objects blob.Store, key string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), uploadPutBound)
-	defer cancel()
-	if err := objects.Delete(ctx, key); err != nil {
-		obs.Log(ctx).Warn("upload object cleanup failed; the reaper retries it")
-	}
-}
-
 // failUpload answers a refused upload as the JSON operations answer errors
-// (reportHandlerError), after reading what is left of the capped body so the
-// browser reads the answer rather than a reset connection. It returns the
-// status sent.
+// (reportHandlerError). What is left of the body is not read: the connection
+// closes after the answer. It returns the status sent.
 func (a *api) failUpload(w http.ResponseWriter, r *http.Request, err error) int {
-	_, _ = io.Copy(io.Discard, r.Body)
+	w.Header().Set("Connection", "close")
 	var status huma.StatusError
 	if !errors.As(err, &status) {
 		err = hErr(err)

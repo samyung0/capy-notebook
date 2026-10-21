@@ -84,6 +84,14 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())
 	}
+	// An upload whose session expired (the sweeper) or changed state (its
+	// payer changed) while its body streamed.
+	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrEditorAssetUploadExpired) {
+		return huma.Error410Gone(err.Error())
+	}
+	if errors.Is(err, store.ErrUploadState) || errors.Is(err, store.ErrEditorAssetUploadState) {
+		return huma.Error409Conflict(err.Error())
+	}
 	var spending *store.SpendingLimitError
 	if errors.As(err, &spending) {
 		return &huma.ErrorModel{

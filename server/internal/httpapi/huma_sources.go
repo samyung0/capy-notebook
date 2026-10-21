@@ -234,9 +234,6 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
-	if body.SizeBytes < 0 || body.SizeBytes > maxBytes {
-		return store.File{}, huma.Error400BadRequest(fmt.Sprintf("uploads support files up to %d MB", maxBytes>>20))
-	}
 	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
 		return store.File{}, huma.Error400BadRequest(err.Error())
 	}
@@ -276,7 +273,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	file, err := a.storeSourceBytes(ctx, form, uploadID, key, body.ContentType, body.SizeBytes)
 	if err != nil {
 		// A failed upload is charged nothing; the release also queues the key
-		// for the reaper.
+		// for the reaper, which deletes it once nothing references it.
 		if err := a.s.MarkUploadExpired(context.WithoutCancel(ctx), uploadID); err != nil {
 			log.Printf("release failed upload %s: %v", uploadID, err)
 		}
@@ -288,7 +285,9 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 }
 
 // storeSourceBytes spools the file part, writes it in one PUT and finalizes the
-// reserved upload; the object is deleted when anything after the PUT fails.
+// reserved upload. Once the bytes are stored, finalize runs to its end even if
+// the browser leaves, so a committed file is never reported (and released) as
+// failed.
 func (a *api) storeSourceBytes(ctx context.Context, form *multipart.Reader, uploadID, key, contentType string, size int64) (store.File, error) {
 	spool, sha, err := spoolUpload(form, size, contentType)
 	if err != nil {
@@ -296,14 +295,10 @@ func (a *api) storeSourceBytes(ctx context.Context, form *multipart.Reader, uplo
 	}
 	defer dropSpool(spool)
 	etag, err := putUpload(ctx, a.blob, uploadID, key, spool, contentType)
-	var file store.File
-	if err == nil {
-		file, err = a.s.FinalizeUploadSession(ctx, userID(ctx), uploadID, etag, sha, a.parser)
-	}
 	if err != nil {
-		dropUploadObject(ctx, a.blob, key)
+		return store.File{}, err
 	}
-	return file, err
+	return a.s.FinalizeUploadSession(context.WithoutCancel(ctx), userID(ctx), uploadID, etag, sha, a.parser)
 }
 
 var errStoredSourceChanged = errors.New("uploaded object changed during completion")

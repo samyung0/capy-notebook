@@ -167,7 +167,7 @@ conflict. Zod's own messages follow the UI locale (`z.config` in
 copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
-and `too_many_streams`. An upload reservation answered 429 waits out
+and `too_many_streams`. An upload answered 429 waits out
 `retryAfterSeconds` (at most 30 s) and gets 3 attempts in all, as does an
 import request after a network error, 408, 429 or 5xx
 (`src/features/workspace/sourceUpload.ts`, `sourceImport.ts`). The add-source

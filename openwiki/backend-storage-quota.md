@@ -321,17 +321,23 @@ carry its type's signature. The spooled bytes go to the final key
 `upload b2 put` line with the upload id, `duration_ms` and `outcome` (ok,
 error, timeout; never keys or URLs; Epo 2026-10-21, kept 2026-10-22). Spooling
 first keeps the bound on B2 alone, not on the browser's upload. The same
-request finalizes: a source's file row and first pipeline job, with the hash
-as `files.source_sha256` for every kind (so the first source session names its
-base and the device copy works from the first reopen, Epo 2026-10-17), or the
-editor asset's ready row. Finalize converts reservation → used (via status
-transitions / triggers). Any failure after the reservation releases it
-(`MarkUploadExpired`, `MarkEditorAssetUploadExpired`, which also queue the key
-for the reaper), and any failure once the PUT started deletes the object it may
-have written. A PUT past its bound answers the generic 500, which the browser
-shows as a server error to try again; nothing retries it. A refusal is answered
-after the rest of the capped body is read, so the browser receives it rather
-than a reset connection. The upload's parse download is its only B2 egress.
+request finalizes, on a context the browser's leaving cannot cancel (the bytes
+are stored by then): a source's file row and first pipeline job, with the hash
+as `files.source_sha256` for every source kind (so the first source session
+names its base and the device copy works from the first reopen, Epo
+2026-10-17), or the editor asset's ready row. Only source files record their
+SHA-256: an editor asset is hashed while it streams, but `editor_assets` has no
+column for it. Finalize converts reservation → used (via status transitions /
+triggers). Any failure after the reservation releases it (`MarkUploadExpired`,
+`MarkEditorAssetUploadExpired`), which also queues the key in
+`pending_blob_deletions`; the reaper deletes an object a timed-out PUT may
+still have landed only once nothing references it, so the request never
+deletes inline and answers right after the PUT's bound. A PUT past its bound
+answers the generic 500, which the browser shows as a server error to try
+again; nothing retries it. A session that expired or changed state while its
+body streamed answers 410 or 409. A refusal (400, 413, 403/404) is answered
+without reading the rest of the body, with `Connection: close`. The upload's
+parse download is its only B2 egress.
 
 A drive import keeps its own completion (`internalCompleteSourceImport`): the
 import worker writes an `incoming/` object, and the gateway checks its size and

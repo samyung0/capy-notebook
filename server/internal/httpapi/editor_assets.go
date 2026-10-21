@@ -22,8 +22,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-const editorAssetMetadataMaxBytes = 64 << 10
-
 // editorAssetRules lists, per purpose, each allowed extension's content types.
 // A note's media are images and audio only (Epo 2026-10-15).
 var editorAssetRules = map[string]map[string][]string{
@@ -177,7 +175,7 @@ func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope e
 	asset, err := a.storeEditorAssetBytes(ctx, form, uploadID, key, in.Purpose, ext, contentType, in.SizeBytes)
 	if err != nil {
 		// Discarding the pending asset releases the reservation and queues
-		// the key for the reaper.
+		// the key for the reaper, which deletes it once nothing references it.
 		if err := a.s.MarkEditorAssetUploadExpired(context.WithoutCancel(ctx), uploadID); err != nil {
 			log.Printf("release failed editor asset upload %s: %v", uploadID, err)
 		}
@@ -187,8 +185,7 @@ func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope e
 }
 
 // storeEditorAssetBytes spools the file part, checks its signature, writes it
-// in one PUT and finalizes the reserved asset; the object is deleted when
-// anything after the PUT fails.
+// in one PUT and finalizes the reserved asset.
 func (a *api) storeEditorAssetBytes(
 	ctx context.Context, form *multipart.Reader, uploadID, key, purpose, ext, contentType string, size int64,
 ) (store.EditorAsset, error) {
@@ -203,14 +200,11 @@ func (a *api) storeEditorAssetBytes(
 		return store.EditorAsset{}, huma.Error400BadRequest("uploaded content does not match its file type")
 	}
 	etag, err := putUpload(ctx, a.blob, uploadID, key, spool, contentType)
-	var asset store.EditorAsset
-	if err == nil {
-		asset, err = a.s.FinalizeEditorAssetUpload(ctx, uploadID, etag)
-	}
 	if err != nil {
-		dropUploadObject(ctx, a.blob, key)
+		return store.EditorAsset{}, err
 	}
-	return asset, err
+	// The bytes are stored: finalize runs to its end even if the browser leaves.
+	return a.s.FinalizeEditorAssetUpload(context.WithoutCancel(ctx), uploadID, etag)
 }
 
 func editorAssetObjectKey(assetID, ext string) string {

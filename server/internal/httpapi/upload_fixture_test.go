@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -33,39 +34,73 @@ func uploadSource(ctx context.Context, st *store.Store, wsID, actorID, name stri
 	return st.FinalizeUploadSession(ctx, actorID, id, "etag-"+id, "", "")
 }
 
-// postUpload streams body to an upload route as the browser does: a multipart
-// POST whose "metadata" part is meta as JSON and whose "file" part carries
-// partType.
-func postUpload(t *testing.T, h http.Handler, path, userID string, meta map[string]any, partType string, body []byte) *httptest.ResponseRecorder {
+// formPart is one part of a multipart upload body; a part with a content type
+// is a file part.
+type formPart struct {
+	name, contentType string
+	body              []byte
+}
+
+// metadataPart is meta as an upload's metadata part.
+func metadataPart(t *testing.T, meta map[string]any) formPart {
+	t.Helper()
+	body, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return formPart{name: "metadata", body: body}
+}
+
+// countedBody is a request body that counts the bytes the handler read.
+type countedBody struct {
+	r    io.Reader
+	read int64
+}
+
+func (c *countedBody) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.read += int64(n)
+	return n, err
+}
+
+// postForm posts parts in order, as a browser's FormData sends them, and
+// returns the answer and the body, which counts what the handler read.
+func postForm(t *testing.T, h http.Handler, path, userID string, parts ...formPart) (*httptest.ResponseRecorder, *countedBody) {
 	t.Helper()
 	var buf bytes.Buffer
 	form := multipart.NewWriter(&buf)
-	field, err := form.CreateFormField("metadata")
-	if err == nil {
-		err = json.NewEncoder(field).Encode(meta)
+	for _, p := range parts {
+		header := textproto.MIMEHeader{"Content-Disposition": {`form-data; name="` + p.name + `"`}}
+		if p.contentType != "" {
+			header.Set("Content-Disposition", `form-data; name="`+p.name+`"; filename="upload"`)
+			header.Set("Content-Type", p.contentType)
+		}
+		part, err := form.CreatePart(header)
+		if err == nil {
+			_, err = part.Write(p.body)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err != nil {
+	if err := form.Close(); err != nil {
 		t.Fatal(err)
 	}
-	part, err := form.CreatePart(textproto.MIMEHeader{
-		"Content-Disposition": {`form-data; name="file"; filename="upload"`},
-		"Content-Type":        {partType},
-	})
-	if err == nil {
-		_, err = part.Write(body)
-	}
-	if err == nil {
-		err = form.Close()
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	req := httptest.NewRequest(http.MethodPost, path, &buf)
+	body := &countedBody{r: &buf}
+	req := httptest.NewRequest(http.MethodPost, path, body)
 	req.Header.Set("Content-Type", form.FormDataContentType())
 	req.Header.Set(auth.HeaderE2EUserID, userID)
 	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
+	return rec, body
+}
+
+// postUpload streams body to an upload route as the browser does: the
+// metadata part, then the file part of partType.
+func postUpload(t *testing.T, h http.Handler, path, userID string, meta map[string]any, partType string, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	rec, _ := postForm(t, h, path, userID, metadataPart(t, meta), formPart{name: "file", contentType: partType, body: body})
 	return rec
 }
 

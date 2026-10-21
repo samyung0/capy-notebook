@@ -317,8 +317,8 @@ func (s *Store) finalizeUploadSessionTx(
 	return file, nil
 }
 
-// SweepExpiredUploads writes off reservations whose presigned window closed
-// without a completion. It covers both upload targets, because they share the
+// SweepExpiredUploads writes off reservations whose deadline passed without a
+// completion (a drive import never completed, an upload request that died). It covers both upload targets, because they share the
 // table, and processes each session in its own transaction so one wedged row
 // cannot block the batch behind it.
 //
