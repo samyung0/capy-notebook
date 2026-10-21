@@ -22,8 +22,9 @@
 -- 429 on 2026-10-20.
 -- OpenRouter DeepSeek V4.1 Flash 1017 (held on DeepInfra) reads pages and
 -- images for captioning, so it has no interactive reserve either. It copies the
--- 0731 gate unmeasured. Page reads lease the fixed vlm_page gate of 20 instead
--- of this row, so it gates standalone image captions only.
+-- 0731 gate unmeasured. Page reads lease the vlm_page gate instead of this row
+-- (CAPY_VLM_PAGE_CAPACITY: 64 in production, 20 in UAT and local), so it gates
+-- standalone image captions only.
 -- Interactive reserves: 83% GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
