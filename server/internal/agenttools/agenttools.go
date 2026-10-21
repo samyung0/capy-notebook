@@ -96,7 +96,10 @@ import (
 // v33: create_material, add_questions (a new quiz) and create_deck take
 // sources, a made-from line of plain strings, instead of an id scope;
 // search_workspace's file_ids take any workspace item (Epo 2026-10-21).
-const ContractVersion = 33
+// v34: edit_office_document inserts and deletes DOCX and PPTX paragraphs
+// (insert_paragraph, delete_paragraph), and a DOCX read lists the file's
+// paragraph styles (Epo 2026-10-21).
+const ContractVersion = 34
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -566,6 +569,16 @@ func officeCommandSchema() map[string]any {
 				"expected_text": map[string]any{"type": "string", "description": "Exact text to replace as inspect_office_document shows it; must occur once in the target."},
 				"text":          map[string]any{"type": "string", "description": "Plain replacement text; empty deletes the expected text."},
 			}, "target_id", "expected_text", "text"),
+			variant("insert_paragraph", "DOCX, PPTX: insert one paragraph right after after_id or right before before_id (exactly one); DOCX paragraphs go in the document body.", map[string]any{
+				"after_id":  str("The paragraph it follows, a target id from inspect_office_document."),
+				"before_id": str("The paragraph it precedes; the first paragraph's id inserts at the start."),
+				"text":      map[string]any{"type": "string", "description": "Plain text without line breaks."},
+				"style":     str("DOCX: a paragraph style id inspect_office_document lists; omit for the default style."),
+			}, "text"),
+			variant("delete_paragraph", "DOCX, PPTX: delete one paragraph, never its story's or shape's last.", map[string]any{
+				"target_id":     str("The paragraph's target id from inspect_office_document."),
+				"expected_text": map[string]any{"type": "string", "description": "The paragraph's whole text as inspect_office_document shows it."},
+			}, "target_id", "expected_text"),
 		},
 	}
 }
@@ -1044,7 +1057,8 @@ func Definitions() []Definition {
 			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
-				"cells a read. DOCX: paragraphs with their target ids and text, count from start. " +
+				"cells a read. DOCX: paragraphs with their target ids and text, count from start, " +
+				"the first page with the file's paragraph styles. " +
 				"PPTX: without slide, shapes with their target ids and text, count from start; " +
 				"with slide, that slide's shapes.",
 			InputSchema: obj(map[string]any{

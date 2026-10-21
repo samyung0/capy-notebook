@@ -7244,14 +7244,14 @@ async fn a_draft_send_is_refused_while_an_eviction_lease_is_held() {
     assert_eq!(rows, 0, "nothing was stored");
 }
 
-/// A DOCX file over `lesson.docx` (the engine tests' fixture), owned by a
-/// fresh user; returns (user, file, the base's SHA-256).
-async fn office_file(env: &Env, gateway: &Gateway) -> (String, String, String) {
-    let bytes = std::fs::read(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../../e2e/fixtures/files/basic/lesson.docx"
+/// An Office file over the engine tests' `lesson.<format>` fixture (docx or
+/// pptx), owned by a fresh user; returns (user, file, the base's SHA-256).
+async fn office_file(env: &Env, gateway: &Gateway, format: &str) -> (String, String, String) {
+    let bytes = std::fs::read(format!(
+        "{}/../../../e2e/fixtures/files/basic/lesson.{format}",
+        env!("CARGO_MANIFEST_DIR")
     ))
-    .expect("the DOCX fixture");
+    .expect("the Office fixture");
     let client = db(env).await;
     let suffix = uuid_like();
     let (user, workspace, file) = (
@@ -7279,15 +7279,15 @@ async fn office_file(env: &Env, gateway: &Gateway) -> (String, String, String) {
     };
     client
         .execute(
-            "INSERT INTO files (id,workspace_id,user_id,name,kind,size_bytes,status,blob_path) VALUES ($1,$2,$3,'it.docx','docx',$4,'ready','p/'||$1)",
-            &[&file, &workspace, &user, &(bytes.len() as i64)],
+            "INSERT INTO files (id,workspace_id,user_id,name,kind,size_bytes,status,blob_path) VALUES ($1,$2,$3,'it.'||$5,$5,$4,'ready','p/'||$1)",
+            &[&file, &workspace, &user, &(bytes.len() as i64), &format],
         )
         .await
         .expect("file");
     client
         .execute(
-            "INSERT INTO source_documents (file_id,user_id,format,base_revision,base_blob_path,base_source_sha256) VALUES ($1,$2,'docx',1,'p/'||$1,$3)",
-            &[&file, &user, &sha],
+            "INSERT INTO source_documents (file_id,user_id,format,base_revision,base_blob_path,base_source_sha256) VALUES ($1,$2,$4,1,'p/'||$1,$3)",
+            &[&file, &user, &sha, &format],
         )
         .await
         .expect("source document");
@@ -7299,6 +7299,103 @@ async fn office_file(env: &Env, gateway: &Gateway) -> (String, String, String) {
     (user, file, sha)
 }
 
+/// The agent's paragraph commands land on a live Office room (Epo
+/// 2026-10-21): a joined writer receives the inserted paragraph, and the
+/// agent's next read, the room merged in, shows it after its anchor and the
+/// deleted paragraph gone. A DOCX read lists the file's paragraph styles.
+#[tokio::test]
+async fn agent_paragraph_commands_apply_on_a_live_office_room() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    const INSERTED: &str = "Inserted by the agent";
+    for format in ["docx", "pptx"] {
+        let (user, file, _) = office_file(&env, &gateway, format).await;
+        let room = format!("source:{file}:epoch:1");
+        let mut client = Client::open(server.port).await;
+        assert_eq!(client.joined(&room, &token(&room, &user, "write")).await, 1);
+        let mut inspect = serde_json::json!({
+            "actorUserId": user,
+            "target": { "id": file, "kind": "source_file" },
+        });
+        if format == "docx" {
+            inspect["office"] = serde_json::json!({ "start": 0, "count": 200 });
+        }
+        let (view, before) = office_entries(server.port, &inspect).await;
+        if format == "docx" {
+            assert!(
+                view["scoped"]["styles"]
+                    .as_array()
+                    .is_some_and(|styles| !styles.is_empty()),
+                "{view}"
+            );
+        }
+        let (anchor, owner) = before
+            .iter()
+            .find(|(_, text)| text.starts_with("Owner sentence"))
+            .cloned()
+            .expect("the owner sentence");
+        let edit = |operation: &str, command: serde_json::Value| {
+            serde_json::json!({
+                "actorUserId": user,
+                "commands": [command],
+                "operation": { "id": format!("op_{operation}_{file}"), "requestHash": operation },
+                "target": { "id": file, "kind": "source_file" },
+            })
+        };
+        let insert = edit(
+            "insert",
+            serde_json::json!({ "type": "insert_paragraph", "afterId": anchor, "text": INSERTED }),
+        );
+        let (status, receipt) = internal(server.port, "/internal/documents/edit", &insert).await;
+        assert_eq!(status, 200, "{format}: {receipt}");
+        assert!(
+            client
+                .settle(|c| String::from_utf8_lossy(&c.received).contains(INSERTED))
+                .await,
+            "{format}: the writer receives the inserted paragraph"
+        );
+        // The owner sentence is not its story's last any more.
+        let delete = edit(
+            "delete",
+            serde_json::json!({ "type": "delete_paragraph", "targetId": anchor, "expectedText": owner }),
+        );
+        let (status, receipt) = internal(server.port, "/internal/documents/edit", &delete).await;
+        assert_eq!(status, 200, "{format}: {receipt}");
+        let (_, after) = office_entries(server.port, &inspect).await;
+        let texts: Vec<&str> = after.iter().map(|(_, text)| text.as_str()).collect();
+        assert!(
+            texts.contains(&INSERTED) && !texts.contains(&owner.as_str()),
+            "{format}: {texts:?}"
+        );
+        assert!(after.iter().all(|(id, _)| *id != anchor), "{format}");
+    }
+}
+
+/// An agent's read of an Office file: the answer and its paragraphs as
+/// (id, text), a DOCX's from its scoped page.
+async fn office_entries(
+    port: u16,
+    inspect: &serde_json::Value,
+) -> (serde_json::Value, Vec<(String, String)>) {
+    let (status, view) = internal(port, "/internal/documents/inspect", inspect).await;
+    assert_eq!(status, 200, "{view}");
+    let entries = match &view["scoped"] {
+        scoped if scoped.is_object() => &scoped["entries"],
+        _ => &view["entries"],
+    };
+    let entries = entries
+        .as_array()
+        .expect("entries")
+        .iter()
+        .map(|entry| {
+            let text = |key: &str| entry[key].as_str().unwrap_or_default().to_owned();
+            (text("id"), text("value"))
+        })
+        .collect();
+    (view, entries)
+}
+
 /// Security regression (drafts-send REVIEW1 S6): an Office file's drafts go
 /// in only over the room's base (the editor's lineage rule), and none while
 /// the Office maintenance pause holds. The pause row pauses every Office
@@ -7308,7 +7405,7 @@ async fn an_office_draft_goes_in_over_the_rooms_base_alone_and_never_while_pause
     let Some(env) = env() else { return };
     let gateway = gateway(&env).await;
     let server = start_with(&env, Some(&gateway.url)).await;
-    let (user, file, sha) = office_file(&env, &gateway).await;
+    let (user, file, sha) = office_file(&env, &gateway, "docx").await;
     let room = format!("source:{file}:epoch:1");
     let write = token(&room, &user, "write");
     let send = |base: Option<String>| {

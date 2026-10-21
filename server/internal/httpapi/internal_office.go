@@ -51,6 +51,9 @@ type officeCommand struct {
 	TargetID     string `json:"target_id"`
 	ExpectedText string `json:"expected_text"`
 	Text         string `json:"text"`
+	AfterID      string `json:"after_id"`
+	BeforeID     string `json:"before_id"`
+	Style        string `json:"style"`
 }
 
 // namedNumberFormats are format_cells' preset number formats, matched in any
@@ -66,6 +69,9 @@ var xlsxCommands = []string{
 	"insert_columns", "delete_columns", "delete_sheet",
 }
 
+// paragraphCommands are the DOCX and PPTX commands.
+var paragraphCommands = []string{"replace_text", "insert_paragraph", "delete_paragraph"}
+
 // NormalizeOfficeCommands turns edit_office_document's commands into the
 // engine's: the type stays snake_case, the fields become camelCase, and
 // format_cells' flat style fields become its style object. Every field name
@@ -79,14 +85,15 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			return nil, refusal(agenttools.ErrInvalidInput, "invalid command: %v", err)
 		}
 		xlsx := slices.Contains(xlsxCommands, c.Type)
+		paragraphs := slices.Contains(paragraphCommands, c.Type)
 		switch {
 		case c.Type == "create":
 			return nil, refusal(agenttools.ErrInvalidInput, "create must be the call's first command, without file_id")
 		case xlsx && format != "xlsx":
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to XLSX files, not %s", c.Type, strings.ToUpper(format))
-		case c.Type == "replace_text" && format == "xlsx":
-			return nil, refusal(agenttools.ErrUnsupportedOperation, "replace_text applies to DOCX and PPTX files; write cells with set_range")
-		case !xlsx && c.Type != "replace_text":
+		case paragraphs && format == "xlsx":
+			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to DOCX and PPTX files; write cells with set_range", c.Type)
+		case !xlsx && !paragraphs:
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "unsupported command %q", c.Type)
 		}
 		var normalized map[string]any
@@ -147,6 +154,15 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 				return nil, refusal(agenttools.ErrInvalidInput, "replace_text on %s needs target_id", strings.ToUpper(format))
 			}
 			normalized = map[string]any{"targetId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text}
+		case "insert_paragraph":
+			normalized = map[string]any{"text": c.Text}
+			for key, value := range map[string]string{"afterId": c.AfterID, "beforeId": c.BeforeID, "style": c.Style} {
+				if value != "" {
+					normalized[key] = value
+				}
+			}
+		case "delete_paragraph":
+			normalized = map[string]any{"targetId": c.TargetID, "expectedText": c.ExpectedText}
 		}
 		normalized["type"] = c.Type
 		encoded, err := json.Marshal(normalized)

@@ -57,9 +57,10 @@ func officeSource(t *testing.T, fx deckFileFixture, name string) string {
 }
 
 // inspect_office_document's query reaches the engine as the inspect body's
-// office object and its scoped answer comes back unchanged; DOCX reads its
-// entries a page at a time until the engine's scoped DOCX read lands, and
-// inspect_document points an Office file at the Office tools.
+// office object and its scoped answer comes back unchanged, a DOCX page's
+// query being its start and count; PPTX reads its entries a page at a time
+// until the engine's scoped PPTX read lands, and inspect_document points an
+// Office file at the Office tools.
 func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	fx := openDeckFiles(t)
 	scoped := `{"sheet":"0","name":"Grades","range":"A1:B2","cells":[{"address":"A1","input":"=1+1","value":"2"}]}`
@@ -67,7 +68,7 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		"/internal/documents/inspect": `{"format":"xlsx","access":"edit","epoch":2,"checkpoint":5,"scoped":` + scoped +
 			`,"entries":[{"id":"p1","label":"Paragraph 1","value":"One"},{"id":"p2","label":"Paragraph 2","value":"Two"}]}`,
 	})
-	xlsx, docx := officeSource(t, fx, "grades.xlsx"), officeSource(t, fx, "essay.docx")
+	xlsx, docx, pptx := officeSource(t, fx, "grades.xlsx"), officeSource(t, fx, "essay.docx"), officeSource(t, fx, "lesson.pptx")
 	inspect := func(file string, office any) *httptest.ResponseRecorder {
 		body := map[string]any{
 			"workspaceId": fx.ws, "userId": fx.editor, "target": map[string]any{"kind": "source_file", "id": file},
@@ -92,13 +93,23 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		t.Fatalf("authority got %v", sent)
 	}
 
+	operations := `"supportedOperations":["replace_text","insert_paragraph","delete_paragraph"]`
 	rec = inspect(docx, map[string]any{"start": 1, "count": 1})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"entries":[{"id":"p2","label":"Paragraph 2","value":"Two"}]`) ||
-		!strings.Contains(rec.Body.String(), `"supportedOperations":["replace_text"]`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
+		!strings.Contains(rec.Body.String(), operations) {
 		t.Fatalf("docx read = %d %s", rec.Code, rec.Body.String())
 	}
-	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || sent[1]["office"] != nil {
-		t.Fatalf("a DOCX page sent an office query: %v", sent)
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || string(sent[1]["office"]) != `{"start":1,"count":1}` {
+		t.Fatalf("a DOCX page's query: %v", sent)
+	}
+
+	rec = inspect(pptx, map[string]any{"start": 1, "count": 1})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"entries":[{"id":"p2","label":"Paragraph 2","value":"Two"}]`) ||
+		!strings.Contains(rec.Body.String(), operations) {
+		t.Fatalf("pptx read = %d %s", rec.Code, rec.Body.String())
+	}
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 3 || sent[2]["office"] != nil {
+		t.Fatalf("a PPTX page sent an office query: %v", sent)
 	}
 
 	rec = inspect(xlsx, nil)
