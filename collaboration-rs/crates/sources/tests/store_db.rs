@@ -646,10 +646,8 @@ async fn an_agent_edit_on_a_checkpoint_that_keeps_moving_stops_after_three_attem
     let input = EditInput {
         actor_user_id: h.user.clone(),
         commands: vec![json!({ "type": "replace_text", "expectedText": "abc", "text": "abd" })],
-        epoch: None,
         file_id: room.file_id.clone(),
         operation: json!({ "id": "op_moving", "requestHash": "h1" }),
-        undo: None,
     };
     let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
     let Err(error) = h.sources.apply_edit(input, live).await else {
@@ -726,13 +724,10 @@ async fn a_rooms_state_cap_is_the_export_cap_less_its_base() {
         commands: vec![json!({
             "type": "replace_text",
             "expectedText": "END",
-            "offset": base.len() - 3,
             "text": "END and more",
         })],
-        epoch: None,
         file_id: room.file_id.clone(),
         operation: json!({ "id": "op_full", "requestHash": "h1" }),
-        undo: None,
     };
     let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
     let Err(error) = h.sources.apply_edit(input, live).await else {

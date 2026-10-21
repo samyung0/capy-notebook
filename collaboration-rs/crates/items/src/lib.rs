@@ -120,32 +120,17 @@ impl Kind {
         }
     }
 
-    /// The agent's commands on the document, with inverses and guards.
+    /// The agent's commands on the document.
     pub fn apply_commands(
         self,
         txn: &mut yrs::TransactionMut,
         commands: &[notes::edit::DocumentCommand],
-    ) -> Result<notes::edit::EditOutcome, notes::edit::EditError> {
+    ) -> Result<(), notes::edit::EditError> {
         match self {
             Kind::Flashcards => flashcards::apply_commands(txn, commands),
             Kind::Quiz | Kind::QuizKeys => Err(notes::edit::EditError::Edit {
                 code: notes::edit::EditErrorCode::UnsupportedOperation,
                 message: "a quiz edits both its documents (quiz::apply_commands)".into(),
-                details: None,
-            }),
-        }
-    }
-
-    pub fn verify_guards<T: yrs::ReadTxn>(
-        self,
-        txn: &T,
-        guards: &[notes::edit::GuardTarget],
-    ) -> Result<(), notes::edit::EditError> {
-        match self {
-            Kind::Flashcards => flashcards::verify_guards(txn, guards),
-            Kind::Quiz | Kind::QuizKeys => Err(notes::edit::EditError::Edit {
-                code: notes::edit::EditErrorCode::UnsupportedOperation,
-                message: "a quiz checks both its documents (quiz::verify_guards)".into(),
                 details: None,
             }),
         }

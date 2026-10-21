@@ -7,8 +7,5 @@
 import type { SourceCheckpointReceipt } from './sourceCheckpointReceipt.ts';
 
 export interface SourceCheckpointOperation {
-  guards?: unknown;
-  inverse?: unknown;
   receipt: SourceCheckpointReceipt;
-  undoOf?: string;
 }

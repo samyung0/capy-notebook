@@ -307,11 +307,6 @@ pub async fn assert_editor<C: GenericClient>(
     Ok(())
 }
 
-pub struct Boundary {
-    /// The account the material is charged to (`owner_user_id`).
-    pub payer_user_id: String,
-}
-
 /// The advisory lock that serializes a material's Yjs writes.
 pub async fn lock_material<C: GenericClient>(
     client: &C,
@@ -332,7 +327,7 @@ pub async fn lock_boundary<C: GenericClient>(
     client: &C,
     material_id: &str,
     actors: &[String],
-) -> Result<Boundary, AccessError> {
+) -> Result<(), AccessError> {
     let placement = client
         .query(
             "SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1 AND trashed_at IS NULL",
@@ -358,7 +353,7 @@ pub async fn lock_boundary<C: GenericClient>(
         };
         owner = found.get("user_id");
     }
-    // The payer is charged by the write (agent inverses), so its row is
+    // The payer is charged by the write (the material's bytes), so its row is
     // locked with the owner's and the actors'.
     let mut ids: Vec<String> = actors.to_vec();
     ids.push(owner.clone());
@@ -410,9 +405,7 @@ pub async fn lock_boundary<C: GenericClient>(
     {
         return Err(AccessError::Forbidden("material placement changed".into()));
     }
-    Ok(Boundary {
-        payer_user_id: payer,
-    })
+    Ok(())
 }
 
 #[cfg(test)]

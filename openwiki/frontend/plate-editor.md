@@ -1859,7 +1859,7 @@ clean), and a clean room's retry never moves it.
 Tokens, outbox events and commands already resolve the current schema, and
 `load`/`store` refuse a stale one, so a stale client sees another room before
 it syncs anything and opens copy-only recovery; item identities do not change,
-so comment anchors and AI Undo guards stay valid. A co-editor still connected
+so comment anchors stay valid. A co-editor still connected
 during such a discard, with a few seconds of unsaved typing, lands in recovery
 too (Epo, 2026-10-04).
 
@@ -2178,8 +2178,8 @@ holds (a removed option, a changed set of ordering items) is dropped (D9).
 Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
 content write is gone). Agent question commands write what differs in the
 questions that differ, texts as the fewest changes and lists by position, so
-an editor typing in the same question keeps their characters, with inverses
-and question guards.
+an editor typing in the same question keeps their characters; their Undo is
+the live Undo of every agent edit.
 
 Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo
@@ -2420,15 +2420,16 @@ Chat `edit_document` never touches the browser editor. The collaboration
 service loads the durable material state into an isolated Y.Doc, merges the
 open live room's state so in-flight typing counts, applies the normalized
 commands through a headless Slate editor
-(`collaboration-rs/crates/notes/src/edit.rs`), stores the
-inverse and item-run guards of the edited nodes, then fans the committed delta
-into the live room as a `service-edit` update; the projection runs on the same
-commit. A refused edit names its reason and, where the agent can retry, the
+(`collaboration-rs/crates/notes/src/edit.rs`), then fans the committed delta
+into the live room as a `service-edit` update, which keeps the edit's own Yjs
+items for its Undo while the room is loaded (see
+[agentic-retrieval](../agentic-retrieval.md), Undo chain); the projection runs
+on the same commit. A refused edit names its reason and, where the agent can retry, the
 target as it reads now (see [agentic-retrieval](../agentic-retrieval.md#tools),
 Tools).
 A removed flashcard's review state stays in `review_states`, ignored until an
 Undo brings the card back. The chat result card shows the effect with an Undo
-button (`available`, `undone`, `unavailable`) fed by the receipt's `undo` ref.
+button (`available`, `unavailable`) fed by the receipt's `undo` ref.
 
 ## AI previews
 

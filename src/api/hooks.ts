@@ -1310,8 +1310,9 @@ export function useDeleteOwnedFile() {
 }
 
 /** Reverse one direct AI edit shown in chat. Each click is its own request
- * (the key is not reused across retries, so it never replays); the server
- * validates the edit's guards and refuses when the targets changed since. */
+ * (the key is not reused across retries); the server answers every request
+ * for a step it reversed already with that receipt, and refuses a step its
+ * room no longer holds (live Undo, Epo 2026-10-20). */
 export function useUndoEdit() {
   return useMutation({
     meta: { errorToast: false },
