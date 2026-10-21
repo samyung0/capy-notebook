@@ -3879,7 +3879,8 @@ counts both sides:
   (`office_service::Touched`, one per applied command in
   `CommandResult::touched`, from `touched.rs` in the fork) as live Yjs items
   and their content's bytes: the text a DOCX or PPTX `replace_text` takes
-  out (the changed span), the text and format markers a `format_text` span
+  out (the changed span, found as apply finds it: in a header, footer or
+  note too; review r2 H1), the text and format markers a `format_text` span
   covers, the mark entries `set_alignment` (`alignment`) and `set_list`
   (`numPr`, `listIsBullet`, `listNumFmt`, `listMarker`) write, a deleted
   paragraph's text and mark (its format markers stay where they are), a
@@ -3889,15 +3890,16 @@ counts both sides:
   takes those bytes times `CONTENT` and an `ITEM` (33 bytes: the most the
   fixtures sent beyond content was 22 bytes an item, plus half again) an
   item, plus what the command writes itself: a replacement's text and 3
-  items (its run and the two it splits), `format_text`'s format JSON and 2,
-  `set_alignment` its entry, `set_list` 80 bytes and 4 entries a
+  items (its run and the two it splits), `format_text` twice its format
+  JSON and a start and an end marker a key it sets plus 4 (font's own pass
+  and the two splits; review r2 M1), `set_alignment` its entry, `set_list` 80 bytes and 4 entries a
   paragraph, a paragraph or table delete 1; a paragraph insert's text and
   style times `CONTENT` and 8 `PIECE`s (the new mark, a copy of its
   anchor's properties: a list item's measured 837 bytes, and the run it
   splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8. On the
   fixtures (lesson.docx and .pptx, paragraphs of 5-character runs and of
   one run a character, 1x1 to 10x10 tables) every DOCX and PPTX command
-  over-estimates 1.5 to 7.4 times, and the calibration fails one past 10
+  over-estimates 1.4 to 7.4 times, and the calibration fails one past 10
   times (`CEILING`), so an ordinary 50-command call keeps its Undo.
 
 A new command adds its rule there; both matches are exhaustive, so it does
@@ -4141,7 +4143,11 @@ elsewhere the next paragraph takes the table into its slot. `delete_table
 {id, expected}` takes any paragraph id of a table's cells (the read names a
 table by its first cell's first paragraph) and its cells' text as rows (a
 cell's paragraphs joined by line breaks); a stale one carries
-`details.block {type: "table", text, grid}`. `set_list {ids, list}` writes
+`details.block {type: "table", text, grid}`, and a table whose cell holds
+what `delete_paragraph` refuses (a table or content control, which
+`expected` cannot name, a picture, equation, field, note reference or
+tracked change) is refused as `unavailable_target` naming it (reviews H2,
+r2 L2). `set_list {ids, list}` writes
 the toolbar buttons' `numPr` (the two `w:num` ids after the file's own, one
 bulleted and one numbered list per document, no restart), keeping each
 paragraph's level, or ends the list (`none` writes `numId` 0, which also
@@ -4168,10 +4174,10 @@ so description and engine cannot drift. It holds 50 commands and, per
 format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
 cells), 1,000 inserted rows and columns and 5 sheets added, renamed or
-deleted; DOCX 20 inserted and 20 deleted paragraphs, 400 table cells
-inserted or deleted, 30 formatted spans and 200 paragraphs given a list or
-an alignment; PPTX 20 inserted and 20 deleted paragraphs (`replace_text`
-counts toward the 50 commands only). `apply_commands` and `create` apply
+deleted; DOCX 20 text replacements, 20 inserted and 20 deleted
+paragraphs, 400 table cells inserted or deleted, 30 formatted spans and 200
+paragraphs given a list or an alignment; PPTX 20 text replacements and 20
+inserted and 20 deleted paragraphs. `apply_commands` and `create` apply
 the commands up to the first that would pass a limit and end the result's
 notice with `Not applied: the commands at indexes N to M (counting from 0),
 past the limit of … a call; send them in another call.` (after a create

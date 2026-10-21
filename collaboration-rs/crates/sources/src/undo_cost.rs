@@ -124,12 +124,16 @@ pub fn office(command: &Command, touched: Touched) -> usize {
             0,
         ),
         Command::SetAlignment { .. } => ("alignment".len() + 8, 1, 0),
-        // The format written over the span, and the runs at either end split.
-        Command::FormatText { format, .. } => (
-            serde_json::to_string(format).map_or(0, |json| json.len()),
-            2,
-            0,
-        ),
+        // A start and an end marker for each key it sets, font's own pass,
+        // and the runs at either end split; stored values run larger than
+        // the agent's JSON (review r2 M1).
+        Command::FormatText { format, .. } => {
+            let format = serde_json::to_value(format).unwrap_or_default();
+            let keys = format
+                .as_object()
+                .map_or(0, |fields| fields.values().filter(|v| !v.is_null()).count());
+            (json_len(&format) * 2, 2 * keys + 4, 0)
+        }
         // A new table's cells, each a story with its paragraph mark, the
         // table embed and the paragraph it opens.
         Command::InsertTable { rows, .. } => {

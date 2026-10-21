@@ -92,6 +92,27 @@ async fn office_calls_through_the_pool_equal_the_crate_in_process() {
             .unwrap();
         let direct = office_service::apply_commands(&base, checkpoint(&seed), &[edit]).unwrap();
         assert_eq!(applied.notice, direct.notice, "{path}");
+        if format != Format::Xlsx {
+            // What the engine measured for the Undo cost crosses the pool
+            // (review r2 L5): a replacement taking out text measures it.
+            let entry = entries.iter().find(|entry| entry.value.len() > 3).unwrap();
+            let cut = Command::ReplaceText {
+                target_id: entry.id.clone(),
+                expected_text: entry.value.clone(),
+                text: "x".into(),
+            };
+            let through = pool
+                .apply_commands(on, &seed, std::slice::from_ref(&cut))
+                .await
+                .unwrap();
+            let direct = office_service::apply_commands(&base, checkpoint(&seed), &[cut]).unwrap();
+            assert_eq!(through.touched, direct.touched, "{path}");
+            assert!(
+                through.touched[0].items > 0,
+                "{path}: {:?}",
+                through.touched
+            );
+        }
         let edited = applied.state;
         let effects = match format {
             Format::Xlsx => {

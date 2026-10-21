@@ -91,11 +91,9 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 		t.Fatalf("authority got %v", sent)
 	}
 
-	operations := `"supportedOperations":["replace_text","insert_paragraph","delete_paragraph","format_text","set_alignment"]`
 	rec = inspect(docx, map[string]any{"start": 1, "count": 1})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
-		!strings.Contains(rec.Body.String(), strings.TrimSuffix(operations, "]")+
-			`,"set_list","insert_table","delete_table"]`) {
+		strings.Contains(rec.Body.String(), "supportedOperations") {
 		t.Fatalf("docx read = %d %s", rec.Code, rec.Body.String())
 	}
 	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || string(sent[1]["office"]) != `{"start":1,"count":1}` {
@@ -104,7 +102,7 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 
 	rec = inspect(pptx, map[string]any{"slide": 2, "start": 1})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
-		!strings.Contains(rec.Body.String(), strings.TrimSuffix(operations, "]")+`,"set_shape_text","add_slide","delete_slide","move_slide","add_text_box"]`) {
+		strings.Contains(rec.Body.String(), "supportedOperations") {
 		t.Fatalf("pptx read = %d %s", rec.Code, rec.Body.String())
 	}
 	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 3 || string(sent[2]["office"]) != `{"start":1,"count":60,"slide":2}` {
