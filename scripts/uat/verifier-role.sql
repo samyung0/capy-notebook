@@ -64,7 +64,6 @@ GRANT SELECT ON TABLE
     public.provider_sessions,
     public.model_configs,
     public.rag_material_contents,
-    public.agent_edit_inverses,
     public.edit_incidents,
     public.user_credits,
     public.credit_purchases,

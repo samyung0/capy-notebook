@@ -466,50 +466,6 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 	return out, s.refreshUndoStatuses(ctx, out)
 }
 
-// refreshUndoStatuses puts each effect with an Undo ref at the latest step of
-// its chain: after an Undo the block shows the edit_undone (or trashed)
-// effect with its Redo ref, and a release after the message was finalized
-// shows as unavailable, so a reload matches the live view.
-func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) error {
-	var ids []string
-	for _, m := range messages {
-		for _, block := range m.Activity {
-			for _, effect := range block.Effects {
-				if effect.Undo != nil && effect.Undo.OperationID != "" {
-					ids = append(ids, effect.Undo.OperationID)
-				}
-			}
-		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	steps, err := s.LatestSteps(ctx, ids)
-	if err != nil {
-		return err
-	}
-	for mi := range messages {
-		for bi := range messages[mi].Activity {
-			for ei := range messages[mi].Activity[bi].Effects {
-				effect := &messages[mi].Activity[bi].Effects[ei]
-				if effect.Undo == nil {
-					continue
-				}
-				step, ok := steps[effect.Undo.OperationID]
-				switch {
-				case !ok:
-					effect.Undo = &agenttools.UndoRef{OperationID: effect.Undo.OperationID, Status: agenttools.UndoUnavailable, Reason: "released"}
-				case step.Effect != nil:
-					*effect = *step.Effect
-				default:
-					effect.Undo = step.Undo
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // AddUserMessage persists an incoming user message and bumps the conversation's
 // updated_at so it sorts to the top of the list.
 func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content string) (Message, error) {

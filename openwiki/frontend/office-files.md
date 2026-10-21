@@ -2714,10 +2714,9 @@ engine keeps. The collaboration server's inspect route answers an XLSX
 `office` query with the engine's scoped read (the sheet list, or at most
 2,000 cells), and `/internal/documents/create` builds a new XLSX from the
 committed starter (`crates/office-service/starters/blank.xlsx`); DOCX create
-and the DOCX and PPTX scoped reads are phases 2 and 3. A command the engine
-returns no inverse for (`format_cells`, `add_sheet`, `delete_sheet`, row and
-column deletes) leaves its edit without Undo until the live-room Undo (Epo,
-2026-10-20) lands.
+and the DOCX and PPTX scoped reads are phases 2 and 3. Every command's edit,
+structural ones included, gets the live Undo while its room is loaded
+([agentic retrieval](../agentic-retrieval.md), Undo chain).
 
 An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
 as a substring that occurs exactly once in the paragraph, counted as note
@@ -2729,8 +2728,7 @@ the style of the character before it). An absent one is refused as
 as `invalid_input`. Each refusal carries the paragraph as it reads now in
 `details.block` (`id`, `type: "paragraph"`, `text`), which crosses the engine
 process (`Failure.details`) and reaches the agent as a note block's does
-([agentic retrieval](../agentic-retrieval.md)). The Undo's inverse names the
-whole paragraph. The rule is `check_replacement` in the fork's
+([agentic retrieval](../agentic-retrieval.md)). The rule is `check_replacement` in the fork's
 `crates/office-service/src/common.rs` (`shared/office-checkpoint.ts`
 `checkReplacement` mirrors it). XLSX `set_cell` still compares the whole cell
 (its input or its shown value); refused as `stale_target`, it carries the cell
@@ -2746,11 +2744,9 @@ mirror). The command result's `notice` names them ("Removed 2 characters
 Office files cannot store (U+0001, U+FFFE)."); the collaboration server adds
 it to the receipt it returns, Go passes it on (`store.DocumentEdit`) and the
 pipeline puts it in the edit's tool result (`_receipt_result` in
-`retrieval/tools.py`). A replayed receipt has no note. The inverse an edit
-returns for its Undo restores the paragraph or cell as the file can store
-it: such a character a paste or an import left there is dropped
-(`storable_text`; `storableText` in the TS mirror), so the Undo is not
-refused for it. What an engine itself
+`retrieval/tools.py`). A replayed receipt has no note. Its Undo reverts the
+edit's own Yjs items, so the paragraph or cell comes back as the room held
+it. What an engine itself
 refuses about the agent's input is an edit refusal too, `invalid_input` with
 the engine's sentence and no details: a DOCX line break inside a paragraph
 (CR, U+2028, U+2029), text in a PPTX equation, an XLSX cell outside the grid

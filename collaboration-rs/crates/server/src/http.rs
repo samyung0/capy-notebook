@@ -39,6 +39,7 @@ pub fn router(app: Shared) -> Router {
         .route("/internal/documents/inspect", post(document))
         .route("/internal/documents/edit", post(document))
         .route("/internal/documents/undo", post(document))
+        .route("/internal/documents/undo-status", post(document))
         .route("/internal/documents/create", post(document))
         .route("/internal/commands", post(command))
         .route("/internal/markdown/convert", post(markdown))
@@ -328,8 +329,8 @@ async fn publish_source_refresh(
     source_answer("source_publish", result)
 }
 
-/// `/internal/documents/{inspect,edit,undo,create}`: direct AI edits and the
-/// agent's new Office files (`edits.rs`).
+/// `/internal/documents/{inspect,edit,undo,undo-status,create}`: direct AI
+/// edits, their Undo and the agent's new Office files (`edits.rs`).
 async fn document(
     State(app): State<Shared>,
     uri: axum::http::Uri,
@@ -658,6 +659,7 @@ pub(crate) mod tests {
             handoff: Default::default(),
             source_joins: Default::default(),
             markdown: None,
+            agent_steps: Default::default(),
         })
     }
 

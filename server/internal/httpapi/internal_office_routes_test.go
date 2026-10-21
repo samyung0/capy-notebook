@@ -175,9 +175,8 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	if err != nil || file.SizeBytes != int64(len(content)) || file.ChapterID == nil || *file.ChapterID != fx.ch {
 		t.Fatalf("file = %+v err = %v", file, err)
 	}
-	step, _, err := fx.st.GetEditInverse(context.Background(), receipt.OperationID)
-	if err != nil || step.Step != store.StepTrash {
-		t.Fatalf("undo step = %+v err = %v", step, err)
+	if receipt.Effect.Undo == nil || receipt.Effect.Undo.OperationID != receipt.OperationID {
+		t.Fatalf("undo ref = %s", rec.Body.String())
 	}
 
 	replay := doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, body)

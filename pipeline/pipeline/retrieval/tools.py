@@ -1064,16 +1064,9 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             if effect.get("projectionPending")
             else ""
         )
-        # Only an edit whose receipt carries an Undo ref has one (an Office
-        # edit the engine returned no inverse for has none, Epo 2026-10-20).
-        undo_note = (
-            " The user can undo this edit from the chat result."
-            if effect.get("undo")
-            else ""
-        )
         text = (
             f"Edited '{title}' (id {rid}).{notice}{pending_note}{_relocations(effect)}"
-            f"{_block_ids(effect)}{undo_note}"
+            f"{_block_ids(effect)}{_undo_note(effect)}"
         )
     elif operation == "edit_undone":
         text = f"Reversed the earlier edit of '{title}' (id {rid})."
@@ -1083,6 +1076,12 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             f"It is now in the workspace.{_block_ids(effect)}"
         )
     return ToolResult(text_parts=[text], effects=[effect])
+
+
+def _undo_note(effect: dict[str, Any]) -> str:
+    """An edit has an Undo only when a room someone has open took it (Epo
+    2026-10-20)."""
+    return " The user can undo this from the chat result." if effect.get("undo") else ""
 
 
 def _block_ids(effect: dict[str, Any]) -> str:
@@ -2575,7 +2574,10 @@ async def write_questions(
         return result
     landed(ctx, credited)
     resource = result.effects[0].get("resource") or {}
-    result.text_parts = [questions.result_text(found, built, resource, quiz is None)]
+    undoable = bool(result.effects[0].get("undo"))
+    result.text_parts = [
+        questions.result_text(found, built, resource, quiz is None, undoable)
+    ]
     return result
 
 
@@ -2669,8 +2671,8 @@ async def write_media(
         result.text_parts = [
             (
                 f"Added the {clean['media']['type']} to question {qid} of quiz "
-                f"'{resource.get('title')}' (id {resource.get('id')}), after its text. "
-                "The user can undo this from the chat result."
+                f"'{resource.get('title')}' (id {resource.get('id')}), after its text."
+                + _undo_note(result.effects[0])
             ),
             *found.notes,
         ]

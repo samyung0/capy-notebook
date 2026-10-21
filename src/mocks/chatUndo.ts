@@ -11,8 +11,8 @@ const NEXT: Record<ResourceEffectOperation, ResourceEffectOperation> = {
   trashed: 'restored',
 };
 
-/** An edit chain's step that is refused, as when someone changed the edited
- * section after the Redo: Undo, Redo, then the next Undo fails. */
+/** An edit chain's step that is refused, as when its room unloaded after the
+ * Redo: Undo, Redo, then the next Undo fails. */
 const REFUSED_EDIT_STEP = 2;
 
 const steps = new Map<string, { effect: ResourceEffect; depth: number }>();
@@ -39,7 +39,7 @@ export const mockUndo = http.post(
     if (edit && depth === REFUSED_EDIT_STEP) {
       steps.delete(String(params.id));
       return HttpResponse.json(
-        { errors: [{ message: 'stale_target' }], status: 409 },
+        { errors: [{ message: 'undo_unavailable' }], status: 409 },
         { status: 409 }
       );
     }

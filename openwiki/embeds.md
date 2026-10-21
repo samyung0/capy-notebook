@@ -323,8 +323,8 @@ figures).
     `parseMaterialDocument` (`liveFigureSchema`, after the repair);
   - strict: an agent's edit blocks in Rust (`edit.rs` `assert_node_shape`
     runs `material::figure_block` on every chart, plot and graph it writes;
-    its Undo puts back what the room held, so the inverse takes
-    `material::live_figure_block`); Go's `ParseWrite`
+    its Undo puts back the room's own items, which the room's store check
+    takes as `material::live_figure_block`); Go's `ParseWrite`
     (an agent's note, `convertAgentNote`, and its markdown blocks) and
     `questions.ValidateBlock` for quiz and bank questions and question media;
     `ValidateKind` for other material kinds; the browser's

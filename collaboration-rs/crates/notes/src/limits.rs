@@ -40,7 +40,6 @@ pub enum LimitCode {
     DocumentDepthExceeded,
     DocumentNodesExceeded,
     DocumentSizeExceeded,
-    UndoPayloadExceeded,
 }
 
 impl LimitCode {
@@ -49,7 +48,6 @@ impl LimitCode {
             LimitCode::DocumentDepthExceeded => "document_depth_exceeded",
             LimitCode::DocumentNodesExceeded => "document_nodes_exceeded",
             LimitCode::DocumentSizeExceeded => "document_size_exceeded",
-            LimitCode::UndoPayloadExceeded => "undo_payload_exceeded",
         }
     }
 }
@@ -1881,8 +1879,7 @@ impl Validator {
     /// A content change `admit` did not check entered the room: the next
     /// update measures exactly. The server calls it after every transaction
     /// of its own on the room that commits a non-empty update: agent
-    /// commands, replace-block, the children pass, guard verification (which
-    /// opens the headless editor, whose normalization may write), a reload.
+    /// commands and their Undo, replace-block, the children pass, a reload.
     pub fn invalidate(&mut self) {
         self.bound = None;
         self.metrics = None;

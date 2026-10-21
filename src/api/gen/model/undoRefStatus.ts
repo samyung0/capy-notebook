@@ -10,7 +10,5 @@ export type UndoRefStatus = typeof UndoRefStatus[keyof typeof UndoRefStatus];
 
 export const UndoRefStatus = {
   available: 'available',
-  undone: 'undone',
   unavailable: 'unavailable',
-  pending: 'pending',
 } as const;

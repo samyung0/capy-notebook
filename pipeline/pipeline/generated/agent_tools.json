@@ -1,5 +1,5 @@
 {
-  "version": 33,
+  "version": 34,
   "operations": [
     "source.read",
     "material.read",
@@ -878,7 +878,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner's Undo. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1329,7 +1329,7 @@
     {
       "name": "edit_office_document",
       "version": 1,
-      "description": "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat. A call's commands are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
+      "description": "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly. A call's commands are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

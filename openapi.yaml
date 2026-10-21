@@ -5355,12 +5355,8 @@ components:
     SourceCheckpointOperation:
       additionalProperties: false
       properties:
-        guards: {}
-        inverse: {}
         receipt:
           $ref: "#/components/schemas/SourceCheckpointReceipt"
-        undoOf:
-          type: string
       required:
         - receipt
       type: object
@@ -6495,14 +6491,10 @@ components:
       properties:
         operationId:
           type: string
-        reason:
-          type: string
         status:
           enum:
             - available
-            - undone
             - unavailable
-            - pending
           type: string
       required:
         - operationId

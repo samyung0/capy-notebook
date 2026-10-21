@@ -477,6 +477,26 @@ impl Client {
         self.send(5, &sync(2, &update)).await;
     }
 
+    /// Inserts `text` at `index` of the first block.
+    async fn type_at(&mut self, index: u32, text: &str) {
+        let before = self.doc.transact().state_vector();
+        {
+            let root = self.doc.get_or_insert_text("content");
+            let mut txn = self.doc.transact_mut();
+            let block = root
+                .diff(&txn, yrs::types::text::YChange::identity)
+                .into_iter()
+                .find_map(|chunk| match chunk.insert {
+                    yrs::Out::YXmlText(block) => Some(block),
+                    _ => None,
+                })
+                .expect("a block");
+            block.insert(&mut txn, index, text);
+        }
+        let update = self.doc.transact().encode_state_as_update_v1(&before);
+        self.send(5, &sync(2, &update)).await;
+    }
+
     /// Inserts Slate blocks at `index` of the note, as a paste does.
     async fn insert_blocks(&mut self, index: u32, blocks: &[serde_json::Value]) {
         let before = self.doc.transact().state_vector();
@@ -856,7 +876,7 @@ async fn a_suspended_owners_note_is_not_found_for_its_readers() {
 /// Security regression (uploader-pays review M4, N4): an agent edit charges
 /// the note's payer (its creator), so it stops once only the payer is being
 /// deleted, the workspace owner and the actor staying healthy. Fails if the
-/// edit lands or records an inverse on the deleting payer.
+/// edit lands on the deleting payer.
 #[tokio::test]
 async fn an_agent_edit_stops_for_a_deleting_payer() {
     let Some(env) = env() else { return };
@@ -907,11 +927,6 @@ async fn an_agent_edit_stops_for_a_deleting_payer() {
     )
     .await;
     assert_eq!(status, 200, "{receipt}");
-    assert_eq!(
-        charged_inverses(&client, &material, &payer).await,
-        1,
-        "the inverse is charged to the payer"
-    );
     // The deletion request holds the payer's row while the edit arrives: the
     // edit waits on that row (lock_boundary locks the payer), then sees the
     // payer locked. Without the lock it would land and charge the payer while
@@ -933,11 +948,15 @@ async fn an_agent_edit_stops_for_a_deleting_payer() {
     deleting.batch_execute("COMMIT").await.expect("commit");
     let (status, refusal) = edited.await.expect("edit");
     assert_ne!(status, 200, "{refusal}");
-    assert_eq!(
-        charged_inverses(&client, &material, &payer).await,
-        1,
-        "nothing more is charged"
-    );
+    let landed: i64 = client
+        .query_one(
+            "SELECT count(*) FROM agent_operations WHERE id=$1",
+            &[&format!("op2_{material}")],
+        )
+        .await
+        .expect("receipts")
+        .get(0);
+    assert_eq!(landed, 0, "the late edit left no receipt");
 }
 
 /// `viewer` presented the link of a link-shared standalone material once
@@ -1027,18 +1046,6 @@ async fn a_locked_account_refuses_before_the_material_lock() {
             answered.unwrap_or_else(|_| panic!("{locked}: the edit waited on the material"));
         assert_ne!(status, 200, "{locked}: {refusal}");
     }
-}
-
-/// Agent edit inverses on `material` charged to `payer`.
-async fn charged_inverses(client: &tokio_postgres::Client, material: &str, payer: &str) -> i64 {
-    client
-        .query_one(
-            "SELECT count(*) FROM agent_edit_inverses WHERE resource_id=$1 AND owner_user_id=$2",
-            &[&material, &payer],
-        )
-        .await
-        .expect("inverses")
-        .get(0)
 }
 
 /// Security regression (cutover-reset REVIEW1 L1): a material without a Yjs
@@ -3318,16 +3325,6 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
     let (status, again) = internal(server.port, "/internal/documents/edit", &edit).await;
     assert_eq!(status, 200);
     assert_eq!(again["operationId"], receipt["operationId"]);
-    let client_db = db(&env).await;
-    let inverses: i64 = client_db
-        .query_one(
-            "SELECT count(*) FROM agent_edit_inverses WHERE resource_id=$1",
-            &[&material],
-        )
-        .await
-        .expect("inverses")
-        .get(0);
-    assert_eq!(inverses, 1);
     // A stale target refuses with its code.
     let stale = serde_json::json!({
         "actorUserId": user,
@@ -3365,26 +3362,21 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
         serde_json::json!([{ "after": "b1", "anchor": "gone", "end": true }]),
         "{landed}"
     );
-    // An Undo's receipt never lists relocations, even when its inverse lands
-    // an insert away from a gone anchor (a hand-written inverse here; Go
-    // sends the stored one).
-    let undo = serde_json::json!({
-        "actorUserId": user,
-        "guards": [],
-        "inverse": [{
-            "type": "insert_block",
-            "afterBlockId": "gone_too",
-            "blocks": [{ "type": "p", "id": "b10", "children": [{ "text": "back" }] }],
-        }],
-        "operation": { "id": format!("op4_{material}"), "requestHash": "h4" },
-        "room": room,
-        "target": { "id": material, "kind": "material" },
-        "undoOf": format!("op3_{material}"),
-    });
-    let (status, undone) = internal(server.port, "/internal/documents/undo", &undo).await;
+    // Its Undo takes the relocated block out of the live room again.
+    assert!(client.settle(|c| c.block("b9").is_some()).await);
+    let (status, undone) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(
+            &user,
+            &format!("op3_{material}"),
+            &format!("op4_{material}"),
+            &material,
+        ),
+    )
+    .await;
     assert_eq!(status, 200, "{undone}");
-    assert_eq!(undone["effect"]["operation"], "edit_undone", "{undone}");
-    assert!(undone["effect"].get("relocated").is_none(), "{undone}");
+    assert!(client.settle(|c| c.block("b9").is_none()).await);
 
     // replace-block replaces the block in the live room the same way; it
     // answers once the projection landed, so it needs the API.
@@ -3417,48 +3409,163 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
     assert_eq!(view["blocks"][0]["text"], "replaced", "{view}");
 }
 
-/// An edit of a material rebuilt since the agent read it (its room schema
-/// moved) refuses with the blocks as they are now, as a gone block's refusal
-/// lists them, so the agent retries without an inspect.
-/// The Undo the gateway sends: the stored inverse and guards of `undo_of`.
-async fn stored_undo(
-    env: &Env,
+/// The Undo (or Redo) Go sends for a step of a note: the actor, the new
+/// step's id and the document.
+fn undo_step(user: &str, undo_of: &str, id: &str, material: &str) -> serde_json::Value {
+    undo_of_target(user, undo_of, id, "material", material)
+}
+
+/// The Undo (or Redo) Go sends for a step of the `kind` document `target`.
+fn undo_of_target(
     user: &str,
-    room: &str,
-    material: &str,
     undo_of: &str,
     id: &str,
+    kind: &str,
+    target: &str,
 ) -> serde_json::Value {
-    let row = db(env)
-        .await
-        .query_one(
-            "SELECT inverse, guards FROM agent_edit_inverses WHERE operation_id=$1 AND undo_status='available'",
-            &[&undo_of],
-        )
-        .await
-        .expect("stored step");
-    let inverse: serde_json::Value = row.get("inverse");
-    let guards: serde_json::Value = row.get("guards");
     serde_json::json!({
         "actorUserId": user,
-        "guards": guards,
-        "inverse": inverse["commands"],
         "operation": { "id": id, "requestHash": id },
-        "room": room,
-        "target": { "id": material, "kind": "material" },
+        "target": { "id": target, "kind": kind },
         "undoOf": undo_of,
     })
 }
 
+/// Which of `ids` a loaded room still holds (`/internal/documents/undo-status`).
+async fn live_steps(port: u16, ids: &[&str]) -> serde_json::Value {
+    let (status, answer) = internal(
+        port,
+        "/internal/documents/undo-status",
+        &serde_json::json!({ "operationIds": ids }),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    answer["live"].clone()
+}
+
+/// Epo 2026-10-20: an agent edit's Undo reverts exactly its own Yjs items in
+/// the live room, as the editor's undo does: a person's typing inside the
+/// agent's text and beside it stays, both peers converge, and Redo puts the
+/// agent's text back. Fails if Undo applies inverse commands under guards
+/// again (the typing inside would refuse it).
 #[tokio::test]
-async fn an_undo_stores_its_redo_and_a_changed_target_refuses_it() {
+async fn an_agent_edit_undo_reverts_its_own_items_and_keeps_a_persons_typing() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "hello world").await;
     let room = format!("material:{material}:schema:1");
-    let mut client = Client::open(server.port).await;
-    client.joined(&room, &token(&room, &user, "write")).await;
-    assert!(client.settle(|c| c.block_text() == "hello world").await);
+    let mut agent_view = Client::open(server.port).await;
+    agent_view
+        .joined(&room, &token(&room, &user, "write"))
+        .await;
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "hello world").await);
+    let (edit, undo, redo) = (
+        format!("e_{material}"),
+        format!("u_{material}"),
+        format!("r_{material}"),
+    );
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "world", "text": "there" }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["effect"]["undo"]["operationId"], edit.as_str());
+    assert!(person.settle(|c| c.block_text() == "hello there").await);
+    person.type_at(8, "X").await;
+    person.type_at(0, "Hi ").await;
+    assert!(
+        agent_view
+            .settle(|c| c.block_text() == "Hi hello thXere")
+            .await,
+        "{}",
+        agent_view.block_text()
+    );
+    assert_eq!(
+        live_steps(server.port, &[&edit]).await,
+        serde_json::json!([edit])
+    );
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &undo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let undone = |c: &Client| {
+        let text = c.block_text();
+        text.contains('X') && text.replace('X', "") == "Hi hello world"
+    };
+    assert!(person.settle(undone).await, "{}", person.block_text());
+    assert!(
+        agent_view.settle(undone).await,
+        "{}",
+        agent_view.block_text()
+    );
+    // The used step is gone; its Undo is the next one.
+    assert_eq!(
+        live_steps(server.port, &[&edit, &undo]).await,
+        serde_json::json!([undo])
+    );
+    // A second request for the step (a second click, a lost answer's retry)
+    // gets the same answer and changes nothing.
+    let (status, again) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &format!("u2_{material}"), &material),
+    )
+    .await;
+    assert_eq!(
+        (status, &again["operationId"]),
+        (200, &serde_json::json!(undo)),
+        "{again}"
+    );
+    // A step named for another document is not this one's (L2).
+    let (status, other) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &undo, &redo, "m_other"),
+    )
+    .await;
+    assert_eq!(
+        (status, other["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{other}"
+    );
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &undo, &redo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let redone = |c: &Client| c.block_text().replace('X', "") == "Hi hello there";
+    assert!(person.settle(redone).await, "{}", person.block_text());
+    assert!(agent_view.settle(redone).await);
+    assert_eq!(agent_view.block_text(), person.block_text());
+}
+
+/// The live Undo lasts only while a room holds the edit (Epo 2026-10-20): an
+/// edit made with no room loaded has none, and once the room unloads its
+/// edit's Undo is refused and no longer shows as live. Fails if Undo
+/// outlives the room (a stored chain).
+#[tokio::test]
+async fn an_agent_edit_undo_lasts_only_while_its_room_is_loaded() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "hello world").await;
+    let room = format!("material:{material}:schema:1");
     let edit = |id: &str, expected: &str, text: &str| {
         serde_json::json!({
             "actorUserId": user,
@@ -3468,61 +3575,704 @@ async fn an_undo_stores_its_redo_and_a_changed_target_refuses_it() {
             "target": { "id": material, "kind": "material" },
         })
     };
-    let (e, u1, r1, u2) = (
-        format!("e_{material}"),
-        format!("u1_{material}"),
-        format!("r1_{material}"),
-        format!("u2_{material}"),
+    let (unopened, opened) = (format!("a_{material}"), format!("b_{material}"));
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(&unopened, "world", "there"),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(receipt["effect"].get("undo").is_none(), "{receipt}");
+
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == "hello there").await);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(&opened, "there", "again"),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["effect"]["undo"]["operationId"], opened.as_str());
+    assert!(client.settle(|c| c.block_text() == "hello again").await);
+    assert_eq!(
+        live_steps(server.port, &[&unopened, &opened]).await,
+        serde_json::json!([opened])
     );
-    let (status, _) = internal(
-        server.port,
-        "/internal/documents/edit",
-        &edit(&e, "world", "there"),
-    )
-    .await;
-    assert_eq!(status, 200);
-    // Undo, Redo, Undo: each step's receipt carries the ref of the next.
-    for (undo_of, id, operation, text) in [
-        (&e, &u1, "edit_undone", "hello world"),
-        (&u1, &r1, "edited", "hello there"),
-        (&r1, &u2, "edit_undone", "hello world"),
-    ] {
-        let undo = stored_undo(&env, &user, &room, &material, undo_of, id).await;
-        let (status, receipt) = internal(server.port, "/internal/documents/undo", &undo).await;
-        assert_eq!(status, 200, "{receipt}");
-        assert_eq!(receipt["effect"]["operation"], operation, "{receipt}");
-        assert_eq!(
-            receipt["effect"]["undo"]["operationId"],
-            id.as_str(),
-            "{receipt}"
-        );
+
+    // The last editor leaves: the room stores, unloads, and the Undo goes.
+    drop(client);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while live_steps(server.port, &[&opened]).await != serde_json::json!([]) {
         assert!(
-            client.settle(|c| c.block_text() == text).await,
-            "{}",
-            client.block_text()
+            tokio::time::Instant::now() < deadline,
+            "the room stayed loaded"
         );
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    // The span the Redo would rewrite changed since: refused, nothing written.
-    let (status, _) = internal(
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &opened, &format!("u_{material}"), &material),
+    )
+    .await;
+    assert_eq!(status, 409, "{refusal}");
+    assert_eq!(refusal["code"], "undo_unavailable", "{refusal}");
+}
+
+/// A source edit as Go sends it.
+fn source_edit(user: &str, file: &str, id: &str, commands: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "actorUserId": user,
+        "commands": commands,
+        "operation": { "id": id, "requestHash": id },
+        "target": { "id": file, "kind": "source_file" },
+    })
+}
+
+/// A source's saved checkpoint.
+async fn stored_checkpoint(env: &Env, file: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT checkpoint FROM source_documents WHERE file_id=$1",
+            &[&file],
+        )
+        .await
+        .expect("source row")
+        .get(0)
+}
+
+/// A receipt's stored Undo ref.
+async fn stored_undo(env: &Env, operation: &str) -> Option<String> {
+    db(env)
+        .await
+        .query_one(
+            "SELECT effect->'undo'->>'operationId' FROM agent_operations WHERE id=$1",
+            &[&operation],
+        )
+        .await
+        .expect("receipt")
+        .get(0)
+}
+
+/// Review M3, M4 (live Undo): a text source's agent edit gets its Undo ref,
+/// on the receipt and stored, once its room took it; the Undo reverts in the
+/// room and stores as a checkpoint. One arriving while the room's store is
+/// under way answers when that store ends, and its revert stores next.
+#[tokio::test]
+async fn a_source_undo_reverts_in_the_room_and_stores_after_a_running_store() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c) == "hello world").await);
+    let edit = format!("e_{file}");
+    let commands = serde_json::json!([
+        { "type": "replace_text", "expectedText": "world", "text": "there" }
+    ]);
+    let (status, receipt) = internal(
         server.port,
         "/internal/documents/edit",
-        &edit(&format!("x_{material}"), "world", "earth"),
+        &source_edit(&user, &file, &edit, commands),
     )
     .await;
-    assert_eq!(status, 200);
-    let redo = stored_undo(
-        &env,
-        &user,
-        &room,
-        &material,
-        &u2,
-        &format!("r2_{material}"),
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        receipt["effect"]["undo"]["operationId"],
+        edit.as_str(),
+        "{receipt}"
+    );
+    assert_eq!(
+        stored_undo(&env, &edit).await.as_deref(),
+        Some(edit.as_str())
+    );
+    assert!(client.settle(|c| source_text(c) == "hello there").await);
+
+    // The writer's store is slow; the Undo comes while it runs.
+    gateway.checkpoint_delay.store(1500, Relaxed);
+    let before = stored_checkpoint(&env, &file).await;
+    let started = gateway.checkpoints.load(Relaxed);
+    type_at_start(&mut client, "> ").await;
+    let mut storing = false;
+    for _ in 0..100 {
+        if gateway.checkpoints.load(Relaxed) > started {
+            storing = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(storing, "the writer's store never started");
+    let undo = format!("u_{file}");
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_of_target(&user, &edit, &undo, "source_file", &file),
     )
     .await;
-    let (status, refusal) = internal(server.port, "/internal/documents/undo", &redo).await;
-    assert_eq!(status, 409, "{refusal}");
-    assert_eq!(refusal["code"], "stale_target", "{refusal}");
-    assert!(client.settle(|c| c.block_text() == "hello earth").await);
+    assert_eq!(
+        (status, &answer["operationId"]),
+        (200, &serde_json::json!(undo)),
+        "{answer}"
+    );
+    assert!(
+        client.settle(|c| source_text(c) == "> hello world").await,
+        "{}",
+        source_text(&client)
+    );
+    gateway.checkpoint_delay.store(0, Relaxed);
+    let mut stored = false;
+    for _ in 0..100 {
+        if stored_checkpoint(&env, &file).await >= before + 2 {
+            stored = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(stored, "the Undo did not store after the running store");
+}
+
+/// Review r2 M2: an Undo answers once the first store holding its revert
+/// ended, though a person keeps typing and every store ends with the room
+/// dirty again. Fails if the Undo waits for a clean room (503 after 8 s,
+/// its revert put back).
+#[tokio::test]
+async fn a_source_undo_answers_while_a_person_keeps_typing() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c) == "hello world").await);
+    let edit = format!("e_{file}");
+    let commands = serde_json::json!([
+        { "type": "replace_text", "expectedText": "world", "text": "there" }
+    ]);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &source_edit(&user, &file, &edit, commands),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(client.settle(|c| source_text(c) == "hello there").await);
+
+    // Each store takes 700 ms, and a key comes every 150 ms throughout.
+    gateway.checkpoint_delay.store(700, Relaxed);
+    let (port, body) = (
+        server.port,
+        undo_of_target(&user, &edit, &format!("u_{file}"), "source_file", &file),
+    );
+    let undo = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        internal(port, "/internal/documents/undo", &body).await
+    });
+    let started = std::time::Instant::now();
+    while !undo.is_finished() && started.elapsed() < Duration::from_secs(15) {
+        type_at_start(&mut client, "x").await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    let (status, answer) = undo.await.expect("the Undo request");
+    gateway.checkpoint_delay.store(0, Relaxed);
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        client
+            .settle(|c| source_text(c).trim_start_matches('x') == "hello world")
+            .await,
+        "{}",
+        source_text(&client)
+    );
+}
+
+/// Epo 2026-10-21: an agent edit whose Undo would send more than the room
+/// may take offers no Undo, judged by its commands' estimate
+/// (`sources::undo_cost`: three bytes per byte removed or inserted). A
+/// removal is a small update whose Undo brings the text back: here past a
+/// source room's admission headroom (an estimate over 8 MiB is refused the
+/// same way). An edit whose Undo fitted when it landed is refused once a
+/// person filled the room; one that does not fit when it lands gets no Undo
+/// ref and is not live. Fails if the estimate is not checked at the edit or
+/// at the Undo.
+#[tokio::test]
+async fn an_undo_too_large_for_the_room_is_not_offered() {
+    let Some(env) = env() else { return };
+    let _cap = ExportCap::lower(&env).await;
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    // 600 KiB of room past the write reserve; the agent removes a 150 KB span
+    // (its Undo estimated at 450 KB), then a 140 KB one (420 KB).
+    let first = format!("<{}>", "x".repeat(150_000));
+    let second = format!("{{{}}}", "y".repeat(140_000));
+    let growth = sources::STATE_WRITE_RESERVE_BYTES as usize + 600 * 1024;
+    let rest = LOWERED_EXPORT_CAP as usize
+        - sources::STATE_GROWTH_MARGIN_BYTES as usize
+        - growth
+        - first.len()
+        - second.len();
+    let base = format!("{first}{second}{}", "a".repeat(rest));
+    let (user, file) = text_file(&env, &gateway, &base).await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c).len() == base.len()).await);
+    let remove = |id: &str, span: &str| {
+        let commands = serde_json::json!([
+            { "type": "replace_text", "expectedText": span, "text": "" }
+        ]);
+        source_edit(&user, &file, id, commands)
+    };
+    let edit = format!("e1_{file}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &remove(&edit, &first),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        receipt["effect"]["undo"]["operationId"],
+        edit.as_str(),
+        "{receipt}"
+    );
+    // A person's 220 KiB fits the room and leaves about 380 KiB.
+    type_at_start(&mut client, &"p".repeat(220 * 1024)).await;
+    source_receipt(&mut client, "filled")
+        .await
+        .expect("the person's text stored");
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_of_target(&user, &edit, &format!("u_{file}"), "source_file", &file),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("undo_unavailable")),
+        "{refusal}"
+    );
+    let late = format!("e2_{file}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &remove(&late, &second),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(receipt["effect"]["undo"].is_null(), "{receipt}");
+    assert_eq!(
+        live_steps(server.port, &[&edit, &late]).await,
+        serde_json::json!([])
+    );
+    assert!(
+        client
+            .settle(|c| source_text(c).trim_start_matches('p').len() == rest)
+            .await
+    );
+}
+
+/// Review M1: a source room under a publication handoff refuses an Undo, as
+/// it refuses drafts, and keeps the step for after.
+#[tokio::test]
+async fn a_source_undo_is_refused_during_a_publication_handoff() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello world").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| source_text(c) == "hello world").await);
+    let edit = format!("e_{file}");
+    let commands = serde_json::json!([
+        { "type": "replace_text", "expectedText": "world", "text": "there" }
+    ]);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &source_edit(&user, &file, &edit, commands),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(client.settle(|c| source_text(c) == "hello there").await);
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let prepare = serde_json::json!({
+        "type": "prepare", "id": "it-undo-handoff", "room": room, "fileId": file,
+        "epoch": 1, "checkpoint": 0, "writersOnly": true,
+    });
+    let _: i64 = redis::cmd("PUBLISH")
+        .arg(sources::handoff::SOURCE_HANDOFF_CHANNEL)
+        .arg(prepare.to_string())
+        .query_async(&mut connection)
+        .await
+        .expect("publish");
+    loop {
+        let payload = client.until(9).await.expect("the handoff's prepare");
+        if text_payload(&payload).contains("source-handoff-prepare") {
+            break;
+        }
+    }
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_of_target(&user, &edit, &format!("u_{file}"), "source_file", &file),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("unavailable_target")),
+        "{refusal}"
+    );
+    assert_eq!(source_text(&client), "hello there");
+    assert_eq!(
+        live_steps(server.port, &[&edit]).await,
+        serde_json::json!([edit])
+    );
+}
+
+/// Review M4: a DOCX agent edit's Undo reverts in the room; the Office
+/// maintenance pause refuses it there (Go refuses it before:
+/// `TestOfficeEditingPause`), and once the pause ends it lands.
+#[tokio::test]
+async fn an_office_undo_reverts_in_the_room_and_waits_out_the_pause() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file, _) = office_file(&env, &gateway).await;
+    let room = format!("source:{file}:epoch:1");
+    let mut writer = Client::open(server.port).await;
+    writer.joined(&room, &token(&room, &user, "write")).await;
+    // A reader keeps the room loaded once the pause closes its writers.
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "read")).await;
+    let inspect = serde_json::json!({
+        "actorUserId": user, "target": { "id": file, "kind": "source_file" },
+    });
+    let text_of = |view: &serde_json::Value, id: &str| {
+        view["entries"]
+            .as_array()
+            .and_then(|entries| entries.iter().find(|entry| entry["id"] == id))
+            .and_then(|entry| entry["value"].as_str())
+            .map(str::to_owned)
+    };
+    let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    let entry = view["entries"]
+        .as_array()
+        .and_then(|entries| {
+            entries.iter().find(|entry| {
+                entry["value"]
+                    .as_str()
+                    .is_some_and(|v| v.chars().count() > 3)
+            })
+        })
+        .cloned()
+        .unwrap_or_else(|| panic!("no paragraph: {view}"));
+    let (target, value) = (
+        entry["id"].as_str().expect("id").to_owned(),
+        entry["value"].as_str().expect("value").to_owned(),
+    );
+    let edited = format!("{value} edited");
+    let edit = format!("e_{file}");
+    let commands = serde_json::json!([{
+        "type": "replace_text", "targetId": target, "expectedText": value, "text": edited,
+    }]);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &source_edit(&user, &file, &edit, commands),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        receipt["effect"]["undo"]["operationId"],
+        edit.as_str(),
+        "{receipt}"
+    );
+    let (_, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(text_of(&view, &target).as_deref(), Some(edited.as_str()));
+
+    let pause = db(&env).await;
+    pause
+        .execute(
+            "INSERT INTO office_editing_pause DEFAULT VALUES ON CONFLICT DO NOTHING",
+            &[],
+        )
+        .await
+        .expect("pause");
+    // The pause reaches the room within 5 s: it flushes, closes the writer,
+    // then holds the room paused.
+    let mut closed = false;
+    for _ in 0..6 {
+        if writer.until(4).await.is_some() {
+            closed = true;
+            break;
+        }
+    }
+    assert!(closed, "the pause never closed the writer");
+    let mut code = String::new();
+    for attempt in 0..100 {
+        let (status, refusal) = internal(
+            server.port,
+            "/internal/documents/undo",
+            &undo_of_target(
+                &user,
+                &edit,
+                &format!("p{attempt}_{file}"),
+                "source_file",
+                &file,
+            ),
+        )
+        .await;
+        code = refusal["code"].as_str().unwrap_or_default().to_owned();
+        if code == "office_editing_paused" {
+            assert_eq!(status, 409, "{refusal}");
+            break;
+        }
+        // The pause's flush may still hold the room (unavailable_target).
+        assert_ne!(status, 200, "an Undo landed during the pause");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    pause
+        .execute("DELETE FROM office_editing_pause", &[])
+        .await
+        .expect("resume");
+    assert_eq!(code, "office_editing_paused");
+    let (_, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(text_of(&view, &target).as_deref(), Some(edited.as_str()));
+    let undo = format!("u_{file}");
+    let mut landed = false;
+    for _ in 0..100 {
+        let (status, _) = internal(
+            server.port,
+            "/internal/documents/undo",
+            &undo_of_target(&user, &edit, &undo, "source_file", &file),
+        )
+        .await;
+        if status == 200 {
+            landed = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    assert!(landed, "the Undo never landed after the pause");
+    let (_, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(text_of(&view, &target).as_deref(), Some(value.as_str()));
+}
+
+/// Review M2: a quiz edit's Undo reverts in the content and the keys room
+/// together; when the keys room refuses (a debug-only refusal), the content
+/// room is put back and both keep the step, which then undoes in both.
+#[tokio::test]
+async fn a_quiz_undo_refused_in_one_room_puts_the_other_back() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let content_room = format!("material:{quiz}:schema:1");
+    let keys_room = format!("keys:{quiz}:schema:1");
+    let mut content = Client::open(server.port).await;
+    let mut keys = Client::open(server.port).await;
+    content
+        .joined(&content_room, &token(&content_room, &owner, "write"))
+        .await;
+    keys.joined(&keys_room, &token(&keys_room, &owner, "write"))
+        .await;
+    let has_q3 = |c: &Client| map_at(&c.doc, &["questions", "q3"]).is_some();
+    let has_keys = |c: &Client| map_at(&c.doc, &["keys", "q3-p"]).is_some();
+    assert!(
+        content
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    assert!(
+        keys.settle(|c| map_at(&c.doc, &["keys", "q2-p"]).is_some())
+            .await
+    );
+    let edit = format!("e_{quiz}");
+    let question = serde_json::json!({
+        "type": "quiz_question", "id": "q3", "children": [{ "text": "" }],
+        "question": {
+            "id": "q3", "layout": "paper", "labels": "letters", "stem": [],
+            "parts": [{
+                "id": "q3-p", "blocks": [{ "type": "text", "text": "Order these." }],
+                "answer": { "type": "ordering", "items": ["a", "b"] }, "marks": 1, "solution": [],
+            }],
+        },
+    });
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": owner,
+            "commands": [{ "type": "insert_child", "parentType": "quiz", "afterNodeId": "q2", "node": question }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": content_room,
+            "target": { "id": quiz, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        receipt["effect"]["undo"]["operationId"],
+        edit.as_str(),
+        "{receipt}"
+    );
+    assert!(content.settle(has_q3).await);
+    assert!(keys.settle(has_keys).await);
+
+    // The room's debug-only refusal of a keys Undo (`IT_REFUSE_KEYS_UNDO`).
+    let refused = format!("capy-it-refuse-keys-undo-{quiz}");
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&owner, &edit, &refused, &quiz),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("unavailable_target")),
+        "{refusal}"
+    );
+    // The content room's revert is put back; the keys never moved.
+    let _ = content.hears(200, 1000).await;
+    assert!(
+        content.settle(has_q3).await,
+        "the content room kept the refused Undo"
+    );
+    assert!(has_keys(&keys));
+    assert_eq!(
+        live_steps(server.port, &[&edit]).await,
+        serde_json::json!([edit])
+    );
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&owner, &edit, &format!("u_{quiz}"), &quiz),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(content.settle(|c| !has_q3(c)).await);
+    assert!(keys.settle(|c| !has_keys(c)).await);
+}
+
+/// A note holding `value`, owned by a fresh user; returns (user, material).
+async fn note_with(env: &Env, value: serde_json::Value) -> (String, String) {
+    let (user, material) = note(env, "").await;
+    db(env)
+        .await
+        .execute(
+            "UPDATE materials SET content=$2 WHERE id=$1",
+            &[
+                &material,
+                &serde_json::json!({ "schemaVersion": 1, "value": value }),
+            ],
+        )
+        .await
+        .expect("content");
+    (user, material)
+}
+
+/// Review M4: an Undo whose result the note's store would refuse (an earlier
+/// removal of an interactive block undone after a later edit brought the
+/// note back to ten) is put back at once, answers `invalid_input` and keeps
+/// its step.
+#[tokio::test]
+async fn an_undo_the_store_would_refuse_is_put_back() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let embed = |id: &str| {
+        serde_json::json!({
+            "id": id, "type": "html_embed", "caption": "Snippet",
+            "html": "<div>snippet</div>", "children": [{ "text": "" }],
+        })
+    };
+    let mut value: Vec<serde_json::Value> = (0..10).map(|n| embed(&format!("h{n}"))).collect();
+    value.push(serde_json::json!({ "type": "p", "id": "p1", "children": [{ "text": "end" }] }));
+    let (user, material) = note_with(&env, serde_json::Value::Array(value)).await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block("h9").is_some()).await);
+    let edit = |id: &str, commands: serde_json::Value| {
+        serde_json::json!({
+            "actorUserId": user, "commands": commands,
+            "operation": { "id": id, "requestHash": id },
+            "room": room, "target": { "id": material, "kind": "material" },
+        })
+    };
+    let inspect = serde_json::json!({
+        "actorUserId": user, "room": room, "target": { "id": material, "kind": "material" },
+    });
+    let (_, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    let text = view["blocks"]
+        .as_array()
+        .and_then(|blocks| blocks.iter().find(|block| block["id"] == "h0"))
+        .and_then(|block| block["text"].as_str())
+        .unwrap_or_else(|| panic!("no h0: {view}"))
+        .to_owned();
+    let removal = format!("e1_{material}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(
+            &removal,
+            serde_json::json!([{ "type": "remove_block", "blockId": "h0", "expectedText": text }]),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(client.settle(|c| c.block("h0").is_none()).await);
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(
+            &format!("e2_{material}"),
+            serde_json::json!([{ "type": "insert_block", "afterBlockId": "p1", "blocks": [embed("h10")] }]),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(client.settle(|c| c.block("h10").is_some()).await);
+
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &removal, &format!("u_{material}"), &material),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("invalid_input")),
+        "{refusal}"
+    );
+    let _ = client.hears(200, 500).await;
+    assert!(client.block("h0").is_none() && client.block("h10").is_some());
+    let (_, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    let embeds = view["blocks"].as_array().map(|blocks| {
+        blocks
+            .iter()
+            .filter(|block| block["type"] == "html_embed")
+            .count()
+    });
+    assert_eq!(embeds, Some(10), "{view}");
+    assert_eq!(
+        live_steps(server.port, &[&removal]).await,
+        serde_json::json!([removal])
+    );
 }
 
 #[tokio::test]
@@ -3676,6 +4426,9 @@ struct Gateway {
     delay: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// Base downloads started.
     downloads: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// How long a checkpoint takes (a slow store), and the ones started.
+    checkpoint_delay: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    checkpoints: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 async fn gateway_db(gateway: &Gateway) -> tokio_postgres::Client {
@@ -3740,6 +4493,13 @@ async fn gateway_post(
     if endpoint != "checkpoint" {
         return axum::http::StatusCode::NOT_FOUND.into_response();
     }
+    gateway
+        .checkpoints
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let delay = gateway
+        .checkpoint_delay
+        .load(std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_millis(delay)).await;
     let mut client = gateway_db(&gateway).await;
     let txn = client.transaction().await.expect("transaction");
     let row = txn
@@ -3765,7 +4525,7 @@ async fn gateway_post(
     .await
     .expect("row");
     txn.execute(
-        "UPDATE source_documents SET checkpoint=$2,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$5,log_rows=log_rows+1,seed_bytes=COALESCE($6,seed_bytes),base_source_sha256=COALESCE($7,base_source_sha256),last_edited_at=now() WHERE file_id=$1",
+        "UPDATE source_documents SET checkpoint=$2,pending_effects=$3,net_tokens=$4,log_bytes=log_bytes+$5,log_rows=log_rows+1,seed_bytes=COALESCE($6,seed_bytes),base_source_sha256=COALESCE($7,base_source_sha256),state_seed_sha256=COALESCE($8,state_seed_sha256),last_edited_at=now() WHERE file_id=$1",
         &[
             &id,
             &next,
@@ -3774,6 +4534,7 @@ async fn gateway_post(
             &(update.len() as i64),
             &body["seedBytes"].as_i64(),
             &body["baseSourceSHA256"].as_str(),
+            &body["stateSeedSHA256"].as_str(),
         ],
     )
     .await
@@ -3787,12 +4548,33 @@ async fn gateway_post(
         .await
         .expect("preview");
     }
-    txn.commit().await.expect("commit");
-    // An agent edit's receipt comes back with its checkpoint, as Go stores it.
+    // An agent edit's receipt commits with its checkpoint and comes back
+    // with it, as Go stores it (no Undo ref: the room's acceptance adds it).
     let mut saved = serde_json::json!({ "checkpoint": next });
     if let Some(receipt) = body["operation"].get("receipt") {
-        saved["operation"] = receipt.clone();
+        let operation = receipt["id"].as_str().unwrap_or_default().to_owned();
+        let effect = serde_json::json!({
+            "operation": "edited", "operationId": operation,
+            "resource": { "id": id, "kind": "source_file" },
+        });
+        txn.execute(
+            "INSERT INTO agent_operations (id,kind,request_hash,actor_user_id,outcome,effect)
+             VALUES ($1,'edit_document',$2,$3,'succeeded',$4)",
+            &[
+                &operation,
+                &receipt["requestHash"].as_str().unwrap_or_default(),
+                &receipt["actorUserId"].as_str(),
+                &effect,
+            ],
+        )
+        .await
+        .expect("receipt");
+        saved["operation"] = serde_json::json!({
+            "effect": effect, "kind": "edit_document", "operationId": operation,
+            "outcome": "succeeded",
+        });
     }
+    txn.commit().await.expect("commit");
     axum::Json(saved).into_response()
 }
 
@@ -3824,6 +4606,8 @@ async fn gateway(env: &Env) -> Gateway {
         blobs: Default::default(),
         delay: Default::default(),
         downloads: Default::default(),
+        checkpoint_delay: Default::default(),
+        checkpoints: Default::default(),
     };
     let app = axum::Router::new()
         .route(
@@ -4628,6 +5412,8 @@ async fn internal_routes_refuse_a_missing_or_wrong_service_secret() {
         "/internal/documents/inspect",
         "/internal/documents/edit",
         "/internal/documents/undo",
+        "/internal/documents/undo-status",
+        "/internal/documents/create",
         "/internal/commands",
         "/internal/markdown/convert",
     ];

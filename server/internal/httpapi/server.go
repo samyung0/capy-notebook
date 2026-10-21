@@ -122,6 +122,9 @@ type api struct {
 	streamMu            sync.Mutex
 	streamByUser        map[string]int
 	streamTotal         int
+	// undos run the requests for one chat Undo step one at a time
+	// (huma_undo.go).
+	undos operationLocks
 	// broker fans the ingest and notification channels out from one Redis
 	// subscription, and the workspace tree channel from one Postgres LISTEN
 	// (treeLive says whether that LISTEN is attached); see fanout.go.

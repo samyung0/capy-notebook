@@ -1067,9 +1067,11 @@ def result_text(
     built: Built,
     resource: dict[str, Any],
     created: bool,
+    undoable: bool,
 ) -> str:
     """What a question call wrote, with each question's id, and what it left
-    out with how to resend it."""
+    out with how to resend it. An edit has an Undo only when a room someone
+    has open took it (Epo 2026-10-20)."""
     rid, title = resource.get("id"), resource.get("title")
     rewrote = sum(1 for item, _ in built.saved if item.value.get("replaces"))
     added = len(built.saved) - rewrote
@@ -1086,7 +1088,7 @@ def result_text(
             f"\nNot added: fix only these and send them again with quiz_id {rid}{place}:"
         )
         lines.append(check_.listing())
-    elif not created:
+    elif not created and undoable:
         lines.append("The user can undo this from the chat result.")
     lines.extend(check_.notes)
     return "\n".join(lines)

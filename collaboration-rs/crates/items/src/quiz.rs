@@ -31,7 +31,7 @@ use yrs::{
     TextRef, Transact, TransactionMut, WriteTxn,
 };
 
-use notes::edit::{DocumentCommand, EditError, EditErrorCode, EditOutcome, GuardTarget};
+use notes::edit::{DocumentCommand, EditError, EditErrorCode};
 use notes::questions::{self as q, Policy};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
@@ -2373,12 +2373,6 @@ fn invalid<T>(code: EditErrorCode, message: impl Into<String>) -> Result<T, Edit
     })
 }
 
-fn question_value<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K, id: &str) -> Value {
-    read_question(content, keys, id)
-        .map(question_node)
-        .unwrap_or(Value::Null)
-}
-
 fn parse_question(node: &Value, what: &str) -> Result<Value, EditError> {
     match node.get("question") {
         Some(question) if node.get("type").and_then(Value::as_str) == Some("quiz_question") => {
@@ -2392,15 +2386,12 @@ fn parse_question(node: &Value, what: &str) -> Result<Value, EditError> {
 }
 
 /// The agent's question commands (`replace_child`, `insert_child`,
-/// `remove_child` on the `quiz` parent) on both documents, with inverses and
-/// guards (each touched question as it reads afterwards).
+/// `remove_child` on the `quiz` parent) on both documents.
 pub fn apply_commands(
     content: &mut TransactionMut,
     keys: &mut TransactionMut,
     commands: &[DocumentCommand],
-) -> Result<EditOutcome, EditError> {
-    let mut outcome = EditOutcome::default();
-    let mut touched: Vec<String> = Vec::new();
+) -> Result<(), EditError> {
     for command in commands {
         let order: Vec<Entry> = ordered(content, content.get_map(QUESTIONS_ROOT).as_ref());
         match command {
@@ -2419,17 +2410,7 @@ pub fn apply_commands(
                         "replacement must keep the node id",
                     );
                 }
-                let previous = question_value(content, keys, node_id);
                 put_question(content, keys, &question, &order[at].order);
-                outcome.inverse.insert(
-                    0,
-                    DocumentCommand::ReplaceChild {
-                        node: previous,
-                        node_id: node_id.clone(),
-                        parent_type: parent_type.clone(),
-                    },
-                );
-                touched.push(node_id.clone());
             }
             DocumentCommand::InsertChild {
                 parent_type,
@@ -2455,33 +2436,15 @@ pub fn apply_commands(
                 let after = order.get(at).map(|e| e.order.as_str());
                 let key = order::between(before, after).unwrap_or_else(|| order::after(before));
                 put_question(content, keys, &question, &key);
-                outcome.inverse.insert(
-                    0,
-                    DocumentCommand::RemoveChild {
-                        node_id: id.clone(),
-                        parent_type: parent_type.clone(),
-                    },
-                );
-                touched.push(id);
             }
             DocumentCommand::RemoveChild {
                 parent_type,
                 node_id,
             } if parent_type == "quiz" => {
-                let Some(at) = order.iter().position(|e| &e.id == node_id) else {
+                if !order.iter().any(|e| &e.id == node_id) {
                     return unavailable(format!("{node_id} no longer exists"));
-                };
-                let previous = question_value(content, keys, node_id);
+                }
                 remove_question(content, keys, node_id);
-                outcome.inverse.insert(
-                    0,
-                    DocumentCommand::InsertChild {
-                        after_node_id: at.checked_sub(1).map(|i| order[i].id.clone()),
-                        node: previous,
-                        parent_type: parent_type.clone(),
-                    },
-                );
-                touched.push(node_id.clone());
             }
             _ => {
                 return invalid(
@@ -2489,43 +2452,6 @@ pub fn apply_commands(
                     "use the question commands for this material",
                 );
             }
-        }
-    }
-    touched.dedup();
-    outcome.guards = touched
-        .iter()
-        .map(|id| GuardTarget::Item {
-            path: vec![QUESTIONS_ROOT.into(), id.clone()],
-            value: question_value(content, keys, id),
-        })
-        .collect();
-    Ok(outcome)
-}
-
-/// Undo's check: every question an edit touched reads as the edit left it.
-pub fn verify_guards<C: ReadTxn, K: ReadTxn>(
-    content: &C,
-    keys: &K,
-    guards: &[GuardTarget],
-) -> Result<(), EditError> {
-    for target in guards {
-        let GuardTarget::Item { path, value } = target else {
-            return invalid(
-                EditErrorCode::StaleTarget,
-                "the quiz changed since this edit",
-            );
-        };
-        let [root, id] = path.as_slice() else {
-            return invalid(
-                EditErrorCode::StaleTarget,
-                "the quiz changed since this edit",
-            );
-        };
-        if root != QUESTIONS_ROOT || &question_value(content, keys, id) != value {
-            return invalid(
-                EditErrorCode::StaleTarget,
-                format!("question {id} changed since this edit"),
-            );
         }
     }
     Ok(())

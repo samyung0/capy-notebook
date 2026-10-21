@@ -76,7 +76,7 @@ Storage is charged once per logical row owned by a user:
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
 | Trashed rows  | same as above              | until the 30-day purge        |
-| Chat Undo     | `agent_edit_inverses.inverse_bytes` | while Undo is available; released on Undo, trash or invalidation |
+| Chat Undo     | none                       | never: the loaded room holds it in memory (Epo 2026-10-20) |
 
 **Uploader pays** (Sam 2026-10-18, Google Drive's My Drive model). The payer
 of a row is the account that uploaded, imported, cloned or created it, in any
@@ -178,10 +178,10 @@ counters/triggers for accounting only.
 
 Reconciliation (`reconcileStorageUserTx`) locks the counter row and the
 owner's files, editor assets, materials and pending upload sessions, recounts
-used bytes from files, `source_documents.storage_bytes`, ready editor assets,
-materials and `agent_edit_inverses` and reserved bytes from pending uploads
-(`storageRecountSQL`), and deletes the folded delta rows. Two known gaps, fix
-deferred: it locks no `source_documents` or `agent_edit_inverses` row, so a
+used bytes from files, `source_documents.storage_bytes`, ready editor assets
+and materials and reserved bytes from pending uploads (`storageRecountSQL`),
+and deletes the folded delta rows. Two known gaps, fix deferred: it locks no
+`source_documents` row, so a
 save committing between its delta read and the recount is counted twice until
 the next run; and its `storage_counter_drift` report compares the counter
 without the pending deltas, so it reports drift whenever deltas are pending.

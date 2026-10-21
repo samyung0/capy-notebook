@@ -72,7 +72,7 @@ func TestOfficeEditingPause(t *testing.T) {
 	sourceTestEdit(t, s, owner, doc, "flushed-state")
 	// An agent edit that passed the gateway's check just before the pause is
 	// refused where it commits.
-	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint + 1, Update: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
+	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint + 1, Update: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}}})
 	if !errors.Is(err, ErrOfficeEditingPaused) {
 		t.Fatalf("agent edit commit during the pause: %v", err)
 	}
@@ -82,7 +82,8 @@ func TestOfficeEditingPause(t *testing.T) {
 	if !errors.As(err, &refusal) || refusal.Code != agenttools.ErrOfficeEditingPaused {
 		t.Fatalf("agent edit: %v", err)
 	}
-	_, err = s.UndoDocumentEdit(ctx, owner, EditInverse{ResourceKind: agenttools.KindSourceFile, ResourceID: open.ID, Inverse: json.RawMessage(`{"commands":[{}]}`)}, DocumentOperation{ID: "undo"})
+	step := AgentOperation{ID: "op", Effect: &agenttools.ResourceEffect{Operation: agenttools.EffectEdited, Resource: agenttools.ResourceRef{Kind: agenttools.KindSourceFile, ID: open.ID}}}
+	_, err = s.UndoDocumentEdit(ctx, owner, step, DocumentOperation{ID: "undo"})
 	if !errors.As(err, &refusal) || refusal.Code != agenttools.ErrOfficeEditingPaused {
 		t.Fatalf("agent undo: %v", err)
 	}
@@ -909,9 +910,9 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 
 // The DOCX engine round's reset (migration 0103) drops every DOCX state under a
 // new epoch with no window: unpublished edits go and editing need not be
-// paused, the files end published, AI edit Undo is released, a refresh in
-// flight is superseded, and a pending rebuild ends on the published bytes,
-// releasing the old base's cached artifacts. Other formats keep their state.
+// paused, the files end published, a refresh in flight is superseded, and a
+// pending rebuild ends on the published bytes, releasing the old base's cached
+// artifacts. Other formats keep their state.
 // The run rolls back.
 func TestDocxEngineRoundReset(t *testing.T) {
 	s := maintenanceTestStore(t)
@@ -921,9 +922,9 @@ func TestDocxEngineRoundReset(t *testing.T) {
 	rebuilt := maintenanceTestEdited(t, s, owner, "report.docx", false)
 	_, deck := sourceTestFile(t, s, owner, "deck.pptx", "ppt")
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, deck.ID), "deck-state")
-	// An AI edit of lesson.docx whose Undo is available, then its refresh.
+	// An AI edit of lesson.docx, then its refresh.
 	agentEdit := sourceTestSave(sourceTestSeed(t, s, owner, edited), owner, "agent-state")
-	agentEdit.Operation = &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[{}]}`)}
+	agentEdit.Operation = &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}}
 	if _, err := s.SaveSourceCheckpoint(ctx, edited, agentEdit); err != nil {
 		t.Fatal(err)
 	}
@@ -952,6 +953,11 @@ func TestDocxEngineRoundReset(t *testing.T) {
 	if _, err = tx.Exec(ctx, `INSERT INTO artifact_cache (object_path,kind,source_sha256) VALUES ($1,'captions',$2)`, "captions/"+oldBase, oldBase); err != nil {
 		t.Fatal(err)
 	}
+	// 0106 dropped the AI edit Undo table this body still releases.
+	if _, err = tx.Exec(ctx, `CREATE TEMP TABLE agent_edit_inverses (resource_kind text, resource_id text, undo_status text, undo_reason text,
+		inverse jsonb, guards jsonb, inverse_bytes bigint, updated_at timestamptz) ON COMMIT DROP`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = tx.Exec(ctx, string(raw)); err != nil {
 		t.Fatal(err)
 	}
@@ -966,14 +972,14 @@ func TestDocxEngineRoundReset(t *testing.T) {
 			t.Fatalf("reset %s: epoch=%d dropped=%v base=%s", file, epoch, dropped, base)
 		}
 	}
-	var status, detail, undo string
+	var status, detail string
 	var running, refreshError *string
 	var candidates, cached int
-	if err = tx.QueryRow(ctx, `SELECT j.status,COALESCE(j.error,''),d.running_job_id,d.refresh_error,(SELECT count(*) FROM source_refresh_candidates c WHERE c.file_id=d.file_id),(SELECT string_agg(i.undo_status||'/'||COALESCE(i.undo_reason,''),',') FROM agent_edit_inverses i WHERE i.resource_kind='source_file' AND i.resource_id=d.file_id),(SELECT count(*) FROM artifact_cache WHERE source_sha256=$2) FROM jobs j JOIN source_documents d ON d.file_id=j.payload->>'fileId' WHERE j.id=$1`, refresh.JobID, oldBase).Scan(&status, &detail, &running, &refreshError, &candidates, &undo, &cached); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT j.status,COALESCE(j.error,''),d.running_job_id,d.refresh_error,(SELECT count(*) FROM source_refresh_candidates c WHERE c.file_id=d.file_id),(SELECT count(*) FROM artifact_cache WHERE source_sha256=$2) FROM jobs j JOIN source_documents d ON d.file_id=j.payload->>'fileId' WHERE j.id=$1`, refresh.JobID, oldBase).Scan(&status, &detail, &running, &refreshError, &candidates, &cached); err != nil {
 		t.Fatal(err)
 	}
-	if status != "failed" || detail != "Editing moved to a new epoch" || running != nil || refreshError != nil || candidates != 0 || undo != "unavailable/source_rebased" || cached != 0 {
-		t.Fatalf("after the reset: job %s %q, running %v, refresh_error %v, %d candidates, undo %q, %d cached artifacts of the old base", status, detail, running, refreshError, candidates, undo, cached)
+	if status != "failed" || detail != "Editing moved to a new epoch" || running != nil || refreshError != nil || candidates != 0 || cached != 0 {
+		t.Fatalf("after the reset: job %s %q, running %v, refresh_error %v, %d candidates, %d cached artifacts of the old base", status, detail, running, refreshError, candidates, cached)
 	}
 	var kept bool
 	// Its saved edits are rows over a NULL state (migration 0075).
