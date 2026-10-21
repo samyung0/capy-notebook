@@ -25,7 +25,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
-import { llmKeyUserMessage } from '@/lib/errors';
+import { errorCopy, llmKeyUserMessage } from '@/lib/errors';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
 // The gateway takes 16 KiB per message; 4,000 characters stays under it even
@@ -117,6 +117,8 @@ export function AiMenu() {
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Accept can wait on a fence's row (aiPreviewState).
+  const [accepting, setAccepting] = useState(false);
   const lastCommand = useRef<{
     mode?: AiAction['mode'];
     prompt: string;
@@ -302,6 +304,7 @@ export function AiMenu() {
             )}
             <div className="flex justify-end gap-1">
               <Button
+                disabled={accepting}
                 onClick={() => {
                   setAiPreview(editor, null);
                   setPreviewError(null);
@@ -313,18 +316,21 @@ export function AiMenu() {
                 {m.editor_ai_reject()}
               </Button>
               <Button
+                disabled={accepting}
                 onClick={() => {
-                  try {
-                    applyAiPreview(editor);
-                    setPreviewError(null);
-                    editor.getApi(AIChatPlugin).aiChat.hide();
-                  } catch (cause) {
-                    setPreviewError(
-                      cause instanceof Error
-                        ? cause.message
-                        : m.editor_ai_target_changed()
-                    );
-                  }
+                  setAccepting(true);
+                  applyAiPreview(editor)
+                    .then((done) => {
+                      if (!done) return;
+                      setPreviewError(null);
+                      editor.getApi(AIChatPlugin).aiChat.hide();
+                    })
+                    .catch((cause: unknown) =>
+                      setPreviewError(
+                        errorCopy(cause, m.editor_ai_accept_failed())
+                      )
+                    )
+                    .finally(() => setAccepting(false));
                 }}
                 size="sm"
                 variant="accent"

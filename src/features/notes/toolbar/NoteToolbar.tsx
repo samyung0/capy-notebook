@@ -55,6 +55,7 @@ import {
   MarkToolbarButton,
   ToolbarButton,
 } from '@/features/notes/toolbar/ToolbarButton';
+import { ToolbarDocumentComments } from '@/features/notes/toolbar/ToolbarDocumentComments';
 import { EditorSettingsDialog } from '@/features/notes/toolbar/ToolbarEditorSettingsDialog';
 import { ExportMenu } from '@/features/notes/toolbar/ToolbarExportMenu';
 import { FontColorControl } from '@/features/notes/toolbar/ToolbarFontColorControl';
@@ -456,6 +457,7 @@ export function NoteToolbar({ className }: { className?: string }) {
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center pl-1 sm:pl-2">
+          <ToolbarDocumentComments />
           {editorAiEnabled(allowExternalAssets) && (
             <ToolbarButton
               label={m.editor_ai_commands()}

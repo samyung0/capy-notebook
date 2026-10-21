@@ -972,9 +972,9 @@ timeout's message names the bound that fired: no first event, silence after
 the start, or the backstop. Comment-only keep-alives do not count as events,
 so a request parked in a provider queue times out like a silent one. The
 stream backstop bounds the whole stream. Non-streaming interactive calls such
-as query embeddings get the 15 seconds as a whole-call bound; a search rerank
-gets 5 seconds for admission and the request, busy retry included, and settles
-in the background. Ingest calls keep
+as query embeddings get the 15 seconds as a whole-call bound, a search rerank
+included; the search itself waits at most 5 seconds for the scores (admission
+and busy retry included) while the request runs on to its receipt. Ingest calls keep
 their 120-second bound. Only the awaits on the provider are timed, so a slow
 consumer between chunks never counts as provider silence. The transport keeps
 one keep-alive `httpx` client per process (one per event loop) and parses
@@ -1143,9 +1143,13 @@ soon as they arrive and the settlement finishes in a background task
 The lease is released when the provider answers; the call row stays open until
 the background settlement applies it, and a failed one is logged and swept at
 the receipt deadline like any other unsettled call. A background rerank reply
-never overwrites the session's exhaustion flags. A timeout leaves the call
-open for its receipt window like any other uncertain call; any failure keeps
-fused order instead of failing the search.
+never overwrites the session's exhaustion flags. The search's 5-second wait
+does not cut the request off: one answering later still settles its measured
+usage, where a cut-off at 5 seconds left it open until `receipt_timeout`,
+never metered. Only a
+request past its own 15-second bound stays open for its receipt window like
+any other uncertain call; any failure keeps fused order instead of failing the
+search.
 
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the

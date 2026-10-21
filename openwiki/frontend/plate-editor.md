@@ -2276,8 +2276,23 @@ removes the thread.
 
 Comment highlighting is local decoration state. It is never applied with
 `editor.tf.setNodes`, so opening or hovering a comment cannot create a Yjs
-update. If an anchor no longer resolves, the thread remains available at its
-stable block and quoted fallback instead of being deleted.
+update. An anchor resolves through `liveSlateRange` (`liveRange.ts`): an end
+inside a block that left the document gives no highlight, where slate-yjs
+alone would place it at the start of the last block. A thread whose anchor no
+longer resolves keeps its block and quoted fallback instead of being deleted.
+
+Document comments (Epo 2026-10-21): a thread with no `blockId`, and a thread
+whose block is not a top-level block of the document now (deleted by anyone,
+or replaced by the agent's `replace_block`, which mints new ids), list in one
+document-level place instead of rendering nowhere. `documentThreads` in
+`Collaboration.tsx` decides this at render from the live top-level ids, with
+no data moved, so Undo bringing a block back (same id) returns its threads to
+it. The note toolbar's pinned end shows a comment icon with their count while
+there are any (`toolbar/ToolbarDocumentComments.tsx`); it opens the block
+threads' popover (`DiscussionThreadsContent`) under a "Document comments"
+heading, each thread with its quote, reply, edit and delete as on a block.
+The API and table already allow a null `blockId`; the UI creates only block
+comments. Threads have no resolved state (migration 0040).
 
 Comment mutations publish `capy:collaboration:comments` through Redis.
 The collaboration server sends a stateless `comments-invalidated` room event and clients
@@ -2426,9 +2441,45 @@ AI output is local until accepted:
 - proposed text/nodes live in a local weak store, not Slate or Yjs.
 
 `AiMenu` displays removed and proposed text. Reject clears local state without a
-Yjs transaction. Accept re-resolves every target; if concurrent changes make a
-target invalid, the UI requires retry. A valid accept assigns missing element
-IDs and flushes one Yjs transaction.
+Yjs transaction. Accept (`applyAiPreview`) writes the suggestion over its
+target as the target reads now, whatever someone changed there since the
+preview (Epo 2026-10-21, no stale check):
+
+- the proposed Markdown, and each table cell's, goes through the editor's
+  markdown import (`importMarkdownDocument`, as a pasted file: URL images
+  upload, quiz and flashcards fences become rows first), so it lands as
+  formatted nodes;
+- an edit whose answer keeps the range's block count in plain paragraphs
+  (Improve, Grammar and the like) replaces each covered block's text in
+  place, so every block keeps its type, list, alignment, id and Yjs text (a
+  peer's concurrent typing elsewhere in the block and comment highlights in
+  it survive; the adapter sends no marker for indent lists or h4-h6, so the
+  model answers those in plain text);
+- any other edit deletes the range, its void blocks (images, embeds,
+  dividers) whole, and inserts the nodes there as a paste (Plate's table and
+  code-block `insertFragment` ignore `at`); when the range covered a whole
+  block, a plain first paragraph takes that block's type, properties and id,
+  and any other first block keeps the model's shape with the block's id;
+- an insert goes after its block; a table update replaces the cell's
+  children, keeping the cell, and a cell the model emptied is written empty;
+- the operations are local, and slate-yjs sends them in one transaction with
+  its local origin, so they apply once and `Y.UndoManager` records one step
+  (capture stopped before and after). The old code wrapped the flush in a
+  transaction of its own origin, which slate-yjs read as remote and applied a
+  second time, and Undo never saw.
+
+When the text a suggestion was for was removed entirely (the edit range's
+block left the document or all of its text is gone, the insert's block is
+gone, every updated table cell is gone), Accept drops the suggestion and
+closes the menu with no message, since the removal is already visible (Epo
+2026-10-21); a table cell removed alone is skipped and the others are written.
+The targets are checked before the conversion as well as after it, so a
+dropped Accept creates no fence rows. An answer that converts to no nodes (a
+lone fence whose row could not be created) writes nothing and shows "The
+suggestion could not be added to the note". Reject is disabled while Accept converts, and a preview
+replaced meanwhile (a new command) is not written. The command's range is
+unhung first (`commandRange` in `aiMenuState.ts`), so a Shift+Down selection
+neither inserts below nor edits the next block.
 
 Copilot ghost text remains plugin-local and continues in the note's language.
 Generate/comment replies follow the account locale injected by the gateway; edits
@@ -2445,7 +2496,8 @@ way chat does, including BYOK. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
 The command menu always sends `ctx.toolName`. Missing or unknown values are
 `400`. There is no server classify step. Free-form text in the menu input
 sends `generate`, so a rewrite-style sentence still inserts new Markdown
-instead of replacing the selection. Canned Improve / Grammar / Shorter /
+below the selection's last block instead of replacing the selection (a
+generate previews as an insert whatever Plate's mode, `aiPlugins.ts`). Canned Improve / Grammar / Shorter /
 Longer / Simplify send `edit`. `comment` is implemented and kept for a future
 Comment action; the current menu never sends it. Retry resends the last
 `toolName`.

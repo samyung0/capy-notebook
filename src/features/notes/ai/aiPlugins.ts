@@ -9,7 +9,7 @@ import {
 import { serializeMd, stripMarkdown } from '@platejs/markdown';
 import { CursorOverlayPlugin } from '@platejs/selection/react';
 import { slateRangeToRelativeRange, type YjsEditor } from '@slate-yjs/core';
-import type { TElement } from 'platejs';
+import { RangeApi, type TElement } from 'platejs';
 import { useEditorRef, usePluginOption } from 'platejs/react';
 import { useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';
@@ -23,7 +23,7 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { llmKeyUserMessage } from '@/lib/errors';
 import { useEditorRuntime } from '../EditorRuntime';
-import { openAiMenu } from './aiMenuState';
+import { commandRange, openAiMenu } from './aiMenuState';
 import { getAiPreview, setAiPreview } from './aiPreviewState';
 import {
   AiAnchorElement,
@@ -157,43 +157,37 @@ function createAiChatPlugin(workspaceId: string) {
       const mode = usePluginOption(AIChatPlugin, 'mode');
       const toolName = usePluginOption(AIChatPlugin, 'toolName');
       useChatChunk({
-        onChunk: ({ chunk, isFirst, nodes, text }) => {
-          if (isFirst && mode === 'insert') {
-            const block = editor.api.block({ highest: true })?.[0] as
-              | TElement
-              | undefined;
+        onChunk: ({ isFirst, text }) => {
+          // Generate always inserts below what it was asked about, a
+          // free-form prompt over a selection included (mode 'chat').
+          const inserting = mode === 'insert' || toolName === 'generate';
+          if (isFirst && inserting) {
+            const range = commandRange(editor);
+            const block = editor.api.block({
+              at: range ? RangeApi.end(range) : undefined,
+              highest: true,
+            })?.[0];
             setAiPreview(editor, {
               insertAfterId:
                 typeof block?.id === 'string' ? block.id : undefined,
               kind: 'insert',
-              nodes: [],
               originalText: '',
               proposedText: '',
             });
             editor.setOption(AIChatPlugin, 'streaming', true);
           }
-          if (mode === 'insert' && nodes.length > 0) {
+          if (inserting && getOption('streaming')) {
             const current = getAiPreview(editor);
-            if (getOption('streaming')) {
-              setAiPreview(editor, {
-                insertAfterId: current?.insertAfterId,
-                kind: 'insert',
-                nodes: [
-                  {
-                    children: [{ text: stripMarkdown(text || chunk) }],
-                    type: 'p',
-                  } as TElement,
-                ],
-                originalText: '',
-                proposedText: text || chunk,
-              });
-            }
+            setAiPreview(editor, {
+              insertAfterId: current?.insertAfterId,
+              kind: 'insert',
+              originalText: '',
+              proposedText: text,
+            });
           }
           if (toolName === 'edit' && mode === 'chat') {
             const current = getAiPreview(editor);
-            const range =
-              editor.getOption(AIChatPlugin, 'chatSelection') ??
-              editor.selection;
+            const range = commandRange(editor);
             if (!current && range) {
               const yjsEditor = editor as typeof editor & YjsEditor;
               if (yjsEditor.sharedRoot) {
