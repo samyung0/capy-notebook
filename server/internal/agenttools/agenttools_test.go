@@ -142,6 +142,33 @@ func commandTypes(def *Definition) []string {
 	return tags
 }
 
+// What each tool's result keeps between user messages (Epo 2026-10-21).
+func TestRetentionBetweenMessages(t *testing.T) {
+	want := map[ResultRetention][]string{
+		RetainFull: {
+			"list_sources", "create_material", "add_questions", "add_question_media", "create_deck",
+			"write_slide", "edit_document", "trash_file", "restore_file", "edit_office_document",
+		},
+		RetainCitedPassages: {"search_workspace", "read_document"},
+		RetainUsedExcerpts:  {"read_knowledge"},
+		RetainNone: {
+			"capture_page", "read_study_progress", "search_knowledge", "capture_knowledge_page", "read_skill",
+			"resolve_source_change", "inspect_document", "list_trashed_files", "inspect_office_document",
+		},
+	}
+	got := map[ResultRetention][]string{}
+	for _, def := range Definitions() {
+		got[def.Retention] = append(got[def.Retention], def.Name)
+	}
+	for retention, names := range want {
+		slices.Sort(names)
+		slices.Sort(got[retention])
+		if !slices.Equal(got[retention], names) {
+			t.Errorf("%s = %v, want %v", retention, got[retention], names)
+		}
+	}
+}
+
 // Office files have their own tools, last in the contract (the retrieval
 // service appends them once office_building is read); edit_document keeps no
 // Office command (Epo 2026-10-15, 2026-10-20, 2026-10-21).
@@ -152,7 +179,7 @@ func TestOfficeFilesHaveTheirOwnTools(t *testing.T) {
 		t.Fatalf("last tools = %v", names)
 	}
 	read, edit := Lookup("inspect_office_document"), Lookup("edit_office_document")
-	if read.Mutates || !slices.Equal(read.RequiredOperations, []Operation{OpSourceRead}) || read.Retention != RetainFull {
+	if read.Mutates || !slices.Equal(read.RequiredOperations, []Operation{OpSourceRead}) || read.Retention != RetainNone {
 		t.Fatalf("inspect_office_document = %+v", read)
 	}
 	if !edit.Mutates || !slices.Equal(edit.RequiredOperations, []Operation{OpDocumentEdit}) {

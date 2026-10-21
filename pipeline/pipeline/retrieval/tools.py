@@ -204,6 +204,9 @@ class ToolContext:
     # widen the scope to every file.
     file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
+    # The citation numbers the answer has shown so far: a turn stopped or
+    # failed mid-answer keeps their passages like an answered one (Epo 2026-10-22).
+    cited_shown: list[int] = field(default_factory=list)
     # The turn's narration and tool blocks so far: what its checkpoints and
     # whatever event ends it carry, so Go saves them however the turn ends.
     activity: list[dict[str, Any]] = field(default_factory=list)
@@ -229,6 +232,8 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Images this message attached: page captures and source-change images.
+    images_taken: int = 0
     # Decks this turn outlined (deck.py records, by deck id) and the working
     # directory their figures and exports go to; the agent removes it at turn end.
     decks: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -645,6 +650,42 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
     return passage.page_start <= page <= (passage.page_end or passage.page_start)
 
 
+# A user message attaches at most this many images, capture_page,
+# capture_knowledge_page and resolve_source_change's image changes together, so
+# the images every request of the turn carries stay bounded (Epo 2026-10-21,
+# raised and shared 2026-10-22). Only a capture says the decided sentence; a
+# source change past the cap fails with its own reason.
+MAX_IMAGES = 16
+IMAGE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
+SOURCE_IMAGE_LIMIT = (
+    "resolve_source_change: this message's image limit is reached, so the "
+    "change's image cannot be attached."
+)
+
+
+def _image_limit(ctx: ToolContext) -> ToolResult | None:
+    """A capture's refusal once the message's images are used; checked again
+    after the render, since the image calls of one response run side by side."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return _refused(IMAGE_LIMIT, code="limit_reached")
+    return None
+
+
+def _source_image_limit(ctx: ToolContext) -> ToolResult | None:
+    """The same check for a source change's image, which fails instead."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return _failed(SOURCE_IMAGE_LIMIT, code="limit_reached")
+    return None
+
+
+def _imaged(ctx: ToolContext, text: str) -> ToolResult:
+    """Count a capture; the last image allowed says so with its image."""
+    ctx.images_taken += 1
+    if ctx.images_taken == MAX_IMAGES:
+        text += "\n\n" + IMAGE_LIMIT
+    return _result(text)
+
+
 async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """Render a cited page (or a box on it) and attach it to the next request.
 
@@ -652,8 +693,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     browse the document by pixels, and a capture adds no citation of its own:
     the tool result names the numbers already covering that page.
     """
-    # No per-turn cap: a capture is dropped when its exchange folds into the
-    # turn note anyway, and a whole set of materials can be one turn.
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
     refused = await _refuse_material_as_file(ctx, file_id)
     if refused is not None:
@@ -679,6 +720,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_page: {exc}")
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     changes = ctx.pending_sources.for_read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
@@ -701,10 +744,11 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         capture.data_url(jpeg),
     )
     numbers = "".join(f"[{i}]" for i in existing)
-    result = _result(
+    result = _imaged(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
-        f"{numbers}; cite those numbers for what the capture shows."
+        f"{numbers}; cite those numbers for what the capture shows.",
     )
     result.pending = changes
     return result
@@ -962,6 +1006,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     reprinted text the library does not reproduce). Like ``capture_page`` it adds no
     citation: the attribution lives on the material.
     """
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     excerpt_id, page, bbox = args["excerpt_id"], args["page"], args.get("bbox")
     try:
         target = await library.capture_target(excerpt_id)
@@ -986,6 +1032,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         return _refused(f"capture_knowledge_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_knowledge_page: {exc}")
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
     label = f"{target.book_title} page {page}" + (
@@ -1008,9 +1056,10 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         f"capture_knowledge_page result {n}: {label}",
         capture.data_url(jpeg),
     )
-    return _result(
+    return _imaged(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next "
-        "message; read it directly."
+        "message; read it directly.",
     )
 
 
@@ -1787,6 +1836,8 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         or not isinstance(checkpoint, int)
     ):
         return _refused("A file id, change id and integer checkpoint are required.")
+    if (limit := _source_image_limit(ctx)) is not None:
+        return limit
     started = time.perf_counter()
     try:
         raw = await pending.resolve(
@@ -1804,6 +1855,8 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         return _refused(f"resolve_source_change: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"resolve_source_change: {exc}")
+    if (limit := _source_image_limit(ctx)) is not None:
+        return limit
     call_id = str(args.get("_tool_call_id") or "")
     ctx.captures.append(
         capture.record(
@@ -1820,6 +1873,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         f"resolve_source_change result: change {change_id} of file {file_id}",
         capture.data_url(jpeg),
     )
+    ctx.images_taken += 1  # counted, with no limit sentence (Epo 2026-10-22)
     return _result(
         "The pending source image is attached to the next message; read it directly."
     )

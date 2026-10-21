@@ -273,10 +273,10 @@ func TestChatStopSavesTheTurnAtOnceAndAddsTheRunningCall(t *testing.T) {
 	}
 }
 
-// A stopped turn replays every call on its row into the next turn's prompt,
-// the one that finished after the Stop included (Epo 2026-10-21): no answer
-// says what it did, and only full-retention results replay otherwise.
-func TestStoppedTurnReplaysTheCallsMergedAfterTheStop(t *testing.T) {
+// A stopped turn's results go into the next turn's prompt as its row keeps
+// them, the call that finished after the Stop included; it replays like a
+// finished turn (Epo 2026-10-22).
+func TestStoppedTurnReplaysTheResultsMergedAfterTheStop(t *testing.T) {
 	pipe := newStopPipe(lateRunningCall)
 	run := startStopTurn(t, pipe, nil)
 	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
@@ -292,17 +292,14 @@ func TestStoppedTurnReplaysTheCallsMergedAfterTheStop(t *testing.T) {
 	pipe.mu.Unlock()
 	var history []struct {
 		Role, Status string
-		Calls        []struct{ Name, Detail, Outcome string }
+		ToolEvidence struct{ Tools []struct{ Name, Text string } }
 	}
 	if err := json.Unmarshal(raw, &history); err != nil || len(history) != 2 {
 		t.Fatalf("history: %s, %v", raw, err)
 	}
 	got := fmt.Sprint(history[1])
-	if want := "{assistant aborted [{list_sources listing sources succeeded} {list_sources listing sources succeeded}]}"; got != want {
+	if want := "{assistant aborted {[{list_sources checkpoint listing} {list_sources slow listing}]}}"; got != want {
 		t.Fatalf("stopped turn replayed as %s, want %s", got, want)
-	}
-	if history[0].Calls != nil {
-		t.Fatalf("a user row carries calls: %s", raw)
 	}
 }
 
