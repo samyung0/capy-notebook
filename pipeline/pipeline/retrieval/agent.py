@@ -17,7 +17,7 @@ import json
 import logging
 import shutil
 from collections.abc import AsyncIterator
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -233,9 +233,10 @@ def _flagged_error() -> dict[str, Any]:
 
 def with_turn_state(event: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     """An event that ends the turn without an answer carries the turn so far:
-    its activity and its evidence, nothing cited (Epo 2026-10-21)."""
+    its activity and its evidence (Epo 2026-10-21), with the passages the
+    answer cited before it ended (Epo 2026-10-22)."""
     event["activity"] = ctx.activity
-    event["toolEvidence"] = evidence.pack(ctx, [])
+    event["toolEvidence"] = evidence.pack(ctx, ctx.cited_shown)
     return event
 
 
@@ -323,7 +324,9 @@ async def run_agent(
             # turn's record, never back to the model (Epo 2026-10-21).
             yield _with_usage(
                 events.turn_checkpoint(
-                    list(ctx.activity), evidence.pack(ctx, []), stopped=True
+                    list(ctx.activity),
+                    evidence.pack(ctx, ctx.cited_shown),
+                    stopped=True,
                 )
             )
     finally:
@@ -662,6 +665,7 @@ async def _run_turn(
                             started = True
                         if len(renderer.order) > len(sent_citations):
                             sent_citations = _ordered_citations(ctx, renderer.order)
+                            ctx.cited_shown = list(renderer.order)
                             citation_version += 1
                             yield events.citations(
                                 sent_citations, citation_version, final=True
@@ -729,6 +733,7 @@ async def _run_turn(
         budget.reasoning_tokens += assembled.usage.reasoning_tokens
 
         if _client_gone(client):
+            ctx.evidence_notes.extend(_cancelled(c, ctx) for c in assembled.tool_calls)
             budget.stop_reason = STOP_CLIENT_GONE
             return
 
@@ -996,11 +1001,7 @@ async def _run_turn(
         activity,
         answer,
     )
-    # An answer that finished after Stop was never shown whole: the stopped
-    # turn keeps every result.
-    done["toolEvidence"] = evidence.pack(
-        ctx, cited_order, answered=not _client_gone(client)
-    )
+    done["toolEvidence"] = evidence.pack(ctx, cited_order)
     usage = obs.current_usage()
     if usage is not None and not usage.is_empty():
         done["usage"] = usage.as_dict()
@@ -1211,6 +1212,21 @@ def _activity(
     return block
 
 
+CANCELLED = "Not run: the user stopped the turn before this call started."
+
+
+def _cancelled(call: ToolCall, ctx: ToolContext) -> dict[str, Any]:
+    """The record of a call the Stop kept from starting, whatever its tool: it
+    has no result for retention to trim (Epo 2026-10-22)."""
+    detail = _describe(call.name, _parse_args(call.arguments), ctx)
+    return {
+        "name": call.name,
+        "detail": detail,
+        "outcome": "cancelled",
+        "text": CANCELLED,
+    }
+
+
 def _tool_start(call: ToolCall, name: str, run: _Run) -> dict[str, Any]:
     return events.tool_start(call.id, name, run.detail, started_at=run.started_at)
 
@@ -1247,39 +1263,22 @@ async def _run_tools(
         return _tool_start(call, name, runs[call.id])
 
     def _keep_evidence(call: ToolCall, result: ToolResult) -> None:
-        """A call's result is kept whole as it finishes, so a batch cut short
-        keeps its finished calls and a turn that ends without its answer
-        carries every result into the next message; the answer keeps what each
-        tool's retention says (evidence.pack, Epo 2026-10-21). Passages ride
-        beside the text, so a replay numbers them afresh."""
+        """A call's evidence is kept as it finishes, so a batch cut short keeps
+        its finished calls. Full-retention tools return no passages, so their
+        text does not wait for the batch's citation numbers."""
         definition = tools.contract.definition(call.name)
         if not definition:
             return
         if definition["retention"] in ("full", "cited_passages"):
             ctx.evidence_passage_ids.update(p.chunk_id for p in result.passages)
-        if call.name == "read_skill":
-            return  # its skill replays by name (toolEvidence.skills)
-        image = ctx.pending_images.get(call.id)
-        note: dict[str, Any] = {
-            "name": call.name,
-            "detail": runs[call.id].detail,
-            "outcome": result.outcome,
-            # A capture keeps its page and box; its image never outlives the turn.
-            "text": f"{image[0]}; the image is not kept."
-            if image
-            else _result_text(result, []),
-        }
-        if call.name in tools.KNOWLEDGE_TOOLS:
-            # A replay runs the call again to check the library still says this.
-            note["args"] = _parse_args(call.arguments)
-        if result.passages:
-            note["passages"] = [
-                asdict(p)
-                | ({"unindexed": n} if (n := ctx.passage_flags.get(p.chunk_id)) else {})
-                for p in result.passages
-            ]
-        notes[call.id] = note
-        ctx.evidence_notes.append(note)
+        if definition["retention"] == "full":
+            notes[call.id] = {
+                "name": call.name,
+                "detail": runs[call.id].detail,
+                "outcome": result.outcome,
+                "text": _result_text(result, []),
+            }
+            ctx.evidence_notes.append(notes[call.id])
 
     for call in calls:
         args = _parse_args(call.arguments)
@@ -1327,7 +1326,10 @@ async def _run_tools(
             # never races a read of the same resource inside one response.
             for call, args, name in work:
                 if _client_gone(client):
-                    break  # after a stop the next call never starts
+                    # After a stop the next call never starts.
+                    notes[call.id] = _cancelled(call, ctx)
+                    ctx.evidence_notes.append(notes[call.id])
+                    continue
                 yield _start(call, name, args)
                 for event in _finish(call.id, await tools.run(name, args, ctx)):
                     yield event

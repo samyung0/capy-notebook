@@ -2167,53 +2167,10 @@ async def test_an_answered_turn_replays_its_edit_receipt_not_its_inspection(
 
 
 _SEARCHED = _passage(chunk_id="s1", text="Mitosis has four phases.")
-_READ = _passage(chunk_id="r1", chunk_idx=3, text="Prophase comes first.")
+_JPEG = "data:image/jpeg;base64,AA=="
 
 
-async def _stopped_evidence(monkeypatch) -> dict:
-    """A turn stopped while its listing, search and read ran: the evidence its
-    stopped checkpoint carries."""
-    client = agent.ClientDrop()
-
-    async def _run(name, args, ctx):
-        del args, ctx
-        if name == "search_workspace":
-            return ToolResult(passages=[_SEARCHED], text_parts=["1 passage matched."])
-        if name == "read_document":
-            client.stop()  # the user stops while the reads run
-            return ToolResult(
-                passages=[_READ], paged=True, text_parts=["(next start = 4)"]
-            )
-        return ToolResult(text_parts=[f"ran {name}"])
-
-    calls = [
-        _call("list_sources", "{}", "c1"),
-        _call("search_workspace", '{"query":"mitosis"}', "c2"),
-        _call("read_document", '{"file_id":"f_1"}', "c3"),
-    ]
-    _stop_turn(monkeypatch, [_assembled("", calls)], _run)
-    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
-    assert sorted(_stopped_calls(events[-1])) == [
-        ("c1", "succeeded"),
-        ("c2", "succeeded"),
-        ("c3", "succeeded"),
-    ]
-    return events[-1]["toolEvidence"]
-
-
-def _current(monkeypatch) -> None:
-    async def _rows(workspace, ids):
-        assert workspace == "ws_1"
-        return [
-            {**asdict(p), "id": p.chunk_id}
-            for p in (_SEARCHED, _READ)
-            if p.chunk_id in ids
-        ]
-
-    monkeypatch.setattr(agent.evidence.store, "history_passages", _rows)
-
-
-def _after_stop(evidence: dict, *later: dict) -> list[dict]:
+def _after_stop(evidence: dict) -> list[dict]:
     return [
         {
             "id": "u1",
@@ -2228,185 +2185,131 @@ def _after_stop(evidence: dict, *later: dict) -> list[dict]:
             "status": "aborted",
             "toolEvidence": evidence,
         },
-        *later,
     ]
 
 
-async def test_a_stopped_turn_carries_its_search_and_read_whole_into_the_next(
+async def test_a_stopped_turn_keeps_its_edit_receipt_not_its_reads_or_captures(
     monkeypatch,
 ):
-    evidence = await _stopped_evidence(monkeypatch)
-    _current(monkeypatch)
-    ctx = ToolContext(workspace_id="ws_1")
-    out = await agent.evidence.history_turns(_after_stop(evidence), ctx)
-    texts = [m["content"] for m in out]
-
-    assert any('"name":"search_workspace"' in t for t in texts)
-    assert any("(next start = 4)" in t for t in texts)
-    # Both passages, citable in the next answer with current numbers.
-    assert any("[1] bio.pdf\nMitosis has four phases." in t for t in texts)
-    assert any("[2] bio.pdf\nProphase comes first." in t for t in texts)
-    assert [p.chunk_id for p in ctx.citations] == ["s1", "r1"]
-    assert {"s1", "r1"} <= ctx.evidence_passage_ids
-
-
-async def test_once_the_next_message_is_answered_the_stopped_turn_is_trimmed(
-    monkeypatch,
-):
-    evidence = await _stopped_evidence(monkeypatch)
-    _current(monkeypatch)
-    answered = [
-        {"id": "u2", "role": "user", "content": "go on", "status": "complete"},
-        {"id": "a2", "role": "assistant", "content": "Four.", "status": "complete"},
-    ]
-    ctx = ToolContext(workspace_id="ws_1")
-    out = await agent.evidence.history_turns(_after_stop(evidence, *answered), ctx)
-    replayed = "\n".join(m["content"] for m in out)
-
-    assert "ran list_sources" in replayed  # a full result stays
-    assert "search_workspace" not in replayed and "next start" not in replayed
-    assert "Mitosis has four phases." not in replayed and not ctx.citations
-
-
-async def test_a_stopped_turns_trashed_passage_never_reaches_the_next_prompt(
-    monkeypatch,
-):
-    """Security regression (review retention-round M3): a carried passage is
-    checked against the current index like a cited one, so the text of a
-    passage no longer indexed (its file trashed) is never replayed."""
-    evidence = await _stopped_evidence(monkeypatch)
-
-    async def _rows(workspace, ids):
-        assert workspace == "ws_1"
-        return (
-            [{**asdict(_READ), "id": _READ.chunk_id}] if _READ.chunk_id in ids else []
-        )
-
-    monkeypatch.setattr(agent.evidence.store, "history_passages", _rows)
-    ctx = ToolContext(workspace_id="ws_1")
-    out = await agent.evidence.history_turns(_after_stop(evidence), ctx)
-    replayed = "\n".join(m["content"] for m in out)
-
-    assert "Historical passage s1 in file f_1 is no longer available" in replayed
-    assert _SEARCHED.text not in replayed
-    assert _READ.text in replayed and [p.chunk_id for p in ctx.citations] == ["r1"]
-
-
-async def test_a_passage_both_searched_and_read_replays_once(monkeypatch):
-    _current(monkeypatch)
-    snapshot = asdict(_SEARCHED)
-    evidence = {
-        "tools": [
-            {"name": "search_workspace", "detail": "", "outcome": "succeeded"}
-            | {"text": "", "passages": [snapshot]},
-            {"name": "read_document", "detail": "", "outcome": "succeeded"}
-            | {"text": "", "passages": [snapshot]},
-        ]
-    }
-    out = await agent.evidence.history_turns(
-        _after_stop(evidence), ToolContext(workspace_id="ws_1")
-    )
-    assert sum(_SEARCHED.text in m["content"] for m in out) == 1
-
-
-async def test_a_stopped_turns_captures_keep_their_record_not_their_image(
-    monkeypatch,
-):
+    """A stopped turn counts as finished (Epo 2026-10-22): its search, read and
+    capture results never reach the next prompt, its edit receipt does."""
     client = agent.ClientDrop()
 
     async def _run(name, args, ctx):
-        call_id = args["_tool_call_id"]
-        label = {
-            "capture_page": "capture_page result 1: bio.pdf page 1",
-            "resolve_source_change": "resolve_source_change result: change c of file f_1",
-        }[name]
-        ctx.pending_images[call_id] = (label, "data:image/jpeg;base64,AA==")
-        if name == "resolve_source_change":
-            client.stop()
-        return ToolResult(text_parts=["The image is attached to the next message."])
+        if name == "capture_page":
+            call_id = args["_tool_call_id"]
+            ctx.captures.append(
+                {"callId": call_id, "page": 1, "bbox": [0, 0, 1000, 1000], "bytes": 3}
+                | {"estimatedImageTokens": 4}
+            )
+            ctx.pending_images[call_id] = ("capture_page result 1", _JPEG)
+            return ToolResult(text_parts=["Captured page 1."])
+        if name == "edit_document":
+            client.stop()  # the user stops while the edit runs
+            return ToolResult(text_parts=["edit receipt: 1 block replaced"])
+        return ToolResult(passages=[_SEARCHED], text_parts=[f"ran {name}"])
 
     calls = [
-        _call("capture_page", '{"file_id":"f_1","page":1}', "k1"),
-        _call("resolve_source_change", '{"file_id":"f_1","change_id":"c"}', "k2"),
+        _call("search_workspace", '{"query":"mitosis"}', "c1"),
+        _call("read_document", '{"file_id":"f_1"}', "c2"),
+        _call("capture_page", '{"file_id":"f_1","page":1}', "c3"),
+        _call("edit_document", '{"material_id":"m"}', "c4"),
     ]
     _stop_turn(monkeypatch, [_assembled("", calls)], _run)
     events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
     evidence = events[-1]["toolEvidence"]
+    assert [n["name"] for n in evidence["tools"]] == ["edit_document"]
 
-    assert [n["text"] for n in evidence["tools"]] == [
-        "capture_page result 1: bio.pdf page 1; the image is not kept.",
-        "resolve_source_change result: change c of file f_1; the image is not kept.",
+    stream, seen = _script_stream([_assembled(_answer(("Done.", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    async for _event in agent.run_agent(
+        query="go on",
+        ctx=ToolContext(workspace_id="ws_1"),
+        history=_after_stop(evidence),
+        model=_model(),
+    ):
+        pass
+    prompt = json.dumps(seen[0]["messages"])
+    assert "edit receipt: 1 block replaced" in prompt
+    assert _SEARCHED.text not in prompt and "ran read_document" not in prompt
+    assert "Captured page 1." not in prompt and _JPEG not in prompt
+
+
+async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch):
+    """A turn stopped mid-answer keeps the passages the user saw cited, like
+    an answered turn (Epo 2026-10-22)."""
+    client = agent.ClientDrop()
+    ctx = ToolContext(workspace_id="ws_1")
+    program = _answer(("Mitosis has four phases.", [1]), ("More.", []))
+    shown, rest = program.split('"More', 1)
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        if not ctx.citations:
+            return _assembled("", [_call("read_document", '{"file_id":"f_1"}', "r1")])
+        on_event(StreamEvent(kind="text", text=shown))
+        for _ in range(20):  # the user sees the first claim with its citation
+            if ctx.cited_shown:
+                break
+            await asyncio.sleep(0)
+        client.stop()
+        on_event(StreamEvent(kind="text", text='"More' + rest))
+        return _assembled(program)
+
+    async def _run(name, args, ctx):
+        return ToolResult(passages=[_SEARCHED], paged=True, text_parts=["(end)"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ctx, client=client)
+
+    assert events[-1]["type"] == "turn_checkpoint" and events[-1]["stopped"]
+    passages = events[-1]["toolEvidence"]["passages"]
+    assert [p["chunk_id"] for p in passages] == ["s1"]
+
+
+async def test_a_call_the_stop_kept_from_starting_replays_as_cancelled(monkeypatch):
+    client = agent.ClientDrop()
+
+    async def _run(name, args, ctx):
+        client.stop()  # the user stops while the first write runs
+        return ToolResult(text_parts=["created A"])
+
+    writes = [
+        _call("create_material", '{"kind":"note","title":"A"}', "c1"),
+        _call("create_material", '{"kind":"note","title":"B"}', "c2"),
     ]
-    assert "base64" not in json.dumps(evidence)
+    _stop_turn(monkeypatch, [_assembled("", writes)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    evidence = events[-1]["toolEvidence"]
+
+    assert [(n["outcome"], n["text"]) for n in evidence["tools"]] == [
+        ("succeeded", "created A"),
+        ("cancelled", agent.CANCELLED),
+    ]
+    out = await agent.evidence.history_turns(
+        _after_stop(evidence), ToolContext(workspace_id="ws_1")
+    )
+    replayed = [m["content"] for m in out if agent.CANCELLED in m["content"]]
+    assert len(replayed) == 1
+    assert '"name":"create_material"' in replayed[0]
+    assert evidence["tools"][1]["detail"] in replayed[0]
 
 
-def _carried_library(name: str, text: str) -> dict:
-    return {
-        "name": name,
-        "detail": "",
-        "outcome": "succeeded",
-        "text": text,
-        "args": {"excerpt_id": "ex_1"},
-    }
-
-
-async def test_a_carried_library_read_replays_only_while_the_library_agrees(
+async def test_the_calls_of_a_response_ending_after_the_stop_are_cancelled(
     monkeypatch,
 ):
-    """As a retained excerpt is read again: a book withheld since the stopped
-    turn does not replay its text (review retention-round L2)."""
-    library_now: dict[str, str | None] = {"text": "Sondheim lyric"}
+    client = agent.ClientDrop()
 
-    async def _read(args, ctx):
-        assert args == {"excerpt_id": "ex_1"} and ctx.library
-        if library_now["text"] is None:
-            return tools._refused("read_knowledge: unknown excerpt 'ex_1'")
-        return ToolResult(text_parts=[library_now["text"]])
+    async def _stream(_messages, **_kwargs):
+        client.stop()  # the response was still streaming at the stop
+        return _assembled("", [_call("search_workspace", '{"query":"q"}', "c1")])
 
-    spec = replace(tools.REGISTRY["read_knowledge"], handler=_read)
-    monkeypatch.setitem(tools.REGISTRY, "read_knowledge", spec)
-    evidence = {"tools": [_carried_library("read_knowledge", "Sondheim lyric")]}
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
 
-    async def _replayed() -> str:
-        ctx = ToolContext(
-            workspace_id="ws_1", library=True, operations=frozenset({"library.read"})
-        )
-        out = await agent.evidence.history_turns(_after_stop(evidence), ctx)
-        return "\n".join(m["content"] for m in out)
-
-    assert "Sondheim lyric" in await _replayed()
-    library_now["text"] = None  # the book's work was withheld
-    replayed = await _replayed()
-    assert "Sondheim lyric" not in replayed
-    assert "read_knowledge result changed or is unavailable" in replayed
-
-
-async def test_carried_library_results_need_the_library_on(monkeypatch):
-    async def _search(args, ctx):
-        return ToolResult(text_parts=["[ex_1] Cells, page 4"])
-
-    spec = replace(tools.REGISTRY["search_knowledge"], handler=_search)
-    monkeypatch.setitem(tools.REGISTRY, "search_knowledge", spec)
-    evidence = {
-        "tools": [
-            _carried_library("search_knowledge", "[ex_1] Cells, page 4"),
-            _carried_library(
-                "capture_knowledge_page", "Cells page 4; the image is not kept."
-            ),
-        ]
-    }
-    on = ToolContext(
-        workspace_id="ws_1", library=True, operations=frozenset({"library.read"})
-    )
-    off = ToolContext(workspace_id="ws_1")
-
-    def _text(out: list[dict]) -> str:
-        return "\n".join(m["content"] for m in out)
-
-    with_library = _text(await agent.evidence.history_turns(_after_stop(evidence), on))
-    without = _text(await agent.evidence.history_turns(_after_stop(evidence), off))
-    assert "[ex_1] Cells, page 4" in with_library and "Cells page 4;" in with_library
-    assert "Cells" not in without
+    assert [(n["name"], n["outcome"]) for n in events[-1]["toolEvidence"]["tools"]] == [
+        ("search_workspace", "cancelled")
+    ]
 
 
 async def test_the_office_tools_stay_offered_after_a_dropped_office_inspection(
@@ -2536,7 +2439,7 @@ async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
                 "",
                 [
                     _call("list_sources", "{}", "c1"),
-                    _call("list_trashed_files", "{}", "c2"),
+                    _call("list_sources", "{}", "c2"),
                 ],
             ),
             _assembled(_answer(("done", []))),
@@ -2545,12 +2448,12 @@ async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
     second_done = asyncio.Event()
 
     async def _run(name, args, ctx):
-        del args, ctx
-        if name == "list_sources":
+        del name, ctx
+        if args["_tool_call_id"] == "c1":
             await second_done.wait()  # the first call finishes last
         else:
             second_done.set()
-        return ToolResult(text_parts=[f"ran {name}"])
+        return ToolResult(text_parts=[f"listed for {args['_tool_call_id']}"])
 
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
@@ -2570,25 +2473,21 @@ async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
         "c1",
         "c2",
     }
-    listing = {
-        "name": "list_sources",
-        "detail": "listing sources",
-        "outcome": "succeeded",
-        "text": "ran list_sources",
+    assert done["toolEvidence"] == {
+        "tools": [
+            {
+                "name": "list_sources",
+                "detail": "listing sources",
+                "outcome": "succeeded",
+                "text": f"listed for {call_id}",
+            }
+            for call_id in ("c1", "c2")
+        ],
+        "passages": [],
+        "skills": [],
     }
-    # Until the answer every result is kept, in call order; the answer keeps
-    # what each tool's retention says (Epo 2026-10-21).
     checkpoint = next(e for e in events if e["type"] == "turn_checkpoint")
-    assert checkpoint["toolEvidence"]["tools"] == [
-        listing,
-        {
-            "name": "list_trashed_files",
-            "detail": "",
-            "outcome": "succeeded",
-            "text": "ran list_trashed_files",
-        },
-    ]
-    assert done["toolEvidence"] == {"tools": [listing], "passages": [], "skills": []}
+    assert checkpoint["toolEvidence"] == done["toolEvidence"]
 
 
 async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypatch):

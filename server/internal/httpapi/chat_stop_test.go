@@ -274,9 +274,9 @@ func TestChatStopSavesTheTurnAtOnceAndAddsTheRunningCall(t *testing.T) {
 }
 
 // A stopped turn's results go into the next turn's prompt as its row keeps
-// them, the call that finished after the Stop included: the pipeline carries
-// them whole into that message (Epo 2026-10-21).
-func TestStoppedTurnCarriesTheResultsMergedAfterTheStop(t *testing.T) {
+// them, the call that finished after the Stop included; it replays like a
+// finished turn (Epo 2026-10-22).
+func TestStoppedTurnReplaysTheResultsMergedAfterTheStop(t *testing.T) {
 	pipe := newStopPipe(lateRunningCall)
 	run := startStopTurn(t, pipe, nil)
 	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {

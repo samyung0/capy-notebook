@@ -426,8 +426,6 @@ func (a *api) relayChat(
 			row["citations"] = m.Citations
 		}
 		if len(m.ToolEvidence) > 0 {
-			// An unfinished turn's evidence holds every result, carried whole
-			// into the next message (Epo 2026-10-21).
 			row["toolEvidence"] = m.ToolEvidence
 		}
 		history = append(history, row)

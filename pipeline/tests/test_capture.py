@@ -132,10 +132,10 @@ async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     assert list(record["pixels"]) == [134, 200]
 
 
-async def test_a_message_allows_twelve_page_captures(monkeypatch, rendered):
-    """capture_page and capture_knowledge_page share 12 captures per message:
-    the 12th returns its image with the limit sentence and later calls are
-    refused, also when a response's captures run side by side (Epo 2026-10-21)."""
+async def test_a_message_allows_sixteen_images(monkeypatch, rendered):
+    """The 16th image returns with the limit sentence and later image calls
+    are refused, also when a response's captures run side by side (Epo
+    2026-10-21, 16 since 2026-10-22)."""
     real = capture.render_file
 
     async def _side_by_side(*args):
@@ -149,20 +149,52 @@ async def test_a_message_allows_twelve_page_captures(monkeypatch, rendered):
             tools._capture_page(
                 {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
             )
-            for n in range(1, 14)
+            for n in range(1, 18)
         )
     )
     taken = [r for r in results if not r.refused]
-    assert len(taken) == 12 == len(ctx.pending_images)
-    assert [r.text().endswith(tools.CAPTURE_LIMIT) for r in taken] == [False] * 11 + [
+    assert len(taken) == 16 == len(ctx.pending_images)
+    assert [r.text().endswith(tools.IMAGE_LIMIT) for r in taken] == [False] * 15 + [
         True
     ]
     knowledge = await tools._capture_knowledge_page(
-        {"excerpt_id": "e_1", "page": 1, "_tool_call_id": "k14"}, ctx
+        {"excerpt_id": "e_1", "page": 1, "_tool_call_id": "k18"}, ctx
     )
     for refused in [*(r for r in results if r.refused), knowledge]:
         assert refused.error_code == "limit_reached"
-        assert refused.text() == tools.CAPTURE_LIMIT
+        assert refused.text() == tools.IMAGE_LIMIT
+
+
+async def test_source_change_images_share_the_cap(monkeypatch, rendered):
+    """resolve_source_change's images count with the page captures; one that
+    is the 16th carries the same sentence (Epo 2026-10-22)."""
+
+    async def _resolve(**_kwargs):
+        return _jpeg(40, 20)
+
+    monkeypatch.setattr(tools.pending, "resolve", _resolve)
+    ctx = _ctx(2)
+    for n in range(15):
+        page = await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+        )
+        assert not page.refused
+
+    def change(call_id: str):
+        args = {"file_id": "f_1", "change_id": "c", "checkpoint": 1}
+        return tools._resolve_source_change(args | {"_tool_call_id": call_id}, ctx)
+
+    sixteenth = await change("r16")
+    assert not sixteenth.refused and "r16" in ctx.pending_images
+    assert sixteenth.text().endswith(tools.IMAGE_LIMIT)
+    for refused in (
+        await change("r17"),
+        await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": "k17"}, ctx
+        ),
+    ):
+        assert refused.error_code == "limit_reached"
+    assert len(ctx.pending_images) == 16
 
 
 async def test_capture_rejects_a_page_past_the_end_and_a_bad_box(rendered):
