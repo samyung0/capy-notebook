@@ -1881,10 +1881,12 @@ mod tests {
 
     /// Epo 2026-10-21: an agent edit's Undo is sized from its commands
     /// (`sources::undo_cost`), never by reverting on a copy. On the notes
-    /// corpus's seeded notes (paragraphs, lists, tables, math), a card set
-    /// and a quiz, every material command's cost is at least what the edit's
-    /// Undo and Redo send in each of its rooms (measured on copies here). The
-    /// lowest and highest ratio per command print (STATE.md keeps them).
+    /// corpus's seeded notes (paragraphs, lists, tables, math), a Mermaid
+    /// block with a long caption rewritten as a small one (the kept caption
+    /// rides its Redo), a card set and a quiz, every material command's cost
+    /// is at least what the edit's Undo and Redo send in each of its rooms
+    /// (measured on copies here). The lowest and highest ratio per command
+    /// print (STATE.md keeps them).
     /// Fails if a rule under-estimates.
     #[test]
     fn every_material_command_costs_at_least_what_its_undo_and_redo_send() {
@@ -2014,6 +2016,32 @@ mod tests {
                 }),
             );
         }
+
+        // A rewrite keeps the old block's caption (`keep_caption`): a long
+        // caption moves onto a small new block, so the Redo carries it.
+        let mermaid = |id: &str, source: &str, caption: &str| {
+            json!({
+                "type": "mermaid", "id": id, "source": source, "width": "60%",
+                "children": [{ "type": "mermaid_caption", "children": [{ "text": caption }] }],
+            })
+        };
+        let captioned = Model::Note.state_from_value(&[mermaid(
+            "m1",
+            "flowchart LR\n  A --> B",
+            &"A long caption. ".repeat(4000),
+        )]);
+        let kept = cost_and_sent(
+            "note",
+            &captioned,
+            None,
+            vec![DocumentCommand::ReplaceBlock {
+                block_id: "m1".into(),
+                expected_text: "flowchart LR\n  A --> B".into(),
+                blocks: vec![mermaid("m2", "flowchart LR\n  A --> C", "")],
+            }],
+        );
+        assert!(kept.is_some(), "the captioned rewrite was refused");
+        check("replace_block", kept);
 
         let question = |id: &str, words: usize| {
             json!({

@@ -242,10 +242,11 @@ class ToolContext:
     # -> text), from inspect_document and its own replace_text edits, so a
     # refused edit can say its target changed since.
     seen_blocks: dict[str, dict[str, str]] = field(default_factory=dict)
-    # Embedded quiz blocks inspect_document showed as a quiz fence (material id
-    # -> block id -> (shown, stored text)): an edit expecting the shown text
-    # expects the stored one.
-    shown_quizzes: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
+    # Blocks whose shown text an edit may not copy exactly (material id ->
+    # block id -> (shown, stored text)): an embedded quiz shown as a quiz
+    # fence, a Mermaid source whose edge whitespace the view hides. An edit
+    # expecting the shown text, edge whitespace aside, expects the stored one.
+    shown_views: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
     # What the chat's tool rows call a resource or excerpt (id -> file name,
     # material title, or book and chapter), learned from this turn's results
     # so a row names its target without a lookup per call.
@@ -2085,6 +2086,8 @@ def _render_inspection(
         flags = " [media]" if props.get("media") else ""
         text = str(block.get("text") or "")
         view = questions.quiz_fence_view(text) if block.get("type") == "quiz" else None
+        if block.get("type") == "mermaid":
+            view = text
         if view is not None and shown is not None:
             shown[str(block.get("id"))] = (view, text)
             text = view
@@ -2157,7 +2160,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         seen = ctx.seen_blocks.setdefault(rid, {})
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
-        shown = ctx.shown_quizzes.setdefault(rid, {})
+        shown = ctx.shown_views.setdefault(rid, {})
     result = _result(_render_inspection(body, shown, source=kind == "source_file"))
     result.pending = changes
     return result
@@ -2257,8 +2260,9 @@ def _saw_edit(seen: dict[str, str], commands: list[dict[str, Any]]) -> None:
 def _stored_expectation(
     command: dict[str, Any], shown: dict[str, tuple[str, str]]
 ) -> dict[str, Any]:
-    """A command expecting an embedded quiz block's text as inspect_document
-    showed it (_render_inspection) expects the block's stored text."""
+    """A command expecting an embedded quiz block's or a Mermaid block's text
+    as inspect_document or a refusal showed it, edge whitespace aside, expects
+    the block's stored text (_render_inspection, review r2 L3)."""
     view = shown.get(str(command.get("block_id") or ""))
     if view and str(command.get("expected_text") or "").strip() == view[0].strip():
         return {**command, "expected_text": view[1]}
@@ -2273,7 +2277,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
     commands = [
-        _stored_expectation(c, ctx.shown_quizzes.get(rid, {}))
+        _stored_expectation(c, ctx.shown_views.get(rid, {}))
         for c in args.get("commands") or []
     ]
     # Note markdown may hold quiz fences and place library figures; a source
@@ -2325,6 +2329,11 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     }
 
     def explain(details: dict[str, Any]) -> str:
+        block = details.get("block")
+        if isinstance(block, dict) and block.get("type") == "mermaid":
+            # A retry copies the source the refusal shows, as an inspected one.
+            stored = str(block.get("text") or "")
+            ctx.shown_views.setdefault(rid, {})[str(block.get("id"))] = (stored, stored)
         # A source's text as it reads now sits in a source block.
         text = _missed_target(details, ctx.seen_blocks.get(rid, {}))
         return source_block(text) if text and kind == "source_file" else text

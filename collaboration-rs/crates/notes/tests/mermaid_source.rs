@@ -50,18 +50,32 @@ fn edit(room: &Doc, client: u64, change: impl FnOnce(&Doc)) -> Vec<u8> {
     peer.transact().encode_state_as_update_v1(&vector)
 }
 
+/// The element at `path` of a document, its top-level block first.
+fn element(doc: &Doc, path: &[usize]) -> XmlTextRef {
+    let txn = doc.transact();
+    let mut branch = plate::content_root(&txn).unwrap();
+    for &index in path {
+        branch = match &plate::insert_delta(&branch).unwrap()[index].insert {
+            plate::Insert::Element(child) => *child,
+            plate::Insert::Text(_) => panic!("no element at {path:?}"),
+        };
+    }
+    XmlTextRef::from(branch)
+}
+
 /// Top-level block `index` of a document.
 fn block(doc: &Doc, index: usize) -> XmlTextRef {
-    let txn = doc.transact();
-    match &plate::insert_delta(&plate::content_root(&txn).unwrap()).unwrap()[index].insert {
-        plate::Insert::Element(branch) => XmlTextRef::from(*branch),
-        plate::Insert::Text(_) => panic!("not a block"),
-    }
+    element(doc, &[index])
 }
 
 /// The source text of the Mermaid block at `index`.
 fn source(doc: &Doc, index: usize) -> TextRef {
-    let element = block(doc, index);
+    source_at(doc, &[index])
+}
+
+/// The source text of the Mermaid block at `path`.
+fn source_at(doc: &Doc, path: &[usize]) -> TextRef {
+    let element = element(doc, path);
     match element.get_attribute(&doc.transact(), "source") {
         Some(Out::YText(text)) => text,
         other => panic!("not a source text: {other:?}"),
@@ -323,14 +337,9 @@ fn captioned(caption: &str) -> Value {
     block
 }
 
-/// The caption element of the Mermaid block at `index`.
-fn caption(doc: &Doc, index: usize) -> XmlTextRef {
-    let element = block(doc, index);
-    let _txn = doc.transact();
-    match &plate::insert_delta(element.as_ref()).unwrap()[0].insert {
-        plate::Insert::Element(branch) => XmlTextRef::from(*branch),
-        plate::Insert::Text(_) => panic!("no caption element"),
-    }
+/// The caption element of the Mermaid block at `path`.
+fn caption(doc: &Doc, path: &[usize]) -> XmlTextRef {
+    element(doc, &[path, &[0]].concat())
 }
 
 /// The agent's rewrite of block d1, expecting `expected`.
@@ -385,7 +394,7 @@ fn a_diagram_rewrite_is_stale_once_its_source_changed_since_the_inspect() {
 fn a_diagram_rewrite_keeps_the_caption_and_width() {
     let room = room(&[captioned("Cell cycle")]);
     let inspected = edit::inspect_material(&room.transact()).unwrap();
-    let retitled = caption(&room, 0);
+    let retitled = caption(&room, &[0]);
     retitled.insert(&mut room.transact_mut(), 0, "The ");
     // replace_text would type into the caption: refused.
     let root = room.get_or_insert_text(plate::CONTENT_ROOT);
@@ -421,6 +430,103 @@ fn a_diagram_rewrite_keeps_the_caption_and_width() {
     );
     assert_eq!(block["width"], "60%");
     notes::material::assert_canonical(&value, "diagram").unwrap();
+}
+
+/// A rewrite into the Mermaid block and a paragraph beside it keeps the
+/// block's caption and width too (review r2 M1): the replacement's first
+/// block of its type is its rewrite. Fails if only a one-block replacement
+/// keeps them.
+#[test]
+fn a_diagram_rewritten_with_a_paragraph_keeps_its_caption() {
+    let room = room(&[captioned("Tide flow")]);
+    let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+    let mut next = mermaid("flowchart LR\n  A --> C");
+    next["id"] = json!("d2");
+    let explained =
+        json!({ "children": [{ "text": "A short explanation." }], "id": "p2", "type": "p" });
+    edit::apply_material_commands(
+        &mut room.transact_mut(),
+        &root,
+        &[DocumentCommand::ReplaceBlock {
+            block_id: "d1".into(),
+            expected_text: SOURCE.into(),
+            blocks: vec![next, explained],
+        }],
+    )
+    .unwrap();
+    let value = plate::value(&room.transact()).unwrap();
+    assert_eq!(value[0]["source"], "flowchart LR\n  A --> C");
+    assert_eq!(value[0]["children"][0]["children"][0]["text"], "Tide flow");
+    assert_eq!(value[0]["width"], "60%");
+    assert_eq!(value[1]["children"][0]["text"], "A short explanation.");
+    notes::material::assert_canonical(&value, "note").unwrap();
+}
+
+/// A Mermaid block inside a container reads as its source there too (review
+/// r2 L1): the callout's expected text holds the nested source, not its
+/// caption, so typing in the nested source makes the agent's rewrite of the
+/// callout stale while typing in the nested caption does not; replace_text
+/// past the nested block edits the callout's own paragraph, and a span into
+/// the source is refused. Fails if a nested caption is compared again.
+#[test]
+fn a_mermaid_block_in_a_callout_reads_as_its_source() {
+    let room = room(&[json!({
+        "children": [captioned("Cell cycle"), paragraph("Read it left to right.")],
+        "id": "c1",
+        "type": "callout",
+    })]);
+    let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+    let apply = |command: DocumentCommand| {
+        edit::apply_material_commands(&mut room.transact_mut(), &root, &[command])
+    };
+    let inspect = || {
+        edit::inspect_material(&room.transact()).unwrap()[0]
+            .text
+            .clone()
+    };
+    assert_eq!(inspect(), format!("{SOURCE}Read it left to right."));
+    let replace_text = |expected: &str| DocumentCommand::ReplaceText {
+        block_id: Some("c1".into()),
+        expected_text: expected.into(),
+        text: "top down".into(),
+    };
+    apply(replace_text("left to right")).unwrap();
+    let value = plate::value(&room.transact()).unwrap();
+    assert_eq!(
+        value[0]["children"][1]["children"][0]["text"],
+        "Read it top down."
+    );
+    assert_eq!(
+        value[0]["children"][0]["children"][0]["children"][0]["text"],
+        "Cell cycle"
+    );
+    assert!(matches!(
+        apply(replace_text("--> B")),
+        Err(EditError::Edit {
+            code: EditErrorCode::InvalidInput,
+            ..
+        })
+    ));
+    let rewrite = |expected: String| DocumentCommand::ReplaceBlock {
+        block_id: "c1".into(),
+        expected_text: expected,
+        blocks: vec![json!({ "children": [paragraph("New")], "id": "c2", "type": "callout" })],
+    };
+    let before = inspect();
+    let text = source_at(&room, &[0, 0]);
+    text.insert(&mut room.transact_mut(), 0, "%% typed\n");
+    assert!(matches!(
+        apply(rewrite(before)),
+        Err(EditError::Edit {
+            code: EditErrorCode::StaleTarget,
+            ..
+        })
+    ));
+    let before = inspect();
+    let retitled = caption(&room, &[0, 0]);
+    retitled.insert(&mut room.transact_mut(), 0, "The ");
+    apply(rewrite(before)).unwrap();
+    assert_eq!(plate::value(&room.transact()).unwrap()[0]["id"], "c2");
 }
 
 /// The store requires a `mermaid` block's `source` (rust-core REVIEW5 R2b's

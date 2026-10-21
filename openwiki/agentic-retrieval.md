@@ -3891,9 +3891,10 @@ what it inserted, so each rule counts both sides:
   grid): its bytes times `CONTENT` (3);
 - an insert (a replacement text, inserted blocks, a card or question): its
   text or JSON times `CONTENT`, plus a `PIECE` (160 bytes) for each run or
-  block it splits at either end; a `replace_block` counts the replaced block
-  twice, since a rewrite as one block of its type also writes the old
-  block's caption and width;
+  block it splits at either end. A `replace_block` rewrite also writes the
+  old block's caption and width (`keep_caption`), part of the replaced block
+  already counted, so the Redo stays under the estimate (a long caption kept
+  on a small new block measures 3.0 in the server's `edits.rs` ratio test);
 - formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
 - XLSX structure (rows, columns, sheets): a `PIECE` per row, column or sheet
   entry, since the cells stay in Yjs;
@@ -4105,13 +4106,20 @@ flattened text with inline math written `$tex$` and display math `$$tex$$`
 never change a block's caption and a stale check never compares one (Epo
 2026-10-22): a Mermaid block's text is its source, its caption printed apart
 (`properties.caption`), and `replace_text` on it is refused, since its text
-leaf is the caption; an image's, audio's, video's or interactive block's
-caption is an attribute outside the text. A `replace_block` whose blocks are
-one block of the replaced one's type is that block rewritten: the new block
-takes the old one's caption (a Mermaid block's caption element, another's
-`caption`) and `width` as they read at the edit, over any the agent's
-markdown gave (`keep_caption`); the agent places a new captioned figure with
-`remove_block` and `insert_markdown`. `replace_text` replaces
+leaf is the caption. A Mermaid block inside a container (a callout, a column)
+reads as its source in the container's text too, and a `replace_text` span
+reaching into it is refused like one over math (review r2 L1). An image's,
+audio's, video's or interactive block's caption is an attribute outside the
+text. In a `replace_block`, the replacement's first block of the replaced
+one's type is that block rewritten, whatever else the markdown adds beside
+it (review r2 M1): it takes the old block's caption (a Mermaid block's
+caption element, another's `caption`) and `width` as they read at the edit,
+over any the agent's markdown gave (`keep_caption`); the agent places a new
+captioned figure with `remove_block` and `insert_markdown`. Inspect prints a
+Mermaid source without showing its edge whitespace, so the pipeline maps an
+expectation matching a shown source, edge whitespace aside, to the stored one,
+from the inspection or a stale refusal (`_stored_expectation`, as for a quiz
+fence view; review r2 L3). `replace_text` replaces
 plain text only: a span over math is refused (`invalid_input`) with a pointer
 to `replace_block`, which rewrites the whole block from note markdown and keeps
 its place, Undo putting the original back there. The headless editor every

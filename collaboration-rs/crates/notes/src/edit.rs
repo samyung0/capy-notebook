@@ -188,59 +188,71 @@ fn has_media(node: &Value) -> bool {
             .is_some_and(|children| children.iter().any(has_media))
 }
 
+/// A span of a block's shown text that replace_text cannot reach: math, or
+/// a Mermaid block shown as its source. `text` counts the UTF-16 units of
+/// the block's own text it stands for (a Mermaid block's caption; math has
+/// none).
+struct Opaque {
+    start: usize,
+    end: usize,
+    text: usize,
+    mermaid: bool,
+}
+
 /// A block's text as inspect shows it, the text an expected text matches:
 /// its text with math written out, inline as `$tex$` and display as
-/// `$$tex$$` (`Node.string` leaves math out), and the UTF-16 [start, end)
-/// spans the math takes in it (`shownText`).
-fn shown_text(node: &Value) -> (String, Vec<(usize, usize)>) {
-    fn walk(node: &Value, text: &mut String, units: &mut usize, math: &mut Vec<(usize, usize)>) {
+/// `$$tex$$` (`Node.string` leaves math out), a Mermaid block, nested ones
+/// included, as its source, its caption the person's and never compared
+/// (Epo 2026-10-22), and the UTF-16 spans those take in it (`shownText`).
+fn shown_text(node: &Value) -> (String, Vec<Opaque>) {
+    fn leaves(node: &Value) -> usize {
+        if is_text(node) {
+            return len16(slate::text(node));
+        }
+        children(node).iter().map(leaves).sum()
+    }
+    fn walk(node: &Value, text: &mut String, units: &mut usize, spans: &mut Vec<Opaque>) {
         if is_text(node) {
             let leaf = slate::text(node);
             text.push_str(leaf);
             *units += len16(leaf);
             return;
         }
-        let delimiter = match node.get("type").and_then(Value::as_str) {
-            Some("inline_equation") => "$",
-            Some("equation") => "$$",
+        let kind = node.get("type").and_then(Value::as_str);
+        let tex = || js_string(node.get("texExpression"));
+        let shown = match kind {
+            Some("inline_equation") => format!("${}$", tex()),
+            Some("equation") => format!("$${}$$", tex()),
+            Some("mermaid") => js_string(node.get("source")),
             _ => {
-                for child in node
-                    .get("children")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                {
-                    walk(child, text, units, math);
+                for child in children(node) {
+                    walk(child, text, units, spans);
                 }
                 return;
             }
         };
-        let shown = format!(
-            "{delimiter}{}{delimiter}",
-            js_string(node.get("texExpression"))
-        );
         let start = *units;
         *units += len16(&shown);
-        math.push((start, *units));
+        spans.push(Opaque {
+            start,
+            end: *units,
+            text: leaves(node),
+            mermaid: kind == Some("mermaid"),
+        });
         text.push_str(&shown);
     }
-    let (mut text, mut units, mut math) = (String::new(), 0, Vec::new());
-    walk(node, &mut text, &mut units, &mut math);
-    (text, math)
+    let (mut text, mut units, mut spans) = (String::new(), 0, Vec::new());
+    walk(node, &mut text, &mut units, &mut spans);
+    (text, spans)
 }
 
-/// `blockText`, except a Mermaid block reads as its source: what an edit of
-/// it changes and its expected text names. Its caption is the person's,
-/// kept and never compared (Epo 2026-10-22).
+/// `blockText`.
 fn block_text(node: &Value) -> String {
-    if js_string(node.get("type")) == "mermaid" {
-        return js_string(node.get("source"));
-    }
     shown_text(node).0
 }
 
-/// A block replaced by one of its own type is rewritten in place: the
-/// rewrite keeps its caption (a Mermaid block's caption element, another
+/// A block replaced by blocks holding one of its own type is rewritten
+/// there: the rewrite keeps its caption (a Mermaid block's caption element, another
 /// block's `caption`) and width, which agent edits never change (Epo
 /// 2026-10-22).
 fn keep_caption(old: &Value, new: &mut Value) {
@@ -260,11 +272,14 @@ fn keep_caption(old: &Value, new: &mut Value) {
     }
 }
 
-/// An offset in a block's shown text as an offset in its text without math.
-fn without_math(math: &[(usize, usize)], offset: usize) -> usize {
-    math.iter()
-        .filter(|(_, end)| *end <= offset)
-        .fold(offset, |flat, (start, end)| flat - (end - start))
+/// An offset in a block's shown text as an offset in its own text.
+fn in_text(spans: &[Opaque], offset: usize) -> usize {
+    spans
+        .iter()
+        .filter(|span| span.end <= offset)
+        .fold(offset, |flat, span| {
+            flat + span.text - (span.end - span.start)
+        })
 }
 
 /// How many blocks, and how much of each, a refusal for a gone id lists.
@@ -666,27 +681,29 @@ fn run_command(
                     "a Mermaid block changes through replace_block with a ```mermaid fence; its caption stays",
                 );
             }
-            // Expected text matches the block as inspect shows it, math
-            // included, but only plain text around the math can be replaced.
-            let (shown, math) = shown_text(&block);
+            // Expected text matches the block as inspect shows it, math and
+            // nested Mermaid sources included, but only plain text around
+            // them can be replaced.
+            let (shown, spans) = shown_text(&block);
             let (span_offset, span_length) = resolve_span(&shown, expected_text)
                 .map_err(|error| with_current(error, &block, &shown))?;
             let span_end = span_offset.saturating_add(span_length);
-            if math.iter().any(|&(from, to)| {
+            if let Some(span) = spans.iter().find(|span| {
                 if span_length > 0 {
-                    span_offset < to && span_end > from
+                    span_offset < span.end && span_end > span.start
                 } else {
-                    from < span_offset && span_offset < to
+                    span.start < span_offset && span_offset < span.end
                 }
             }) {
-                return edit_with(
-                    InvalidInput,
-                    "replace_text changes plain text and this span includes math; rewrite the block with replace_block",
-                    current_block(&block, shown),
-                );
+                let message = if span.mermaid {
+                    "replace_text changes plain text and this span includes a Mermaid block; rewrite the block with replace_block"
+                } else {
+                    "replace_text changes plain text and this span includes math; rewrite the block with replace_block"
+                };
+                return edit_with(InvalidInput, message, current_block(&block, shown));
             }
-            let start = point_at(editor, index, without_math(&math, span_offset), Edge::Start)?;
-            let end = point_at(editor, index, without_math(&math, span_end), Edge::End)?;
+            let start = point_at(editor, index, in_text(&spans, span_offset), Edge::Start)?;
+            let end = point_at(editor, index, in_text(&spans, span_end), Edge::End)?;
             if span_length > 0 {
                 editor.delete_range(start.clone(), end)?;
             }
@@ -781,9 +798,12 @@ fn run_command(
             if let Some(id) = ids.iter().find(|id| exists(editor, id)) {
                 return edit(StaleTarget, format!("block id {id} already exists"));
             }
+            // The replacement's first block of the replaced one's type is its
+            // rewrite, whatever else the markdown adds beside it.
             let mut blocks = blocks.clone();
-            if let [rewrite] = blocks.as_mut_slice()
-                && rewrite.get("type") == block.get("type")
+            if let Some(rewrite) = blocks
+                .iter_mut()
+                .find(|node| node.get("type") == block.get("type"))
             {
                 keep_caption(&block, rewrite);
             }
