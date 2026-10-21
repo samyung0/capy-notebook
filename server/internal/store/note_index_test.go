@@ -375,6 +375,50 @@ func TestNoteChangesListAndProcessNow(t *testing.T) {
 	}
 }
 
+// The note list takes the cap that bounds the file list (the owner's files
+// per workspace), lists work in flight first, and counts the notes past it.
+func TestNoteChangesListIsCapped(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	ownerID := newBlobTestUser(t, s, "u_note_cap")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Capped", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits, err := s.PayerPlanLimits(ctx, ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newest Material
+	for i := range limits.FilesPerWorkspace + 1 {
+		if newest, err = s.CreateMaterial(ctx, Material{
+			CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note",
+			Title: fmt.Sprintf("Capped %03d", i), Content: materialTestContent(t, "body"),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The newest edit falls past the cap unless its job lists it first.
+	if _, err := s.ProcessNoteChanges(ctx, ownerID, newest.ID); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := s.WorkspaceStats(ctx, ownerID, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.NoteChanges) != limits.FilesPerWorkspace || stats.MoreNoteChanges != 1 {
+		t.Fatalf("listed %d notes and %d more, want %d and 1", len(stats.NoteChanges), stats.MoreNoteChanges, limits.FilesPerWorkspace)
+	}
+	if first := stats.NoteChanges[0]; first.MaterialID != newest.ID || first.State != "queued" {
+		t.Fatalf("first listed note = %+v, want the queued newest note", first)
+	}
+}
+
 // A note's index text holds its embedded quizzes and flashcard sets at their
 // references, and an item's content write (a save or its room's projection)
 // marks the note dirty as the note's own edits do, clearing its last failure.

@@ -16,6 +16,7 @@ export interface WorkspaceStats {
   fileChanges: FileChange[];
   files: number;
   indexed: number;
+  moreNoteChanges: number;
   notIndexable: number;
   notIndexed: number;
   noteChanges: NoteChange[];

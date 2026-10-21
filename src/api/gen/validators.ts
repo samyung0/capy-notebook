@@ -7263,6 +7263,7 @@ export const GetWorkspaceStatsResponse = zod.object({
 })),
   "files": zod.int(),
   "indexed": zod.int(),
+  "moreNoteChanges": zod.int(),
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
   "noteChanges": zod.array(zod.object({

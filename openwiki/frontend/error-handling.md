@@ -679,8 +679,12 @@ changes build up or after 10 minutes while Auto process edits is on, and a
 failed one is a note parked after its failed jobs, shown like a failed file
 (the job's own error text never renders). The owner's Process (Retry when
 failed, and Process all) indexes the note at once, also with auto process
-off; a queued or processing note shows no action, and there is no Cancel for
-a note. The source coverage bar counts files only. Chapter-level quizzes and
+off; a `processing_started` answer (queued meanwhile by the scheduler or
+another tab) counts as started, and `nothing_to_process` toasts that there
+are no saved changes to process. A queued or processing note shows no action,
+and there is no Cancel for a note. Notes past the list's cap (the owner's
+files per workspace) show as one "Notes not shown" count line under the
+list. The source coverage bar counts files only. Chapter-level quizzes and
 flashcard sets are not indexed and not listed; an embedded one's edits show
 under its note.
 

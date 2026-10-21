@@ -7118,6 +7118,9 @@ components:
         indexed:
           format: int64
           type: integer
+        moreNoteChanges:
+          format: int64
+          type: integer
         notIndexable:
           format: int64
           type: integer
@@ -7137,6 +7140,7 @@ components:
         - notIndexable
         - fileChanges
         - noteChanges
+        - moreNoteChanges
         - chapters
         - files
         - quizzes

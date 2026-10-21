@@ -96,12 +96,15 @@ type ChangeRow = Pick<FileChange, 'lastEditedAt' | 'state'> & {
 function FileChanges({
   autoProcess,
   changes,
+  moreNotes,
   noteChanges,
   owner,
   workspaceId,
 }: {
   autoProcess: boolean;
   changes: FileChange[];
+  /** Notes past the list's cap, not listed. */
+  moreNotes: number;
   noteChanges: NoteChange[];
   /** Only the owner processes or cancels; editors see the list. */
   owner: boolean;
@@ -206,6 +209,11 @@ function FileChanges({
         </ul>
       ) : (
         <p className="mt-3 text-fg-muted">{m.workspace_file_changes_empty()}</p>
+      )}
+      {moreNotes > 0 && (
+        <p className="t-meta mt-2 text-fg-muted">
+          {m.workspace_note_changes_more({ count: String(moreNotes) })}
+        </p>
       )}
     </div>
   );
@@ -357,6 +365,7 @@ export function IndexingTab({
       <FileChanges
         autoProcess={workspace.autoProcess}
         changes={stats.fileChanges}
+        moreNotes={stats.moreNoteChanges}
         noteChanges={stats.noteChanges}
         owner={workspace.isOwner}
         workspaceId={workspace.id}

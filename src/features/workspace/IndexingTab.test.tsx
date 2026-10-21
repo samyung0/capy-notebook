@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { api } from '@/api/client';
+import { ApiError, api } from '@/api/client';
 import type { NoteChange, Workspace, WorkspaceStats } from '@/api/types';
 import { m } from '@/i18n';
 import { IndexingTab } from './IndexingTab';
 
-vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+const userToast = vi.hoisted(() => vi.fn());
+vi.mock('@/components/ui/userToast', () => ({ userToast }));
 vi.mock('@/features/workspace/AddSourceDialog', () => ({
   AddSourceDialog: () => null,
 }));
@@ -25,6 +26,7 @@ vi.mock('@/components/ui/Button', async (original) => ({
 
 afterEach(() => {
   buttons.length = 0;
+  userToast.mockReset();
   vi.restoreAllMocks();
 });
 
@@ -46,6 +48,7 @@ const stats = {
     },
   ],
   indexed: 1,
+  moreNoteChanges: 3,
   noteChanges: [
     note('n_wait', 'waiting'),
     note('n_fail', 'failed'),
@@ -70,7 +73,7 @@ function render(workspace: Partial<Workspace>) {
 }
 
 describe('IndexingTab note changes', () => {
-  it('lists notes like files, with the automatic hint on a waiting note only while auto process is on', () => {
+  it('lists notes like files, with the automatic hint on a waiting note only while auto process is on, and counts the notes past the cap', () => {
     const html = render({ isOwner: true });
     const row = (name: string) =>
       html.split('<li').find((item) => item.includes(name));
@@ -79,6 +82,7 @@ describe('IndexingTab note changes', () => {
     }
     expect(html.split(m.workspace_note_change_auto()).length - 1).toBe(1);
     expect(row('Note n_wait')).toContain(m.workspace_note_change_auto());
+    expect(html).toContain(m.workspace_note_changes_more({ count: '3' }));
     expect(render({ autoProcess: false, isOwner: true })).not.toContain(
       m.workspace_note_change_auto()
     );
@@ -109,6 +113,31 @@ describe('IndexingTab note changes', () => {
       '/materials/n_fail/process-changes',
       '/materials/n_wait/process-changes',
     ]);
+  });
+
+  it('takes a note queued meanwhile as started, and says when there is nothing to process', async () => {
+    const refusal = (code: string) =>
+      new ApiError(409, 'Conflict', undefined, { code });
+    vi.spyOn(api, 'post').mockRejectedValue(refusal('processing_started'));
+    render({ isOwner: true });
+    buttons.at(-1)?.onClick?.();
+    await vi.waitFor(() =>
+      expect(userToast).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'success' })
+      )
+    );
+    userToast.mockReset();
+    vi.spyOn(api, 'post').mockRejectedValue(refusal('nothing_to_process'));
+    render({ isOwner: true });
+    buttons.at(-1)?.onClick?.();
+    await vi.waitFor(() =>
+      expect(userToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: m.error_nothing_to_process_body(),
+          variant: 'error',
+        })
+      )
+    );
   });
 
   it('shows editors the list without actions', () => {

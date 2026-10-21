@@ -684,11 +684,13 @@ type WorkspaceStats struct {
 	// edit first, including ones queued or processing.
 	FileChanges []FileChange `json:"fileChanges" nullable:"false"`
 	// NoteChanges lists workspace notes whose index is behind their content,
-	// oldest edit first.
-	NoteChanges []NoteChange `json:"noteChanges" nullable:"false"`
-	Chapters    int          `json:"chapters"`
-	Files       int          `json:"files"`
-	Quizzes     int          `json:"quizzes"`
-	Attempts    int          `json:"attempts"`
-	AvgScore    int          `json:"avgScore"`
+	// work in flight first, then oldest edit, at most the owner's files per
+	// workspace; MoreNoteChanges counts the notes past that cap.
+	NoteChanges     []NoteChange `json:"noteChanges" nullable:"false"`
+	MoreNoteChanges int          `json:"moreNoteChanges"`
+	Chapters        int          `json:"chapters"`
+	Files           int          `json:"files"`
+	Quizzes         int          `json:"quizzes"`
+	Attempts        int          `json:"attempts"`
+	AvgScore        int          `json:"avgScore"`
 }

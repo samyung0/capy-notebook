@@ -115,6 +115,7 @@ const surfaces = {
           {
             fileChanges: [],
             indexed: 1,
+            moreNoteChanges: 0,
             noteChanges: [],
             notIndexable: 0,
             notIndexed: 0,

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, qk } from '@/api/client';
+import { api, isApiError, qk } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { describeError, isStorageRefusal } from '@/lib/errors';
@@ -22,7 +22,14 @@ export function useProcessFileChanges(workspaceId: string) {
       const results = await Promise.allSettled([
         ...fileIds.map((id) => api.post(`/files/${id}/process-changes`, {})),
         ...noteIds.map((id) =>
-          api.post(`/materials/${id}/process-changes`, {})
+          api
+            .post(`/materials/${id}/process-changes`, {})
+            .catch((error: unknown) => {
+              // Queued meanwhile (by the scheduler or another tab): started.
+              if (isApiError(error) && error.code === 'processing_started')
+                return;
+              throw error;
+            })
         ),
       ]);
       const failed = results.find((result) => result.status === 'rejected');

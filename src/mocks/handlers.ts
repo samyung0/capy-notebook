@@ -1228,6 +1228,7 @@ export const handlers = [
       ),
       files: ws.fileCount,
       indexed,
+      moreNoteChanges: 0,
       noteChanges: advanceChanges(
         db.materials.filter(
           (item) => item.workspaceId === ws.id && item.kind === 'note'

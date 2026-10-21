@@ -4052,15 +4052,21 @@ behind its content, as the Indexing tab shows them beside the file changes
 (Epo 2026-10-21): waiting (dirty), queued (its `ingest` job not yet claimed:
 pending with no attempts), processing, or failed (parked with `index_error`).
 Embedded quizzes and flashcard sets index inside their note and chapter-level
-ones are not indexed, so only notes are listed. `POST
+ones are not indexed, so only notes are listed. The list takes the cap that
+bounds the file list, the workspace owner's files per workspace (100 on both
+plans today; notes do not count toward it): notes with a job come first, then
+the oldest edit, and `moreNoteChanges` counts the notes past the cap, which
+the tab shows as one count line. `POST
 /api/materials/{id}/process-changes` (`ProcessNoteChanges`) is a note's
 Process: it queues the index job at once, below the token threshold, before
-the idle wait, with `auto_process` off, and for a parked note, through the same
-admission as the scheduler (ingest credits reserved on the workspace owner;
-the payload's `automatic` is false). It is the owner's alone, like a file's
-Process: a non-member gets 404, any other member 403. A trashed or standalone
-note is 404, a note with a job 409 `processing_started`, and a note whose
-index is current 409 `nothing_to_process`. A queued note job has no Cancel.
+the idle wait, with `auto_process` off, and for a parked note, with the same
+credit reservation as the scheduler (ingest credits on the workspace owner;
+the payload's `automatic` is false). Unlike the scheduler's path, and like a
+file's Process, it refuses a frozen owner. It is the owner's alone: a
+non-member gets 404, any other member 403. A trashed or standalone note is
+404, a note with a job 409 `processing_started` (the tab takes it as started:
+the scheduler or another tab queued it), and a note whose index is current
+409 `nothing_to_process`. A queued note job has no Cancel.
 Admission clears a parked `index_error`; a failed manual job counts in
 `index_failures` like any other, so a parked note that fails again parks
 again.
