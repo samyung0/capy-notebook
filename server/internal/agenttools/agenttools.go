@@ -105,7 +105,10 @@ import (
 // v36: edit_document loses set_mermaid (a mindmap's or diagram's Mermaid
 // block changes through replace_block), may remove or replace any note
 // block, media included, and replace_card takes expected_front and
-// expected_back, required with the side it replaces (Epo 2026-10-21).
+// expected_back, required with the side it replaces (Epo 2026-10-21); a
+// Mermaid block's inspected and expected text is its source, and a block
+// rewritten as one of its own type keeps its caption and width (Epo
+// 2026-10-22).
 const ContractVersion = 36
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
@@ -998,10 +1001,12 @@ func Definitions() []Definition {
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly; replace_block rewrites a note " +
-				"block with formatting or math, and a mindmap's or diagram's mermaid block as one " +
-				"```mermaid fence. Any note block may be removed or replaced, media included; " +
-				"the only media an edit adds are library figures. PDFs cannot be edited. Quiz " +
-				"questions are added and replaced with the question tools.",
+				"block with formatting or math, and a mermaid block (a mindmap's or diagram's " +
+				"one block) as one ```mermaid fence, expecting the source inspect shows as its text. " +
+				"Any note block may be removed or replaced, media included; the only media an edit " +
+				"adds are library figures, and a block rewritten as one of its own type keeps its " +
+				"caption and width. PDFs cannot be edited. Quiz questions are added and replaced " +
+				"with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{

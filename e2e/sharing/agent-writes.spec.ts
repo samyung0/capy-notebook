@@ -1040,6 +1040,9 @@ test.describe('agent writes to notes', () => {
     // set_mermaid is gone: the diagram's one block is replaced from a
     // ```mermaid fence like any block (Epo 2026-10-21), with a new id.
     const [diagram] = await blocks(anonymousApi, id);
+    // Its inspected text is its source, what the rewrite expects; a caption
+    // stays apart, never compared (Epo 2026-10-22).
+    expect(diagram.text).toBe(source);
     // The rewrite is one ```mermaid fence and nothing else (review r1 M1): a
     // paragraph or a second fence beside it, or a figure, is refused and the
     // diagram stays as it was.

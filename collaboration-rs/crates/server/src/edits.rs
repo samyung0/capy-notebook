@@ -1710,7 +1710,8 @@ mod tests {
     fn an_agent_edit_that_empties_a_note_leaves_an_empty_paragraph() {
         let remove = |kind: &str, value: serde_json::Value| {
             let id = value["id"].as_str().unwrap().to_owned();
-            let expected = if kind == "note" { "last" } else { "" };
+            // As inspect shows it: the paragraph's text, the Mermaid source.
+            let expected = value["source"].as_str().unwrap_or("last").to_owned();
             compute(
                 Model::Note.state_from_value(&[value]),
                 Vec::new(),
@@ -1718,7 +1719,7 @@ mod tests {
                 kind.into(),
                 vec![notes::edit::DocumentCommand::RemoveBlock {
                     block_id: id,
-                    expected_text: expected.into(),
+                    expected_text: expected,
                 }],
                 None,
             )

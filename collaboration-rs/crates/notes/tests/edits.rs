@@ -11,9 +11,9 @@ mod common;
 use notes::children::{self, ChildAnswer};
 use notes::commands::{self, ReplaceBlock};
 use notes::edit::{self, DocumentCommand, EditError, EditOutcome};
-use notes::plate;
+use notes::{plate, slate_yjs};
 use serde_json::{Value, json};
-use yrs::{GetString, ReadTxn, Transact};
+use yrs::{Any, GetString, ReadTxn, Transact, Xml, XmlTextRef};
 
 /// JSON equality as JS sees it: key order aside, numbers by value.
 fn same(a: &Value, b: &Value) -> bool {
@@ -90,6 +90,22 @@ fn replay_step(
             .any(|c| c.get("offset").is_some() || c["type"] == "set_property")
     });
     if kind == "apply" && dropped {
+        return;
+    }
+    // A Mermaid block's expected text is its source since 2026-10-22 (Node
+    // compared its caption), and a rewrite keeps its caption and width:
+    // mermaid_source.rs covers them.
+    let mermaid = |id: &Value| {
+        plate::value(&doc.transact())
+            .unwrap()
+            .iter()
+            .any(|block| block["type"] == "mermaid" && &block["id"] == id)
+    };
+    if kind == "apply"
+        && action["commands"]
+            .as_array()
+            .is_some_and(|commands| commands.iter().any(|c| mermaid(&c["blockId"])))
+    {
         return;
     }
     let result: Result<Value, EditError> = match kind {
@@ -495,6 +511,56 @@ fn an_edit_removes_or_replaces_media_and_the_last_block() {
     );
 }
 
+/// An agent edit never changes a block's caption and never compares it (Epo
+/// 2026-10-22): an image whose caption someone changed after the inspect is
+/// still replaced by a figure, and the figure keeps that caption and the
+/// image's width over the caption the agent wrote. Fails if a rewrite takes
+/// the agent's caption or loses the width.
+#[test]
+fn an_image_rewrite_keeps_the_caption_someone_changed_since_the_inspect() {
+    let doc = common::doc(
+        &slate_yjs::state_from_value(
+            &[json!({
+                "assetId": "ea_1", "caption": [{ "text": "Old" }], "children": [{ "text": "" }],
+                "id": "i1", "type": "img", "width": "40%",
+            })],
+            1,
+        ),
+        2,
+    );
+    let inspected = edit::inspect_material(&doc.transact()).unwrap();
+    let image = {
+        let txn = doc.transact();
+        let root = plate::content_root(&txn).unwrap();
+        match &plate::insert_delta(&root).unwrap()[0].insert {
+            plate::Insert::Element(branch) => XmlTextRef::from(*branch),
+            plate::Insert::Text(_) => panic!("not a block"),
+        }
+    };
+    let retitled: Any = serde_json::from_value(json!([{ "text": "New" }])).unwrap();
+    image.insert_attribute(&mut doc.transact_mut(), "caption", retitled);
+    let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+    let figure = json!({
+        "assetId": "figure:fig_1", "caption": [{ "text": "The agent's" }],
+        "children": [{ "text": "" }], "id": "i2", "type": "img",
+    });
+    edit::apply_material_commands(
+        &mut doc.transact_mut(),
+        &root,
+        &[DocumentCommand::ReplaceBlock {
+            block_id: "i1".into(),
+            expected_text: inspected[0].text.clone(),
+            blocks: vec![figure],
+        }],
+    )
+    .unwrap();
+    let value = plate::value(&doc.transact()).unwrap();
+    assert_eq!(value[0]["id"], "i2");
+    assert_eq!(value[0]["assetId"], "figure:fig_1");
+    assert_eq!(value[0]["caption"], json!([{ "text": "New" }]));
+    assert_eq!(value[0]["width"], "40%");
+}
+
 #[test]
 fn inspect_matches_the_node_server() {
     let corpus = common::load("inspect");
@@ -540,10 +606,25 @@ fn inspect_matches_the_node_server() {
         }
         v
     };
+    // A Mermaid block's text is its source since 2026-10-22, its caption
+    // printed apart; Node printed the caption as its text.
+    let captioned = |mut v: Value| {
+        for block in v.as_array_mut().unwrap() {
+            if block["type"] == "mermaid" {
+                let caption = block.pointer("/properties/caption").cloned();
+                block["properties"] = json!({ "source": block["text"] });
+                block["text"] = caption.unwrap_or(json!(""));
+            }
+        }
+        v
+    };
     for case in corpus.as_array().unwrap() {
         let doc = common::doc(&common::bytes(&case["state"]), 99);
         let ours = serde_json::to_value(edit::inspect_material(&doc.transact()).unwrap()).unwrap();
-        if !same(&parse(joined(ours.clone())), &parse(case["blocks"].clone())) {
+        if !same(
+            &parse(captioned(joined(ours.clone()))),
+            &parse(case["blocks"].clone()),
+        ) {
             failures.push(format!("{}: {ours} != JS {}", case["name"], case["blocks"]));
         }
     }

@@ -229,9 +229,35 @@ fn shown_text(node: &Value) -> (String, Vec<(usize, usize)>) {
     (text, math)
 }
 
-/// `blockText`.
+/// `blockText`, except a Mermaid block reads as its source: what an edit of
+/// it changes and its expected text names. Its caption is the person's,
+/// kept and never compared (Epo 2026-10-22).
 fn block_text(node: &Value) -> String {
+    if js_string(node.get("type")) == "mermaid" {
+        return js_string(node.get("source"));
+    }
     shown_text(node).0
+}
+
+/// A block replaced by one of its own type is rewritten in place: the
+/// rewrite keeps its caption (a Mermaid block's caption element, another
+/// block's `caption`) and width, which agent edits never change (Epo
+/// 2026-10-22).
+fn keep_caption(old: &Value, new: &mut Value) {
+    let caption = if js_string(old.get("type")) == "mermaid" {
+        "children"
+    } else {
+        "caption"
+    };
+    let Some(new) = new.as_object_mut() else {
+        return;
+    };
+    for key in [caption, "width"] {
+        match old.get(key) {
+            Some(value) => new.insert(key.to_owned(), value.clone()),
+            None => new.remove(key),
+        };
+    }
 }
 
 /// An offset in a block's shown text as an offset in its text without math.
@@ -633,6 +659,13 @@ fn run_command(
             if has_media(&block) && node_string(&block)?.is_empty() {
                 return edit(UnsupportedOperation, "this block holds media, not text");
             }
+            // Its text is its caption, which an agent edit never changes.
+            if js_string(block.get("type")) == "mermaid" {
+                return edit(
+                    UnsupportedOperation,
+                    "a Mermaid block changes through replace_block with a ```mermaid fence; its caption stays",
+                );
+            }
             // Expected text matches the block as inspect shows it, math
             // included, but only plain text around the math can be replaced.
             let (shown, math) = shown_text(&block);
@@ -748,12 +781,18 @@ fn run_command(
             if let Some(id) = ids.iter().find(|id| exists(editor, id)) {
                 return edit(StaleTarget, format!("block id {id} already exists"));
             }
+            let mut blocks = blocks.clone();
+            if let [rewrite] = blocks.as_mut_slice()
+                && rewrite.get("type") == block.get("type")
+            {
+                keep_caption(&block, rewrite);
+            }
             let mut before: Vec<String> = editor.root.children[..index]
                 .iter()
                 .map(stable_id)
                 .collect();
             editor.remove_node(vec![index])?;
-            editor.insert_nodes(vec![index], blocks.clone())?;
+            editor.insert_nodes(vec![index], blocks)?;
             // An insert after the replaced id later in this call follows the
             // replacement.
             before.extend(ids);
@@ -960,10 +999,12 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                     .unwrap_or_default();
                 out.properties = props(vec![("block", printed)]);
             }
-            if kind == "mermaid"
-                && let Some(source) = block.get("source").and_then(Value::as_str)
-            {
-                out.properties = props(vec![("source", source.to_owned())]);
+            // A Mermaid block's text is its source; its caption shows apart.
+            if kind == "mermaid" {
+                let caption = node_string(block)?;
+                if !caption.is_empty() {
+                    out.properties = props(vec![("caption", caption)]);
+                }
             }
             if kind == "html_embed"
                 && let Some(caption) = block.get("caption").and_then(Value::as_str)

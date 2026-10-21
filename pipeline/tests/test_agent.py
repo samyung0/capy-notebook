@@ -2729,8 +2729,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
                     {
                         "id": "m1",
                         "type": "mermaid",
-                        "text": "",
-                        "properties": {"source": "graph TD"},
+                        "text": "graph TD",
+                        "properties": {"caption": "Tide flow"},
                     },
                     {
                         "id": "r1",
@@ -2784,7 +2784,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
     text = material.text()
     assert "[b1] (p) hello" in text
     assert "    [qq1] (quiz_question) Why?" in text
-    assert "source: graph TD" in text
+    # A Mermaid block reads as its source, its caption apart (Epo 2026-10-22).
+    assert "[m1] (mermaid) graph TD\n    caption: Tide flow" in text
     assert "embedded quiz material id=mat_q: inspect it as kind material" in text
     assert "embedded flashcards reference, not yet created" in text
 

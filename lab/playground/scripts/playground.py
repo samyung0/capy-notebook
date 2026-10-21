@@ -626,7 +626,8 @@ def inspected(record: dict[str, Any]) -> list[dict[str, Any]]:
             for c in record["cards"]
         ]
     if kind in ("mindmap", "diagram"):
-        return [{"id": "source", "type": "mermaid", "text": "", "properties": {"source": record["content"]}}]
+        # The block's text is its source, which a rewrite expects (Epo 2026-10-22).
+        return [{"id": "source", "type": "mermaid", "text": record["content"]}]
     if "blocks" not in record:
         record["blocks"] = new_blocks(record, record["content"])
     return [
@@ -685,9 +686,7 @@ def read_locally(args: dict[str, Any], state: dict[str, Any]):
     end = min(start + min(12, int(args.get("count") or 4)), len(targets))
     if start >= end:
         return tools._result("No passages at that position.")
-    text = "\n\n".join(
-        t["text"] or t.get("properties", {}).get("source", "") for t in targets[start:end]
-    )
+    text = "\n\n".join(t["text"] for t in targets[start:end])
     return tools._result(text + (f"\n\n(next start = {end})" if end < len(targets) else ""))
 
 
@@ -718,6 +717,8 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
         # replace_block of the one mermaid block, from a ```mermaid fence.
         if command.get("block_id") != "source":
             return f"{where}.block_id: no {command.get('block_id')} in this {kind}"
+        if command["expected_text"].strip() != draft["content"].strip():
+            return f"{where}.expected_text: the source now reads: {draft['content'][:2000]}"
         # The gateway refuses anything beside the one fence (review r1 M1).
         markdown = command["markdown"].strip()
         fence = FENCE.fullmatch(markdown)

@@ -2039,8 +2039,6 @@ def _render_inspection(
             lines.append(
                 f"    [{child.get('id')}] ({child.get('type')}) {child.get('text') or ''}"
             )
-        if props.get("source") is not None:
-            lines.append(f"    source: {props['source']}")
         if props.get("block") is not None:
             lines.append(f"    block: {_figure_view(str(props['block']))}")
         if props.get("caption"):

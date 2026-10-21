@@ -7634,7 +7634,8 @@ async fn two_writers_type_in_one_mermaid_source_and_an_agent_replaces_it() {
     assert!(a.settle(|c| c.source() == merged).await, "{}", a.source());
     assert!(b.settle(|c| c.source() == merged).await, "{}", b.source());
 
-    // The agent's ```mermaid fence, converted, replaces the block whole.
+    // The agent's ```mermaid fence, converted, replaces the block whole,
+    // expecting the source both typed (Epo 2026-10-22).
     let rewritten = "flowchart LR\n  A --> B --> C";
     let operation = format!("op_{material}");
     let edit = serde_json::json!({
@@ -7642,7 +7643,7 @@ async fn two_writers_type_in_one_mermaid_source_and_an_agent_replaces_it() {
         "commands": [{
             "type": "replace_block",
             "blockId": "d1",
-            "expectedText": "",
+            "expectedText": merged,
             "blocks": [{
                 "children": [{ "children": [{ "text": "" }], "type": "mermaid_caption" }],
                 "id": "d2",

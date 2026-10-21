@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use common::AdmitBytes;
-use notes::edit::{self, DocumentCommand};
+use notes::edit::{self, DocumentCommand, EditError, EditErrorCode};
 use notes::limits::{Admission, LimitCode, MAX_CONTENT_BYTES, Refusal, Validator};
 use notes::{plate, slate_yjs};
 use serde_json::{Value, json};
@@ -303,7 +303,7 @@ fn a_replaced_mermaid_block_holds_its_source_as_a_text() {
         &root,
         &[DocumentCommand::ReplaceBlock {
             block_id: "d1".into(),
-            expected_text: String::new(),
+            expected_text: SOURCE.into(),
             blocks: vec![next],
         }],
     )
@@ -313,6 +313,114 @@ fn a_replaced_mermaid_block_holds_its_source_as_a_text() {
     text.insert(&mut room.transact_mut(), 0, "%% typed\n");
     assert_eq!(projected_source(&room), "%% typed\nflowchart LR\n  A --> C");
     notes::material::assert_canonical(&plate::value(&room.transact()).unwrap(), "diagram").unwrap();
+}
+
+/// A captioned, resized diagram block.
+fn captioned(caption: &str) -> Value {
+    let mut block = mermaid(SOURCE);
+    block["children"][0]["children"][0]["text"] = json!(caption);
+    block["width"] = json!("60%");
+    block
+}
+
+/// The caption element of the Mermaid block at `index`.
+fn caption(doc: &Doc, index: usize) -> XmlTextRef {
+    let element = block(doc, index);
+    let _txn = doc.transact();
+    match &plate::insert_delta(element.as_ref()).unwrap()[0].insert {
+        plate::Insert::Element(branch) => XmlTextRef::from(*branch),
+        plate::Insert::Text(_) => panic!("no caption element"),
+    }
+}
+
+/// The agent's rewrite of block d1, expecting `expected`.
+fn rewrite(room: &Doc, expected: &str) -> Result<edit::EditOutcome, EditError> {
+    let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+    let mut next = mermaid("flowchart LR\n  A --> C");
+    next["id"] = json!("d2");
+    edit::apply_material_commands(
+        &mut room.transact_mut(),
+        &root,
+        &[DocumentCommand::ReplaceBlock {
+            block_id: "d1".into(),
+            expected_text: expected.into(),
+            blocks: vec![next],
+        }],
+    )
+}
+
+/// A diagram rewrite checks the source the agent inspected, never the
+/// caption (Epo 2026-10-22): inspect shows the source as the block's text
+/// and the caption apart, and typing in the source since makes the rewrite
+/// stale, with the source as it reads now. Fails if the expected text is the
+/// caption again.
+#[test]
+fn a_diagram_rewrite_is_stale_once_its_source_changed_since_the_inspect() {
+    let room = room(&[captioned("Cell cycle")]);
+    let inspected = edit::inspect_material(&room.transact()).unwrap();
+    assert_eq!(inspected[0].text, SOURCE);
+    assert_eq!(
+        inspected[0].properties.as_ref().unwrap()["caption"],
+        "Cell cycle"
+    );
+    let text = source(&room, 0);
+    text.insert(&mut room.transact_mut(), 0, "%% typed\n");
+    let typed = format!("%% typed\n{SOURCE}");
+    match rewrite(&room, &inspected[0].text) {
+        Err(EditError::Edit {
+            code: EditErrorCode::StaleTarget,
+            details: Some(details),
+            ..
+        }) => assert_eq!(details["block"]["text"], typed),
+        other => panic!("{other:?}"),
+    }
+    assert_eq!(projected_source(&room), typed);
+}
+
+/// A diagram rewrite keeps the block's caption and width (Epo 2026-10-22),
+/// the caption as someone changed it since the inspect, which the rewrite
+/// never compares. Fails if the rewrite drops either or compares the
+/// caption.
+#[test]
+fn a_diagram_rewrite_keeps_the_caption_and_width() {
+    let room = room(&[captioned("Cell cycle")]);
+    let inspected = edit::inspect_material(&room.transact()).unwrap();
+    let retitled = caption(&room, 0);
+    retitled.insert(&mut room.transact_mut(), 0, "The ");
+    // replace_text would type into the caption: refused.
+    let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+    let typed = edit::apply_material_commands(
+        &mut room.transact_mut(),
+        &root,
+        &[DocumentCommand::ReplaceText {
+            block_id: Some("d1".into()),
+            expected_text: "Cell".into(),
+            text: "Cat".into(),
+        }],
+    );
+    assert!(
+        matches!(
+            &typed,
+            Err(EditError::Edit {
+                code: EditErrorCode::UnsupportedOperation,
+                ..
+            })
+        ),
+        "{typed:?}"
+    );
+    rewrite(&room, &inspected[0].text).unwrap();
+    let value = plate::value(&room.transact()).unwrap();
+    assert_eq!(value.len(), 1);
+    let block = &value[0];
+    assert_eq!(block["id"], "d2");
+    assert_eq!(block["source"], "flowchart LR\n  A --> C");
+    assert_eq!(block["children"][0]["type"], "mermaid_caption");
+    assert_eq!(
+        block["children"][0]["children"][0]["text"],
+        "The Cell cycle"
+    );
+    assert_eq!(block["width"], "60%");
+    notes::material::assert_canonical(&value, "diagram").unwrap();
 }
 
 /// The store requires a `mermaid` block's `source` (rust-core REVIEW5 R2b's
