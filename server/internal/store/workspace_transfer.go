@@ -105,6 +105,12 @@ func (s *Store) TransferWorkspace(
 		workspaceID, actorID); err != nil {
 		return Workspace{}, err
 	}
+	// Invites were the old owner's; the new owner starts with none pending
+	// (human authorization, 2026-10-19 10b).
+	if _, err := tx.Exec(ctx, `UPDATE workspace_invites SET revoked_at=now()
+		WHERE workspace_id=$1 AND accepted_at IS NULL AND revoked_at IS NULL`, workspaceID); err != nil {
+		return Workspace{}, err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, err

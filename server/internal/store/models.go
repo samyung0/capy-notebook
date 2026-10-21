@@ -31,11 +31,42 @@ type User struct {
 	// ChatSteps is how much of a turn's tool work the chat shows.
 	ChatSteps string `json:"chatSteps" enum:"normal,verbose"`
 	// ChatSendKey is the key that sends a chat message; the other adds a line.
-	ChatSendKey        string             `json:"chatSendKey" enum:"enter,shift_enter"`
+	ChatSendKey string `json:"chatSendKey" enum:"enter,shift_enter"`
+	// Customization is the look last synced from one of the user's devices;
+	// nil until they first press Sync.
+	Customization      *Customization     `json:"customization,omitempty"`
 	ChatModel          models.Ref         `json:"chatModel"`
 	EditorModel        models.Ref         `json:"editorModel"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
+}
+
+// Customization is how the app looks for one account: the style, the theme
+// and the painted page frame (openwiki/frontend/appearance.md). Devices keep
+// it locally; Sync stores it here for the user's other devices. Every field is
+// required and bounded, and unknown fields are refused, so a stored value is
+// always one the app can apply.
+type Customization struct {
+	Style     string    `json:"style" enum:"classroom,notion"`
+	Theme     string    `json:"theme" enum:"latte,frappe,mocha"`
+	PageFrame PageFrame `json:"pageFrame"`
+}
+
+// PageFrame is the paint behind the page panel: a pattern drawn in a colour
+// preset or in up to three custom colours, each a point on the hue (x) and
+// saturation (y) field.
+type PageFrame struct {
+	Pattern  string           `json:"pattern" enum:"none,arc,mesh,glow,painted,waves,contours"`
+	Colours  string           `json:"colours" enum:"dusk,sea,meadow,rose,sunset,wheat,mist,custom"`
+	Dots     []PageFrameColor `json:"dots" minItems:"1" maxItems:"3"`
+	Strength float64          `json:"strength" minimum:"0" maximum:"1"`
+	Grain    float64          `json:"grain" minimum:"0" maximum:"1"`
+}
+
+// PageFrameColor is one custom colour as a point on the colour field.
+type PageFrameColor struct {
+	X float64 `json:"x" minimum:"0" maximum:"1"`
+	Y float64 `json:"y" minimum:"0" maximum:"1"`
 }
 
 // StudyPreferences are the learner's defaults for what the agent builds
@@ -172,6 +203,10 @@ type File struct {
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
+	// ErrorID is a failed file's error id for the Indexing tab's Failed files:
+	// the trace of the ingest attempt that failed it (migration 0105). Only the
+	// workspace file list sends it, and only to the owner and editors.
+	ErrorID string `json:"errorId,omitempty"`
 	// WorkspaceName and LostAccess: owned-list rows only (ListOwnedFiles).
 	WorkspaceName string `json:"workspaceName,omitempty"`
 	LostAccess    bool   `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
@@ -663,6 +698,22 @@ type FileChange struct {
 	Kind         FileKind  `json:"kind"`
 	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
 	LastEditedAt time.Time `json:"lastEditedAt"`
+	// ErrorID is a failed row's error id: the trace id of its failed attempt
+	// (migration 0105), so a reported failure can be traced; the failure's
+	// text stays hidden. Absent on other rows and when none was recorded.
+	ErrorID string `json:"errorId,omitempty"`
+}
+
+// NoteChange is one workspace note in the same list: its content is ahead of
+// its index. waiting: dirty, indexed automatically at its threshold while auto
+// process is on; queued and processing: its index job; failed: parked after
+// its failed jobs until its next edit or the owner's Process.
+type NoteChange struct {
+	MaterialID   string    `json:"materialId"`
+	Title        string    `json:"title"`
+	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
+	LastEditedAt time.Time `json:"lastEditedAt"`
+	ErrorID      string    `json:"errorId,omitempty"` // as FileChange.ErrorID
 }
 
 type WorkspaceStats struct {
@@ -672,11 +723,14 @@ type WorkspaceStats struct {
 	// FileChanges lists source files with unprocessed saved edits, oldest
 	// edit first, including ones queued or processing.
 	FileChanges []FileChange `json:"fileChanges" nullable:"false"`
-	// PendingNotes counts workspace notes whose index is behind their content.
-	PendingNotes int `json:"pendingNotes"`
-	Chapters     int `json:"chapters"`
-	Files        int `json:"files"`
-	Quizzes      int `json:"quizzes"`
-	Attempts     int `json:"attempts"`
-	AvgScore     int `json:"avgScore"`
+	// NoteChanges lists workspace notes whose index is behind their content,
+	// work in flight first, then oldest edit, at most the owner's files per
+	// workspace; MoreNoteChanges counts the notes past that cap.
+	NoteChanges     []NoteChange `json:"noteChanges" nullable:"false"`
+	MoreNoteChanges int          `json:"moreNoteChanges"`
+	Chapters        int          `json:"chapters"`
+	Files           int          `json:"files"`
+	Quizzes         int          `json:"quizzes"`
+	Attempts        int          `json:"attempts"`
+	AvgScore        int          `json:"avgScore"`
 }

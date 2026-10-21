@@ -26,8 +26,6 @@ PARSER_TOKEN.
 from __future__ import annotations
 
 import asyncio
-import ctypes
-import gc
 import hashlib
 import hmac
 import io
@@ -65,7 +63,7 @@ from odl.document import (
 )
 from odl.elements import TooManyElements, check_office, check_pdf
 from odl.java import JavaKilled, JavaTimeout
-from odl.memory import out_of_memory
+from odl.memory import out_of_memory, release_memory
 
 try:
     import resource
@@ -340,23 +338,6 @@ def run_document(document: Document) -> dict[str, Any]:
     return result
 
 
-def _release_memory() -> None:
-    """Hand the heap a finished unit of work freed back to the kernel.
-
-    glibc keeps freed arenas (about 0.8 GiB after a large document) otherwise,
-    and MuPDF's store keeps decoded images and fonts (up to 256 MiB) of
-    documents already closed.
-    """
-    import pymupdf
-
-    pymupdf.TOOLS.store_shrink(100)
-    gc.collect()
-    try:
-        ctypes.CDLL("libc.so.6").malloc_trim(0)
-    except (OSError, AttributeError):
-        pass  # Not glibc (macOS development).
-
-
 def _set_oom_score_adj(value: int) -> None:
     try:
         Path("/proc/self/oom_score_adj").write_text(str(value), encoding="ascii")
@@ -456,7 +437,7 @@ def _parse_worker_main(
             _send_error(responses, exc)
         finally:
             document = result = None
-            _release_memory()
+            release_memory()
 
 
 # Child errors the API acts on, by name; any other arrives as a RuntimeError

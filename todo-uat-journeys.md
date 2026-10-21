@@ -262,10 +262,10 @@ note indexing entirely uncovered.
      content row is gone.
   3. **Auto process off (Indexing tab), then edit.** After 75 s:
      - the note is dirty and has no job;
-     - `pendingNotes = 1`;
+     - the stats' `noteChanges` list the note as `waiting`;
      - a scripted `search_workspace` still finds the old text.
 
-     Turn it back on: indexed within 60 s, `pendingNotes = 0`, and search finds
+     Turn it back on: indexed within 60 s, gone from `noteChanges`, and search finds
      the new text.
   4. **Trash:** search drops the note; rows and charge stay. **Purge:** alias,
      content, chunks and vectors are gone.
@@ -346,13 +346,13 @@ note indexing entirely uncovered.
       assert an `epoch_reset` incident.
 - Also missing:
   - the refusal journey never settles its republication spend;
-  - the Indexing tab's `fileChanges` / `pendingNotes` are never asserted.
+  - the Indexing tab's `fileChanges` / `noteChanges` are never asserted.
 - **Budget:** J1–J4 together add 35–40 min, J5 another 12–15. Run J2–J5
   under their own `--grep` dispatch, or raise `globalTimeout`.
 - Doc fixes beyond the chips:
   - `plate-editor.md`: the pending-projection idle threshold is 30 s, not 5 s.
-  - `agentic-retrieval.md` says worker and reaper parks count in
-    `pendingNotes`. Today they don't, because admission already cleared the
+  - `agentic-retrieval.md` says worker and reaper parks are listed in
+    `noteChanges`. Today they don't, because admission already cleared the
     dirty mark. The release trigger in the fix plan makes the doc true, so fix
     the code, not the doc.
 
@@ -449,8 +449,8 @@ fixed yet.** The fix order and open questions are in "Fix plan" below.
      failure keeps the old index.
 2. **Note indexing, migration:** a trigger on `jobs` releases the note when its
    index job ends:
-   - failed: `index_error` set, and the note stays dirty and counted in
-     `pendingNotes`;
+   - failed: `index_error` set, and the note stays dirty and listed in
+     `noteChanges` as failed;
    - done: job and error cleared.
 
    Then delete the redundant Python clears. Go tests: `cancel_pipeline_jobs`,
@@ -498,7 +498,7 @@ fixed yet.** The fix order and open questions are in "Fix plan" below.
 
 **Questions for Epo:**
 1. Recover the 181 UAT notes, or delete them, or leave them?
-2. Should parked notes count in `pendingNotes` (recommended, per the 2026-09-18
+2. Should parked notes be listed in `noteChanges` (recommended, per the 2026-09-18
    decision)?
 3. Notes Process: fix the doc (recommended), or add a Process?
 4. Notes parked by transient failures: wait for their next edit, or be

@@ -7,6 +7,7 @@ import {
 } from '@/api/hooks';
 import type {
   FileChange,
+  NoteChange,
   SourceFile,
   Workspace,
   WorkspaceStats,
@@ -18,13 +19,18 @@ import {
   UsageLegend,
 } from '@/components/app/UsageMeter';
 import { Button } from '@/components/ui/Button';
+import { ErrorId } from '@/components/ui/ErrorId';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Skeleton, SkeletonList, Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Switch } from '@/components/ui/Switch';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
-import { fileIconName } from '@/lib/fileIcons';
+import {
+  type FileIconName,
+  fileIconName,
+  materialIconName,
+} from '@/lib/fileIcons';
 import { userColorPair } from '@/lib/userColor';
 import { AddSourceDialog } from './AddSourceDialog';
 import { retryFailedFile } from './retryProcessing';
@@ -41,7 +47,11 @@ const STATE_ORDER: Record<FileChange['state'], number> = {
   waiting: 2,
 };
 
-function ChangeStatus({ change }: { change: FileChange }) {
+function ChangeStatus({
+  change,
+}: {
+  change: Pick<FileChange, 'lastEditedAt' | 'state'>;
+}) {
   switch (change.state) {
     case 'processing':
       return (
@@ -76,16 +86,28 @@ function ChangeStatus({ change }: { change: FileChange }) {
   }
 }
 
+/** One file or note in the changes list. */
+type ChangeRow = Pick<FileChange, 'errorId' | 'lastEditedAt' | 'state'> & {
+  icon: FileIconName;
+  id: string;
+  name: string;
+  note: boolean;
+};
+
 function FileChanges({
   changes,
+  moreNotes,
+  noteChanges,
   owner,
-  pendingNotes,
   workspaceId,
 }: {
   changes: FileChange[];
-  /** Only the owner processes or cancels; editors see the list. */
+  /** Notes past the list's cap, not listed. */
+  moreNotes: number;
+  noteChanges: NoteChange[];
+  /** Only the owner processes or cancels; editors see the same rows and
+   * status without any action (Epo 2026-10-21). */
   owner: boolean;
-  pendingNotes: number;
   workspaceId: string;
 }) {
   const { mutate: process, isPending: processing } =
@@ -93,12 +115,36 @@ function FileChanges({
   const { mutate: cancel, isPending: cancelling } =
     useCancelFileChanges(workspaceId);
   const busy = processing || cancelling;
-  const sorted = [...changes].sort(
-    (a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]
+  // Notes are listed like files and processed now the same way (Epo
+  // 2026-10-21); a queued note job has no Cancel.
+  const rows: ChangeRow[] = [
+    ...changes.map((change) => ({
+      errorId: change.errorId,
+      icon: fileIconName(change),
+      id: change.fileId,
+      lastEditedAt: change.lastEditedAt,
+      name: change.name,
+      note: false,
+      state: change.state,
+    })),
+    ...noteChanges.map((change) => ({
+      errorId: change.errorId,
+      icon: materialIconName('note'),
+      id: change.materialId,
+      lastEditedAt: change.lastEditedAt,
+      name: change.title,
+      note: true,
+      state: change.state,
+    })),
+  ].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+  const processable = rows.filter(
+    (row) => row.state === 'waiting' || row.state === 'failed'
   );
-  const processable = sorted
-    .filter((change) => change.state === 'waiting' || change.state === 'failed')
-    .map((change) => change.fileId);
+  const processRows = (targets: ChangeRow[]) =>
+    process({
+      fileIds: targets.filter((row) => !row.note).map((row) => row.id),
+      noteIds: targets.filter((row) => row.note).map((row) => row.id),
+    });
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
@@ -106,7 +152,7 @@ function FileChanges({
         {owner && processable.length > 0 && (
           <Button
             disabled={busy}
-            onClick={() => process(processable)}
+            onClick={() => processRows(processable)}
             size="sm"
           >
             {m.workspace_change_process_all()}
@@ -116,61 +162,70 @@ function FileChanges({
       <p className="t-meta mt-1 text-fg-muted">
         {m.workspace_file_changes_hint()}
       </p>
-      {sorted.length ? (
+      {rows.length ? (
         <ul className="m-0 mt-3 flex list-none flex-col p-0">
-          {sorted.map((change) => (
+          {rows.map((row) => (
             <li
-              className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex"
-              data-state={change.state}
-              key={change.fileId}
+              className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex sm:flex-wrap"
+              data-state={row.state}
+              key={row.id}
             >
-              <FileIcon className="size-3.75" name={fileIconName(change)} />
-              <span className="min-w-0 truncate sm:flex-1">{change.name}</span>
+              <FileIcon className="size-3.75" name={row.icon} />
+              <span className="min-w-0 truncate sm:flex-1">{row.name}</span>
               <span className="t-meta col-start-2 flex shrink-0 -translate-x-0.5 items-center gap-1.5 text-fg-muted">
-                <ChangeStatus change={change} />
+                <ChangeStatus change={row} />
               </span>
-              {owner && change.state === 'queued' && (
+              {owner && !row.note && row.state === 'queued' && (
                 <Button
                   className="col-start-3 row-span-2 row-start-1"
                   disabled={busy}
-                  onClick={() => cancel(change.fileId)}
+                  onClick={() => cancel(row.id)}
                   size="sm"
                   variant="outline"
                 >
                   {m.action_cancel()}
                 </Button>
               )}
-              {owner &&
-                (change.state === 'waiting' || change.state === 'failed') && (
-                  <Button
-                    className="col-start-3 row-span-2 row-start-1"
-                    disabled={busy}
-                    onClick={() => process([change.fileId])}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {change.state === 'failed'
-                      ? m.error_action_retry()
-                      : m.workspace_change_process()}
-                  </Button>
-                )}
+              {owner && (row.state === 'waiting' || row.state === 'failed') && (
+                <Button
+                  className="col-start-3 row-span-2 row-start-1"
+                  disabled={busy}
+                  onClick={() => processRows([row])}
+                  size="sm"
+                  variant="outline"
+                >
+                  {row.state === 'failed'
+                    ? m.error_action_retry()
+                    : m.workspace_change_process()}
+                </Button>
+              )}
+              {/* A failed row's error id, on its own line under the row and
+                  aligned with the name; the failure's text stays hidden. */}
+              {row.errorId && (
+                <ErrorId
+                  className="col-span-2 col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
+                  id={row.errorId}
+                />
+              )}
             </li>
           ))}
         </ul>
       ) : (
         <p className="mt-3 text-fg-muted">{m.workspace_file_changes_empty()}</p>
       )}
-      <div className="mt-3 flex justify-between border-line border-t pt-3">
-        <span>{m.workspace_pending_notes()}</span>
-        <span>{pendingNotes}</span>
-      </div>
+      {moreNotes > 0 && (
+        <p className="t-meta mt-2 text-fg-muted">
+          {m.workspace_note_changes_more({ count: String(moreNotes) })}
+        </p>
+      )}
     </div>
   );
 }
 
-/** Files whose processing failed. Automatic processing skips them; the owner
- * retries one through the upload dialog's Retry processing, or in one click
- * when it is still indexed (a part missing, parts design Q8). */
+/** Files whose processing failed, each with its error id. Automatic
+ * processing skips them; the owner retries one through the upload dialog's
+ * Retry processing, or in one click when it is still indexed (a part missing,
+ * parts design Q8). */
 function FailedFiles({
   owner,
   workspaceId,
@@ -193,7 +248,7 @@ function FailedFiles({
       <ul className="m-0 mt-3 flex list-none flex-col p-0">
         {failed.map((file) => (
           <li
-            className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex"
+            className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex sm:flex-wrap"
             key={file.id}
           >
             <FileIcon className="size-3.75" name={fileIconName(file)} />
@@ -216,6 +271,12 @@ function FailedFiles({
               >
                 {m.error_action_retry()}
               </Button>
+            )}
+            {file.errorId && (
+              <ErrorId
+                className="col-span-2 col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
+                id={file.errorId}
+              />
             )}
           </li>
         ))}
@@ -253,8 +314,8 @@ function IndexingSkeleton() {
   );
 }
 
-/** The workspace settings Indexing tab: what is searchable, the file changes
- * still to process, and the automatic processing switch. */
+/** The workspace settings Indexing tab: which sources are searchable, the file
+ * and note changes still to process, and the automatic processing switch. */
 export function IndexingTab({
   error,
   stats,
@@ -313,16 +374,18 @@ export function IndexingTab({
       </div>
       <FileChanges
         changes={stats.fileChanges}
+        moreNotes={stats.moreNoteChanges}
+        noteChanges={stats.noteChanges}
         owner={workspace.isOwner}
-        pendingNotes={stats.pendingNotes}
         workspaceId={workspace.id}
       />
       <FailedFiles owner={workspace.isOwner} workspaceId={workspace.id} />
       <label className="flex items-center justify-between gap-5">
         <span className="font-medium">{m.workspace_auto_process()}</span>
+        {/* Owner-only, like the actions above; the server refuses editors. */}
         <Switch
           checked={workspace.autoProcess}
-          disabled={saving}
+          disabled={saving || !workspace.isOwner}
           onCheckedChange={(autoProcess) => {
             void update({ autoProcess, id: workspace.id }).catch(() => {});
           }}

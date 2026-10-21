@@ -39,10 +39,22 @@ const signIn = {
     if (!result.error) window.location.replace(redirectAfterAuth());
     return result;
   },
+  mfa: {
+    sendEmailCode: action('send-code'),
+    sendPhoneCode: action('send-code'),
+    verifyBackupCode: action('verify-code'),
+    verifyEmailCode: action('verify-code'),
+    verifyPhoneCode: action('verify-code'),
+    verifyTOTP: action('verify-code'),
+  },
   password: async () => {
     const result = await mockAuthAction('sign-in');
     signIn.status = result.status ?? 'complete';
     return result;
+  },
+  reset: async () => {
+    signIn.status = 'complete';
+    return { error: null };
   },
   resetPasswordEmailCode: {
     sendCode: action('send-code'),
@@ -57,6 +69,7 @@ const signIn = {
     return result;
   },
   status: 'complete',
+  supportedSecondFactors: [{ strategy: 'totp' }, { strategy: 'backup_code' }],
 };
 
 const signUp = {
@@ -69,6 +82,10 @@ const signUp = {
 };
 
 export const useAuth = () => ({ isLoaded: true, isSignedIn: false });
+// Clerk's hosted account page has no mock; the link stays on this origin.
+export const useClerk = () => ({
+  buildUserProfileUrl: () => '/__mock/auth/user-profile',
+});
 export const useSignIn = () => ({ signIn });
 export const useSignUp = () => ({ signUp });
 

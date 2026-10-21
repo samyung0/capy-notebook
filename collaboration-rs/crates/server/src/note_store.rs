@@ -773,15 +773,6 @@ pub async fn compact(
         )
         .await?;
     }
-    tx.execute(
-        "UPDATE agent_edit_inverses
-         SET undo_status='unavailable', undo_reason='compacted', inverse='[]'::jsonb,
-             guards='[]'::jsonb, inverse_bytes=0, updated_at=now()
-         WHERE resource_kind='material' AND resource_id=$1 AND undo_status='available'
-           AND step='edit'",
-        &[&material_id],
-    )
-    .await?;
     tx.commit().await?;
     Ok(Some((
         format!("material:{material_id}:schema:{next_schema}"),

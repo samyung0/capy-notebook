@@ -93,10 +93,23 @@ import (
 // and edited or created with edit_office_document, offered once the
 // office_building skill is read (Epo 2026-10-20); edit_document loses set_cell
 // and its replace_text takes notes and text sources only.
-// v33: edit_office_document creates Word files and edits their paragraphs,
-// lists, tables, text formatting and alignment; inspect_office_document reads
-// a Word file's paragraphs with their styles (Epo 2026-10-20).
-const ContractVersion = 33
+// v33: create_material, add_questions (a new quiz) and create_deck take
+// sources, a made-from line of plain strings, instead of an id scope;
+// search_workspace's file_ids take any workspace item (Epo 2026-10-21).
+// v34: the live Undo (Epo 2026-10-20): an edit receipt carries effect.undo
+// only when a loaded room holds the edit's Undo, and edit_document and
+// edit_office_document no longer promise one.
+// v35: edit_office_document inserts and deletes DOCX and PPTX paragraphs
+// (insert_paragraph, delete_paragraph), and a DOCX read names each
+// paragraph's style and lists the file's paragraph styles (Epo 2026-10-21).
+// v36: edit_office_document creates Word files; insert_paragraph's anchor is
+// optional (the body's end) and it takes a list; set_list, insert_table,
+// delete_table, format_text and set_alignment edit Word files; a DOCX read
+// marks lists, table cells, content controls and locked paragraphs and reads
+// headers, footers and notes after the body; a call applies at most 50
+// commands, 10,000 cells and 20 inserted paragraphs and returns the rest
+// unapplied by index (Epo 2026-10-21).
+const ContractVersion = 36
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -228,22 +241,20 @@ type ToolError struct {
 	Message string    `json:"message"`
 }
 
-// UndoStatus is the advisory availability of an edit's Undo action.
+// UndoStatus is the availability of a step's Undo: the server sends
+// available; the chat marks a refused step unavailable for the session.
 type UndoStatus string
 
 const (
 	UndoAvailable   UndoStatus = "available"
-	UndoUndone      UndoStatus = "undone"
 	UndoUnavailable UndoStatus = "unavailable"
-	UndoPending     UndoStatus = "pending"
 )
 
-// UndoRef points at the durable edit operation whose inverse the server holds.
-// The inverse payload itself never leaves the server.
+// UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
+// room holds its Yjs items while the step is live (Epo 2026-10-20).
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
-	Status      UndoStatus `json:"status" enum:"available,undone,unavailable,pending"`
-	Reason      string     `json:"reason,omitempty"`
+	Status      UndoStatus `json:"status" enum:"available,unavailable"`
 }
 
 // EffectOperation names what a mutation did to a resource.
@@ -259,7 +270,7 @@ const (
 
 // ResourceEffect is one durable mutation receipt as shown in chat and stored
 // on the assistant message. It carries identity and status only, never the
-// document content or an inverse payload.
+// document content.
 type ResourceEffect struct {
 	Operation   EffectOperation `json:"operation" enum:"created,edited,edit_undone,trashed,restored"`
 	Resource    ResourceRef     `json:"resource"`
@@ -393,14 +404,20 @@ func idList(desc string, min, max int) map[string]any {
 	return s
 }
 
-// scopeSchema is the optional source scope shared by material creation.
-func scopeSchema() map[string]any {
-	s := obj(map[string]any{
-		"file_ids":    idList("", 0, 0),
-		"chapter_ids": idList("", 0, 0),
-	})
-	s["description"] = "Source scope for the material. Omit or leave empty to use the current chat scope."
-	return s
+// sourcesSchema is the made-from line of whatever a create tool makes
+// (Epo 2026-10-21): plain strings, which Go stores as names. lead prefixes the
+// description.
+func sourcesSchema(lead string) map[string]any {
+	return map[string]any{
+		"type":     "array",
+		"maxItems": fieldlimits.MaterialSources,
+		"items":    map[string]any{"type": "string", "maxLength": fieldlimits.MaterialSource},
+		"description": fmt.Sprintf("%smade-from line: each source it is made from, named in words or by id: "+
+			"workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or "+
+			"outside sources such as a lecture, a handout or a web address. At most %d, each at most %d "+
+			"characters. An id or exact name of a workspace item is stored as that item's current name. "+
+			"Omit it to name none.", lead, fieldlimits.MaterialSources, fieldlimits.MaterialSource),
+	}
 }
 
 // resourceTarget is the tagged reference the trash and document tools take.
@@ -563,16 +580,17 @@ func officeCommandSchema() map[string]any {
 				"expected_text": map[string]any{"type": "string", "description": "Exact text to replace as inspect_office_document shows it; must occur once in the target."},
 				"text":          map[string]any{"type": "string", "description": "Plain replacement text; empty deletes the expected text."},
 			}, "target_id", "expected_text", "text"),
-			variant("insert_paragraph", "DOCX: add a paragraph to the document body.", map[string]any{
-				"after_id": after,
-				"text":     str("One paragraph's plain text, up to 5,000 characters, without line breaks."),
-				"style":    str(`A paragraph style id from inspect_office_document's styles, like "Heading1"; omit for the default style.`),
-				"list":     map[string]any{"type": "string", "enum": []string{"bullet", "numbered"}},
+			variant("insert_paragraph", "DOCX, PPTX: insert one paragraph right after after_id or right before before_id (at most one); DOCX paragraphs go in the document body, at its end with neither.", map[string]any{
+				"after_id":  str("The paragraph it follows, a target id from inspect_office_document."),
+				"before_id": str("The paragraph it precedes; the first paragraph's id inserts at the start."),
+				"text":      str("One paragraph's plain text, up to 5,000 characters, without line breaks."),
+				"style":     str("DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does."),
+				"list":      map[string]any{"type": "string", "enum": []string{"bullet", "numbered", "none"}, "description": "DOCX: start or end a list; omit to continue the paragraph before it."},
 			}, "text"),
-			variant("delete_paragraph", "DOCX: delete a paragraph.", map[string]any{
-				"id":            paragraph,
-				"expected_text": str("The paragraph's whole text as inspect_office_document shows it."),
-			}, "id", "expected_text"),
+			variant("delete_paragraph", "DOCX, PPTX: delete one paragraph, never its story's or shape's last.", map[string]any{
+				"target_id":     str("The paragraph's target id from inspect_office_document."),
+				"expected_text": map[string]any{"type": "string", "description": "The paragraph's whole text as inspect_office_document shows it."},
+			}, "target_id", "expected_text"),
 			variant("set_list", "DOCX: make paragraphs bulleted or numbered, or end their list.", map[string]any{
 				"ids":  map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Paragraph target ids."},
 				"list": map[string]any{"type": "string", "enum": []string{"bullet", "numbered", "none"}},
@@ -745,8 +763,9 @@ func Definitions() []Definition {
 			Retention:   RetainCitedPassages,
 			Description: "Search the learner's sources for passages matching one focused query.",
 			InputSchema: obj(map[string]any{
-				"query":    str(""),
-				"file_ids": idList("Restrict to these files. Omit to search the current scope.", 0, 0),
+				"query": str(""),
+				"file_ids": idList("Restrict to these workspace items (ids from list_sources); only source "+
+					"files and notes hold text to search. Omit to search the current scope.", 0, 0),
 			}, "query"),
 			UsesEmbedding:      true,
 			Concurrency:        "search",
@@ -882,7 +901,7 @@ func Definitions() []Definition {
 					"type":        "string",
 					"description": "note, mindmap or diagram only: markdown.",
 				},
-				"scope":       scopeSchema(),
+				"sources":     sourcesSchema("The "),
 				"chapter_id":  str("The chapter to file it in; omit to leave it unfiled."),
 				"excerpt_ids": excerptIDs("Library excerpts it was written from; they become its attribution."),
 			}, "kind"),
@@ -910,6 +929,7 @@ func Definitions() []Definition {
 			InputSchema: obj(quizPlace(map[string]any{
 				"title":      str("Instead of quiz_id: create a quiz with this title."),
 				"chapter_id": str("With title: the new quiz's chapter."),
+				"sources":    sourcesSchema("With title: the new quiz's "),
 				"questions": map[string]any{
 					"type": "array", "minItems": 1, "maxItems": 20, "items": questionSchema(),
 				},
@@ -958,6 +978,7 @@ func Definitions() []Definition {
 					}, "title", "brief"),
 				},
 				"chapter_id":  str("The chapter to file the deck in; omit to leave it unfiled."),
+				"sources":     sourcesSchema("The "),
 				"excerpt_ids": deckExcerpts(),
 			}, "title", "slides"),
 			Mutates:            true,
@@ -1016,9 +1037,9 @@ func Definitions() []Definition {
 			Retention: RetainFull,
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
-				"the whole call. Edits save directly, each with an Undo; replace_block rewrites a note " +
+				"the whole call. Edits save directly; replace_block rewrites a note " +
 				"block with formatting or math. Uploaded media and PDFs cannot be edited; a library " +
-				"figure placed in a note is removed only by the learner's Undo. Quiz questions are " +
+				"figure placed in a note is removed only by the learner. Quiz questions are " +
 				"added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
@@ -1081,7 +1102,7 @@ func Definitions() []Definition {
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
 				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
 				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
-				"only; the first page also lists the paragraph styles. " +
+				"only; the first page also lists the file's paragraph styles. " +
 				"PPTX: without slide, shapes with their target ids and text, count from start; " +
 				"with slide, that slide's shapes.",
 			InputSchema: obj(map[string]any{
@@ -1101,11 +1122,9 @@ func Definitions() []Definition {
 			Description: "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
-				"whole call. Edits save directly; a call can be undone from the chat only when all its " +
-				"commands are replace_text, set_range, rename_sheet, insert_rows or insert_columns. A call " +
-				"applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted paragraphs (DOCX); the " +
-				"commands past a limit come back unapplied, to send in another call. A call's commands are " +
-				"at most 256 KB; a larger call is refused.",
+				"whole call. Edits save directly. A call applies at most 50 commands, 10,000 cells " +
+				"(XLSX) and 20 inserted paragraphs; the commands past a limit come back unapplied, to " +
+				"send in another call. A call's commands are at most 256 KB; a larger call is refused.",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
 				"commands": map[string]any{

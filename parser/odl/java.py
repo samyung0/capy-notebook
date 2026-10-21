@@ -142,10 +142,15 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         blocked=frozenset({"setsid", "setpgid", "fork"}),
         read=(*READ, executable, *classpath, str(pdf)),
         write=(str(out_dir), "/dev/null"),
+        # Two malloc arenas, as LibreOffice gets (document.py): a JVM otherwise
+        # reserves 27-36 of them (4.9 GiB of address space, 2.8 GiB with two).
         env={
-            key: os.environ[key]
-            for key in ("PATH", "HOME", "LANG")
-            if key in os.environ
+            **{
+                key: os.environ[key]
+                for key in ("PATH", "HOME", "LANG")
+                if key in os.environ
+            },
+            "MALLOC_ARENA_MAX": "2",
         },
         timeout_s=timeout_s,
     )

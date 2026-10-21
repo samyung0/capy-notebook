@@ -133,6 +133,11 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_subscription_exists_body(),
         title: m.error_subscription_exists_title(),
       };
+    case 'checkout_starting':
+      return {
+        description: m.error_checkout_starting_body(),
+        title: m.error_checkout_starting_title(),
+      };
     case 'subscription_active':
       return {
         description: m.error_subscription_active_body(),

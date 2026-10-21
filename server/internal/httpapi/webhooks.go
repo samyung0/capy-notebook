@@ -9,10 +9,12 @@ import (
 	"strings"
 	"time"
 
+	clerk "github.com/clerk/clerk-sdk-go/v2"
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
 	svix "github.com/svix/svix-webhooks/go"
 
+	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -246,33 +248,21 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 	switch evt.Type {
 	case "user.created", "user.updated":
 		var wrapper struct {
-			ID             string  `json:"id"`
-			FirstName      *string `json:"first_name"`
-			LastName       *string `json:"last_name"`
-			EmailAddresses []struct {
-				EmailAddress string `json:"email_address"`
-			} `json:"email_addresses"`
-			ImageURL *string `json:"image_url"`
-			HasImage *bool   `json:"has_image"`
+			ID                    string                `json:"id"`
+			FirstName             *string               `json:"first_name"`
+			LastName              *string               `json:"last_name"`
+			Username              *string               `json:"username"`
+			PrimaryEmailAddressID *string               `json:"primary_email_address_id"`
+			EmailAddresses        []*clerk.EmailAddress `json:"email_addresses"`
+			ImageURL              *string               `json:"image_url"`
+			HasImage              *bool                 `json:"has_image"`
 		}
 		if err := json.Unmarshal(evt.Data, &wrapper); err != nil {
 			procErr = err
 			break
 		}
-		name := ""
-		if wrapper.FirstName != nil {
-			name = *wrapper.FirstName
-		}
-		if wrapper.LastName != nil {
-			if name != "" {
-				name += " "
-			}
-			name += *wrapper.LastName
-		}
-		email := ""
-		if len(wrapper.EmailAddresses) > 0 {
-			email = wrapper.EmailAddresses[0].EmailAddress
-		}
+		name := auth.ProfileName(wrapper.FirstName, wrapper.LastName, wrapper.Username)
+		email := auth.PrimaryVerifiedEmail(wrapper.PrimaryEmailAddressID, wrapper.EmailAddresses)
 		avatar := ""
 		if wrapper.ImageURL != nil && (wrapper.HasImage == nil || *wrapper.HasImage) {
 			avatar = *wrapper.ImageURL

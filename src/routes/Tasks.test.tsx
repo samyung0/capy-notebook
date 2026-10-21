@@ -15,7 +15,7 @@ vi.mock('@/api/hooks', () => ({
 }));
 vi.mock('@/components/app/layout', () => ({
   PageHeader: () => null,
-  PanelWithInvertedRadius: ({ children }: { children: ReactNode }) => children,
+  PagePanel: ({ children }: { children: ReactNode }) => children,
 }));
 const { default: Tasks } = await import('./Tasks');
 

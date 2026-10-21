@@ -22,6 +22,7 @@ from pipeline.retrieval import (
     contract,
     pending,
     scripted,
+    search,
     skills,
     tools,
 )
@@ -137,6 +138,7 @@ def _script_stream(responses: list[AssembledResponse]):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del model, call_purpose
         seen.append(
@@ -392,7 +394,7 @@ async def test_search_rejects_one_invalid_file_without_running_search(monkeypatc
     assert result.refused
     assert called["n"] == 0
     assert budget.embedding_calls == 0
-    assert "invalid or unavailable" in result.text()
+    assert 'No workspace item has the id "f_missing"' in result.text()
 
 
 async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
@@ -407,10 +409,40 @@ async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
     read = await tools._read_document({"file_id": "f_2"}, ctx)
 
     assert read.refused
-    assert read.text() == tools._INVALID_SCOPE
+    assert '"f_2" is outside the sources chosen for this chat' in read.text()
 
 
-async def test_create_material_persists_resolved_scope(monkeypatch):
+async def test_read_document_refuses_a_quiz_in_words(monkeypatch):
+    # A quiz is a scope item (Epo 2026-10-21) but holds no passages.
+    async def no_rows(**_kwargs):
+        return []
+
+    # Without the guard the read reaches this stub, not a database.
+    monkeypatch.setattr(tools.store, "read_file_range", no_rows)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {
+                "id": "mat_quiz",
+                "name": "Cells quiz",
+                "chapter_id": None,
+                "chunks": 0,
+                "kind": "material",
+                "material_kind": "quiz",
+            },
+        ],
+    }
+    read = await tools._read_document({"file_id": "mat_quiz"}, ctx)
+    assert read.refused
+    assert read.text() == (
+        "mat_quiz is a quiz, which has no passages to read; inspect_document reads it."
+    )
+
+
+async def test_create_material_sends_its_sources_as_written(monkeypatch):
+    # Sources are a made-from line Go resolves to names (Epo 2026-10-21): sent
+    # as written, with nothing indexed in the workspace and no library books.
     ctx = ToolContext(
         workspace_id="ws_1",
         user_id="u1",
@@ -418,8 +450,8 @@ async def test_create_material_persists_resolved_scope(monkeypatch):
         assistant_message_id="m_1",
     )
     ctx._scope_outline = {
-        "chapters": [{"id": "ch_1", "name": "Chapter one"}],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": "ch_1", "chunks": 1}],
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
     }
     monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
     monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
@@ -449,21 +481,65 @@ async def test_create_material_persists_resolved_scope(monkeypatch):
         return _Resp()
 
     monkeypatch.setattr(tools.requests, "post", _post)
+    sources = ["f_1", "Cells quiz", "Lecture 3, 14 Oct"]
     result = await tools._create_material(
         {
             "kind": "note",
             "content": "body",
-            "scope": {"chapter_ids": ["ch_1"]},
+            "sources": sources,
             "_tool_call_id": "call_1",
         },
         ctx,
     )
 
     assert not result.refused
-    assert seen["fileIds"] == ["f_1"]
-    assert seen["chapterIds"] == ["ch_1"]
+    assert seen["sources"] == sources
+    assert "fileIds" not in seen and "chapterIds" not in seen
     assert seen["assistantMessageId"] == "m_1"
     assert seen["toolCallId"] == "call_1"
+
+
+@pytest.mark.parametrize(
+    "status, code, told",
+    [
+        (403, "permission_denied", True),
+        (403, "account_suspended", True),
+        (404, "", False),
+    ],
+)
+async def test_a_write_refused_for_permission_tells_the_model_to_stop(
+    monkeypatch, status, code, told
+):
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+    )
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    class _Resp:
+        status_code = status
+
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
+        def json(self):
+            return (
+                {"code": code, "message": "refused"}
+                if code
+                else {"message": "not found"}
+            )
+
+    monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
+    result = await tools._create_material(
+        {"kind": "note", "content": "body", "_tool_call_id": "call_1"}, ctx
+    )
+
+    assert result.refused
+    assert (tools.NO_PERMISSION in agent._result_text(result, [])) is told
+    assert tools.NO_PERMISSION not in result.error_payload()["message"]
 
 
 async def test_create_material_clamps_model_title(monkeypatch):
@@ -516,28 +592,6 @@ async def test_create_material_clamps_model_title(monkeypatch):
     )
 
     assert len(seen["title"]) == tools.MATERIAL_TITLE_MAX
-
-
-async def test_create_material_rejects_scope_without_indexed_content(monkeypatch):
-    ctx = ToolContext(
-        workspace_id="ws_1",
-        user_id="u1",
-        operations=frozenset(contract.OPERATIONS),
-        assistant_message_id="m_1",
-    )
-    ctx._scope_outline = {
-        "chapters": [],
-        "files": [{"id": "f_1", "name": "one.pdf", "chapter_id": None, "chunks": 0}],
-    }
-    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
-    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
-
-    result = await tools._create_material(
-        {"kind": "note", "_tool_call_id": "call_1"}, ctx
-    )
-
-    assert result.refused
-    assert "no indexed content" in result.text()
 
 
 async def test_create_material_refuses_an_unknown_chapter_before_sending(monkeypatch):
@@ -861,6 +915,7 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -1243,6 +1298,7 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, on_event
         purposes.append(call_purpose)
@@ -1642,6 +1698,7 @@ async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, call_purpose
         calls["n"] += 1
@@ -1681,6 +1738,7 @@ async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, on_event, call_purpose
         calls["n"] += 1
@@ -1717,6 +1775,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -1752,8 +1811,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
     assert not any(e.get("type") == "error" for e in events)
 
 
-@pytest.mark.asyncio
-async def test_relay_stops_sse_and_waits_for_agent():
+async def test_a_go_hang_up_marks_the_client_and_lets_the_running_call_finish():
     from pipeline.retrieve import service as retrieve_service
 
     released = asyncio.Event()
@@ -1765,33 +1823,523 @@ async def test_relay_stops_sse_and_waits_for_agent():
         finished["n"] += 1
         yield {"type": "done"}
 
-    class _Req:
-        def __init__(self) -> None:
-            self.gone = False
-
-        async def is_disconnected(self) -> bool:
-            return self.gone
-
-    req = _Req()
     client = agent.ClientDrop()
-    chunks: list[str] = []
+    first = asyncio.Event()
 
     async def _consume() -> None:
-        async for chunk in retrieve_service._relay_until_disconnect(
-            req, _agen(), client
-        ):
-            chunks.append(chunk)
-            req.gone = True
+        async for _chunk in retrieve_service._relay_until_disconnect(_agen(), client):
+            first.set()
 
     task = asyncio.create_task(_consume())
-    await asyncio.sleep(0.05)
-    assert finished["n"] == 0
-    assert client.dropped
+    await first.wait()
+    task.cancel()  # Starlette cancels the response when Go hangs up
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert client.dropped and finished["n"] == 0
     released.set()
-    await task
+    with pytest.raises(asyncio.CancelledError):
+        await task
     assert finished["n"] == 1
-    assert any("planning" in c for c in chunks)
-    assert not any("done" in c for c in chunks)
+
+
+# ------------------------------------- turn saves, however it ends (Epo 2026-10-21)
+
+_LEAKED_TOOL_CALL = (
+    _answer(("Safe prefix", []))
+    + '<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="create_material">'
+)
+
+
+def _listing_then(monkeypatch, second) -> None:
+    """A turn whose first response lists sources (call c1) and whose second is
+    ``second``: a response, or an exception the provider call raises."""
+    responses = [_assembled("", [_call("list_sources", "{}", "c1")]), second]
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        reply = responses.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        if on_event is not None and reply.text:
+            on_event(StreamEvent(kind="text", text=reply.text))
+        return reply
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+
+
+def _saved_listing(event: dict) -> None:
+    assert [b["callId"] for b in event["activity"] if b["kind"] == "tool"] == ["c1"]
+    assert [n["text"] for n in event["toolEvidence"]["tools"]] == ["ran list_sources"]
+
+
+async def test_a_client_drop_after_a_tool_leaves_a_checkpoint_with_it(monkeypatch):
+    client = agent.ClientDrop()
+    _listing_then(monkeypatch, _assembled(_answer(("late", []))))
+    real = agent.models.stream_agent_response
+
+    async def _stream(*args, **kwargs):
+        reply = await real(*args, **kwargs)
+        if reply.text:  # the user stops while the second response streams
+            client.mark()
+        return reply
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert not any(e["type"] in ("done", "error") for e in events)
+    _saved_listing([e for e in events if e["type"] == "turn_checkpoint"][-1])
+
+
+@pytest.mark.parametrize(
+    "code, second, compaction",
+    [
+        ("agent_failed", RuntimeError("provider disconnected"), None),
+        ("provider_busy", agent.elitellm.ProviderBusy("busy", retry_after=1), None),
+        ("invalid_key", agent.models.UserKeyError("invalid_key", "rejected"), None),
+        ("source_changed", pending.SourceChanged(), None),
+        ("invalid_answer", _assembled(""), None),
+        ("response_flagged", _assembled(_LEAKED_TOOL_CALL), None),
+        ("context_too_large", None, agent.compact.ContextTooLarge("full")),
+        ("compaction_failed", None, agent.compact.InvalidSummary("empty")),
+    ],
+)
+async def test_an_error_after_a_tool_carries_the_turn_so_far(
+    monkeypatch, code, second, compaction
+):
+    _listing_then(monkeypatch, second)
+    if compaction is not None:
+        real = agent.compact.compact_messages
+        steps = itertools.count()
+
+        async def _compact(*args, **kwargs):
+            if next(steps):  # the second step's compaction fails
+                raise compaction
+            return await real(*args, **kwargs)
+
+        monkeypatch.setattr(agent.compact, "compact_messages", _compact)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    assert events[-1]["type"] == "error" and events[-1]["code"] == code
+    _saved_listing(events[-1])
+
+
+async def test_a_turn_without_an_answer_still_records_its_searches(monkeypatch):
+    _listing_then(monkeypatch, RuntimeError("provider disconnected"))
+    recorded: list[dict] = []
+
+    async def _record(events):
+        recorded.extend(events)
+
+    monkeypatch.setattr(agent.store, "record_search_events", _record)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx.search_events.append({"chunk_ids": ["c_1"]})  # a search the turn ran
+    await _collect("q", ctx)
+
+    assert [event["cited"] for event in recorded] == [[False]]
+
+
+# ------------------------------------------------------- Stop (Epo 2026-10-21)
+
+
+def _stop_turn(monkeypatch, responses: list[AssembledResponse], run) -> None:
+    """A turn that answers from ``responses`` and runs tools with ``run``; a
+    model call past them, or an error report, fails the test."""
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        assert responses, "a model call after the stop"
+        return responses.pop(0)
+
+    def _report(*_args, **_kwargs):
+        raise AssertionError("a stop reported an error")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.tools, "run", run)
+    monkeypatch.setattr(agent.obs, "reported_event", _report)
+
+
+def _stopped_calls(event: dict) -> list[tuple[str, str]]:
+    assert event["type"] == "turn_checkpoint" and event["stopped"]
+    return [
+        (b["callId"], b["outcome"]) for b in event["activity"] if b["kind"] == "tool"
+    ]
+
+
+async def test_a_stop_during_a_slow_tool_lets_it_finish_and_starts_nothing_more(
+    monkeypatch,
+):
+    client = agent.ClientDrop()
+    running, release = asyncio.Event(), asyncio.Event()
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        running.set()
+        await release.wait()
+        return ToolResult(text_parts=["slow listing"])
+
+    _stop_turn(monkeypatch, [_assembled("", [_call("list_sources", "{}", "c1")])], _run)
+    task = asyncio.create_task(
+        _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    )
+    await running.wait()
+    client.stop()
+    release.set()
+    events = await task
+
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+    assert [n["text"] for n in events[-1]["toolEvidence"]["tools"]] == ["slow listing"]
+    assert not any(e["type"] in ("done", "error") for e in events)
+
+
+async def test_a_stop_during_a_write_starts_no_further_call_of_its_batch(monkeypatch):
+    client = agent.ClientDrop()
+    ran: list[str] = []
+
+    async def _run(name, args, ctx):
+        del name, ctx
+        ran.append(args["_tool_call_id"])
+        client.stop()  # the user stops while the first write runs
+        return ToolResult(text_parts=["created"])
+
+    writes = [
+        _call("create_material", '{"kind":"note","title":"A"}', "c1"),
+        _call("create_material", '{"kind":"note","title":"B"}', "c2"),
+    ]
+    _stop_turn(monkeypatch, [_assembled("", writes)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert ran == ["c1"]
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+
+
+async def test_a_stop_during_a_search_lets_its_rerank_finish_and_settle(monkeypatch):
+    """A provider call running inside a tool at Stop is billed with the turn."""
+    client = agent.ClientDrop()
+    running, answer = asyncio.Event(), asyncio.Event()
+    opened: list[str] = []
+    settled: list[str] = []
+
+    async def _open(call_id, **_kwargs):
+        opened.append(call_id)
+
+    async def _no_lease(_call_id):
+        return None
+
+    async def _post(payload, **_kwargs):
+        settled.append(payload["callId"])
+        return {}
+
+    async def _rerank(_spec, _query, documents):
+        running.set()
+        await answer.wait()
+        return {"scores": [1.0] * len(documents), "input_tokens": 30}
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        rows = [{"id": "a", "indexed_text": "a"}, {"id": "b", "indexed_text": "b"}]
+        _, reranked = await search.rerank("q", rows)
+        return ToolResult(text_parts=[f"reranked={reranked}"])
+
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting, "open_call", _open)
+    monkeypatch.setattr(accounting, "release_call", _no_lease)
+    monkeypatch.setattr(accounting, "_post_settlement", _post)
+    monkeypatch.setattr(agent.models.elitellm, "rerank", _rerank)
+    monkeypatch.setattr(search, "_rerank_spec", lambda: _model())
+    search_call = _call("search_knowledge", '{"query":"q"}', "c1")
+    _stop_turn(monkeypatch, [_assembled("", [search_call])], _run)
+    token = accounting.bind("cr_stop")
+    try:
+        turn = asyncio.create_task(
+            _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+        )
+        await running.wait()
+        client.stop()
+        answer.set()
+        events = await turn
+        await asyncio.gather(*list(accounting._background))
+    finally:
+        accounting.reset(token)
+
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+    assert len(opened) == 1 and settled == opened
+
+
+async def test_a_model_call_failing_after_a_stop_is_not_reported(monkeypatch):
+    client = agent.ClientDrop()
+
+    async def _stream(_messages, **_kwargs):
+        client.stop()
+        raise RuntimeError("provider session is closed")
+
+    def _report(*_args, **_kwargs):
+        raise AssertionError("a stop reported an error")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.obs, "reported_event", _report)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert _stopped_calls(events[-1]) == []
+    assert not any(e["type"] == "error" for e in events)
+
+
+async def test_chat_stop_marks_only_the_running_turn():
+    from pipeline.retrieve import service as retrieve_service
+
+    client = agent.ClientDrop()
+    retrieve_service._running["m_run"] = client
+    try:
+        stopped = await retrieve_service.chat_stop(
+            retrieve_service.ChatStopReq(assistantMessageId="m_run")
+        )
+        missing = await retrieve_service.chat_stop(
+            retrieve_service.ChatStopReq(assistantMessageId="m_other")
+        )
+    finally:
+        retrieve_service._running.pop("m_run", None)
+    assert stopped == {"stopped": True} and client.stopped and not client.dropped
+    assert missing.status_code == 404
+
+
+async def test_stopped_and_failed_turns_replay_marked_unfinished():
+    def _turn(id_: str, status: str, content: str, note: str) -> dict:
+        evidence = {"tools": [{"name": "list_sources", "text": note}], "passages": []}
+        return {
+            "id": id_,
+            "role": "assistant",
+            "content": content,
+            "status": status,
+            "toolEvidence": evidence,
+        }
+
+    # The stopped row's calls as Go merged them: the last finished after Stop.
+    calls = [
+        {
+            "name": "search_knowledge",
+            "detail": "Searching cells",
+            "outcome": "succeeded",
+        },
+        {"name": "list_sources", "detail": "Listing sources", "outcome": "succeeded"},
+        {"name": "read_document", "detail": "Reading Biology", "outcome": "succeeded"},
+    ]
+    history = [
+        {"id": "u1", "role": "user", "content": "make a note", "status": "complete"},
+        _turn("a1", "aborted", "Working on it", "stopped listing") | {"calls": calls},
+        {"id": "u2", "role": "user", "content": "try again", "status": "complete"},
+        _turn("a2", "error", "", "failed listing"),
+    ]
+    out = await agent.evidence.history_turns(history, ToolContext(workspace_id="ws_1"))
+    texts = [message["content"] for message in out]
+
+    assert texts[1] == "Working on it\n\n" + agent.evidence.UNFINISHED["aborted"]
+    assert agent.evidence.UNFINISHED["error"] in texts
+    assert sum("stopped listing" in t or "failed listing" in t for t in texts) == 2
+    replayed = [t for t in texts if t.startswith("Historical tool calls")]
+    assert len(replayed) == 1 and texts.index(replayed[0]) == 2
+    assert json.loads(replayed[0].split("\n", 1)[1]) == calls
+
+
+async def test_an_answer_that_fails_after_recording_does_not_record_again(
+    monkeypatch,
+):
+    stream, _seen = _script_stream([_assembled(_answer(("ok", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    calls: list[list[dict]] = []
+
+    async def _record(events):
+        calls.append(events)
+
+    def _pack(_ctx, _order):
+        raise RuntimeError("pack failed")
+
+    monkeypatch.setattr(agent.store, "record_search_events", _record)
+    monkeypatch.setattr(agent.evidence, "pack", _pack)
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx.search_events.append({"chunk_ids": ["c_1"]})
+    with pytest.raises(RuntimeError, match="pack failed"):
+        await _collect("q", ctx)
+
+    assert len(calls) == 1
+
+
+async def test_a_cancelled_search_record_still_removes_the_deck_dir(
+    monkeypatch, tmp_path
+):
+    _listing_then(monkeypatch, RuntimeError("provider disconnected"))
+
+    async def _cancelled(_events):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(agent.store, "record_search_events", _cancelled)
+    ctx = ToolContext(workspace_id="ws_1", deck_dir=str(tmp_path / "deck"))
+    (tmp_path / "deck").mkdir()
+    ctx.search_events.append({"chunk_ids": ["c_1"]})
+    with pytest.raises(asyncio.CancelledError):
+        await _collect("q", ctx)
+
+    assert not (tmp_path / "deck").exists()
+
+
+async def test_a_turn_failed_mid_batch_keeps_the_calls_that_finished(monkeypatch):
+    stream, _seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call("list_sources", "{}", "c1"),
+                    _call("create_material", '{"kind":"note"}', "c2"),
+                ],
+            )
+        ]
+    )
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        if name == "create_material":
+            raise TurnFailed("the receipt read timed out")
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1", user_id="u1"))
+
+    assert events[-1]["type"] == "error" and events[-1]["code"] == "agent_failed"
+    assert not any(e["type"] == "turn_checkpoint" for e in events)
+    _saved_listing(events[-1])
+
+
+async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
+    monkeypatch,
+):
+    stream, _seen = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call("list_sources", "{}", "c1"),
+                    _call("list_trashed_files", "{}", "c2"),
+                ],
+            ),
+            _assembled(_answer(("done", []))),
+        ]
+    )
+    second_done = asyncio.Event()
+
+    async def _run(name, args, ctx):
+        del args, ctx
+        if name == "list_sources":
+            await second_done.wait()  # the first call finishes last
+        else:
+            second_done.set()
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    done = events[-1]
+    assert set(done) == {
+        "type",
+        "tokenCount",
+        "telemetry",
+        "activity",
+        "answer",
+        "toolEvidence",
+    }
+    assert done["telemetry"]["stopReason"] == "answer"
+    assert {b["callId"] for b in done["activity"] if b["kind"] == "tool"} == {
+        "c1",
+        "c2",
+    }
+    assert done["toolEvidence"] == {
+        "tools": [
+            {
+                "name": "list_sources",
+                "detail": "listing sources",
+                "outcome": "succeeded",
+                "text": "ran list_sources",
+            },
+            {
+                "name": "list_trashed_files",
+                "detail": "",
+                "outcome": "succeeded",
+                "text": "ran list_trashed_files",
+            },
+        ],
+        "passages": [],
+        "skills": [],
+    }
+    checkpoint = next(e for e in events if e["type"] == "turn_checkpoint")
+    assert checkpoint["toolEvidence"] == done["toolEvidence"]
+
+
+async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypatch):
+    from pipeline.retrieve import service
+
+    async def _agent(*, ctx, **_kwargs):
+        ctx.activity.append({"id": "c1", "kind": "tool", "callId": "c1"})
+        ctx.evidence_notes.append({"name": "list_sources", "text": "ran list_sources"})
+        yield {"type": "phase", "phase": "planning"}
+        raise RuntimeError("citation regions unavailable")
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        providerSlug="deepseek",
+        modelSlug="deepseek-v4-flash",
+        configVersion=1,
+        userId="u_1",
+        paidBy="platform",
+        thinking="high",
+        query="q",
+        workspaceId="ws_1",
+        contractVersion=contract.VERSION,
+        operations=[],
+        spendSessionId="cr_1",
+        role="editor",
+    )
+    chunks = [chunk async for chunk in service._chat_events(req)]
+
+    last = json.loads(chunks[-1].removeprefix("data: "))
+    assert last["code"] == "agent_failed"
+    _saved_listing(last)
+
+
+async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
+    from pipeline.retrieve import service
+
+    registered = []
+
+    async def _agent(*, client, **_kwargs):
+        registered.append(service._running.get("m_turn") is client)
+        yield {"type": "done"}
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        providerSlug="deepseek",
+        modelSlug="deepseek-v4-flash",
+        configVersion=1,
+        userId="u_1",
+        paidBy="platform",
+        thinking="high",
+        query="q",
+        workspaceId="ws_1",
+        contractVersion=contract.VERSION,
+        operations=[],
+        assistantMessageId="m_turn",
+        spendSessionId="cr_1",
+        role="editor",
+    )
+    _chunks = [chunk async for chunk in service._chat_events(req)]
+
+    assert registered == [True] and "m_turn" not in service._running
 
 
 # ------------------------------------------------------------- trash tools
@@ -1964,7 +2512,7 @@ async def test_restricted_scope_emptied_by_trash_stays_empty(monkeypatch):
     monkeypatch.setattr(tools, "_gateway_read", _documents)
     listed = await tools._list_sources({}, ctx)
     assert "two.pdf" not in listed.text()
-    resolved = await tools._resolve_scope(ctx, tools._MISSING)
+    resolved = await tools._resolve_scope(ctx, [])
     assert isinstance(resolved, tools.ResolvedScope) and resolved.file_ids == []
 
 
@@ -2279,6 +2827,7 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
     assert seen["assistantMessageId"] == "m_1" and seen["toolCallId"] == "c1"
     assert result.effects[0]["operation"] == "edited"
     assert ctx._scope_outline is None and reloaded["n"] == 1
+    assert "The user can undo this" in result.text()
 
 
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
@@ -2445,9 +2994,9 @@ def test_an_office_edit_receipt_says_which_characters_it_removed():
 
 
 def test_an_edit_receipt_offers_undo_only_when_it_has_one():
-    """An edit the engine returned no inverse for has no Undo ref, so its
-    result does not promise one (Epo 2026-10-20)."""
-    undo = " The user can undo this edit from the chat result."
+    """An edit no loaded room took has no Undo ref, so its result does not
+    promise one (Epo 2026-10-20)."""
+    undo = " The user can undo this from the chat result."
     body = _receipt("edited", "source_file", "f_1")
     assert undo not in tools._receipt_result(body).text()
     body["effect"]["undo"] = {"operationId": "op_x", "status": "available"}
@@ -2522,7 +3071,7 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
         "_tool_call_id": "c1",
     }
     assert tools.without_blanks(
-        "create_material", {"kind": "note", "scope": [], "title": "null", "cards": {}}
+        "create_material", {"kind": "note", "sources": [], "title": "null", "cards": {}}
     ) == {"kind": "note"}
 
     # Dispatch hands the handler the cleaned arguments.
@@ -2560,6 +3109,7 @@ def _stream_chunks(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del model, call_purpose
         seen.append(
@@ -3542,6 +4092,30 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     assert asked == ["Q1?", "Q2?", "Q3?"]
 
 
+@pytest.mark.parametrize(("provider", "offered"), [("zai", True), ("deepseek", False)])
+async def test_glm_is_offered_askuser_as_a_real_tool(monkeypatch, provider, offered):
+    """DigitalOcean drops calls to tools a request does not list, and GLM calls
+    AskUser as one, so GLM's requests list it (decision 2026-10-21)."""
+    stream, seen = _script_stream([_assembled(_answer(("Hello", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    model = ModelConfig(
+        version=1,
+        provider_name="Z.ai" if provider == "zai" else "DeepSeek",
+        model_name="GLM-5.3-Flash" if provider == "zai" else "Flash",
+        provider_slug=provider,
+        model_slug="glm-5.3-flash" if provider == "zai" else "deepseek-v4-flash",
+        thinking_levels=("low", "high", "max"),
+        default_thinking="high",
+        context_window_tokens=100_000,
+        slots=("chat",),
+    )
+    await _collect("hi", ToolContext(workspace_id="ws_1"), model=model)
+    names = [t["function"]["name"] for t in seen[0]["tools"]]
+    assert ("AskUser" in names) is offered
+    if offered:
+        assert names[-1] == "AskUser", "appended, so the cached prefix is unchanged"
+
+
 @pytest.mark.parametrize("writing", [True, False])
 async def test_results_before_the_last_tools_response_say_write_now(
     monkeypatch, writing
@@ -4213,7 +4787,6 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                         },
                         {
                             "id": "body:t0:r0c1:paragraph:3C",
-                            "style": "Normal",
                             "list": None,
                             "table": {
                                 "id": "body:t0:r0c0:paragraph:3A",
@@ -4250,7 +4823,16 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                         {"id": "Normal", "name": "Normal"},
                         {"id": "Heading1", "name": "heading 1"},
                     ],
+                    "stylesMore": 3,
                 },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "supportedOperations": ["replace_text"],
+                "entries": [{"id": "s1", "label": "Slide 1, Title", "value": "Cells"}],
+                "total": 1,
+                "nextStart": None,
             },
         ]
     )
@@ -4284,21 +4866,24 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
     cells = await inspect(sheet="Grades", range="A1:B2")
     assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
     assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
+    # A DOCX page is the engine's scoped read, its first page listing the
+    # paragraph styles, at most 50 and a count of the rest (Epo 2026-10-21).
     paragraphs = (await inspect(start=0, count=60)).text()
     assert paragraphs == "\n".join(
         [
             "essay.docx format=docx",
             (
-                "paragraphs as [id] (style, list, table cell, content control, "
-                "locked: why replace_text, delete_paragraph and format_text refuse it) "
-                "text; after the body, headers, footers and notes under == part == "
-                "lines, which take replace_text only:"
+                "paragraphs as [id] (style unless the default, list, table cell, "
+                "content control, locked: why replace_text, delete_paragraph and "
+                "format_text refuse it) text; after the body, headers, footers and "
+                "notes under == part == lines, which take replace_text only:"
             ),
             source_block(
-                "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)\n"
+                "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
+                " and 3 more\n"
                 "[body:paragraph:1A] (Heading1) Method\n"
                 "[body:paragraph:2B] (bullet) Ruler\n"
-                "[body:t0:r0c1:paragraph:3C] (Normal, table "
+                "[body:t0:r0c1:paragraph:3C] (table "
                 "body:t0:r0c0:paragraph:3A row 1 column 2) Period\n"
                 "[body:sdt0:paragraph:4D] (content control) Name\n"
                 "[body:paragraph:5E] (locked: holds a field) Page 1\n"
@@ -4309,6 +4894,8 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
         ]
     )
     assert sent[2]["office"] == {"start": 0, "count": 60}
+    shapes = (await inspect(start=0, count=60)).text()
+    assert "[s1] Slide 1, Title: Cells" in shapes and "styles" not in shapes
 
 
 async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on(
@@ -4485,16 +5072,6 @@ def test_a_stale_office_band_shows_its_grid_to_copy():
     }
     assert tools._missed_target({"block": table}, {}, office=True) == (
         'Table body:t0:r0c0:paragraph:3A now holds, as rows of cells:\n[["a","b"]]'
-    )
-
-
-def test_an_unknown_docx_style_lists_the_documents_styles():
-    styles = [
-        {"id": "Normal", "type": "style", "text": "Normal"},
-        {"id": "Heading1", "type": "style", "text": "heading 1"},
-    ]
-    assert tools._missed_target({"blocks": styles}, {}, office=True) == (
-        "The document's paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
     )
 
 

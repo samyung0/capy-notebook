@@ -19,6 +19,10 @@ import {
 } from 'platejs/react';
 import { type CSSProperties, useEffect, useState } from 'react';
 import * as Y from 'yjs';
+import {
+  type PresenceStore,
+  presenceNames,
+} from '@/features/collaboration/presence';
 import { m } from '@/i18n';
 
 const REMOTE_CURSOR_KEY = 'capy_remote_cursor';
@@ -64,7 +68,9 @@ export const remoteCursorDecorationPlugin = createPlatePlugin({
 type CollaborativeEditor = YjsEditor & SlateEditor & CursorEditorType;
 
 /** A peer's selection as its awareness state holds it: Yjs relative
- * positions, which follow the text and are resolved only when drawn. */
+ * positions, which follow the text and are resolved only when drawn. Its
+ * label is the verified name the room's presence gives its client id, never
+ * a name its awareness claims (Epo 2026-10-20). */
 type RemotePeer = {
   color: string | undefined;
   name: string | undefined;
@@ -83,16 +89,20 @@ type RemoteCursorDecoration = {
 const NO_PEERS: RemotePeer[] = [];
 const NO_REMOTE_CURSORS: RemoteCursorDecoration[] = [];
 
-export function readRemotePeers(editor: SlateEditor): RemotePeer[] {
+export function readRemotePeers(
+  editor: SlateEditor,
+  names: ReadonlyMap<number, string>
+): RemotePeer[] {
   if (!CursorEditor.isCursorEditor(editor)) return NO_PEERS;
-  return Object.values(
+  // Keyed by client id (its states carry no `clientId`, whatever the types say).
+  return Object.entries(
     CursorEditor.cursorStates(editor as CollaborativeEditor)
-  ).flatMap(({ data, relativeSelection }) =>
+  ).flatMap(([client, { data, relativeSelection }]) =>
     relativeSelection
       ? [
           {
             color: typeof data?.color === 'string' ? data.color : undefined,
-            name: typeof data?.name === 'string' ? data.name : undefined,
+            name: names.get(Number(client)),
             selection: relativeSelection,
           },
         ]
@@ -119,7 +129,7 @@ function samePeers(left: RemotePeer[], right: RemotePeer[]) {
   );
 }
 
-export function useRemotePeers(editor: SlateEditor) {
+export function useRemotePeers(editor: SlateEditor, presence: PresenceStore) {
   // Every state change here re-renders the whole editable, and the render
   // also restores the DOM caret from Slate's selection, which can undo native
   // caret movement the editor has not synced yet. So only a peer whose
@@ -128,14 +138,22 @@ export function useRemotePeers(editor: SlateEditor) {
   const [peers, setPeers] = useState<RemotePeer[]>(NO_PEERS);
   useEffect(() => {
     if (!CursorEditor.isCursorEditor(editor)) return;
+    let names = presenceNames(presence.getState().connections);
     const update = () => {
-      const next = readRemotePeers(editor);
+      const next = readRemotePeers(editor, names);
       setPeers((previous) => (samePeers(previous, next) ? previous : next));
     };
     update();
     CursorEditor.on(editor, 'change', update);
-    return () => CursorEditor.off(editor, 'change', update);
-  }, [editor]);
+    const unsubscribe = presence.subscribe(({ connections }) => {
+      names = presenceNames(connections);
+      update();
+    });
+    return () => {
+      CursorEditor.off(editor, 'change', update);
+      unsubscribe();
+    };
+  }, [editor, presence]);
 
   return peers;
 }

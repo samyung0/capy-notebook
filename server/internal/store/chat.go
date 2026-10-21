@@ -78,7 +78,8 @@ type Citation struct {
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on
-// the assistant row. It is shown in the UI and never sent back as LLM history.
+// the assistant row. It is shown in the UI; only a stopped or failed turn's
+// tool calls go back into later prompts (Epo 2026-10-21).
 // Tool blocks carry the shared agent-tool result contract: a terminal outcome,
 // a safe typed error and the durable resource effects the call committed.
 type ActivityBlock struct {
@@ -144,7 +145,7 @@ type ConversationCheckpoint struct {
 }
 
 // ConversationPrompt is prior context for one turn: optional checkpoint plus
-// all completed history after that pin. It never includes the current question.
+// all finalized history after that pin. It never includes the current question.
 type ConversationPrompt struct {
 	Checkpoint *ConversationCheckpoint `json:"checkpoint,omitempty"`
 	History    []Message               `json:"history"`
@@ -465,50 +466,6 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 	return out, s.refreshUndoStatuses(ctx, out)
 }
 
-// refreshUndoStatuses puts each effect with an Undo ref at the latest step of
-// its chain: after an Undo the block shows the edit_undone (or trashed)
-// effect with its Redo ref, and a release after the message was finalized
-// shows as unavailable, so a reload matches the live view.
-func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) error {
-	var ids []string
-	for _, m := range messages {
-		for _, block := range m.Activity {
-			for _, effect := range block.Effects {
-				if effect.Undo != nil && effect.Undo.OperationID != "" {
-					ids = append(ids, effect.Undo.OperationID)
-				}
-			}
-		}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	steps, err := s.LatestSteps(ctx, ids)
-	if err != nil {
-		return err
-	}
-	for mi := range messages {
-		for bi := range messages[mi].Activity {
-			for ei := range messages[mi].Activity[bi].Effects {
-				effect := &messages[mi].Activity[bi].Effects[ei]
-				if effect.Undo == nil {
-					continue
-				}
-				step, ok := steps[effect.Undo.OperationID]
-				switch {
-				case !ok:
-					effect.Undo = &agenttools.UndoRef{OperationID: effect.Undo.OperationID, Status: agenttools.UndoUnavailable, Reason: "released"}
-				case step.Effect != nil:
-					*effect = *step.Effect
-				default:
-					effect.Undo = step.Undo
-				}
-			}
-		}
-	}
-	return nil
-}
-
 // AddUserMessage persists an incoming user message and bumps the conversation's
 // updated_at so it sorts to the top of the list.
 func (s *Store) AddUserMessage(ctx context.Context, userID, convID, content string) (Message, error) {
@@ -626,9 +583,62 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 	return err
 }
 
-// ConversationPrompt loads the rolling checkpoint (if any) and every completed
-// historical message after that pin. Call this before inserting the current
-// user row so the question is not sent twice.
+// CheckpointAssistantMessage saves a streaming turn's activity and evidence so
+// far, so a crash keeps them for AbortOrphanedStreams. A finalized row is left
+// alone.
+func (s *Store) CheckpointAssistantMessage(ctx context.Context, msgID string, activity []ActivityBlock, toolEvidence json.RawMessage) error {
+	meta, err := json.Marshal(msgMetadata{Activity: activity, ToolEvidence: toolEvidence})
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx,
+		`UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+		  WHERE id=$1 AND status='streaming'`,
+		msgID, meta)
+	return err
+}
+
+// AddStoppedTurnCalls adds to a stopped turn's aborted row what came after the
+// stop (Epo 2026-10-21): the calls that were still running, as the turn's
+// latest activity and evidence merged with the receipts by call id, the
+// citations and generation id of a turn that finished as it stopped, and its
+// token count. Only an aborted row changes; saved is false when there is none.
+func (s *Store) AddStoppedTurnCalls(ctx context.Context, msgID string, activity []ActivityBlock, toolEvidence json.RawMessage, citations []Citation, generationID string, tokenCount int) (saved bool, err error) {
+	ops, err := messageOperationsTx(ctx, s.pool, msgID)
+	if err != nil {
+		return false, err
+	}
+	meta, err := json.Marshal(msgMetadata{
+		Activity: mergeOperationEffects(activity, ops), ToolEvidence: toolEvidence,
+		Citations: citations, GenerationID: generationID,
+	})
+	if err != nil {
+		return false, err
+	}
+	var tc *int
+	if tokenCount > 0 {
+		tc = &tokenCount
+	}
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE messages SET token_count = COALESCE($3, token_count),
+		        metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+		  WHERE id=$1 AND status='aborted'`,
+		msgID, meta, tc)
+	return err == nil && tag.RowsAffected() > 0, err
+}
+
+// IsAssistantMessageOf says whether msgID is an assistant row of convID.
+func (s *Store) IsAssistantMessageOf(ctx context.Context, convID, msgID string) (bool, error) {
+	var found bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM messages
+		WHERE id=$1 AND conversation_id=$2 AND role='assistant')`, msgID, convID).Scan(&found)
+	return found, err
+}
+
+// ConversationPrompt loads the rolling checkpoint (if any) and every finalized
+// historical message after that pin: stopped and failed turns replay like
+// finished ones (Epo 2026-10-21), each row with its status. Call this before
+// inserting the current user row so the question is not sent twice.
 func (s *Store) ConversationPrompt(ctx context.Context, convID string) (ConversationPrompt, error) {
 	var (
 		cp        ConversationCheckpoint
@@ -647,7 +657,7 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, conversation_id, role, content, status, metadata, created_at
 		  FROM messages
-		 WHERE conversation_id=$1 AND status='complete'
+		 WHERE conversation_id=$1 AND status <> 'streaming'
 		   AND ($2::text IS NULL OR (created_at, id) > (
 		        SELECT created_at, id FROM messages WHERE id=$2
 		      ))
@@ -669,6 +679,7 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
 		m.ToolEvidence = meta.ToolEvidence
+		m.Activity = meta.Activity
 		history = append(history, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -682,7 +693,7 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 	// the office_building skill; a checkpoint drops that turn from History.
 	err = s.pool.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM messages
-		 WHERE conversation_id=$1 AND status='complete'
+		 WHERE conversation_id=$1 AND status <> 'streaming'
 		   AND metadata->'toolEvidence'->>'officeTools' = 'true')`, convID).Scan(&out.OfficeTools)
 	return out, err
 }

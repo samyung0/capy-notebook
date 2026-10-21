@@ -126,11 +126,13 @@ export type {
   ModelOption,
   ModelsResponse,
   ModelThinking,
+  NoteChange,
   Notification as AppNotification,
   NotificationCountOutputBody as NotificationCount,
   NotificationPage,
   NotificationPrefs,
   PaymentMethod,
+  PendingWorkspaceInvite,
   PublicFlashcardSet,
   PublicWorkspace,
   Ref as ModelRef,
@@ -495,6 +497,24 @@ export type ChatSteps = UserChatSteps;
 export type ChatSendKey = UserChatSendKey;
 /** The Settings → Chat choices to save; omitted ones keep their value. */
 export type ChatPrefs = SetChatPrefsReq;
+
+import type {
+  Customization as GenCustomization,
+  PageFrame as GenPageFrame,
+  PageFrameColor,
+} from './gen/model';
+
+export type {
+  PageFrameColor,
+  PageFrameColours,
+  PageFramePattern,
+} from './gen/model';
+/** The painted page frame (src/theme/pageFrame.ts); always 1 to 3 colours. */
+export type PageFrame = Omit<GenPageFrame, 'dots'> & { dots: PageFrameColor[] };
+/** The app's look as Sync stores it on the account. */
+export type Customization = Omit<GenCustomization, 'pageFrame'> & {
+  pageFrame: PageFrame;
+};
 export type ResourceEffectOperation = GenResourceEffectOperation;
 export type UndoStatus = UndoRefStatus;
 

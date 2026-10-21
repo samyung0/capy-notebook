@@ -33,8 +33,6 @@ pub struct Args {
     pub object_ref: Option<ObjectRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commands: Option<Vec<Command>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ids: Option<Vec<String>>,
     /// What a scoped read reads (`inspectOfficeScoped`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<InspectQuery>,
@@ -183,24 +181,7 @@ pub fn dispatch(request: &Frame) -> Answer {
             let commands = args.commands.as_deref().unwrap_or_default();
             let result = office_service::apply_commands(blob(0)?, checkpoint(1)?, commands)
                 .map_err(failure)?;
-            Ok((
-                json!({
-                    "inverse": to_json(result.inverse)?,
-                    "targets": to_json(result.targets)?,
-                    "notice": result.notice,
-                }),
-                vec![result.state],
-            ))
-        }
-        "locateOfficeTargets" => {
-            let ids = args.ids.as_deref().unwrap_or_default();
-            Ok((
-                to_json(
-                    office_service::locate_targets(blob(0)?, checkpoint(1)?, ids)
-                        .map_err(failure)?,
-                )?,
-                Vec::new(),
-            ))
+            Ok((json!({ "notice": result.notice }), vec![result.state]))
         }
         other => Err(Failure::invalid(format!("unknown engine method {other}"))),
     }
@@ -208,11 +189,10 @@ pub fn dispatch(request: &Frame) -> Answer {
 
 /// The typed calls the server makes, on the lane each belongs to: saves
 /// (effects, seeds for a load, replica drops) never wait behind background
-/// work (exports, rebases, inspect, agent commands, locate, assets).
+/// work (exports, rebases, inspect, agent commands, assets).
 pub mod calls {
     use office_service::{
-        BaselineEntry, Command, CommandResult, Entry, Format, InspectQuery, NetEffect, ObjectRef,
-        Target,
+        BaselineEntry, Command, Entry, Format, InspectQuery, NetEffect, ObjectRef,
     };
     use serde::de::DeserializeOwned;
     use serde_json::Value;
@@ -227,6 +207,14 @@ pub mod calls {
         pub base: &'a [u8],
         pub base_sha256: &'a str,
         pub room: Option<&'a str>,
+    }
+
+    /// Agent commands applied: the new state and the engine's note on the
+    /// characters the text lost.
+    #[derive(Debug)]
+    pub struct Applied {
+        pub state: Vec<u8>,
+        pub notice: Option<String>,
     }
 
     fn frame(method: &str, args: &Args, blobs: Vec<Vec<u8>>) -> Frame {
@@ -405,14 +393,15 @@ pub mod calls {
             Ok((bytes, parse(reply.value["notice"].take())?))
         }
 
-        /// Applies agent commands: the new state, the inverse in undo order and
-        /// the post-edit target locations.
+        /// Applies agent commands: the new state and the note on characters
+        /// the text lost (the live Undo reverts the edit's own Yjs items, so
+        /// the engine's inverse is not sent).
         pub async fn apply_commands(
             &self,
             on: On<'_>,
             state: &[u8],
             commands: &[Command],
-        ) -> Result<CommandResult, EngineError> {
+        ) -> Result<Applied, EngineError> {
             let mut request = args(on);
             request.commands = Some(commands.to_vec());
             let request = frame(
@@ -421,28 +410,10 @@ pub mod calls {
                 vec![on.base.to_vec(), state.to_vec()],
             );
             let mut reply = self.call(Lane::Background, on.room, request).await?;
-            Ok(CommandResult {
+            Ok(Applied {
                 state: blob(&mut reply)?,
-                inverse: parse(reply.value["inverse"].take())?,
-                targets: parse(reply.value["targets"].take())?,
                 notice: parse(reply.value["notice"].take())?,
             })
-        }
-
-        pub async fn locate_targets(
-            &self,
-            on: On<'_>,
-            state: &[u8],
-            ids: &[String],
-        ) -> Result<Vec<Target>, EngineError> {
-            let mut request = args(on);
-            request.ids = Some(ids.to_vec());
-            let request = frame(
-                "locateOfficeTargets",
-                &request,
-                vec![on.base.to_vec(), state.to_vec()],
-            );
-            parse(self.call(Lane::Background, on.room, request).await?.value)
         }
 
         /// The image bytes of an effect's asset: (bytes, mime type, sha256).

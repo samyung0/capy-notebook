@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -9,9 +10,11 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -35,16 +38,16 @@ import (
 // transaction. The same call replayed returns that receipt; a lost response is
 // reconciled through GET /api/internal/agent-operations/{id}.
 type internalMaterialReq struct {
-	WorkspaceID        string   `json:"workspaceId"`
-	UserID             string   `json:"userId"`
-	AssistantMessageID string   `json:"assistantMessageId"`
-	ToolCallID         string   `json:"toolCallId"`
-	Kind               string   `json:"kind"`
-	Title              string   `json:"title"`
-	ChapterIDs         []string `json:"chapterIds"`
+	WorkspaceID        string `json:"workspaceId"`
+	UserID             string `json:"userId"`
+	AssistantMessageID string `json:"assistantMessageId"`
+	ToolCallID         string `json:"toolCallId"`
+	Kind               string `json:"kind"`
+	Title              string `json:"title"`
 	// ChapterID is where the material is filed; empty leaves it unfiled.
-	ChapterID string   `json:"chapterId"`
-	FileIDs   []string `json:"fileIds"`
+	ChapterID string `json:"chapterId"`
+	// Sources is the model's made-from line (resolveSources).
+	Sources []string `json:"sources"`
 
 	Questions json.RawMessage `json:"questions"`
 	Cards     []struct {
@@ -65,7 +68,7 @@ func (r internalMaterialReq) hashPayload() map[string]any {
 	return hashFigures(map[string]any{
 		"kind": r.Kind, "title": strings.TrimSpace(r.Title), "questions": r.Questions,
 		"cards": r.Cards, "content": r.Content,
-		"fileIds": r.FileIDs, "chapterIds": r.ChapterIDs, "provenance": r.Provenance,
+		"sources": r.Sources, "provenance": r.Provenance,
 		"chapterId": r.ChapterID,
 	}, r.Figures)
 }
@@ -144,6 +147,69 @@ func mergeProvenance(stored, added *store.Provenance) (*store.Provenance, string
 	return merged, "", nil
 }
 
+// sourcesBounds is the one refusal an agent's sources can get: their format.
+var sourcesBounds = fmt.Sprintf("sources: send at most %d sources of at most %d characters each.",
+	fieldlimits.MaterialSources, fieldlimits.MaterialSource)
+
+// validSources counts a repeated source once and a blank one not at all, as
+// resolveSources stores them.
+func validSources(sources []string) bool {
+	distinct := map[string]struct{}{}
+	for _, source := range sources {
+		source = strings.TrimSpace(source)
+		if source == "" {
+			continue
+		}
+		if utf8.RuneCountInString(source) > fieldlimits.MaterialSource {
+			return false
+		}
+		distinct[source] = struct{}{}
+	}
+	return len(distinct) <= fieldlimits.MaterialSources
+}
+
+// resolveSources turns an agent's sources, its made-from line in plain strings
+// (Epo 2026-10-21), into the names stored with what it made: the id of a
+// workspace file, top-level material of any kind or chapter becomes that
+// item's current name, and anything else (an exact name, which already is the
+// current one, a lecture, a web address) stays as written, trimmed. Duplicates
+// are kept once and a blank source is dropped (Epo 2026-10-21); no sources
+// stores none.
+func (a *api) resolveSources(ctx context.Context, wsID string, sources []string) ([]string, error) {
+	names := []string{}
+	if len(sources) == 0 {
+		return names, nil
+	}
+	items, err := a.s.SourceItems(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	chapters, err := a.s.ListChapters(ctx, wsID)
+	if err != nil {
+		return nil, err
+	}
+	nameByID := make(map[string]string, len(items)+len(chapters))
+	for _, ch := range chapters {
+		nameByID[ch.ID] = ch.Name
+	}
+	for _, item := range items {
+		nameByID[item.ID] = item.Name
+	}
+	for _, source := range sources {
+		source = strings.TrimSpace(source)
+		if source == "" {
+			continue
+		}
+		if name, ok := nameByID[source]; ok {
+			source = name
+		}
+		if !slices.Contains(names, source) {
+			names = append(names, source)
+		}
+	}
+	return names, nil
+}
+
 func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 	if !a.pipelineSecretOK(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
@@ -182,6 +248,10 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "only a note shows figures"})
 		return
 	}
+	if !validSources(req.Sources) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": sourcesBounds})
+		return
+	}
 	ctx := r.Context()
 	actorStatus, err := a.s.AccountAccess(ctx, req.UserID)
 	if err != nil {
@@ -201,12 +271,10 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		return
 	}
 	if err := a.s.AssertWorkspaceEditor(ctx, req.UserID, req.WorkspaceID); err != nil {
-		if errors.Is(err, store.ErrForbidden) {
-			// The role changed after the turn started; the write is refused,
-			// not lost (an unmapped error read as an unknown outcome).
-			writeJSON(w, http.StatusForbidden, map[string]string{
-				"code": "lifecycle_rejected", "message": "you can no longer edit this workspace, so nothing was created",
-			})
+		if errors.Is(err, store.ErrForbidden) || errors.Is(err, store.ErrNotFound) {
+			// The role or membership changed after the turn started; the write
+			// is refused, not lost (an unmapped error read as an unknown outcome).
+			permissionRefusal(w)
 			return
 		}
 		a.fail(w, err)
@@ -220,7 +288,7 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		return
 	}
 	// A committed receipt answers a replay without rerunning mutable admission
-	// (scope, quota); a different payload under the same id is a conflict.
+	// (sources, quota); a different payload under the same id is a conflict.
 	if existing, err := a.s.ReplayAgentOperation(ctx, opID, hash); err == nil {
 		writeJSON(w, http.StatusOK, existing)
 		return
@@ -229,21 +297,9 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		return
 	}
 
-	// A material written from the knowledge library is grounded there, not in
-	// the workspace, so it needs no indexed content.
-	_, fileNames, chapterNames, err := a.resolveScope(ctx, req.WorkspaceID, &generateOpts{
-		FileIds: req.FileIDs, Chapters: req.ChapterIDs, AllowUnindexed: req.Provenance != nil,
-	})
+	sourceNames, err := a.resolveSources(ctx, req.WorkspaceID, req.Sources)
 	if err != nil {
-		if errors.Is(err, errScopeNoIndexedContent) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"code": "scope_has_no_indexed_content", "message": errScopeNoIndexedContent.Error(),
-			})
-			return
-		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "invalid_scope", "message": "The requested scope is invalid or unavailable.",
-		})
+		a.fail(w, err)
 		return
 	}
 	// Do not recheck inference credits here. The provider call that emitted this
@@ -322,7 +378,7 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		ID: store.ChatMaterialID(req.AssistantMessageID, req.ToolCallID), ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, WorkspaceName: ws.Name, Kind: store.MaterialKind(req.Kind), Title: title,
 		Questions: req.Questions, Cards: cards, Content: content, Embedded: embedded, Assets: assets,
-		ChapterID: chapterID, ScopeChapters: chapterNames, ScopeFileNames: fileNames, Provenance: req.Provenance,
+		ChapterID: chapterID, ScopeFileNames: sourceNames, Provenance: req.Provenance,
 	}, store.AgentOperation{
 		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, ConversationID: convID,

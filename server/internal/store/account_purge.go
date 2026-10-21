@@ -211,14 +211,13 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	// Everything else the account pays for goes with it, in other people's
 	// workspaces too (uploader pays, Sam 2026-10-18): its standalone
 	// materials, the files, materials and editor assets it uploaded or
-	// created, its open reservations and its chat Undo records. The row
-	// triggers release blobs, jobs and rooms as for any delete.
+	// created and its open reservations. The row triggers release blobs, jobs
+	// and rooms as for any delete.
 	for _, statement := range []string{
 		`DELETE FROM materials WHERE owner_user_id=$1`,
 		`DELETE FROM files WHERE user_id=$1`,
 		`DELETE FROM editor_assets WHERE user_id=$1`,
 		`DELETE FROM upload_sessions WHERE user_id=$1`,
-		`DELETE FROM agent_edit_inverses WHERE owner_user_id=$1`,
 	} {
 		if _, err := tx.Exec(ctx, statement, userID); err != nil {
 			return err
@@ -285,6 +284,13 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspace_members WHERE user_id=$1`, userID); err != nil {
+		return err
+	}
+	// A pending invite to this account stays listed for its owner, inert, until
+	// its own expiry or Cancel: a row vanishing at the purge would tell the
+	// owner the address had an account (human authorization, 2026-10-21).
+	if _, err := tx.Exec(ctx, `UPDATE workspace_invites SET invited_user_id=NULL
+		WHERE invited_user_id=$1 AND accepted_at IS NULL AND revoked_at IS NULL`, userID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspace_invites

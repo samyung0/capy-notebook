@@ -33,7 +33,7 @@ def run(monkeypatch, tmp_path):
     async def outline(_workspace_id):
         return {"chapters": [], "files": []}
 
-    async def reload_pending(_ctx, _changed):
+    async def reload_pending(_ctx, _file_id):
         return None
 
     monkeypatch.setattr(cfg, "gateway_url", "http://playground.invalid")
@@ -155,7 +155,11 @@ async def test_a_created_word_file_reads_back_and_a_stale_delete_shows_the_parag
             "_tool_call_id": "c2",
             "file_id": "f_local_1",
             "commands": [
-                {"type": "delete_paragraph", "id": method, "expected_text": "Methods"}
+                {
+                    "type": "delete_paragraph",
+                    "target_id": method,
+                    "expected_text": "Methods",
+                }
             ],
         },
         ctx,

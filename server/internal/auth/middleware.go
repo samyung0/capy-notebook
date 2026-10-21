@@ -36,6 +36,11 @@ type Config struct {
 	E2EAuth    bool
 	E2ESecret  string
 	E2EUserIDs []string
+	// AuthorizedParties are the browser origins whose Clerk session tokens are
+	// accepted (the token's azp claim). A token minted for another origin is
+	// refused; a token without azp (Backend API) and an empty list are not
+	// checked.
+	AuthorizedParties []string
 }
 
 // UserStore lazily provisions users on first authenticated request and reports
@@ -147,7 +152,9 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 
 	var clerkMW func(http.Handler) http.Handler
 	if cfg.SecretKey != "" && !cfg.Disabled {
-		clerkMW = clerkhttp.WithHeaderAuthorization()
+		clerkMW = clerkhttp.WithHeaderAuthorization(
+			clerkhttp.AuthorizedPartyMatches(cfg.AuthorizedParties...),
+		)
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -313,26 +320,46 @@ func profileFromSession(ctx context.Context, userID string) (name, email, avatar
 	if u == nil {
 		return "", "", "", errors.New("Clerk profile unavailable")
 	}
-	if u.FirstName != nil || u.LastName != nil {
-		parts := []string{}
-		if u.FirstName != nil {
-			parts = append(parts, *u.FirstName)
-		}
-		if u.LastName != nil {
-			parts = append(parts, *u.LastName)
-		}
-		name = strings.TrimSpace(strings.Join(parts, " "))
-	}
-	if u.Username != nil && name == "" {
-		name = *u.Username
-	}
-	if len(u.EmailAddresses) > 0 && u.EmailAddresses[0] != nil {
-		email = u.EmailAddresses[0].EmailAddress
-	}
+	name = ProfileName(u.FirstName, u.LastName, u.Username)
+	email = PrimaryVerifiedEmail(u.PrimaryEmailAddressID, u.EmailAddresses)
 	if u.HasImage && u.ImageURL != nil {
 		avatar = *u.ImageURL
 	}
 	return name, email, avatar, nil
+}
+
+// ProfileName is a Clerk profile's name for a new account, the same for the
+// sign-in sync and the webhook: first and last name, else the username, else
+// "" so the store names the account after its email's local part (human
+// authorization, 2026-10-21).
+func ProfileName(first, last, username *string) string {
+	parts := []string{}
+	for _, part := range []*string{first, last} {
+		if part != nil {
+			parts = append(parts, *part)
+		}
+	}
+	name := strings.TrimSpace(strings.Join(parts, " "))
+	if name == "" && username != nil {
+		name = strings.TrimSpace(*username)
+	}
+	return name
+}
+
+// PrimaryVerifiedEmail is the account's primary address when Clerk has
+// verified it, otherwise "" (human authorization, 2026-10-19 10a): an
+// unconfirmed address, even one listed first, never becomes users.email.
+func PrimaryVerifiedEmail(primaryID *string, addresses []*clerk.EmailAddress) string {
+	if primaryID == nil {
+		return ""
+	}
+	for _, address := range addresses {
+		if address != nil && address.ID == *primaryID &&
+			address.Verification != nil && address.Verification.Status == "verified" {
+			return address.EmailAddress
+		}
+	}
+	return ""
 }
 
 func writeUnauthorized(w http.ResponseWriter) {

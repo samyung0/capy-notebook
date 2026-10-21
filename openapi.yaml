@@ -1789,6 +1789,33 @@ components:
         - spentThisMonthCents
         - reload
       type: object
+    Customization:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Customization.json
+          format: uri
+          readOnly: true
+          type: string
+        pageFrame:
+          $ref: "#/components/schemas/PageFrame"
+        style:
+          enum:
+            - classroom
+            - notion
+          type: string
+        theme:
+          enum:
+            - latte
+            - frappe
+            - mocha
+          type: string
+      required:
+        - style
+        - theme
+        - pageFrame
+      type: object
     DeletionPreflight:
       additionalProperties: false
       properties:
@@ -2087,6 +2114,8 @@ components:
         chapterId:
           nullable: true
           type: string
+        errorId:
+          type: string
         hasBytes:
           type: boolean
         id:
@@ -2147,6 +2176,8 @@ components:
     FileChange:
       additionalProperties: false
       properties:
+        errorId:
+          type: string
         fileId:
           type: string
         kind:
@@ -3396,6 +3427,31 @@ components:
         - defaultModel
         - selectedThinking
       type: object
+    NoteChange:
+      additionalProperties: false
+      properties:
+        errorId:
+          type: string
+        lastEditedAt:
+          format: date-time
+          type: string
+        materialId:
+          type: string
+        state:
+          enum:
+            - waiting
+            - queued
+            - processing
+            - failed
+          type: string
+        title:
+          type: string
+      required:
+        - materialId
+        - title
+        - state
+        - lastEditedAt
+      type: object
     Notification:
       additionalProperties: false
       properties:
@@ -3628,6 +3684,71 @@ components:
         - width
         - height
       type: object
+    PageFrame:
+      additionalProperties: false
+      properties:
+        colours:
+          enum:
+            - dusk
+            - sea
+            - meadow
+            - rose
+            - sunset
+            - wheat
+            - mist
+            - custom
+          type: string
+        dots:
+          items:
+            $ref: "#/components/schemas/PageFrameColor"
+          maxItems: 3
+          minItems: 1
+          nullable: true
+          type: array
+        grain:
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+        pattern:
+          enum:
+            - none
+            - arc
+            - mesh
+            - glow
+            - painted
+            - waves
+            - contours
+          type: string
+        strength:
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+        - pattern
+        - colours
+        - dots
+        - strength
+        - grain
+      type: object
+    PageFrameColor:
+      additionalProperties: false
+      properties:
+        x:
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+        "y":
+          format: double
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+        - x
+        - "y"
+      type: object
     PastReview:
       additionalProperties: false
       properties:
@@ -3722,6 +3843,25 @@ components:
           type: string
       required:
         - type
+      type: object
+    PendingWorkspaceInvite:
+      additionalProperties: false
+      properties:
+        address:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        sentAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - address
+        - sentAt
+        - expiresAt
       type: object
     PlanTier:
       enum:
@@ -4449,6 +4589,7 @@ components:
           readOnly: true
           type: string
         confirmEmail:
+          description: The account email, or delete for an account with no email
           maxLength: 254
           minLength: 1
           type: string
@@ -5214,12 +5355,8 @@ components:
     SourceCheckpointOperation:
       additionalProperties: false
       properties:
-        guards: {}
-        inverse: {}
         receipt:
           $ref: "#/components/schemas/SourceCheckpointReceipt"
-        undoOf:
-          type: string
       required:
         - receipt
       type: object
@@ -6354,14 +6491,10 @@ components:
       properties:
         operationId:
           type: string
-        reason:
-          type: string
         status:
           enum:
             - available
-            - undone
             - unavailable
-            - pending
           type: string
       required:
         - operationId
@@ -6837,6 +6970,8 @@ components:
           type: string
         classLabel:
           type: string
+        customization:
+          $ref: "#/components/schemas/Customization"
         editorModel:
           $ref: "#/components/schemas/Ref"
         email:
@@ -7076,15 +7211,19 @@ components:
         indexed:
           format: int64
           type: integer
+        moreNoteChanges:
+          format: int64
+          type: integer
         notIndexable:
           format: int64
           type: integer
         notIndexed:
           format: int64
           type: integer
-        pendingNotes:
-          format: int64
-          type: integer
+        noteChanges:
+          items:
+            $ref: "#/components/schemas/NoteChange"
+          type: array
         quizzes:
           format: int64
           type: integer
@@ -7093,7 +7232,8 @@ components:
         - notIndexed
         - notIndexable
         - fileChanges
-        - pendingNotes
+        - noteChanges
+        - moreNoteChanges
         - chapters
         - files
         - quizzes
@@ -8165,6 +8305,36 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Load a conversation's message history
+      tags:
+        - Chat
+  /api/conversations/{id}/messages/{messageId}/stop:
+    post:
+      operationId: stopChatTurn
+      parameters:
+        - description: Conversation id
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Conversation id
+            type: string
+        - description: The turn's assistant message id
+          in: path
+          name: messageId
+          required: true
+          schema:
+            description: The turn's assistant message id
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Stop a conversation's running turn
       tags:
         - Chat
   /api/discussions/{id}:
@@ -9558,6 +9728,27 @@ paths:
       summary: Update material metadata
       tags:
         - Materials
+  /api/materials/{id}/process-changes:
+    post:
+      operationId: processNoteChanges
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Index a workspace note's changes now
+      tags:
+        - Materials
   /api/materials/{id}/sharing:
     patch:
       operationId: updateMaterialSharing
@@ -9651,6 +9842,27 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Set the chat settings
+      tags:
+        - Account
+  /api/me/customization:
+    put:
+      operationId: setCustomization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Customization"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Sync the app's look to the account
       tags:
         - Account
   /api/me/ingest-slots:
@@ -11728,6 +11940,32 @@ paths:
       tags:
         - Generate
   /api/workspaces/{id}/invites:
+    get:
+      operationId: listWorkspaceInvites
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/PendingWorkspaceInvite"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List pending workspace invites
+      tags:
+        - Workspace collaboration
     post:
       operationId: createWorkspaceInvite
       parameters:
@@ -11752,6 +11990,32 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Privately invite a workspace member
+      tags:
+        - Workspace collaboration
+  /api/workspaces/{id}/invites/{inviteId}:
+    delete:
+      operationId: cancelWorkspaceInvite
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: inviteId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Cancel a pending workspace invite
       tags:
         - Workspace collaboration
   /api/workspaces/{id}/materials:

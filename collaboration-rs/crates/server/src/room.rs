@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use bytes::BytesMut;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
+use ydoc::undo::{Captured, Change};
 use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
@@ -52,6 +53,14 @@ pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can'
 /// (`OPEN_SLOWED_TYPE` in src/features/collaboration/roomProvider.ts): the
 /// editor keeps loading and says so after a while, never offline.
 pub const OPEN_SLOWED_TYPE: &str = "open-slowed";
+/// The room's presence (Epo 2026-10-20): the editors in it, for the avatar
+/// group and cursor labels (`PRESENCE_TYPE` in
+/// src/features/collaboration/presence.ts). It goes out a flush window after
+/// a change and at most once a second, listing at most `MAX_PRESENCE`
+/// connections, oldest first.
+pub const PRESENCE_TYPE: &str = "room-presence";
+pub const PRESENCE_EVERY: Duration = Duration::from_secs(1);
+pub const MAX_PRESENCE: usize = 64;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -65,6 +74,8 @@ pub enum RoomCmd {
         context: Context,
         out: Outbox,
         socket: String,
+        /// An embed's channel inside its note's (Epo 2026-10-20).
+        inside: bool,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Leave(MemberKey),
@@ -111,6 +122,8 @@ pub enum RoomCmd {
     Snapshot(oneshot::Sender<Vec<u8>>),
     /// A server edit committed beside the room's stores.
     ServiceEdit(Box<ServiceEdit>),
+    /// Undo or Redo of an agent edit this room holds (`ydoc::undo`).
+    AgentUndo(Box<AgentUndo>),
     /// A children pass for an update this room holds (`children.rs`).
     ChildPass(Box<ChildPass>),
     /// The API's answer to the running pass.
@@ -182,14 +195,45 @@ pub struct ChildPass {
     pub notify: Option<MemberKey>,
 }
 
-/// A server edit (an agent edit or Undo, a command) committed as its own row:
-/// what the live room lacks of it, the stored cover it makes, and the
-/// note's stored version or the source's checkpoint it reached.
+/// A server edit (an agent edit, a command) committed as its own row: what
+/// the live room lacks of it, the stored cover it makes, the note's stored
+/// version or the source's checkpoint it reached, and for an agent edit its
+/// operation id with its own items, which the room keeps for its Undo.
 pub struct ServiceEdit {
     pub update: Vec<u8>,
     pub durable: ydoc::Durable,
     pub version: u64,
     pub row_bytes: usize,
+    /// The agent edit's id, its items and what its Undo may send
+    /// (`sources::undo_cost`).
+    pub step: Option<(String, Captured, usize)>,
+    /// Answers whether this room kept `step` for its Undo.
+    pub taken: Option<oneshot::Sender<bool>>,
+}
+
+/// An Undo or Redo of the agent step `step` (`edits::undo`), under the chat
+/// actor's contributor marker; the step that reverses it is kept as `next`.
+/// The reply comes once the room stored it.
+pub struct AgentUndo {
+    pub step: String,
+    pub next: String,
+    pub actor: String,
+    pub reply: oneshot::Sender<Result<Reverted, String>>,
+}
+
+/// What an Undo or Redo of an agent step came to in one room.
+#[derive(Debug)]
+pub enum Reverted {
+    /// Reverted (stored, or its store retrying), the step that reverses it
+    /// kept under this id: the request's, or an earlier request's whose
+    /// answer was lost.
+    Done(String),
+    /// Nothing of the step was left to revert here.
+    Nothing,
+    /// The room holds no such step (used already, or the room reloaded).
+    Missing,
+    /// Refused before anything was stored: the error code and why.
+    Refused { code: &'static str, message: String },
 }
 
 struct Member {
@@ -205,6 +249,8 @@ struct Member {
     held_read_only: bool,
     out: Outbox,
     socket: String,
+    /// An embed's channel inside its note's: it hears no room presence.
+    inside: bool,
     /// Awareness client ids this channel sent.
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
@@ -359,7 +405,15 @@ struct Store {
     retry_delay: Duration,
     failed_event: Option<String>,
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
+    /// Stores that took their snapshot so far.
+    snapshots: u64,
+    /// Agent Undos waiting on the store that takes them: the id their reverse
+    /// is kept under and the snapshot that holds the revert.
+    undo_waiters: Vec<(String, u64, UndoReply)>,
 }
+
+/// Where an agent Undo's answer goes.
+type UndoReply = oneshot::Sender<Result<Reverted, String>>;
 
 /// See `sync_message`: not a valid update, so a release build refuses it.
 #[cfg(debug_assertions)]
@@ -369,6 +423,11 @@ const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
 /// builds only.
 #[cfg(debug_assertions)]
 const IT_PANIC_LOAD: &str = "capy-it-panic-load";
+
+/// See `agent_undo`: an Undo whose new step id starts with this is refused
+/// in a quiz's keys room, in debug builds only.
+#[cfg(debug_assertions)]
+pub const IT_REFUSE_KEYS_UNDO: &str = "capy-it-refuse-keys-undo";
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -380,6 +439,13 @@ pub struct Room {
     members: HashMap<MemberKey, Member>,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
+    /// Presence changed since it last went out; when it may go next.
+    presence_dirty: bool,
+    presence_at: Option<Instant>,
+    /// Each person's number in the room's presence, kept while they are in
+    /// it: never their user id, which a reader may not learn (Epo 2026-10-12).
+    people: HashMap<String, u64>,
+    next_person: u64,
     /// This window's updates and who sent each (none: everyone gets it).
     window: Vec<(Option<MemberKey>, Vec<u8>)>,
     flush_at: Option<Instant>,
@@ -402,6 +468,13 @@ pub struct Room {
     child_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
+    /// The agent edits (and their Undo and Redo steps) this room keeps the
+    /// items of, by operation id (`ydoc::undo`), with what each one's revert
+    /// may send (the edit's `sources::undo_cost`); gone with the room.
+    agent_changes: HashMap<String, (Change, usize)>,
+    /// Steps this room reverted, by the id their reverse is kept under, so a
+    /// request repeated after a lost answer gets the same answer.
+    agent_reverted: HashMap<String, String>,
     /// When waiting opens look at their users' budgets again, and the next
     /// one's place.
     open_at: Option<Instant>,
@@ -775,6 +848,10 @@ async fn run(
         members: HashMap::new(),
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
+        presence_dirty: false,
+        presence_at: None,
+        people: HashMap::new(),
+        next_person: 0,
         window: Vec::new(),
         flush_at: None,
         receipts: Vec::new(),
@@ -789,6 +866,8 @@ async fn run(
             retry_delay: RETRY_FIRST / 2,
             failed_event: None,
             waiters: Vec::new(),
+            snapshots: 0,
+            undo_waiters: Vec::new(),
         },
         idle_at: None,
         kind,
@@ -799,6 +878,8 @@ async fn run(
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
         applying: false,
+        agent_changes: HashMap::new(),
+        agent_reverted: HashMap::new(),
         open_at: None,
         openings: 0,
     };
@@ -860,10 +941,17 @@ impl Room {
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        [self.flush_at, self.store_due(), self.idle_at, self.open_at]
-            .into_iter()
-            .flatten()
-            .min()
+        let presence = self.presence_at.filter(|_| self.presence_dirty);
+        [
+            self.flush_at,
+            self.store_due(),
+            self.idle_at,
+            self.open_at,
+            presence,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn store_due(&self) -> Option<Instant> {
@@ -903,6 +991,9 @@ impl Room {
             self.open_at = None;
             self.release_openings().await;
         }
+        if self.presence_dirty && self.presence_at.is_some_and(|at| at <= now) {
+            self.send_presence(now);
+        }
     }
 
     /// The handoff's view of the room, when something it reads changed.
@@ -936,6 +1027,7 @@ impl Room {
             && !self.store.running
             && self.store.retry_at.is_none()
             && self.store.waiters.is_empty()
+            && self.store.undo_waiters.is_empty()
             && !markers::pending(&self.doc)
     }
 
@@ -946,9 +1038,10 @@ impl Room {
                 context,
                 out,
                 socket,
+                inside,
                 reply,
             } => {
-                let _ = reply.send(self.join(key, context, out, socket));
+                let _ = reply.send(self.join(key, context, out, socket, inside));
             }
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
@@ -961,8 +1054,15 @@ impl Room {
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
                     member.read_only = member.held_read_only || context.access == Access::Read;
+                    // A narrowed writer of a source room leaves its presence.
+                    let was = in_presence(member, &self.kind);
+                    let renamed = member.context.identity != context.identity;
                     member.context = context;
                     self.view_dirty = true;
+                    let now = in_presence(member, &self.kind);
+                    if was != now || (now && renamed) {
+                        self.mark_presence();
+                    }
                 }
             }
             RoomCmd::Stored(done) => self.stored(*done),
@@ -1084,6 +1184,7 @@ impl Room {
                 let _ = reply.send(state);
             }
             RoomCmd::ServiceEdit(edit) => self.service_edit(*edit),
+            RoomCmd::AgentUndo(undo) => self.agent_undo(*undo).await,
             RoomCmd::Items(parts) => self.follow_items(&parts),
             RoomCmd::PeerLoaded => {
                 if let Kindly::Note(note) = &mut self.kind {
@@ -1280,6 +1381,7 @@ impl Room {
             user_id: actor.to_owned(),
             viewer: false,
             parent: None,
+            identity: Default::default(),
         };
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
@@ -1439,26 +1541,55 @@ impl Room {
     }
 
     /// A server edit reaches the editors; it is durable already, so the room
-    /// stays clean and its cover takes the edit's row in.
+    /// stays clean and its cover takes the edit's row in. An agent edit's own
+    /// items stay here for its Undo, what it deleted kept from collection.
     fn service_edit(&mut self, edit: ServiceEdit) {
         let applied = ydoc::decode(&edit.update)
             .map_err(|error| error.to_string())
-            .and_then(|update| ydoc::apply(&self.doc, update).map_err(|error| error.to_string()));
-        let applied_bytes = match applied {
-            Ok(update) => {
-                let bytes = update.len() as u64;
-                self.broadcast_update(None, update);
-                bytes
-            }
+            .and_then(|update| {
+                match edit.step {
+                    Some(_) => ydoc::undo::apply_kept(&self.doc, update),
+                    None => ydoc::apply(&self.doc, update),
+                }
+                .map_err(|error| error.to_string())
+            });
+        let update = match applied {
+            Ok(update) => update,
             Err(error) => {
                 observe::capture(
                     &error,
                     None,
                     &[("room", &self.name), ("stage", "service_edit")],
                 );
+                if let Some(reply) = edit.taken {
+                    let _ = reply.send(false);
+                }
                 return;
             }
         };
+        // An agent's growth counts toward the cap as a writer's does.
+        if let Kindly::Source(source) = &mut self.kind {
+            source.estimate.applied(update.len() as u64, 0);
+        }
+        // The editors get the edit first; its Undo is judged after.
+        let changed = !update.is_empty();
+        self.broadcast_update(None, update);
+        // A room that loaded after the edit committed holds its items already,
+        // without what it deleted: no Undo there. Nor where its Undo's
+        // estimate is too large to send (Epo 2026-10-21).
+        let mut taken = false;
+        if let Some((id, items, cost)) = edit.step
+            && changed
+            && self.update_fits(cost)
+        {
+            self.agent_changes
+                .insert(id.clone(), (items.change(&self.doc), cost));
+            self.app.agent_steps.hold(&id, &self.name);
+            taken = true;
+        }
+        if let Some(reply) = edit.taken {
+            let _ = reply.send(taken);
+        }
         self.durable.union(&edit.durable);
         self.app
             .stats
@@ -1473,14 +1604,188 @@ impl Room {
                 note.log_bytes += edit.row_bytes as i64;
             }
             Kindly::Source(source) => {
-                // An agent's growth counts toward the cap as a writer's does.
-                source.estimate.applied(applied_bytes, 0);
                 source.checkpoint = source.checkpoint.max(edit.version);
                 source.log_rows += 1;
                 source.log_bytes += edit.row_bytes as i64;
             }
         }
         self.maybe_fold();
+    }
+
+    /// Undo or Redo of an agent step (`edits::undo`): reverted as the
+    /// editor's undo reverts (`ydoc::undo`), so other people's later changes
+    /// stay; a note the store would refuse is put back at once. The result
+    /// goes out like a writer's update under the actor's contributor marker
+    /// (the store checks the actor's access), and the reply waits for the
+    /// first store that holds it, even when people typed on meanwhile (a store
+    /// that failed and retries still answers done: the revert stays in the
+    /// room). The step that reverses it stays as `next`. A step
+    /// this room reverted already answers done again, with the id its reverse
+    /// is kept under, so a request whose answer was lost can be repeated.
+    async fn agent_undo(&mut self, undo: AgentUndo) {
+        let AgentUndo {
+            step,
+            next,
+            actor,
+            reply,
+        } = undo;
+        let Some((change, cost)) = self.agent_changes.remove(&step) else {
+            let answer = match self.agent_reverted.get(&step) {
+                Some(kept) => Reverted::Done(kept.clone()),
+                None => Reverted::Missing,
+            };
+            let _ = reply.send(Ok(answer));
+            return;
+        };
+        let refused = if self.discard_pending.is_some()
+            || !self.forced_unload.is_empty()
+            || self.app.evictions.blocks(&self.name, false)
+        {
+            Some(("unavailable_target", crate::edits::ROOM_RESET))
+        } else if matches!(self.kind, Kindly::Source(_)) && self.app.handoff().busy(&self.name) {
+            // A publication handoff holds every writer read-only, as drafts.
+            Some(("unavailable_target", "a publication is under way"))
+        } else if self.unsupported().is_some() {
+            Some(("unsupported_operation", UNSUPPORTED_BLOCK))
+        } else if matches!(&self.kind, Kindly::Source(source) if source.paused) {
+            Some(("office_editing_paused", "Office editing is paused"))
+        } else {
+            None
+        };
+        // Debug builds only: the integration tests' refusal of a quiz's keys
+        // room, to check the content room is put back.
+        #[cfg(debug_assertions)]
+        let refused = refused.or_else(|| {
+            (self.name.starts_with("keys:") && next.starts_with(IT_REFUSE_KEYS_UNDO))
+                .then_some(("unavailable_target", "integration test refusal"))
+        });
+        if let Some((code, message)) = refused {
+            self.agent_changes.insert(step, (change, cost));
+            let _ = reply.send(Ok(Reverted::Refused {
+                code,
+                message: message.into(),
+            }));
+            return;
+        }
+        // An Undo whose estimate no longer fits is refused (Epo 2026-10-21):
+        // a source room may have grown toward its cap since. The step goes.
+        if !self.update_fits(cost) {
+            self.app.agent_steps.release(&step, &self.name);
+            let _ = reply.send(Ok(Reverted::Refused {
+                code: "undo_unavailable",
+                message: "this edit is too large to undo".into(),
+            }));
+            return;
+        }
+        let doc = self.doc.clone();
+        let Some(reverted) = tokio::task::block_in_place(|| ydoc::undo::revert(&doc, change))
+        else {
+            self.app.agent_steps.release(&step, &self.name);
+            let _ = reply.send(Ok(Reverted::Nothing));
+            return;
+        };
+        let ydoc::undo::Reverted { update, next: back } = reverted;
+        if let Kindly::Note(note) = &self.kind {
+            let (model, kind, previous, peer) = (
+                note.model,
+                note.kind.clone(),
+                note.durable_metrics,
+                note.validator.peer(),
+            );
+            if let Err(error) =
+                tokio::task::block_in_place(|| validate(&doc, model, &kind, previous, peer))
+            {
+                self.broadcast_update(None, update);
+                let restored = back.and_then(|back| {
+                    tokio::task::block_in_place(|| ydoc::undo::revert(&doc, back))
+                });
+                match restored {
+                    Some(restored) => {
+                        self.broadcast_update(None, restored.update);
+                        match restored.next {
+                            Some(again) => {
+                                self.agent_changes.insert(step, (again, cost));
+                            }
+                            None => self.app.agent_steps.release(&step, &self.name),
+                        }
+                    }
+                    None => {
+                        self.app.agent_steps.release(&step, &self.name);
+                        observe::capture(
+                            "a refused agent Undo could not be put back",
+                            None,
+                            &[("room", &self.name), ("stage", "agent_undo")],
+                        );
+                    }
+                }
+                self.content_changed();
+                let (code, message) = match error {
+                    StoreError::Limit { code, .. } => ("quota_rejected", code.as_str().to_owned()),
+                    other => ("invalid_input", other.to_string()),
+                };
+                let _ = reply.send(Ok(Reverted::Refused { code, message }));
+                return;
+            }
+        }
+        let context = Context {
+            access: Access::Write,
+            expires_at: i64::MAX,
+            token_id: String::new(),
+            user_id: actor.clone(),
+            viewer: false,
+            parent: None,
+            identity: Default::default(),
+        };
+        if let Some(marker) = self.markers.write(&self.doc, &context) {
+            self.broadcast_update(None, marker);
+        }
+        match &mut self.kind {
+            // Content the validator did not admit: its growth bound is stale.
+            Kindly::Note(note) => note.validator.invalidate(),
+            // An upper bound: what the revert freed is not counted.
+            Kindly::Source(source) => source.estimate.applied(update.len() as u64, 0),
+        }
+        // An Undo that brings back a quiz or an image gets a children pass,
+        // as a person's undo does.
+        if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
+            && let Ok(decoded) = ydoc::decode(&update)
+            && notes::children::child_writes(&self.doc.transact(), &decoded).is_some()
+        {
+            self.child_passes.push_back(ChildPass {
+                actor,
+                update: update.clone(),
+                notify: None,
+            });
+            self.next_child_pass();
+        }
+        self.content_changed();
+        self.broadcast_update(None, update);
+        self.app.agent_steps.revert(&step, &self.name);
+        self.agent_reverted.insert(step, next.clone());
+        // Its reverse (the same edit's other side) is kept only when its
+        // estimate fits, as an edit's is.
+        if let Some(back) = back
+            && self.update_fits(cost)
+        {
+            self.agent_changes.insert(next.clone(), (back, cost));
+            self.app.agent_steps.hold(&next, &self.name);
+        }
+        // The next store's snapshot holds the revert.
+        let snapshot = self.store.snapshots + 1;
+        self.store.undo_waiters.push((next, snapshot, reply));
+        self.start_store().await;
+    }
+
+    /// Whether an update of `len` bytes may go out (Epo 2026-10-21): within
+    /// the 8 MiB update cap and, in a source room, its admission cap.
+    fn update_fits(&self, len: usize) -> bool {
+        len <= ydoc::MAX_UPDATE_BYTES
+            && match &self.kind {
+                Kindly::Source(source) => {
+                    source.estimate.bytes + len as u64 <= sources::admission_cap(source.state_cap)
+                }
+                Kindly::Note(_) => true,
+            }
     }
 
     /// Sends `notification` (if any) and CLOSED, and forgets the channel.
@@ -1536,6 +1841,7 @@ impl Room {
         }
         self.store.dirty = false;
         self.store.retry_at = None;
+        self.fail_undo_waiters("collaboration room discarded");
         self.answer_store_waiters(Err("collaboration room discarded".into()));
         let _ = reply.send(Ok(()));
     }
@@ -1880,6 +2186,7 @@ impl Room {
         context: Context,
         out: Outbox,
         socket: String,
+        inside: bool,
     ) -> Result<(), String> {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
@@ -1912,12 +2219,20 @@ impl Room {
                 held_read_only: false,
                 out,
                 socket,
+                inside,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
                 opening: None,
             },
         );
+        if self
+            .members
+            .get(&key)
+            .is_some_and(|member| in_presence(member, &self.kind))
+        {
+            self.mark_presence();
+        }
         if unsupported && let Some(notice) = self.unsupported() {
             self.send(key, Kind::Stateless, &protocol::text(&notice));
         }
@@ -1971,6 +2286,9 @@ impl Room {
             return;
         };
         self.view_dirty = true;
+        if in_presence(&member, &self.kind) {
+            self.mark_presence();
+        }
         if let Kindly::Source(_) = &self.kind {
             self.app.handoff().closed(&self.name, member.channel_id);
         }
@@ -2068,9 +2386,12 @@ impl Room {
                 member.out.frame(frame.freeze());
             }
         }
-        // Removed clients are forgotten once their removal went out.
-        self.awareness
-            .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
+        // Removed clients are forgotten once their removal went out, or, while
+        // a presence is due, once it went out too (`send_presence`).
+        if !self.presence_dirty {
+            self.awareness
+                .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
+        }
     }
 
     fn broadcast_update(&mut self, sender: Option<MemberKey>, update: Vec<u8>) {
@@ -2655,13 +2976,15 @@ impl Room {
         }
         // Ids another channel of the same user held until now.
         let mut taken_over = Vec::new();
+        // A channel's ids name its cursors in the room's presence.
+        let mut clients_changed = false;
         for entry in entries {
             let current = self.awareness.get(&entry.client);
             // A client id is its user's: another user's channel neither
-            // writes nor removes it (Epo 2026-10-19).
-            if current
-                .is_some_and(|state| state.owner.is_some() && state.user != member.context.user_id)
-            {
+            // writes nor removes it (Epo 2026-10-19), nor takes it once it is
+            // released until the presence after that went out, since until
+            // then co-editors still label it with its user's name.
+            if current.is_some_and(|state| state.user != member.context.user_id) {
                 continue;
             }
             // y-protocols: a newer clock wins; at the same clock a removal wins.
@@ -2691,11 +3014,11 @@ impl Room {
             if let Some(previous) = held.filter(|previous| *previous != key) {
                 taken_over.push((previous, entry.client));
             }
-            if entry.removed() {
-                member.clients.remove(&entry.client);
+            clients_changed |= if entry.removed() {
+                member.clients.remove(&entry.client)
             } else {
-                member.clients.insert(entry.client);
-            }
+                member.clients.insert(entry.client)
+            };
             self.changed_awareness.insert(entry.client);
             self.awareness.insert(
                 entry.client,
@@ -2708,12 +3031,83 @@ impl Room {
         }
         for (previous, client) in taken_over {
             if let Some(member) = self.members.get_mut(&previous) {
-                member.clients.remove(&client);
+                clients_changed |= member.clients.remove(&client);
             }
+        }
+        if clients_changed {
+            self.mark_presence();
         }
         if !self.changed_awareness.is_empty() {
             self.schedule_flush();
         }
+    }
+
+    /// The room's presence changed: it goes out a flush window from now, and
+    /// at most once a second.
+    fn mark_presence(&mut self) {
+        if self.presence_dirty {
+            return;
+        }
+        self.presence_dirty = true;
+        let soonest = Instant::now() + FLUSH_WINDOW;
+        self.presence_at = Some(self.presence_at.map_or(soonest, |at| at.max(soonest)));
+    }
+
+    /// Sends each editor in the room (`in_presence`) the others: each one's
+    /// verified identity from its token and the awareness client ids it
+    /// holds, which name its cursor. Its own user's other tabs and devices
+    /// are listed too, never its own connection. An embed's channel (inside
+    /// its note's) is listed but hears none: its page's header shows the
+    /// note's.
+    fn send_presence(&mut self, now: Instant) {
+        self.presence_dirty = false;
+        self.presence_at = Some(now + PRESENCE_EVERY);
+        let mut listed: Vec<(&MemberKey, &Member)> = self
+            .members
+            .iter()
+            .filter(|(_, member)| in_presence(member, &self.kind))
+            .collect();
+        listed.sort_by_key(|(_, member)| member.channel_id);
+        self.people.retain(|user, _| {
+            listed
+                .iter()
+                .any(|(_, member)| member.context.user_id == *user)
+        });
+        let entries: Vec<(MemberKey, String)> = listed
+            .into_iter()
+            .map(|(key, member)| {
+                let person = *self
+                    .people
+                    .entry(member.context.user_id.clone())
+                    .or_insert_with(|| {
+                        self.next_person += 1;
+                        self.next_person
+                    });
+                (*key, presence_entry(member, person).to_string())
+            })
+            .collect();
+        for (key, member) in &self.members {
+            if member.inside || !in_presence(member, &self.kind) {
+                continue;
+            }
+            let others: Vec<&str> = entries
+                .iter()
+                .filter(|(owner, _)| owner != key)
+                .take(MAX_PRESENCE)
+                .map(|(_, entry)| entry.as_str())
+                .collect();
+            let payload = format!(
+                "{{\"type\":\"{PRESENCE_TYPE}\",\"connections\":[{}]}}",
+                others.join(",")
+            );
+            self.send(*key, Kind::Stateless, &protocol::text(&payload));
+        }
+        // An id released before this presence, which no longer lists it, is
+        // free for anyone now that its removal went out too (`on_awareness`).
+        let unsent = &self.changed_awareness;
+        self.awareness.retain(|client, state| {
+            !(state.entry.removed() && state.owner.is_none()) || unsent.contains(client)
+        });
     }
 
     /// Sends the room's awareness states to a channel; returns their bytes.
@@ -2889,6 +3283,7 @@ impl Room {
         };
         let claimed = self.receipts.clone();
         self.store.dirty = false;
+        self.store.snapshots += 1;
         self.store.first_change = None;
         let started = Instant::now();
         // Checked (and repaired) first: the row holds what a repair wrote.
@@ -3085,6 +3480,7 @@ impl Room {
             }
         };
         self.store.dirty = false;
+        self.store.snapshots += 1;
         self.store.first_change = None;
         let mut actors: Vec<String> = Vec::new();
         for contributor in &contributors {
@@ -3212,6 +3608,7 @@ impl Room {
             }
         }
         self.project_on_cadence();
+        self.answer_stored_undos();
         if self.store.dirty || markers::pending(&self.doc) {
             if self.store.again {
                 self.store.again = false;
@@ -3262,6 +3659,7 @@ impl Room {
                 "store refused the document",
                 json!({ "error": error.to_string(), "room": self.name }),
             );
+            self.fail_undo_waiters(&error.to_string());
             self.answer_store_waiters(Err(error.to_string()));
             self.reject_after_store(&error, bytes);
             return;
@@ -3391,6 +3789,7 @@ impl Room {
             source.failing_since = None;
         }
         let cause = incidents::Cause::from_source(&error.discard_cause(slow_limit));
+        self.fail_undo_waiters(&error.to_string());
         self.answer_store_waiters(Err(error.to_string()));
         let eviction = uuid::Uuid::new_v4().to_string();
         let payload = json!({
@@ -3403,9 +3802,38 @@ impl Room {
         self.reject_room(cause, bytes, &eviction, payload);
     }
 
+    /// Answers the store's waiters. An agent Undo is done either way: a
+    /// failed store is retried with the revert still in the room; a store the
+    /// room gives up on calls `fail_undo_waiters` first.
     fn answer_store_waiters(&mut self, result: Result<(), String>) {
         for waiter in self.store.waiters.drain(..) {
             let _ = waiter.send(result.clone());
+        }
+        for (kept, _, waiter) in self.store.undo_waiters.drain(..) {
+            let _ = waiter.send(Ok(Reverted::Done(kept)));
+        }
+    }
+
+    /// Answers the agent Undos whose revert the store that just ended held,
+    /// though the room is dirty again: people typing on would otherwise keep
+    /// an Undo waiting until it times out (review r2 M2). Only one store runs
+    /// at a time, so the one that ended took the latest snapshot.
+    fn answer_stored_undos(&mut self) {
+        let stored = self.store.snapshots;
+        let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.store.undo_waiters)
+            .into_iter()
+            .partition(|(_, snapshot, _)| *snapshot <= stored);
+        self.store.undo_waiters = waiting;
+        for (kept, _, waiter) in done {
+            let _ = waiter.send(Ok(Reverted::Done(kept)));
+        }
+    }
+
+    /// The room drops what it holds (a discard, a store refused for good):
+    /// the agent Undos waiting on it did not land.
+    fn fail_undo_waiters(&mut self, error: &str) {
+        for (_, _, waiter) in self.store.undo_waiters.drain(..) {
+            let _ = waiter.send(Err(error.to_owned()));
         }
     }
 
@@ -3609,6 +4037,8 @@ impl Room {
             "room_unload",
             json!({ "bytes": stored_bytes(&self.kind), "room": self.name }),
         );
+        // The live Undo of agent edits ends with the room (Epo 2026-10-20).
+        self.app.agent_steps.forget_room(&self.name);
         for reply in self.forced_unload.drain(..) {
             let _ = reply.send(());
         }
@@ -3758,6 +4188,35 @@ async fn sleep_until(deadline: Option<Instant>) {
         Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
         None => std::future::pending().await,
     }
+}
+
+/// Whether a channel is in the room's presence, listed and hearing it:
+/// people who can edit, never viewers (Epo 2026-10-20). A material room knows
+/// a viewer from the material's access at join, so an editor's reading tab (a
+/// View) and a narrowed editor are in and their cursors keep their names; a
+/// source room knows only the token's access, so only its write channels are.
+/// A quiz's keys room has none: its writers' page shows the content room's.
+fn in_presence(member: &Member, kind: &Kindly) -> bool {
+    !member.viewer
+        && match kind {
+            Kindly::Note(note) => note.doc != note_store::Doc::Keys,
+            Kindly::Source(_) => member.context.access == Access::Write,
+        }
+}
+
+/// One connection in the room's presence: its person's number, the token's
+/// name and avatar (nothing about its device, Epo 2026-10-20), and the
+/// awareness client ids it holds.
+fn presence_entry(member: &Member, person: u64) -> Value {
+    let identity = &member.context.identity;
+    let mut clients: Vec<u64> = member.clients.iter().copied().collect();
+    clients.sort_unstable();
+    json!({
+        "person": person,
+        "name": identity.name,
+        "avatar": identity.avatar_url,
+        "clients": clients,
+    })
 }
 
 /// A read-only channel names no uploads in presence (REVIEW5 E2): only a

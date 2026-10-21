@@ -20,20 +20,57 @@ export function arrayField(value: unknown, key: string): unknown[] {
 
 class ProviderError extends Error {
   readonly status: number;
-  constructor(provider: string, status: number) {
-    super(`${provider} request failed (${status})`);
+  constructor(provider: string, status: number, code = '') {
+    super(`${provider} request failed (${status}${code ? `, ${code}` : ''})`);
     this.status = status;
   }
 }
 
+/** A Stripe error's type and code (e.g. `rate_limit`, `lock_timeout`), never
+ * its message or the rest of the body. Empty for other providers. */
+async function errorCode(provider: string, response: Response) {
+  if (provider !== 'Stripe') return '';
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: { code?: unknown; type?: unknown };
+  };
+  return [body.error?.type, body.error?.code]
+    .filter((part) => typeof part === 'string' && /^[a-z_]{1,64}$/.test(part))
+    .join('/');
+}
+
+/** Tries for a Stripe 429. Test-clock objects are briefly locked while Stripe
+ * advances the clock (`lock_timeout`), and a 429 is a request Stripe did not
+ * process. This is the journey harness talking to Stripe, not a user-facing
+ * endpoint a user retries, so AGENTS.md's no-retry rule does not apply. */
+const STRIPE_TRIES = 3;
+
 async function providerJSON(url: URL, init: RequestInit, provider: string) {
-  const response = await fetch(url, {
-    ...init,
-    redirect: 'error',
-    signal: AbortSignal.timeout(30_000),
-  });
-  // Provider bodies can contain addresses, tokens and signed links. Keep errors bounded to status.
-  if (!response.ok) throw new ProviderError(provider, response.status);
+  let response: Response;
+  for (let attempt = 1; ; attempt++) {
+    response = await fetch(url, {
+      ...init,
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (
+      provider !== 'Stripe' ||
+      response.status !== 429 ||
+      attempt === STRIPE_TRIES
+    )
+      break;
+    await response.body?.cancel();
+    const after = Number(response.headers.get('retry-after'));
+    const wait = after > 0 ? Math.min(after * 1000, 5000) : 1500;
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
+  // Provider bodies can contain addresses, tokens and signed links. Keep errors
+  // bounded to the status and, for Stripe, its error type and code.
+  if (!response.ok)
+    throw new ProviderError(
+      provider,
+      response.status,
+      await errorCode(provider, response)
+    );
   return {
     body: (await response.json().catch(() => {
       throw new Error(`${provider} returned invalid JSON`);

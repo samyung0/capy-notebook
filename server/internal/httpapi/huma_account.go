@@ -125,6 +125,7 @@ func (a *api) registerAccount(api huma.API) {
 	reg(api, http.MethodPatch, "/api/me", "updateMe", tag, "Update profile", http.StatusOK, a.updateMe)
 	reg(api, http.MethodPatch, "/api/me/locale", "setLocale", tag, "Set account locale", http.StatusNoContent, a.setLocale)
 	reg(api, http.MethodPatch, "/api/me/chat", "setChatPrefs", tag, "Set the chat settings", http.StatusNoContent, a.setChatPrefs)
+	reg(api, http.MethodPut, "/api/me/customization", "setCustomization", tag, "Sync the app's look to the account", http.StatusNoContent, a.setCustomization)
 	reg(api, http.MethodGet, "/api/search", "search", tag, "Global search", http.StatusOK, a.searchAll)
 	reg(api, http.MethodGet, "/api/notifications", "listNotifications", tag, "List notifications", http.StatusOK, a.listNotifications)
 	reg(api, http.MethodGet, "/api/notifications/unread-count", "getUnreadNotificationCount", tag, "Unread notification count", http.StatusOK, a.getUnreadNotificationCount)
@@ -230,6 +231,25 @@ func (a *api) setChatPrefs(ctx context.Context, in *chatPrefsInput) (*Empty, err
 		return nil, err
 	}
 	return &Empty{}, hErr(a.s.SetChatPrefs(ctx, userID(ctx), in.Body.Steps, in.Body.SendKey))
+}
+
+type customizationInput struct {
+	Body store.Customization
+}
+
+// setCustomization stores the look a device synced and tells the user's open
+// tabs, which refetch /api/me and adopt it. The sending tab hears it too and
+// finds nothing new.
+func (a *api) setCustomization(ctx context.Context, in *customizationInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	uid := userID(ctx)
+	if err := a.s.SetCustomization(ctx, uid, in.Body); err != nil {
+		return nil, hErr(err)
+	}
+	a.publishNotificationEvent(ctx, uid, notificationEvent{Type: "customization"})
+	return &Empty{}, nil
 }
 
 func (a *api) setLocale(ctx context.Context, in *localeInput) (*Empty, error) {
@@ -445,6 +465,23 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 		successURL,
 		cancelURL,
 	)
+	var open *store.OpenCheckoutError
+	if errors.As(err, &open) {
+		url, settleErr := a.settleOpenCheckout(ctx, uid, priceID, open)
+		if settleErr != nil {
+			return nil, hErr(settleErr)
+		}
+		if url != "" {
+			return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+		}
+		reservationID, status, err = a.s.ReserveStripeCheckout(
+			ctx, uid, customerID, priceID, successURL, cancelURL,
+		)
+		if errors.As(err, &open) {
+			// Another tab opened one in between.
+			err = store.ErrCheckoutStarting
+		}
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -466,7 +503,7 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 			return nil, hErr(err)
 		}
 	}
-	session, err := billing.CreateCheckoutSession(
+	session, err := a.stripeNewCheckout(
 		customerID,
 		priceID,
 		uid,
@@ -488,7 +525,7 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 	if err != nil {
 		// The remote session exists but could not be recorded durably. Expiring it
 		// synchronously is the only safe outcome; never return an untracked URL.
-		if billing.ExpireCheckoutSession(session.ID) == nil {
+		if a.stripeExpireCheckout(session.ID) == nil {
 			_ = a.s.RecordStripeCheckoutSessionExpired(
 				ctx, reservationID, uid, customerID, session.ID,
 			)
@@ -503,6 +540,49 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 		})
 	}
 	return &urlOutput{Body: apimodel.URLResp{URL: session.URL}}, nil
+}
+
+// settleOpenCheckout handles the user's earlier subscription Checkout that is
+// still open locally (Epo 2026-10-21). While Stripe has it open, the same plan
+// gets the same page and another plan's page is expired at Stripe; a page
+// Stripe expired is recorded expired too, so a new one can start (url ""). A
+// completed one means Stripe made the subscription, which its webhook records.
+func (a *api) settleOpenCheckout(
+	ctx context.Context,
+	uid, priceID string,
+	open *store.OpenCheckoutError,
+) (string, error) {
+	remote, err := a.stripeGetCheckout(open.SessionID)
+	if err != nil {
+		return "", err
+	}
+	switch stripe.CheckoutSessionStatus(remote.Status) {
+	case stripe.CheckoutSessionStatusOpen:
+		if open.PriceID == priceID && remote.URL != "" {
+			return remote.URL, nil
+		}
+		if err := a.stripeExpireCheckout(open.SessionID); err != nil {
+			return "", err
+		}
+		// Expiring does nothing to a session that completed after the read
+		// above; that subscription exists, so no second Checkout starts.
+		if remote, err = a.stripeGetCheckout(open.SessionID); err != nil {
+			return "", err
+		}
+		if stripe.CheckoutSessionStatus(remote.Status) == stripe.CheckoutSessionStatusComplete {
+			return "", store.ErrSubscriptionExists
+		}
+	case stripe.CheckoutSessionStatusComplete:
+		return "", store.ErrSubscriptionExists
+	}
+	err = a.s.RecordStripeCheckoutSessionExpired(
+		ctx, open.ReservationID, uid, open.CustomerID, open.SessionID,
+	)
+	if errors.Is(err, store.ErrConflict) {
+		// The row moved on meanwhile; the next reservation reads where to.
+		return "", nil
+	}
+	return "", err
 }
 
 // creditsCustomer returns the user's Stripe customer, creating and binding one

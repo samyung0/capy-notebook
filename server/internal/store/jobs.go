@@ -93,6 +93,8 @@ type AgentFileDraft struct {
 	SizeBytes                            int64
 	BlobPath, Parser, ParseMode          string
 	Provenance                           *Provenance
+	// ScopeFileNames is its made-from line, as on a material.
+	ScopeFileNames []string
 }
 
 // CreateAgentFileOperation lands an agent's file the way an upload does (the
@@ -117,6 +119,11 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 	if err != nil {
 		return AgentOperation{}, false, err
 	}
+	if len(draft.ScopeFileNames) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE files SET scope_file_names=$2 WHERE id=$1`, f.ID, draft.ScopeFileNames); err != nil {
+			return AgentOperation{}, false, err
+		}
+	}
 	// agent_operations.kind has no file kind; a deck is the agent's study
 	// material, stored as a file.
 	op.Kind = "create_material"
@@ -133,11 +140,7 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 		return AgentOperation{}, false, err
 	}
 	// Its Undo moves it to the trash (UndoFileStep).
-	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, f.ID).Scan(&ownerID); err != nil {
-		return AgentOperation{}, false, err
-	}
-	if err := insertFileStepTx(ctx, tx, &op, StepTrash, ownerID, ""); err != nil {
+	if err := markFileUndoTx(ctx, tx, &op); err != nil {
 		return AgentOperation{}, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {

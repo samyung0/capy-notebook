@@ -246,6 +246,44 @@ async def test_agent_stream_retries_only_before_the_first_byte(monkeypatch, slee
     assert sleeps == [0.25]
 
 
+async def test_a_stopped_turn_starts_no_retry_of_its_model_call(monkeypatch, sleeps):
+    attempts = 0
+
+    async def stream(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise elitellm.ProviderError("connect failed", status_code=502)
+
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    with pytest.raises(elitellm.ProviderError, match="connect failed"):
+        await models.stream_agent_response(
+            [{"role": "user", "content": "hi"}], model=_spec(), stopped=lambda: True
+        )
+    assert attempts == 1 and sleeps == []
+
+
+async def test_a_stop_during_the_retry_wait_starts_no_next_attempt(monkeypatch):
+    attempts = 0
+    stop = False
+
+    async def stream(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise _busy(retry_after=0.25)
+
+    async def sleep(_seconds):
+        nonlocal stop
+        stop = True  # the user presses Stop while the call waits to retry
+
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    monkeypatch.setattr(models.asyncio, "sleep", sleep)
+    with pytest.raises(elitellm.ProviderError, match="slow down"):
+        await models.stream_agent_response(
+            [{"role": "user", "content": "hi"}], model=_spec(), stopped=lambda: stop
+        )
+    assert attempts == 1
+
+
 async def test_interactive_completion_streams_and_assembles(monkeypatch):
     seen = {}
 
@@ -309,6 +347,8 @@ async def test_vlm_page_retries_an_unusable_answer_and_charges_only_a_usable_rea
     monkeypatch, sleeps, ingest_mode, first_text, first_finish
 ):
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+    # Each attempt leases the page-read gate at CAPY_VLM_PAGE_CAPACITY.
+    monkeypatch.setattr(models.cfg, "vlm_page_capacity", 64)
     answers = iter([(first_text, first_finish), ("page text", "stop")])
     opened: list = []
     charged: list = []
@@ -333,7 +373,7 @@ async def test_vlm_page_retries_an_unusable_answer_and_charges_only_a_usable_rea
     monkeypatch.setattr(models.elitellm, "complete", complete)
     read = await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1_000)
     assert read == "page text"
-    assert opened == [models.VLM_PAGE_CAPACITY] * 2
+    assert opened == [("vlm_page", 64)] * 2
     assert charged == [0, 1_000]
 
 
@@ -406,7 +446,10 @@ async def test_captioning_on_openrouter_keeps_reasoning_off(
         assert caption == "text"
     [body] = bodies
     assert body["model"] == "deepseek/deepseek-v4.1-flash-1017"
-    assert body["provider"] == {"order": ["DeepInfra"], "allow_fallbacks": False}
+    assert body["provider"] == {
+        "order": ["InferenceNet", "Cloudflare"],
+        "allow_fallbacks": False,
+    }
     assert body["reasoning"] == {"enabled": False}
     if call == "vlm":
         assert body["max_tokens"] == models.VLM_PAGE_MAX_TOKENS == 2_000

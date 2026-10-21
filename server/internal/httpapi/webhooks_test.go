@@ -392,11 +392,12 @@ func TestClerkWebhook_UserCreated(t *testing.T) {
 	srv := newTestServer(t, f, Config{ClerkWebhookSecret: testClerkSecret})
 
 	body := clerkBody(t, "evt_created_1", "user.created", map[string]any{
-		"id":         "user_123",
-		"first_name": "Ada",
-		"last_name":  "Lovelace",
+		"id":                       "user_123",
+		"first_name":               "Ada",
+		"last_name":                "Lovelace",
+		"primary_email_address_id": "idn_ada",
 		"email_addresses": []map[string]any{
-			{"email_address": "ada@example.com"},
+			{"id": "idn_ada", "email_address": "ada@example.com", "verification": map[string]any{"status": "verified"}},
 		},
 		"image_url": "https://img.example/ada.png",
 	})
@@ -426,6 +427,66 @@ func TestClerkWebhook_UserCreated(t *testing.T) {
 	if f.associated["evt_created_1"] != "user_123" || f.redacted["evt_created_1"] {
 		t.Fatalf("created event association=%q redacted=%v",
 			f.associated["evt_created_1"], f.redacted["evt_created_1"])
+	}
+}
+
+// The webhook names a new account like the sign-in sync: first and last name,
+// else the username, else nothing, so the store takes the email's local part
+// (human authorization, 2026-10-21). A whitespace-only name counts as none.
+func TestClerkWebhookNamesLikeTheSignInSync(t *testing.T) {
+	for i, test := range []struct {
+		data map[string]any
+		want string
+	}{
+		{map[string]any{"first_name": " ", "last_name": nil, "username": "ada_l"}, "ada_l"},
+		{map[string]any{"first_name": " ", "last_name": " "}, ""},
+		{map[string]any{"first_name": "Ada", "username": "ada_l"}, "Ada"},
+	} {
+		f := newFakeStore()
+		srv := newTestServer(t, f, Config{ClerkWebhookSecret: testClerkSecret})
+		test.data["id"] = "user_named"
+		body := clerkBody(t, fmt.Sprintf("evt_named_%d", i), "user.created", test.data)
+		resp := post(t, srv.URL+"/webhooks/clerk", signSvix(t, testClerkSecret, body), body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || len(f.upserts) != 1 || f.upserts[0].name != test.want {
+			t.Fatalf("%v: status %d, upserts %+v, want name %q", test.data, resp.StatusCode, f.upserts, test.want)
+		}
+	}
+}
+
+// Security regression (human authorization, 2026-10-19 10a): users.email is
+// Clerk's primary address only when it is verified. Clerk verifies the
+// sign-up address, so the risky case is an unconfirmed second address listed
+// first.
+func TestClerkWebhookStoresOnlyTheVerifiedPrimaryAddress(t *testing.T) {
+	unconfirmed := map[string]any{"id": "idn_second", "email_address": "second@example.com",
+		"verification": map[string]any{"status": "unverified"}}
+	for _, test := range []struct {
+		name, primaryStatus, want string
+	}{
+		{name: "verified primary after an unconfirmed address", primaryStatus: "verified", want: "primary@example.com"},
+		{name: "unverified primary", primaryStatus: "unverified", want: ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFakeStore()
+			srv := newTestServer(t, f, Config{ClerkWebhookSecret: testClerkSecret})
+			body := clerkBody(t, "evt_primary_"+test.primaryStatus, "user.updated", map[string]any{
+				"id":                       "user_primary",
+				"primary_email_address_id": "idn_primary",
+				"email_addresses": []map[string]any{unconfirmed, {
+					"id": "idn_primary", "email_address": "primary@example.com",
+					"verification": map[string]any{"status": test.primaryStatus},
+				}},
+			})
+			resp := post(t, srv.URL+"/webhooks/clerk", signSvix(t, testClerkSecret, body), body)
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK || len(f.upserts) != 1 {
+				t.Fatalf("status = %d, upserts = %+v", resp.StatusCode, f.upserts)
+			}
+			if f.upserts[0].email != test.want {
+				t.Fatalf("stored email = %q, want %q", f.upserts[0].email, test.want)
+			}
+		})
 	}
 }
 

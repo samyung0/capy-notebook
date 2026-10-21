@@ -577,10 +577,11 @@ fn agent_edits_write_figures_strictly_and_the_content_api_takes_the_live_policy(
 
 /// Undo puts back a figure as the room held it, a kept state included: a pie
 /// without a positive total that an agent's edit removed or replaced comes
-/// back whole. Fails with Undo's figure check strict again.
+/// back whole, since the room reverts the edit's own items (`ydoc::undo`).
 #[test]
 fn undo_puts_back_a_figure_in_a_kept_state() {
     use notes::edit::{self, DocumentCommand};
+    use yrs::updates::decoder::Decode;
     let mut flat = chart();
     flat["kind"] = json!("pie");
     flat["series"] = json!([{ "name": "A", "values": [0, 0] }]);
@@ -599,10 +600,21 @@ fn undo_puts_back_a_figure_in_a_kept_state() {
         },
     ] {
         let room = common::doc(&slate_yjs::state_from_value(&held, 3), 4);
-        let root = room.get_or_insert_text(plate::CONTENT_ROOT);
-        let outcome =
-            edit::apply_material_commands(&mut room.transact_mut(), &root, &[command]).unwrap();
-        edit::undo_material_commands(&mut room.transact_mut(), &root, &outcome.inverse).unwrap();
+        // The edit runs on a scratch copy; the room applies it keeping what
+        // it deleted, then reverts it.
+        let scratch = common::doc(&common::state(&room), 9);
+        let root = scratch.get_or_insert_text(plate::CONTENT_ROOT);
+        let captured = {
+            let mut txn = scratch.transact_mut();
+            edit::apply_material_commands(&mut txn, &root, &[command]).unwrap();
+            ydoc::undo::Captured::of(&mut txn)
+        };
+        let update = scratch
+            .transact()
+            .encode_state_as_update_v1(&room.transact().state_vector());
+        ydoc::undo::apply_kept(&room, yrs::Update::decode_v1(&update).unwrap()).unwrap();
+        assert_ne!(projected(&room), held);
+        ydoc::undo::revert(&room, captured.change(&room)).unwrap();
         assert_eq!(projected(&room), held);
     }
 }

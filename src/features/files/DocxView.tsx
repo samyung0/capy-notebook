@@ -46,7 +46,8 @@ export default function DocxView({
     sourceHeaderStatus(runtime.status, {
       busy: runtime.saving || runtime.handoff,
       editing: runtime.mode === 'edit',
-    })
+    }),
+    runtime.slowed
   );
 
   if (runtime.unavailable)
@@ -86,7 +87,6 @@ export default function DocxView({
         readOnly={runtime.readOnly}
         reloading={runtime.discarding}
         replaced={runtime.replaced}
-        slowed={runtime.slowed}
         storageFull={runtime.storageFull}
       />
       <OfficeHeader

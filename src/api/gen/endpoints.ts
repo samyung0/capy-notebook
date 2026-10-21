@@ -60,6 +60,7 @@ import type {
   CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
+  Customization,
   DeleteFileParams,
   DeleteMaterialParams,
   DeleteQuizParams,
@@ -122,6 +123,7 @@ import type {
   PDFAnnotation,
   PDFAnnotationBody,
   PastReviewsOutputBody,
+  PendingWorkspaceInvite,
   ProjectMaterialReq,
   PublicFlashcardSet,
   PublicQuiz,
@@ -2072,6 +2074,58 @@ export const listMessages = async (id: string, options?: RequestInit): Promise<l
 
   const data: listMessagesResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listMessagesResponse
+}
+
+
+
+export type stopChatTurnResponse204 = {
+  data: void
+  status: 204
+}
+
+export type stopChatTurnResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type stopChatTurnResponseSuccess = (stopChatTurnResponse204) & {
+  headers: Headers;
+};
+export type stopChatTurnResponseError = (stopChatTurnResponseDefault) & {
+  headers: Headers;
+};
+
+export type stopChatTurnResponse = (stopChatTurnResponseSuccess | stopChatTurnResponseError)
+
+export const getStopChatTurnUrl = (id: string,
+    messageId: string,) => {
+
+
+
+
+  return `/api/conversations/${id}/messages/${messageId}/stop`
+}
+
+/**
+ * @summary Stop a conversation's running turn
+ */
+export const stopChatTurn = async (id: string,
+    messageId: string, options?: RequestInit): Promise<stopChatTurnResponse> => {
+
+  const res = await fetch(getStopChatTurnUrl(id,messageId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: stopChatTurnResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as stopChatTurnResponse
 }
 
 
@@ -4594,6 +4648,56 @@ export const updateMaterial = async (id: string,
 
 
 
+export type processNoteChangesResponse202 = {
+  data: void
+  status: 202
+}
+
+export type processNoteChangesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 202>
+}
+
+export type processNoteChangesResponseSuccess = (processNoteChangesResponse202) & {
+  headers: Headers;
+};
+export type processNoteChangesResponseError = (processNoteChangesResponseDefault) & {
+  headers: Headers;
+};
+
+export type processNoteChangesResponse = (processNoteChangesResponseSuccess | processNoteChangesResponseError)
+
+export const getProcessNoteChangesUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/process-changes`
+}
+
+/**
+ * @summary Index a workspace note's changes now
+ */
+export const processNoteChanges = async (id: string, options?: RequestInit): Promise<processNoteChangesResponse> => {
+
+  const res = await fetch(getProcessNoteChangesUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: processNoteChangesResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as processNoteChangesResponse
+}
+
+
+
 export type updateMaterialSharingResponse200 = {
   data: Material
   status: 200
@@ -4791,6 +4895,56 @@ export const setChatPrefs = async (setChatPrefsReq: NonReadonly<SetChatPrefsReq>
 
   const data: setChatPrefsResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as setChatPrefsResponse
+}
+
+
+
+export type setCustomizationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setCustomizationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setCustomizationResponseSuccess = (setCustomizationResponse204) & {
+  headers: Headers;
+};
+export type setCustomizationResponseError = (setCustomizationResponseDefault) & {
+  headers: Headers;
+};
+
+export type setCustomizationResponse = (setCustomizationResponseSuccess | setCustomizationResponseError)
+
+export const getSetCustomizationUrl = () => {
+
+
+
+
+  return `/api/me/customization`
+}
+
+/**
+ * @summary Sync the app's look to the account
+ */
+export const setCustomization = async (customization: NonReadonly<Customization>, options?: RequestInit): Promise<setCustomizationResponse> => {
+
+  const res = await fetch(getSetCustomizationUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customization)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setCustomizationResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setCustomizationResponse
 }
 
 
@@ -8662,6 +8816,56 @@ export const generate = async (id: string,
 
 
 
+export type listWorkspaceInvitesResponse200 = {
+  data: PendingWorkspaceInvite[]
+  status: 200
+}
+
+export type listWorkspaceInvitesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listWorkspaceInvitesResponseSuccess = (listWorkspaceInvitesResponse200) & {
+  headers: Headers;
+};
+export type listWorkspaceInvitesResponseError = (listWorkspaceInvitesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listWorkspaceInvitesResponse = (listWorkspaceInvitesResponseSuccess | listWorkspaceInvitesResponseError)
+
+export const getListWorkspaceInvitesUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/invites`
+}
+
+/**
+ * @summary List pending workspace invites
+ */
+export const listWorkspaceInvites = async (id: string, options?: RequestInit): Promise<listWorkspaceInvitesResponse> => {
+
+  const res = await fetch(getListWorkspaceInvitesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listWorkspaceInvitesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listWorkspaceInvitesResponse
+}
+
+
+
 export type createWorkspaceInviteResponse202 = {
   data: void
   status: 202
@@ -8709,6 +8913,58 @@ export const createWorkspaceInvite = async (id: string,
 
   const data: createWorkspaceInviteResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as createWorkspaceInviteResponse
+}
+
+
+
+export type cancelWorkspaceInviteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelWorkspaceInviteResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type cancelWorkspaceInviteResponseSuccess = (cancelWorkspaceInviteResponse204) & {
+  headers: Headers;
+};
+export type cancelWorkspaceInviteResponseError = (cancelWorkspaceInviteResponseDefault) & {
+  headers: Headers;
+};
+
+export type cancelWorkspaceInviteResponse = (cancelWorkspaceInviteResponseSuccess | cancelWorkspaceInviteResponseError)
+
+export const getCancelWorkspaceInviteUrl = (id: string,
+    inviteId: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/invites/${inviteId}`
+}
+
+/**
+ * @summary Cancel a pending workspace invite
+ */
+export const cancelWorkspaceInvite = async (id: string,
+    inviteId: string, options?: RequestInit): Promise<cancelWorkspaceInviteResponse> => {
+
+  const res = await fetch(getCancelWorkspaceInviteUrl(id,inviteId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelWorkspaceInviteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as cancelWorkspaceInviteResponse
 }
 
 

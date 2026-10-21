@@ -1,20 +1,37 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, qk } from '@/api/client';
+import { api, isApiError, qk } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { describeError, isStorageRefusal } from '@/lib/errors';
 
 /** Process file changes, from the chat's pending-source notice, Generate's
- * too-large notice and the Indexing tab: a toast says it started, or why it
- * did not. Only the Indexing tab shows its progress. */
+ * too-large notice and the Indexing tab, which also indexes notes now: a
+ * toast says it started, or why it did not. Only the Indexing tab shows its
+ * progress. */
 export function useProcessFileChanges(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
-    mutationFn: async (fileIds: string[]) => {
-      const results = await Promise.allSettled(
-        fileIds.map((id) => api.post(`/files/${id}/process-changes`, {}))
-      );
+    mutationFn: async ({
+      fileIds = [],
+      noteIds = [],
+    }: {
+      fileIds?: string[];
+      noteIds?: string[];
+    }) => {
+      const results = await Promise.allSettled([
+        ...fileIds.map((id) => api.post(`/files/${id}/process-changes`, {})),
+        ...noteIds.map((id) =>
+          api
+            .post(`/materials/${id}/process-changes`, {})
+            .catch((error: unknown) => {
+              // Queued meanwhile (by the scheduler or another tab): started.
+              if (isApiError(error) && error.code === 'processing_started')
+                return;
+              throw error;
+            })
+        ),
+      ]);
       const failed = results.find((result) => result.status === 'rejected');
       if (failed) throw failed.reason;
     },

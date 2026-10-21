@@ -59,6 +59,8 @@ describe('frontend error normalization', () => {
     const workspaces = await api.post('/workspaces', {}).catch((e) => e);
     vi.stubGlobal('fetch', reply('account_deletion_busy', 409));
     const busy = await api.post('/account/restore', {}).catch((e) => e);
+    vi.stubGlobal('fetch', reply('checkout_starting', 409));
+    const starting = await api.post('/billing/checkout', {}).catch((e) => e);
     vi.unstubAllGlobals();
 
     expect(stale).toMatchObject({ code: 'revision_conflict', status: 409 });
@@ -74,6 +76,10 @@ describe('frontend error normalization', () => {
     // A conflict that is not a stale revision keeps its own copy.
     expect(describeError(busy).title).toBe(
       m.error_account_deletion_busy_title()
+    );
+    // A double Subscribe click is not told a subscription exists.
+    expect(describeError(starting).title).toBe(
+      m.error_checkout_starting_title()
     );
   });
 

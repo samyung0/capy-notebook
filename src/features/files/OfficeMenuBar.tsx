@@ -1,4 +1,4 @@
-import { type ReactNode, useContext, useRef, useState } from 'react';
+import { type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import {
@@ -30,6 +30,7 @@ import { FileModeControl } from './FileModeControl';
 import {
   FileActionsTarget,
   FileHeaderTarget,
+  FileMenuShown,
   FileMenuTarget,
 } from './fileModeContext';
 import {
@@ -86,6 +87,14 @@ export function OfficeHeaderSlots({
   // Below sm the right cluster has no room for a label (PPTX Present runs
   // under the mode toggle): the action shows its icon, named by its tooltip.
   const labelled = useMediaQuery('(min-width: 640px)');
+  // The first menus mean the file is visible: the header gets its second row
+  // and keeps it while the frame reloads for a mode switch (Epo 2026-10-20).
+  const setMenuShown = useContext(FileMenuShown);
+  const shown = !!menus && !!menuTarget;
+  useEffect(() => {
+    if (shown) setMenuShown?.(true);
+  }, [setMenuShown, shown]);
+  useEffect(() => () => setMenuShown?.(false), [setMenuShown]);
   if (!menus) return null;
   return (
     <>

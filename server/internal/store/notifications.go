@@ -183,16 +183,27 @@ func (s *Store) UnreadNotificationCount(ctx context.Context, userID string) (int
 	return count, err
 }
 
+// MarkNotificationRead reports whether this call marked it. Re-reading one's
+// own read notification is a no-op; an id that is not the caller's answers
+// ErrNotFound (human error-handling, 2026-10-21).
 func (s *Store) MarkNotificationRead(ctx context.Context, userID, notificationID string) (bool, error) {
 	var id string
 	err := s.pool.QueryRow(ctx, `UPDATE notifications
 		SET read_at=COALESCE(read_at, now())
 		WHERE id=$1 AND user_id=$2 AND read_at IS NULL
 		RETURNING id`, notificationID, userID).Scan(&id)
-	if isNoRows(err) {
-		return false, nil
+	if !isNoRows(err) {
+		return err == nil, err
 	}
-	return err == nil, err
+	var own bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM notifications WHERE id=$1 AND user_id=$2)`,
+		notificationID, userID).Scan(&own); err != nil {
+		return false, err
+	}
+	if !own {
+		return false, ErrNotFound
+	}
+	return false, nil
 }
 
 func (s *Store) MarkAllNotificationsRead(ctx context.Context, userID string) ([]string, error) {

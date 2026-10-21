@@ -102,7 +102,7 @@ export function PublicByline({
 /** The summary page's card layout for SPA pages signed-out visitors open. */
 export function PublicPage({ children }: { children: ReactNode }) {
   return (
-    <div className="t-body flex h-dvh flex-col bg-page p-1.5 text-fg sm:p-2.5">
+    <div className="page-frame t-body relative flex h-dvh flex-col bg-page p-1.5 text-fg sm:p-2.5">
       <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-card-xl bg-surface shadow-card">
         <header className="flex min-h-16 shrink-0 items-center justify-between gap-4 px-4 sm:min-h-[98px] sm:px-7">
           <a className="font-extrabold text-base" href="/">

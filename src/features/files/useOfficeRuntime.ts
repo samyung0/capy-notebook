@@ -5,6 +5,7 @@ import type { SourceFile } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import { useCollaborationHeld } from '@/features/collaboration/held';
+import { frameInput } from '@/features/collaboration/idle';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
@@ -508,6 +509,20 @@ export function useOfficeRuntime({
     source.doc,
   ]);
 
+  // The co-editors' cursors (Epo 2026-10-20), and this editor's gone when it
+  // leaves Edit.
+  const cursors = source.cursors;
+  useEffect(() => {
+    if (!frameLoaded || mode !== 'edit') return;
+    const stop = cursors.subscribe((peers) =>
+      post({ peers, type: 'peers', version: OFFICE_PROTOCOL_VERSION })
+    );
+    return () => {
+      stop();
+      cursors.set(null);
+    };
+  }, [cursors, frameBoot, frameLoaded, mode, post]);
+
   useEffect(() => {
     if (frameLoaded && mode === 'edit')
       post({
@@ -580,10 +595,18 @@ export function useOfficeRuntime({
         setFrameBoot((value) => value + 1);
         return;
       }
+      if (message.type === 'activity') {
+        frameInput();
+        return;
+      }
       if (!isCurrentOfficeRuntimeMessage(message.revision, revisionRef.current))
         return;
       if (message.type === 'dirty') {
         active.pendingInput(message.dirty);
+        return;
+      }
+      if (message.type === 'cursor') {
+        if (modeRef.current === 'edit') active.cursors.set(message.cursor);
         return;
       }
       if (message.type === 'presenting') {

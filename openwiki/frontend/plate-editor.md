@@ -64,8 +64,9 @@ The permission boundary is layered:
 1. Go checks `MaterialEffectiveRole` before minting a short-lived token.
 2. Signed-in viewers receive `read` tokens for content documents (never quiz
    keys); the collaboration server joins them read-only, never relays awareness
-   to or from them and sends them no comment relays (Epo 2026-10-10). Narrowed
-   editors (a frozen account, a full owner) keep presence.
+   to or from them and sends them no comment relays and no room presence (Epo
+   2026-10-10, 2026-10-20). Narrowed editors (a frozen account, a full owner)
+   keep presence.
 3. The collaboration server checks the browser origin at the upgrade and, per
    room, the token's signature, issuer, audience, expiry, exact room, schema
    and access.
@@ -212,8 +213,10 @@ root's decorations down to every node they cover, and returning them per block
 and text drew each caret three times. A selection is a tinted range
 (`data-remote-cursor`); every peer also gets a caret at its focus, a collapsed
 decoration that renders as an empty, zero-width leaf with `data-remote-caret`.
-Both carry the peer's colour as `--remote-cursor`, and the `.note-editor`
-stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
+Both carry the peer's colour as `--remote-cursor` and its label, the verified
+name the [room presence](#room-presence) gives its awareness client id (never
+a name its awareness claims; notes send none, and a client the presence does
+not name reads "Collaborator"), and the `.note-editor` stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
 colours, which a hex alpha suffix made invalid) and the caret's 2 px bar as a
 `::before`, so the caret adds no DOM node to the text and leaves Slate's
 DOM-to-point mapping and native caret movement alone. slate-react renders no
@@ -232,6 +235,85 @@ they run for remote operations too.
 The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
+
+### Room presence
+
+Developer Epo decided the avatar group and verified cursor labels on
+2026-10-20, and for privacy the same day that the group has no tooltip and
+nothing about a device reaches anyone. The collaboration token names who a
+connection is by the user's display name and avatar alone
+(`collaboration_tokens.go`): the name without bidi controls, the zero-width
+space, word joiner or BOM (`claimName`; the joiner and non-joiner stay, for
+Persian names and emoji sequences) and cut to the 60-character user name limit, the
+avatar left out past 1,024 bytes (co-editors then see initials). The server
+keeps them in each channel's `Context` (`auth::Identity`).
+
+Each room sends its editors a stateless `room-presence` message
+(`send_presence` in `room.rs`, `PRESENCE_TYPE`) a flush window after a join, a
+leave, a token whose identity changed, or a change in a channel's awareness
+client ids, and at most once a second (`PRESENCE_EVERY`). It lists the room's
+other connections of people who can edit (`in_presence`: in a material room
+every non-viewer channel, an editor's reading tab and a narrowed editor
+included; in a source room, which knows only the token's access, its write
+channels; a quiz's keys room has none, its page showing the content room's),
+oldest first and at most 64 (`MAX_PRESENCE`): each one's person (a number the
+room keeps per user while they are in it, never the user id, which a reader
+may not learn: Epo 2026-10-12), name, avatar and the awareness client ids it
+holds. Only those channels hear it, and an embed's channel inside its note's
+hears none (its page's header shows the note's). A member's own connection is
+never in its list, so its user appears only for their other tabs and devices.
+The ids come from the room's own map of which channel holds which client id,
+so a client cannot label a cursor as someone else: labels and the group read
+only this message. An id its user released (a removal, a leave) stays theirs
+until the next presence, which no longer lists it, has gone out: until then
+co-editors still label it with their name, so another user's channel cannot
+take it.
+
+The browser (`presence.ts`) hands it to the open editor (`onPresence` on
+`RoomProvider`; it goes empty when the channel ends): notes keep it for cursor
+labels (`useRemotePeers`), Office files for theirs (below), and both report
+it, with items (quiz, set, Mermaid) and text sources (`PresenceContext`), to
+the pane's presence store, which the header's avatar group reads
+(`RoomPresence.tsx`, labelled "Also in this document"): one avatar per person,
+at most three, then +N, with no tooltip; hidden below sm. Hovering spreads the
+group as transitions.dev's avatar group does (the hovered avatar lifts 4 px
+and grows 5 %, neighbours lift 0.45 as much per step, 320 ms in on the
+smooth-out curve and back on the strong bounce; reduced motion keeps them
+still).
+
+### Office cursors
+
+Developer Epo decided on 2026-10-20 that Office files draw co-editors'
+cursors through BetterOffice's own overlays, labelled like notes. Each fork
+editor takes a presence object (DOCX `collaboration.presence`, XLSX
+`collaboration.provider`, PPTX `collaboration.presence`); the runtime gives
+it one over the frame (`officePresence.ts`, an adapter per editor host), so
+the fork's providers, which would read names from awareness, are not used.
+The editor's cursor goes out as a `cursor` message (at most every 80 ms, the
+last always; a DOCX edit's move waits for the next) and Capy puts it in the
+source room's awareness (`officeCursors.ts`, `useSourceSession`). Capy sends
+the frame the co-editors' cursors as `peers`: each client id with a cursor in
+the room's awareness and a name in the room's presence, under that name,
+never one from awareness; an id the presence does not list (a reader, or a
+peer not listed yet) is not drawn. A cursor is a DOCX story and its encoded
+positions, an XLSX sheet and cell range, or a PPTX slide and shape, each
+bounded (`isOfficeCursor`). The flags look as the fork draws them.
+
+### Idle close
+
+The browser closes a page's collaboration connections after 60 minutes
+without keyboard, pointer, touch or wheel input (`idle.ts`, Epo 2026-10-20);
+a hidden page gets no input, so 60 minutes hidden closes them too, and
+scroll events do not count since pages scroll themselves. Input inside an
+Office frame never reaches Capy's page, so the runtime reports it
+(`activity.ts`: an `activity` message at once, then at most once a minute)
+and Capy counts it as its own (`frameInput`). Each room's channel ends first,
+quietly, as a room closed as its user's oldest does (no close or drop
+reported; it waits not synced), then the tab's socket closes and stays closed
+(`CollabSocket.sleep`). The next input or window focus opens it (`wake`) and
+every room joins again, catching up with its step 1 (the small-answer path).
+The server keeps no idle timer of its own: the per-user caps bound a client
+that ignores this.
 
 ## Stable IDs and persisted node data
 
@@ -891,7 +973,8 @@ The editor reports:
 - `Collaboration unavailable`: the first connection never synced, or the
   provider could not start.
 
-The header shows these as Hugeicons cloud icons beside the title: CloudUpload
+The header shows these as Hugeicons cloud icons beside the title, on its
+top row at every width, phones included (Epo 2026-10-20): CloudUpload
 for Connecting, Reconnecting and Syncing, the plain Cloud for Saved (and the
 PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
 Collaboration unavailable; a live item's footer status uses the same icons.
@@ -1004,8 +1087,9 @@ joins the wait of its JOIN's awareness (rate-limit review r7 S-1). The editor
 keeps its normal loading state, and after 5 s it adds the line "Opening is
 slowed because many large files were opened recently." (`SlowedOpenLine`,
 `useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
-(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and as a strip
-over an Office or text source (`SourceBanners`). A note already on screen
+(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and for an Office or text
+source in the header's sync indicator tooltip on the top row
+(`useReportEditorStatus`, Epo 2026-10-20). A note already on screen
 whose reconnect is slowed keeps its editor and holds its header's sync
 indicator tooltip open with the line (`NoteEditorStatus.slowed`,
 `EditorSaveStatus`; Epo 2026-10-20). The room is reachable, so the
@@ -1324,6 +1408,15 @@ design, option d), and the nudge's release file on 2026-10-17.
   Office protocol 12, raised `CLIENT_PROTOCOL` to 6 and both minimums to 6.
   Its deploy request names "client protocol 5 -> 6, material 4 -> 6, source
   5 -> 6, Office 12".
+  The room presence (a stateless message both families act on, cursor labels
+  from it instead of awareness; Epo 2026-10-20) raised `CLIENT_PROTOCOL` to 7
+  and both minimums to 7: an older client would keep reading names from
+  awareness. Its deploy request names "client protocol 6 -> 7, material
+  6 -> 7, source 6 -> 7".
+  The DOCX engine round (every DOCX seed changes, Word rooms reset; Epo
+  2026-10-20) raised `CLIENT_PROTOCOL` to 8 and `MIN_SOURCE` to 8;
+  `MIN_MATERIAL` stays 7. Its deploy request names "client protocol 7 -> 8,
+  source 7 -> 8".
 
 #### When to bump
 
@@ -1766,7 +1859,7 @@ clean), and a clean room's retry never moves it.
 Tokens, outbox events and commands already resolve the current schema, and
 `load`/`store` refuse a stale one, so a stale client sees another room before
 it syncs anything and opens copy-only recovery; item identities do not change,
-so comment anchors and AI Undo guards stay valid. A co-editor still connected
+so comment anchors stay valid. A co-editor still connected
 during such a discard, with a few seconds of unsaved typing, lands in recovery
 too (Epo, 2026-10-04).
 
@@ -2085,8 +2178,8 @@ holds (a removed option, a changed set of ordering items) is dropped (D9).
 Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
 content write is gone). Agent question commands write what differs in the
 questions that differ, texts as the fewest changes and lists by position, so
-an editor typing in the same question keeps their characters, with inverses
-and question guards.
+an editor typing in the same question keeps their characters; their Undo is
+the live Undo of every agent edit.
 
 Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo
@@ -2183,8 +2276,23 @@ removes the thread.
 
 Comment highlighting is local decoration state. It is never applied with
 `editor.tf.setNodes`, so opening or hovering a comment cannot create a Yjs
-update. If an anchor no longer resolves, the thread remains available at its
-stable block and quoted fallback instead of being deleted.
+update. An anchor resolves through `liveSlateRange` (`liveRange.ts`): an end
+inside a block that left the document gives no highlight, where slate-yjs
+alone would place it at the start of the last block. A thread whose anchor no
+longer resolves keeps its block and quoted fallback instead of being deleted.
+
+Document comments (Epo 2026-10-21): a thread with no `blockId`, and a thread
+whose block is not a top-level block of the document now (deleted by anyone,
+or replaced by the agent's `replace_block`, which mints new ids), list in one
+document-level place instead of rendering nowhere. `documentThreads` in
+`Collaboration.tsx` decides this at render from the live top-level ids, with
+no data moved, so Undo bringing a block back (same id) returns its threads to
+it. The note toolbar's pinned end shows a comment icon with their count while
+there are any (`toolbar/ToolbarDocumentComments.tsx`); it opens the block
+threads' popover (`DiscussionThreadsContent`) under a "Document comments"
+heading, each thread with its quote, reply, edit and delete as on a block.
+The API and table already allow a null `blockId`; the UI creates only block
+comments. Threads have no resolved state (migration 0040).
 
 Comment mutations publish `capy:collaboration:comments` through Redis.
 The collaboration server sends a stateless `comments-invalidated` room event and clients
@@ -2312,15 +2420,16 @@ Chat `edit_document` never touches the browser editor. The collaboration
 service loads the durable material state into an isolated Y.Doc, merges the
 open live room's state so in-flight typing counts, applies the normalized
 commands through a headless Slate editor
-(`collaboration-rs/crates/notes/src/edit.rs`), stores the
-inverse and item-run guards of the edited nodes, then fans the committed delta
-into the live room as a `service-edit` update; the projection runs on the same
-commit. A refused edit names its reason and, where the agent can retry, the
+(`collaboration-rs/crates/notes/src/edit.rs`), then fans the committed delta
+into the live room as a `service-edit` update, which keeps the edit's own Yjs
+items for its Undo while the room is loaded (see
+[agentic-retrieval](../agentic-retrieval.md), Undo chain); the projection runs
+on the same commit. A refused edit names its reason and, where the agent can retry, the
 target as it reads now (see [agentic-retrieval](../agentic-retrieval.md#tools),
 Tools).
 A removed flashcard's review state stays in `review_states`, ignored until an
 Undo brings the card back. The chat result card shows the effect with an Undo
-button (`available`, `undone`, `unavailable`) fed by the receipt's `undo` ref.
+button (`available`, `unavailable`) fed by the receipt's `undo` ref.
 
 ## AI previews
 
@@ -2332,9 +2441,45 @@ AI output is local until accepted:
 - proposed text/nodes live in a local weak store, not Slate or Yjs.
 
 `AiMenu` displays removed and proposed text. Reject clears local state without a
-Yjs transaction. Accept re-resolves every target; if concurrent changes make a
-target invalid, the UI requires retry. A valid accept assigns missing element
-IDs and flushes one Yjs transaction.
+Yjs transaction. Accept (`applyAiPreview`) writes the suggestion over its
+target as the target reads now, whatever someone changed there since the
+preview (Epo 2026-10-21, no stale check):
+
+- the proposed Markdown, and each table cell's, goes through the editor's
+  markdown import (`importMarkdownDocument`, as a pasted file: URL images
+  upload, quiz and flashcards fences become rows first), so it lands as
+  formatted nodes;
+- an edit whose answer keeps the range's block count in plain paragraphs
+  (Improve, Grammar and the like) replaces each covered block's text in
+  place, so every block keeps its type, list, alignment, id and Yjs text (a
+  peer's concurrent typing elsewhere in the block and comment highlights in
+  it survive; the adapter sends no marker for indent lists or h4-h6, so the
+  model answers those in plain text);
+- any other edit deletes the range, its void blocks (images, embeds,
+  dividers) whole, and inserts the nodes there as a paste (Plate's table and
+  code-block `insertFragment` ignore `at`); when the range covered a whole
+  block, a plain first paragraph takes that block's type, properties and id,
+  and any other first block keeps the model's shape with the block's id;
+- an insert goes after its block; a table update replaces the cell's
+  children, keeping the cell, and a cell the model emptied is written empty;
+- the operations are local, and slate-yjs sends them in one transaction with
+  its local origin, so they apply once and `Y.UndoManager` records one step
+  (capture stopped before and after). The old code wrapped the flush in a
+  transaction of its own origin, which slate-yjs read as remote and applied a
+  second time, and Undo never saw.
+
+When the text a suggestion was for was removed entirely (the edit range's
+block left the document or all of its text is gone, the insert's block is
+gone, every updated table cell is gone), Accept drops the suggestion and
+closes the menu with no message, since the removal is already visible (Epo
+2026-10-21); a table cell removed alone is skipped and the others are written.
+The targets are checked before the conversion as well as after it, so a
+dropped Accept creates no fence rows. An answer that converts to no nodes (a
+lone fence whose row could not be created) writes nothing and shows "The
+suggestion could not be added to the note". Reject is disabled while Accept converts, and a preview
+replaced meanwhile (a new command) is not written. The command's range is
+unhung first (`commandRange` in `aiMenuState.ts`), so a Shift+Down selection
+neither inserts below nor edits the next block.
 
 Copilot ghost text remains plugin-local and continues in the note's language.
 Generate/comment replies follow the account locale injected by the gateway; edits
@@ -2351,7 +2496,8 @@ way chat does, including BYOK. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
 The command menu always sends `ctx.toolName`. Missing or unknown values are
 `400`. There is no server classify step. Free-form text in the menu input
 sends `generate`, so a rewrite-style sentence still inserts new Markdown
-instead of replacing the selection. Canned Improve / Grammar / Shorter /
+below the selection's last block instead of replacing the selection (a
+generate previews as an insert whatever Plate's mode, `aiPlugins.ts`). Canned Improve / Grammar / Shorter /
 Longer / Simplify send `edit`. `comment` is implemented and kept for a future
 Comment action; the current menu never sends it. Retry resends the last
 `toolName`.

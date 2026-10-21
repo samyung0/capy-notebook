@@ -151,9 +151,10 @@ def sources_svg(style: str, credits: list[str], page: int, lang: str) -> str:
 
 # ------------------------------------------------------------------ records
 #
-# A deck is a dict: id, title, chapter_id, deck {style, slides [{title, brief,
-# svg}]}, provenance {books} or None, and file (the stored file's id) once it
-# is stored. The playground writes the same record as JSON.
+# A deck is a dict: id, title, chapter_id, sources (its made-from line, as
+# written), deck {style, slides [{title, brief, svg}]}, provenance {books} or
+# None, and file (the stored file's id) once it is stored. The playground
+# writes the same record as JSON.
 
 
 def deck_id(assistant_message_id: str, call_id: str) -> str:
@@ -171,6 +172,7 @@ def create(args: dict[str, Any], rid: str) -> dict[str, Any]:
         "kind": "deck",
         "title": args["title"].strip(),
         "chapter_id": str(args.get("chapter_id") or ""),
+        "sources": list(args.get("sources") or []),
         "deck": {"style": DEFAULT_STYLE, "slides": slides},
         "provenance": None,
     }

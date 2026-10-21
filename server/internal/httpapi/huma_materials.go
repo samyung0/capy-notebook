@@ -87,6 +87,7 @@ func (a *api) registerMaterials(api huma.API) {
 	regWithMaxBody(api, http.MethodPatch, "/api/materials/{id}/metadata", "updateMaterial", tag, "Update material metadata", http.StatusOK, materialRequestMaxBytes, a.updateMaterial)
 	reg(api, http.MethodPatch, "/api/materials/{id}/sharing", "updateMaterialSharing", tag, "Update standalone material sharing", http.StatusOK, a.updateMaterialSharing)
 	reg(api, http.MethodDelete, "/api/materials/{id}", "deleteMaterial", tag, "Move a material to the trash", http.StatusNoContent, a.deleteMaterial)
+	reg(api, http.MethodPost, "/api/materials/{id}/process-changes", "processNoteChanges", tag, "Index a workspace note's changes now", http.StatusAccepted, a.processNoteChanges)
 	a.registerTrash(api)
 	a.registerUndo(api)
 	a.registerMembership(api)
@@ -425,6 +426,15 @@ func (a *api) deleteMaterial(ctx context.Context, in *trashMaterialInput) (*Empt
 	}
 	if _, err := a.s.TrashMaterial(ctx, userID(ctx), in.ID, "", op); err != nil {
 		return nil, trashError(err)
+	}
+	return &Empty{}, nil
+}
+
+// processNoteChanges is a note's Process in the Indexing tab: the owner
+// queues its index job now (ProcessNoteChanges); another member gets 403.
+func (a *api) processNoteChanges(ctx context.Context, in *materialIDInput) (*Empty, error) {
+	if _, err := a.s.ProcessNoteChanges(ctx, userID(ctx), in.ID); err != nil {
+		return nil, collaborationError(err)
 	}
 	return &Empty{}, nil
 }

@@ -1,5 +1,5 @@
 {
-  "version": 33,
+  "version": 36,
   "operations": [
     "source.read",
     "material.read",
@@ -45,7 +45,7 @@
         "additionalProperties": false,
         "properties": {
           "file_ids": {
-            "description": "Restrict to these files. Omit to search the current scope.",
+            "description": "Restrict to these workspace items (ids from list_sources); only source files and notes hold text to search. Omit to search the current scope.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -415,26 +415,14 @@
             ],
             "type": "string"
           },
-          "scope": {
-            "additionalProperties": false,
-            "description": "Source scope for the material. Omit or leave empty to use the current chat scope.",
-            "properties": {
-              "chapter_ids": {
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "file_ids": {
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "type": "array"
-              }
+          "sources": {
+            "description": "The made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
             },
-            "type": "object"
+            "maxItems": 20,
+            "type": "array"
           },
           "title": {
             "maxLength": 120,
@@ -581,6 +569,15 @@
             "minLength": 1,
             "type": "string"
           },
+          "sources": {
+            "description": "With title: the new quiz's made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
           "title": {
             "description": "Instead of quiz_id: create a quiz with this title.",
             "minLength": 1,
@@ -695,6 +692,15 @@
             },
             "maxItems": 30,
             "minItems": 1,
+            "type": "array"
+          },
+          "sources": {
+            "description": "The made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 20,
             "type": "array"
           },
           "title": {
@@ -872,7 +878,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner's Undo. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1267,7 +1273,7 @@
     {
       "name": "inspect_office_document",
       "version": 1,
-      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the paragraph styles. PPTX: without slide, shapes with their target ids and text, count from start; with slide, that slide's shapes.",
+      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, shapes with their target ids and text, count from start; with slide, that slide's shapes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1323,7 +1329,7 @@
     {
       "name": "edit_office_document",
       "version": 1,
-      "description": "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly; a call can be undone from the chat only when all its commands are replace_text, set_range, rename_sheet, insert_rows or insert_columns. A call applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted paragraphs (DOCX); the commands past a limit come back unapplied, to send in another call. A call's commands are at most 256 KB; a larger call is refused.",
+      "description": "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly. A call applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted paragraphs; the commands past a limit come back unapplied, to send in another call. A call's commands are at most 256 KB; a larger call is refused.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1747,22 +1753,29 @@
                 },
                 {
                   "additionalProperties": false,
-                  "description": "DOCX: add a paragraph to the document body.",
+                  "description": "DOCX, PPTX: insert one paragraph right after after_id or right before before_id (at most one); DOCX paragraphs go in the document body, at its end with neither.",
                   "properties": {
                     "after_id": {
-                      "description": "The body paragraph it follows; several inserts after one paragraph keep their order. Omit to add it at the end of the document.",
+                      "description": "The paragraph it follows, a target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "before_id": {
+                      "description": "The paragraph it precedes; the first paragraph's id inserts at the start.",
                       "minLength": 1,
                       "type": "string"
                     },
                     "list": {
+                      "description": "DOCX: start or end a list; omit to continue the paragraph before it.",
                       "enum": [
                         "bullet",
-                        "numbered"
+                        "numbered",
+                        "none"
                       ],
                       "type": "string"
                     },
                     "style": {
-                      "description": "A paragraph style id from inspect_office_document's styles, like \"Heading1\"; omit for the default style.",
+                      "description": "DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does.",
                       "minLength": 1,
                       "type": "string"
                     },
@@ -1783,15 +1796,14 @@
                 },
                 {
                   "additionalProperties": false,
-                  "description": "DOCX: delete a paragraph.",
+                  "description": "DOCX, PPTX: delete one paragraph, never its story's or shape's last.",
                   "properties": {
                     "expected_text": {
                       "description": "The paragraph's whole text as inspect_office_document shows it.",
-                      "minLength": 1,
                       "type": "string"
                     },
-                    "id": {
-                      "description": "A paragraph's target id from inspect_office_document.",
+                    "target_id": {
+                      "description": "The paragraph's target id from inspect_office_document.",
                       "minLength": 1,
                       "type": "string"
                     },
@@ -1801,7 +1813,7 @@
                   },
                   "required": [
                     "type",
-                    "id",
+                    "target_id",
                     "expected_text"
                   ],
                   "type": "object"

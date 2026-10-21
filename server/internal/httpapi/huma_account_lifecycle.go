@@ -25,6 +25,10 @@ type requestDeletionInput struct {
 	Body apimodel.RequestAccountDeletionReq
 }
 
+// deletionConfirmWord is what a user with no stored email types to confirm
+// deletion, in every locale; DeleteAccountDialog shows the same word.
+const deletionConfirmWord = "delete"
+
 func (a *api) registerAccountLifecycle(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/account/deletion", "getDeletionPreflight", tag,
@@ -105,10 +109,15 @@ func (a *api) requestAccountDeletion(ctx context.Context, in *requestDeletionInp
 	if err != nil {
 		return nil, hErr(err)
 	}
-	// Typing the email is the confirmation gesture. It is checked server-side
-	// because this is the one irreversible endpoint in the API.
-	if in.Body.ConfirmEmail == "" || !strings.EqualFold(string(in.Body.ConfirmEmail), u.Email) {
-		return nil, huma.Error400BadRequest("confirmation does not match the account email")
+	// Typing the email, or deletionConfirmWord for an account with no stored
+	// email (Epo 2026-10-21), is the confirmation gesture. It is checked
+	// server-side because this is the one irreversible endpoint in the API.
+	want := u.Email
+	if want == "" {
+		want = deletionConfirmWord
+	}
+	if !strings.EqualFold(string(in.Body.ConfirmEmail), want) {
+		return nil, huma.Error400BadRequest("confirmation does not match")
 	}
 	blocker, err := a.liveSubscriptionBlocker(ctx, uid)
 	if err != nil {

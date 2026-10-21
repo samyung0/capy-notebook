@@ -1,13 +1,13 @@
 import type { Citation, SourceFile } from '@/api/types';
 
 /** One tool call of a fixture's turn and the files or materials it changed.
- * `undo` defaults to available; `unavailable` is a released inverse (the
- * Undo is hidden), `none` a step that keeps no inverse at all. */
+ * `undo` defaults to available; `none` is an edit no loaded room took, whose
+ * receipt shows without Undo. */
 export interface FixtureEdit {
   changes: readonly {
     id: string;
     operation: 'created' | 'edited';
-    undo?: 'none' | 'unavailable';
+    undo?: 'none';
   }[];
   tool: string;
 }
@@ -366,7 +366,7 @@ export const chatFixtures = [
       {
         changes: [
           { id: 'f_2', operation: 'edited' },
-          { id: 'f_3', operation: 'edited', undo: 'unavailable' },
+          { id: 'f_3', operation: 'edited', undo: 'none' },
         ],
         tool: 'edit_document',
       },
@@ -375,11 +375,11 @@ export const chatFixtures = [
         tool: 'edit_material',
       },
       {
-        changes: [{ id: 'mat_1', operation: 'edited', undo: 'unavailable' }],
+        changes: [{ id: 'mat_1', operation: 'edited', undo: 'none' }],
         tool: 'edit_material',
       },
     ],
-    hint: 'Biology 101: a quiz created, notes and a mindmap edited, some without Undo: hidden where the inverse was released, no receipt where none was kept.',
+    hint: 'Biology 101: a quiz created, notes and a mindmap edited, some without Undo: edits no open room took show their receipt alone.',
     id: 'chat-files-no-undo',
     label: 'Files: edits without Undo',
     passages: [1, 2],

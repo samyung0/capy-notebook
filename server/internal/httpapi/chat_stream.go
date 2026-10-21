@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"log"
@@ -70,7 +69,8 @@ func chatQueryTooLong(text string) bool {
 
 // pipeChatEvent is one event line from the Python retrieval service.
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
-// tool_end | citations | checkpoint | pending_sources | done | error.
+// tool_end | citations | checkpoint | turn_checkpoint | pending_sources | done |
+// error.
 type pipeChatEvent struct {
 	Type              string                      `json:"type"`
 	SentryEventID     string                      `json:"sentryEventId,omitempty"`
@@ -138,10 +138,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
-	ctx := r.Context()
+	// A turn outlives its browser connection, and runs no periodic check:
+	// only a stop request or the pipeline's own bounds end it early, and lost
+	// permission surfaces through each tool call's own check (Epo 2026-10-21).
+	ctx := context.WithoutCancel(r.Context())
 	userID := uid(r)
-	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, userID, wsID)
-	defer cancelLiveAuthorization()
 
 	llm, err := a.resolveLLM(ctx, userID, models.SlotChat)
 	if err != nil {
@@ -205,16 +206,26 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The stop request finds the turn here (chat_stop.go) from before the
+	// browser learns its id. The pipeline request has its own cancel: a stop
+	// that cannot reach the pipeline hangs up on it.
+	pipeCtx, cancelPipe := context.WithCancel(ctx)
+	defer cancelPipe()
+	run := &runningTurn{convID: conv.ID, cancelPipe: cancelPipe}
+	a.turns.Store(assistant.ID, run)
+	defer a.turns.Delete(assistant.ID)
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	send := func(v any) {
-		b, _ := json.Marshal(v)
-		fmt.Fprintf(w, "data: %s\n\n", b)
-		flusher.Flush()
-	}
+	// The browser reads the events on its own writer: the relay never waits
+	// for it, and a browser that left misses the rest of the turn, which goes
+	// on. The response closes after the last event is written.
+	browser := newBrowserWriter(w, flusher.Flush)
+	defer browser.finish()
+	send := browser.send
 
 	send(map[string]any{
 		"type":             "start",
@@ -225,18 +236,6 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		"modelVersion":     cfg.Version,
 		"modelDisplayName": cfg.DisplayName(),
 	})
-
-	var (
-		currentText  strings.Builder
-		answer       strings.Builder
-		citations    []store.Citation
-		activity     []store.ActivityBlock
-		toolEvidence json.RawMessage
-		genID        string
-		tokens       int
-		usage        pipeUsage
-		errorCode    string
-	)
 
 	// library.read is granted per turn with the Library switch, to any role
 	// that can chat; writing from it still needs the role's write operations.
@@ -255,7 +254,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		operations = append(operations, agenttools.OpLibraryRead)
 	}
 
-	streamErr := a.relayChat(ctx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(pipeCtx, userID, operations, conv, turn, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
+		run.mu.Lock()
+		forward := run.state.hear(ev)
+		activity, toolEvidence := run.state.activity, run.state.toolEvidence
+		run.mu.Unlock()
 		switch ev.Type {
 		case "checkpoint":
 			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -270,58 +273,23 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
 			}
 			cpCancel()
-		case "block_start":
-			currentText.Reset()
-			send(ev)
-		case "block_delta":
-			currentText.WriteString(ev.Text)
-			send(ev)
-		case "block_end":
-			if ev.Kind == "answer" {
-				answer.Reset()
-				answer.WriteString(currentText.String())
+		case "turn_checkpoint":
+			// Saved on the streaming row so a crash of this process keeps the
+			// turn so far too (Epo 2026-10-21).
+			cpCtx, cpCancel := obs.Detach(ctx, 5*time.Second)
+			if err := a.s.CheckpointAssistantMessage(cpCtx, assistant.ID, activity, toolEvidence); err != nil {
+				log.Printf("persist turn checkpoint msg=%s: %v", assistant.ID, err)
 			}
-			send(ev)
-		case "citations":
-			citations = ev.Citations
-			send(ev)
-		case "phase", "tool_start", "tool_end":
-			send(ev)
+			cpCancel()
 		case "pending_sources":
 			// Viewers never learn that sources have pending edits.
-			if access.canEdit {
-				send(ev)
-			}
+			forward = access.canEdit
 			if ev.Omitted != nil && *ev.Omitted {
 				a.notifyPendingOverflow(ctx, wsID, ev.FileIDs)
 			}
-		case "done", "error":
-			if ev.Type == "error" {
-				errorCode = ev.Code
-				if ev.Code == "response_flagged" {
-					answer.Reset()
-					currentText.Reset()
-					citations = nil
-				}
-			}
-			if len(ev.Activity) > 0 {
-				activity = ev.Activity
-			}
-			if !ev.Usage.empty() {
-				usage = ev.Usage
-			}
-			if ev.TokenCount > 0 {
-				tokens = ev.TokenCount
-			}
-			if ev.Type != "done" {
-				break
-			}
-			if ev.Answer != "" {
-				answer.Reset()
-				answer.WriteString(ev.Answer)
-			}
-			genID = ev.GenerationID
-			toolEvidence = ev.ToolEvidence
+		}
+		if forward {
+			send(ev)
 		}
 	})
 
@@ -329,42 +297,53 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	status := "complete"
-	switch {
-	case ctx.Err() != nil:
-		status = "aborted"
-	case streamErr != nil:
+	if streamErr != nil {
 		status = "error"
 	}
-	if status == "aborted" && answer.Len() == 0 && currentText.Len() > 0 {
-		answer.WriteString(currentText.String())
+	run.mu.Lock()
+	run.finished = true
+	stopped := run.stopped
+	if stopped {
+		status = "aborted"
 	}
-	if tokens == 0 {
-		tokens = int(usage.InputTokens + usage.OutputTokens)
-	}
-	if err := a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, answer.String(), status, tokens, citations, genID, activity, toolEvidence, errorCode); err != nil {
-		obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_finalize"})
+	saved := run.state.save(status)
+	run.mu.Unlock()
+	if stopped {
+		// The row was saved aborted at the stop; what the calls still running
+		// then did is added now (Epo 2026-10-21). A row the stop could not
+		// save is still streaming: it is saved aborted now.
+		added, err := a.s.AddStoppedTurnCalls(saveCtx, assistant.ID, saved.activity, saved.toolEvidence, saved.citations, saved.genID, saved.tokens)
+		switch {
+		case err != nil:
+			obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_stopped_calls"})
+		case !added:
+			a.finalizeTurn(saveCtx, assistant.ID, status, saved)
+		}
+	} else {
+		a.finalizeTurn(saveCtx, assistant.ID, status, saved)
 	}
 	charge.settle(saveCtx)
 
-	if ctx.Err() == nil {
-		if streamErr != nil {
-			obs.CaptureErr(ctx, unexpectedChatError(streamErr), map[string]string{"stage": "chat_stream"})
-			var eventErr *chatEventError
-			if code, msg, ok := llmKeyPayload(streamErr); ok {
-				send(pipeChatEvent{Type: "error", Code: code, Message: msg})
-			} else if errors.As(streamErr, &eventErr) {
-				send(pipeChatEvent{
-					Type: "error", Code: eventErr.Code, Message: eventErr.Message,
-					RetryAfterSeconds: eventErr.RetryAfterSeconds,
-				})
-			} else if errors.Is(streamErr, errAIUnavailable) {
-				send(pipeChatEvent{Type: "error", Code: "ai_unavailable", Message: errAIUnavailable.Error()})
-			} else {
-				send(pipeChatEvent{Type: "error", Code: "agent_failed", Message: errAgentFailed.Error()})
-			}
-		}
-		send(map[string]any{"type": "done", "status": status, "tokenCount": tokens, "generationId": genID})
+	if stopped {
+		return
 	}
+	if streamErr != nil {
+		obs.CaptureErr(ctx, unexpectedChatError(streamErr), map[string]string{"stage": "chat_stream"})
+		var eventErr *chatEventError
+		if code, msg, ok := llmKeyPayload(streamErr); ok {
+			send(pipeChatEvent{Type: "error", Code: code, Message: msg})
+		} else if errors.As(streamErr, &eventErr) {
+			send(pipeChatEvent{
+				Type: "error", Code: eventErr.Code, Message: eventErr.Message,
+				RetryAfterSeconds: eventErr.RetryAfterSeconds,
+			})
+		} else if errors.Is(streamErr, errAIUnavailable) {
+			send(pipeChatEvent{Type: "error", Code: "ai_unavailable", Message: errAIUnavailable.Error()})
+		} else {
+			send(pipeChatEvent{Type: "error", Code: "agent_failed", Message: errAgentFailed.Error()})
+		}
+	}
+	send(map[string]any{"type": "done", "status": status, "tokenCount": saved.tokens, "generationId": saved.genID})
 }
 
 // chatTurn is the trusted per-turn context the pipeline receives beside the
@@ -440,12 +419,25 @@ func (a *api) relayChat(
 			"id":      m.ID,
 			"role":    m.Role,
 			"content": m.Content,
+			// aborted and error turns replay marked unfinished (Epo 2026-10-21).
+			"status": m.Status,
 		}
 		if len(m.Citations) > 0 {
 			row["citations"] = m.Citations
 		}
 		if len(m.ToolEvidence) > 0 {
 			row["toolEvidence"] = m.ToolEvidence
+		}
+		if m.Status == "aborted" || m.Status == "error" {
+			// No answer says what an unfinished turn did, so it replays every
+			// call on its row, late ones included; results keep their retention.
+			calls := []map[string]any{}
+			for _, b := range m.Activity {
+				if b.Kind == "tool" {
+					calls = append(calls, map[string]any{"name": b.Name, "detail": b.Detail, "outcome": b.Outcome})
+				}
+			}
+			row["calls"] = calls
 		}
 		history = append(history, row)
 	}

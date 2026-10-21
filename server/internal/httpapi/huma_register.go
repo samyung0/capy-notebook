@@ -109,6 +109,9 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}
+	if errors.Is(err, store.ErrInvalidCustomization) {
+		return huma.Error422UnprocessableEntity(err.Error())
+	}
 	if errors.Is(err, store.ErrModelRefRequired) {
 		return huma.Error400BadRequest("a model preference is required")
 	}
@@ -186,6 +189,9 @@ func mapHTTPError(err error) error {
 	}
 	if errors.Is(err, store.ErrSubscriptionExists) {
 		return conflictError("subscription_exists", "an active subscription already exists")
+	}
+	if errors.Is(err, store.ErrCheckoutStarting) {
+		return conflictError("checkout_starting", "a checkout is still starting")
 	}
 	if errors.Is(err, store.ErrCloneSourceChanged) {
 		return conflictError("clone_source_changed", "the source changed while it was copied")

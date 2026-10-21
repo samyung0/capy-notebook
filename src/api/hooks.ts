@@ -22,8 +22,9 @@ import {
   trackItemCloned,
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
+import { emitSyncedCustomization } from '@/theme/customizationEvents';
 import { USE_MSW } from './auth';
-import { api, qk } from './client';
+import { api, isApiError, qk } from './client';
 import {
   type IngestEvent,
   type NotificationStreamEvent,
@@ -58,6 +59,7 @@ import type {
   CreateQuizReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
+  Customization,
   DeletionPreflight,
   EditableQuiz,
   FileLinks,
@@ -91,6 +93,7 @@ import type {
   OperationReceipt,
   PastReview,
   PastReviewParams,
+  PendingWorkspaceInvite,
   Privacy,
   PublicFlashcardSet,
   PublicQuiz,
@@ -387,6 +390,16 @@ export function applyNotificationEvent(
       void qc.invalidateQueries({ queryKey: qk.billing });
     return;
   }
+  // A device synced its look (the sender hears it too and finds its own).
+  if (event.type === 'customization') {
+    void qc
+      .fetchQuery({ ...meQuery(), staleTime: 0 })
+      .then((me) => {
+        if (me.customization) emitSyncedCustomization(me.customization);
+      })
+      .catch(() => undefined);
+    return;
+  }
   // The list joins each row's workspace and member for its icon, which a
   // pushed row lacks, so a new notification refetches instead of inserting.
   if (event.type === 'created') {
@@ -666,6 +679,20 @@ export function useSetChatPrefs() {
     },
     onSettled: () =>
       refetchIfLast(qc, qk.me, () => qc.invalidateQueries({ queryKey: qk.me })),
+  });
+}
+
+/** Sync in the Theme drawer: stores this device's look on the account; the
+ * server then tells the user's other tabs and devices to adopt it. */
+export function useSyncCustomization() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (customization: Customization) =>
+      api.put<void>('/me/customization', customization),
+    onSuccess: (_, customization) =>
+      qc.setQueryData<User>(qk.me, (me) =>
+        me ? { ...me, customization } : me
+      ),
   });
 }
 
@@ -955,9 +982,12 @@ export const workspaceStatsQuery = (id: string) =>
     queryFn: () => api.get<WorkspaceStats>(`/workspaces/${id}/stats`),
     queryKey: qk.workspaceStats(id),
     // Processing reports nothing live, so the Indexing tab polls while a
-    // file change is queued or processing.
+    // file or note change is queued or processing.
     refetchInterval: (query) =>
-      query.state.data?.fileChanges.some(
+      [
+        ...(query.state.data?.fileChanges ?? []),
+        ...(query.state.data?.noteChanges ?? []),
+      ].some(
         (change) => change.state === 'queued' || change.state === 'processing'
       )
         ? 3000
@@ -1280,8 +1310,9 @@ export function useDeleteOwnedFile() {
 }
 
 /** Reverse one direct AI edit shown in chat. Each click is its own request
- * (the key is not reused across retries, so it never replays); the server
- * validates the edit's guards and refuses when the targets changed since. */
+ * (the key is not reused across retries); the server answers every request
+ * for a step it reversed already with that receipt, and refuses a step its
+ * room no longer holds (live Undo, Epo 2026-10-20). */
 export function useUndoEdit() {
   return useMutation({
     meta: { errorToast: false },
@@ -1725,6 +1756,24 @@ export function useUpdateConversation(
   });
 }
 
+/** Stop a running turn: the server saves it as it stands and starts nothing
+ * further; a failure toasts and the turn goes on. */
+export function useStopChatTurn(options?: MutationUiOptions) {
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: ({
+      conversationId,
+      messageId,
+    }: {
+      conversationId: string;
+      messageId: string;
+    }) =>
+      api.post<void>(
+        `/conversations/${conversationId}/messages/${messageId}/stop`
+      ),
+  });
+}
+
 export function useDeleteConversation(
   wsId: string,
   options?: MutationUiOptions
@@ -2052,10 +2101,39 @@ export const useWorkspaceCollaborators = (
     meta: queryMeta(options),
   });
 
+/** The owner's pending invites: every typed address, as typed. */
+export const useWorkspaceInvites = (
+  workspaceId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    enabled: !!workspaceId,
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<PendingWorkspaceInvite[]>(`/workspaces/${workspaceId}/invites`),
+    queryKey: qk.workspaceInvites(workspaceId),
+  });
+
+// Invite and cancel failures render inside the form, not as toasts.
 export function useCreateWorkspaceInvite(workspaceId: string) {
+  const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: (body: CreateWorkspaceInviteReq) =>
       api.post<void>(`/workspaces/${workspaceId}/invites`, body),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.workspaceInvites(workspaceId) }),
+  });
+}
+
+export function useCancelWorkspaceInvite(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (inviteId: string) =>
+      api.del<void>(`/workspaces/${workspaceId}/invites/${inviteId}`),
+    onSettled: () =>
+      qc.invalidateQueries({ queryKey: qk.workspaceInvites(workspaceId) }),
   });
 }
 
@@ -2727,7 +2805,15 @@ export function useUpdateLabel() {
 export function useDeleteLabel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/labels/${id}`),
+    // A label that is already gone counts as deleted: no toast, the list
+    // refreshes (Epo 2026-10-21).
+    mutationFn: async (id: string) => {
+      try {
+        await api.del<void>(`/labels/${id}`);
+      } catch (error) {
+        if (!(isApiError(error) && error.status === 404)) throw error;
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.labels });
       qc.invalidateQueries({ queryKey: qk.events });

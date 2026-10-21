@@ -128,7 +128,7 @@ export const requestAccountDeletionBodyLifecycleGenerationMin = 0;
 
 
 export const RequestAccountDeletionBody = zod.object({
-  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax),
+  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax).describe('The account email, or delete for an account with no email'),
   "lifecycleGeneration": zod.int().min(requestAccountDeletionBodyLifecycleGenerationMin)
 })
 
@@ -1117,8 +1117,7 @@ export const UndoEditOperationResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -1248,8 +1247,7 @@ export const ListMessagesResponseItem = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 })).nullish(),
   "endedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -1293,6 +1291,17 @@ export const ListMessagesResponseItem = zod.object({
   "status": zod.string()
 })
 export const ListMessagesResponse = zod.array(ListMessagesResponseItem)
+
+
+/**
+ * @summary Stop a conversation's running turn
+ */
+export const StopChatTurnParams = zod.object({
+  "id": zod.string().describe('Conversation id'),
+  "messageId": zod.string().describe('The turn\'s assistant message id')
+})
+
+export const StopChatTurnResponse = zod.void()
 
 
 /**
@@ -1674,6 +1683,7 @@ export const ListOwnedFilesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -1772,6 +1782,7 @@ export const GetFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -1859,6 +1870,7 @@ export const UpdateFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -2146,6 +2158,7 @@ export const CloneFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -3637,6 +3650,16 @@ export const UpdateMaterialResponse = zod.object({
 
 
 /**
+ * @summary Index a workspace note's changes now
+ */
+export const ProcessNoteChangesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ProcessNoteChangesResponse = zod.void()
+
+
+/**
  * @summary Update standalone material sharing
  */
 export const UpdateMaterialSharingParams = zod.object({
@@ -3780,6 +3803,22 @@ export const UpdateMaterialSharingResponse = zod.object({
 /**
  * @summary Current user
  */
+export const getMeResponseCustomizationPageFrameDotsItemXMin = 0;
+export const getMeResponseCustomizationPageFrameDotsItemXMax = 1;
+
+export const getMeResponseCustomizationPageFrameDotsItemYMin = 0;
+export const getMeResponseCustomizationPageFrameDotsItemYMax = 1;
+
+export const getMeResponseCustomizationPageFrameDotsMax = 3;
+
+export const getMeResponseCustomizationPageFrameGrainMin = 0;
+export const getMeResponseCustomizationPageFrameGrainMax = 1;
+
+export const getMeResponseCustomizationPageFrameStrengthMin = 0;
+export const getMeResponseCustomizationPageFrameStrengthMax = 1;
+
+
+
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
@@ -3804,6 +3843,21 @@ export const GetMeResponse = zod.object({
   "chatSendKey": zod.enum(['enter', 'shift_enter']),
   "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
+  "customization": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "pageFrame": zod.object({
+  "colours": zod.enum(['dusk', 'sea', 'meadow', 'rose', 'sunset', 'wheat', 'mist', 'custom']),
+  "dots": zod.array(zod.object({
+  "x": zod.number().min(getMeResponseCustomizationPageFrameDotsItemXMin).max(getMeResponseCustomizationPageFrameDotsItemXMax),
+  "y": zod.number().min(getMeResponseCustomizationPageFrameDotsItemYMin).max(getMeResponseCustomizationPageFrameDotsItemYMax)
+})).min(1).max(getMeResponseCustomizationPageFrameDotsMax).nullable(),
+  "grain": zod.number().min(getMeResponseCustomizationPageFrameGrainMin).max(getMeResponseCustomizationPageFrameGrainMax),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "strength": zod.number().min(getMeResponseCustomizationPageFrameStrengthMin).max(getMeResponseCustomizationPageFrameStrengthMax)
+}),
+  "style": zod.enum(['classroom', 'notion']),
+  "theme": zod.enum(['latte', 'frappe', 'mocha'])
+}).optional(),
   "editorModel": zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
@@ -3844,6 +3898,22 @@ export const UpdateMeBody = zod.object({
   "name": zod.string().min(1).max(updateMeBodyNameMax).describe('Display name')
 })
 
+export const updateMeResponseCustomizationPageFrameDotsItemXMin = 0;
+export const updateMeResponseCustomizationPageFrameDotsItemXMax = 1;
+
+export const updateMeResponseCustomizationPageFrameDotsItemYMin = 0;
+export const updateMeResponseCustomizationPageFrameDotsItemYMax = 1;
+
+export const updateMeResponseCustomizationPageFrameDotsMax = 3;
+
+export const updateMeResponseCustomizationPageFrameGrainMin = 0;
+export const updateMeResponseCustomizationPageFrameGrainMax = 1;
+
+export const updateMeResponseCustomizationPageFrameStrengthMin = 0;
+export const updateMeResponseCustomizationPageFrameStrengthMax = 1;
+
+
+
 export const UpdateMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
@@ -3868,6 +3938,21 @@ export const UpdateMeResponse = zod.object({
   "chatSendKey": zod.enum(['enter', 'shift_enter']),
   "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
+  "customization": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "pageFrame": zod.object({
+  "colours": zod.enum(['dusk', 'sea', 'meadow', 'rose', 'sunset', 'wheat', 'mist', 'custom']),
+  "dots": zod.array(zod.object({
+  "x": zod.number().min(updateMeResponseCustomizationPageFrameDotsItemXMin).max(updateMeResponseCustomizationPageFrameDotsItemXMax),
+  "y": zod.number().min(updateMeResponseCustomizationPageFrameDotsItemYMin).max(updateMeResponseCustomizationPageFrameDotsItemYMax)
+})).min(1).max(updateMeResponseCustomizationPageFrameDotsMax).nullable(),
+  "grain": zod.number().min(updateMeResponseCustomizationPageFrameGrainMin).max(updateMeResponseCustomizationPageFrameGrainMax),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "strength": zod.number().min(updateMeResponseCustomizationPageFrameStrengthMin).max(updateMeResponseCustomizationPageFrameStrengthMax)
+}),
+  "style": zod.enum(['classroom', 'notion']),
+  "theme": zod.enum(['latte', 'frappe', 'mocha'])
+}).optional(),
   "editorModel": zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
@@ -3904,6 +3989,43 @@ export const SetChatPrefsBody = zod.object({
 })
 
 export const SetChatPrefsResponse = zod.void()
+
+
+/**
+ * @summary Sync the app's look to the account
+ */
+export const setCustomizationBodyPageFrameDotsItemXMin = 0;
+export const setCustomizationBodyPageFrameDotsItemXMax = 1;
+
+export const setCustomizationBodyPageFrameDotsItemYMin = 0;
+export const setCustomizationBodyPageFrameDotsItemYMax = 1;
+
+export const setCustomizationBodyPageFrameDotsMax = 3;
+
+export const setCustomizationBodyPageFrameGrainMin = 0;
+export const setCustomizationBodyPageFrameGrainMax = 1;
+
+export const setCustomizationBodyPageFrameStrengthMin = 0;
+export const setCustomizationBodyPageFrameStrengthMax = 1;
+
+
+
+export const SetCustomizationBody = zod.object({
+  "pageFrame": zod.object({
+  "colours": zod.enum(['dusk', 'sea', 'meadow', 'rose', 'sunset', 'wheat', 'mist', 'custom']),
+  "dots": zod.array(zod.object({
+  "x": zod.number().min(setCustomizationBodyPageFrameDotsItemXMin).max(setCustomizationBodyPageFrameDotsItemXMax),
+  "y": zod.number().min(setCustomizationBodyPageFrameDotsItemYMin).max(setCustomizationBodyPageFrameDotsItemYMax)
+})).min(1).max(setCustomizationBodyPageFrameDotsMax).nullable(),
+  "grain": zod.number().min(setCustomizationBodyPageFrameGrainMin).max(setCustomizationBodyPageFrameGrainMax),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "strength": zod.number().min(setCustomizationBodyPageFrameStrengthMin).max(setCustomizationBodyPageFrameStrengthMax)
+}),
+  "style": zod.enum(['classroom', 'notion']),
+  "theme": zod.enum(['latte', 'frappe', 'mocha'])
+})
+
+export const SetCustomizationResponse = zod.void()
 
 
 /**
@@ -5636,8 +5758,7 @@ export const PurgeTrashedResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -5694,8 +5815,7 @@ export const RestoreTrashedResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -6371,6 +6491,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -6471,6 +6592,22 @@ export const GenerateResponse = zod.record(zod.string(), zod.unknown())
 
 
 /**
+ * @summary List pending workspace invites
+ */
+export const ListWorkspaceInvitesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ListWorkspaceInvitesResponseItem = zod.object({
+  "address": zod.string(),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "sentAt": zod.iso.datetime({"offset":true})
+})
+export const ListWorkspaceInvitesResponse = zod.array(ListWorkspaceInvitesResponseItem)
+
+
+/**
  * @summary Privately invite a workspace member
  */
 export const CreateWorkspaceInviteParams = zod.object({
@@ -6487,6 +6624,17 @@ export const CreateWorkspaceInviteBody = zod.object({
 })
 
 export const CreateWorkspaceInviteResponse = zod.void()
+
+
+/**
+ * @summary Cancel a pending workspace invite
+ */
+export const CancelWorkspaceInviteParams = zod.object({
+  "id": zod.string(),
+  "inviteId": zod.string()
+})
+
+export const CancelWorkspaceInviteResponse = zod.void()
 
 
 /**
@@ -6766,6 +6914,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -7138,6 +7287,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -7218,6 +7368,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "avgScore": zod.int(),
   "chapters": zod.int(),
   "fileChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
   "fileId": zod.string(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
@@ -7226,9 +7377,16 @@ export const GetWorkspaceStatsResponse = zod.object({
 })),
   "files": zod.int(),
   "indexed": zod.int(),
+  "moreNoteChanges": zod.int(),
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
-  "pendingNotes": zod.int(),
+  "noteChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
+  "lastEditedAt": zod.iso.datetime({"offset":true}),
+  "materialId": zod.string(),
+  "state": zod.enum(['waiting', 'queued', 'processing', 'failed']),
+  "title": zod.string()
+})),
   "quizzes": zod.int()
 })
 
@@ -7527,8 +7685,6 @@ export const CheckpointSourceDocumentBody = zod.object({
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
   "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
   "operation": zod.object({
-  "guards": zod.unknown().optional(),
-  "inverse": zod.unknown().optional(),
   "receipt": zod.object({
   "actorUserId": zod.string(),
   "callId": zod.string().optional(),
@@ -7537,8 +7693,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "messageId": zod.string().optional(),
   "requestHash": zod.string(),
   "toolVersion": zod.int()
-}),
-  "undoOf": zod.string().optional()
+})
 }).optional(),
   "pendingEffects": zod.unknown(),
   "preview": zod.string().optional(),
@@ -7574,8 +7729,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({

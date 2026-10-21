@@ -44,12 +44,12 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     # Per-call limits return the rest unapplied; 256 KB still refuses (Epo 2026-10-21).
     assert (
         "a call applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted "
-        "paragraphs (DOCX); the commands past a limit come back unapplied" in office
+        "paragraphs; the commands past a limit come back unapplied" in office
     )
     assert "at most 256 KB; a larger call is refused" in office
     # Word files are read, edited and created (Epo 2026-10-20, phase 2).
+    assert "insert_paragraph (DOCX, PPTX)" in office
     for command in (
-        "insert_paragraph",
         "delete_paragraph",
         "set_list",
         "insert_table",

@@ -142,6 +142,30 @@ func validateAuthConfiguration(
 	return nil
 }
 
+// originConfiguration reads the CORS allowlist and the origins whose Clerk
+// session tokens are accepted (their azp: COLLABORATION_ALLOWED_ORIGINS). A
+// deployed gateway refuses to boot without the first or with a `*` in it, or
+// with Clerk on and without the second (human deployment-runbook and
+// authorization, 2026-10-21). Development and e2e reach the API through a
+// same-origin proxy, so they may run without.
+func originConfiguration(appEnv string, clerkOn bool) (corsOrigins, authorizedParties []string, err error) {
+	corsOrigins = envList("CORS_ALLOWED_ORIGINS")
+	authorizedParties = envList("COLLABORATION_ALLOWED_ORIGINS")
+	if appEnv == "development" || appEnv == "e2e" {
+		return corsOrigins, authorizedParties, nil
+	}
+	if len(corsOrigins) == 0 {
+		return nil, nil, errors.New("CORS_ALLOWED_ORIGINS is required outside development and e2e")
+	}
+	if strings.Contains(strings.Join(corsOrigins, ","), "*") {
+		return nil, nil, errors.New("CORS_ALLOWED_ORIGINS must list exact origins, without *, outside development and e2e")
+	}
+	if clerkOn && len(authorizedParties) == 0 {
+		return nil, nil, errors.New("COLLABORATION_ALLOWED_ORIGINS is required with Clerk outside development and e2e")
+	}
+	return corsOrigins, authorizedParties, nil
+}
+
 func validateStripeConfiguration(secretKey, webhookSecret, pricePro string) error {
 	billingEnabled := strings.TrimSpace(webhookSecret) != "" || strings.TrimSpace(pricePro) != ""
 	if billingEnabled && strings.TrimSpace(secretKey) == "" {
@@ -254,6 +278,12 @@ func main() {
 	if err := validateStripeConfiguration(
 		stripeSecretKey, stripeWebhookSecret, stripePricePro,
 	); err != nil {
+		log.Fatal(err)
+	}
+	corsOrigins, authorizedParties, err := originConfiguration(
+		appEnv, strings.TrimSpace(clerkSecret) != "" && !authDisabled,
+	)
+	if err != nil {
 		log.Fatal(err)
 	}
 	parseMaxPages, err := requiredPageCap("CAPY_PARSE_MAX_PAGES")
@@ -466,7 +496,8 @@ func main() {
 		PipelineSecret:         pipeSecret,
 		ParseMaxPages:          parseMaxPages,
 		ParseMaxOCRPages:       parseMaxOCRPages,
-		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
+		AllowedOrigins:         corsOrigins,
+		AuthorizedParties:      authorizedParties,
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,
 		Jev:                    jev.New(env("JEV_TYPESAFE_API_KEY", "")),

@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
@@ -492,12 +491,10 @@ const (
 // trashEmbeddedRowTx trashes an embedded row, hidden from the trash listing,
 // purged after retention unless a save references it again.
 func trashEmbeddedRowTx(ctx context.Context, tx pgx.Tx, id, actorID, episode, retention string) error {
-	if _, err := tx.Exec(ctx, `UPDATE materials SET trashed_at=now(), trashed_by=$2, trash_episode_id=$3,
+	_, err := tx.Exec(ctx, `UPDATE materials SET trashed_at=now(), trashed_by=$2, trash_episode_id=$3,
 		purge_after=now() + $4::interval
-		WHERE id=$1 AND trashed_at IS NULL`, id, nullStr(actorID), episode, retention); err != nil {
-		return err
-	}
-	return invalidateEditInversesTx(ctx, tx, agenttools.KindMaterial, id, "trashed")
+		WHERE id=$1 AND trashed_at IS NULL`, id, nullStr(actorID), episode, retention)
+	return err
 }
 
 // restoreEmbeddedRowTx reopens a trashed embedded row under a fresh

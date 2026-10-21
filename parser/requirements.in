@@ -1,6 +1,6 @@
 fastapi[standard]>=0.110,<1
 opendataloader-pdf==2.5.7
-pillow==12.3.0
+pillow==13.0.0
 psutil>=6,<8
 pymupdf==1.28.2
 pypdf[crypto]==6.19.0

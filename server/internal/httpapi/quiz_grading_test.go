@@ -163,6 +163,23 @@ func TestCreateAttemptGradesOnTheServer(t *testing.T) {
 	}
 }
 
+// Security regression (human error-handling, 2026-10-21): questions a request
+// sends that fail our validation answer 400 with the reason, not a 500.
+func TestCreateQuizRefusesInvalidQuestionsWith400(t *testing.T) {
+	h, _, _ := openGradingAPI(t, "full")
+	question := map[string]any{
+		"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+		"parts": []any{map[string]any{"id": "a", "blocks": []any{map[string]any{"type": "text", "text": "True?"}},
+			"answer": map[string]any{"type": "boolean", "correct": true}, "marks": 1, "solution": []any{}}},
+	}
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
+		"name": "Twice", "privacy": "private", "questions": []any{question, question},
+	})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "duplicate question id") {
+		t.Fatalf("create quiz with a repeated question id → %d %s, want 400", rec.Code, rec.Body.String())
+	}
+}
+
 // An ordering part always has an answer, the order the learner was shown, so
 // grading refuses one sent without it rather than marking it wrong.
 func TestAttemptNeedsAnOrder(t *testing.T) {
