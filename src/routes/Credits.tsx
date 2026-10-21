@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -7,7 +7,7 @@ import credits from '@/lib/icon-credits.json';
 
 export default function Credits() {
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <PageHeader subtitle={m.credits_hint()} title={m.credits_title()} />
       }
@@ -130,6 +130,6 @@ export default function Credits() {
           </section>
         </div>
       </div>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

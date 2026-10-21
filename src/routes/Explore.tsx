@@ -5,7 +5,7 @@ import {
   useExploreWorkspaces,
 } from '@/api/hooks';
 import type { PublicWorkspace } from '@/api/types';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -49,7 +49,7 @@ export default function Explore() {
   const frozen = useAccountFrozen();
 
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <PageHeader
           actions={<AccountStatusButton />}
@@ -217,6 +217,6 @@ export default function Explore() {
           workspace={cloneSource}
         />
       )}
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

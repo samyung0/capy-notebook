@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { createCanvasBodyNameMax } from '@/api/gen/validators';
 import { useCanvases, useCreateCanvas } from '@/api/hooks';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
@@ -23,7 +23,7 @@ export default function Thinking() {
   const frozen = useAccountFrozen();
 
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <PageHeader
           actions={
@@ -103,6 +103,6 @@ export default function Thinking() {
           title={m.thinking_new_canvas()}
         />
       )}
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

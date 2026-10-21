@@ -1,5 +1,5 @@
 import { useTasks, useToggleTask } from '@/api/hooks';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -26,7 +26,7 @@ export default function Tasks() {
   }, {});
 
   return (
-    <PanelWithInvertedRadius header={<PageHeader title={m.nav_tasks()} />}>
+    <PagePanel header={<PageHeader title={m.nav_tasks()} />}>
       <div className="flex-1 px-4 py-5 sm:px-6">
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
@@ -74,6 +74,6 @@ export default function Tasks() {
           <p className="py-8 text-center text-fg-muted">{m.tasks_empty()}</p>
         )}
       </div>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

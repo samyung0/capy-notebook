@@ -6,11 +6,7 @@ import {
   type SortOption,
   toggleValue,
 } from '@/components/app/ListToolbar';
-import {
-  PageBody,
-  PageHeader,
-  PanelWithInvertedRadius,
-} from '@/components/app/layout';
+import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -80,7 +76,7 @@ export default function Workspaces() {
   const sortedWorkspaces = ascending ? data?.slice().reverse() : data;
 
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <PageHeader
           actions={<AccountStatusButton />}
@@ -172,6 +168,6 @@ export default function Workspaces() {
         setOpen={setCreateOpen}
         workspace={{ name: '', tags: [] }}
       />
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }
