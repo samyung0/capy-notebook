@@ -4236,6 +4236,13 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                             "locked": "holds a field",
                             "text": "Page 1",
                         },
+                        {
+                            "id": "hf:rIdH:paragraph:6F",
+                            "style": "Header",
+                            "list": None,
+                            "part": "header (default)",
+                            "text": "Lab 3",
+                        },
                     ],
                     "total": 80,
                     "nextStart": 60,
@@ -4283,7 +4290,9 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             "essay.docx format=docx",
             (
                 "paragraphs as [id] (style, list, table cell, content control, "
-                "locked: why replace_text, delete_paragraph and format_text refuse it) text:"
+                "locked: why replace_text, delete_paragraph and format_text refuse it) "
+                "text; after the body, headers, footers and notes under == part == "
+                "lines, which take replace_text only:"
             ),
             source_block(
                 "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)\n"
@@ -4292,7 +4301,9 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                 "[body:t0:r0c1:paragraph:3C] (Normal, table "
                 "body:t0:r0c0:paragraph:3A row 1 column 2) Period\n"
                 "[body:sdt0:paragraph:4D] (content control) Name\n"
-                "[body:paragraph:5E] (locked: holds a field) Page 1"
+                "[body:paragraph:5E] (locked: holds a field) Page 1\n"
+                "== header (default) ==\n"
+                "[hf:rIdH:paragraph:6F] (Header) Lab 3"
             ),
             "(next start = 60 of 80)",
         ]
@@ -4362,13 +4373,19 @@ async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatc
     )
 
 
-async def test_an_office_edit_over_10_000_cells_is_refused_before_it_leaves(
+async def test_an_xlsx_call_over_the_cell_limit_applies_a_prefix_and_returns_the_rest(
     monkeypatch,
 ):
-    """set_range and format_cells areas count toward the call's 10,000 cells
-    (Epo 2026-10-20, review finding 3); the engine counts the rest."""
-    posts: list[str] = []
-    ctx = _office_ctx(monkeypatch, post=lambda url, **_: posts.append(url))
+    """Commands go out only up to the first that would pass 10,000 cells
+    (Epo 2026-10-21): range areas and delete bands count; the rest come back
+    unapplied, by index, to send in another call."""
+    sent: list[dict] = []
+
+    def _post(url, **kwargs):
+        sent.append(json.loads(kwargs["data"]))
+        return _JsonResp(_receipt("edited", "source_file", "f_1"))
+
+    ctx = _office_ctx(monkeypatch, post=_post)
     commands = [
         {
             "type": "set_range",
@@ -4377,17 +4394,67 @@ async def test_an_office_edit_over_10_000_cells_is_refused_before_it_leaves(
             "expected": [[""]] * 6000,
             "values": [["1"]] * 6000,
         },
+        {
+            "type": "delete_rows",
+            "sheet": "Grades",
+            "at": 7000,
+            "count": 1000,
+            "expected": [["a", "b", "c"]] * 1000,
+        },
         {"type": "format_cells", "sheet": "Grades", "range": "b1:f1000", "bold": True},
+        {"type": "add_sheet", "name": "Notes"},
     ]
     result = await tools.run(
         "edit_office_document",
         {"file_id": "f_1", "commands": commands, "_tool_call_id": "c1"},
         ctx,
     )
-    assert result.error_code == "invalid_input" and posts == []
-    assert result.error == (
-        "The commands write 11,000 cells, over the 10,000 one call may write; "
-        "split the edit into several calls."
+    assert result.outcome == "succeeded"
+    assert [command["type"] for command in sent[0]["commands"]] == [
+        "set_range",
+        "delete_rows",
+    ]
+    assert result.text().endswith(
+        "Not applied: the commands at indexes 2 to 3 (counting from 0), past the "
+        "limit of 10,000 cells a call; send them in another call with file_id f_1."
+    )
+
+
+async def test_a_docx_call_over_50_commands_applies_a_prefix_and_returns_the_rest(
+    monkeypatch,
+):
+    """A create with 55 commands goes out with its first 50; the rest come
+    back unapplied, to send to the new file (Epo 2026-10-21)."""
+    sent: list[dict] = []
+
+    def _post(url, **kwargs):
+        sent.append(json.loads(kwargs["data"]))
+        return _JsonResp(
+            {
+                "operationId": "op_c",
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": "created",
+                    "resource": {
+                        "kind": "source_file",
+                        "id": "f_new",
+                        "title": "Notes.docx",
+                    },
+                },
+            }
+        )
+
+    ctx = _office_ctx(monkeypatch, post=_post)
+    commands = [{"type": "create", "format": "docx", "title": "Notes"}] + [
+        {"type": "set_alignment", "target_id": "body:paragraph:1", "alignment": "left"}
+    ] * 54
+    result = await tools.run(
+        "edit_office_document", {"commands": commands, "_tool_call_id": "c1"}, ctx
+    )
+    assert len(sent[0]["commands"]) == 49
+    assert result.text().endswith(
+        "Not applied: the commands at indexes 50 to 54 (counting from 0), past the "
+        "limit of 50 commands a call; send them in another call with file_id f_new."
     )
 
 

@@ -65,7 +65,7 @@ _OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and
 
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, styles and lists, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text, delete_paragraph and format_text; one marked content control or table cannot be an after_id. The first page lists the paragraph styles by id and name.
+- DOCX: paragraphs with their target ids, styles and lists, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines; they take replace_text only. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an after_id. The first page lists the paragraph styles by id and name.
 - PPTX: shapes with their target ids and text, count at a time from start.
 
 Edit, one file a call; one stale expectation refuses the whole call:
@@ -75,14 +75,14 @@ Edit, one file a call; one stale expectation refuses the whole call:
 - Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
 - replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
 - insert_paragraph adds one body paragraph after after_id, or at the end without it; several inserts after one paragraph land in the order given. style is a style id from the read; list makes it bulleted or numbered.
-- delete_paragraph deletes a paragraph whose whole text is expected_text; it refuses a locked paragraph and a story's last paragraph.
+- delete_paragraph deletes a paragraph whose whole text is expected_text; the paragraph after it keeps its own id and style, and takes the table the deleted one followed. It refuses a locked paragraph (but one that only follows a table), the paragraph after a table that ends the body or a cell, and a story's last paragraph.
 - set_list makes paragraphs bulleted or numbered, or ends their list (none, which also ends a list the paragraph's style gives); a document has one bulleted and one numbered list, so numbering continues across them.
-- insert_table adds a table of text, at most 20 rows of 10 cells, placed like insert_paragraph and followed by an empty paragraph. delete_table names the table's id and its cells' text as rows of cells.
+- insert_table adds a table of text, at most 20 rows of 10 cells, placed like insert_paragraph; an empty paragraph follows it only where Word needs one (the table ends the body or comes before another table). delete_table names the table's id and its cells' text as rows of cells.
 - format_text formats the one occurrence of expected_text in a paragraph (bold, italic, underline, strikethrough, colour, highlight, size, font); set_alignment aligns one paragraph.
 
 Create: a new Excel or Word file is a create command first, without file_id, followed by the commands that fill it; a new Word file's insert_paragraph and insert_table commands omit after_id and build it in order. A deck is made with create_deck (the deck_building skill).
 
-Limits: a call's commands up to 256 KB, writing up to 10,000 cells or inserting up to 20 paragraphs; split larger edits into several calls."""
+Limits: a call applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted paragraphs (DOCX); the commands past a limit come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it."""
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""

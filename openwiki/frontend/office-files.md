@@ -2674,13 +2674,14 @@ the engine applies in one session per call (the fork's
 format without a full recalculation). Go no longer sends `set_cell`, which the
 engine keeps. The collaboration server's inspect route answers an XLSX
 `office` query with the engine's scoped read (the sheet list, or at most
-2,000 cells) and a DOCX one with a page of the body's paragraphs (id, style
+2,000 cells) and a DOCX one with a page of the body's paragraphs, then the headers', footers' and notes' (id, style
 id, list or the style's list, table cell, content control, text without
 tracked deletions, and why the text commands refuse it as `locked`; the
 first page adds the paragraph styles), and
 `/internal/documents/create` builds a new XLSX or DOCX from the committed
 starter (`crates/office-service/starters/blank.xlsx`, or `blank.docx`,
-python-docx's default template, unchanged; MIT, `starters/NOTICE.md`); the
+python-docx's default template with its core properties emptied; MIT,
+`starters/NOTICE.md`); the
 PPTX scoped read is phase 3. DOCX commands set paragraph style ids and direct
 formatting only, never the resolved style values the seed still copies onto
 paragraphs: a new paragraph keeps none of its neighbour's properties but its

@@ -2845,7 +2845,8 @@ build, and the knowledge library is one more source while the switch is on.
   the read shows them, formulas only with functions the workbook supports and
   only its own sheets, `create` first for a new Excel or Word file (decks stay
   `create_deck`), and one limits line (a call's commands up to 256 KB,
-  10,000 cells or 20 inserted paragraphs; split larger edits). Reading it offers the Office tools (Office tools, above).
+  10,000 cells or 20 inserted paragraphs, the commands past one coming
+  back unapplied; a larger request is refused). Reading it offers the Office tools (Office tools, above).
   `editing` carries no Office instructions and says that after reading a
   document the agent sees its most recent changes, recent edits not yet in
   search possibly showing as hints.
@@ -3202,8 +3203,8 @@ build, and the knowledge library is one more source while the switch is on.
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages the body's paragraphs by `start`/`count` (at most 200) as `[id] (style, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it, or the table or content control before it); the first page opens with the file's paragraph styles as `id (name)`, inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX pages its shape entries with target ids as `inspect_document` paged them (its scoped read is phase 3), and a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX: `insert_paragraph`, `delete_paragraph`, `set_list`, `insert_table`, `delete_table`, `format_text`, `set_alignment`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON, or whose `set_range` and `format_cells` ranges cover over 10,000 cells, is refused before it leaves (`invalid_input`, naming its size or cell count and asking for several calls); the engine refuses a call writing over 10,000 cells across all its commands. Receipts and refusals as `edit_document`'s for a source; a call holding a command the engine returns no inverse for has no Undo, and its result offers none |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it, or the table or content control before it); the first page opens with the file's paragraph styles as `id (name)`, inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX pages its shape entries with target ids as `inspect_document` paged them (its scoped read is phase 3), and a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX: `insert_paragraph`, `delete_paragraph`, `set_list`, `insert_table`, `delete_table`, `format_text`, `set_alignment`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (Epo 2026-10-21: 50 commands, 10,000 cells its XLSX commands name, 20 inserted DOCX paragraphs) only the commands before the first that would pass one are sent, and the result ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call with file_id …` (the refusal's detail, when the sent part is refused); the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source; a call holding a command the engine returns no inverse for has no Undo, and its result offers none |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3732,9 +3733,21 @@ paragraph of at most 5,000 characters, and a call inserts at most 20
 paragraphs. `insert_table {after_id?, rows}` (at most 20 rows of 10 cells,
 rectangular, top-level body only) puts the table in a new empty paragraph's
 slot, placed the same way, and writes each cell's text into its one
-paragraph. `delete_paragraph {id, expected_text}` deletes a plain paragraph
-whose whole text matches, refusing a story's last paragraph and one that ends
-a section. `delete_table {id, expected}` takes any paragraph id of a table's
+paragraph; after the call's commands (`finish_agent`, from `apply_commands`
+and `create`) that empty paragraph goes where Word does not need it (Epo
+2026-10-21): it stays only when the table ends the body or comes before
+another table, and elsewhere the next paragraph takes the table into its
+slot. `delete_paragraph {id, expected_text}` deletes a paragraph whose whole
+text matches through docx-edit's `remove_paragraph` (`ops/text.rs`), so the
+next paragraph keeps its own properties and paraId (`delete_range` would make
+it adopt the deleted mark's) and takes the tables the deleted one followed;
+it refuses a paragraph holding an object or tracked change or following a
+content control, a story's last paragraph (after a table: Word needs it),
+one between two tables and one that ends a section. Every command but
+`replace_text` takes body paragraphs only (the body's tables and content
+controls included): a header, footer or note paragraph is refused as
+`unsupported_operation` (`header, footer and note paragraphs take
+replace_text only`). `delete_table {id, expected}` takes any paragraph id of a table's
 cells (the read names a table by its first cell's first paragraph) and its
 cells' text as rows (a cell's paragraphs joined by line breaks); a stale one
 carries `details.block {type: "table", text, grid}`. `set_list {ids, list}`
@@ -3754,12 +3767,14 @@ empty cells and rows left out, so `[]` expects an empty band and cells holding
 tabs or line breaks match exactly (review finding 6); Go refuses an `expected`
 that is not such a grid. A stale band's refusal carries `details.block.grid`,
 the exact grid to copy, cut after 2,000 cells (an empty row counting as one)
-with `gridCut`, beside its TSV `text`. One call writes at most 10,000 cells
-across its commands (review finding 3): the engine's XLSX session counts a
-range's area for `set_range` and `format_cells` and a delete's stored cells,
-inserts and sheet changes counting none, and `apply_commands` and `create`
-refuse past it as `invalid_input` naming the count so far; the retrieval
-service refuses earlier from the `set_range` and `format_cells` areas alone.
+with `gridCut`, beside its TSV `text`. A call's commands name at most 10,000 cells
+(Epo 2026-10-21; review finding 3): a range's area for `set_range` and
+`format_cells` and a row or column delete's `expected` cells, inserts and
+sheet changes counting none. The retrieval service sends a call only up to
+its limits (`_office_fitting` in `tools.py`), counting as the engine does;
+the engine's own refusals past them (the XLSX session's count, 50 commands
+and 20 inserted paragraphs in `apply_commands` and `create`) guard other
+callers.
 
 Undo (Epo 2026-10-20): until the live-room Undo lands, an Office command
 returns only the inverse the engine gives cheaply (`set_range` with values and

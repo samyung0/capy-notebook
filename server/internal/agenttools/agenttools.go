@@ -1080,7 +1080,8 @@ func Definitions() []Definition {
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
 				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
-				"table cells; the first page also lists the paragraph styles. " +
+				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
+				"only; the first page also lists the paragraph styles. " +
 				"PPTX: without slide, shapes with their target ids and text, count from start; " +
 				"with slide, that slide's shapes.",
 			InputSchema: obj(map[string]any{
@@ -1101,15 +1102,15 @@ func Definitions() []Definition {
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
 				"whole call. Edits save directly; a call can be undone from the chat only when all its " +
-				"commands are replace_text, set_range, rename_sheet, insert_rows or insert_columns. A call's commands " +
-				"are at most 256 KB, write at most 10,000 cells and insert at most 20 paragraphs; split " +
-				"larger edits into several calls.",
+				"commands are replace_text, set_range, rename_sheet, insert_rows or insert_columns. A call " +
+				"applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted paragraphs (DOCX); the " +
+				"commands past a limit come back unapplied, to send in another call. A call's commands are " +
+				"at most 256 KB; a larger call is refused.",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
 				"commands": map[string]any{
 					"type":     "array",
 					"minItems": 1,
-					"maxItems": 50,
 					"items":    officeCommandSchema(),
 				},
 			}, "commands"),
