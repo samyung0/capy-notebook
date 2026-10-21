@@ -3,8 +3,9 @@
 //! merges it, lands in the room keeping what it deleted, and reverting it
 //! there restores the content. An XLSX formula reading the edited cell
 //! computes from the restored value, as an editor's engine recalculates it;
-//! structural XLSX commands (a row delete, a sheet delete) and DOCX and PPTX
-//! paragraph inserts and deletes undo the same way.
+//! structural XLSX commands (a row delete, a sheet delete), DOCX and PPTX
+//! paragraph inserts and deletes and PPTX slide deletes and moves undo the
+//! same way.
 
 #![allow(clippy::unwrap_used)]
 
@@ -180,6 +181,39 @@ impl File {
             ..InspectQuery::default()
         };
         office_service::inspect_scoped(&self.base, self.checkpoint(&state(room)), &query).unwrap()
+    }
+
+    /// The agent's scoped PPTX read: the slide list, or slide `number`'s
+    /// shapes and paragraphs (200 a page, more than the fixtures hold).
+    fn deck(&self, room: &Doc, number: Option<u32>) -> serde_json::Value {
+        let query = InspectQuery {
+            slide: number,
+            start: Some(0),
+            count: Some(200),
+            ..InspectQuery::default()
+        };
+        office_service::inspect_scoped(&self.base, self.checkpoint(&state(room)), &query).unwrap()
+    }
+
+    /// The slides' ids, in order.
+    fn slides(&self, room: &Doc) -> Vec<String> {
+        self.deck(room, None)["slides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|slide| slide["id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// Slide `number`'s text, a line a paragraph (delete_slide's expected).
+    fn slide_text(&self, room: &Doc, number: u32) -> String {
+        self.deck(room, Some(number))["paragraphs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|paragraph| paragraph["text"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// The sheets' (id, name), in order.
@@ -518,6 +552,37 @@ fn undo_restores_a_docx_and_a_pptx_paragraph() {
         assert_eq!(text(&room), entry.value, "{path}");
         ydoc::undo::revert(&room, redo).unwrap();
         assert_eq!(text(&room), edited, "{path}");
+    }
+}
+
+/// PPTX `delete_slide` and `move_slide`: Undo puts the slide back in its
+/// place with its shapes and text, and the room saves the file it saved
+/// before the edit.
+#[test]
+fn undo_restores_a_deleted_and_a_moved_slide() {
+    let file = File::open(Format::Pptx, LESSON_PPTX);
+    let room = file.room();
+    let before = file.export(&room);
+    let slides = file.slides(&room);
+    let texts = [file.slide_text(&room, 1), file.slide_text(&room, 2)];
+    for command in [
+        Command::DeleteSlide {
+            slide_id: slides[0].clone(),
+            expected_text: texts[0].clone(),
+        },
+        Command::MoveSlide {
+            slide_id: slides[0].clone(),
+            after_slide: Some(slides[1].clone()),
+            before_slide: None,
+        },
+    ] {
+        let change = file.agent_edit(&room, std::slice::from_ref(&command));
+        assert_ne!(file.slides(&room), slides, "{command:?}");
+        ydoc::undo::revert(&room, change).unwrap();
+        assert_eq!(file.slides(&room), slides, "{command:?}");
+        let now = [file.slide_text(&room, 1), file.slide_text(&room, 2)];
+        assert_eq!(now, texts, "{command:?}");
+        assert!(file.export(&room) == before, "{command:?}");
     }
 }
 
@@ -886,6 +951,91 @@ fn docx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
     ]
 }
 
+/// The PPTX shape and slide commands on lesson.pptx: a shape's text
+/// rewritten longer and emptied, a span given every format, an alignment, a
+/// slide added on its neighbour's layout (Blank) and on Comparison (five
+/// text placeholders), a text box of 19 long paragraphs (4,864 characters,
+/// near a box's 5,000), a slide moved and one deleted.
+fn pptx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
+    let slides = file.slides(room);
+    let read = file.deck(room, Some(1));
+    let paragraphs = read["paragraphs"].as_array().unwrap();
+    let shape_text = |shape: &serde_json::Value| {
+        paragraphs
+            .iter()
+            .filter(|p| p["shape"] == shape["id"])
+            .map(|p| p["text"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let shapes = read["shapes"].as_array().unwrap();
+    let owner = paragraphs
+        .iter()
+        .find(|p| p["text"].as_str().unwrap().starts_with("Owner sentence"))
+        .unwrap();
+    let long = "a new paragraph from the agent, ".repeat(8);
+    vec![
+        (
+            "set_shape_text (longer)",
+            command(serde_json::json!({
+                "type": "set_shape_text", "shapeId": shapes[0]["id"],
+                "expectedText": shape_text(&shapes[0]), "paragraphs": [long, long, long],
+            })),
+        ),
+        (
+            "set_shape_text (emptied)",
+            command(serde_json::json!({
+                "type": "set_shape_text", "shapeId": shapes[1]["id"],
+                "expectedText": shape_text(&shapes[1]), "paragraphs": [""],
+            })),
+        ),
+        (
+            "format_text",
+            command(serde_json::json!({
+                "type": "format_text", "targetId": owner["id"], "expectedText": "launch code",
+                "bold": true, "italic": true, "underline": true, "strikethrough": true,
+                "color": "#1F4E79", "fontSize": 28, "fontFamily": "Georgia",
+            })),
+        ),
+        (
+            "set_alignment",
+            command(serde_json::json!({
+                "type": "set_alignment", "targetId": owner["id"], "alignment": "center",
+            })),
+        ),
+        (
+            "add_slide",
+            command(serde_json::json!({ "type": "add_slide", "afterSlide": slides[0] })),
+        ),
+        (
+            "add_slide (Comparison)",
+            command(serde_json::json!({
+                "type": "add_slide", "layout": "ppt/slideLayouts/slideLayout5.xml",
+            })),
+        ),
+        (
+            "add_text_box",
+            command(serde_json::json!({
+                "type": "add_text_box", "slideId": slides[0], "paragraphs": vec![long.clone(); 19],
+                "x": 36, "y": 36, "w": 400, "h": 300,
+            })),
+        ),
+        (
+            "move_slide",
+            command(serde_json::json!({
+                "type": "move_slide", "slideId": slides[0], "afterSlide": slides[1],
+            })),
+        ),
+        (
+            "delete_slide",
+            command(serde_json::json!({
+                "type": "delete_slide", "slideId": slides[0],
+                "expectedText": file.slide_text(room, 1),
+            })),
+        ),
+    ]
+}
+
 /// Epo 2026-10-21: an agent edit's Undo is sized from its commands
 /// (`sources::undo_cost`), never by reverting on a copy. On the fixtures every
 /// Office command type's rule, and the text source's, is at least what the
@@ -1145,16 +1295,26 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 );
             }
         }
-        if format == Format::Docx {
-            for (name, case) in docx_cases(&file, &room) {
-                let (cost, change) = file.costed_edit(&room, &[case]);
-                covers_closely(
-                    &mut short,
-                    &format!("{path} {name}"),
-                    cost,
-                    undo_and_redo(&room, change),
-                );
-            }
+        let cases = match format {
+            Format::Docx => docx_cases(&file, &room),
+            _ => pptx_cases(&file, &room),
+        };
+        for (name, case) in cases {
+            // add_slide is priced at five placeholders (its layout's count is
+            // not in the command) and skips the ceiling: 20 slides a call are
+            // 154 KB, far under the 8 MiB cap.
+            let check = if matches!(case, Command::AddSlide { .. }) {
+                covers
+            } else {
+                covers_closely
+            };
+            let (cost, change) = file.costed_edit(&room, &[case]);
+            check(
+                &mut short,
+                &format!("{path} {name}"),
+                cost,
+                undo_and_redo(&room, change),
+            );
         }
     }
 
@@ -1191,16 +1351,33 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 },
             ),
         ];
+        let mut format = serde_json::json!({
+            "type": "format_text", "targetId": id, "expectedText": text,
+            "bold": true, "italic": true, "underline": true, "strikethrough": true,
+            "color": "#1F4E79", "fontSize": 14, "fontFamily": "Georgia",
+        });
         if file.format == Format::Docx {
+            format["highlight"] = "yellow".into();
+        } else {
+            // The shape's whole text rewritten: its many-run paragraph and
+            // the owner sentence.
+            let read = file.deck(&room, Some(1));
+            let paragraphs = read["paragraphs"].as_array().unwrap();
+            let shape = &paragraphs.iter().find(|p| p["text"] == **text).unwrap()["shape"];
+            let lines: Vec<&str> = paragraphs
+                .iter()
+                .filter(|p| p["shape"] == *shape)
+                .map(|p| p["text"].as_str().unwrap())
+                .collect();
             cases.push((
-                "format_text",
+                "set_shape_text",
                 command(serde_json::json!({
-                    "type": "format_text", "targetId": id, "expectedText": text,
-                    "bold": true, "italic": true, "underline": true, "strikethrough": true,
-                    "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
+                    "type": "set_shape_text", "shapeId": shape,
+                    "expectedText": lines.join("\n"), "paragraphs": ["short"],
                 })),
             ));
         }
+        cases.push(("format_text", command(format)));
         for (case, command) in cases {
             let (cost, change) = file.costed_edit(&room, &[command]);
             covers_closely(

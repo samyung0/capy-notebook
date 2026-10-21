@@ -3885,7 +3885,9 @@ counts both sides:
   (`numPr`, `listIsBullet`, `listNumFmt`, `listMarker`) write, a deleted
   paragraph's text and mark (its format markers stay where they are), a
   deleted table's embed and cell stories whole (with the tables in its
-  cells), and a deleted sheet's key in the sheet order; a command whose
+  cells), a deleted sheet's key in the sheet order, the text and marks of
+  the shape a PPTX `set_shape_text` rewrites, and a deleted slide whole
+  (its entry, its shapes and their stories, its comments); a command whose
   Undo only deletes what it wrote measures nothing. `undo_cost::office`
   takes those bytes times `CONTENT` and an `ITEM` (33 bytes: the most the
   fixtures sent beyond content was 22 bytes an item, plus half again) an
@@ -3896,10 +3898,17 @@ counts both sides:
   paragraph, a paragraph or table delete 1; a paragraph insert's text and
   style times `CONTENT` and 8 `PIECE`s (the new mark, a copy of its
   anchor's properties: a list item's measured 837 bytes, and the run it
-  splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8. On the
+  splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8;
+  `set_shape_text` its paragraphs' text and 2 items a paragraph plus 2,
+  `add_text_box` the same and 12 `PIECE`s (the shape entry), `move_slide`
+  the slide's id and 2 items, `delete_slide` 1 item, `add_slide` its layout's path and 48 `PIECE`s
+  (the slide entry and five text placeholders, Comparison's: the command
+  does not say how many its layout gives, so a Blank slide's estimate is 35
+  times what it sends; 20 slides a call are 154 KB, far under the cap, and
+  the calibration checks it without the ceiling). On the
   fixtures (lesson.docx and .pptx, paragraphs of 5-character runs and of
-  one run a character, 1x1 to 10x10 tables) every DOCX and PPTX command
-  over-estimates 1.4 to 7.4 times, and the calibration fails one past 10
+  one run a character, 1x1 to 10x10 tables, a Blank and a Comparison slide
+  added) every other DOCX and PPTX command over-estimates 1.4 to 7.4 times, and the calibration fails one past 10
   times (`CEILING`), so an ordinary 50-command call keeps its Undo.
 
 A new command adds its rule there; both matches are exhaustive, so it does

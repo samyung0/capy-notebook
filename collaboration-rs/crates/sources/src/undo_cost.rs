@@ -143,6 +143,26 @@ pub fn office(command: &Command, touched: Touched) -> usize {
         // around the gap joins.
         Command::DeleteParagraph { .. } | Command::DeleteTable { .. } => (0, 1, 0),
         Command::DeleteSheet { .. } => (0, 0, 0),
+        // A shape's new text: each paragraph's run and mark.
+        Command::SetShapeText { paragraphs, .. } => (
+            paragraphs.iter().map(|p| p.len() + 1).sum(),
+            2 * paragraphs.len() + 2,
+            0,
+        ),
+        // A new box: its shape entry (a few maps) and its text, as above.
+        Command::AddTextBox { paragraphs, .. } => (
+            paragraphs.iter().map(|p| p.len() + 1).sum(),
+            2 * paragraphs.len(),
+            12,
+        ),
+        // A new slide's entry and its layout's text placeholders, a shape
+        // and an empty story each (about 650 bytes measured). The command
+        // does not say how many, so this counts five, Comparison's: 35 times
+        // a Blank slide's, but 20 slides a call are 154 KB, far under the cap.
+        Command::AddSlide { layout, .. } => (layout.as_ref().map_or(0, String::len), 0, 48),
+        // The slide's id moved in the slide order.
+        Command::MoveSlide { slide_id, .. } => (slide_id.len(), 2, 0),
+        Command::DeleteSlide { .. } => (0, 1, 0),
     };
     let size = |value: u64| usize::try_from(value).unwrap_or(usize::MAX);
     size(touched.content)
