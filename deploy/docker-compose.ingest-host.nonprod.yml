@@ -54,6 +54,9 @@ x-worker-env: &worker-env
   CAPY_TABULAR_TEXT_VERSION: ${CAPY_TABULAR_TEXT_VERSION:-v2}
   CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
   CAPY_PARSE_SPOOL_TTL_HOURS: ${CAPY_PARSE_SPOOL_TTL_HOURS:-2}
+  # VLM page reads in flight: across each environment's workers, and within one job.
+  CAPY_VLM_PAGE_CAPACITY: "20"
+  CAPY_VLM_PAGES_PER_JOB: "10"
 
 # The pipeline services run as capy-ingest (pipeline/Dockerfile), in the parse
 # spool's group, with no capabilities and no privilege gain. The workers decode

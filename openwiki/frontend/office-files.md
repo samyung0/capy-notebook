@@ -395,6 +395,10 @@ The parent owns the room provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
+Cursors cross the same way: the editor's own goes to the room's awareness and
+the co-editors' come back under the names the room's presence gives them
+([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
+Capy's idle close as an `activity` message ([plate-editor](plate-editor.md#idle-close)).
 
 The parent's Y.Doc runs no formatting cleanup, matching yrs in the DOCX and
 PPTX editors (`docx-edit`, `pptx-edit`) and the room. Stock Yjs, after every remote update to a text with formatting,
@@ -931,16 +935,22 @@ resolve revisions in nested fields and controls and remove resolved move
 wrappers and range markers. Deleting a break in a field result removes it from
 the saved field too.
 
-DOCX, XLSX and PPTX files have a two-row header in both modes, inside the
-usual 56px (`CenterContentHeader` picks it by extension, `officeFormatOf`):
-a 4px gap under the panel's top edge, two 24px rows 2px apart, then the
-divider. The top row holds back, the sidebar toggle, the workspace picker (a
-24px pill with 6px padding, slimmer than elsewhere) and the file name; the row
-under it holds Google-style menus from the left edge (File, Edit, View,
-Insert, Format…, 24px triggers) with the save status as icon and word after
-them. The mode toggle, header actions (PPTX Present) and ⋮ sit right, centred
-on both rows, or on the top row below sm at the row's 24px, where the menus
-take the full width and scroll sideways with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
+DOCX, XLSX and PPTX files have a two-row header in both modes once the file
+is visible, inside the usual 56px (`CenterContentHeader` picks it by
+extension, `officeFormatOf`): a 4px gap under the panel's top edge, two 24px
+rows 2px apart, then the divider. Until the runtime's first menus arrive (the
+file is visible) the header is one row (`data-rows`, `FileMenuShown`, Epo
+2026-10-20), and it keeps both rows through the frame reload of a mode
+switch. The top row holds back, the sidebar toggle, the workspace picker (a
+24px pill with 6px padding, slimmer than elsewhere), the file name and its
+save status beside it at every width, phones included (the icon, its label
+in the tooltip; a slowed open's line holds that tooltip open, Epo
+2026-10-20); the row under it holds Google-style menus from the left edge
+(File, Edit, View, Insert, Format…, 24px triggers). The avatar group (see
+[plate-editor](plate-editor.md#room-presence)), the mode toggle, header actions
+(PPTX Present) and ⋮ sit right, centred on both rows, or on the top row below
+sm at the row's 24px, where the menus take the full width and scroll sideways
+with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
 File › Save and leaving Edit save. Rename, Move, Properties and Delete stay in
 ⋮. The Office views render `OfficeHeader` (`OfficeMenuBar.tsx`), which portals
 the runtime's menus and actions into the header and draws the menus as a Radix

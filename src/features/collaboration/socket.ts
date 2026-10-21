@@ -1,5 +1,6 @@
 import { Allowance, tabAllowance } from './allowance';
 import { setHeld } from './held';
+import { watchIdle } from './idle';
 import { decodeFrame, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
@@ -7,6 +8,9 @@ export interface ChannelHandler {
   onMessage(message: Message): void;
   /** The user's timeout ended: a room paused by it joins again and resyncs. */
   onResume(): void;
+  /** The page went idle: the room's channel ends before the socket closes,
+   * reporting no drop. */
+  onSleep(): void;
   /** The socket closed: every channel on it ended. */
   onSocketClose(): void;
   /** The socket opened (again): a room that wants to be joined joins. */
@@ -35,6 +39,7 @@ const MAX_PENDING_JOINS = 8;
  */
 export class CollabSocket {
   private static readonly sockets = new Map<string, CollabSocket>();
+  private static idleWatched = false;
 
   /** A socket of its own (a load generator's peer), not the tab's shared
    * one, pacing its updates under an allowance of its own. */
@@ -45,6 +50,18 @@ export class CollabSocket {
   static for(url: string): CollabSocket {
     let socket = CollabSocket.sockets.get(url);
     if (!socket) {
+      // The tab's sockets close while the page is idle (`idle.ts`).
+      if (!CollabSocket.idleWatched && typeof window !== 'undefined') {
+        CollabSocket.idleWatched = true;
+        watchIdle({
+          sleep: () => {
+            for (const each of CollabSocket.sockets.values()) each.sleep();
+          },
+          wake: () => {
+            for (const each of CollabSocket.sockets.values()) each.wake();
+          },
+        });
+      }
       socket = new CollabSocket(url);
       CollabSocket.sockets.set(url, socket);
     }
@@ -58,6 +75,7 @@ export class CollabSocket {
     const holder: ChannelHandler = {
       onMessage() {},
       onResume() {},
+      onSleep() {},
       onSocketClose() {},
       onSocketOpen() {},
     };
@@ -87,6 +105,8 @@ export class CollabSocket {
   private attempts = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
+  /** Closed while the page is idle (`sleep`): it opens again only on `wake`. */
+  private asleep = false;
 
   readonly url: string;
   /** Its own allowance; the tab's (`tabAllowance`) when none. */
@@ -98,7 +118,12 @@ export class CollabSocket {
     // Back online: reconnect now instead of waiting out the backoff.
     if (typeof window !== 'undefined')
       window.addEventListener('online', () => {
-        if (this.status !== 'disconnected' || this.handlers.size === 0) return;
+        if (
+          this.asleep ||
+          this.status !== 'disconnected' ||
+          this.handlers.size === 0
+        )
+          return;
         clearTimeout(this.retry);
         this.retry = undefined;
         this.attempts = 0;
@@ -111,7 +136,8 @@ export class CollabSocket {
     this.handlers.add(handler);
     clearTimeout(this.idle);
     this.idle = undefined;
-    if (this.status === 'disconnected' && !this.retry) this.open();
+    if (this.status === 'disconnected' && !this.retry && !this.asleep)
+      this.open();
   }
 
   /** The room no longer wants it; the last one out closes it after a while. */
@@ -127,6 +153,28 @@ export class CollabSocket {
       this.idle = undefined;
       if (this.handlers.size === 0) this.close();
     }, IDLE_CLOSE_MS);
+  }
+
+  /**
+   * The page went idle (Epo 2026-10-20): every room's channel ends without
+   * a drop and the socket closes, staying closed until `wake`, so the server
+   * frees the user's places with no idle timer of its own.
+   */
+  sleep() {
+    if (this.asleep) return;
+    this.asleep = true;
+    clearTimeout(this.retry);
+    this.retry = undefined;
+    for (const handler of [...this.handlers]) handler.onSleep();
+    this.close();
+  }
+
+  /** Input or focus again: the socket opens and its rooms join again,
+   * catching up with a step 1 as any rejoin does. */
+  wake() {
+    if (!this.asleep) return;
+    this.asleep = false;
+    if (this.handlers.size > 0 && this.status === 'disconnected') this.open();
   }
 
   /** A fresh channel number for a join of `handler`. */
@@ -310,7 +358,12 @@ export class CollabSocket {
       (0.5 + Math.random());
     this.retry = setTimeout(() => {
       this.retry = undefined;
-      if (this.handlers.size > 0 && this.status === 'disconnected') this.open();
+      if (
+        this.handlers.size > 0 &&
+        this.status === 'disconnected' &&
+        !this.asleep
+      )
+        this.open();
     }, delay);
   }
 

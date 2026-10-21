@@ -1651,11 +1651,6 @@ async def _chunks_for(
         shutil.rmtree(raw_dir, ignore_errors=True)
 
 
-# One job reads this many pages at once; two jobs then share the VLM gate
-# (models.VLM_PAGE_CAPACITY, 20) without waiting long at it.
-VLM_PAGES_PER_JOB = 10
-
-
 async def _read_vlm_pages(
     content_list: list[dict],
     raw_dir: Path,
@@ -1676,7 +1671,9 @@ async def _read_vlm_pages(
     if not renders:
         return content_list, []
     rate = int(_rate(_RESOURCE_VLM_PAGE)["creditMicrosPerUnit"])
-    limit = asyncio.Semaphore(VLM_PAGES_PER_JOB)
+    # One job reads CAPY_VLM_PAGES_PER_JOB pages at once, below the gate every
+    # worker shares (CAPY_VLM_PAGE_CAPACITY), so jobs take turns at it.
+    limit = asyncio.Semaphore(cfg.vlm_pages_per_job)
     # UAT only (ingest/uat.py): a marked file's reads fail or are scripted,
     # under a cache key of their own, so no real read is served from them or
     # them from a real one.

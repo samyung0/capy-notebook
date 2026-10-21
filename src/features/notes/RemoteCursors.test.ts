@@ -78,7 +78,7 @@ function room() {
     peer.setLocalState(
       JSON.parse(
         JSON.stringify({
-          data: { color: '#123456', name: 'Peer' },
+          data: { color: '#123456', name: 'Mallory' },
           selection: { anchor: relative(anchor), focus: relative(focus) },
         })
       )
@@ -89,10 +89,12 @@ function room() {
       'server'
     );
   };
+  /** The verified names the room's presence gives client ids. */
+  const names = new Map([[peer.clientID, 'Peer']]);
   /** What `decorate` returns for the root entry. */
-  const drawn = (peers = readRemotePeers(editor)) =>
+  const drawn = (peers = readRemotePeers(editor, names)) =>
     remoteCursorRangesForEntry(editor, [editor, []], peers);
-  return { drawn, editor, select };
+  return { drawn, editor, names, peer, select };
 }
 
 it('marks a peer caret, not only a peer selection, once', () => {
@@ -108,7 +110,7 @@ it('marks a peer caret, not only a peer selection, once', () => {
   ]);
   // Only the root returns it: slate-react hands it down to the text, so a
   // block or text entry returning it too would draw it again.
-  const peers = readRemotePeers(editor);
+  const peers = readRemotePeers(editor, new Map());
   expect(
     remoteCursorRangesForEntry(editor, [editor.children[0], [0]], peers)
   ).toEqual([]);
@@ -155,7 +157,7 @@ it('moves an idle peer caret when a local edit lands before it', async () => {
   const { drawn, editor, select } = room();
   select({ offset: 5, path: [0, 2] });
   // The peer stays put: its state is the same object throughout.
-  const peers = readRemotePeers(editor);
+  const peers = readRemotePeers(editor, new Map());
   const before = drawn(peers);
   expect(before.map(({ focus }) => focus)).toEqual([
     { offset: 5, path: [0, 2] },
@@ -169,4 +171,22 @@ it('moves an idle peer caret when a local edit lands before it', async () => {
   expect(drawn(peers).map(({ focus }) => focus)).toEqual([
     { offset: 8, path: [0, 2] },
   ]);
+});
+
+/** Security regression (Epo 2026-10-20): a cursor's label is the verified
+ * name the room's presence gives its client id, never the name the peer's
+ * awareness claims ('Mallory' here); a client the presence does not name
+ * gets the generic label. Fails if labels read the awareness name. */
+it('labels a peer caret with its verified name, never its claimed one', () => {
+  const { drawn, editor, names, peer, select } = room();
+  select({ offset: 2, path: [0, 0] });
+  expect(drawn()).toEqual([
+    expect.objectContaining({ remoteCursorName: 'Peer' }),
+  ]);
+  names.delete(peer.clientID);
+  const [unnamed] = readRemotePeers(editor, names);
+  expect(unnamed?.name).toBeUndefined();
+  expect(JSON.stringify(drawn(readRemotePeers(editor, names)))).not.toContain(
+    'Mallory'
+  );
 });

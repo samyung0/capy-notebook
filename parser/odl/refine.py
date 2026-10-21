@@ -36,6 +36,7 @@ from . import (
     levels,
     list_headings,
     lists,
+    memory,
     order,
     outline_levels,
     page_text,
@@ -83,6 +84,9 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
     pdf = work_dir / "document.pdf"
     pdf.write_bytes(repaired)
     phases["flatten"] = time.perf_counter() - started
+    # Font repair and flattening free most of what they allocated; hand it back
+    # before the JVM starts beside this child (about 0.3 GiB on a large book).
+    memory.release_memory()
 
     started = time.perf_counter()
     java_deadline = started + java_timeout_s

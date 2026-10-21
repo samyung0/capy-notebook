@@ -939,9 +939,6 @@ async def stream_text(
             )
 
 
-# VLM page reads have a gate of their own, apart from the captioning model's
-# ingest share: at most 20 in flight across every worker.
-VLM_PAGE_CAPACITY = ("vlm_page", 20)
 # A page is about 460 output tokens; the cap ends a degenerate loop early.
 VLM_PAGE_MAX_TOKENS = 2_000
 
@@ -979,7 +976,9 @@ async def read_page(
             context=context,
             spec=spec,
             deadline=deadline,
-            capacity=VLM_PAGE_CAPACITY,
+            # A gate of its own, apart from the captioning model's ingest share:
+            # at most CAPY_VLM_PAGE_CAPACITY in flight across every worker.
+            capacity=("vlm_page", cfg.vlm_page_capacity),
         ) as call_id:
             if scripted is None:
                 resp = await elitellm.complete(
