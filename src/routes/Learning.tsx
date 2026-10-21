@@ -2,7 +2,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { CSSProperties } from 'react';
 import { useLearningProgress } from '@/api/hooks';
 import type { ProgressMap, ProgressWorkspace } from '@/api/types';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent } from '@/components/app/tabPanel';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
@@ -246,7 +246,7 @@ export default function Learning() {
   };
   const navigate = useNavigate();
   return (
-    <PanelWithInvertedRadius header={<PageHeader title={m.nav_learning()} />}>
+    <PagePanel header={<PageHeader title={m.nav_learning()} />}>
       <Tabs
         className="page-tabs-px"
         onChange={(next) =>
@@ -277,6 +277,6 @@ export default function Learning() {
           )}
         </TabContent>
       )}
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

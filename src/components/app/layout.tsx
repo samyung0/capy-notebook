@@ -5,11 +5,9 @@ import {
   type RefObject,
   useRef,
 } from 'react';
-import { useMediaQuery } from 'usehooks-ts';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
 import { PhoneTopRow } from './Sidebar';
-import { TopInsetBar } from './TopInsetBar';
 
 /** The scrolling body of the page panel, the root that ListEnd watches. */
 export const PanelScrollRoot = createContext<
@@ -17,43 +15,27 @@ export const PanelScrollRoot = createContext<
 >(undefined);
 
 /**
- * Large page panel with the top bar in a notch at its top-right from xl.
- * Below xl there is no notch: the sidebar or rail carries search,
- * notifications and the profile, and on phones the panel opens with the
- * nav drawer's menu button.
+ * The large page panel: an optional header and the body, scrolling together.
+ * On phones it opens with the nav drawer's menu button and the profile menu.
  */
-export function PanelWithInvertedRadius({
+export function PagePanel({
   children,
   header,
   className,
   sectionClassName,
 }: {
   children: ReactNode;
-  /** From xl it stays put above the scrolling body: it holds the top bar in
-   * the notch, and content scrolling under the notch would show outside the
-   * panel's shape. Below xl it scrolls with the body. */
   header?: ReactNode;
   sectionClassName?: string;
-  scroll?: boolean;
   /** Placement in the parent layout, e.g. flex-1 in a row. */
   className?: string;
 }) {
-  // Below xl the header scrolls too, so the scroller is the wrapper of
-  // header and body; from xl it is the body alone.
-  const outerRef = useRef<HTMLDivElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const xl = useMediaQuery('(min-width: 1280px)');
+  const scrollRef = useRef<HTMLDivElement>(null);
   return (
-    <div
-      className={cn(
-        'flex h-full min-h-0 w-full flex-col gap-1.5 sm:gap-2.5',
-        className
-      )}
-    >
+    <div className={cn('flex h-full min-h-0 w-full flex-col', className)}>
       <Card
-        className="inverted-radius-large-panel-container min-h-0 w-full flex-1 p-0 shadow-card sm:rounded-card-xl"
+        className="min-h-0 w-full flex-1 p-0 shadow-card sm:rounded-card-xl"
         radius="button"
-        theme="transparent"
       >
         <section
           className={cn(
@@ -61,30 +43,18 @@ export function PanelWithInvertedRadius({
             sectionClassName
           )}
         >
-          <Card
-            asChild
-            className="inverted-radius-large-panel absolute inset-0 block p-0 sm:rounded-card-xl"
-            radius="button"
+          {/* The scroller keeps the scrollbar's gutter, so content that grows
+              past the panel does not narrow it (and reflow grids). */}
+          <div
+            className="flex h-full min-h-0 flex-col gap-2 overflow-auto [scrollbar-gutter:stable]"
+            ref={scrollRef}
           >
-            <div />
-          </Card>
-          <div className="relative flex h-full flex-col gap-2">
-            {/* Both scrollers keep the scrollbar's gutter, so content that
-                grows past the panel does not narrow it (and reflow grids). */}
-            <div
-              className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto [scrollbar-gutter:stable] xl:overflow-visible"
-              ref={outerRef}
-            >
-              <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
-              {header && <div className="shrink-0">{header}</div>}
-              <div
-                className="flex flex-1 flex-col items-stretch gap-2 p-0 pb-10 [scrollbar-gutter:stable] xl:min-h-0 xl:overflow-auto"
-                ref={bodyRef}
-              >
-                <PanelScrollRoot.Provider value={xl ? bodyRef : outerRef}>
-                  {children}
-                </PanelScrollRoot.Provider>
-              </div>
+            <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
+            {header && <div className="shrink-0">{header}</div>}
+            <div className="flex flex-1 flex-col items-stretch gap-2 p-0 pb-10">
+              <PanelScrollRoot.Provider value={scrollRef}>
+                {children}
+              </PanelScrollRoot.Provider>
             </div>
           </div>
         </section>
@@ -182,27 +152,22 @@ export function PanelHeader({
   );
 }
 
-/**
- * General-page header: page title + actions on the left, the top-level inset
- * bar (search / notifications / profile) nested at the top-right from xl.
- */
+/** General-page header: page title, subtitle and actions. */
 export function PageHeader({
   title,
   subtitle,
   actions,
-  showTopBar = true,
   titleClassName,
   className,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;
-  showTopBar?: boolean;
   titleClassName?: string;
   className?: string;
 }) {
   return (
-    <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
+    <header>
       <div
         className={cn(
           'page-px flex min-w-0 items-center gap-10 pt-2 pb-0 sm:pt-6 sm:pb-2',
@@ -219,7 +184,6 @@ export function PageHeader({
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
-      {showTopBar && <TopInsetBar className="hidden xl:flex" />}
     </header>
   );
 }

@@ -6,10 +6,27 @@ import {
   useState,
 } from 'react';
 
+import type { PageFrame } from '@/api/types';
+import { onSyncedCustomization } from './customizationEvents';
+import { pageFrameStyle, sanitizePageFrame } from './pageFrame';
 import { STYLES, type Style, THEMES, type Theme, ThemeContext } from './theme';
 
 const STYLE_KEY = 'capy.style';
 const THEME_KEY = 'capy.theme';
+/** The frame's settings, and its resolved paint for the pre-paint scripts in
+ * index.html and share.html (shared pages read only this, never the API). */
+const FRAME_KEY = 'capy.pageFrame';
+const FRAME_CSS_KEY = 'capy.pageFrameCss';
+
+function readFrame(): PageFrame {
+  try {
+    return sanitizePageFrame(
+      JSON.parse(localStorage.getItem(FRAME_KEY) ?? 'null')
+    );
+  } catch {
+    return sanitizePageFrame(null);
+  }
+}
 
 function readStored<T extends string>(
   key: string,
@@ -48,6 +65,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     )
   );
 
+  const [pageFrame, setPageFrameState] = useState<PageFrame>(readFrame);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const vars = pageFrameStyle(pageFrame);
+    for (const name of [...root.style]) {
+      if (name.startsWith('--page-frame-')) root.style.removeProperty(name);
+    }
+    if (vars) {
+      for (const [name, value] of Object.entries(vars))
+        root.style.setProperty(name, value);
+      root.dataset.pageFrame = '';
+      localStorage.setItem(FRAME_CSS_KEY, JSON.stringify(vars));
+    } else {
+      delete root.dataset.pageFrame;
+      localStorage.removeItem(FRAME_CSS_KEY);
+    }
+  }, [pageFrame]);
+
   useEffect(() => {
     const root = document.documentElement;
     root.dataset.style = style;
@@ -67,15 +103,35 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(THEME_KEY, m);
   }, []);
 
+  const setPageFrame = useCallback((frame: PageFrame) => {
+    setPageFrameState(frame);
+    localStorage.setItem(FRAME_KEY, JSON.stringify(frame));
+  }, []);
+
+  // A look synced from another device replaces this one's.
+  useEffect(
+    () =>
+      onSyncedCustomization((c) => {
+        const style = STYLES.find((s) => s.value === c.style)?.value;
+        const theme = THEMES.find((t) => t.value === c.theme)?.value;
+        if (style) setStyle(style);
+        if (theme) setTheme(theme);
+        setPageFrame(sanitizePageFrame(c.pageFrame));
+      }),
+    [setStyle, setTheme, setPageFrame]
+  );
+
   const value = useMemo(
     () => ({
       isDark: THEMES.find((t) => t.value === theme)?.isDark ?? false,
+      pageFrame,
+      setPageFrame,
       setStyle,
       setTheme,
       style,
       theme,
     }),
-    [theme, style, setTheme, setStyle]
+    [theme, style, pageFrame, setTheme, setStyle, setPageFrame]
   );
 
   return (

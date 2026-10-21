@@ -109,6 +109,9 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}
+	if errors.Is(err, store.ErrInvalidCustomization) {
+		return huma.Error422UnprocessableEntity(err.Error())
+	}
 	if errors.Is(err, store.ErrModelRefRequired) {
 		return huma.Error400BadRequest("a model preference is required")
 	}

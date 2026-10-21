@@ -6,9 +6,8 @@ import {
 } from '@tanstack/react-router';
 import { useReviewResult } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent } from '@/components/app/tabPanel';
 import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -35,21 +34,21 @@ export default function ReviewResult() {
 
   if (waitsForConnection(fetchStatus, data))
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   if (isLoading)
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   if (isError || !data)
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <ErrorState
           action={
             <ErrorAction asChild back>
@@ -62,19 +61,18 @@ export default function ReviewResult() {
           title={m.review_result_unavailable()}
           variant="page"
         />
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
 
   const s = data.session;
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <QuizPageHeader
           meta={reviewResultMeta(s)}
           metaClassName="text-fg-secondary text-sm"
           onBack={toReview}
           title={groupName(s.group, s.chapterName) || s.workspaceName}
-          topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
           trail={[
             { label: m.nav_learning(), link: linkOptions({ to: '/learning' }) },
             {
@@ -102,6 +100,6 @@ export default function ReviewResult() {
           result={data}
         />
       </TabContent>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

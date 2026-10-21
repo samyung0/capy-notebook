@@ -47,7 +47,6 @@ import {
 } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { PhoneTopRow } from '@/components/app/Sidebar';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
@@ -615,10 +614,8 @@ export default function QuestionBank() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 xl:flex-row">
-      {/* The topics panel and the top bar above it from xl; below it the
-          sidebar has the bar's items and the page is one column. */}
+      {/* The topics panel from xl; below it the page is one column. */}
       <div className="order-last hidden h-full shrink-0 flex-col gap-2.5 xl:flex xl:w-(--top-inset-bar-width)">
-        <TopInsetBar />
         <Panel
           className="min-h-0 flex-1"
           sectionClassName="scroll-fade-y h-full px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
@@ -721,7 +718,6 @@ export default function QuestionBank() {
                   )
                 }
                 className="justify-between md:flex-1"
-                showTopBar={false}
                 subtitle={m.question_ui_bank_hint()}
                 title={m.question_ui_question_bank()}
               />

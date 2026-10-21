@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AccountStatus } from './accountStatus.ts';
+import type { Customization } from './customization.ts';
 import type { PlanTier } from './planTier.ts';
 import type { Ref } from './ref.ts';
 import type { StudyPreferences } from './studyPreferences.ts';
@@ -22,6 +23,7 @@ export interface User {
   chatSendKey: UserChatSendKey;
   chatSteps: UserChatSteps;
   classLabel?: string;
+  customization?: Customization;
   editorModel: Ref;
   email: string;
   id: string;

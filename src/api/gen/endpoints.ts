@@ -60,6 +60,7 @@ import type {
   CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
+  Customization,
   DeleteFileParams,
   DeleteMaterialParams,
   DeleteQuizParams,
@@ -4894,6 +4895,56 @@ export const setChatPrefs = async (setChatPrefsReq: NonReadonly<SetChatPrefsReq>
 
   const data: setChatPrefsResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as setChatPrefsResponse
+}
+
+
+
+export type setCustomizationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setCustomizationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setCustomizationResponseSuccess = (setCustomizationResponse204) & {
+  headers: Headers;
+};
+export type setCustomizationResponseError = (setCustomizationResponseDefault) & {
+  headers: Headers;
+};
+
+export type setCustomizationResponse = (setCustomizationResponseSuccess | setCustomizationResponseError)
+
+export const getSetCustomizationUrl = () => {
+
+
+
+
+  return `/api/me/customization`
+}
+
+/**
+ * @summary Sync the app's look to the account
+ */
+export const setCustomization = async (customization: NonReadonly<Customization>, options?: RequestInit): Promise<setCustomizationResponse> => {
+
+  const res = await fetch(getSetCustomizationUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(customization)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setCustomizationResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setCustomizationResponse
 }
 
 

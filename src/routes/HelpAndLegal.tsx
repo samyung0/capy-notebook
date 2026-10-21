@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -72,7 +72,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 
 export default function HelpAndLegal() {
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <PageHeader subtitle={m.help_legal_hint()} title={m.nav_help_legal()} />
       }
@@ -154,6 +154,6 @@ export default function HelpAndLegal() {
           </section>
         </div>
       </div>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

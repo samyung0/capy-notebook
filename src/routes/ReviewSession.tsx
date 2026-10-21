@@ -24,8 +24,7 @@ import type {
   ReviewSuggestion,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
+import { PagePanel } from '@/components/app/layout';
 import { ErrorAction } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
@@ -264,13 +263,12 @@ function Session({
   }
 
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <QuizPageHeader
           meta={item?.materialTitle}
           onBack={back}
           title={m.review_title({ workspace: ws?.name ?? '' })}
-          topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
           trail={[
             search.from === 'review'
               ? {
@@ -395,7 +393,7 @@ function Session({
           />
         )}
       </div>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }
 

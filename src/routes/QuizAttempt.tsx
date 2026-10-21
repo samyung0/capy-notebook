@@ -8,9 +8,8 @@ import {
 import { useState } from 'react';
 import { useQuiz, useSubmitAttempt, useWorkspace } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -64,18 +63,18 @@ function Attempt({ quizId }: { quizId: string }) {
 
   if (fetchStatus === 'paused') {
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   }
   if (isLoading || (!isFetchedAfterMount && !isError))
     return (
-      <PanelWithInvertedRadius>
+      <PagePanel>
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </PanelWithInvertedRadius>
+      </PagePanel>
     );
   // Other failures without data go to the error boundary.
   if (isMissing(error) || !quiz)
@@ -125,7 +124,7 @@ function Attempt({ quizId }: { quizId: string }) {
           </Button>
         </Link>
       }
-      frame={PanelWithInvertedRadius}
+      frame={PagePanel}
       grade={async (answers, startedAt) => {
         const attempt = await submit({ answers, quizId, startedAt });
         return {
@@ -134,6 +133,7 @@ function Attempt({ quizId }: { quizId: string }) {
           questions: attempt.questions,
         };
       }}
+      inApp
       name={quiz.name}
       onBack={() =>
         canGoBack
@@ -142,7 +142,6 @@ function Attempt({ quizId }: { quizId: string }) {
       }
       provenance={quiz.provenance}
       questions={questions}
-      topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
       trail={[blockHomeCrumb(quiz)]}
     />
   );
