@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -223,11 +224,23 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	info, err := a.blob.Head(r.Context(), upload.ObjectPath)
+	info, err := boundB2(r.Context(), uploadID, "head", func(ctx context.Context) (blob.ObjectInfo, error) {
+		return a.blob.Head(ctx, upload.ObjectPath)
+	})
 	fromFinalPath := false
+	if errors.Is(err, errB2CallTimeout) {
+		a.fail(w, err)
+		return
+	}
 	if err != nil {
-		info, err = a.blob.Head(r.Context(), asset.ObjectPath)
+		info, err = boundB2(r.Context(), uploadID, "head", func(ctx context.Context) (blob.ObjectInfo, error) {
+			return a.blob.Head(ctx, asset.ObjectPath)
+		})
 		fromFinalPath = err == nil
+		if errors.Is(err, errB2CallTimeout) {
+			a.fail(w, err)
+			return
+		}
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]string{"message": "uploaded object is not available"})
 			return
@@ -243,7 +256,9 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 	if fromFinalPath {
 		sourcePath = asset.ObjectPath
 	}
-	prefix, err := a.blob.ReadPrefix(r.Context(), sourcePath, 512)
+	prefix, err := boundB2(r.Context(), uploadID, "signature_read", func(ctx context.Context) ([]byte, error) {
+		return a.blob.ReadPrefix(ctx, sourcePath, 512)
+	})
 	if err != nil {
 		a.fail(w, fmt.Errorf("inspect editor asset: %w", err))
 		return
@@ -254,7 +269,9 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !fromFinalPath {
-		if err := a.blob.Promote(r.Context(), upload.ObjectPath, asset.ObjectPath); err != nil {
+		if _, err := boundB2(r.Context(), uploadID, "promote", func(ctx context.Context) (struct{}, error) {
+			return struct{}{}, a.blob.Promote(ctx, upload.ObjectPath, asset.ObjectPath)
+		}); err != nil {
 			a.fail(w, err)
 			return
 		}

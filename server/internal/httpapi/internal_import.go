@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -380,9 +382,22 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusGone, map[string]string{"code": "workspace_access_revoked"})
 		return
 	}
-	info, finalErr := a.blob.Head(r.Context(), job.FinalPath)
+	upload := job.UploadSessionID
+	info, finalErr := boundB2(r.Context(), upload, "head", func(ctx context.Context) (blob.ObjectInfo, error) {
+		return a.blob.Head(ctx, job.FinalPath)
+	})
+	if errors.Is(finalErr, errB2CallTimeout) {
+		a.fail(w, finalErr)
+		return
+	}
 	if finalErr != nil {
-		info, err = a.blob.Head(r.Context(), job.AttemptObjectPath)
+		info, err = boundB2(r.Context(), upload, "head", func(ctx context.Context) (blob.ObjectInfo, error) {
+			return a.blob.Head(ctx, job.AttemptObjectPath)
+		})
+		if errors.Is(err, errB2CallTimeout) {
+			a.fail(w, err)
+			return
+		}
 		if err != nil {
 			writeJSON(w, http.StatusConflict, map[string]string{"code": "object_unavailable"})
 			return
@@ -398,16 +413,18 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if finalErr != nil {
-		info, err = promoteMatchingObject(
-			r.Context(), a.blob, job.AttemptObjectPath, job.FinalPath,
-			job.DeclaredSize, job.ContentType, info,
-		)
+		info, err = boundB2(r.Context(), upload, "promote", func(ctx context.Context) (blob.ObjectInfo, error) {
+			return promoteMatchingObject(
+				ctx, a.blob, job.AttemptObjectPath, job.FinalPath,
+				job.DeclaredSize, job.ContentType, info,
+			)
+		})
 		if err != nil {
 			a.fail(w, err)
 			return
 		}
 	}
-	sha, err := storedSourceSHA256(r.Context(), a.blob, job.Name, job.Kind, job.FinalPath, job.DeclaredSize)
+	sha, err := storedSourceSHA256(r.Context(), a.blob, upload, job.Name, job.Kind, job.FinalPath, job.DeclaredSize)
 	if errors.Is(err, errStoredSourceChanged) {
 		writeJSON(w, http.StatusConflict, map[string]string{"code": "object_size_mismatch"})
 		return

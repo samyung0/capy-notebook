@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -140,6 +141,109 @@ func TestSourceUploadCompletionRefusesBytesThatDoNotMatchTheObject(t *testing.T)
 	if err := th.st.Pool().QueryRow(context.Background(),
 		`SELECT status FROM upload_sessions WHERE id=$1 AND file_id IS NULL`, upload).Scan(&status); err != nil || status != "pending" {
 		t.Fatalf("upload after a refused completion: status=%q err=%v", status, err)
+	}
+}
+
+// stallingBucket stalls its `stall` call until the call's context ends, as a
+// B2 call that never answers does; past stallLimit it answers normally, so a
+// missing bound fails the test instead of hanging it.
+type stallingBucket struct {
+	*blob.Memory
+	stall string
+}
+
+const stallLimit = 5 * time.Second
+
+func (b *stallingBucket) wait(ctx context.Context, call string) error {
+	if b.stall != call {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(stallLimit):
+		return nil
+	}
+}
+
+func (b *stallingBucket) Head(ctx context.Context, path string) (blob.ObjectInfo, error) {
+	if err := b.wait(ctx, "head"); err != nil {
+		return blob.ObjectInfo{}, err
+	}
+	return b.Memory.Head(ctx, path)
+}
+
+func (b *stallingBucket) Promote(ctx context.Context, from, to string) error {
+	if err := b.wait(ctx, "promote"); err != nil {
+		return err
+	}
+	return b.Memory.Promote(ctx, from, to)
+}
+
+// Open answers at once and stalls in the body, as a GET whose bytes stop.
+func (b *stallingBucket) Open(ctx context.Context, path string) (io.ReadCloser, error) {
+	body, err := b.Memory.Open(ctx, path)
+	if err != nil || b.stall != "read" {
+		return body, err
+	}
+	return stalledBody{body, func() error { return b.wait(ctx, "read") }}, nil
+}
+
+type stalledBody struct {
+	io.ReadCloser
+	wait func() error
+}
+
+func (s stalledBody) Read(p []byte) (int, error) {
+	if err := s.wait(); err != nil {
+		return 0, err
+	}
+	return s.ReadCloser.Read(p)
+}
+
+// Each B2 call in a source upload's completion (the HEAD, the promotion, the
+// SHA-256 read-back) is bounded (Epo 2026-10-21): a stalled call fails the
+// completion within the bound with the generic 5xx the browser offers a retry
+// on, the upload stays pending, and the user's second completion succeeds
+// once B2 answers.
+func TestSourceUploadCompletionBoundsEachB2Call(t *testing.T) {
+	httpapi.SetB2CallBound(t, 100*time.Millisecond)
+	bucket := &stallingBucket{Memory: blob.NewMemory()}
+	th := openThumbnailHarnessWith(t, bucket)
+	ws := uploadWorkspace(t, th)
+	for _, call := range []string{"head", "promote", "read"} {
+		t.Run(call, func(t *testing.T) {
+			body := []byte("PK\x03\x04 stalled " + call)
+			upload := putUpload(t, th, bucket.Memory, ws, call+".docx", body)
+			complete := "/api/workspaces/" + ws + "/sources/uploads/" + upload + "/complete"
+
+			bucket.stall = call
+			start := time.Now()
+			rec := doReq(t, th.h, http.MethodPost, complete, "u_owner", nil)
+			bucket.stall = ""
+			expectStatus(t, rec, http.StatusInternalServerError, "completion with a stalled "+call)
+			if took := time.Since(start); took > 2*time.Second {
+				t.Fatalf("stalled %s answered after %v", call, took)
+			}
+			var status string
+			if err := th.st.Pool().QueryRow(context.Background(),
+				`SELECT status FROM upload_sessions WHERE id=$1 AND file_id IS NULL`, upload).Scan(&status); err != nil || status != "pending" {
+				t.Fatalf("upload after a stalled %s: status=%q err=%v", call, status, err)
+			}
+
+			rec = doReq(t, th.h, http.MethodPost, complete, "u_owner", nil)
+			expectStatus(t, rec, http.StatusCreated, "second completion")
+			var file struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &file); err != nil {
+				t.Fatal(err)
+			}
+			sum := sha256.Sum256(body)
+			if got := fileSourceSHA(t, th, file.ID); got != hex.EncodeToString(sum[:]) {
+				t.Fatalf("source_sha256 after the second completion = %q", got)
+			}
+		})
 	}
 }
 

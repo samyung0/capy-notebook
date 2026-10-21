@@ -322,6 +322,19 @@ upload stays pending). A PDF, image or other file without source sessions is
 not read. Ingest still hashes its own download and writes the same value (its
 cache key, and the SHA of files uploaded before this); the first save no longer
 writes the file's SHA.
+Each B2 call of a completion (source uploads, editor assets, a drive import's
+internal completion: each HEAD, the promotion, the SHA-256 read-back, an editor
+asset's signature read, a size mismatch's delete) runs under its own 60 s
+deadline and logs one `upload completion b2 call` line with the upload id, the
+call's name, `duration_ms` and `outcome` (ok, error, timeout), never object
+keys or URLs (`boundB2`, Epo 2026-10-21). The SDK sends each request with that
+deadline, so it also aborts a body still being read. A call that hits it fails
+the completion with the generic 500 (the browser's `server` error, "try
+again"), never the 409 of a missing object; nothing retries it automatically
+(the import worker retries any 5xx as it always has). The upload stays pending
+with its reservation: a second completion resumes from what landed (an object
+already at its stable key skips the promotion), and one never completed
+expires as below.
 Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).

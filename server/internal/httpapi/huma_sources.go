@@ -309,15 +309,28 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 		}
 	}
 
-	info, finalErr := a.blob.Head(ctx, session.FinalPath)
+	id := in.UploadID
+	info, finalErr := boundB2(ctx, id, "head", func(ctx context.Context) (blob.ObjectInfo, error) {
+		return a.blob.Head(ctx, session.FinalPath)
+	})
+	if errors.Is(finalErr, errB2CallTimeout) {
+		return nil, hErr(finalErr)
+	}
 	if finalErr != nil {
-		info, err = a.blob.Head(ctx, session.ObjectPath)
+		info, err = boundB2(ctx, id, "head", func(ctx context.Context) (blob.ObjectInfo, error) {
+			return a.blob.Head(ctx, session.ObjectPath)
+		})
+		if errors.Is(err, errB2CallTimeout) {
+			return nil, hErr(err)
+		}
 		if err != nil {
 			return nil, huma.Error409Conflict("uploaded object is not available")
 		}
 	}
 	if info.Size != session.DeclaredSize {
-		_ = a.blob.Delete(ctx, session.ObjectPath)
+		_, _ = boundB2(ctx, id, "delete", func(ctx context.Context) (struct{}, error) {
+			return struct{}{}, a.blob.Delete(ctx, session.ObjectPath)
+		})
 		return nil, huma.Error400BadRequest("uploaded size does not match the reserved size")
 	}
 	// The PUT signs its Content-Type, so B2 always reports one; an empty one
@@ -326,12 +339,14 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 		return nil, huma.Error400BadRequest("uploaded content type does not match the reservation")
 	}
 	if finalErr != nil {
-		info, err = promoteUploadObject(ctx, a.blob, session, info)
+		info, err = boundB2(ctx, id, "promote", func(ctx context.Context) (blob.ObjectInfo, error) {
+			return promoteUploadObject(ctx, a.blob, session, info)
+		})
 		if err != nil {
 			return nil, hErr(err)
 		}
 	}
-	sha, err := storedSourceSHA256(ctx, a.blob, session.Name, session.Kind, session.FinalPath, session.DeclaredSize)
+	sha, err := storedSourceSHA256(ctx, a.blob, id, session.Name, session.Kind, session.FinalPath, session.DeclaredSize)
 	if errors.Is(err, errStoredSourceChanged) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -352,30 +367,63 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 
 var errStoredSourceChanged = errors.New("uploaded object changed during completion")
 
+// b2CallBound bounds each B2 call in an upload's completion (Epo 2026-10-21);
+// tests shorten it.
+var b2CallBound = 60 * time.Second
+
+// errB2CallTimeout is a completion B2 call that hit b2CallBound. Completion
+// answers it with the generic 5xx the browser offers a retry on; nothing
+// retries it automatically.
+var errB2CallTimeout = errors.New("storage call timed out")
+
+// boundB2 runs one B2 call of an upload's completion under b2CallBound and
+// logs its duration with the upload id and the call's name. The SDK sends the
+// request with ctx, so the deadline also aborts a body still being read.
+func boundB2[T any](ctx context.Context, uploadID, call string, fn func(context.Context) (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, b2CallBound)
+	defer cancel()
+	start := time.Now()
+	v, err := fn(ctx)
+	outcome := "ok"
+	if err != nil {
+		outcome = "error"
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			outcome = "timeout"
+			err = fmt.Errorf("%w: %s: %w", errB2CallTimeout, call, err)
+		}
+	}
+	obs.Log(ctx).Info("upload completion b2 call", "upload_id", uploadID, "call", call,
+		"duration_ms", time.Since(start).Milliseconds(), "outcome", outcome)
+	return v, err
+}
+
 // storedSourceSHA256 hashes a completed upload's stored object once, for a file
 // with source sessions (Office and text), so every session names its SHA-256
 // from the first open (Epo 2026-10-17); a file without them is not read ("").
 // The gateway hashes the bytes itself: B2's documented PutObject verifies no
 // client-sent checksum, and the collaboration server checks every original it
 // loads against this SHA, so a hash the browser sent would be trusted unseen.
-func storedSourceSHA256(ctx context.Context, objects blob.Store, name, kind, path string, size int64) (string, error) {
+// The read-back is one bounded call, open to last byte.
+func storedSourceSHA256(ctx context.Context, objects blob.Store, uploadID, name, kind, path string, size int64) (string, error) {
 	if store.SourceEditFormat(name, kind) == "" {
 		return "", nil
 	}
-	body, err := objects.Open(ctx, path)
-	if err != nil {
-		return "", err
-	}
-	defer body.Close()
-	hash := sha256.New()
-	read, err := io.Copy(hash, io.LimitReader(body, size+1))
-	if err != nil {
-		return "", err
-	}
-	if read != size {
-		return "", errStoredSourceChanged
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	return boundB2(ctx, uploadID, "sha256_read", func(ctx context.Context) (string, error) {
+		body, err := objects.Open(ctx, path)
+		if err != nil {
+			return "", err
+		}
+		defer body.Close()
+		hash := sha256.New()
+		read, err := io.Copy(hash, io.LimitReader(body, size+1))
+		if err != nil {
+			return "", err
+		}
+		if read != size {
+			return "", errStoredSourceChanged
+		}
+		return hex.EncodeToString(hash.Sum(nil)), nil
+	})
 }
 
 // promoteUploadObject treats a matching stable object as success when another
