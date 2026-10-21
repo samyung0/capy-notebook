@@ -1,7 +1,7 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 import { useCanvas, useSaveCanvas } from '@/api/hooks';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -22,7 +22,7 @@ export default function Canvas() {
   const frozen = useAccountFrozen();
 
   return (
-    <PanelWithInvertedRadius>
+    <PagePanel>
       <div className="flex items-center gap-3 border-divider border-b px-5 py-3">
         <Link
           className="text-fg-muted hover:text-fg"
@@ -56,6 +56,6 @@ export default function Canvas() {
           </Suspense>
         )}
       </div>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

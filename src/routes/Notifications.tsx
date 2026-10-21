@@ -8,7 +8,7 @@ import {
 } from '@/api/hooks';
 import type { AppNotification } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -104,9 +104,7 @@ export default function Notifications() {
   const items = data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
-    <PanelWithInvertedRadius
-      header={<PageHeader title={m.notifications_title()} />}
-    >
+    <PagePanel header={<PageHeader title={m.notifications_title()} />}>
       {/* The wide gutter; the actions sit at the panel's right edge, the
        * list keeps its reading width. */}
       <div className="page-px-wide flex w-full flex-col">
@@ -170,6 +168,6 @@ export default function Notifications() {
           )}
         </div>
       </div>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

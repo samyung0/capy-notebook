@@ -9,7 +9,7 @@ import {
   useUpdateLabel,
 } from '@/api/hooks';
 import type { CalendarEvent, Label } from '@/api/types';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Card } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/Dialog';
@@ -274,7 +274,7 @@ export default function Schedule() {
       </div>
 
       {/* main calendar */}
-      <PanelWithInvertedRadius
+      <PagePanel
         className="flex-1"
         header={
           <PageHeader
@@ -291,7 +291,6 @@ export default function Schedule() {
                 <AccountStatusButton />
               </>
             }
-            showTopBar
             title={`${monthName(month)} ${month.getFullYear()}`}
           />
         }
@@ -340,7 +339,7 @@ export default function Schedule() {
             />
           )}
         </div>
-      </PanelWithInvertedRadius>
+      </PagePanel>
       {labelEdit && (
         <LabelEditDialog
           key={labelEdit.id}

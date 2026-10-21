@@ -907,7 +907,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 	}
 }
 
-// The DOCX engine round's reset (migration 0102) drops every DOCX state under a
+// The DOCX engine round's reset (migration 0103) drops every DOCX state under a
 // new epoch with no window: unpublished edits go and editing need not be
 // paused, the files end published, AI edit Undo is released, a refresh in
 // flight is superseded, and a pending rebuild ends on the published bytes,
@@ -931,7 +931,7 @@ func TestDocxEngineRoundReset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile("../../migrations/0102_docx_engine_round_reset.sql")
+	raw, err := os.ReadFile("../../migrations/0103_docx_engine_round_reset.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

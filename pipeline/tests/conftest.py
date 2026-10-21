@@ -64,7 +64,7 @@ for _k in (
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     "DEEPINFRA_API_KEY",
-    "ZAI_API_KEY",
+    "OPENROUTER_API_KEY",
 ):
     os.environ.setdefault(_k, "test-dummy-key")
 
@@ -252,6 +252,15 @@ def _json_body_matcher(r1, r2) -> None:
     assert n1 == n2, "request JSON body mismatch"
 
 
+def _scrub_response(response: dict) -> dict:
+    """Drop response cookies (Cloudflare's __cf_bm): filter_headers covers
+    request headers only."""
+    headers = response.get("headers") or {}
+    for name in [name for name in headers if name.lower() == "set-cookie"]:
+        del headers[name]
+    return response
+
+
 @pytest.fixture(scope="session")
 def _vcr():
     import vcr
@@ -268,6 +277,7 @@ def _vcr():
             "set-cookie",
         ],
         filter_query_parameters=["key"],
+        before_record_response=_scrub_response,
         decode_compressed_response=True,
     )
     v.register_matcher("capy_json_body", _json_body_matcher)

@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react';
+import type { PageFrame } from '@/api/types';
 
 export type Style = 'classroom' | 'notion';
 export type Theme = 'latte' | 'mocha' | 'frappe';
@@ -44,6 +45,9 @@ export function themeSwatch(style: Style, theme: Theme): string {
 
 interface ThemeState {
   isDark: boolean;
+  /** The painted page frame (pageFrame.ts); kept on this device. */
+  pageFrame: PageFrame;
+  setPageFrame: (frame: PageFrame) => void;
   setStyle: (m: Style) => void;
   setTheme: (t: Theme) => void;
   style: Style;

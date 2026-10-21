@@ -545,18 +545,22 @@ named provider directly. These exact routing exceptions are allowed:
   `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
   (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
   `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
-- `zai/glm-5.3-flash` is served by Z.AI itself
-  (`https://api.z.ai/api/paas/v4/chat/completions`, OpenAI-compatible, model
-  `glm-5.3-flash`, platform-only `ZAI_API_KEY`) for chat and ingest alike
-  (decision 2026-10-20). Earlier hops (DeepInfra, Tencent TokenHub, then Relace
-  from 2026-09-26 until its GLM stopped reading prompts on 2026-10-19) are
-  history in `human/agentic-retrieval.md`; there is no fallback route. Thinking
-  cannot be disabled: `reasoning_effort` takes `low`, `high` or `max`, and `low`
-  is the floor a reasoning-off call runs at.
+- `zai/glm-5.3-flash` keeps its `zai` catalog identity, credit rates and
+  capacity row but is served through OpenRouter (decision 2026-10-21): the
+  request names OpenRouter's `z-ai/glm-5.3-flash`, routed to DigitalOcean, then
+  Z.AI, with the platform key `OPENROUTER_API_KEY` (the `zai` provider's
+  `platformEnv`). Earlier hops (DeepInfra, Tencent TokenHub, Relace from
+  2026-09-26, Z.AI's own endpoint from 2026-10-20) are history in
+  `human/agentic-retrieval.md`; no Z.AI key is read anywhere. Thinking cannot
+  be disabled (OpenRouter answers 400 "Reasoning is mandatory"), and a request
+  without an effort reasons as at `max`, so every GLM request sends
+  `reasoning: {effort}` with `low`, `high` or `max`; `low` is the floor a
+  reasoning-off call runs at and `high` the chat default.
 - `openrouter` rows post their own slug to OpenRouter
   (`https://openrouter.ai/api/v1/chat/completions`, platform-only
-  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}` and the slug's
-  provider list from `OPENROUTER_ROUTING` in `pipeline/elitellm/client.py`: an
+  `OPENROUTER_API_KEY`) with `reasoning: {enabled: false}`. Every OpenRouter
+  model, GLM included, takes its provider list from `OPENROUTER_ROUTING` in
+  `pipeline/elitellm/client.py`: an
   ordered `order` with `allow_fallbacks: false`, so OpenRouter tries the listed
   providers in turn and never a host outside the list, and the call answers 429
   only when every listed provider is busy. `deepseek/deepseek-v4-flash-0731`,
@@ -564,7 +568,10 @@ named provider directly. These exact routing exceptions are allowed:
   (decision 2026-10-20, after Relace's endpoint answered 429 for every summary;
   each held 32 summary calls in flight without a 429 when probed that day);
   `deepseek/deepseek-v4.1-flash-1017`, the captioning pin for page reads and
-  image captions (decision 2026-10-19), DeepInfra only. Default routing is
+  image captions (decision 2026-10-19), goes to InferenceNet, then Cloudflare
+  (decision 2026-10-21: both read page text as well as DeepInfra did;
+  InferenceNet describes non-text visuals such as QR codes less often, which is
+  accepted). Default routing is
   never used: providers behind one slug differ on images (one drops them
   silently, others take none), so a slug with no pin fails when its request is
   built, naming the slug. The allowlist in
@@ -577,8 +584,8 @@ named provider directly. These exact routing exceptions are allowed:
   of `prompt_tokens` (1,024 of 1,208 observed).
 
 No exception opens a general router path. Other DeepInfra, ZAI and
-OpenRouter slugs fail registry validation. A ZAI user key cannot
-authenticate the routed GLM call.
+OpenRouter slugs fail registry validation. The `zai` provider takes no user
+key (`byok: false`, and `models.IsFirstPartyProvider` leaves it out).
 A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
@@ -718,9 +725,11 @@ Per-model credit multipliers live on the config row as three rates: input,
 cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
-80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, OpenRouter DeepSeek V4 Flash
-0731 42 / 12 / 1056 (Reka's list price, its first route, decision 2026-10-20),
-embedding 40, reranker 50.
+300 / 60 / 1000 (Z.AI's list price, decision 2026-10-20, kept on OpenRouter,
+where DigitalOcean lists less), DeepSeek Flash 600 / 12 / 2400, OpenRouter
+DeepSeek V4 Flash 0731 42 / 12 / 1056 (Reka's list price, its first route,
+decision 2026-10-20), V4.1 Flash 1017 160 / 16 / 1000 (InferenceNet's list
+price, its first route, decision 2026-10-21), embedding 40, reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -728,11 +737,12 @@ There is no USD estimate on `model_configs` or `usage_events`.
 `(input-cached)*input + cached*cache + output*output`. A 0 stays 0. Missing or
 unproven cache details charge all reported input at the input rate and do not
 fail the request. Cache writes are ordinary input under the three-rate design.
-DeepSeek, OpenAI, Z.AI (GLM under its `zai` slug) and OpenRouter report a
+DeepSeek, OpenAI and OpenRouter (GLM under its `zai` slug included) report a
 cache split proven inclusive of their own reported input; Anthropic's disjoint
-counters are folded into input separately. Z.AI's was observed on 2026-10-20:
-a repeated 2,744-token prompt reported `prompt_tokens_details.cached_tokens`
-2,688 with `prompt_tokens` unchanged, and reasoning under
+counters are folded into input separately. GLM's on OpenRouter was checked on
+2026-10-21: every billed `usage.cost` equalled (prompt - cached) at the input
+price plus cached at the cache price plus output (9,856 of 10,069 cached on a
+repeated chat prompt), with reasoning under
 `completion_tokens_details.reasoning_tokens`. A split larger
 than reported input is still refused as
 `cached_gt_input` and charged in full.
@@ -1525,22 +1535,22 @@ reads need no `model_capacities` row and do not count against GLM's ingest
 share.
 
 Before enabling traffic, configure the environment's limits in Ops. The approved
-production values are GLM 48/40 and Qwen embedding 200/80; UAT uses its own account
-and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
-DeepSeek Flash 2500/1500, Z.AI GLM 48/40, OpenRouter DeepSeek V4 Flash
-0731 32/0 and V4.1 Flash 1017 32/0 (ingest-only, so no interactive reserve;
-page reads lease the `vlm_page` gate instead), Qwen embedding 200/80
-(total/interactive reserve). Existing settings remain.
+production values are GLM 150/125 and Qwen embedding 200/80; local development
+keeps GLM at 8/4. The opt-in `deploy/model-capacities.sql` fills only missing
+rows: DeepSeek Flash 2500/1500, GLM 150/125 (still keyed `zai/glm-5.3-flash`),
+OpenRouter DeepSeek V4 Flash 0731 32/0 and V4.1 Flash 1017 64/0 (ingest-only,
+so no interactive reserve; page reads lease the `vlm_page` gate instead), Qwen
+embedding 200/80 (total/interactive reserve). Existing settings remain, so an
+environment that already has rows changes them in Ops.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
-limits; the reserves are application policy. GLM's 48 calls in flight with 40
-reserved for interactive use (decision 2026-10-20) stay under Z.AI's measured
-hold of about 50 per key, past which connections hang about 21 s and fail; ingest
-uses no GLM once page reads run on DeepSeek. Migration `0097` copies an existing
-`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40. It keeps the
-relace row, which retrieval containers on the previous release still lease
-against while a deploy rolls out; an operator removes it by hand afterwards
-(the `tencent` row stays as history). Z.AI 429s appear under Health
-"Busy models". An interactive
+limits; the reserves are application policy. GLM's 150 calls in flight with 125
+reserved for interactive use (decision 2026-10-21): DigitalOcean held 150 in
+flight for 66 s with no error and a first-token p95 of 2.2 s, and answered 250
+at once, but half of those waited past the 15 s first-event bound. Ingest uses
+no GLM. 1017's 64 (decision 2026-10-21): InferenceNet answered 128 page reads at
+once and Cloudflare 64. Migration `0097` (2026-10-20) copied an existing
+`relace/glm-5.3-flash` row to `zai/glm-5.3-flash` capped at 48/40; the relace
+and `tencent` rows are history. GLM 429s appear under Health "Busy models". An interactive
 429 fails at once with the busy message when its `Retry-After` is past the 3 s
 interactive retry budget; ingest calls wait and retry within their 120 s budget. See the script for assumptions and
 official sources; split capacities when environments share a provider account.

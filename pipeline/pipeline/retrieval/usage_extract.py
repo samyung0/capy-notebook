@@ -6,11 +6,12 @@ details.
 Missing or invalid detail is recorded and charged as ordinary input. It does
 not fail the request.
 
-Z.AI serves GLM-5.3-Flash itself; its split was observed inclusive on
-2026-10-20 (a repeated 2,744-token prompt reported 2,688 cached, with
-prompt_tokens unchanged and total = prompt + completion). The `openrouter` pins
-report the same nested cached_tokens, observed inclusive on 2026-10-15 (1,024
-cached of 1,208 prompt tokens).
+GLM-5.3-Flash keeps the `zai` slug but is served through OpenRouter
+(2026-10-21); its split there is inclusive: every billed cost equalled
+(prompt - cached) x input + cached x cache + completion x output (9,856 of
+10,069 cached). Z.AI's own endpoint was inclusive too (2026-10-20). The
+`openrouter` pins report the same nested cached_tokens, observed inclusive on
+2026-10-15 (1,024 cached of 1,208 prompt tokens).
 """
 
 from __future__ import annotations

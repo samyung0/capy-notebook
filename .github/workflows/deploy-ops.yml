@@ -114,7 +114,6 @@ jobs:
           CAPY_SECRET_OPS_INGEST_LOCAL_DATABASE_URL: ${{ secrets.OPS_INGEST_LOCAL_DATABASE_URL }}
           CAPY_SECRET_OPS_INGEST_UAT_DATABASE_URL: ${{ secrets.OPS_INGEST_UAT_DATABASE_URL }}
           CAPY_SECRET_OPS_LIBRARY_DATABASE_URL: ${{ secrets.OPS_LIBRARY_DATABASE_URL }}
-          CAPY_SECRET_ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         run: python3 scripts/env/config.py render-ops --environment "$TARGET_ENVIRONMENT" --revision "$DEPLOY_REVISION" --output "$RUNNER_TEMP/capy-ops-config"
       - name: Synchronize and verify Ops configuration
         env:
