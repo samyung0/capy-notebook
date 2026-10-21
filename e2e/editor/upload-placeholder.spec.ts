@@ -11,11 +11,10 @@ const PNG_B64 =
 const PNG_DATA_URL = `data:image/png;base64,${PNG_B64}`;
 
 /**
- * Before the page loads: the call that completes an editor-asset upload (and
- * returns the asset id) waits for a `release-uploads` event; `refuse` makes
- * the reservation fail as a full storage does. Counts reservations in
- * `window.reservations`. Wraps fetch, which MSW's service worker answers
- * behind.
+ * Before the page loads: the editor-asset upload (one request, which returns
+ * the asset id) waits for a `release-uploads` event; `refuse` makes it fail as
+ * a full storage does. Counts uploads in `window.uploads`. Wraps fetch, which
+ * MSW's service worker answers behind.
  */
 async function holdUploads(page: Page, refuse = false) {
   await page.addInitScript((refuse) => {
@@ -29,12 +28,12 @@ async function holdUploads(page: Page, refuse = false) {
       const request = new Request(input, init);
       const path = new URL(request.url, location.href).pathname;
       if (request.method !== 'POST') return original(input, init);
-      const reserving = /\/editor-assets\/uploads$/.test(path);
-      const counted = window as unknown as { reservations?: number };
-      // An aborted upload's reservation never leaves the page.
-      if (reserving && !request.signal.aborted)
-        counted.reservations = (counted.reservations ?? 0) + 1;
-      if (refuse && reserving)
+      const uploading = /\/editor-assets\/uploads$/.test(path);
+      if (!uploading) return original(input, init);
+      const counted = window as unknown as { uploads?: number };
+      // An aborted upload never leaves the page.
+      if (!request.signal.aborted) counted.uploads = (counted.uploads ?? 0) + 1;
+      if (refuse)
         return new Response(
           JSON.stringify({
             detail: 'Storage is full.',
@@ -47,8 +46,7 @@ async function holdUploads(page: Page, refuse = false) {
             status: 403,
           }
         );
-      if (/\/editor-assets\/uploads\/[^/]+\/complete$/.test(path))
-        await released;
+      await released;
       return original(input, init);
     };
   }, refuse);
@@ -221,7 +219,7 @@ test.describe('upload placeholder', () => {
       // One upload: nothing restarted it or uploaded the image twice.
       expect(
         await page.evaluate(
-          () => (window as unknown as { reservations?: number }).reservations
+          () => (window as unknown as { uploads?: number }).uploads
         )
       ).toBe(1);
       await page.screenshot({
@@ -267,7 +265,7 @@ test.describe('upload placeholder', () => {
     await expect(placeholder.getByRole('status')).toHaveCount(0);
     expect(
       await page.evaluate(
-        () => (window as unknown as { reservations?: number }).reservations
+        () => (window as unknown as { uploads?: number }).uploads
       )
     ).toBeUndefined();
   });

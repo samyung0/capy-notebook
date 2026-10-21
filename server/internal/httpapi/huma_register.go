@@ -84,6 +84,14 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())
 	}
+	// An upload whose session expired (the sweeper) or changed state (its
+	// payer changed) while its body streamed.
+	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrEditorAssetUploadExpired) {
+		return huma.Error410Gone(err.Error())
+	}
+	if errors.Is(err, store.ErrUploadState) || errors.Is(err, store.ErrEditorAssetUploadState) {
+		return huma.Error409Conflict(err.Error())
+	}
 	var spending *store.SpendingLimitError
 	if errors.As(err, &spending) {
 		return &huma.ErrorModel{
@@ -398,7 +406,7 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 // typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
 // carrying anything else in errors[] (an error's text, even one word) is
 // unexpected. src/lib/errors.ts keeps the same list.
-var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable"}
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable", "upload_queue_full"}
 
 func typedServerError(details []*huma.ErrorDetail) bool {
 	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {
@@ -548,9 +556,10 @@ func reportHandlerError(ctx context.Context, err error) error {
 // Empty is the output for endpoints that return 204 No Content.
 type Empty struct{}
 
-// registerRoutes wires every JSON operation and the multipart source upload
-// onto the huma API. Streaming, redirect, webhook, pipeline-passthrough, and
-// /api/internal/* endpoints stay on raw chi (see server.go) and are
+// registerRoutes wires the JSON operations onto the huma API. Streaming
+// (the gateway uploads with their tickets), redirect, webhook,
+// pipeline-passthrough, and /api/internal/* endpoints stay on raw chi (see
+// server.go) and are
 // intentionally absent from the spec so Orval does not generate a browser
 // client for them.
 func registerRoutes(api huma.API, a *api) {

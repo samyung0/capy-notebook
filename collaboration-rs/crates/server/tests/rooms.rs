@@ -8505,9 +8505,9 @@ async fn office_entries(
 ) -> (serde_json::Value, Vec<(String, String)>) {
     let (status, view) = internal(port, "/internal/documents/inspect", inspect).await;
     assert_eq!(status, 200, "{view}");
-    let entries = match &view["scoped"] {
-        scoped if scoped.is_object() => &scoped["entries"],
-        _ => &view["entries"],
+    let (entries, value) = match &view["scoped"] {
+        scoped if scoped.is_object() => (&scoped["paragraphs"], "text"),
+        _ => (&view["entries"], "value"),
     };
     let entries = entries
         .as_array()
@@ -8515,7 +8515,7 @@ async fn office_entries(
         .iter()
         .map(|entry| {
             let text = |key: &str| entry[key].as_str().unwrap_or_default().to_owned();
-            (text("id"), text("value"))
+            (text("id"), text(value))
         })
         .collect();
     (view, entries)

@@ -1,13 +1,6 @@
 # Layered after docker-compose.stress.yml by stress.ts only (the capacity
 # harness uses the shared overlay without it).
 services:
-  # The client uploads with presigned PUTs from the host, so the fake S3's
-  # plain HTTP port is published (it checks no signatures: the URL's path
-  # and query are all it needs).
-  s3:
-    ports:
-      - "127.0.0.1:${STRESS_S3_PORT:?set by stress.ts}:9000"
-
   # STRESS_COLLABORATION_IMAGE runs the same scenarios against another build
   # of the server (it must speak capy-sync, as the driver does); stress.ts
   # refuses it without E2E_PREBUILT_IMAGES=true, so compose never builds the

@@ -301,10 +301,9 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		case query != nil:
+			// The pipeline's DOCX page names its commands in the tool's
+			// description, so no supportedOperations (review r2 L7).
 			body["scoped"] = inspection.Scoped
-			if format == "docx" {
-				body["supportedOperations"] = paragraphCommands
-			}
 		case inspection.Format == "text":
 			lines := textLines(deref(inspection.Text))
 			total := len(lines)
@@ -373,8 +372,8 @@ func utf16Len(s string) int {
 	return n
 }
 
-// textOperations are the edit commands a text source supports; a DOCX or
-// PPTX one supports paragraphCommands.
+// textOperations are the edit commands a text source supports; a PPTX one
+// supports paragraphCommands.
 var textOperations = []string{"replace_text"}
 
 // materialOperations are the edit commands a material kind supports: the

@@ -6,6 +6,8 @@ import type { SourceTransfer } from './sourceTransfers';
 export type TransferStatus =
   | { kind: 'progress'; label: string; value: number }
   | { kind: 'indeterminate'; label: string }
+  /** Waiting in the gateway's line: a label too long for the progress row. */
+  | { kind: 'queued'; label: string }
   | {
       detail?: string;
       kind: 'done' | 'background' | 'info' | 'error';
@@ -22,6 +24,14 @@ export function transferStatus(
     case 'waiting':
       return { kind: 'progress', label: m.source_transfer_waiting(), value: 0 };
     case 'uploading':
+      if (transfer.queuePosition) {
+        return {
+          kind: 'queued',
+          label: m.source_transfer_upload_queued({
+            position: transfer.queuePosition,
+          }),
+        };
+      }
       return {
         kind: 'progress',
         label: m.source_transfer_uploading(),

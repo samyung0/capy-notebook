@@ -21,8 +21,7 @@
  *
  * Run: pnpm bench:stress (Docker required; E2E_PREBUILT_IMAGES=true reuses the
  * capy-e2e-* images, E2E_SKIP_COMPOSE=true with the E2E_* variables a running
- * stack, which also needs STRESS_S3_PORT set to its published fake S3 port and
- * names its containers like an external stack). Results:
+ * stack, which names its containers like an external stack). Results:
  * bench/collaboration/.results/stress.json, rewritten after each phase.
  *
  * STRESS_TARGET=uat runs against the UAT deployment instead (see uatTarget),
@@ -40,11 +39,7 @@
  *   repository, Office rooms cycle through: DOCX and PPTX peers type into
  *   story text, XLSX peers write their own cells of the first sheet;
  * - STRESS_JOIN_CONCURRENCY caps peers joining at once (16 on UAT);
- * - STRESS_IDLE=true keeps the peers connected without typing;
- * - STRESS_UPLOAD_ORIGIN replaces the origin of presigned upload URLs, which
- *   name the fake S3 as s3.stress.backblazeb2.com:9443 with the throwaway
- *   certificate (a generator in the stack's network can use
- *   http://s3:9000; the local target does the same from STRESS_S3_PORT).
+ * - STRESS_IDLE=true keeps the peers connected without typing.
  *
  * The collaboration server is measured from outside, so the same scenarios
  * judge any implementation that speaks the protocol (capy-sync with Yjs sync,
@@ -165,9 +160,6 @@ interface Room {
 interface Target {
   /** The app origin the collaboration service admits. */
   origin: string;
-  /** Replaces the origin of presigned upload URLs, when they are not
-   * reachable from here as given. */
-  uploadOrigin?: string;
   setup(): Promise<void>;
   createRooms(kinds: Kind[]): Promise<Room[]>;
   /** Collaboration error lines logged since setup. */
@@ -208,17 +200,11 @@ async function request(
     : (response.json() as Promise<Record<string, unknown>>);
 }
 
-interface Reservation {
-  headers: Record<string, string>;
-  uploadId: string;
-  url: string;
-}
-
 /**
- * The app's direct upload: reserve, PUT the bytes to the presigned URL, then
- * complete. The target's `uploadOrigin` replaces the URL's origin (the local
- * fake S3 answers inside the Docker network under a B2 name, and on a
- * published port here).
+ * The app's upload: a ticket whose turn comes (the gateway runs 32 uploads at
+ * once and lines up the rest), then one request streaming the metadata and
+ * the bytes through the gateway, which writes them to the bucket (the fake S3
+ * locally).
  */
 async function uploadSource(
   call: Call,
@@ -227,28 +213,26 @@ async function uploadSource(
   bytes: Uint8Array<ArrayBuffer>,
   fields: Record<string, string>
 ) {
-  const route = `/api/workspaces/${workspace}/sources/uploads`;
   const contentType = name.endsWith('.txt') ? 'text/plain' : 'application/octet-stream';
-  const reservation = (await call('POST', route, undefined, {
+  const metadata = {
     batchId: `stress_${randomBytes(6).toString('hex')}`,
     batchTotal: 1,
     contentType,
     name,
     sizeBytes: bytes.byteLength,
     ...fields,
-  })) as unknown as Reservation;
-  const url = new URL(reservation.url);
-  const putUrl = target.uploadOrigin
-    ? `${target.uploadOrigin}${url.pathname}${url.search}`
-    : reservation.url;
-  const put = await fetch(putUrl, {
-    body: bytes,
-    headers: reservation.headers,
-    method: 'PUT',
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!put.ok) throw new Error(`PUT ${name}: ${put.status} ${await put.text()}`);
-  return call('POST', `${route}/${reservation.uploadId}/complete`);
+  };
+  const uploads = `/api/workspaces/${workspace}/sources/uploads`;
+  let turn = await call('POST', `${uploads}/tickets`, undefined, metadata);
+  while (Number(turn.position) > 0)
+    turn = await call(
+      'GET',
+      `/api/uploads/tickets/${String(turn.ticketId)}?position=${String(turn.position)}`
+    );
+  const form = new FormData();
+  form.append('metadata', JSON.stringify(metadata));
+  form.append('file', new Blob([bytes], { type: contentType }), name);
+  return call('POST', `${uploads}?ticket=${encodeURIComponent(String(turn.ticketId))}`, form);
 }
 
 /** Lines of plain text up to `bytes`, the same on every run. */
@@ -357,8 +341,6 @@ async function localTarget(): Promise<Target> {
   process.env.E2E_COLLABORATION_PORT ??= String(randomPort());
   process.env.E2E_DB_PORT ??= String(randomPort());
   process.env.E2E_REDIS_PORT ??= String(randomPort());
-  // The fake S3's plain HTTP port on the host, for the presigned upload PUTs.
-  process.env.STRESS_S3_PORT ??= String(randomPort());
   process.env.E2E_API_URL ??= `http://127.0.0.1:${process.env.E2E_API_PORT}`;
   // The collaboration service only admits this origin (COLLABORATION_ALLOWED_ORIGINS).
   process.env.E2E_BASE_URL ??= 'http://127.0.0.1:5174';
@@ -419,7 +401,6 @@ async function localTarget(): Promise<Target> {
   return {
     origin: process.env.E2E_BASE_URL,
     setup,
-    uploadOrigin: `http://127.0.0.1:${process.env.STRESS_S3_PORT}`,
     createRooms: (kinds) => createWorkspaceRooms(call, 'ws_e2e_edit', kinds),
     serverContainers() {
       // A stack started elsewhere (E2E_SKIP_COMPOSE) is named like an
@@ -471,7 +452,6 @@ function externalTarget(): Target {
       if (!health.ok) throw new Error(`API unhealthy: ${health.status}`);
     },
     // One seeded owner workspace per generator keeps each under 100 files.
-    uploadOrigin: process.env.STRESS_UPLOAD_ORIGIN,
     createRooms: (kinds) =>
       // Store-only uploads, as on UAT: no ingest job, so no per-user ingest lease cap.
       createWorkspaceRooms(call, process.env.STRESS_WORKSPACE ?? 'ws_e2e_edit', kinds, {

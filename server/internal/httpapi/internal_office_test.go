@@ -44,12 +44,25 @@ func TestNormalizeOfficeCommands(t *testing.T) {
 			`{"expectedText":"old","targetId":"body:paragraph:p1","text":"new","type":"replace_text"}`},
 		{"pptx", `{"type":"replace_text","target_id":"slide:1:shape:2","expected_text":"old","text":""}`,
 			`{"expectedText":"old","targetId":"slide:1:shape:2","text":"","type":"replace_text"}`},
-		{"docx", `{"type":"insert_paragraph","after_id":"body:paragraph:p1","text":"Method","style":"Heading1"}`,
-			`{"afterId":"body:paragraph:p1","style":"Heading1","text":"Method","type":"insert_paragraph"}`},
+		{"docx", `{"type":"insert_paragraph","after_id":"body:paragraph:p1","text":"Method","style":"Heading1","list":"bullet"}`,
+			`{"afterId":"body:paragraph:p1","list":"bullet","style":"Heading1","text":"Method","type":"insert_paragraph"}`},
+		{"docx", `{"type":"insert_paragraph","text":""}`, `{"text":"","type":"insert_paragraph"}`},
 		{"pptx", `{"type":"insert_paragraph","before_id":"para:s:0","text":""}`,
 			`{"beforeId":"para:s:0","text":"","type":"insert_paragraph"}`},
 		{"docx", `{"type":"delete_paragraph","target_id":"body:paragraph:p1","expected_text":"Old"}`,
 			`{"expectedText":"Old","targetId":"body:paragraph:p1","type":"delete_paragraph"}`},
+		{"docx", `{"type":"set_list","ids":["body:paragraph:p1","body:paragraph:p2"],"list":"none"}`,
+			`{"ids":["body:paragraph:p1","body:paragraph:p2"],"list":"none","type":"set_list"}`},
+		{"docx", `{"type":"insert_table","rows":[["Name","Score"],["Ann","91"]]}`,
+			`{"rows":[["Name","Score"],["Ann","91"]],"type":"insert_table"}`},
+		{"docx", `{"type":"delete_table","id":"body:t0:r0c0:paragraph:p9","expected":[["Name","a\nb"]]}`,
+			`{"expected":[["Name","a\nb"]],"id":"body:t0:r0c0:paragraph:p9","type":"delete_table"}`},
+		{"docx", `{"type":"format_text","target_id":"body:paragraph:p1","expected_text":"key","bold":true,"underline":false,` +
+			`"color":"#1F4E79","highlight":"yellow","font_size":14,"font_family":"Arial"}`,
+			`{"bold":true,"color":"#1F4E79","expectedText":"key","fontFamily":"Arial","fontSize":14,"highlight":"yellow",` +
+				`"targetId":"body:paragraph:p1","type":"format_text","underline":false}`},
+		{"docx", `{"type":"set_alignment","target_id":"body:paragraph:p1","alignment":"justify"}`,
+			`{"alignment":"justify","targetId":"body:paragraph:p1","type":"set_alignment"}`},
 	} {
 		out, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		if err != nil {
@@ -83,6 +96,14 @@ func TestNormalizeOfficeCommandsRefusesTheWrongFormat(t *testing.T) {
 			agenttools.ErrInvalidInput, "delete_rows needs expected: the band's current inputs as a grid of rows, [] when it is empty"},
 		{"xlsx", `{"type":"delete_columns","sheet":"0","at":"C","count":1}`,
 			agenttools.ErrInvalidInput, "delete_columns needs expected: the band's current inputs as a grid of rows, [] when it is empty"},
+		{"xlsx", `{"type":"set_list","ids":["x"],"list":"bullet"}`,
+			agenttools.ErrUnsupportedOperation, "set_list applies to DOCX files, not XLSX"},
+		{"pptx", `{"type":"set_alignment","target_id":"x","alignment":"left"}`,
+			agenttools.ErrUnsupportedOperation, "set_alignment applies to DOCX files, not PPTX"},
+		{"docx", `{"type":"insert_table","rows":"Name, Score"}`,
+			agenttools.ErrInvalidInput, "insert_table needs rows: the cells' text as a grid of rows"},
+		{"docx", `{"type":"delete_table","id":"body:t0:r0c0:paragraph:p9"}`,
+			agenttools.ErrInvalidInput, "delete_table needs expected: the table's cells' text as a grid of rows"},
 	} {
 		_, err := NormalizeOfficeCommands(tc.format, []json.RawMessage{json.RawMessage(tc.model)})
 		var refused *store.EditRefusal

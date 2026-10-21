@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { APIRequestContext, FrameLocator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { seed, users } from '../fixtures/seed';
+import { uploadSourceFile } from '../helpers/api';
 import { expectEditorLive } from '../helpers/editor';
 import { type OfficeFormat, officeEditMenu } from '../helpers/office';
 import { openWorkspaceMaterial } from '../helpers/workspace';
@@ -128,21 +129,29 @@ const blocks = async (api: APIRequestContext, id: string) =>
   (await inspect<{ blocks: Block[] }>(api, { id, kind: 'material' })).blocks;
 type Sheet = { id: string; name: string; usedRange: string };
 type Cell = { address: string; input: string; value: string };
-/** An Office source as the agent reads it: DOCX paragraphs and PPTX shapes,
- * or the cells of an XLSX's first sheet (by address, their input as value). */
+type Paragraph = { id: string; text: string };
+/** An Office source as the agent reads it: DOCX paragraphs (their text as
+ * value) and PPTX shapes, or the cells of an XLSX's first sheet (by address,
+ * their input as value). */
 async function entries(
   api: APIRequestContext,
   id: string,
   format: OfficeFormat
 ): Promise<Entry[]> {
   const target = { id, kind: 'source_file' } as const;
-  // A DOCX page is the engine's scoped read (Epo 2026-10-21).
-  if (format === 'docx')
-    return (
-      await inspect<{ scoped: { entries: Entry[] } }>(api, target, {
-        count: 200,
-      })
-    ).scoped.entries;
+  if (format === 'docx') {
+    const read = await inspect<{ scoped: { paragraphs: Paragraph[] } }>(
+      api,
+      target,
+      { count: 200 }
+    );
+    return read.scoped.paragraphs.map((paragraph) => ({
+      id: paragraph.id,
+      label: '',
+      position: '',
+      value: paragraph.text,
+    }));
+  }
   if (format === 'pptx')
     return (await inspect<{ entries: Entry[] }>(api, target, { count: 200 }))
       .entries;
@@ -1137,34 +1146,21 @@ const OFFICE = {
 async function uploadOffice(api: APIRequestContext, format: OfficeFormat) {
   const { contentType, name } = OFFICE[format];
   const bytes = readFileSync(`e2e/fixtures/files/basic/${name}`);
-  const reserved = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads`,
+  const uploadName = `${randomUUID().slice(0, 8)}-${name}`;
+  const uploaded = await uploadSourceFile(
+    api,
+    workspaceId,
     {
-      data: {
-        batchId: `agent-writes-${randomUUID()}`,
-        batchTotal: 1,
-        contentType,
-        name: `${randomUUID().slice(0, 8)}-${name}`,
-        sizeBytes: bytes.length,
-      },
-    }
+      batchId: `agent-writes-${randomUUID()}`,
+      batchTotal: 1,
+      contentType,
+      name: uploadName,
+      sizeBytes: bytes.length,
+    },
+    bytes
   );
-  expect(reserved.status(), await reserved.text()).toBe(201);
-  const upload = (await reserved.json()) as {
-    headers?: Record<string, string>;
-    uploadId: string;
-    url: string;
-  };
-  const put = await api.put(upload.url, {
-    data: bytes,
-    headers: upload.headers,
-  });
-  expect(put.status(), await put.text()).toBe(200);
-  const completed = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads/${upload.uploadId}/complete`
-  );
-  expect(completed.status(), await completed.text()).toBe(201);
-  const { id } = (await completed.json()) as { id: string };
+  expect(uploaded.status(), await uploaded.text()).toBe(201);
+  const { id } = (await uploaded.json()) as { id: string };
   made.push(`/api/files/${id}`);
   return id;
 }

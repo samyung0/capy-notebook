@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 
@@ -22,7 +23,7 @@ func e2eBlobs(store *blob.Memory) http.HandlerFunc {
 				http.Error(w, "unreadable body", http.StatusBadRequest)
 				return
 			}
-			if err := store.PutObjectOnce(r.Context(), path, body, r.Header.Get("Content-Type"), ""); err != nil {
+			if _, err := store.PutObjectOnce(r.Context(), path, bytes.NewReader(body), r.Header.Get("Content-Type"), ""); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}

@@ -96,7 +96,7 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	operations := `"supportedOperations":["replace_text","insert_paragraph","delete_paragraph"]`
 	rec = inspect(docx, map[string]any{"start": 1, "count": 1})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
-		!strings.Contains(rec.Body.String(), operations) {
+		strings.Contains(rec.Body.String(), "supportedOperations") {
 		t.Fatalf("docx read = %d %s", rec.Code, rec.Body.String())
 	}
 	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || string(sent[1]["office"]) != `{"start":1,"count":1}` {
@@ -194,6 +194,22 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), receipt.Effect.Resource.ID) ||
 		len(authority.sent("/internal/documents/create")) != 1 || fx.blobs(t) != 1 {
 		t.Fatalf("replay = %d %s", replay.Code, replay.Body.String())
+	}
+
+	// A Word file is created the same way, its commands normalized.
+	rec = doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, map[string]any{
+		"workspaceId": fx.ws, "userId": fx.editor, "assistantMessageId": msgID, "toolCallId": "call_create_docx",
+		"format": "docx", "title": "Lab report",
+		"commands": []map[string]any{{"type": "insert_paragraph", "text": "Method", "style": "Heading1"}},
+	})
+	if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil || rec.Code != http.StatusOK ||
+		receipt.Effect == nil || receipt.Effect.Resource.Title != "Lab report.docx" {
+		t.Fatalf("docx create = %d %s", rec.Code, rec.Body.String())
+	}
+	sent = authority.sent("/internal/documents/create")
+	if len(sent) != 2 || string(sent[1]["format"]) != `"docx"` ||
+		string(sent[1]["commands"]) != `[{"style":"Heading1","text":"Method","type":"insert_paragraph"}]` {
+		t.Fatalf("authority got %v", sent)
 	}
 }
 

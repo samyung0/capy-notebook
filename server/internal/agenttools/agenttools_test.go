@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/questions"
@@ -119,7 +120,11 @@ func TestOperationsForRole(t *testing.T) {
 // The committed Python asset must match the Go source of truth. Regenerate
 // with `pnpm gen:openapi`.
 func TestGeneratedContractIsCurrent(t *testing.T) {
-	want, err := Marshal()
+	limits, err := os.ReadFile(filepath.Join("..", "..", "..", OfficeLimitsPath))
+	if err != nil {
+		t.Fatalf("read the engine's limits: %v (check out vendor/betteroffice)", err)
+	}
+	want, err := Marshal(limits)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,6 +148,41 @@ func commandTypes(def *Definition) []string {
 }
 
 // What each tool's result keeps between user messages (Epo 2026-10-21).
+// Every edit_office_document command has a row in the engine's limit table
+// for each format its description names (review r2 L4), so none escapes the
+// per-call limits (Epo 2026-10-22).
+func TestEveryOfficeCommandHasALimit(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", OfficeLimitsPath))
+	if err != nil {
+		t.Fatalf("read the engine's limits: %v (check out vendor/betteroffice)", err)
+	}
+	var table struct {
+		Formats map[string][]struct {
+			Commands []string `json:"commands"`
+		} `json:"formats"`
+	}
+	if err := json.Unmarshal(data, &table); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range officeCommandSchema()["oneOf"].([]any) {
+		variant := v.(map[string]any)
+		name := variant["properties"].(map[string]any)["type"].(map[string]any)["const"].(string)
+		if name == "create" {
+			continue
+		}
+		formats, _, _ := strings.Cut(variant["description"].(string), ":")
+		for _, format := range strings.Split(formats, ", ") {
+			if !slices.ContainsFunc(table.Formats[strings.ToLower(format)], func(row struct {
+				Commands []string `json:"commands"`
+			}) bool {
+				return slices.Contains(row.Commands, name)
+			}) {
+				t.Errorf("%s has no %s limit in %s", name, format, OfficeLimitsPath)
+			}
+		}
+	}
+}
+
 func TestRetentionBetweenMessages(t *testing.T) {
 	want := map[ResultRetention][]string{
 		RetainFull: {
@@ -188,7 +228,7 @@ func TestOfficeFilesHaveTheirOwnTools(t *testing.T) {
 	want := []string{
 		"create", "set_range", "format_cells", "add_sheet", "rename_sheet", "insert_rows", "delete_rows",
 		"insert_columns", "delete_columns", "delete_sheet", "replace_text", "insert_paragraph",
-		"delete_paragraph",
+		"delete_paragraph", "set_list", "insert_table", "delete_table", "format_text", "set_alignment",
 	}
 	if got := commandTypes(edit); !slices.Equal(got, want) {
 		t.Fatalf("office commands = %v", got)

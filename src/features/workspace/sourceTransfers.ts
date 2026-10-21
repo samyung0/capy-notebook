@@ -50,6 +50,8 @@ export interface SourceTransfer {
   kind: FileKind;
   name: string;
   provider?: SourceProvider;
+  /** The upload's place in the gateway's line, while it waits for a turn. */
+  queuePosition?: number;
   stage: TransferStage;
   uploadPct: number;
   workspaceId: string;
@@ -299,6 +301,8 @@ export function startSourceTransfer(start: StartTransfer) {
                 estimatedCreditMicros: request.estimatedCreditMicros,
                 file: request.file,
                 kind: request.kind,
+                onQueued: (queuePosition) =>
+                  patchTransfer(request.key, { queuePosition }),
                 onUploadProgress: (uploadPct) =>
                   patchTransfer(request.key, { uploadPct }),
                 pageCount: request.pageCount,

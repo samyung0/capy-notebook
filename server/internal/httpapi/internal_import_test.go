@@ -333,7 +333,7 @@ func TestImportCompleteRefusesAnUntypedObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.PutObjectOnce(ctx, claimed.AttemptObjectPath, payload, "", ""); err != nil {
+	if _, err := mem.PutObjectOnce(ctx, claimed.AttemptObjectPath, bytes.NewReader(payload), "", ""); err != nil {
 		t.Fatal(err)
 	}
 	rec := doInternal(t, h, http.MethodPost, "/api/internal/import/complete", pipeSecret, map[string]any{

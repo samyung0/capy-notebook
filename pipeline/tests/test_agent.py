@@ -26,6 +26,7 @@ from pipeline.retrieval import (
     skills,
     tools,
 )
+from pipeline.retrieval.chunking import estimate_tokens
 from pipeline.retrieval.limits import TOOLS_PER_RESPONSE
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
@@ -5194,13 +5195,52 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "docx",
                 "title": "essay.docx",
-                "supportedOperations": [
-                    "replace_text",
-                    "insert_paragraph",
-                    "delete_paragraph",
-                ],
                 "scoped": {
-                    "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
+                    "paragraphs": [
+                        {
+                            "id": "body:paragraph:1A",
+                            "style": "Heading1",
+                            "list": None,
+                            "text": "Method",
+                        },
+                        {
+                            "id": "body:paragraph:2B",
+                            "style": None,
+                            "list": "bullet",
+                            "text": "Ruler",
+                        },
+                        {
+                            "id": "body:t0:r0c1:paragraph:3C",
+                            "list": None,
+                            "table": {
+                                "id": "body:t0:r0c0:paragraph:3A",
+                                "row": 0,
+                                "column": 1,
+                            },
+                            "text": "Period",
+                        },
+                        {
+                            "id": "body:sdt0:paragraph:4D",
+                            "style": None,
+                            "list": None,
+                            "contentControl": True,
+                            "text": "Name",
+                        },
+                        {
+                            "id": "body:paragraph:5E",
+                            "style": None,
+                            "list": None,
+                            "locked": "holds a field",
+                            "text": "Page 1",
+                        },
+                        {
+                            "id": "hf:rIdH:paragraph:6F",
+                            "style": "Header",
+                            "list": None,
+                            "part": "header (default)",
+                            "text": "Lab 3",
+                        },
+                    ],
                     "total": 80,
                     "nextStart": 60,
                     "styles": [
@@ -5253,19 +5293,72 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
     # A DOCX page is the engine's scoped read, its first page listing the
     # paragraph styles, at most 50 and a count of the rest (Epo 2026-10-21).
     paragraphs = (await inspect(start=0, count=60)).text()
-    assert paragraphs == (
-        "essay.docx format=docx\n"
-        "supported: replace_text, insert_paragraph, delete_paragraph\n"
-        + source_block(
-            "[p1] Paragraph 1: Intro\n"
-            "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
-            " and 3 more"
-        )
-        + "\n(next start = 60 of 80)"
+    assert paragraphs == "\n".join(
+        [
+            "essay.docx format=docx",
+            (
+                "paragraphs as [id] (style unless the default, list, table cell, "
+                "content control, locked: why replace_text and format_text refuse "
+                "it, and delete_paragraph unless it only follows a table) text; after "
+                "the body, headers, footers and notes under == part == lines, which "
+                "take replace_text only:"
+            ),
+            source_block(
+                "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
+                " and 3 more\n"
+                "[body:paragraph:1A] (Heading1) Method\n"
+                "[body:paragraph:2B] (bullet) Ruler\n"
+                "[body:t0:r0c1:paragraph:3C] (table "
+                "body:t0:r0c0:paragraph:3A row 1 column 2) Period\n"
+                "[body:sdt0:paragraph:4D] (content control) Name\n"
+                "[body:paragraph:5E] (locked: holds a field) Page 1\n"
+                "== header (default) ==\n"
+                "[hf:rIdH:paragraph:6F] (Header) Lab 3"
+            ),
+            "(next start = 60 of 80)",
+        ]
     )
     assert sent[2]["office"] == {"start": 0, "count": 60}
     shapes = (await inspect(start=0, count=60)).text()
     assert "[s1] Slide 1, Title: Cells" in shapes and "styles" not in shapes
+
+
+async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A page over the tool output limit keeps its styles (first, inside the
+    source fence) and is cut between paragraphs, its next start the first
+    paragraph not shown."""
+    paragraphs = [
+        {"id": f"body:paragraph:{i}", "text": f"{i} " + "word " * 400}
+        for i in range(60)
+    ]
+    body = {
+        "format": "docx",
+        "title": "essay.docx",
+        "scoped": {
+            "paragraphs": paragraphs,
+            "total": 300,
+            "nextStart": 65,
+            "styles": [{"id": "Normal", "name": "Normal"}],
+        },
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "start": 5, "count": 60, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    assert "<source>\nparagraph styles as id (name): Normal (Normal)\n" in text
+    shown = re.findall(r"^\[body:paragraph:(\d+)\]", text, re.MULTILINE)
+    assert 0 < len(shown) < 60 and shown == [str(i) for i in range(len(shown))]
+    assert text.endswith(
+        "</source>\n(page cut at the tool output limit; "
+        f"next start = {5 + len(shown)} of 300)"
+    )
 
 
 async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatch):
@@ -5292,35 +5385,6 @@ async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatc
     )
 
 
-async def test_an_office_edit_over_10_000_cells_is_refused_before_it_leaves(
-    monkeypatch,
-):
-    """set_range and format_cells areas count toward the call's 10,000 cells
-    (Epo 2026-10-20, review finding 3); the engine counts the rest."""
-    posts: list[str] = []
-    ctx = _office_ctx(monkeypatch, post=lambda url, **_: posts.append(url))
-    commands = [
-        {
-            "type": "set_range",
-            "sheet": "Grades",
-            "range": "$A$6000:A1",
-            "expected": [[""]] * 6000,
-            "values": [["1"]] * 6000,
-        },
-        {"type": "format_cells", "sheet": "Grades", "range": "b1:f1000", "bold": True},
-    ]
-    result = await tools.run(
-        "edit_office_document",
-        {"file_id": "f_1", "commands": commands, "_tool_call_id": "c1"},
-        ctx,
-    )
-    assert result.error_code == "invalid_input" and posts == []
-    assert result.error == (
-        "The commands write 11,000 cells, over the 10,000 one call may write; "
-        "split the edit into several calls."
-    )
-
-
 def test_a_stale_office_band_shows_its_grid_to_copy():
     """A refused row or column delete shows the band as rows of cells, exact
     for cells holding tabs or line breaks, and says when the engine cut it
@@ -5338,6 +5402,16 @@ def test_a_stale_office_band_shows_its_grid_to_copy():
     cut = tools._missed_target({"block": {**block, "gridCut": True}}, {}, office=True)
     assert cut.endswith(
         " … (its first 2,000 cells; inspect_office_document reads the rest)"
+    )
+    # A refused table delete shows the table's cells the same way.
+    table = {
+        "id": "body:t0:r0c0:paragraph:3A",
+        "type": "table",
+        "text": "a\tb",
+        "grid": [["a", "b"]],
+    }
+    assert tools._missed_target({"block": table}, {}, office=True) == (
+        'Table body:t0:r0c0:paragraph:3A now holds, as rows of cells:\n[["a","b"]]'
     )
 
 

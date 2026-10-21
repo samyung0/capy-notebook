@@ -508,6 +508,25 @@ func (s *Store) AssertWorkspaceFileRoom(ctx context.Context, workspaceID string,
 	return s.gateWorkspaceFilesTx(ctx, tx, workspaceID, requested)
 }
 
+// AssertSourceUploadRoom runs a source upload's reservation gates (the
+// uploader's editor access and storage, the workspace's file cap) and rolls
+// back, so an upload's ticket refuses what its upload would be refused
+// before the browser waits in line. The reservation still gates.
+func (s *Store) AssertSourceUploadRoom(ctx context.Context, workspaceID, userID string, size int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, userID); err != nil {
+		return err
+	}
+	if err := s.gateStorageTx(ctx, tx, userID, size); err != nil {
+		return err
+	}
+	return s.gateWorkspaceFilesTx(ctx, tx, workspaceID, 1)
+}
+
 func (s *Store) releaseStorageReservationTx(ctx context.Context, tx pgx.Tx, userID string, bytes int64) error {
 	if bytes < 0 {
 		return fmt.Errorf("negative storage reservation release: %d", bytes)

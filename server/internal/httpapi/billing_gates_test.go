@@ -266,9 +266,10 @@ func TestUploadRefusesActorCreditsAndStorageSeparately(t *testing.T) {
 		"batchId": fx.workspaceID, "batchTotal": 1,
 	}
 
+	pdf := make([]byte, 1024)
 	exhaustCredits(t, fx.store, fx.pool, fx.actorID)
-	credits := doReq(t, fx.handler, http.MethodPost,
-		"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, body)
+	credits := postUpload(t, fx.handler,
+		"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, body, "application/pdf", pdf)
 	if credits.Code != http.StatusForbidden || errorCode(t, credits) != "llm_credits_exhausted" {
 		t.Fatalf("actor credits: %d %s", credits.Code, credits.Body.String())
 	}
@@ -279,17 +280,17 @@ func TestUploadRefusesActorCreditsAndStorageSeparately(t *testing.T) {
 		t.Fatal(err)
 	}
 	body["batchId"] = fx2.workspaceID
-	if rec := doReq(t, fx2.handler, http.MethodPost,
-		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body); rec.Code != http.StatusCreated {
+	if rec := postUpload(t, fx2.handler,
+		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body, "application/pdf", pdf); rec.Code != http.StatusCreated {
 		t.Fatalf("upload beside a full owner: %d %s", rec.Code, rec.Body.String())
 	}
-	// The reservation above already holds 1024 bytes of the actor's quota.
+	// The upload above already holds 1024 bytes of the actor's quota.
 	if _, err := uploadSource(context.Background(), fx2.store, fx2.workspaceID, fx2.actorID,
 		"ballast.pdf", mustPlanLimits(t, fx2.store, store.PlanFree).StorageBytes-1024, "sources/"+fx2.actorID); err != nil {
 		t.Fatal(err)
 	}
-	storage := doReq(t, fx2.handler, http.MethodPost,
-		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body)
+	// The ticket refuses it, before the upload waits in line.
+	storage, _ := takeTicket(t, fx2.handler, "/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body)
 	if storage.Code != http.StatusForbidden || errorCode(t, storage) != "storage_quota_exceeded" {
 		t.Fatalf("uploader storage: %d %s", storage.Code, storage.Body.String())
 	}
@@ -320,12 +321,12 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 	}
 
 	reserve := func(parseMode string, pages int) *httptest.ResponseRecorder {
-		return doReq(t, fx.handler, http.MethodPost,
+		return postUpload(t, fx.handler,
 			"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, map[string]any{
 				"name": "book.pdf", "kind": "pdf", "parseMode": parseMode,
 				"sizeBytes": 1024, "contentType": "application/pdf", "pageCount": pages,
 				"batchId": fx.workspaceID, "batchTotal": 3,
-			})
+			}, "application/pdf", make([]byte, 1024))
 	}
 	if over := reserve("fast", 1401); over.Code != http.StatusBadRequest ||
 		!strings.Contains(over.Body.String(), "at most 1400 pages") {
@@ -338,5 +339,108 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 		if rec := reserve(ok.mode, ok.pages); rec.Code != http.StatusCreated {
 			t.Fatalf("%s %d pages: %d %s", ok.mode, ok.pages, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// The upload checks again what its ticket checked: a file within the cap when
+// its ticket was issued but over it when it uploads (the payer's plan fell),
+// and a reservation over the storage that filled while it waited, are refused
+// at the upload with nothing held, for sources and editor assets (security
+// regression: human backend-storage-quota 2026-10-22 gateway uploads).
+func TestUploadsRecheckTheCapAndStorageAtTheUpload(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	free, pro := mustPlanLimits(t, fx.store, store.PlanFree), mustPlanLimits(t, fx.store, store.PlanPro)
+	plan := func(user, tier string) {
+		t.Helper()
+		if _, err := fx.pool.Exec(ctx, `UPDATE users SET plan_tier=$2 WHERE id=$1`, user, tier); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sources := "/api/workspaces/" + fx.workspaceID + "/sources/uploads"
+	source := func(size int64) map[string]any {
+		return map[string]any{
+			"name": "big.pdf", "parseMode": "none", "sizeBytes": size, "contentType": "application/pdf",
+			"batchId": fmt.Sprintf("sb_%d", time.Now().UnixNano()), "batchTotal": 1,
+		}
+	}
+	// fill takes the user's storage to its limit, whatever it holds already.
+	fill := func(user string) {
+		t.Helper()
+		usage, err := fx.store.StorageUsage(ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := uploadSource(ctx, fx.store, fx.workspaceID, user, "ballast.pdf",
+			usage.LimitBytes-usage.UsedBytes-usage.ReservedBytes, "sources/"+user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upload := func(route, user string, meta map[string]any, partType string, body []byte) *httptest.ResponseRecorder {
+		t.Helper()
+		rec, _ := postForm(t, fx.handler, route, user, metadataPart(t, meta),
+			formPart{name: "file", contentType: partType, body: body})
+		return rec
+	}
+
+	plan(fx.actorID, "pro")
+	if free.SourceFileBytes >= pro.SourceFileBytes {
+		t.Fatalf("free cap %d is not below pro cap %d", free.SourceFileBytes, pro.SourceFileBytes)
+	}
+	over := source(free.SourceFileBytes + 1)
+	route := ticketed(t, fx.handler, sources, fx.actorID, over)
+	plan(fx.actorID, "free")
+	if rec := upload(route, fx.actorID, over, "application/pdf", make([]byte, free.SourceFileBytes+1)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a source over the cap at its upload: %d %s", rec.Code, rec.Body.String())
+	}
+
+	small := source(1024)
+	route = ticketed(t, fx.handler, sources, fx.actorID, small)
+	fill(fx.actorID)
+	if rec := upload(route, fx.actorID, small, "application/pdf", make([]byte, 1024)); rec.Code != http.StatusForbidden ||
+		errorCode(t, rec) != "storage_quota_exceeded" {
+		t.Fatalf("a source over the storage at its upload: %d %s", rec.Code, rec.Body.String())
+	}
+
+	note, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "note", Title: "Figures", Content: noteTestContent(t, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, note.ID)
+	assets := "/api/materials/" + note.ID + "/editor-assets/uploads"
+	image := func(size int64) map[string]any {
+		return map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": size, "contentType": "image/png"}
+	}
+	plan(fx.ownerID, "pro")
+	bigImage := image(free.EditorAssetBytes("image") + 1)
+	route = ticketed(t, fx.handler, assets, fx.ownerID, bigImage)
+	plan(fx.ownerID, "free")
+	// A real PNG's first bytes, so only the cap can refuse it.
+	bigPNG := make([]byte, free.EditorAssetBytes("image")+1)
+	copy(bigPNG, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	if rec := upload(route, fx.ownerID, bigImage, "image/png", bigPNG); rec.Code != http.StatusBadRequest {
+		t.Fatalf("an editor asset over the cap at its upload: %d %s", rec.Code, rec.Body.String())
+	}
+
+	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, make([]byte, 100)...)
+	smallImage := image(int64(len(png)))
+	route = ticketed(t, fx.handler, assets, fx.ownerID, smallImage)
+	fill(fx.ownerID)
+	if rec := upload(route, fx.ownerID, smallImage, "image/png", png); rec.Code != http.StatusForbidden ||
+		errorCode(t, rec) != "storage_quota_exceeded" {
+		t.Fatalf("an editor asset over the storage at its upload: %d %s", rec.Code, rec.Body.String())
+	}
+
+	var held, assetRows int
+	if err := fx.pool.QueryRow(ctx, `SELECT count(*) FROM upload_sessions
+		WHERE created_by IN ($1,$2) AND status='pending'`, fx.actorID, fx.ownerID).Scan(&held); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.pool.QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE material_id=$1`, note.ID).Scan(&assetRows); err != nil {
+		t.Fatal(err)
+	}
+	if held != 0 || assetRows != 0 {
+		t.Fatalf("refused uploads left %d held sessions and %d asset rows", held, assetRows)
 	}
 }

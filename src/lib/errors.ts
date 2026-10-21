@@ -86,6 +86,11 @@ export function errorKind(error: unknown): ErrorKind {
 
   if (isApiError(error)) {
     if (error.code === 'source_changed') return 'sourceChanged';
+    // A connection too slow for the gateway's 5-minute upload deadline.
+    if (error.code === 'upload_timeout') return 'network';
+    // An upload whose turn in the gateway's line passed, or whose ticket a
+    // restart forgot: the user adds it again.
+    if (error.code === 'upload_ticket_gone') return 'validation';
     if (error.code === 'account_over_quota' || error.code === 'account_locked')
       return 'quota';
     if (error.status === 401) return 'auth';
@@ -230,6 +235,26 @@ function codeCopy(code: string): ErrorDescription | null {
       return {
         description: m.error_bank_unavailable_body(),
         title: m.error_bank_unavailable_title(),
+      };
+    // The gateway cut off an upload whose body took past 5 minutes; a
+    // connection dropped first reads as a network error instead.
+    case 'upload_timeout':
+      return {
+        action: 'retry',
+        description: m.error_upload_timeout(),
+        title: m.error_upload_timeout(),
+      };
+    case 'upload_ticket_gone':
+      return {
+        action: 'retry',
+        description: m.error_upload_ticket_gone(),
+        title: m.error_upload_ticket_gone(),
+      };
+    case 'upload_queue_full':
+      return {
+        action: 'retry',
+        description: m.error_upload_queue_full_body(),
+        title: m.error_upload_queue_full_title(),
       };
     default:
       return null;
@@ -382,6 +407,7 @@ const TYPED_SERVER_CODES = new Set([
   'bank_unavailable',
   'generate_empty',
   'provider_busy',
+  'upload_queue_full',
 ]);
 
 /** The trace id an error that stays on screen shows (a boundary, FormAlert,

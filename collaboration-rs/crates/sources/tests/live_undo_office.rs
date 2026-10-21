@@ -51,9 +51,25 @@ impl File {
     /// state, a copy merges the engine's result (the edit's own items), and
     /// the room applies the copy's change keeping what it deleted.
     fn agent_edit(&self, room: &Doc, commands: &[Command]) -> Change {
+        self.costed_edit(room, commands).1
+    }
+
+    /// [`Self::agent_edit`] with the edit's Undo cost, as `sources::edit`
+    /// sums it: each applied command's rule with what the engine measured
+    /// of its target (`touched`).
+    fn costed_edit(&self, room: &Doc, commands: &[Command]) -> (usize, Change) {
         let state = state(room);
         let applied =
             office_service::apply_commands(&self.base, self.checkpoint(&state), commands).unwrap();
+        let cost = commands
+            .iter()
+            .zip(&applied.touched)
+            .map(|(command, touched)| sources::undo_cost::office(command, *touched))
+            .fold(0, usize::saturating_add);
+        let (content, items) = applied.touched.iter().fold((0, 0), |(content, items), t| {
+            (content + t.content, items + t.items)
+        });
+        eprintln!("touched: {items} items, {content} bytes");
         let copy = doc_of(&state);
         let captured = {
             let mut txn = copy.transact_mut();
@@ -65,7 +81,77 @@ impl File {
             .transact()
             .encode_state_as_update_v1(&room.transact().state_vector());
         ydoc::undo::apply_kept(room, Update::decode_v1(&update).unwrap()).unwrap();
-        captured.change(room)
+        (cost, captured.change(room))
+    }
+
+    /// A person's edit: the engine's commands merged into the room as an
+    /// update the room keeps no Undo for.
+    fn person_edit(&self, room: &Doc, commands: &[Command]) {
+        let state = state(room);
+        let applied =
+            office_service::apply_commands(&self.base, self.checkpoint(&state), commands).unwrap();
+        let copy = doc_of(&state);
+        copy.transact_mut()
+            .apply_update(Update::decode_v1(&applied.state).unwrap())
+            .unwrap();
+        let update = copy
+            .transact()
+            .encode_state_as_update_v1(&room.transact().state_vector());
+        ydoc::apply(room, Update::decode_v1(&update).unwrap()).unwrap();
+    }
+
+    /// Every paragraph a DOCX read lists, page by page.
+    fn paragraphs(&self, room: &Doc) -> Vec<serde_json::Value> {
+        let state = state(room);
+        let mut all = Vec::new();
+        let mut start = Some(0);
+        while let Some(at) = start {
+            let page = office_service::inspect_scoped(
+                &self.base,
+                self.checkpoint(&state),
+                &InspectQuery {
+                    start: Some(at),
+                    count: Some(200),
+                    ..InspectQuery::default()
+                },
+            )
+            .unwrap();
+            all.extend(page["paragraphs"].as_array().unwrap().iter().cloned());
+            start = page["nextStart"].as_u64().map(|next| next as u32);
+        }
+        all
+    }
+
+    /// Each table the read marks, by its id: its cells' text as rows, a
+    /// cell's paragraphs joined by line breaks (delete_table's expected).
+    fn tables(&self, room: &Doc) -> Vec<(String, Vec<Vec<String>>)> {
+        let mut tables: Vec<(String, Vec<Vec<String>>)> = Vec::new();
+        for paragraph in self.paragraphs(room) {
+            let Some(cell) = paragraph.get("table") else {
+                continue;
+            };
+            let id = cell["id"].as_str().unwrap();
+            if tables.last().is_none_or(|(last, _)| last != id) {
+                tables.push((id.to_owned(), Vec::new()));
+            }
+            let grid = &mut tables.last_mut().unwrap().1;
+            let (row, column) = (
+                cell["row"].as_u64().unwrap() as usize,
+                cell["column"].as_u64().unwrap() as usize,
+            );
+            if grid.len() <= row {
+                grid.resize(row + 1, Vec::new());
+            }
+            let text = paragraph["text"].as_str().unwrap();
+            let cells = &mut grid[row];
+            if cells.len() <= column {
+                cells.resize(column + 1, String::new());
+                cells[column] = text.to_owned();
+            } else {
+                cells[column] = format!("{}\n{text}", cells[column]);
+            }
+        }
+        tables
     }
 
     fn entries(&self, room: &Doc) -> Vec<office_service::Entry> {
@@ -124,6 +210,8 @@ impl File {
 const GRADES: &str = "e2e/fixtures/files/basic/grades.xlsx";
 const LESSON_DOCX: &str = "e2e/fixtures/files/basic/lesson.docx";
 const LESSON_PPTX: &str = "e2e/fixtures/files/basic/lesson.pptx";
+/// Eight classes of 2,000 rows and a summary (`bench/editor`).
+const GRADEBOOK: &str = "bench/editor/fixtures/office/large-gradebook.xlsx";
 
 /// lesson.docx with its first paragraph ending a section, its second a
 /// bulleted list item and, after its table, a paragraph and a closing one,
@@ -159,6 +247,204 @@ fn lesson_docx() -> File {
         })
         .collect();
     File::of(Format::Docx, ooxml_opc::rezip_parts(&parts).unwrap())
+}
+
+/// lesson.docx with `body` before its own paragraphs.
+fn lesson_docx_with(body: &str) -> File {
+    let lesson = File::open(Format::Docx, LESSON_DOCX);
+    let parts: Vec<(String, Vec<u8>)> = ooxml_opc::unzip_parts(&lesson.base)
+        .unwrap()
+        .into_iter()
+        .map(|(name, bytes)| {
+            if name != "word/document.xml" {
+                return (name, bytes);
+            }
+            let xml = String::from_utf8(bytes).unwrap().replacen(
+                "<w:body>",
+                &format!("<w:body>{body}"),
+                1,
+            );
+            (name, xml.into_bytes())
+        })
+        .collect();
+    File::of(Format::Docx, ooxml_opc::rezip_parts(&parts).unwrap())
+}
+
+/// Review H1's fixtures: a paragraph of 5-character runs in turn bold,
+/// italic, red, 14 pt and Georgia, and one of mixed Chinese and Latin
+/// letters a run each (as PDF-converted and CJK files hold them), each
+/// formatted, replaced and deleted whole.
+const FIVE_RUNS: usize = 60;
+const ONE_CHARACTER_RUNS: usize = 200;
+
+fn many_runs_docx() -> (File, String, String) {
+    let props = [
+        "<w:b/>",
+        "<w:i/>",
+        r#"<w:color w:val="FF0000"/>"#,
+        r#"<w:sz w:val="28"/>"#,
+        r#"<w:rFonts w:ascii="Georgia" w:hAnsi="Georgia"/>"#,
+    ];
+    let mut five = String::new();
+    let mut five_text = String::new();
+    for n in 0..FIVE_RUNS {
+        let text = format!("w{:03}x", n);
+        five.push_str(&format!(
+            "<w:r><w:rPr>{}</w:rPr><w:t>{text}</w:t></w:r>",
+            props[n % props.len()]
+        ));
+        five_text.push_str(&text);
+    }
+    let (mixed, mixed_text) = one_character_runs(ONE_CHARACTER_RUNS);
+    (
+        lesson_docx_with(&format!("<w:p>{five}</w:p><w:p>{mixed}</w:p>")),
+        five_text,
+        mixed_text,
+    )
+}
+
+/// `count` runs of one Chinese or Latin letter in turn, each with its
+/// fonts and language: the XML and its text.
+fn one_character_runs(count: usize) -> (String, String) {
+    let mut xml = String::new();
+    let mut text = String::new();
+    for n in 0..count {
+        let (letter, props) = if n % 2 == 0 {
+            (
+                ['中', '文', '字', '体'][n / 2 % 4],
+                r#"<w:rFonts w:eastAsia="SimSun" w:hint="eastAsia"/><w:lang w:eastAsia="zh-CN"/>"#,
+            )
+        } else {
+            (
+                ['a', 'b', 'c', 'd'][n / 2 % 4],
+                r#"<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:lang w:val="en-US"/>"#,
+            )
+        };
+        xml.push_str(&format!(
+            "<w:r><w:rPr>{props}</w:rPr><w:t>{letter}</w:t></w:r>"
+        ));
+        text.push(letter);
+    }
+    (xml, text)
+}
+
+/// The fork's stories.docx with its header's and its footnote's text each
+/// [`ONE_CHARACTER_RUNS`] runs (review r2 H1): the file and that text.
+fn stories_docx() -> (File, String) {
+    let stories = File::open(
+        Format::Docx,
+        "vendor/betteroffice/crates/office-service/tests/fixtures/stories.docx",
+    );
+    let (runs, text) = one_character_runs(ONE_CHARACTER_RUNS);
+    let parts: Vec<(String, Vec<u8>)> = ooxml_opc::unzip_parts(&stories.base)
+        .unwrap()
+        .into_iter()
+        .map(|(name, bytes)| {
+            let old = match name.as_str() {
+                "word/header1.xml" => "Header",
+                "word/footnotes.xml" => "A note",
+                _ => return (name, bytes),
+            };
+            let xml = String::from_utf8(bytes).unwrap().replacen(
+                &format!(r#"<w:r><w:t xml:space="preserve">{old}</w:t></w:r>"#),
+                &runs,
+                1,
+            );
+            (name, xml.into_bytes())
+        })
+        .collect();
+    (
+        File::of(Format::Docx, ooxml_opc::rezip_parts(&parts).unwrap()),
+        text,
+    )
+}
+
+/// lesson.pptx with a paragraph of 5-character runs, in turn bold, italic
+/// and red, before the owner sentence in its shape.
+fn many_runs_pptx() -> (File, String) {
+    let lesson = File::open(Format::Pptx, LESSON_PPTX);
+    let props = [r#"b="1""#, r#"i="1""#, r#"sz="2400""#];
+    let mut runs = String::new();
+    let mut text = String::new();
+    for n in 0..FIVE_RUNS {
+        let piece = format!("p{:03}y", n);
+        runs.push_str(&format!(
+            r#"<a:r><a:rPr lang="en-US" {}/><a:t>{piece}</a:t></a:r>"#,
+            props[n % props.len()]
+        ));
+        text.push_str(&piece);
+    }
+    let owner = "<a:p><a:r><a:t>Owner sentence: The launch code is LARCH-17.</a:t></a:r></a:p>";
+    let parts: Vec<(String, Vec<u8>)> = ooxml_opc::unzip_parts(&lesson.base)
+        .unwrap()
+        .into_iter()
+        .map(|(name, bytes)| {
+            if name != "ppt/slides/slide1.xml" {
+                return (name, bytes);
+            }
+            let xml = String::from_utf8(bytes).unwrap();
+            assert!(xml.contains(owner));
+            let xml = xml.replacen(owner, &format!("<a:p>{runs}</a:p>{owner}"), 1);
+            (name, xml.into_bytes())
+        })
+        .collect();
+    (
+        File::of(Format::Pptx, ooxml_opc::rezip_parts(&parts).unwrap()),
+        text,
+    )
+}
+
+/// Review M1's tables: a plain 1x1, a 10x10 of shaded cells holding three
+/// formatted paragraphs each, and a 3x3 whose cells hold 20 list items.
+fn tables_docx() -> File {
+    let table = |rows: usize, columns: usize, cell: &dyn Fn(usize, usize) -> String| {
+        let grid: String = (0..columns).map(|_| r#"<w:gridCol w:w="900"/>"#).collect();
+        let rows: String = (0..rows)
+            .map(|r| {
+                let cells: String = (0..columns)
+                    .map(|c| {
+                        format!(
+                            r#"<w:tc><w:tcPr><w:tcW w:type="dxa" w:w="900"/><w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/></w:tcPr>{}</w:tc>"#,
+                            cell(r, c)
+                        )
+                    })
+                    .collect();
+                format!("<w:tr>{cells}</w:tr>")
+            })
+            .collect();
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:type="auto" w:w="0"/></w:tblPr><w:tblGrid>{grid}</w:tblGrid>{rows}</w:tbl>"#
+        )
+    };
+    let gap = |n: usize| format!("<w:p><w:r><w:t>Gap {n}</w:t></w:r></w:p>");
+    let formatted = |r: usize, c: usize| -> String {
+        (0..3)
+            .map(|p| {
+                format!(
+                    r#"<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">R{r}C{c} </w:t></w:r><w:r><w:rPr><w:i/><w:color w:val="1F4E79"/></w:rPr><w:t>line {p}</w:t></w:r></w:p>"#
+                )
+            })
+            .collect()
+    };
+    let listed = |r: usize, c: usize| -> String {
+        (0..20)
+            .map(|item| {
+                format!(
+                    r#"<w:p><w:pPr><w:pStyle w:val="ListBullet"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>Item {r}.{c}.{item}</w:t></w:r></w:p>"#
+                )
+            })
+            .collect()
+    };
+    lesson_docx_with(&format!(
+        "{}{}{}{}{}{}",
+        table(1, 1, &|_, _| "<w:p><w:r><w:t>Only</w:t></w:r></w:p>"
+            .to_owned()),
+        gap(1),
+        table(10, 10, &formatted),
+        gap(2),
+        table(3, 3, &listed),
+        gap(3),
+    ))
 }
 
 /// An insert_paragraph naming its anchor by `key` (`afterId` or `beforeId`).
@@ -417,6 +703,82 @@ fn undo_reverts_paragraph_inserts_and_deletes() {
     }
 }
 
+/// Epo's question (2026-10-22): what the agent's Undo does to text a
+/// person typed, after the agent's edit, into a paragraph and a table the
+/// edit inserted. The Undo removes exactly the agent's own items: the
+/// paragraph's text and mark and the table go. The person's words in the
+/// paragraph stay, joining the anchor paragraph the agent's split was made
+/// at (its mark was the agent's); the words in the cell leave the document
+/// with the table, whose cell stories nothing reaches any more.
+#[test]
+fn undo_of_an_agent_insert_after_a_person_typed_into_it() {
+    let file = lesson_docx();
+    let room = file.room();
+    let owner = file
+        .paragraphs(&room)
+        .into_iter()
+        .find(|p| p["text"].as_str().unwrap().starts_with("Owner sentence"))
+        .unwrap();
+    let anchor = owner["id"].as_str().unwrap().to_owned();
+    let change = file.agent_edit(
+        &room,
+        &[
+            insert("afterId", &anchor, "Agent line", None),
+            command(serde_json::json!({
+                "type": "insert_table", "afterId": anchor, "rows": [["Agent cell"]],
+            })),
+        ],
+    );
+    let read = file.paragraphs(&room);
+    let id_of = |text: &str| {
+        read.iter()
+            .find(|p| p["text"] == text)
+            .map(|p| p["id"].as_str().unwrap().to_owned())
+            .unwrap()
+    };
+    let replace = |id: String, expected: &str, text: &str| Command::ReplaceText {
+        target_id: id,
+        expected_text: expected.into(),
+        text: text.into(),
+    };
+    file.person_edit(
+        &room,
+        &[
+            replace(
+                id_of("Agent line"),
+                "Agent line",
+                "Agent line, then the person",
+            ),
+            replace(
+                id_of("Agent cell"),
+                "Agent cell",
+                "Agent cell and the person",
+            ),
+        ],
+    );
+    ydoc::undo::revert(&room, change).unwrap();
+    let texts: Vec<String> = file
+        .paragraphs(&room)
+        .into_iter()
+        .map(|p| p["text"].as_str().unwrap().to_owned())
+        .collect();
+    eprintln!("after the Undo: {texts:?}");
+    assert!(
+        !texts.iter().any(|text| text.contains("Agent")),
+        "{texts:?}"
+    );
+    // The agent's split put its own mark between the anchor's text and
+    // the new paragraph's: without it the person's words end the anchor.
+    assert!(
+        texts.contains(&"Owner sentence: The launch code is LARCH-17., then the person".to_owned()),
+        "{texts:?}"
+    );
+    assert!(
+        !texts.iter().any(|text| text.contains("and the person")),
+        "{texts:?}"
+    );
+}
+
 /// What an edit's Undo and its Redo send, measured on copies of the room
 /// (`ydoc::undo::revert_len`), the room left undone.
 fn undo_and_redo(room: &Doc, change: Change) -> (usize, usize) {
@@ -440,8 +802,88 @@ fn covers(short: &mut Vec<String>, name: &str, cost: usize, (undo, redo): (usize
     }
 }
 
+/// How far a DOCX or PPTX estimate may sit above what its Undo or Redo
+/// sends (the Editor 2026-10-22): within it an ordinary 50-command call
+/// keeps its Undo.
+const CEILING: f64 = 10.0;
+
+/// [`covers`], and notes a DOCX or PPTX estimate past [`CEILING`] times
+/// what was sent.
+fn covers_closely(short: &mut Vec<String>, name: &str, cost: usize, sent: (usize, usize)) {
+    covers(short, name, cost, sent);
+    let most = sent.0.max(sent.1).max(1);
+    if cost as f64 > CEILING * most as f64 {
+        short.push(format!(
+            "{name}: cost {cost} over {CEILING}x Undo {} / Redo {}",
+            sent.0, sent.1
+        ));
+    }
+}
+
 fn command(value: serde_json::Value) -> Command {
     serde_json::from_value(value).unwrap()
+}
+
+/// The DOCX-only commands on lesson.docx: a list, an alignment and every
+/// format over body paragraphs, a table of long cells inserted, and the
+/// file's table deleted.
+fn docx_cases(file: &File, room: &Doc) -> Vec<(&'static str, Command)> {
+    let paragraphs = file.paragraphs(room);
+    let body: Vec<&serde_json::Value> = paragraphs
+        .iter()
+        .filter(|p| {
+            p["id"].as_str().unwrap().starts_with("body:paragraph:")
+                && p.get("locked").is_none()
+                && !p["text"].as_str().unwrap().is_empty()
+        })
+        .take(3)
+        .collect();
+    let first = &body[0];
+    let (table_id, table) = file.tables(room).remove(0);
+    let long = "a longer cell of the agent's table, ".repeat(4);
+    vec![
+        (
+            "set_list",
+            command(serde_json::json!({
+                "type": "set_list", "list": "numbered",
+                "ids": body.iter().map(|p| p["id"].clone()).collect::<Vec<_>>(),
+            })),
+        ),
+        (
+            "set_alignment",
+            command(serde_json::json!({
+                "type": "set_alignment", "targetId": first["id"], "alignment": "justify",
+            })),
+        ),
+        (
+            "format_text",
+            command(serde_json::json!({
+                "type": "format_text", "targetId": first["id"], "expectedText": first["text"],
+                "bold": true, "italic": true, "underline": true, "strikethrough": true,
+                "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
+            })),
+        ),
+        (
+            "insert_table",
+            command(serde_json::json!({
+                "type": "insert_table", "afterId": first["id"],
+                "rows": (0..5).map(|r| (0..4).map(|c| format!("{long}{r}.{c}")).collect::<Vec<_>>()).collect::<Vec<_>>(),
+            })),
+        ),
+        (
+            "insert_table (empty cells)",
+            command(serde_json::json!({
+                "type": "insert_table", "afterId": first["id"],
+                "rows": vec![vec![""; 4]; 5],
+            })),
+        ),
+        (
+            "delete_table",
+            command(serde_json::json!({
+                "type": "delete_table", "id": table_id, "expected": table,
+            })),
+        ),
+    ]
 }
 
 /// Epo 2026-10-21: an agent edit's Undo is sized from its commands
@@ -541,11 +983,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
         ),
     ];
     for (case, commands) in cases {
-        let cost = commands
-            .iter()
-            .map(sources::undo_cost::office)
-            .fold(0, usize::saturating_add);
-        let change = xlsx.agent_edit(&room, &commands);
+        let (cost, change) = xlsx.costed_edit(&room, &commands);
         covers(&mut short, case, cost, undo_and_redo(&room, change));
     }
     // Bands and a sheet to delete, filled first.
@@ -584,10 +1022,68 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
         ),
     ] {
         // Each case leaves the room undone, so the next finds its band.
-        let cost = sources::undo_cost::office(&removal);
-        let change = xlsx.agent_edit(&room, &[removal]);
+        let (cost, change) = xlsx.costed_edit(&room, &[removal]);
         covers(&mut short, case, cost, undo_and_redo(&room, change));
     }
+
+    // Large sheets (the Editor's design 2026-10-22): a sheet of 10,000
+    // written cells, half its rows or columns deleted and the sheet deleted,
+    // and the large gradebook's first sheet (16,000 cells of the base)
+    // deleted.
+    let written = grid(1_000, 10, "a written cell ");
+    xlsx.agent_edit(
+        &room,
+        &[
+            command(serde_json::json!({ "type": "add_sheet", "name": "Big" })),
+            Command::SetRange {
+                sheet: "Big".into(),
+                range: "A1:J1000".into(),
+                expected: empty(1_000, 10),
+                values: written.clone(),
+            },
+        ],
+    );
+    for (case, removal) in [
+        (
+            "delete_rows (500 rows of a 10,000-cell sheet)",
+            command(serde_json::json!({
+                "type": "delete_rows", "sheet": "Big", "at": 1, "count": 500,
+                "expected": written[..500],
+            })),
+        ),
+        (
+            "delete_columns (5 columns of a 10,000-cell sheet)",
+            command(serde_json::json!({
+                "type": "delete_columns", "sheet": "Big", "at": "A", "count": 5,
+                "expected": written.iter().map(|row| row[..5].to_vec()).collect::<Vec<_>>(),
+            })),
+        ),
+        (
+            "delete_sheet (10,000 written cells)",
+            command(serde_json::json!({
+                "type": "delete_sheet", "sheet": "Big", "expectedName": "Big",
+            })),
+        ),
+    ] {
+        let (cost, change) = xlsx.costed_edit(&room, &[removal]);
+        covers(&mut short, case, cost, undo_and_redo(&room, change));
+    }
+    let book = File::open(Format::Xlsx, GRADEBOOK);
+    let room = book.room();
+    let (sheet, name) = book.sheets(&room).remove(0);
+    let (cost, change) = book.costed_edit(
+        &room,
+        &[Command::DeleteSheet {
+            sheet,
+            expected_name: name,
+        }],
+    );
+    covers(
+        &mut short,
+        "delete_sheet (the large gradebook's first)",
+        cost,
+        undo_and_redo(&room, change),
+    );
 
     for (file, path) in [
         (lesson_docx(), LESSON_DOCX),
@@ -606,9 +1102,8 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 expected_text: entry.value.clone(),
                 text: format!("{} {}", entry.value, "and a longer replacement".repeat(3)),
             };
-            let cost = sources::undo_cost::office(&replace);
-            let change = file.agent_edit(&room, &[replace]);
-            covers(
+            let (cost, change) = file.costed_edit(&room, &[replace]);
+            covers_closely(
                 &mut short,
                 &format!("{path} replace_text"),
                 cost,
@@ -641,9 +1136,8 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
             }
             cases.push(("delete_paragraph", delete));
             for (name, case) in cases {
-                let cost = sources::undo_cost::office(&case);
-                let change = file.agent_edit(&room, &[case]);
-                covers(
+                let (cost, change) = file.costed_edit(&room, &[case]);
+                covers_closely(
                     &mut short,
                     &format!("{path} {name}"),
                     cost,
@@ -651,6 +1145,146 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 );
             }
         }
+        if format == Format::Docx {
+            for (name, case) in docx_cases(&file, &room) {
+                let (cost, change) = file.costed_edit(&room, &[case]);
+                covers_closely(
+                    &mut short,
+                    &format!("{path} {name}"),
+                    cost,
+                    undo_and_redo(&room, change),
+                );
+            }
+        }
+    }
+
+    // Many runs a paragraph (review H1): every format on the whole text, the
+    // whole text replaced, the paragraph deleted.
+    let (docx, five, mixed) = many_runs_docx();
+    let (pptx, pptx_five) = many_runs_pptx();
+    for (file, name, text) in [
+        (&docx, "docx 5-character runs", &five),
+        (&docx, "docx one-character CJK/Latin runs", &mixed),
+        (&pptx, "pptx 5-character runs", &pptx_five),
+    ] {
+        let room = file.room();
+        let id = file
+            .entries(&room)
+            .into_iter()
+            .find(|entry| entry.value == *text)
+            .map(|entry| entry.id)
+            .unwrap_or_else(|| panic!("{name}: no paragraph reads its text"));
+        let mut cases = vec![
+            (
+                "replace_text",
+                Command::ReplaceText {
+                    target_id: id.clone(),
+                    expected_text: text.clone(),
+                    text: "short".into(),
+                },
+            ),
+            (
+                "delete_paragraph",
+                Command::DeleteParagraph {
+                    target_id: id.clone(),
+                    expected_text: text.clone(),
+                },
+            ),
+        ];
+        if file.format == Format::Docx {
+            cases.push((
+                "format_text",
+                command(serde_json::json!({
+                    "type": "format_text", "targetId": id, "expectedText": text,
+                    "bold": true, "italic": true, "underline": true, "strikethrough": true,
+                    "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
+                })),
+            ));
+        }
+        for (case, command) in cases {
+            let (cost, change) = file.costed_edit(&room, &[command]);
+            covers_closely(
+                &mut short,
+                &format!("{name} {case}"),
+                cost,
+                undo_and_redo(&room, change),
+            );
+        }
+    }
+
+    // Review r2 H1: a header's and a footnote's text replaced whole, each
+    // one run a character (apply finds them outside the body).
+    let (stories, text) = stories_docx();
+    let room = stories.room();
+    for part in ["header", "footnote"] {
+        let id = stories
+            .paragraphs(&room)
+            .into_iter()
+            .find(|p| {
+                p["part"]
+                    .as_str()
+                    .is_some_and(|label| label.starts_with(part))
+            })
+            .map(|p| p["id"].as_str().unwrap().to_owned())
+            .unwrap();
+        let (cost, change) = stories.costed_edit(
+            &room,
+            &[Command::ReplaceText {
+                target_id: id,
+                expected_text: text.clone(),
+                text: "x".into(),
+            }],
+        );
+        covers_closely(
+            &mut short,
+            &format!("{part} replace_text, one-character runs"),
+            cost,
+            undo_and_redo(&room, change),
+        );
+    }
+
+    // Review r2 M1: every format on a 2-character paragraph of a file with
+    // no default run properties, so the span holds no markers to measure:
+    // the Redo is a start and an end marker a key.
+    let file = File::of(
+        Format::Docx,
+        ooxml_opc::rezip_parts(&[(
+            "word/document.xml".to_owned(),
+            br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>ab</w:t></w:r></w:p><w:p><w:r><w:t>End</w:t></w:r></w:p></w:body></w:document>"#.to_vec(),
+        )])
+        .unwrap(),
+    );
+    let room = file.room();
+    let id = file
+        .paragraphs(&room)
+        .into_iter()
+        .find(|p| p["text"] == "ab")
+        .map(|p| p["id"].clone())
+        .unwrap();
+    let (cost, change) = file.costed_edit(
+        &room,
+        &[command(serde_json::json!({
+            "type": "format_text", "targetId": id, "expectedText": "ab",
+            "bold": true, "italic": true, "underline": true, "strikethrough": true,
+            "color": "#1F4E79", "highlight": "yellow", "fontSize": 14, "fontFamily": "Georgia",
+        }))],
+    );
+    covers_closely(
+        &mut short,
+        "format_text, every format on 2 characters",
+        cost,
+        undo_and_redo(&room, change),
+    );
+
+    // Tables of several sizes (review M1): 1x1, 10x10 of three formatted
+    // paragraphs a cell, 3x3 of 20 list items a cell, deleted.
+    let file = tables_docx();
+    let room = file.room();
+    for (id, grid) in file.tables(&room) {
+        let name = format!("delete_table {}x{}", grid.len(), grid[0].len());
+        let (cost, change) =
+            file.costed_edit(&room, &[Command::DeleteTable { id, expected: grid }]);
+        covers_closely(&mut short, &name, cost, undo_and_redo(&room, change));
     }
 
     // A text source: `replace_text` on its text.

@@ -38,9 +38,11 @@ export function isCompleteQuestion(question: Question): boolean {
  * (Epo 2026-10-10, D6); an abandoned pick goes to the hidden trash at the
  * next projection. */
 export function quizImageUpload(quizId: string): UploadQuestionAsset {
-  return async (file) => {
+  return async (file, signal) => {
     const fitted = await fitImage(file, await editorImageMaxBytes(quizId));
-    const { assetId } = await uploadEditorAsset(quizId, fitted, 'image');
+    const { assetId } = await uploadEditorAsset(quizId, fitted, 'image', {
+      signal,
+    });
     return { assetId };
   };
 }

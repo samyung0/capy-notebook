@@ -1652,57 +1652,6 @@ components:
         workspaceId:
           type: string
       type: object
-    CreateSourceUploadReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CreateSourceUploadReq.json
-          format: uri
-          readOnly: true
-          type: string
-        batchId:
-          maxLength: 64
-          minLength: 1
-          pattern: ^[A-Za-z0-9_-]+$
-          type: string
-        batchTotal:
-          format: int64
-          maximum: 10000
-          minimum: 1
-          type: integer
-        chapterId:
-          type: string
-        chapterName:
-          maxLength: 60
-          type: string
-        contentType:
-          type: string
-        estimatedCreditMicros:
-          format: int64
-          minimum: 0
-          type: integer
-        kind:
-          type: string
-        name:
-          maxLength: 120
-          minLength: 1
-          type: string
-        pageCount:
-          format: int64
-          minimum: 0
-          type: integer
-        parseMode:
-          type: string
-        sizeBytes:
-          format: int64
-          type: integer
-      required:
-        - name
-        - sizeBytes
-        - batchId
-        - batchTotal
-      type: object
     CreateWorkspaceInviteReq:
       additionalProperties: false
       properties:
@@ -5923,35 +5872,6 @@ components:
         - allowNoExtension
         - digitalParsePageCreditMicros
         - vlmIngestPageCreditMicros
-      type: object
-    SourceUploadReservation:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SourceUploadReservation.json
-          format: uri
-          readOnly: true
-          type: string
-        expiresAt:
-          format: date-time
-          type: string
-        headers:
-          additionalProperties:
-            type: string
-          type: object
-        method:
-          type: string
-        uploadId:
-          type: string
-        url:
-          type: string
-      required:
-        - uploadId
-        - url
-        - method
-        - headers
-        - expiresAt
       type: object
     SpendingLimitReq:
       additionalProperties: false
@@ -12358,67 +12278,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Get source import status
-      tags:
-        - Content
-  /api/workspaces/{id}/sources/uploads:
-    post:
-      operationId: createSourceUpload
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateSourceUploadReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SourceUploadReservation"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Reserve a direct source upload
-      tags:
-        - Content
-  /api/workspaces/{id}/sources/uploads/{uploadId}/complete:
-    post:
-      operationId: completeSourceUpload
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: uploadId
-          required: true
-          schema:
-            type: string
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/File"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Complete a direct source upload
       tags:
         - Content
   /api/workspaces/{id}/stats:

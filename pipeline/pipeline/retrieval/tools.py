@@ -2114,13 +2114,6 @@ def _render_inspection(
         lines.append(f"{line.get('start')}: {line.get('text')}")
     for entry in body.get("entries") or []:
         lines.append(f"[{entry.get('id')}] {entry.get('label')}: {entry.get('value')}")
-    if body.get("styles"):
-        more = body.get("stylesMore")
-        lines.append(
-            "paragraph styles as id (name): "
-            + ", ".join(f"{st.get('id')} ({st.get('name')})" for st in body["styles"])
-            + (f" and {more} more" if more else "")
-        )
     if source:
         lines = [source_block("\n".join(lines))]
     if body.get("nextStart") is not None:
@@ -2197,14 +2190,16 @@ def _missed_target(
             shown += f" … ({more} more characters; {reader} shows them)"
         grid = block.get("grid")
         if office and isinstance(grid, list):
-            # A refused row or column delete's band, exact for its expected.
+            # A refused row, column or table delete's cells, exact for its
+            # expected.
             cut = (
                 f" … (its first 2,000 cells; {reader} reads the rest)"
                 if block.get("gridCut")
                 else ""
             )
+            what = "Table" if block.get("type") == "table" else "Range"
             return (
-                f"Range {bid} now holds, as rows of cells:\n"
+                f"{what} {bid} now holds, as rows of cells:\n"
                 + json.dumps(grid, ensure_ascii=False, separators=(",", ":"))
                 + cut
             )
@@ -2384,32 +2379,75 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 # One edit_office_document call's commands at most, as compact JSON (Epo
 # 2026-10-20); a larger call is refused before it leaves.
 OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
-# Cells one call writes across its commands (Epo 2026-10-20, review finding
-# 3). The pipeline counts set_range and format_cells areas for an early
-# refusal; the engine counts every command's cells and stays the authority.
-OFFICE_CALL_MAX_CELLS = 10_000
-_A1_RANGE = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
 
 
-def _range_cells(text: str) -> int:
-    """The cells an A1 range covers; 0 for one the engine refuses anyway."""
-    match = _A1_RANGE.fullmatch(text.strip().upper())
-    if not match:
-        return 0
+def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
+    """A DOCX read: the styles (first page), then its paragraphs as ``[id]
+    (style unless the default, list, table cell, content control, locked:
+    why) text``, the body's and then each header's, footer's and note's
+    under a ``== part ==`` line, inside the source fence, cut to the
+    paragraphs that fit the tool output limit so the next start names the
+    first one not shown."""
+    head += (
+        "\nparagraphs as [id] (style unless the default, list, table cell, content control, "
+        "locked: why replace_text and format_text refuse it, and delete_paragraph unless "
+        "it only follows a table) text; "
+        "after the body, headers, footers and notes under == part == lines, which "
+        "take replace_text only:"
+    )
+    lines = []
+    part = None
+    for paragraph in scoped.get("paragraphs") or []:
+        marks = [str(paragraph[k]) for k in ("style", "list") if paragraph.get(k)]
+        if table := paragraph.get("table"):
+            marks.append(
+                f"table {table.get('id')} row {int(table.get('row') or 0) + 1} "
+                f"column {int(table.get('column') or 0) + 1}"
+            )
+        if paragraph.get("contentControl"):
+            marks.append("content control")
+        if locked := paragraph.get("locked"):
+            marks.append(f"locked: {locked}")
+        group = f" ({', '.join(marks)})" if marks else ""
+        line = f"[{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
+        if paragraph.get("part") != part:
+            part = paragraph.get("part")
+            line = f"== {part or 'body'} ==\n{line}"
+        lines.append(line)
+    more = scoped.get("stylesMore")
+    styles = (
+        [
+            "paragraph styles as id (name): "
+            + ", ".join(f"{s.get('id')} ({s.get('name')})" for s in scoped["styles"])
+            + (f" and {more} more" if more else "")
+        ]
+        if scoped.get("styles")
+        else []
+    )
+    total = scoped.get("total")
 
-    def column(letters: str) -> int:
-        return sum((ord(ch) - 64) * 26**i for i, ch in enumerate(reversed(letters)))
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(styles + lines[:n]))
+        if n < len(lines):
+            return body, (
+                "\n(page cut at the tool output limit; "
+                f"next start = {start + n} of {total})"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, f"\n(next start = {scoped['nextStart']} of {total})"
+        return body, ""
 
-    first, row = column(match[1]), int(match[2])
-    last, end = (column(match[3]), int(match[4])) if match[3] else (first, row)
-    return (abs(last - first) + 1) * (abs(end - row) + 1)
+    return _fitting(page, len(lines))[1]
 
 
-def _render_scoped(body: dict[str, Any], scoped: dict[str, Any]) -> str:
+def _render_scoped(body: dict[str, Any], scoped: dict[str, Any], start: int) -> str:
     """An XLSX read: its sheets as ``[id] name used-range``, or a range's
-    cells as ``A1: input``, followed by ``→ shown value`` where that differs."""
+    cells as ``A1: input``, followed by ``→ shown value`` where that differs.
+    A DOCX read: a page of its paragraphs from ``start``."""
     head = f"{body.get('title') or ''} format={body.get('format')}"
     lines: list[str] = []
+    if "paragraphs" in scoped:
+        return _render_docx_page(head, scoped, start)
     if "sheets" in scoped:
         head += "\nsheets as [id] name used range:"
         for sheet in scoped.get("sheets") or []:
@@ -2461,11 +2499,9 @@ async def _inspect_office_document(
         return body
     ctx.pending_sources.read(rid)
     scoped = body.get("scoped")
-    if isinstance(scoped, dict) and "entries" in scoped:
-        # A DOCX page: its paragraphs, the first with the paragraph styles.
-        return _result(_render_inspection({**body, **scoped}, source=True))
     if isinstance(scoped, dict):
-        return _result(_render_scoped(body, scoped))
+        start = max(int(args.get("start") or 0), 0)
+        return _result(_render_scoped(body, scoped, start))
     return _result(_render_inspection(body, source=True))
 
 
@@ -2482,16 +2518,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             f"The commands are {-(-size // 1024)} KB, over the 256 KB one call may "
             "send; split the edit into several calls."
         )
-    cells = sum(
-        _range_cells(str(command.get("range") or ""))
-        for command in commands
-        if command.get("type") in ("set_range", "format_cells")
-    )
-    if cells > OFFICE_CALL_MAX_CELLS:
-        return _refused(
-            f"The commands write {cells:,} cells, over the 10,000 one call may "
-            "write; split the edit into several calls."
-        )
+    # The engine alone counts a call's limits (Epo 2026-10-22): it applies
+    # the commands before the first past one and its notice names the rest.
     rid = str(args.get("file_id") or "")
     creating = commands[0].get("type") == "create"
     if creating == bool(rid):

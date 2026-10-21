@@ -2068,7 +2068,7 @@ needed: production has no data and UAT data was cleared.
 Office view never reads it: it opens from its source session). Each
 consumer reads its link on mount; links are dropped on unmount. Unsupported-file
 download signs on click, and audio retry signs a fresh link. Read links use
-`B2_LINK_TTL` and upload PUTs use `B2_PRESIGN_TTL`.
+`B2_LINK_TTL`.
 
 ## Edit and save lifecycle
 
@@ -2706,21 +2706,26 @@ them with `edit_office_document` (since agent contract v32, 2026-10-20; see
 [agentic retrieval](../agentic-retrieval.md), Office tools). Go turns its
 commands into the engine's (`normalizeOfficeCommands`): `replace_text`,
 `insert_paragraph` and `delete_paragraph` for DOCX and PPTX (the fork's
-`crates/office-service/src/docx/agent.rs` and `pptx.rs`, since contract v34,
-2026-10-21), and for XLSX `set_range`, `format_cells`, `add_sheet`,
+`crates/office-service/src/docx/agent.rs` and `pptx.rs`, since contract v35,
+2026-10-21), for DOCX also `set_list`, `insert_table`, `delete_table`,
+`format_text` and `set_alignment` (contract v36), and for XLSX `set_range`,
+`format_cells`, `add_sheet`,
 `rename_sheet`, row and column inserts and deletes and `delete_sheet`, which
 the engine applies in one session per call (the fork's
 `crates/office-service/src/xlsx.rs`: one `edit_cells` per `set_range`, a
 format without a full recalculation). Go no longer sends `set_cell`, which the
 engine keeps. The collaboration server's inspect route answers an XLSX
 `office` query with the engine's scoped read (the sheet list, or at most
-2,000 cells), and a DOCX one (`start`, `count`) with a page of the editable
-paragraphs, each label naming the paragraph's style unless it is the
-default, the first page with the file's shown paragraph styles (at most 50,
-no hidden or semi-hidden ones; `stylesMore` counts the rest);
-`/internal/documents/create` builds a new XLSX from the committed starter
-(`crates/office-service/starters/blank.xlsx`); DOCX create and the PPTX
-scoped read are phases 2 and 3. Every command's edit, structural ones
+2,000 cells), and a DOCX one (`start`, `count`) with a page of the body's
+paragraphs, then the headers', footers' and notes' (id, the style unless it
+is the default, list or the style's list, table cell, content control, text
+without tracked deletions, and why the text commands refuse it as
+`locked`), the first page with the file's shown paragraph styles (at most
+50, no hidden or semi-hidden ones; `stylesMore` counts the rest);
+`/internal/documents/create` builds a new XLSX or DOCX from the committed
+starter (`crates/office-service/starters/blank.xlsx`, or `blank.docx`,
+python-docx's default template with its core properties emptied; MIT,
+`starters/NOTICE.md`); the PPTX scoped read is phase 3. Every command's edit, structural ones
 included, gets the live Undo while its room is loaded
 ([agentic retrieval](../agentic-retrieval.md), Undo chain).
 
@@ -2736,7 +2741,11 @@ delete across a mark would join two paragraphs and the survivor adopt the
 first mark. A DOCX paragraph's leading blocks (a page or column break, a
 table) stay, opening the next paragraph. A new DOCX paragraph keeps its id
 and the section its neighbour ended; without a style it then takes its
-anchor's properties and next style (Enter), with one only that style.
+anchor's properties and next style (Enter), with one that style in place
+of the next (Epo 2026-10-22). DOCX commands set paragraph style ids and
+direct formatting only, never the resolved style values the seed still
+copies onto paragraphs; the empty paragraph an inserted table opens is
+plain.
 
 An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
 as a substring that occurs exactly once in the paragraph, counted as note
