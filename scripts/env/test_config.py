@@ -157,7 +157,7 @@ class ConfigTest(unittest.TestCase):
             CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://uat.example.com",
-            ZAI_API_KEY="zai-key",
+            OPENROUTER_API_KEY="or-key",
         )
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
@@ -168,11 +168,12 @@ class ConfigTest(unittest.TestCase):
                 "postgres://capy:a%40%2F%3A%3F%24%23%25%20b@10.77.0.3:5432/capy?sslmode=disable",
             )
             self.assertEqual(queue["GATEWAY_URL"], "http://10.77.0.3:8080")
-            # Chat and ingest share the one Z.AI platform key (Epo 2026-10-20).
-            self.assertEqual(queue["ZAI_API_KEY"], "zai-key")
+            # Chat (GLM) and ingest share the one OpenRouter platform key
+            # (Epo 2026-10-21).
+            self.assertEqual(queue["OPENROUTER_API_KEY"], "or-key")
             self.assertEqual(
-                json.loads(Path(temp, "coolify.json").read_text())["ZAI_API_KEY"],
-                "zai-key",
+                json.loads(Path(temp, "coolify.json").read_text())["OPENROUTER_API_KEY"],
+                "or-key",
             )
             self.assertNotIn(
                 "DATABASE_URL",

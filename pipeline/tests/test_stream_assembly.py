@@ -115,6 +115,27 @@ def test_chat_completions_marks_incomplete_and_ignores_reasoning_text():
     assert "secret" not in out.text
 
 
+def test_chat_completions_returns_openrouter_reasoning_for_the_next_request():
+    """OpenRouter streams GLM's reasoning as `reasoning`; the assistant message
+    carries it back under that name in a tool loop (decision 2026-10-21)."""
+    asm = ChatCompletionsAssembler("zai")
+    kinds = []
+    for delta in (
+        {"reasoning": "Need the ", "reasoning_details": [{"type": "reasoning.text"}]},
+        {"reasoning": "notes."},
+        {
+            "tool_calls": [
+                {"index": 0, "id": "c1", "function": {"name": "s", "arguments": "{}"}}
+            ]
+        },
+    ):
+        kinds += [e.kind for e in asm.push({"choices": [{"delta": delta}]})]
+    out = asm.finish()
+    assert out.provider_message["reasoning"] == "Need the notes."
+    assert "reasoning_content" not in out.provider_message
+    assert out.text == "" and kinds.count("reasoning") == 2
+
+
 @pytest.mark.asyncio
 async def test_anthropic_stream_preserves_tool_call_thinking_and_usage(
     monkeypatch: pytest.MonkeyPatch,

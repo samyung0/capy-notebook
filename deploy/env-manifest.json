@@ -596,7 +596,7 @@
     },
     "OPENROUTER_API_KEY": {
       "kind": "secret",
-      "targets": ["ingest-production", "ingest-queue", "local", "ops"]
+      "targets": ["coolify", "ingest-production", "ingest-queue", "local", "ops"]
     },
     "OPS_ACCESS_DISABLED": {
       "kind": "variable",
@@ -1060,10 +1060,6 @@
     "WORKER_REPLICAS": {
       "kind": "variable",
       "targets": ["ingest-production"]
-    },
-    "ZAI_API_KEY": {
-      "kind": "secret",
-      "targets": ["coolify", "ingest-queue", "ops"]
     }
   }
 }

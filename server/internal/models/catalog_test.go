@@ -77,10 +77,11 @@ func TestEliteLLMProvidersPlatformEnv(t *testing.T) {
 	if catalog.CredentialEnv("anthropic") != "ANTHROPIC_API_KEY" {
 		t.Fatal(catalog.CredentialEnv("anthropic"))
 	}
-	if !IsFirstPartyProvider("zai") {
-		t.Fatal("zai must be treated as a first-party provider")
+	// GLM-5.3-Flash is served through OpenRouter (decision 2026-10-21).
+	if IsFirstPartyProvider("zai") {
+		t.Fatal("zai is served through OpenRouter and holds no user key")
 	}
-	if catalog.CredentialEnv("zai") != "ZAI_API_KEY" {
+	if catalog.CredentialEnv("zai") != "OPENROUTER_API_KEY" {
 		t.Fatal(catalog.CredentialEnv("zai"))
 	}
 }
