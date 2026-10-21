@@ -195,7 +195,7 @@
       "requiredOperations": [
         "source.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "search_knowledge",
@@ -873,7 +873,7 @@
         "source.read",
         "material.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "edit_document",
@@ -1208,7 +1208,7 @@
       "requiredOperations": [
         "trash.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "restore_file",
@@ -1310,7 +1310,7 @@
       "requiredOperations": [
         "source.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "edit_office_document",
