@@ -380,7 +380,8 @@ function SignInCard() {
       <SecondFactorCard
         finish={finish}
         onBack={() => {
-          // Drops the waiting attempt so /sign-in opens on the form again.
+          // Clears the local attempt and shows the form; a reload may still
+          // find Clerk's attempt waiting and open the code step again.
           void signIn.reset();
           setStep('form');
         }}

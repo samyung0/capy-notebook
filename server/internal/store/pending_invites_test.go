@@ -176,7 +176,7 @@ func TestPendingInvitesListEveryTypedAddress(t *testing.T) {
 	assertListed()
 }
 
-// 0100 clears the pending invites stored before it: they hold the resolved
+// 0101 clears the pending invites stored before it: they hold the resolved
 // account email (empty for an account without one), not the typed address, and
 // two such empty addresses would break the new unique index.
 func TestInviteAddressMigrationClearsEarlierPendingInvites(t *testing.T) {
@@ -194,7 +194,7 @@ func TestInviteAddressMigrationClearsEarlierPendingInvites(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	// Rows as they were before 0100: two pending invites to accounts without
+	// Rows as they were before 0101: two pending invites to accounts without
 	// an email, and one accepted invite.
 	if _, err := tx.Exec(ctx, `DROP INDEX workspace_invites_pending_address_idx`); err != nil {
 		t.Fatal(err)
@@ -211,12 +211,12 @@ func TestInviteAddressMigrationClearsEarlierPendingInvites(t *testing.T) {
 			t.Fatalf("row %d: %v", i, err)
 		}
 	}
-	body, err := migrations.FS.ReadFile("0100_workspace_invite_addresses.sql")
+	body, err := migrations.FS.ReadFile("0101_workspace_invite_addresses.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, string(body)); err != nil {
-		t.Fatalf("0100 on earlier pending invites: %v", err)
+		t.Fatalf("0101 on earlier pending invites: %v", err)
 	}
 	var pending, accepted int
 	if err := tx.QueryRow(ctx, `SELECT
@@ -225,6 +225,6 @@ func TestInviteAddressMigrationClearsEarlierPendingInvites(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pending != 0 || accepted != 1 {
-		t.Fatalf("after 0100: %d pending, %d accepted; want 0 and 1", pending, accepted)
+		t.Fatalf("after 0101: %d pending, %d accepted; want 0 and 1", pending, accepted)
 	}
 }

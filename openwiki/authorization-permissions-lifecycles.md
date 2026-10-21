@@ -394,7 +394,7 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   in that workspace stay listed but go inert, since a vanishing row would tell
   the inviter both addresses are one account. Purging an invitee's account
   detaches its pending rows the same way: they stay listed, inert, until their
-  own expiry or Cancel. Migration 0100 cleared the pending invites stored
+  own expiry or Cancel. Migration 0101 cleared the pending invites stored
   before it, since they held the resolved account email rather than the typed
   address.
 - The emailed invite link's token is minted when the email is sent
@@ -1091,8 +1091,9 @@ forgot-password reset (which sends the user back to `/sign-in`), and on
 (`secondFactorUrl`). The step is one code field: the authenticator (TOTP) code,
 with a "Use a backup code" switch when backup codes exist; a phone or email
 code only when Clerk reports no authenticator for the user, sent as the step
-opens. "Back to Log In" resets the waiting attempt and returns to the form, so
-a lost device, another account or a stale attempt never strands the user. Everyone else signs in exactly as before. Enrolment is not built yet:
+opens. "Back to Log In" clears the local attempt (`signIn.reset()`) and shows the
+form, so the user can start over with another factor or account; it does not end
+the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Enrolment is not built yet:
 Clerk's prebuilt profile page is not mounted, so turning MFA on waits for a
 Capy settings UI.
 
