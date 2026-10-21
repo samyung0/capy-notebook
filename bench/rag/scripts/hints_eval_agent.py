@@ -18,7 +18,7 @@ adds four patches of its own for the turn:
   uv run python bench/rag/scripts/hints_eval_agent.py launch --out <dir> --dsn <dsn> --workers glm=4,deepseek=4
   uv run python bench/rag/scripts/hints_eval_agent.py score --out <dir>
 
-GLM-5.3-Flash goes to Z.AI on production's route (ZAI_API_KEY). DeepSeek
+GLM-5.3-Flash goes to OpenRouter on production's route (OPENROUTER_API_KEY). DeepSeek
 Flash goes to DeepInfra's deepseek-ai/DeepSeek-V4.1-Flash through the
 playground's transport override (DEEPINFRA_API_KEY), with production's
 deepseek request body. Keys are read from the repository-root .env.local into
@@ -457,8 +457,8 @@ async def run_one(job: dict[str, Any], playground, versions: dict[str, int], doc
 
 
 def run(args) -> None:
-    # DeepInfra embeds and reranks every search; Z.AI serves GLM.
-    keys = ("DEEPINFRA_API_KEY", "ZAI_API_KEY") if args.model == "glm" else ("DEEPINFRA_API_KEY",)
+    # DeepInfra embeds and reranks every search; OpenRouter serves GLM.
+    keys = ("DEEPINFRA_API_KEY", "OPENROUTER_API_KEY") if args.model == "glm" else ("DEEPINFRA_API_KEY",)
     prepare(args.dsn, args.env_file, keys)
     sys.path.insert(0, str(PLAYGROUND))
     import playground  # noqa: E402  (after the environment)

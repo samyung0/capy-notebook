@@ -1437,16 +1437,17 @@ three attempts, a transient error retries, and a definitive client error (400,
 401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
 Caption calls never inherit a user's chat reasoning level. The captioning
-default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on DeepInfra
-with fallbacks and reasoning off (decision 2026-10-19, after GLM-5.3-Flash on
-Relace stopped reading its input; the provider pin is described in
+default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on InferenceNet
+then Cloudflare with fallbacks outside them and reasoning off (decision
+2026-10-19, after GLM-5.3-Flash on Relace stopped reading its input; DeepInfra
+until 2026-10-21; the provider pin is described in
 [Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
 Its catalog and capacity rows
 are UAT data. The caption prompt rides as the system message and the image as
 the user turn (decided 2026-10-15, when Relace, GLM's host then, refused image
 input with no conversation context).
-On the `zai/glm-5.3-flash` row (served by Z.AI), which cannot turn thinking
-off, captioning sends `reasoning_effort: low`.
+On the `zai/glm-5.3-flash` row (served through OpenRouter), which cannot turn
+thinking off, captioning sends `reasoning: {effort: "low"}`.
 
 ### VLM page read
 
@@ -1482,9 +1483,9 @@ fallback); the per-job limit must be between 1 and the overall one. A scan's
 reads take far longer than its parse (a 500-page scan renders in about 13 s),
 so these gates, not the parser, bound scan-heavy ingest.
 
-On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`; a
-slot pointed at GLM uses `ZAI_API_KEY`, the one Z.AI key chat also uses
-(decision 2026-10-20, replacing the second Relace account ingest had). GLM's
+Reads use the ingest worker's `OPENROUTER_API_KEY`, also when the slot points
+at GLM, since GLM is served through OpenRouter too (decision 2026-10-21; Z.AI's
+own key from 2026-10-20, a second Relace account before that). GLM's
 quality against RapidOCR on Relace, the 1,280 px render size, per-page speed
 and cost are in
 [`bench/parsers/reports/2026-10-15-glm-ocr.md`](../bench/parsers/reports/2026-10-15-glm-ocr.md).
@@ -2623,12 +2624,13 @@ current pending changes applied. Embedded source instructions remain untrusted.
    editor authorization and storage quota checks still apply.
 8. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
    encrypted reasoning items inside the current tool loop. DeepSeek,
-   Anthropic, and ZAI GLM (served by Z.AI,
-   `api.z.ai/api/paas/v4/chat/completions`, model `glm-5.3-flash`,
-   `ZAI_API_KEY`, no fallback route) use Chat
-   Completions-compatible paths. The GLM
-   adapter preserves `reasoning_content` on the assistant message immediately
-   before the matching tool result in the next request. Raw chain-of-thought
+   Anthropic, and ZAI GLM (served through OpenRouter as `z-ai/glm-5.3-flash`
+   on DigitalOcean, then Z.AI, `OPENROUTER_API_KEY`, decision 2026-10-21) use
+   Chat Completions-compatible paths. The stream assembler keeps reasoning on
+   the assistant message immediately before the matching tool result in the
+   next request: DeepSeek's `reasoning_content`, and OpenRouter's `reasoning`
+   under that name, which OpenRouter passes back to GLM (decision 2026-10-21;
+   without it GLM on DigitalOcean built materials nobody asked for). Raw chain-of-thought
    is never streamed to the browser. The user's reasoning policy applies to
    every agent model response. Chat always requires an enabled reasoning level, including checkpoint and in-turn compaction calls; an Instant request is rejected before model admission. A provider failure before the first response
    byte is retried once on a new call id inside a three-second budget, waiting
@@ -2636,14 +2638,20 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `abandoned` (absorbed, no charge). A busy provider or a full per-model gate
    past that budget ends the turn with a retryable `provider_busy` error
    carrying `retryAfterSeconds`. Any later provider or SSE failure is not
-   retried and the client gets the same generic `agent_failed` error. A
-   browser that disconnects without Stop does not end the turn: Go relays on a
-   context detached from the browser request and finishes, saves and settles
-   the turn as usual (Epo 2026-10-21; it keeps the user's AI request slot until
-   then). Only Stop (below), lost authorization (Go's 5-second live check) or
-   the pipeline's own bounds end a turn early. If the Go hop itself goes away,
-   Python stops writing SSE but finishes the in-flight provider call, settles
-   usage when it arrives, and does not start another planning step.
+   retried and the client gets the same generic `agent_failed` error.
+   OpenRouter reports a provider failure inside a started stream as an `error`
+   chunk whose choice finishes with `error`; elitellm raises it as a provider
+   error, so a cut-off answer is never assembled as complete and an empty one
+   never reads as `invalid_answer`. A 200 stream that sends no data at all is a
+   provider error too (before any byte, so it takes the one pre-byte retry);
+   the user is charged for neither. A browser that disconnects without Stop
+   does not end the turn: Go relays on a context detached from the browser
+   request and finishes, saves and settles the turn as usual (Epo 2026-10-21;
+   it keeps the user's AI request slot until then). Only Stop (below), lost
+   authorization (Go's 5-second live check) or the pipeline's own bounds end a
+   turn early. If the Go hop itself goes away, Python stops writing SSE but
+   finishes the in-flight provider call, settles usage when it arrives, and
+   does not start another planning step.
 9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
    `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
@@ -3787,8 +3795,8 @@ offered after read_skill("office_building").` The two tools are offered only
 once the `office_building` skill is read (`ToolContext.office_tools`): its
 `read_skill` sets the flag, and after that response's tools ran the agent
 appends the two schemas to the turn's tool list, so the rest of the request
-keeps its provider-cached prefix (a tool list change misses Z.AI's whole
-cached prompt; accepted once per chat). They stay offered for the rest of the
+keeps its provider-cached prefix (a tool list change misses the provider's
+whole cached prompt; accepted once per chat). They stay offered for the rest of the
 conversation: `evidence.pack` marks the turn's `toolEvidence.officeTools`,
 and Go's `ConversationPrompt` sends `officeTools` with every later turn when
 any completed message of the conversation carries that mark, a turn a
@@ -4023,7 +4031,14 @@ its questions: the answer is the response's prose as `Md` followed by one
 `AskUser(question, choices)` per call that carries a question, at most three
 as the format allows (choices sent as JSON text are read as a list), so the
 panel below shows them as usual. A call with no question is refused as an
-unknown tool.
+unknown tool. Since GLM moved to OpenRouter (decision 2026-10-21) its requests
+list `AskUser` as a real tool (`agent.ASK_USER_SCHEMA`, appended after the
+registry's tools): DigitalOcean drops a call to a tool the request does not
+list, which left answers empty or ending on "a few questions:" with the
+questions gone. Other models get no such tool and keep writing `AskUser` in
+the answer. The credit guard's terminal call sends no tools, so AskUser is not
+listed there and a GLM call to it on DigitalOcean is still dropped; that needs
+exhausted credits and a question in the same turn.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,
@@ -4479,8 +4494,8 @@ The lines are source data, in a `<source>` block. Two paths use it:
   saved with the answer (`toolEvidence.pendingHints`, snippets only) and
   replayed after their user message word for word, under the one heading the
   live message uses (worded to stay true later), so earlier requests stay a
-  cached prefix; providers reuse any shared prefix (GLM on Z.AI measured
-  2026-10-20). After a checkpoint, an edit hinted before it may be hinted
+  cached prefix; providers reuse any shared prefix (GLM measured on Z.AI
+  2026-10-20 and on DigitalOcean 2026-10-21). After a checkpoint, an edit hinted before it may be hinted
   again. The turn's own hint message survives a turn-start checkpoint and a
   live fold of its older exchanges. Hints stay in context until the chat is
   condensed; condensing (a checkpoint, a live-history fold or a turn fold)
@@ -4592,7 +4607,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `ZAI_API_KEY`, `OPENROUTER_API_KEY` | The ingest queue env carries the same `ZAI_API_KEY` as chat and the `OPENROUTER_API_KEY` of the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
@@ -4604,7 +4619,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the ZAI GLM-5.3-Flash row (served by Z.AI) captions at `reasoning_effort: low`. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |

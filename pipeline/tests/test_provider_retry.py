@@ -424,7 +424,10 @@ async def test_captioning_on_openrouter_keeps_reasoning_off(
         assert caption == "text"
     [body] = bodies
     assert body["model"] == "deepseek/deepseek-v4.1-flash-1017"
-    assert body["provider"] == {"order": ["DeepInfra"], "allow_fallbacks": False}
+    assert body["provider"] == {
+        "order": ["InferenceNet", "Cloudflare"],
+        "allow_fallbacks": False,
+    }
     assert body["reasoning"] == {"enabled": False}
     if call == "vlm":
         assert body["max_tokens"] == models.VLM_PAGE_MAX_TOKENS == 2_000

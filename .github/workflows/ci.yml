@@ -395,9 +395,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          # The Go line server/Dockerfile and ops/Dockerfile build with.
-          go-version: "1.25"
-          check-latest: true
+          # go.mod's exact go version, the one server/Dockerfile and
+          # ops/Dockerfile build with.
+          go-version-file: server/go.mod
       # Fails on a called vulnerability (one whose trace reaches a function)
       # that the ignore list does not name, and on a listed one no longer
       # reported, so a fixed entry leaves the list with its fix.
