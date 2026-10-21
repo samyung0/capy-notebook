@@ -1571,8 +1571,10 @@ that membership check. Cloudflare Access signs the edge assertion, which the
 origin verifies against the team JWKS with issuer and audience checks. It
 protects both static files and `/api/ops`. The static shell then starts Clerk.
 Every Ops API request carries a Clerk bearer token, whose subject must match an
-`operators` row. Access and Clerk remain independent gates; their email
-addresses do not have to match.
+`operators` row and whose `azp`, when present, must be the Ops page's own origin
+(`OPS_ORIGIN`, Epo 2026-10-21), so a token minted for the main app is refused.
+Access and Clerk remain independent gates; their email addresses do not have to
+match.
 
 Each accepted API request calls `touch_operator_seen`. That write is
 best-effort. A failure is logged and sent to Sentry with the request `trace_id`
@@ -1770,7 +1772,7 @@ the likelihood grew every time the registry was reconfigured.
 | `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` | SPA | empty disables |
 | `LOG_FORMAT` | all | `json` \| `text` |
 | `LOG_LEVEL` | all | default `info` |
-| `CORS_ALLOWED_ORIGINS` | gateway | comma separated; never `*`: empty answers no cross-origin request, and outside development and e2e the gateway refuses to boot without it |
+| `CORS_ALLOWED_ORIGINS` | gateway | comma separated exact origins; never `*`: empty answers no cross-origin request, and outside development and e2e the gateway refuses to boot when it is empty or contains a `*` |
 | `COLLABORATION_ALLOWED_ORIGINS` | gateway, collaboration | the gateway accepts a Clerk session token only when its `azp` is one of these; with Clerk on outside development and e2e it refuses to boot when the list is empty |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
@@ -1785,5 +1787,6 @@ the likelihood grew every time the registry was reconfigured.
 | `OPS_ADMIN_DATABASE_URL` | ops | lazy `capy_ops_admin` pool; restricted registry writes and reconciliation requests |
 | `OPS_CF_ACCESS_ISSUER` / `_AUDIENCE` | ops | required Cloudflare Access verification values |
 | `OPS_CF_ACCESS_JWKS_URL` | ops | optional; defaults to `<issuer>/cdn-cgi/access/certs` |
+| `OPS_ORIGIN` | ops | the Ops page origin, the only `azp` accepted on a Clerk session token (one without `azp` passes); required with Clerk outside development; deployments set it from `DEPLOYMENT_OPS_URL` |
 | `OPS_ACCESS_DISABLED` / `OPS_AUTH_DISABLED` | ops | fail-closed defaults; bypass requires explicit unsafe development mode |
 | `OPS_UNSAFE_DEVELOPMENT` | ops | allows owner DSNs/auth bypasses only when `APP_ENV=development`; false by default |

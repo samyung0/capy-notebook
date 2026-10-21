@@ -2694,20 +2694,22 @@ quota, retries POST, then GET. Same-id replay returns the original row. A
 confirmed 404 is a normal tool failure. An uncertain GET fails the turn
 without appending a failed tool result. Its optional `sources` (also on
 `add_questions` creating a quiz and on `create_deck`) is the made-from line:
-plain strings, at most 20 of 1 to 200 characters (`fieldlimits.MaterialSources`
+plain strings, at most 20 of at most 200 characters (`fieldlimits.MaterialSources`
 and `MaterialSource`), sent as written. Go (`resolveSources` in
 `internal_materials.go`) stores each as a name in `scope_file_names`: the id or
 exact name of an untrashed file, a top-level material of any kind or a chapter
 of the same workspace becomes its current name, anything else (a lecture, a
 handout, a web address, an id from another workspace or of a trashed item)
-stays as written, trimmed, duplicates once (Epo 2026-10-21). No sources stores
-none; the chat scope is not filled in. Over the bounds (more than 20 distinct
-after trimming, or one of 0 or over 200 characters) is the only refusal
-(`invalid_input`, "sources: send at most 20 sources of 1 to 200 characters
-each."); nothing is refused for a source's kind or index state, and agent
-creates no longer return `invalid_scope` or `scope_has_no_indexed_content`.
-A deck's PPTX keeps the same names in `files.scope_file_names` (migration
-`0100`), not exposed by the API.
+stays as written, trimmed, duplicates once (Epo 2026-10-21). A blank source
+(empty after trimming) is dropped silently, so the tool schema sets no minimum
+length. No sources stores none; the chat scope is not filled in. Over the
+bounds (more than 20 distinct non-blank sources after trimming, or one over 200
+characters) is the only refusal (`invalid_input`, "sources: send at most 20
+sources of at most 200 characters each."); nothing is refused for a source's
+kind or index state, and agent creates no longer return `invalid_scope` or
+`scope_has_no_indexed_content`. A deck's PPTX keeps the same names in
+`files.scope_file_names` (migration `0100`), not exposed by the API; a file
+copy (single or workspace clone) keeps them as a material copy does.
 
 ### How a turn's work is saved
 

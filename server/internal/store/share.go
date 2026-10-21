@@ -587,6 +587,9 @@ type workspaceCloneFile struct {
 	thumbnailKey                *string
 	preview                     []byte
 	revision                    int64
+	// scopeFileNames is its made-from line, which a copy keeps as a material
+	// copy does (Epo 2026-10-21).
+	scopeFileNames []string
 	// The saved edit state (source_documents), when the file has one: its
 	// base blob is locked like the published one and its bytes are charged.
 	sourceBasePath *string
@@ -602,7 +605,7 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 		`SELECT f.id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.status,
 			i.served, f.parser, f.blob_path, f.source_etag,
 			f.content_hash, f.source_sha256, f.parse_mode, f.ever_parsed_successfully,
-			f.index_limit, f.provenance, f.thumbnail_key, f.preview, f.revision,
+			f.index_limit, f.provenance, f.thumbnail_key, f.preview, f.revision, f.scope_file_names,
 			d.base_blob_path, COALESCE(d.storage_bytes, 0)
 		 FROM files f LEFT JOIN source_documents d ON d.file_id=f.id
 		 CROSS JOIN LATERAL (SELECT f.indexed AND EXISTS (
@@ -625,7 +628,7 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 			&file.sizeBytes, &file.status, &file.indexed, &file.parser,
 			&file.blobPath, &file.sourceETag, &file.contentHash, &file.sourceSHA256,
 			&file.parseMode, &file.everParsed, &file.indexLimit, &file.provenance,
-			&file.thumbnailKey, &file.preview, &file.revision,
+			&file.thumbnailKey, &file.preview, &file.revision, &file.scopeFileNames,
 			&file.sourceBasePath, &file.sourceBytes,
 		); err != nil {
 			return nil, err
@@ -636,7 +639,7 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 }
 
 // insertCloneFileTx copies one snapshot file into workspaceID as newID: its
-// published bytes, published captions and saved edit state, which reopens at
+// published bytes, made-from names, published captions and saved edit state, which reopens at
 // epoch 1 on the same base (job, refresh and notice columns start empty; the
 // reprocess mark travels, so a copy of bytes an export-only publication left
 // unindexed is indexed like its source). Its thumbnail is copied under the new
@@ -653,10 +656,12 @@ func insertCloneFileTx(
 	// The cloner pays and is credited (uploader pays).
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
-		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision)
-		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision,
+		 scope_file_names)
+		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
 		newID, workspaceID, actorID, chapterID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
-		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision); err != nil {
+		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision,
+		f.scopeFileNames); err != nil {
 		return nil, err
 	}
 	// Saved edits travel (Epo 2026-10-11): the base state, the rows saved over

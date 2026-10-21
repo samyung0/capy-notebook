@@ -82,6 +82,10 @@ const signUp = {
 };
 
 export const useAuth = () => ({ isLoaded: true, isSignedIn: false });
+// Clerk's hosted account page has no mock; the link stays on this origin.
+export const useClerk = () => ({
+  buildUserProfileUrl: () => '/__mock/auth/user-profile',
+});
 export const useSignIn = () => ({ signIn });
 export const useSignUp = () => ({ signUp });
 

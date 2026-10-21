@@ -757,13 +757,15 @@ export const handlers = [
       confirmEmail?: string;
       lifecycleGeneration?: number;
     };
+    // An account with no email confirms with the word, as on the server.
+    const expected = db.user.email || 'delete';
     if (
       !body.confirmEmail ||
       body.lifecycleGeneration !== 0 ||
-      body.confirmEmail.toLowerCase() !== db.user.email.toLowerCase()
+      body.confirmEmail.toLowerCase() !== expected.toLowerCase()
     ) {
       return HttpResponse.json(
-        { message: 'confirmation does not match the account email' },
+        { message: 'confirmation does not match' },
         { status: 400 }
       );
     }

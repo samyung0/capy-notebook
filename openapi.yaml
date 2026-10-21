@@ -4468,6 +4468,7 @@ components:
           readOnly: true
           type: string
         confirmEmail:
+          description: The account email, or delete for an account with no email
           maxLength: 254
           minLength: 1
           type: string

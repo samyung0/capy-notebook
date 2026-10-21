@@ -472,7 +472,8 @@
     },
     "DEPLOYMENT_OPS_URL": {
       "kind": "variable",
-      "targets": ["workflow", "quality"]
+      "targets": ["workflow", "quality", "ops"],
+      "required_for": ["ops"]
     },
     "DEV_USER_ID": {
       "kind": "variable",
@@ -651,6 +652,10 @@
       "kind": "secret",
       "targets": ["ops"],
       "required_for": ["ops"]
+    },
+    "OPS_ORIGIN": {
+      "kind": "variable",
+      "targets": ["local"]
     },
     "OPS_UNSAFE_DEVELOPMENT": {
       "kind": "variable",

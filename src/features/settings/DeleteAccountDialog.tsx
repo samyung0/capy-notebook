@@ -22,10 +22,15 @@ import { m } from '@/i18n';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+/** What a user with no stored email types instead, in every locale; the
+ * server checks the same word (huma_account_lifecycle.go). */
+const CONFIRM_WORD = 'delete';
+
 type Props = { open: boolean; onClose: () => void };
 
-/** Email-confirmed account deletion. The preflight lists what goes with it
- * and blocks while a subscription is still live. */
+/** Account deletion confirmed by typing the account email (or CONFIRM_WORD
+ * without one). The preflight lists what goes with it and blocks while a
+ * subscription is still live. */
 export function DeleteAccountDialog(props: Props) {
   if (!CLERK_ACTIVE) return <DeleteAccountDialogInner {...props} />;
   return <ClerkDeleteAccountDialog {...props} />;
@@ -50,18 +55,22 @@ function DeleteAccountDialogInner({
   } = useDeletionPreflight();
   const { mutateAsync: requestDeletion } = useRequestAccountDeletion();
 
+  const email = meData?.email;
+  const expected = meData && (email || CONFIRM_WORD);
   const deletionSchema = useMemo(
     () =>
       RequestAccountDeletionBody.refine(
         (v) =>
-          !!meData?.email &&
-          v.confirmEmail.trim().toLowerCase() === meData.email.toLowerCase(),
+          !!expected &&
+          v.confirmEmail.trim().toLowerCase() === expected.toLowerCase(),
         {
-          message: m.settings_email_mismatch(),
+          message: email
+            ? m.settings_email_mismatch()
+            : m.settings_deletion_word_mismatch(),
           path: ['confirmEmail'],
         }
       ),
-    [meData?.email]
+    [email, expected]
   );
 
   const {
@@ -192,9 +201,7 @@ function DeleteAccountDialogInner({
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
             <span className="text-fg-secondary text-sm">
-              {m.settings_deletion_confirm_email({
-                email: meData?.email ?? '…',
-              })}
+              {m.settings_deletion_confirm({ text: expected ?? '…' })}
             </span>
             <Input
               {...field}
@@ -202,7 +209,7 @@ function DeleteAccountDialogInner({
               autoComplete="off"
               disabled={isSubmitting || !preflightData?.canDelete}
               maxLength={requestAccountDeletionBodyConfirmEmailMax}
-              placeholder={meData?.email}
+              placeholder={expected}
             />
             {fieldState.invalid && <InputError errors={[fieldState.error]} />}
           </label>

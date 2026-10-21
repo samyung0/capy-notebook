@@ -400,7 +400,7 @@ func sourcesSchema(lead string) map[string]any {
 	return map[string]any{
 		"type":     "array",
 		"maxItems": fieldlimits.MaterialSources,
-		"items":    map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialSource},
+		"items":    map[string]any{"type": "string", "maxLength": fieldlimits.MaterialSource},
 		"description": fmt.Sprintf("%smade-from line: each source it is made from, named in words or by id: "+
 			"workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or "+
 			"outside sources such as a lecture, a handout or a web address. At most %d, each at most %d "+

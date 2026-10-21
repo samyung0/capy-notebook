@@ -959,6 +959,10 @@ COLLABORATION_URL=wss://collab.capynotebook.com
 COLLABORATION_ALLOWED_ORIGINS=https://app.capynotebook.com
 ```
 
+Outside development and e2e the gateway refuses to boot when
+`CORS_ALLOWED_ORIGINS` is empty or contains a `*` anywhere (a bare `*` or a
+wildcard origin such as `https://*.example.com`): list exact origins.
+
 Ops uses one read/auth role and one shared admin-actions role. The admin pool
 opens lazily only after the application authorizes a registry Save or a
 reconciliation request:
@@ -3296,8 +3300,12 @@ so GitHub holds the run until someone with write access approves it on the
 run page.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
-file for the optional ops edge check. The UAT workflow and local review scripts
-use this name directly; there is no repository-level ops URL fallback.
+file. Deploy Ops requires it: the render passes it to the Ops container as
+`OPS_ORIGIN`, the only `azp` the Ops API accepts on a Clerk session token, and
+Ops refuses to start with Clerk on outside development without it. Write it as
+a bare origin (`https://ops.capynotebook.com`, no trailing slash). The UAT
+edge check and local review scripts use the same name; there is no
+repository-level ops URL fallback.
 
 ```bash
 pnpm env:check --file deploy/.env.uat

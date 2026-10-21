@@ -10,11 +10,36 @@ func validOpsConfig(env string) Config {
 	return Config{
 		AppEnv:                 env,
 		ClerkSecretKey:         "clerk",
+		Origin:                 "https://ops.example.test",
 		CloudflareAccessIssuer: "https://team.cloudflareaccess.com",
 		CloudflareAccessAUD:    "audience",
 		CloudflareAccessJWKS:   "https://team.cloudflareaccess.com/cdn-cgi/access/certs",
 		DatabaseURL:            "postgres://capy_ops@db/capy",
 		AdminDatabaseURL:       "postgres://capy_ops_admin@db/capy",
+	}
+}
+
+// Security regression (human authorization 2026-10-21): with Clerk on outside
+// development Ops refuses to start without its own origin, which its session
+// tokens' azp must match; development may run without (no azp check).
+func TestConfigRequiresTheOpsOriginWithClerk(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		env, origin string
+		ok          bool
+	}{
+		{"production", "https://ops.example.test", true},
+		{"production", "", false},
+		{"production", "https://ops.example.test/", false},
+		{"production", "ops.example.test", false},
+		{"development", "", true},
+		{"development", "http://localhost:8082", true},
+	} {
+		config := validOpsConfig(test.env)
+		config.Origin = test.origin
+		if err := config.Validate(); (err == nil) != test.ok {
+			t.Errorf("%s with OPS_ORIGIN %q: err = %v, want ok=%v", test.env, test.origin, err, test.ok)
+		}
 	}
 }
 
