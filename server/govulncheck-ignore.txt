@@ -1,21 +1,2 @@
 # govulncheck (CI job audit_go) fails on any called vulnerability not listed
 # here: one OSV id per line, then why it waits.
-#
-# The Go 1.25 line gets no more fixes, and these need Go 1.26.9+ or 1.27.x,
-# x/image v0.45 and x/text v0.41: the version wave the developer deferred
-# (todo-security P2, the gateway's Go and Alpine base, 2026-10-18).
-GO-2026-6222 x/image vp8l: VP8L decoding allocation (fixed in v0.45.0)
-GO-2026-6599 stdlib html/template
-GO-2026-6600 stdlib html/template
-GO-2026-6603 stdlib net/http (HTTP/2 server)
-GO-2026-6605 stdlib net/http (HTTP/1 client)
-GO-2026-6607 stdlib crypto/tls
-GO-2026-6608 stdlib net/textproto
-GO-2026-6609 stdlib net/http
-GO-2026-6610 stdlib net/http (HTTP/2 transport)
-GO-2026-6611 stdlib net/http (HTTP/2)
-GO-2026-6612 stdlib net/http (HTTP/2 server)
-GO-2026-6613 stdlib net/http (HTTP/1 server)
-GO-2026-6617 stdlib net/http (HTTP/2 server)
-GO-2026-6629 x/text secure/precis: panic on crafted input (fixed in v0.41.0)
-GO-2026-6809 stdlib crypto/x509: distrust of compromised emSign intermediates (fixed in 1.26.10)
