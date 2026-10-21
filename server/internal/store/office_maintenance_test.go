@@ -923,7 +923,7 @@ func TestDocxEngineRoundReset(t *testing.T) {
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, deck.ID), "deck-state")
 	// An AI edit of lesson.docx whose Undo is available, then its refresh.
 	agentEdit := sourceTestSave(sourceTestSeed(t, s, owner, edited), owner, "agent-state")
-	agentEdit.Operation = &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}
+	agentEdit.Operation = &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[{}]}`)}
 	if _, err := s.SaveSourceCheckpoint(ctx, edited, agentEdit); err != nil {
 		t.Fatal(err)
 	}

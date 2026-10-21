@@ -663,10 +663,7 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     }
     // Before the gateway is asked about a file it does not know.
     let source = "source:file_outdated:epoch:1";
-    for protocol in [
-        None,
-        Some(protocol_constant("MIN_SOURCE") - 1),
-    ] {
+    for protocol in [None, Some(protocol_constant("MIN_SOURCE") - 1)] {
         client
             .send(
                 0,
