@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { APIRequestContext, FrameLocator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { seed, users } from '../fixtures/seed';
+import { uploadSourceFile } from '../helpers/api';
 import { expectEditorLive } from '../helpers/editor';
 import { type OfficeFormat, officeEditMenu } from '../helpers/office';
 import { openWorkspaceMaterial } from '../helpers/workspace';
@@ -1092,34 +1093,21 @@ const OFFICE = {
 async function uploadOffice(api: APIRequestContext, format: OfficeFormat) {
   const { contentType, name } = OFFICE[format];
   const bytes = readFileSync(`e2e/fixtures/files/basic/${name}`);
-  const reserved = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads`,
+  const uploadName = `${randomUUID().slice(0, 8)}-${name}`;
+  const uploaded = await uploadSourceFile(
+    api,
+    workspaceId,
     {
-      data: {
-        batchId: `agent-writes-${randomUUID()}`,
-        batchTotal: 1,
-        contentType,
-        name: `${randomUUID().slice(0, 8)}-${name}`,
-        sizeBytes: bytes.length,
-      },
-    }
+      batchId: `agent-writes-${randomUUID()}`,
+      batchTotal: 1,
+      contentType,
+      name: uploadName,
+      sizeBytes: bytes.length,
+    },
+    bytes
   );
-  expect(reserved.status(), await reserved.text()).toBe(201);
-  const upload = (await reserved.json()) as {
-    headers?: Record<string, string>;
-    uploadId: string;
-    url: string;
-  };
-  const put = await api.put(upload.url, {
-    data: bytes,
-    headers: upload.headers,
-  });
-  expect(put.status(), await put.text()).toBe(200);
-  const completed = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads/${upload.uploadId}/complete`
-  );
-  expect(completed.status(), await completed.text()).toBe(201);
-  const { id } = (await completed.json()) as { id: string };
+  expect(uploaded.status(), await uploaded.text()).toBe(201);
+  const { id } = (await uploaded.json()) as { id: string };
   made.push(`/api/files/${id}`);
   return id;
 }

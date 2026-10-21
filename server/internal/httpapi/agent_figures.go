@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -153,7 +154,7 @@ func (a *api) putAgentFigures(ctx context.Context, f *agentFigures, imageMaxByte
 			ID: meta.ID, Name: meta.Name, ObjectPath: editorAssetObjectKey(meta.ID, ".jpg"),
 			ContentType: meta.ContentType, SizeBytes: meta.SizeBytes,
 		}
-		if err := a.blob.PutObjectOnce(ctx, asset.ObjectPath, image, asset.ContentType, ""); err != nil {
+		if _, err := a.blob.PutObjectOnce(ctx, asset.ObjectPath, bytes.NewReader(image), asset.ContentType, ""); err != nil {
 			a.deleteAgentAssets(ctx, assets)
 			return nil, err
 		}

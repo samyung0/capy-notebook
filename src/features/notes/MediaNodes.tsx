@@ -361,6 +361,9 @@ function ImageToolbar({
   const element = node as unknown as MediaAssetNode;
   const { materialId, allowExternalAssets } = useEditorRuntime();
   const [replacing, setReplacing] = useState(false);
+  // Deleting the block cancels a replacement still waiting in the line.
+  const replaceAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => replaceAbort.current?.abort(), []);
 
   const replace = async (file: File) => {
     if (!acceptsPurpose(file, 'image')) {
@@ -371,8 +374,13 @@ function ImageToolbar({
       return;
     }
     setReplacing(true);
+    replaceAbort.current?.abort();
+    const controller = new AbortController();
+    replaceAbort.current = controller;
     try {
-      const asset = await uploadEditorAsset(materialId, file, 'image');
+      const asset = await uploadEditorAsset(materialId, file, 'image', {
+        signal: controller.signal,
+      });
       const { assetId, contentType, name, sizeBytes } =
         mediaNodeFromAsset(asset);
       // Keep the node id, width and caption; only the picture changes. The
@@ -381,7 +389,7 @@ function ImageToolbar({
       if (at)
         editor.tf.setNodes({ assetId, contentType, name, sizeBytes }, { at });
     } catch (cause) {
-      if (deferStorageRefusal(cause)) return;
+      if (controller.signal.aborted || deferStorageRefusal(cause)) return;
       userToast({
         description: isStorageQuotaError(cause)
           ? m.editor_storage_quota()

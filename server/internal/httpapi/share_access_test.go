@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
@@ -482,7 +481,8 @@ func TestShareHTTPReadersRecordReviewRatings(t *testing.T) {
 }
 
 // Editor assets upload through the material: a link viewer of a standalone
-// quiz cannot reserve bytes on its owner's quota.
+// quiz cannot take an upload ticket, let alone reserve bytes on its owner's
+// quota.
 func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
 	h := openShareHTTP(t)
 	body := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": 10, "contentType": "image/png"}
@@ -490,17 +490,16 @@ func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
 		user   string
 		status int
 	}{{"", 401}, {"u_other", 403}} {
-		rec := doReq(t, h, http.MethodPost, "/api/materials/qz_e2e_link/editor-assets/uploads", tc.user, body)
+		rec := doReq(t, h, http.MethodPost, "/api/materials/qz_e2e_link/editor-assets/uploads/tickets", tc.user, body)
 		if rec.Code != tc.status {
 			t.Fatalf("%q upload → %d body=%s, want %d", tc.user, rec.Code, rec.Body.String(), tc.status)
 		}
 	}
 }
 
-// An editor who does not pay for a note completes the image it reserved
-// there, and the note's payer is charged (Sam 2026-10-18/19); the payer
-// cannot complete the editor's reservation.
-func TestEditorCompletesItsImageInAnotherPayersNote(t *testing.T) {
+// An editor who does not pay for a note uploads an image into it, and the
+// note's payer is charged (Sam 2026-10-18/19).
+func TestEditorUploadsAnImageIntoAnotherPayersNote(t *testing.T) {
 	h, st, mem := openInternalHTTPWithBlob(t)
 	ctx := context.Background()
 	note, err := st.CreateMaterial(ctx, store.Material{CreatedBy: "u_owner", WorkspaceID: "ws_e2e_private",
@@ -520,27 +519,22 @@ func TestEditorCompletesItsImageInAnotherPayersNote(t *testing.T) {
 	ownerBefore, editorBefore := usage("u_owner"), usage("u_editor")
 
 	image := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
-	base := "/api/materials/" + note.ID + "/editor-assets/uploads"
-	rec := doReq(t, h, http.MethodPost, base, "u_editor", map[string]any{
+	rec := postUpload(t, h, "/api/materials/"+note.ID+"/editor-assets/uploads", "u_editor", map[string]any{
 		"name": "figure.png", "purpose": "image", "sizeBytes": len(image), "contentType": "image/png",
-	})
+	}, "image/png", image)
 	if rec.Code != http.StatusCreated {
-		t.Fatalf("reserve = %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("editor uploading into the note = %d %s, want 201", rec.Code, rec.Body.String())
 	}
-	var reserved struct{ UploadID, URL string }
-	if err := json.Unmarshal(rec.Body.Bytes(), &reserved); err != nil {
+	var asset struct{ AssetID string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &asset); err != nil {
 		t.Fatal(err)
 	}
-	if err := mem.PutObjectOnce(ctx, strings.TrimPrefix(reserved.URL, "memory-put://"), image, "image/png", ""); err != nil {
+	stored, err := st.GetEditorAsset(ctx, asset.AssetID)
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	complete := base + "/" + reserved.UploadID + "/complete"
-	if rec := doReq(t, h, http.MethodPost, complete, "u_owner", nil); rec.Code != http.StatusNotFound {
-		t.Fatalf("payer completing the editor's reservation = %d %s, want 404", rec.Code, rec.Body.String())
-	}
-	if rec := doReq(t, h, http.MethodPost, complete, "u_editor", nil); rec.Code != http.StatusCreated {
-		t.Fatalf("editor completing its reservation = %d %s, want 201", rec.Code, rec.Body.String())
+	if got, _, ok := mem.Object(stored.ObjectPath); !ok || !bytes.Equal(got, image) {
+		t.Fatalf("stored object at %q holds %d bytes", stored.ObjectPath, len(got))
 	}
 	if owner, editor := usage("u_owner")-ownerBefore, usage("u_editor")-editorBefore; owner != int64(len(image)) || editor != 0 {
 		t.Fatalf("charged owner %d editor %d, want the image's %d bytes on the owner", owner, editor, len(image))

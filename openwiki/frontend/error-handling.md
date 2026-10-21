@@ -21,11 +21,26 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+### Gateway upload codes
+
+The gateway's upload line answers two typed 4xx codes the browser gives their
+own copy, as both title and description, so the transfer row (its title) and
+the note placeholder (`errorCopy`) show it inline:
+
+- `upload_timeout` (408): the upload's body took past 5 minutes. Its kind is
+  overridden to `network` (a coded 4xx otherwise reads as `unknown`, which
+  `errorCopy` replaces with its fallback). A connection dropped before the
+  answer is an ordinary network error.
+- `upload_ticket_gone` (410): the upload's turn passed, or a restart or a
+  deploy forgot its ticket ("Your turn to upload passed. Try again."). Its
+  kind is overridden to `validation`.
+
 ### Error ids where the error stays
 
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
 without one of the typed codes `provider_busy`, `ai_unavailable`,
-`generate_empty`, `bank_unavailable`, or an unknown status without a code)
+`generate_empty`, `bank_unavailable`, `upload_queue_full` (the gateway's
+upload line is full: busy, try again), or an unknown status without a code)
 shows its request's trace id as a small (`text-xs`) "Error ID: …" line under
 the Retry action, spaced well apart from it (`ErrorId`). It has no copy button:
 one click selects the whole line (`select-all`) so a user can copy and quote it,
@@ -167,7 +182,7 @@ conflict. Zod's own messages follow the UI locale (`z.config` in
 copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
-and `too_many_streams`. An upload reservation answered 429 waits out
+and `too_many_streams`. An upload answered 429 waits out
 `retryAfterSeconds` (at most 30 s) and gets 3 attempts in all, as does an
 import request after a network error, 408, 429 or 5xx
 (`src/features/workspace/sourceUpload.ts`, `sourceImport.ts`). The add-source

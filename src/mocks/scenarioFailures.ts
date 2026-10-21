@@ -258,6 +258,14 @@ export const failureScenarios = [
     status: 403,
   },
   {
+    code: 'upload_queue_full',
+    id: 'upload-queue-full',
+    label: 'Upload line full 503',
+    method: 'post',
+    paths: ['/api/workspaces/:id/sources/uploads/tickets'],
+    status: 503,
+  },
+  {
     code: 'too_many_ingest_leases',
     id: 'ingest-slots',
     label: 'Ingest slots exhausted 429',

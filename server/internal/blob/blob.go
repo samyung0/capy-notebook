@@ -46,26 +46,23 @@ type Store interface {
 	// and number of bytes written.
 	Put(id string, r io.Reader) (path string, size int64, err error)
 	// PutObjectOnce writes key with the given Content-Type and Cache-Control
-	// in one attempt, without the SDK's retries, for objects the browser
-	// reads straight from the bucket and whose writer never retries
-	// (thumbnail captures).
-	PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error
+	// in one attempt, without the SDK's retries, for writers that never retry
+	// (thumbnail captures, uploads streamed through the gateway), and returns
+	// the stored object's ETag.
+	PutObjectOnce(ctx context.Context, key string, body io.ReadSeeker, contentType, cacheControl string) (etag string, err error)
 	PresignGet(ctx context.Context, path string) (url string, err error)
 	PresignGetWithExpiry(ctx context.Context, path string) (PresignedGet, error)
 	// PresignStableGet signs a GET that is identical for every call within one
 	// UTC hour and lasts StableLinkTTL from that hour, for list thumbnails the
 	// browser should cache. It signs without checking that the object exists.
 	PresignStableGet(ctx context.Context, path string) (string, error)
-	// PresignPut signs an upload of path. A positive size is signed as its
-	// Content-Length, so the bucket refuses a body of any other size.
-	PresignPut(ctx context.Context, path, contentType string, size int64) (PresignedPut, error)
+	// PresignPut signs an upload of path for a service that writes it (the
+	// collaboration service's source refresh candidates).
+	PresignPut(ctx context.Context, path, contentType string) (PresignedPut, error)
 	Head(ctx context.Context, path string) (ObjectInfo, error)
-	// ReadPrefix returns at most maxBytes from the beginning of an object.
-	// It is intended for bounded post-upload signature inspection.
-	ReadPrefix(ctx context.Context, path string, maxBytes int64) ([]byte, error)
 	// Open streams an object's bytes; the caller closes the reader. Used to
-	// hash a completed source upload once (B2's documented PutObject takes
-	// no checksum header the bucket would verify).
+	// hash a completed drive import once (B2's documented PutObject takes no
+	// checksum header the bucket would verify).
 	Open(ctx context.Context, path string) (io.ReadCloser, error)
 	Promote(ctx context.Context, from, to string) error
 	// Copy duplicates an object inside the bucket; no bytes pass through the

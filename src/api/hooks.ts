@@ -149,6 +149,7 @@ import type {
   WorkspaceRecent,
   WorkspaceStats,
 } from './types';
+import { uploadWithTicket } from './uploadTurn';
 
 export interface QueryUiOptions {
   errorBoundary?: false | 'unlessMissing';
@@ -1578,8 +1579,8 @@ async function simulateMswUploadProgress(
   }
 }
 
-/** Reserve a B2 object, upload it directly, then ask the gateway to verify and
- * enqueue it. File bytes never traverse the Go gateway. */
+/** Stream the file through the gateway, which stores it, records its SHA-256
+ * and queues its processing in the same request (Epo 2026-10-22). */
 export function useUploadSource(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1594,6 +1595,7 @@ export function useUploadSource(wsId: string) {
       pageCount,
       batchId,
       batchTotal,
+      onQueued,
       onUploadProgress,
       signal,
     }: {
@@ -1616,43 +1618,40 @@ export function useUploadSource(wsId: string) {
       /** The analysed page count of a fast-parse document; the gateway
        * refuses one past the policy's maxPages. */
       pageCount?: number;
+      /** The upload's place in the gateway's line while it waits, 0 once
+       * its turn comes (uploadWithTicket). */
+      onQueued?: (position: number) => void;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
     }) => {
-      if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
-      return api
-        .post<{
-          uploadId: string;
-          url: string;
-          method: 'PUT';
-          headers: Record<string, string>;
-          expiresAt: string;
-        }>(`/workspaces/${wsId}/sources/uploads`, {
-          batchId,
-          batchTotal,
-          chapterId: chapterId ?? null,
-          chapterName: chapterName ?? null,
-          contentType: file.type || 'application/octet-stream',
-          estimatedCreditMicros: estimatedCreditMicros || undefined,
-          kind,
-          name: file.name,
-          pageCount: pageCount || undefined,
-          parseMode,
-          sizeBytes: file.size,
-        })
-        .then(async (reservation) => {
-          await api.putFile(
-            reservation.url,
-            file,
-            reservation.headers,
-            onUploadProgress,
-            signal
-          );
-          onUploadProgress?.(100);
-          return api.post<SourceFile>(
-            `/workspaces/${wsId}/sources/uploads/${reservation.uploadId}/complete`
-          );
-        });
+      const metadata = {
+        batchId,
+        batchTotal,
+        chapterId: chapterId ?? null,
+        chapterName: chapterName ?? null,
+        contentType: file.type || 'application/octet-stream',
+        estimatedCreditMicros: estimatedCreditMicros || undefined,
+        kind,
+        name: file.name,
+        pageCount: pageCount || undefined,
+        parseMode,
+        sizeBytes: file.size,
+      };
+      return uploadWithTicket(
+        `/workspaces/${wsId}/sources/uploads`,
+        metadata,
+        async (path) => {
+          if (USE_MSW)
+            await simulateMswUploadProgress(onUploadProgress, signal);
+          // The metadata part comes first: the gateway reserves storage from
+          // it before it reads the file part.
+          const form = new FormData();
+          form.append('metadata', JSON.stringify(metadata));
+          form.append('file', file);
+          return api.upload<SourceFile>(path, form, onUploadProgress, signal);
+        },
+        { onQueued, signal }
+      );
     },
     onSuccess: (file, vars) => {
       track('source_uploaded', {

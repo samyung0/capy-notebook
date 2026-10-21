@@ -1707,9 +1707,9 @@ rows; on 2026-09-24 it rewrote 3,239 library chunks and 2,270 pilot chunks.
 
 Before parsing, the worker hashes the uploaded bytes (`files.source_sha256`) by
 streaming the object and digesting it. The object's stored
-`x-amz-checksum-sha256` is deliberately not trusted, however convenient: the
-browser PUTs through a presigned URL that signs only host and content-type, so
-that header is uploader-controlled, and a hash the uploader chooses would let
+`x-amz-checksum-sha256` is deliberately not trusted, however convenient: a
+checksum header is whatever its writer sent, and a hash the uploader chooses
+would let
 anyone claim the hash of a document they do not have and be handed its chunks
 and summary. One GET per ingest is the price. It then looks for a
 **ready** `rag_contents` row with the same

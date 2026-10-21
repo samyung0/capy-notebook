@@ -6,10 +6,9 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
-	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-func TestPromoteUploadObjectAcceptsConcurrentMatchingPromotion(t *testing.T) {
+func TestPromoteMatchingObjectAcceptsConcurrentMatchingPromotion(t *testing.T) {
 	objects := blob.NewMemory()
 	if _, _, err := objects.Put("incoming", strings.NewReader("data")); err != nil {
 		t.Fatal(err)
@@ -19,12 +18,6 @@ func TestPromoteUploadObjectAcceptsConcurrentMatchingPromotion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	session := store.UploadSession{
-		ObjectPath:   "incoming",
-		FinalPath:    "stable",
-		DeclaredSize: 4,
-		ContentType:  "application/octet-stream",
-	}
 	type result struct {
 		info blob.ObjectInfo
 		err  error
@@ -32,8 +25,9 @@ func TestPromoteUploadObjectAcceptsConcurrentMatchingPromotion(t *testing.T) {
 	results := make(chan result, 2)
 	for range 2 {
 		go func() {
-			info, err := promoteUploadObject(
-				context.Background(), objects, session, incoming,
+			info, err := promoteMatchingObject(
+				context.Background(), objects, "incoming", "stable",
+				4, "application/octet-stream", incoming,
 			)
 			results <- result{info: info, err: err}
 		}()
