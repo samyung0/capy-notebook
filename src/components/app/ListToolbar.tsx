@@ -118,7 +118,7 @@ export function ListToolbar<V extends string>({
   );
 }
 
-function SortMenu<V extends string>({
+export function SortMenu<V extends string>({
   sorts,
   sort,
   ascending,

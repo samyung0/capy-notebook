@@ -395,6 +395,10 @@ The parent owns the room provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
+Cursors cross the same way: the editor's own goes to the room's awareness and
+the co-editors' come back under the names the room's presence gives them
+([plate-editor](plate-editor.md#office-cursors)). Input in the frame reaches
+Capy's idle close as an `activity` message ([plate-editor](plate-editor.md#idle-close)).
 
 The parent's Y.Doc runs no formatting cleanup, matching yrs in the DOCX and
 PPTX editors (`docx-edit`, `pptx-edit`) and the room. Stock Yjs, after every remote update to a text with formatting,
@@ -931,16 +935,22 @@ resolve revisions in nested fields and controls and remove resolved move
 wrappers and range markers. Deleting a break in a field result removes it from
 the saved field too.
 
-DOCX, XLSX and PPTX files have a two-row header in both modes, inside the
-usual 56px (`CenterContentHeader` picks it by extension, `officeFormatOf`):
-a 4px gap under the panel's top edge, two 24px rows 2px apart, then the
-divider. The top row holds back, the sidebar toggle, the workspace picker (a
-24px pill with 6px padding, slimmer than elsewhere) and the file name; the row
-under it holds Google-style menus from the left edge (File, Edit, View,
-Insert, Format…, 24px triggers) with the save status as icon and word after
-them. The mode toggle, header actions (PPTX Present) and ⋮ sit right, centred
-on both rows, or on the top row below sm at the row's 24px, where the menus
-take the full width and scroll sideways with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
+DOCX, XLSX and PPTX files have a two-row header in both modes once the file
+is visible, inside the usual 56px (`CenterContentHeader` picks it by
+extension, `officeFormatOf`): a 4px gap under the panel's top edge, two 24px
+rows 2px apart, then the divider. Until the runtime's first menus arrive (the
+file is visible) the header is one row (`data-rows`, `FileMenuShown`, Epo
+2026-10-20), and it keeps both rows through the frame reload of a mode
+switch. The top row holds back, the sidebar toggle, the workspace picker (a
+24px pill with 6px padding, slimmer than elsewhere), the file name and its
+save status beside it at every width, phones included (the icon, its label
+in the tooltip; a slowed open's line holds that tooltip open, Epo
+2026-10-20); the row under it holds Google-style menus from the left edge
+(File, Edit, View, Insert, Format…, 24px triggers). The avatar group (see
+[plate-editor](plate-editor.md#room-presence)), the mode toggle, header actions
+(PPTX Present) and ⋮ sit right, centred on both rows, or on the top row below
+sm at the row's 24px, where the menus take the full width and scroll sideways
+with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
 File › Save and leaving Edit save. Rename, Move, Properties and Delete stay in
 ⋮. The Office views render `OfficeHeader` (`OfficeMenuBar.tsx`), which portals
 the runtime's menus and actions into the header and draws the menus as a Radix
@@ -1153,8 +1163,12 @@ clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too),
 over body paragraphs only (not tables, headers, footers or notes). The fork's
 Page setup and Watermark commands are left out of the menus (Epo 2026-10-13):
 they change only the open editor's document model, outside the Yjs state Capy
-saves, so neither would reach the saved file or co-editors; the ruler's margin
-drags still change the open copy only (DOCX parity checklist).
+saves, so neither would reach the saved file or co-editors. For the same
+reason the rulers' margins do not drag and a header or footer's Options menu
+offers no Remove (Epo 2026-10-20): the host passes the fork's
+`finalSectionEditable={false}`, and each margin zone and marker carries
+`data-draggable`. Shared final-section settings, which would let all of these
+save, come after the security todo.
 
 Format › Table ▸ (Google Docs' place) has Vertical alignment ▸
 Top/Middle/Bottom and Table alignment ▸ Left/Center/Right (radio items ticked
@@ -1307,14 +1321,52 @@ the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
 cell). Clear and cut act on the selection's part inside the used range
 (inputs committed but not drawn yet count) and resolve in the engine
 (`clearContents`) to edits for only the cells that hold a value or a formula,
-so their cost is bounded by the cells that hold content; a clear whose update
-could exceed the room's per-message limit (2 MiB, counted at 128 bytes per
-cleared cell) is refused with a notice and changes nothing, and a cut clears
-only after its copy reached the clipboard. Copy keeps the selection's own
-top-left corner, leading blanks included as in Excel, and trims only past the
-used range's last row and column; a copy over the engine's 100,000-cell read
-is refused with a notice, and a selection wholly past the used range sends
-nothing. A cell the keyboard reaches past the used range grows the scroll area
+so their cost is bounded by the cells that hold content. Any edit (a clear,
+cut or paste) whose update could pass the engine's 64 MiB cap
+(`MAX_COLLABORATION_BYTES`, one action's most: about 500,000 filled cells,
+counted at 160 bytes per value cell plus its input and 512 per formula plus 128
+per input byte) changes nothing and shows the `edit-too-large` notice. The
+check covers batches of cell inputs only; Undo, Redo, row and column deletes
+and resyncs are left to the server's limits, and the formula bound may
+overestimate (a paste of more than about 37,000-50,000 simple formulas is
+refused). While the tab holds back its collaboration messages (pacing, an
+update's pieces, a timeout), `XlsxEditorHost` passes `sending` to the editor:
+the grid and formula bar show a loading cursor (`aria-busy` on the grid) and
+every edit is refused as in read-only; an open cell edit or formula-bar draft
+stays open, read-only, on its cell (a press elsewhere, a sheet switch, the name
+box and the host's `selectCells` and `clearSelection` are refused while it is
+open), while an armed paint brush, a chart drag or an arrow burst is dropped;
+selection, scrolling and copy still work. A gesture that resumes after a wait
+(a cut's read, a row/column op or host clear waiting on a commit, an unmerge's
+merged-range read) does not edit if the pause began meanwhile: the cut ends as
+a copy.
+Copy keeps the selection's own top-left corner, leading blanks included as in
+Excel, and trims only past the used range's last row and column; it reads that
+area in pieces of at most 100,000 cells (the engine's read cap) without
+skipping empty cells, up to the fork's `XLSX_COPY_MAX_CELLS` ceiling (5,000,000 cells), past
+which it shows the `copy-too-large` notice, and stops with the same notice
+once its text passes 64 MiB (`XLSX_COPY_MAX_BYTES`, UTF-8 counted as the
+pieces arrive); a selection wholly past the used range sends nothing. The
+clipboard write starts in the key press, as a `ClipboardItem` whose text is
+a promise filled once the pieces are read (`writeText` after the read where
+the browser has no `ClipboardItem`), so a long read keeps the browser's
+permission; a write the browser still refuses shows the `copy-failed`
+notice. Only headless Chromium is measured; Firefox and Safari wait for a
+measurement. A cut shows the same loading cursor and refuses edits
+while it reads, then clears the range it copied; past either ceiling, or when
+the write fails, it clears nothing. Before reading, a cut asks the engine
+(`checkClearContents`, from the count of the clear's filled cells) whether
+its clear fits the 64 MiB update cap: over it nothing is read, copied or
+cleared and the `edit-too-large` notice shows. Once its read finishes a cut
+always clears its range, even when another person changed a cell inside it
+during the read (that change is lost; the read takes up to about 8 s at the
+5,000,000-cell ceiling). A copy reads, and a cut checks and clears, on its
+own sheet by id (the proxy's `inSheet`), so a sheet switch during the read
+changes nothing; a sheet removed meanwhile clears nothing, without a notice.
+A copy accepts the rare row a concurrent row insert or delete duplicates or
+skips. The latest copy or cut
+owns the clipboard: one still reading when a newer copy or cut starts stops
+reading and writes nothing, and such a cut clears nothing. A cell the keyboard reaches past the used range grows the scroll area
 to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
 Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
 200% page zoom), so cells past it are selected but not scrolled to, as in
@@ -1325,7 +1377,37 @@ cell) and Enter selects and reveals that cell, opening the other sheet when it
 names one; text that names no cell stays in the box and Escape restores the
 address. Capy's own View (`XlsxViewer`) reads the address with the fork's
 parser (`parseHyperlinkLocation` from `@betteroffice/xlsx/viewer`), switches
-the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`). An open cell edit keeps its input mounted and
+the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`).
+The pressed cell is the active cell, as in Excel and Sheets: a drag, Shift+click
+or Shift+arrows move only the selection's far end, the next bare move steps
+from the active cell, a press inside a merged block selects its top-left cell,
+Select all keeps the active cell where it was, or moves it to A1 when it lies
+outside the used range it selects, so the selection always holds it, and
+Shift+click extends from the active cell, after Select all too (the fork's
+`Selection` anchor, or its `active` cell after select all). A typed formula that leaves
+parentheses open is closed by the engine when that makes it parse
+(`=SUM(B2:B5` stores `=SUM(B2:B5)`, `=TODAY(` stores `=TODAY()`, `=SUM(B3,`
+stores `=SUM(B3,)`; `=SUM(` is not); in the cell editor and the formula bar a formula that still fails to
+parse, or text over 32,767 characters, is refused with a translated line under
+the formula bar while the draft stays open on its cell (its arrows then move the
+caret, as Excel's Edit mode). Such an edit closes only once the browser's engine
+took it: keys typed meanwhile are dropped, a press elsewhere (from the cell
+editor or the formula bar), a sheet switch, a name box Enter or a row/column op
+waits for it and does nothing after a refusal, and the grid takes the focus back only if it
+stayed in the edit; a refusal that lands after the focus left the edit leaves
+the focus there. A formula-bar draft commits to the cell it started on,
+whatever moved the selection since (the menu's Select all, a press while
+sending), and while it is open a key that reaches the grid gives the focus back
+to the formula bar and does nothing else. Paste and agent writes store such a formula as text. Point mode (v1): while a formula waits for an operand, a click or
+drag writes the cell or range reference (pointing again replaces it, typing
+ends it), arrows point from the edited cell in an edit opened by typing (Shift
+extends, F2 or a click in the edit switches to caret movement) and commit and move where no
+reference fits, merged cells are named by their top-left cell and a range
+cutting a merge grows over it, the pointed range has a dashed outline, and the
+formula bar points by mouse too. The cell editor and the text awaiting its
+frame use the active cell's own font, size, bold, italic and colour as the
+grid paints them, whatever fonts the rest of the selection uses (Calibri 11 pt
+black until the frame describes the cell), over a white fill. An open cell edit keeps its input mounted and
 focused while its cell scrolls away, so the next key that types, composition
 included, is typed into the edit and scrolls the cell back whole, as in Excel
 and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
@@ -1342,7 +1424,9 @@ file error and no failed Save, since nobody asked to save. A formula-bar draft
 stays open over an app or tab switch too. A draft whose sheet a peer removes,
 or whose sheet stops being the active one in a peer's update, is dropped, not
 committed; otherwise a draft commits to its own sheet even when a peer's update
-shifted that sheet's index. Once a draft is dropped neither the grid nor the
+shifted that sheet's index, and so does every sheet call the worker runs for
+the editor (clear and its pre-check included): it takes the active sheet's
+current index, not the one the editor last drew. Once a draft is dropped neither the grid nor the
 formula bar keeps the focus, so the keys still being typed do nothing until a
 click. Clicking a sheet
 tab gives the grid the keys. A cell wider
@@ -1417,7 +1501,19 @@ source, so a runtime that boots before the source loads gets
 `set-capabilities` first: the runtime keeps the last `canEdit` it was sent and
 applies it on `load`. A runtime that reloads during a handoff, a replacement,
 recovery, a discard or while connecting therefore opens paused (read-only and
-selectable) whichever message comes first. Pages stay white in
+selectable) whichever message comes first. While the tab holds back its
+collaboration messages (frames waiting for the update allowance, an
+update's pieces over 2 MiB waiting for the room's acknowledgement, or the
+user in a timeout; see
+[plate-editor](plate-editor.md#connection-lifetime-and-refusals)) a DOCX or
+PPTX editor is paused the same way (`canEdit: false`, Epo 2026-10-18). In
+edit mode the host also sends that state as `sending` (`pending`), whenever
+it changes and after every boot: the runtime keeps it in state and passes it
+to `XlsxEditorHost`, which hands it to the fork's `XlsxEditor` (its `sending`
+prop, from the XLSX pieces round): the XLSX editor marks its grid busy
+(`aria-busy`) and refuses edits instead of pausing (`held-back.spec.ts`). It
+shipped with the rate-limit landing's Office protocol 12; a runtime without
+it drops a message it does not know, and the host and runtime ship together. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
@@ -2189,7 +2285,15 @@ controls Saved. A failed DOCX input queue stays pending until the session ends.
 
 Each incoming source update is checked without copying the room: contributor
 markers against the decoded update, and size against an estimate kept from the
-room's applied update bytes. The writer's access is revalidated at most every
+room's applied update bytes, less the payload bytes each update's deletes free
+(Epo 2026-10-19, `ydoc::apply_freeing`): counted after the apply and before
+the commit over the transaction's own delete set, so the cost follows the
+deleted structs; a string's bytes, a binary's length and a value's strings and
+buffers, never the item headers or the deleted markers, and only items that
+existed before the update, that the commit collected, and (Office) newer than
+the seed, whose content a delete only marks in the stored change. Overwrites,
+deletes and replaced pictures no longer drift the estimate toward refusals,
+and it stays an upper bound of the state. The writer's access is revalidated at most every
 5 s per connection. Membership, role and share changes, and a user's own
 account change, close that user's connections through the collaboration
 eviction outbox; anything else (such as the owner's account state for a
@@ -2230,8 +2334,15 @@ Pro upload between about 28.94 and 30 MiB opens view-only from the start. An
 image picked once the replica exists waits for its first measure; one picked
 before is refused with the budget notice. A
 save's whole state and an agent edit's are held to the same cap. Only when
-the estimate passes the cap is the exact size computed; an update over the cap
-gets an unrecoverable
+the estimate passes the room's cap is the exact size computed, at most once per
+1,000 updates (`MEASURE_EVERY` in `collaboration-rs/crates/sources/src/admit.rs`,
+about 13 ms per MB of state) or sooner once the estimate grew 8 MiB since the
+last measure (`MEASURE_GROWTH`, the allowance's byte burst: a large action's
+pieces over existing cells near the cap are measured, not refused; at most one
+measure per 4 s per writer); an update past the estimate otherwise is refused
+by it alone, with the update's apply to the measured copy limited to
+`ydoc::MAX_WORK` steps (Epo 2026-10-19); an update over the cap gets an
+unrecoverable
 `source-checkpoint-failed` message, so the client resets to the last saved
 version instead of reconnecting and resending. The exact limit at save still
 applies and is final too (a 413 `SourceRequestError`, never retried).
@@ -2520,7 +2631,35 @@ and 1 background process, UAT 1 and 1 (`COLLABORATION_ENGINE_*`, rendered by
 `scripts/env/config.py`). Within a lane a room's calls go to one process; each
 process runs one call at a time, with its own data cap
 (`COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES`, 4 GiB production, 3 GiB UAT) and
-`oom_score_adj` 1000. A call running past 120 s kills its process; a process
+`oom_score_adj` 1000. Engines run sandboxed under the shared decoder policy
+(Epo 2026-10-20, `collaboration-rs/crates/sources/src/engine/sandbox.rs`): an
+engine starts with an empty environment plus `CAPY_ENGINE_*`, `MALLOC_*`,
+`APP_ENV` and `LOG_FORMAT` (no database URL, secrets or `SENTRY_DSN`, so no
+Sentry in the engine), in its own process group, from a pool thread that
+outlives it so its parent-death signal kills it when the pool goes; the
+server that runs the pool is not dumpable, so an engine of the same uid
+cannot read the server's environment or memory through `/proc`; a panic on
+that spawner thread aborts the server, which restarts. Before its engine
+thread starts, an engine closes any descriptor it inherited above stderr,
+keeps 64 descriptors and no core file (no file-size cap: its stderr may be
+a file), sets no_new_privs, takes Landlock
+(reads only under its own `/proc/self`, no TCP, and with its signal and
+abstract Unix-socket scoping no signal or abstract socket reaches outside
+its own sandbox) and seccomp filters that
+refuse non-Unix sockets and exec (EACCES), cross-process calls
+(`ptrace`, `process_vm_*`, `pidfd_getfd` and the like), `setsid`/`setpgid`,
+new processes and `prctl` changes to its parent-death signal or dumpability
+(EPERM), io_uring and `clone3` (ENOSYS, so glibc starts threads with
+`clone`, which the filter lets through only with `CLONE_THREAD`), and on
+x86_64 every x32 call (EPERM; the other filters match x86_64 numbers only).
+An engine that cannot take its sandbox does not serve. A
+production server (`APP_ENV=production`, UAT included) on a host without
+Landlock's scoping (ABI 6, Linux 6.12) does not start; elsewhere it logs the
+gap once (`office engine sandbox incomplete`) and engines run with seccomp,
+their limits and whatever Landlock the kernel has, and off Linux (Windows
+development) with the cleared environment only. The engine
+sandbox has no CPU limit: the per-call timeout bounds it. A call running past
+120 s kills its process group; a process
 that dies (a crash, an abort at its cap) fails its call as transient and the
 next call starts a new process, and the same call crashing a fresh process
 again is refused at once (Epo, 2026-10-07). Engine refusals such as
@@ -2530,6 +2669,24 @@ clients with unsaved edits enter recovery with them. An engine timeout or a
 lost process is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
+
+The chat agent reads Office files with `inspect_office_document` and edits
+them with `edit_office_document` (since agent contract v32, 2026-10-20; see
+[agentic retrieval](../agentic-retrieval.md), Office tools). Go turns its
+commands into the engine's (`normalizeOfficeCommands`): `replace_text` for
+DOCX and PPTX, and for XLSX `set_range`, `format_cells`, `add_sheet`,
+`rename_sheet`, row and column inserts and deletes and `delete_sheet`, which
+the engine applies in one session per call (the fork's
+`crates/office-service/src/xlsx.rs`: one `edit_cells` per `set_range`, a
+format without a full recalculation). Go no longer sends `set_cell`, which the
+engine keeps. The collaboration server's inspect route answers an XLSX
+`office` query with the engine's scoped read (the sheet list, or at most
+2,000 cells), and `/internal/documents/create` builds a new XLSX from the
+committed starter (`crates/office-service/starters/blank.xlsx`); DOCX create
+and the DOCX and PPTX scoped reads are phases 2 and 3. A command the engine
+returns no inverse for (`format_cells`, `add_sheet`, `delete_sheet`, row and
+column deletes) leaves its edit without Undo until the live-room Undo (Epo,
+2026-10-20) lands.
 
 An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
 as a substring that occurs exactly once in the paragraph, counted as note

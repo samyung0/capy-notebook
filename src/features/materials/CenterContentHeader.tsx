@@ -24,6 +24,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
+import type { PresenceStore } from '@/features/collaboration/presence';
+import { useSlowedLine } from '@/features/collaboration/SlowedOpen';
 import {
   clampImageZoom,
   fileCanClone,
@@ -57,6 +59,7 @@ import { MaterialModeToggle } from './MaterialModeToggle';
 import { MaterialShareDialog } from './MaterialShareDialog';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
+import { RoomPresence } from './RoomPresence';
 
 const STATUS_ICON = {
   connecting: 'cloudSync',
@@ -130,11 +133,15 @@ export const EditorStatusStoreContext = createContext<EditorStatusStore | null>(
   null
 );
 
+/** The open editor's save status. In the header, an icon beside the file's
+ * name on the top row at every width (Epo 2026-10-20), its label in the
+ * tooltip, held open with the slowed line while an open waits on the open
+ * budget; `labelled` (a dialog's footer) writes the label beside the icon. */
 export function EditorSaveStatus({
-  layout,
+  labelled = false,
   store,
 }: {
-  layout: 'office' | 'default';
+  labelled?: boolean;
   store: EditorStatusStore;
 }) {
   // Subscribed in an effect rather than with `useStore`: an external-store
@@ -146,11 +153,16 @@ export function EditorSaveStatus({
     return store.subscribe((state) => setEditorStatus(state.status));
   }, [store]);
   const online = useOnlineStatus();
+  // A slowed open (a note's reconnect, an Office or text file's open) says
+  // why under the indicator, its tooltip held open after 5 s (Epo
+  // 2026-10-20).
+  const slowedLine = useSlowedLine(!!editorStatus?.slowed);
+  const [hovered, setHovered] = useState(false);
   const statusLabel = noteEditorStatusLabel(editorStatus);
   if (!(online && editorStatus && statusLabel)) return null;
   const failed =
     editorStatus.saveState === 'error' || editorStatus.saveState === 'unsaved';
-  if (layout === 'office')
+  if (labelled)
     return (
       <span
         className={cn(
@@ -169,7 +181,7 @@ export function EditorSaveStatus({
       </span>
     );
   return (
-    <Tooltip>
+    <Tooltip onOpenChange={setHovered} open={hovered || slowedLine}>
       <TooltipTrigger
         className={cn(
           'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-action',
@@ -185,8 +197,13 @@ export function EditorSaveStatus({
           name={STATUS_ICON[editorStatus.saveState]}
         />
         <span className="sr-only">{statusLabel}</span>
+        {slowedLine && (
+          <span className="sr-only">{m.editor_open_slowed()}</span>
+        )}
       </TooltipTrigger>
-      <TooltipContent side="bottom">{statusLabel}</TooltipContent>
+      <TooltipContent side="bottom">
+        {slowedLine ? m.editor_open_slowed() : statusLabel}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -323,11 +340,14 @@ export function Header({
   readOnly,
   workspaceId,
   leading,
+  trailing,
   standalone = false,
   fileControls,
   fileActions,
   menuBar,
+  menuShown,
   oneColumn,
+  presence,
 }: {
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
@@ -336,9 +356,16 @@ export function Header({
   fileActions?: ReactNode;
   /** Office files: where the runtime's menu bar renders, on the second row. */
   menuBar?: ReactNode;
+  /** Office files: the menu bar arrived (the file is visible), so the
+   * header has its second row; one row until then (Epo 2026-10-20). */
+  menuShown: boolean;
+  /** The open room's other editors, shown as the avatar group. */
+  presence: PresenceStore;
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
+  /** Workspace chrome at the header's right end: the right panel toggle. */
+  trailing?: ReactNode;
   chapters: Chapter[];
   color?: UserColor;
   item: OpenItem;
@@ -382,13 +409,10 @@ export function Header({
       ? material
       : undefined;
   const [sharing, setSharing] = useState(false);
-  // Phones drop the read toggle and the status icons for the title's chevron.
+  // Phones drop the read toggle and workspace status for the title's chevron.
   const compact = !!oneColumn && !sm;
   const fileIcon = (
-    <FileIcon
-      className="size-4 shrink-0 -translate-y-px md:size-5"
-      name={icon}
-    />
+    <FileIcon className="size-4 shrink-0 md:size-5" name={icon} />
   );
   const nameClassName = cn(
     'min-w-0 truncate',
@@ -409,14 +433,12 @@ export function Header({
   );
   const right = (
     <>
+      <RoomPresence store={presence} />
       {/* A live item's Undo and Redo portal here in Edit (live-items D5). */}
       {(item.kind === 'material' || office) && fileActions}
       {item.kind === 'file' && fileControls}
       {!readOnly && modes && modes.length > 1 && activeMode && (
         <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
-      )}
-      {!(standalone || compact) && (
-        <ReadToggle item={item} workspaceId={workspaceId} />
       )}
       {showImageZoom && (
         <>
@@ -439,6 +461,15 @@ export function Header({
             <Icon name="zoomIn" />
           </ToolbarButton>
         </>
+      )}
+    </>
+  );
+  // Mark as read and the file's ⋮ follow its name, the status icons after
+  // them; phones drop the read toggle and keep ⋮ at the row's end.
+  const menu = (
+    <div className="flex items-center gap-0">
+      {!(standalone || compact) && (
+        <ReadToggle item={item} workspaceId={workspaceId} />
       )}
       <ContentActions
         beforeDelete={file ? beforeFileDelete : undefined}
@@ -496,17 +527,36 @@ export function Header({
           onClose={() => setSharing(false)}
         />
       )}
+    </div>
+  );
+  // The save status sits beside the name on the top row at every width (Epo
+  // 2026-10-20); the offline icon stands in for it while offline.
+  const status = (
+    <>
+      <OfflineStatus />
+      <EditorSaveStatus store={editorStatus} />
+      {!compact && <WorkspaceStatusButton />}
     </>
   );
-  // Office files: the top row carries the file, the second the runtime's menu
-  // bar and the save status, both 24px under a 4px gap; the mode toggle and ⋮
-  // sit centred on both, or on the top row below sm, where the menu bar takes
-  // the full width.
+  // Office files: the top row carries the file, its ⋮ and its status, the
+  // second the runtime's menu bar once it loaded (one row until then), both
+  // 24px under a 4px gap; the mode toggle sits centred on both, or on the top
+  // row below sm, where the menu bar takes the full width. The menu bar's
+  // slot stays mounted while hidden: the runtime portals into it.
   if (office)
     return (
       <div
-        className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[24px_24px] gap-x-2 gap-y-0.5 border-divider border-b pt-1 pr-2 pl-4"
+        className={cn(
+          'grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-divider border-b pr-2',
+          menuShown
+            ? 'h-14 grid-rows-[24px_24px] gap-y-0.5 pt-1'
+            : 'h-12 items-center sm:h-14',
+          // Workspace buttons at the left edge (24px here, the right's are
+          // full size) sit as far in as the right's.
+          leading ? 'pl-3' : 'pl-4'
+        )}
         data-layout="office"
+        data-rows={menuShown ? 2 : 1}
         data-testid="content-header"
       >
         <div
@@ -519,34 +569,55 @@ export function Header({
           )}
         >
           {leading}
-          <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
-            {name}
-            {!compact && (
-              <>
-                <OfflineStatus />
-                <WorkspaceStatusButton />
-              </>
+          <div
+            className={cn(
+              '-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5',
+              // Workspace buttons before it keep the buttons' narrow gaps.
+              !leading && 'lg:ml-2'
             )}
+          >
+            {name}
+            {!compact && menu}
+            {status}
           </div>
         </div>
-        <div className="col-span-2 row-start-2 flex min-w-0 items-center sm:col-span-1">
-          {menuBar}
-          {!compact && (
-            <EditorSaveStatus layout="office" store={editorStatus} />
+        <div
+          className={cn(
+            'col-span-2 row-start-2 flex min-w-0 items-center sm:col-span-1',
+            !menuShown && 'hidden'
           )}
+        >
+          {menuBar}
         </div>
-        <div className="col-start-2 row-start-1 flex items-center gap-0 sm:row-span-2 max-sm:[&_[data-slot=button]]:size-7.5 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-7.5">
+        <div
+          className={cn(
+            'col-start-2 row-start-1 flex items-center gap-0 max-sm:[&_[data-slot=button]]:size-7.5 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-7.5',
+            menuShown && 'sm:row-span-2'
+          )}
+        >
           {right}
+          {compact && menu}
+          {trailing}
         </div>
       </div>
     );
   return (
     <div
-      className="flex h-12 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:pr-2 sm:pl-4"
+      className={cn(
+        'flex h-12 items-center gap-1 border-divider border-b pr-1 sm:h-14 sm:gap-2 sm:pr-2',
+        // Workspace buttons at the left edge sit as far in as the right's.
+        leading ? 'pl-1 sm:pl-2' : 'pl-2 sm:pl-4'
+      )}
       data-testid="content-header"
     >
       {leading}
-      <div className="-ml-0.5 flex min-w-0 items-center gap-1.5 sm:gap-2 lg:ml-2">
+      <div
+        className={cn(
+          '-ml-0.5 flex min-w-0 items-center gap-1.5 sm:gap-2',
+          // Workspace buttons before it keep the buttons' narrow gaps.
+          !leading && 'lg:ml-2'
+        )}
+      >
         {oneColumn ? (
           name
         ) : (
@@ -555,15 +626,14 @@ export function Header({
             <h2 className={cn(nameClassName, 'flex-1')}>{title ?? '--'}</h2>
           </>
         )}
-        {!compact && (
-          <>
-            <OfflineStatus />
-            <EditorSaveStatus layout="default" store={editorStatus} />
-            <WorkspaceStatusButton />
-          </>
-        )}
+        {!compact && menu}
+        {status}
       </div>
-      <div className="ml-auto flex items-center gap-0">{right}</div>
+      <div className="ml-auto flex items-center gap-0">
+        {right}
+        {compact && menu}
+        {trailing}
+      </div>
     </div>
   );
 }

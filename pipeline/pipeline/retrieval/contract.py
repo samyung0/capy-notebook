@@ -15,7 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
 
-SUPPORTED_VERSION = 31
+SUPPORTED_VERSION = 33
 
 
 def _load() -> dict[str, Any]:

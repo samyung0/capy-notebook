@@ -3,6 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/ui/Dialog';
+import { useEditorHeld } from '@/features/collaboration/CollaborationHold';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { useOptionalNoteBlockDialogs } from './blocks/dialogContext';
@@ -26,12 +27,15 @@ export function EditorCommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  // Held back: the palette neither opens nor runs commands until sent.
+  const held = useEditorHeld();
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        if (held) return;
         if (!open) {
           // The search input takes focus and commands run on the stored
           // selection: store what the user selected, even if Slate's
@@ -45,7 +49,7 @@ export function EditorCommandPalette() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editor, open]);
+  }, [editor, held, open]);
 
   const commands = useMemo(() => {
     const comment: EditorCommand | null =
@@ -87,6 +91,7 @@ export function EditorCommandPalette() {
           aria-describedby={undefined}
           aria-label={m.editor_command_palette()}
           className="motion-modal motion-blur-in fixed top-[15dvh] left-1/2 z-60 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 overflow-hidden rounded-card border border-overlay-line bg-overlay shadow-pop"
+          inert={held}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DialogPrimitive.Title className="sr-only">

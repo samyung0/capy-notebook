@@ -266,10 +266,11 @@ func FromMaterial(m store.Material) (Material, error) {
 }
 
 type (
-	WorkspaceMember       = store.WorkspaceMember
-	WorkspaceCollaborator = store.WorkspaceCollaborator
-	Discussion            = store.Discussion
-	Comment               = store.Comment
+	WorkspaceMember        = store.WorkspaceMember
+	PendingWorkspaceInvite = store.PendingWorkspaceInvite
+	WorkspaceCollaborator  = store.WorkspaceCollaborator
+	Discussion             = store.Discussion
+	Comment                = store.Comment
 )
 
 // Workspace is the response contract. Tags are object-wrapped for useFieldArray.
@@ -428,12 +429,16 @@ type AttemptDetail struct {
 	Questions []map[string]any `json:"questions" nullable:"false"`
 	// Cards is a flashcard attempt's cards; empty for a quiz.
 	Cards []store.AttemptCard `json:"cards" nullable:"false"`
+	// Previous is the set's attempt before this one; absent for a quiz or a
+	// first attempt.
+	Previous *store.PreviousAttempt `json:"previous,omitempty"`
 }
 
 func FromAttemptDetail(d store.AttemptDetail) AttemptDetail {
 	out := AttemptDetail{Attempt: d.Attempt, Answers: decodeAnswers(d.Answers), Questions: []map[string]any{}, Cards: []store.AttemptCard{}}
 	if d.Kind == "flashcards" {
 		out.Cards = decodeCards(d.Questions)
+		out.Previous = d.Previous
 		return out
 	}
 	out.Questions = decodeQuestions(d.Questions)

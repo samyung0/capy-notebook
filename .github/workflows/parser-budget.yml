@@ -72,7 +72,6 @@ jobs:
             --memory 12g --memory-swap 12g --cpus 4 --pids-limit 512 \
             --cap-drop ALL --security-opt no-new-privileges:true --read-only \
             --tmpfs /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700 \
-            --tmpfs /tmp:noexec,nosuid,nodev,size=64m \
             --env-file "$RUNNER_TEMP/parser.env" -e MALLOC_ARENA_MAX=2 \
             -v capy-parser-budget-spool:/var/lib/capy-parse \
             -v capy-parser-budget-work:/run/capy-parser/work capy-parser-budget

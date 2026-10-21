@@ -8,6 +8,7 @@ import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import {
   itemEditingStopped,
   useItemRoom,
@@ -16,6 +17,10 @@ import {
   itemSaveState,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
+import {
+  type PresenceConnection,
+  useReportPresence,
+} from '@/features/collaboration/presence';
 import type { UndoTarget } from '@/features/collaboration/undo';
 import {
   LOCAL_EDIT,
@@ -70,6 +75,7 @@ import { textLength } from '@/lib/textLength';
 export default function MermaidMaterialEditor({
   kind,
   materialId,
+  onPresenceChange,
   onReadOnly,
   onStatusChange,
   provenance,
@@ -82,6 +88,8 @@ export default function MermaidMaterialEditor({
    * drops to View. */
   onReadOnly: (code?: ReadOnlyCode) => void;
   onStatusChange: (status: NoteEditorStatus | null) => void;
+  /** The room's other editors, for the header's avatar group. */
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   title: string;
 }) {
   const qc = useQueryClient();
@@ -97,6 +105,7 @@ export default function MermaidMaterialEditor({
     onStatusChange(saveState ? { saveState } : null);
   }, [snapshot.status, snapshot.recovery, snapshot.offline, onStatusChange]);
   useEffect(() => () => onStatusChange(null), [onStatusChange]);
+  useReportPresence(onPresenceChange, snapshot.presence);
   useEffect(() => {
     if (snapshot.access === 'read')
       onReadOnly(snapshot.readOnlyCode ?? undefined);
@@ -138,17 +147,21 @@ export default function MermaidMaterialEditor({
   if (isOutdatedBanner(snapshot.offline) && !snapshot.synced)
     return <SaveBanner state="outdated" />;
   if (!(room && snapshot.synced && live))
-    return <FileLoading message={m.editor_connecting()} />;
+    return (
+      <FileLoading message={m.editor_connecting()} slowed={snapshot.slowed} />
+    );
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
-      <LiveDiagram
-        history={room.history}
-        live={live}
-        provenance={provenance}
-        readOnly={itemEditingStopped(snapshot.offline)}
-        title={title}
-      />
+      <CollaborationHold className="flex min-h-0 flex-1 flex-col">
+        <LiveDiagram
+          history={room.history}
+          live={live}
+          provenance={provenance}
+          readOnly={itemEditingStopped(snapshot.offline)}
+          title={title}
+        />
+      </CollaborationHold>
     </div>
   );
 }

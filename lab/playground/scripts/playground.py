@@ -31,6 +31,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import deck
+import office
 from deck import production as production_deck
 from common import (
     CONFIGS,
@@ -400,8 +401,13 @@ async def list_sources_locally(ctx, state: dict[str, Any]):
     from pipeline.retrieval import store, tools
 
     outline = await store.workspace_outline(ctx.workspace_id)
+    # Office files are edited in the run (office.py); other sources are not.
     documents = [
-        {"id": f["id"], "kind": "source_file", "editable": False}
+        {
+            "id": f["id"],
+            "kind": "source_file",
+            "editable": office.format_of(f["name"]) is not None,
+        }
         for f in outline["files"]
         if f.get("kind") != "material"
     ]
@@ -755,6 +761,14 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
     rid = str(target.get("id") or "")
     record = run_material(state, rid)
     if record is None or target.get("kind") != "material":
+        if target.get("kind") == "source_file" and await office.office_format(
+            state, ctx.workspace_id, rid
+        ):
+            # The gateway's answer to edit_document on an Office file.
+            return tools._refused(
+                f"Could not edit the document: {office.OFFICE_TOOLS}",
+                code="unsupported_operation",
+            )
         return tools._refused(
             f"edit_document: {rid} is not a material this conversation created.",
             code="unavailable_target",
@@ -1257,6 +1271,8 @@ class Turn:
             "_result_call": {},
             "compactions": [],
             "materials": [],
+            # The run's Office files by id (office.py).
+            "office": {},
             "stall_events": [],
         }
 
@@ -1307,6 +1323,12 @@ class Turn:
             open_resource=dict(c["open_resource"] or {}),
             study_preferences=dict(c["study_preferences"] or {}),
             study_progress=bool(c["study_progress"]),
+            # The gateway offers the Office tools once a completed turn read
+            # office_building (store.ConversationPrompt); here only the
+            # history the page still sends counts, not what a checkpoint folded.
+            office_tools=any(
+                (m.get("toolEvidence") or {}).get("officeTools") for m in self.history
+            ),
         )
         saved = {
             "system_prompt": chat_prompts.system_prompt,
@@ -1373,19 +1395,21 @@ class Turn:
                             "url": f"/api/runs/{self.id}/captures/{cap['n']}.jpg",
                         }
                     )
+            elif name in tools.OFFICE_TOOLS and not ctx_.office_tools:
+                # Production refuses an Office tool it has not offered first.
+                result = await saved["run"](name, args, ctx_)
             elif problem:
                 result = tools._refused(problem)
             elif needs := skills.missing(name, clean, ctx_.skills_read):
                 result = tools._refused(
-                    skills.refusal(needs),
-                    detail=skills.carried(
-                        needs,
-                        lambda n: skill_text(c, n, library=ctx_.library) or "",
-                    ),
+                    skills.refusal(needs, write=tools.mutates(name))
                 )
             elif name == "read_skill" and (
                 text := skill_text(c, clean["name"], library=ctx_.library)
             ) is not None:
+                # Production's _read_skill: office_building offers the Office tools.
+                if clean["name"] == skills.OFFICE_BUILDING:
+                    ctx_.office_tools = True
                 result = tools._result(skills.render(clean["name"], text))
             elif name == "list_sources":
                 result = await list_sources_locally(ctx_, state)
@@ -1865,7 +1889,7 @@ class Turn:
                 yield event
 
         try:
-            with preference_wording(c):
+            with preference_wording(c), office.local_gateway(state):
                 async for raw_event in agent.run_agent(
                     query=self.question,
                     ctx=ctx,
@@ -2010,6 +2034,7 @@ def build_app(target: str):
     @app.on_event("shutdown")
     async def close_library():
         await library.close_pool()
+        office.close()
 
     @app.get("/", response_class=HTMLResponse)
     def index():

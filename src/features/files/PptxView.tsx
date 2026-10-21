@@ -47,7 +47,8 @@ export default function PptxView({
     sourceHeaderStatus(runtime.status, {
       busy: runtime.saving || runtime.handoff,
       editing: runtime.mode === 'edit',
-    })
+    }),
+    runtime.slowed
   );
 
   if (runtime.unavailable)

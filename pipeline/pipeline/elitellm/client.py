@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
@@ -128,8 +128,8 @@ def _retry_after(headers: Mapping[str, str]) -> float | None:
     except (TypeError, ValueError, IndexError):
         return None
     if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+        when = when.replace(tzinfo=UTC)
+    return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
 def _error_from_response(

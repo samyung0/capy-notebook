@@ -46,7 +46,8 @@ export default function DocxView({
     sourceHeaderStatus(runtime.status, {
       busy: runtime.saving || runtime.handoff,
       editing: runtime.mode === 'edit',
-    })
+    }),
+    runtime.slowed
   );
 
   if (runtime.unavailable)

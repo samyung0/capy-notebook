@@ -1,3 +1,8 @@
+import {
+  type AwarenessPeer,
+  type CollaborationAwareness,
+  colorForClientId,
+} from '@betteroffice/xlsx/collaboration';
 import { SheetGoneError } from '@betteroffice/xlsx/editor';
 import { analyzeOpenWorkbook } from '@betteroffice/xlsx/viewer';
 import {
@@ -9,6 +14,7 @@ import {
   type PointerEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -23,6 +29,7 @@ import type {
   OfficeExporter,
   OfficeFlusher,
 } from './officeCollaboration';
+import { type CursorChannel, mappedPeers } from './officePresence';
 import type {
   OfficeCaptureScope,
   OfficeMenuReporter,
@@ -39,11 +46,34 @@ import {
 } from './xlsxRender';
 import './xlsx-runtime.css';
 
-/**
- * The largest update one XLSX clear may send: the collaboration server's
- * per-message payload limit (`COLLABORATION_MAX_PAYLOAD_BYTES`, 2 MiB).
- */
-const OFFICE_MESSAGE_MAX_BYTES = 2 * 1024 * 1024;
+/** The XLSX editor's presence over the frame's cursor channel: co-editors'
+ * cell ranges under the names Capy gives them. */
+function xlsxAwareness(channel: CursorChannel): CollaborationAwareness {
+  const peers = mappedPeers(channel, (peer): AwarenessPeer | null =>
+    'sheet' in peer.cursor
+      ? {
+          clientId: peer.clientId,
+          clock: 0,
+          cursor: peer.cursor,
+          cursorMovedAt: peer.movedAt,
+          lastSeen: peer.seenAt,
+          user: { color: colorForClientId(peer.clientId), name: peer.name },
+        }
+      : null
+  );
+  return {
+    // The editor reads the peers only from its listener: it hears them at
+    // once.
+    onAwareness: (listener) => {
+      listener(peers());
+      return channel.subscribe(() => listener(peers()));
+    },
+    get peers() {
+      return peers();
+    },
+    setCursor: (cursor) => channel.send(cursor),
+  };
+}
 
 export function XlsxEditorHost({
   bytes,
@@ -63,6 +93,7 @@ export function XlsxEditorHost({
   onThumbnailer,
   onZoomChange,
   readOnly,
+  sending,
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
@@ -76,7 +107,7 @@ export function XlsxEditorHost({
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onMenus: OfficeMenuReporter;
-  /** A clear too big for the room, or a copy too big to read: nothing changed. */
+  /** An edit past the engine's update cap, or a copy past its ceiling: nothing changed. */
   onNotice: (notice: OfficeNotice) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onPendingChange: (pending: boolean) => void;
@@ -89,8 +120,20 @@ export function XlsxEditorHost({
   onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
+  /**
+   * The tab holds back its collaboration messages (pacing, an update's
+   * pieces, a timeout): the grid refuses edits with a loading cursor.
+   */
+  sending?: boolean;
 }) {
   const apiRef = useRef<XlsxEditorApi | null>(null);
+  const editorCollaboration = useMemo(
+    () => ({
+      ...collaboration,
+      provider: xlsxAwareness(collaboration.cursors),
+    }),
+    [collaboration]
+  );
   useEffect(() => {
     onExporter(async () => {
       if (!apiRef.current) throw new Error('Editor is still loading');
@@ -196,8 +239,7 @@ export function XlsxEditorHost({
     >
       <XlsxEditor
         className="office-editor-host"
-        clearLimitBytes={OFFICE_MESSAGE_MAX_BYTES}
-        collaboration={collaboration}
+        collaboration={editorCollaboration}
         file={bytes}
         fileName={fileName}
         i18n={xlsxStrings(locale)}
@@ -218,6 +260,7 @@ export function XlsxEditorHost({
         }}
         onSave={onSave}
         readOnly={readOnly}
+        sending={sending}
         showCustomNumberFormat={false}
         showFontPicker={!narrow}
         showFontSizePicker={!narrow}

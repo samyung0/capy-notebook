@@ -45,9 +45,9 @@ test.describe('workspace invitations', () => {
     await expect(
       ownerPage.getByText(m.members_invite_sent_title())
     ).toBeVisible();
-    await expect(
-      ownerPage.getByText('viewer@capynotebook.test')
-    ).not.toBeVisible();
+    // The pending list shows the address as typed (human authorization,
+    // 2026-10-21).
+    await expect(ownerPage.getByText('viewer@capynotebook.test')).toBeVisible();
 
     const unknown = await ownerApi.post(
       `/api/workspaces/${workspace.id}/invites`,
@@ -85,7 +85,8 @@ test.describe('workspace invitations', () => {
     const wrongAccount = await otherApi.post(
       `/api/workspace-invites/${reference}/accept`
     );
-    expect(wrongAccount.status()).toBe(403);
+    // Someone else's invite answers like a missing one.
+    expect(wrongAccount.status()).toBe(404);
 
     await viewerPage.goto('/workspaces');
     // Phone and desktop bars both link to the notifications page; click the
@@ -143,6 +144,11 @@ test.describe('workspace invitations', () => {
     await expect(ownerPage.getByText('viewer@capynotebook.test')).toHaveCount(
       0
     );
+    // An address without an account stays listed as sent, so the list never
+    // tells which addresses have one.
+    await expect(
+      ownerPage.getByText('missing@capynotebook.test')
+    ).toBeVisible();
 
     const candidates = await ownerApi.get(
       `/api/workspaces/${workspace.id}/invite-candidates?q=viewer`

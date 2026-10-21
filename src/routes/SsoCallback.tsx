@@ -1,5 +1,5 @@
 import { Panel } from '@/components/app/layout';
-import { redirectAfterAuth } from '@/features/auth/clerk';
+import { redirectAfterAuth, signInHref } from '@/features/auth/clerk';
 import { AuthenticateWithRedirectCallback } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 
@@ -20,7 +20,9 @@ export default function SsoCallbackPage() {
         {/* A first-time OAuth account transfers into sign-up here, which can
           still draw a bot-protection challenge. */}
         <div id="clerk-captcha" />
+        {/* A user with MFA on finishes on the sign-in page's code step. */}
         <AuthenticateWithRedirectCallback
+          secondFactorUrl={signInHref(target)}
           signInForceRedirectUrl={target}
           signInUrl="/sign-in"
           signUpForceRedirectUrl={target}

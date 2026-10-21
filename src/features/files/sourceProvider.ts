@@ -1,6 +1,8 @@
+import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import type { SourceSession } from '@/api/types';
+import type { PresenceConnection } from '@/features/collaboration/presence';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
 import { CollabSocket } from '@/features/collaboration/socket';
 
@@ -15,6 +17,8 @@ export function sourceDocOptions(format: SourceSession['format']) {
 /** The slice of the room provider that source editing drives. Under MSW an
  * in-page provider registered by the mocks stands in for the sidecar. */
 export interface SourceProvider {
+  /** The room's awareness: an Office editor's cursor (`officeCursors.ts`). */
+  awareness: Awareness;
   connect(): unknown;
   destroy(): void;
   disconnect(): void;
@@ -33,6 +37,10 @@ export interface SourceProviderConfig {
   /** The room closed; on an open socket the server closed only this room. */
   onClose?: () => void;
   onDisconnect?: () => void;
+  /** The room's other editors (`RoomProvider`). */
+  onPresence?: (connections: PresenceConnection[]) => void;
+  /** The room's answer waits on the user's open budget (`RoomProvider`). */
+  onSlowed?: (slowed: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;

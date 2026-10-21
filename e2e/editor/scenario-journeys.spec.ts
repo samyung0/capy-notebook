@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
 import { officeEditMenu, saveOffice } from '../helpers/office';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 const marker = 'My unsaved scenario edit.';
@@ -98,9 +99,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const mounted = await input.elementHandle();
   const currentURL = page.url();
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   page.once('dialog', (dialog) => dialog.dismiss());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')
@@ -416,6 +415,37 @@ test('page retry and form retry remain usable after the one-click fault retires'
   ).toBeVisible();
 });
 
+// Review M2: a user stuck on the code step (lost device, another account, a
+// stale attempt) can start the sign-in over.
+test('the MFA code step goes back to the sign-in form', async ({ page }) => {
+  await launch(page, 'auth-second-factor');
+  const codeStep = page.getByRole('heading', { name: m.auth_mfa_title() });
+  await expect(codeStep).toBeVisible();
+  await page.getByRole('button', { name: m.auth_back_to_signin() }).click();
+  await expect(codeStep).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: m.auth_signin_title() })
+  ).toBeVisible();
+  await expect(page.getByLabel(m.auth_email())).toBeVisible();
+});
+
+// Review L7: a pending list that fails to load says so, with a retry, instead
+// of reading as "nothing pending".
+test('a failed pending-invite list offers a retry in its section', async ({
+  page,
+}) => {
+  await launch(page, 'invites-load');
+  const people = page.locator(
+    'section[aria-labelledby="workspace-members-title"]'
+  );
+  await expect(people.getByText(m.members_pending_title())).toBeVisible();
+  await expect(
+    people
+      .getByRole('alert')
+      .getByRole('button', { name: m.error_action_retry() })
+  ).toBeVisible();
+});
+
 test('a new scenario cancels a pending auth request', async ({ page }) => {
   await page.evaluate(() => {
     const fetch = window.fetch;
@@ -712,9 +742,7 @@ test('a text source in view mode shows its latest saved state, not only the publ
   await expect(page.getByText(savedMarker)).toBeVisible();
   // A fresh open in view mode reads the viewer session: saving did not
   // publish, yet the edit shows.
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
   await page
     .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')
     .click();

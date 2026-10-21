@@ -68,7 +68,7 @@ class ToolResult:
     error: str | None = None
     error_code: str | None = None
     # What the model reads after the error, kept out of the error the chat
-    # stores and shows: a missed target as it is now, carried skills or excerpts.
+    # stores and shows: a missed target as it is now, or carried excerpts.
     detail: str = ""
     refused: bool = False
     failed: bool = False
@@ -78,6 +78,8 @@ class ToolResult:
     # A read document's pending changes, appended after the clipped result
     # (pending.PendingSources.for_read).
     pending: str = ""
+    # A search's documents with unindexed edits, by id: their passages say so.
+    unindexed: dict[str, int] = field(default_factory=dict)
 
     @property
     def outcome(self) -> str:
@@ -173,12 +175,19 @@ class ToolContext:
     # material they have open, and their saved study preferences.
     open_resource: dict[str, Any] = field(default_factory=dict)
     study_preferences: dict[str, Any] = field(default_factory=dict)
+    # The learner's workspace role (owner, editor, viewer); the chat request
+    # always sends it, in-process contexts (tests, playground) set their own.
+    role: str = "owner"
     # The workspace's chapters in order ({id, name}), loaded at turn start so
     # "chapter 2" resolves without a tool call; at most 20 (the server's cap).
     chapters: list[dict[str, Any]] = field(default_factory=list)
     # Skills whose read_skill result is still in the request; the writes they
     # cover are refused until it is (skills.retained recomputes it per call).
     skills_read: set[str] = field(default_factory=set)
+    # The Office tools are offered: this turn read the office_building skill,
+    # or an earlier turn of the conversation was offered them (the gateway's
+    # officeTools); then they stay for the rest of the conversation.
+    office_tools: bool = False
     # The requester's study progress is on in this workspace, so the agent may
     # read it.
     study_progress: bool = False
@@ -195,8 +204,14 @@ class ToolContext:
     # widen the scope to every file.
     file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
+    # The turn's narration and tool blocks so far: what its checkpoints and
+    # whatever event ends it carry, so Go saves them however the turn ends.
+    activity: list[dict[str, Any]] = field(default_factory=list)
     evidence_notes: list[dict[str, Any]] = field(default_factory=list)
     evidence_passage_ids: set[str] = field(default_factory=set)
+    # Each searched passage's unindexed-edit count as its line first showed it,
+    # saved with the answer so a replay repeats it word for word.
+    passage_flags: dict[str, int] = field(default_factory=dict)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
     pending_sources: pending.PendingSources = field(
@@ -209,6 +224,7 @@ class ToolContext:
     # One entry per search_workspace call this turn, written to
     # rag_search_events when the turn ends (agent.run_agent fills `cited`).
     search_events: list[dict[str, Any]] = field(default_factory=list)
+    searches_recorded: bool = False
     # capture_page records for the activity blocks, and the JPEGs (by tool
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
@@ -253,12 +269,8 @@ class ToolSpec:
 class ResolvedScope:
     file_ids: list[str]
     file_names: list[str]
-    chapter_ids: list[str]
-    chapter_names: list[str]
-    indexed: bool
 
 
-_INVALID_SCOPE = "The requested scope is invalid or unavailable."
 _MISSING = object()
 
 
@@ -268,17 +280,27 @@ async def _scope_outline(ctx: ToolContext) -> dict[str, Any]:
     return ctx._scope_outline
 
 
-async def _refuse_note_as_file(ctx: ToolContext, resource_id: str) -> ToolResult | None:
-    """Notes share the search scope with files but are not source files: the
-    file lifecycle and edit tools must not accept a note id under that kind."""
+async def _material_kind(ctx: ToolContext, resource_id: str) -> str | None:
+    """The kind of the top-level material with this id; None for anything else."""
     outline = await _scope_outline(ctx)
     for item in outline.get("files") or []:
         if str(item["id"]) == resource_id and item.get("kind") == "material":
-            return _refused(
-                "That id is a note, not a source file; target it as kind material.",
-                code="unavailable_target",
-            )
+            return str(item["material_kind"])
     return None
+
+
+async def _refuse_material_as_file(
+    ctx: ToolContext, resource_id: str
+) -> ToolResult | None:
+    """Materials share the search scope with files but are not source files: the
+    file lifecycle and edit tools must not accept a material id under that kind."""
+    kind = await _material_kind(ctx, resource_id)
+    if kind is None:
+        return None
+    return _refused(
+        f"That id is a {kind}, not a source file; target it as kind material.",
+        code="unavailable_target",
+    )
 
 
 def _scope_ids(value: Any) -> list[str] | None:
@@ -292,72 +314,40 @@ def _scope_ids(value: Any) -> list[str] | None:
 
 
 async def _resolve_scope(
-    ctx: ToolContext,
-    raw_scope: Any = None,
+    ctx: ToolContext, ids: list[str]
 ) -> ResolvedScope | ToolResult:
-    if raw_scope is _MISSING:
-        scope: dict[str, Any] = {}
-    elif isinstance(raw_scope, dict):
-        scope = raw_scope
-    else:
-        return _refused(_INVALID_SCOPE)
-    if set(scope) - {"file_ids", "chapter_ids"}:
-        return _refused(_INVALID_SCOPE)
-    file_ids = _scope_ids(scope.get("file_ids", _MISSING))
-    chapter_ids = _scope_ids(scope.get("chapter_ids", _MISSING))
-    if file_ids is None or chapter_ids is None:
-        return _refused(_INVALID_SCOPE)
-
+    """The workspace items these ids name, of any kind (Epo 2026-10-21), inside
+    the chat's scope; no ids is that whole scope. Only source files and notes
+    hold passages, so the others add nothing to a search."""
     outline = await _scope_outline(ctx)
-    files = list(outline.get("files") or [])
-    chapters = list(outline.get("chapters") or [])
-    file_by_id = {str(file["id"]): file for file in files}
-    chapter_by_id = {str(chapter["id"]): chapter for chapter in chapters}
-    if ctx.file_ids is not None and any(
-        file_id not in file_by_id for file_id in ctx.file_ids
-    ):
-        return _refused(_INVALID_SCOPE, code="unavailable_target")
-    allowed = set(ctx.file_ids) if ctx.file_ids is not None else set(file_by_id)
-    if any(file_id not in file_by_id or file_id not in allowed for file_id in file_ids):
-        return _refused(_INVALID_SCOPE)
-    if any(chapter_id not in chapter_by_id for chapter_id in chapter_ids):
-        return _refused(_INVALID_SCOPE)
-
-    selected = list(file_ids)
-    seen = set(selected)
-    for chapter_id in chapter_ids:
-        chapter_files = [
-            str(file["id"])
-            for file in files
-            if str(file.get("chapter_id") or "") == chapter_id
-        ]
-        if any(file_id not in allowed for file_id in chapter_files):
-            return _refused(_INVALID_SCOPE)
-        for file_id in chapter_files:
-            if file_id not in seen:
-                seen.add(file_id)
-                selected.append(file_id)
-    if not file_ids and not chapter_ids:
-        selected = [str(file["id"]) for file in files if str(file["id"]) in allowed]
-
-    selected_files = [file_by_id[file_id] for file_id in selected]
+    item_by_id = {str(item["id"]): item for item in outline.get("files") or []}
+    if ctx.file_ids is not None and any(i not in item_by_id for i in ctx.file_ids):
+        return _refused(
+            "A source chosen for this chat is no longer in the workspace: it was "
+            "deleted or moved to trash.",
+            code="unavailable_target",
+        )
+    allowed = set(ctx.file_ids) if ctx.file_ids is not None else set(item_by_id)
+    for item_id in ids:
+        if item_id not in item_by_id:
+            return _refused(
+                f'No workspace item has the id "{item_id}": it may have been deleted '
+                "or moved to trash. list_sources shows the current ids."
+            )
+        if item_id not in allowed:
+            return _refused(
+                f'"{item_id}" is outside the sources chosen for this chat, and the '
+                "chat cannot widen that choice."
+            )
+    selected = ids or [i for i in item_by_id if i in allowed]
     return ResolvedScope(
         file_ids=selected,
-        file_names=[str(file.get("name") or "") for file in selected_files],
-        chapter_ids=chapter_ids,
-        chapter_names=[
-            str(chapter_by_id[cid].get("name") or "") for cid in chapter_ids
-        ],
-        indexed=(
-            any(int(file.get("chunks") or 0) > 0 for file in selected_files)
-            or any(file["fileId"] in selected for file in ctx.pending_sources.files)
-            or any(note["materialId"] in selected for note in ctx.pending_sources.notes)
-        ),
+        file_names=[str(item_by_id[i].get("name") or "") for i in selected],
     )
 
 
 async def resolve_current_scope(ctx: ToolContext) -> ResolvedScope | ToolResult:
-    return await _resolve_scope(ctx, _MISSING)
+    return await _resolve_scope(ctx, [])
 
 
 def operation_id(assistant_message_id: str, tool_call_id: str) -> str:
@@ -395,8 +385,8 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     requested = args.get("file_ids", _MISSING)
     ids = _scope_ids(requested)
     if ids is None:
-        return _refused(_INVALID_SCOPE)
-    resolved = await _resolve_scope(ctx, {"file_ids": ids})
+        return _refused("file_ids takes a list of ids from list_sources.")
+    resolved = await _resolve_scope(ctx, ids)
     if isinstance(resolved, ToolResult):
         return resolved
     if ctx.budget is not None:
@@ -428,10 +418,15 @@ async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         return _result(
             "No passages matched. Try different wording, or list_sources first."
         )
+    unindexed = ctx.pending_sources.unindexed_counts()
+    for passage in passages:
+        if passage.file_id in unindexed:
+            ctx.passage_flags.setdefault(passage.chunk_id, unindexed[passage.file_id])
     return ToolResult(
         passages=passages,
         text_parts=[_overlap_footer(overlap, len(passages))],
         tail=edits,
+        unindexed=unindexed,
     )
 
 
@@ -582,7 +577,7 @@ def _material_line(item: dict[str, Any], summaries: dict[str, str]) -> str:
         f"material_kind={item['materialKind']}, editable={str(item['editable']).lower()})"
     )
     if item["materialKind"] != "note":
-        # Only notes are indexed and outlined; the other kinds read as blocks.
+        # Only notes are indexed; the other kinds read as blocks.
         line += "; inspect_document and edit_document take its id"
     elif summaries.get(item["id"]):
         line += f"\n  {summaries[item['id']]}"
@@ -605,9 +600,16 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     file_id = args.get("file_id")
     if not isinstance(file_id, str) or not file_id.strip():
         return _refused("read_document needs a file id.")
-    resolved = await _resolve_scope(ctx, {"file_ids": [file_id.strip()]})
+    resolved = await _resolve_scope(ctx, [file_id.strip()])
     if isinstance(resolved, ToolResult):
         return resolved
+    kind = await _material_kind(ctx, file_id.strip())
+    if kind not in (None, "note"):
+        return _refused(
+            f"{file_id.strip()} is a {kind}, which has no passages to read; "
+            "inspect_document reads it.",
+            code="unavailable_target",
+        )
     try:
         start = max(0, int(args.get("start") or 0))
         count = min(12, max(1, int(args.get("count") or 4)))
@@ -653,10 +655,10 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     # No per-turn cap: a capture is dropped when its exchange folds into the
     # turn note anyway, and a whole set of materials can be one turn.
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
-    refused = await _refuse_note_as_file(ctx, file_id)
+    refused = await _refuse_material_as_file(ctx, file_id)
     if refused is not None:
         return refused
-    resolved = await _resolve_scope(ctx, {"file_ids": [file_id]})
+    resolved = await _resolve_scope(ctx, [file_id])
     if isinstance(resolved, ToolResult):
         return resolved
     existing = [
@@ -1045,6 +1047,9 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
     resource = effect.get("resource") or {}
     title, rid = resource.get("title"), resource.get("id")
     operation = effect.get("operation")
+    # An Office edit's or create's note on the characters its text lost (Epo
+    # 2026-10-15).
+    notice = f" {body['notice']}" if body.get("notice") else ""
     if operation == "trashed":
         text = (
             f"Moved '{title}' (id {rid}) to the trash. Passages retrieved from it "
@@ -1059,17 +1064,22 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             if effect.get("projectionPending")
             else ""
         )
-        # An Office edit's note on the characters its text lost (Epo 2026-10-15).
-        notice = f" {body['notice']}" if body.get("notice") else ""
+        # Only an edit whose receipt carries an Undo ref has one (an Office
+        # edit the engine returned no inverse for has none, Epo 2026-10-20).
+        undo_note = (
+            " The user can undo this edit from the chat result."
+            if effect.get("undo")
+            else ""
+        )
         text = (
             f"Edited '{title}' (id {rid}).{notice}{pending_note}{_relocations(effect)}"
-            f"{_block_ids(effect)} The user can undo this edit from the chat result."
+            f"{_block_ids(effect)}{undo_note}"
         )
     elif operation == "edit_undone":
         text = f"Reversed the earlier edit of '{title}' (id {rid})."
     else:
         text = (
-            f"Created {resource.get('materialKind')} '{title}' (id {rid}). "
+            f"Created {resource.get('materialKind') or 'file'} '{title}' (id {rid}).{notice} "
             f"It is now in the workspace.{_block_ids(effect)}"
         )
     return ToolResult(text_parts=[text], effects=[effect])
@@ -1155,9 +1165,6 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         summary, listing = questions.refusal(fences)
         return _refused(summary, detail=listing)
     books, credited = prepared
-    resolved = await _material_scope(ctx, args, books)
-    if isinstance(resolved, ToolResult):
-        return resolved
     images = await figures.render()
     if isinstance(images, ToolResult):
         return images
@@ -1166,7 +1173,6 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         ctx,
         call_id,
         args,
-        resolved,
         books,
         {"kind": kind, "cards": args.get("cards") or [], "content": content},
         images=images,
@@ -1176,34 +1182,18 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     return with_repairs(figures.noted(result), fences)
 
 
-async def _material_scope(
-    ctx: ToolContext, args: dict[str, Any], books: list[dict[str, Any]]
-) -> ResolvedScope | ToolResult:
-    """The scope a new material is written from. A material written from the
-    library is grounded in the library, so it needs no indexed workspace
-    content."""
-    resolved = await _resolve_scope(ctx, args.get("scope", _MISSING))
-    if isinstance(resolved, ToolResult):
-        return resolved
-    if not resolved.indexed and not books:
-        return _refused(
-            "The requested scope has no indexed content.", code="unavailable_target"
-        )
-    return resolved
-
-
 async def _post_material(
     ctx: ToolContext,
     call_id: str,
     args: dict[str, Any],
-    resolved: ResolvedScope,
     books: list[dict[str, Any]],
     content: dict[str, Any],
     *,
     images: dict[str, bytes] | None = None,
 ) -> ToolResult:
     """Create a material through the gateway: its kind and content, with the
-    call's title, chapter, scope and provenance."""
+    call's title, chapter, sources and provenance. The sources are the model's
+    made-from line, sent as written: Go stores them as names."""
     payload = {
         "workspaceId": ctx.workspace_id,
         "userId": ctx.user_id,
@@ -1213,8 +1203,7 @@ async def _post_material(
         # duplicates and only reserves room for its own suffix.
         "title": str(args.get("title") or "").strip()[:MATERIAL_TITLE_MAX].strip(),
         **content,
-        "fileIds": resolved.file_ids,
-        "chapterIds": resolved.chapter_ids,
+        "sources": list(args.get("sources") or []),
         "chapterId": str(args.get("chapter_id") or ""),
     }
     if books:
@@ -1715,8 +1704,6 @@ def _response_details(resp: requests.Response) -> dict[str, Any]:
 _GATEWAY_CODES = {
     "storage_quota_exceeded": "quota_rejected",
     "account_over_quota": "lifecycle_rejected",
-    "invalid_scope": "unavailable_target",
-    "scope_has_no_indexed_content": "unavailable_target",
 }
 
 
@@ -1850,10 +1837,10 @@ async def _trash_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
     if kind == "source_file":
-        refused = await _refuse_note_as_file(ctx, rid)
+        refused = await _refuse_material_as_file(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
+        resolved = await _resolve_scope(ctx, [rid])
         if isinstance(resolved, ToolResult):
             return resolved
     # Detect unrelated publications first; the acknowledged change re-baselines after.
@@ -2015,10 +2002,10 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         )
     kind, rid = _target(args)
     if kind == "source_file":
-        refused = await _refuse_note_as_file(ctx, rid)
+        refused = await _refuse_material_as_file(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
+        resolved = await _resolve_scope(ctx, [rid])
         if isinstance(resolved, ToolResult):
             return resolved
     body = await _gateway_read(
@@ -2049,18 +2036,47 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
 # How much of a missed block's current text a refused edit shows.
 SHOWN_BLOCK_CHARS = 2000
 
+# How a refused Office edit names its target as it is now, by the engine's
+# details.block type.
+_OFFICE_TARGETS = {
+    "range": "Range {id} now holds, as TSV:",
+    "cell": "Cell {id} now holds:",
+    "sheet": "Sheet {id} now reads:",
+    "paragraph": "Paragraph {id} now reads:",
+    "shape": "Shape {id} now reads:",
+}
 
-def _missed_target(details: dict[str, Any], seen: dict[str, str]) -> str:
-    """A refused edit's target as it is now, so the retry needs no
-    inspect_document: the block's current text, saying when it changed since
-    this turn last saw it, or the material's blocks for an id that is gone."""
+
+def _missed_target(
+    details: dict[str, Any], seen: dict[str, str], *, office: bool = False
+) -> str:
+    """A refused edit's target as it is now, so the retry needs no new read:
+    the block's current text, saying when it changed since this turn last saw
+    it, or the material's blocks (an Office file's sheets) for an id that is
+    gone."""
+    reader = "inspect_office_document" if office else "inspect_document"
     block = details.get("block")
     if isinstance(block, dict):
         bid, text = str(block.get("id") or ""), str(block.get("text") or "")
         shown = text[:SHOWN_BLOCK_CHARS]
         if len(text) > SHOWN_BLOCK_CHARS:
             more = len(text) - SHOWN_BLOCK_CHARS
-            shown += f" … ({more} more characters; inspect_document shows them)"
+            shown += f" … ({more} more characters; {reader} shows them)"
+        grid = block.get("grid")
+        if office and isinstance(grid, list):
+            # A refused row or column delete's band, exact for its expected.
+            cut = (
+                f" … (its first 2,000 cells; {reader} reads the rest)"
+                if block.get("gridCut")
+                else ""
+            )
+            return (
+                f"Range {bid} now holds, as rows of cells:\n"
+                + json.dumps(grid, ensure_ascii=False, separators=(",", ":"))
+                + cut
+            )
+        if office and block.get("type") in _OFFICE_TARGETS:
+            return _OFFICE_TARGETS[str(block["type"])].format(id=bid) + f"\n{shown}"
         changed = seen.get(bid, text) != text
         return (
             f"Block {bid} ({block.get('type')})"
@@ -2069,18 +2085,24 @@ def _missed_target(details: dict[str, Any], seen: dict[str, str]) -> str:
         )
     blocks = details.get("blocks")
     if isinstance(blocks, list):
+        listed = [b for b in blocks if isinstance(b, dict)]
+        sheets = office and all(b.get("type") == "sheet" for b in listed)
         lines = [
-            f"[{b.get('id')}] ({b.get('type')}) {b.get('text')}"
-            for b in blocks
-            if isinstance(b, dict)
+            f"[{b.get('id')}] {b.get('text')}"
+            if sheets
+            else f"[{b.get('id')}] ({b.get('type')}) {b.get('text')}"
+            for b in listed
         ]
         more = int(details.get("total") or len(lines)) - len(lines)
-        tail = f"\n… {more} more; inspect_document pages through them" if more else ""
-        return (
-            "The material's blocks now, with the start of each:\n"
-            + "\n".join(lines)
-            + tail
+        tail = f"\n… {more} more; {reader} pages through them" if more else ""
+        head = (
+            "The workbook's sheets now:"
+            if sheets
+            else "The file's targets now, with the start of each:"
+            if office
+            else "The material's blocks now, with the start of each:"
         )
+        return head + "\n" + "\n".join(lines) + tail
     return ""
 
 
@@ -2158,10 +2180,10 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     for i, markdown in zip(placing, figures.markdown, strict=True):
         commands[i] = {**commands[i], "markdown": markdown}
     if kind == "source_file":
-        refused = await _refuse_note_as_file(ctx, rid)
+        refused = await _refuse_material_as_file(ctx, rid)
         if refused is not None:
             return refused
-        resolved = await _resolve_scope(ctx, {"file_ids": [rid]})
+        resolved = await _resolve_scope(ctx, [rid])
         if isinstance(resolved, ToolResult):
             return resolved
         # Detect unrelated publications first; the acknowledged edit re-baselines after.
@@ -2211,7 +2233,185 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             f"No skill named {name}. Skills: {', '.join(skills.SKILLS)}.",
             code="unavailable_target",
         )
+    if name == skills.OFFICE_BUILDING:
+        # The agent appends the Office tools to the turn's tools after this
+        # call (agent._run_turn).
+        ctx.office_tools = True
     return _result(skills.render(name, skill.text(ctx.library)))
+
+
+# --------------------------------------------------------------- Office files
+
+# One edit_office_document call's commands at most, as compact JSON (Epo
+# 2026-10-20); a larger call is refused before it leaves.
+OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
+# Cells one call writes across its commands (Epo 2026-10-20, review finding
+# 3). The pipeline counts set_range and format_cells areas for an early
+# refusal; the engine counts every command's cells and stays the authority.
+OFFICE_CALL_MAX_CELLS = 10_000
+_A1_RANGE = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
+
+
+def _range_cells(text: str) -> int:
+    """The cells an A1 range covers; 0 for one the engine refuses anyway."""
+    match = _A1_RANGE.fullmatch(text.strip().upper())
+    if not match:
+        return 0
+
+    def column(letters: str) -> int:
+        return sum((ord(ch) - 64) * 26**i for i, ch in enumerate(reversed(letters)))
+
+    first, row = column(match[1]), int(match[2])
+    last, end = (column(match[3]), int(match[4])) if match[3] else (first, row)
+    return (abs(last - first) + 1) * (abs(end - row) + 1)
+
+
+def _render_scoped(body: dict[str, Any], scoped: dict[str, Any]) -> str:
+    """An XLSX read: its sheets as ``[id] name used-range``, or a range's
+    cells as ``A1: input``, followed by ``→ shown value`` where that differs."""
+    head = f"{body.get('title') or ''} format={body.get('format')}"
+    lines: list[str] = []
+    if "sheets" in scoped:
+        head += "\nsheets as [id] name used range:"
+        for sheet in scoped.get("sheets") or []:
+            used = sheet.get("usedRange") or "empty"
+            lines.append(f"[{sheet.get('id')}] {sheet.get('name')} {used}")
+    else:
+        sheet = scoped.get("sheet") or {}
+        head += (
+            f"\ncells of {sheet.get('name')}!{scoped.get('range')} "
+            "(empty cells left out):"
+        )
+        for cell in scoped.get("cells") or []:
+            line = f"{cell.get('address')}: {cell.get('input')}"
+            if cell.get("value") != cell.get("input"):
+                line += f" → {cell.get('value')}"
+            lines.append(line)
+    return head + "\n" + source_block("\n".join(lines))
+
+
+async def _inspect_office_document(
+    args: dict[str, Any], ctx: ToolContext
+) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id:
+        return _refused(
+            "Document tools are unavailable for this user.", code="lifecycle_rejected"
+        )
+    rid = str(args["file_id"])
+    refused = await _refuse_material_as_file(ctx, rid)
+    if refused is not None:
+        return refused
+    resolved = await _resolve_scope(ctx, [rid])
+    if isinstance(resolved, ToolResult):
+        return resolved
+    body = await _gateway_read(
+        "/api/internal/documents/inspect",
+        {
+            "workspaceId": ctx.workspace_id,
+            "userId": ctx.user_id,
+            "target": {"kind": "source_file", "id": rid},
+            "office": {
+                k: args[k]
+                for k in ("sheet", "range", "start", "count", "slide")
+                if k in args
+            },
+        },
+        "inspect the file",
+    )
+    if isinstance(body, ToolResult):
+        return body
+    ctx.pending_sources.read(rid)
+    scoped = body.get("scoped")
+    if isinstance(scoped, dict):
+        return _result(_render_scoped(body, scoped))
+    return _result(_render_inspection(body, source=True))
+
+
+async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
+        return _refused(
+            "Document editing is unavailable for this user.", code="lifecycle_rejected"
+        )
+    call_id = str(args.get("_tool_call_id") or "")
+    commands = list(args["commands"])
+    size = len(json.dumps(commands, ensure_ascii=False, separators=(",", ":")).encode())
+    if size > OFFICE_COMMANDS_MAX_BYTES:
+        return _refused(
+            f"The commands are {-(-size // 1024)} KB, over the 256 KB one call may "
+            "send; split the edit into several calls."
+        )
+    cells = sum(
+        _range_cells(str(command.get("range") or ""))
+        for command in commands
+        if command.get("type") in ("set_range", "format_cells")
+    )
+    if cells > OFFICE_CALL_MAX_CELLS:
+        return _refused(
+            f"The commands write {cells:,} cells, over the 10,000 one call may "
+            "write; split the edit into several calls."
+        )
+    rid = str(args.get("file_id") or "")
+    creating = commands[0].get("type") == "create"
+    if creating == bool(rid):
+        return _refused(
+            "A create command makes a new file, so the call takes no file_id."
+            if creating
+            else "file_id is required unless the first command is create."
+        )
+
+    def explain(details: dict[str, Any]) -> str:
+        text = _missed_target(details, {}, office=True)
+        return source_block(text) if text else ""
+
+    op_id = operation_id(ctx.assistant_message_id, call_id)
+    if creating:
+        create = commands[0]
+        if (unknown := unknown_chapter(ctx, create)) is not None:
+            return unknown
+        await ctx.pending_sources.validate()
+        result = await _post_operation(
+            "/api/internal/documents/office/create",
+            {
+                **_chat_context(ctx, call_id),
+                "format": create["format"],
+                "title": create["title"],
+                "chapterId": str(create.get("chapter_id") or ""),
+                "commands": commands[1:],
+            },
+            op_id,
+            ctx,
+            failure="create the file",
+            # The engine builds the file and Go stores it, like a deck's store.
+            timeout=60,
+            explain=explain,
+        )
+    else:
+        refused = await _refuse_material_as_file(ctx, rid)
+        if refused is not None:
+            return refused
+        resolved = await _resolve_scope(ctx, [rid])
+        if isinstance(resolved, ToolResult):
+            return resolved
+        # Detect unrelated publications first; the acknowledged edit re-baselines after.
+        await ctx.pending_sources.validate()
+        result = await _post_operation(
+            "/api/internal/documents/edit",
+            {
+                **_chat_context(ctx, call_id),
+                "target": {"kind": "source_file", "id": rid},
+                "commands": commands,
+                "office": True,
+            },
+            op_id,
+            ctx,
+            failure="edit the file",
+            explain=explain,
+        )
+    if result.effects:
+        ctx._scope_outline = None
+        changed = (result.effects[0].get("resource") or {}).get("id") or ""
+        await _reload_pending(ctx, str(changed))
+    return result
 
 
 # --------------------------------------------------------------- questions
@@ -2271,11 +2471,8 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
         return body if isinstance(body, ToolResult) else quiz_questions(quiz_id, body)
 
     async def create(args, written, books):
-        resolved = await _material_scope(ctx, args, books)
-        if isinstance(resolved, ToolResult):
-            return resolved
         return await _post_material(
-            ctx, call_id, args, resolved, books, {"kind": "quiz", "questions": written}
+            ctx, call_id, args, books, {"kind": "quiz", "questions": written}
         )
 
     async def edit(quiz_id, commands, books, images):
@@ -2495,7 +2692,8 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if record.get("file"):
         return _refused(
             f"Deck {rid} is stored as file {record['file']}, which is now the document: "
-            "change its text with edit_document replace_text, or make a new deck.",
+            "edit it with edit_office_document (the office_building skill), or make "
+            "a new deck.",
             code="unavailable_target",
         )
     prepared = await write_sources(ctx, "write_slide", args)
@@ -2533,6 +2731,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         **_chat_context(ctx, call_id),
         "name": deck.file_name(record),
         "chapterId": record["chapter_id"],
+        "sources": record["sources"],
         "content": base64.b64encode(pptx.read_bytes()).decode(),
     }
     if record["provenance"]:
@@ -2642,6 +2841,9 @@ _register("list_trashed_files", _list_trashed_files)
 _register("restore_file", _restore_file)
 _register("create_deck", _create_deck)
 _register("write_slide", _write_slide)
+# Last, so a turn that starts offering them appends them to its tools.
+_register("inspect_office_document", _inspect_office_document)
+_register("edit_office_document", _edit_office_document)
 
 
 # Offered only with the Library switch on and a configured library.
@@ -2649,6 +2851,8 @@ KNOWLEDGE_TOOLS = ("search_knowledge", "read_knowledge")
 KNOWLEDGE_CAPTURE = "capture_knowledge_page"
 # Offered with ppt-master installed (the retrieval image has it).
 DECK_TOOLS = ("create_deck", "write_slide")
+# Offered once the office_building skill is read (ToolContext.office_tools).
+OFFICE_TOOLS = ("inspect_office_document", "edit_office_document")
 
 
 def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
@@ -2659,6 +2863,8 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
         return False
     if spec.name == "read_study_progress":
         return ctx.study_progress
+    if spec.name in OFFICE_TOOLS:
+        return ctx.office_tools
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return ctx.library and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
@@ -2768,10 +2974,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(problem)
     needs = skills.missing(name, args, ctx.skills_read)
     if needs:
-        return _refused(
-            skills.refusal(needs),
-            detail=skills.carried(needs, lambda n: skills.SKILLS[n].text(ctx.library)),
-        )
+        return _refused(skills.refusal(needs, write=mutates(name)))
     try:
         result = await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):
@@ -2823,7 +3026,12 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
         parts.extend([body, result.text_parts[0]])
     else:
         if numbered:
-            parts.append("\n\n".join(passage.as_context(n) for n, passage in numbered))
+            parts.append(
+                "\n\n".join(
+                    passage.as_context(n, result.unindexed.get(passage.file_id, 0))
+                    for n, passage in numbered
+                )
+            )
         parts.extend(part for part in result.text_parts if part)
     text = "\n\n".join(parts) if parts else result.text()
     if numbered:

@@ -25,6 +25,7 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     # other is for a request that asks for its format (Epo 2026-10-14).
     listed = described()
     assert f"- editing: {skills.SKILLS['editing'].when}." in listed
+    assert f"- office_building: {skills.SKILLS['office_building'].when}." in listed
     assert "main explainers are notes." in listed
     assert "PowerPoint deck (create_deck, write_slide), only when the request" in listed
     ctx.study_preferences = {"mainFormat": "deck"}
@@ -38,6 +39,12 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     editing = (await tools._read_skill({"name": "editing"}, ctx)).text()
     assert "Budget:" in editing and "excerpt_ids are" not in editing
     assert "add_questions" in editing and "Flashcards:" in editing
+    assert "Edits not yet in search show up as hints" in editing
+    office = (await tools._read_skill({"name": "office_building"}, ctx)).text()
+    assert (
+        "a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits"
+        in office
+    )
     ctx.library = True
     assert (
         "Practice from the library"
@@ -55,15 +62,12 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
 
     refused = await tools.run("create_material", {"kind": "note", "content": "x"}, ctx)
     assert refused.refused
-    # The refusal carries both skills, which count as read once it is in the
-    # request; only the short refusal is the error the chat stores.
-    assert refused.error == skills.refusal(["editing", "note_building"])
-    building = skills.render(
-        "note_building", skills.SKILLS["note_building"].text(False)
-    )
-    assert refused.text().endswith(building)
-    carried = [{"role": "tool", "tool_call_id": "c0", "content": refused.text()}]
-    assert skills.retained(carried) == {"editing", "note_building"}
+    # The refusal carries no skill text and reads nothing (Epo 2026-10-20): a
+    # write takes a deliberate read_skill, and only if the user wants it.
+    assert refused.error == skills.refusal(["editing", "note_building"], write=True)
+    assert refused.text() == refused.error and "read_skill only if" in refused.text()
+    refusal = [{"role": "tool", "tool_call_id": "c0", "content": refused.text()}]
+    assert skills.retained(refusal) == set()
 
     read = skills.render("editing", "instructions")
     messages = [{"role": "tool", "tool_call_id": "c1", "content": read}]

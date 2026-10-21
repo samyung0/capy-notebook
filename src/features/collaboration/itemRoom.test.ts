@@ -4,12 +4,20 @@ import { ApiError } from '@/api/client';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
-const providers: { config: RoomProviderConfig; connects: number }[] = [];
+const providers: {
+  config: RoomProviderConfig;
+  connects: number;
+  stateless: string[];
+}[] = [];
 vi.mock('./roomProvider', () => ({
   RoomProvider: class {
-    record: { config: RoomProviderConfig; connects: number };
+    record: {
+      config: RoomProviderConfig;
+      connects: number;
+      stateless: string[];
+    };
     constructor(config: RoomProviderConfig) {
-      this.record = { config, connects: 0 };
+      this.record = { config, connects: 0, stateless: [] };
       providers.push(this.record);
     }
     connect() {
@@ -17,7 +25,9 @@ vi.mock('./roomProvider', () => ({
     }
     disconnect() {}
     destroy() {}
-    sendStateless() {}
+    sendStateless(payload: string) {
+      this.record.stateless.push(payload);
+    }
   },
 }));
 // The next token requests' answers: a token, or an error thrown.
@@ -38,6 +48,7 @@ const drafts = vi.hoisted(() => ({
   onStorage: undefined as ((ok: boolean) => void) | undefined,
   refused: 0,
   rows: [] as unknown[],
+  unsaved: true,
 }));
 vi.mock('@/lib/editDrafts', () => ({
   applyDrafts: vi.fn(),
@@ -58,7 +69,9 @@ vi.mock('@/lib/editDrafts', () => ({
     drafts.onStorage = options.onStorage;
     return {
       connected() {},
-      covered: async () => undefined,
+      covered: async () => {
+        drafts.unsaved = false;
+      },
       discard: async () => {
         drafts.discarded += 1;
       },
@@ -70,7 +83,9 @@ vi.mock('@/lib/editDrafts', () => ({
         drafts.refused += 1;
       },
       sequence: 1,
-      unsaved: true,
+      get unsaved() {
+        return drafts.unsaved;
+      },
     };
   },
   recoveryDocument: () => new Y.Doc(),
@@ -79,7 +94,8 @@ vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
 vi.mock('./unsentItems', () => ({ markUnsent: vi.fn() }));
 
-const { ItemRoom } = await import('./itemRoom');
+const { ItemRoom, openItemRoom } = await import('./itemRoom');
+const { NoteSeat } = await import('./noteSeat');
 const { applyDrafts } = await import('@/lib/editDrafts');
 const { markUpdateAvailable } = await import('@/lib/appRelease');
 const { markUnsent } = await import('./unsentItems');
@@ -92,6 +108,7 @@ beforeEach(() => {
   drafts.refused = 0;
   drafts.discarded = 0;
   drafts.disposed = 0;
+  drafts.unsaved = true;
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -103,6 +120,59 @@ async function started(onReplace = vi.fn()) {
   await room.start();
   return { onReplace, room };
 }
+
+// Rate-limit review r6 S-2: two copies of one embedded set in a note share
+// one room, so the note's channel joins it once (the server closes a second
+// channel of one room under a note); both read its state, the room stays
+// while a copy holds it, and a replace reaches both copies.
+it('shares one room between two copies of an embed in a note', async () => {
+  const seat = new NoteSeat();
+  const replaces = [vi.fn(), vi.fn()];
+  const first = openItemRoom('q', {
+    inside: seat,
+    onReplace: replaces[0],
+    read: true,
+  });
+  const second = openItemRoom('q', {
+    inside: seat,
+    onReplace: replaces[1],
+    read: true,
+  });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(second.room).toBe(first.room);
+  expect(providers).toHaveLength(1);
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  expect(second.room.getSnapshot().synced).toBe(true);
+  // Another document of the material is a room of its own.
+  const keys = openItemRoom('q', {
+    document: 'keys',
+    inside: seat,
+    onReplace: vi.fn(),
+  });
+  expect(keys.room).not.toBe(first.room);
+  keys.close();
+
+  const destroy = vi.spyOn(first.room, 'destroy');
+  first.close();
+  expect(destroy).not.toHaveBeenCalled();
+  await provider.config.token();
+  tokens.push({ access: 'write', room: 'material:q:schema:2' });
+  await expect(provider.config.token()).rejects.toThrow('room moved');
+  await vi.advanceTimersByTimeAsync(0);
+  expect(replaces[0]).not.toHaveBeenCalled();
+  expect(replaces[1]).toHaveBeenCalledTimes(1);
+  second.close();
+  expect(destroy).toHaveBeenCalledTimes(1);
+  // The next copy opens a fresh room.
+  const third = openItemRoom('q', {
+    inside: seat,
+    onReplace: vi.fn(),
+    read: true,
+  });
+  expect(third.room).not.toBe(first.room);
+  third.close();
+});
 
 // REVIEW1 M1: a refused update never rejoins with what was refused: the
 // edits are kept as a refused draft and a fresh room replaces this one.
@@ -119,6 +189,28 @@ it('ends once on a refused update and never rejoins', async () => {
   expect(drafts.refused).toBe(1);
   expect(onReplace).toHaveBeenCalledTimes(1);
   expect(provider.connects).toBe(1);
+  room.destroy();
+});
+
+// Saved means stored in the database (Epo 2026-10-19): edits the room
+// acknowledged still show syncing until the receipt of the store that holds
+// them, then saved.
+it('shows syncing until a store receipt covers the edits, then saved', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onUnsyncedChanges?.({ number: 1 });
+  expect(room.getSnapshot().status).toBe('syncing');
+  provider.config.onUnsyncedChanges?.({ number: 0 });
+  expect(room.getSnapshot().status).toBe('syncing');
+  const { id } = JSON.parse(provider.stateless.at(-1) ?? '{}');
+  provider.config.onStateless?.({
+    payload: JSON.stringify({
+      checkpointIds: [id],
+      type: 'checkpoint-persisted',
+    }),
+  });
+  expect(room.getSnapshot().status).toBe('saved');
   room.destroy();
 });
 
@@ -352,5 +444,31 @@ it('says the reload loses edits this device could not store', async () => {
   });
   expect(room.getSnapshot().offline).toBe('outdated-unstored');
   expect(markUnsent).toHaveBeenLastCalledWith(room, true);
+  room.destroy();
+});
+
+// Epo 2026-10-20: an open waiting on the user's open budget keeps loading,
+// even past the reconnect grace and after a socket drop showed offline.
+it('loads while its open is slowed, never offline, until it syncs', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onClose?.({ code: 0, reason: 'socket closed' });
+  expect(room.getSnapshot().status).toBe('offline');
+  provider.config.onSlowed?.(true);
+  expect(room.getSnapshot()).toMatchObject({
+    offline: null,
+    slowed: true,
+    status: 'connecting',
+  });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(room.getSnapshot().status).toBe('connecting');
+  provider.config.onSynced?.({ state: true });
+  expect(room.getSnapshot().slowed).toBe(false);
+  // A slowed open whose channel parked (closed as the user's oldest) shows
+  // no slowed line (rate-limit review r6 N-4).
+  provider.config.onSlowed?.(true);
+  provider.config.onSlowed?.(false);
+  expect(room.getSnapshot().slowed).toBe(false);
   room.destroy();
 });

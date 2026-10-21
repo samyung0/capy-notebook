@@ -115,6 +115,9 @@ pub struct Loaded {
     pub bytes: u64,
     /// The room's state cap ([`crate::state_cap`]).
     pub state_cap: u64,
+    /// An Office room's seed state vector: deleting what it holds frees
+    /// nothing in the stored change (`ydoc::apply_freeing`).
+    pub seed: Option<StateVector>,
     /// The stored base's size and the rows over it (the room's fold sizes).
     pub base_bytes: u64,
     pub rows: u64,
@@ -220,6 +223,10 @@ pub struct SourceInspection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entries: Option<Vec<office_service::Entry>>,
     pub epoch: u64,
+    /// The agent's scoped Office read (`office_service::inspect_scoped`), in
+    /// place of `entries` when the request names a query.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scoped: Option<serde_json::Value>,
     pub format: SourceFormat,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -281,22 +288,25 @@ fn decode(bytes: &[u8]) -> Result<Update, SourceError> {
 /// Applies `updates` in one transaction (seed plus change, as a fresh
 /// document applies a whole state) and refuses a result with pending
 /// content: every item a change refers to must be in what precedes it.
+/// Returns the state vector after the first update (an Office room's seed).
 pub(crate) fn replay<'a>(
     doc: &Doc,
     updates: impl IntoIterator<Item = &'a [u8]>,
-) -> Result<(), SourceError> {
+) -> Result<StateVector, SourceError> {
     let mut txn = doc.transact_mut();
+    let mut first = None;
     for bytes in updates {
         txn.apply_update(decode(bytes)?).map_err(|error| {
             SourceError::State(format!("stored update does not apply: {error}"))
         })?;
+        first.get_or_insert_with(|| txn.state_vector());
     }
     if txn.store().pending_update().is_some() || txn.store().pending_ds().is_some() {
         return Err(SourceError::State(
             "The saved changes refer to content missing from the seed".into(),
         ));
     }
-    Ok(())
+    Ok(first.unwrap_or_default())
 }
 
 /// A document to replay stored state into (a fold, a capture, a save's
@@ -664,9 +674,10 @@ impl Sources {
         let target = doc.clone();
         let layers = Arc::new(layers);
         let applied = layers.clone();
-        tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
-            .await
-            .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
+        let seeded =
+            tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
+                .await
+                .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
         stage(&mut times.replay);
         let mut record = RoomRecord {
             generation,
@@ -698,6 +709,7 @@ impl Sources {
             checkpoint: stored.checkpoint,
             bytes: layers.iter().map(|layer| layer.len() as u64).sum(),
             state_cap,
+            seed: office(session.format).map(|_| seeded),
             base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
             rows: stored.rows.len() as u64,
             row_bytes: stored.rows.iter().map(|(_, row)| row.len() as u64).sum(),
@@ -1375,11 +1387,15 @@ impl Sources {
         &self,
         file_id: &str,
         actor: &str,
+        query: Option<serde_json::Value>,
         live: F,
     ) -> Result<SourceInspection, SourceError>
     where
         F: FnOnce(String) -> BoxFuture<Option<Vec<u8>>>,
     {
+        let query: Option<office_service::InspectQuery> = query
+            .map(|query| crate::edit::parse(query, "office query"))
+            .transpose()?;
         let session = self.gateway.session(file_id, actor).await?;
         let job = Job::default();
         let (base, sha) = self.bound_base(&session, Reader::Job(&job)).await?;
@@ -1396,6 +1412,7 @@ impl Sources {
             entries: None,
             epoch: session.epoch,
             format: session.format,
+            scoped: None,
             text: None,
         };
         match office(session.format) {
@@ -1412,10 +1429,44 @@ impl Sources {
                     base_sha256: &sha,
                     room: Some(&session.room),
                 };
-                inspection.entries = Some(self.engines.inspect(on, &state).await?);
+                match &query {
+                    Some(query) => {
+                        // A refused read (a range too large) answers like a
+                        // refused edit, with its sentence.
+                        inspection.scoped = Some(
+                            self.engines
+                                .inspect_scoped(on, &state, query)
+                                .await
+                                .map_err(crate::edit::office_error)?,
+                        )
+                    }
+                    None => inspection.entries = Some(self.engines.inspect(on, &state).await?),
+                }
             }
         }
         Ok(inspection)
+    }
+
+    /// A new Office file for the agent's `create`: the format's starter with
+    /// the commands applied, exported like a publication (fixed time, seed
+    /// from the request), so a retried create gives the same bytes. Nothing
+    /// is stored here; the API stores the file.
+    pub async fn create_office(
+        &self,
+        format: serde_json::Value,
+        commands: Vec<serde_json::Value>,
+    ) -> Result<(Vec<u8>, Option<String>), SourceError> {
+        let format: office_service::Format = crate::edit::parse(format, "format")?;
+        let commands: Vec<office_service::Command> =
+            crate::edit::parse(serde_json::Value::Array(commands), "commands")?;
+        let seed = office_service::sha256_hex(
+            serde_json::to_string(&(format, &commands))
+                .map_err(|error| SourceError::Other(error.to_string()))?,
+        );
+        self.engines
+            .create(format, &commands, &seed, "2000-01-01T00:00:00.000Z")
+            .await
+            .map_err(crate::edit::office_error)
     }
 
     /// The image of a pending effect, for the API's change review.

@@ -36,7 +36,13 @@ from ..retrieval import (
     store,
     workflows,
 )
-from ..retrieval.agent import CLIENT_ERROR, CLIENT_ERROR_CODE, ClientDrop, run_agent
+from ..retrieval.agent import (
+    CLIENT_ERROR,
+    CLIENT_ERROR_CODE,
+    ClientDrop,
+    run_agent,
+    with_turn_state,
+)
 from ..retrieval.chunking import estimate_tokens
 from ..retrieval.events import error as client_error
 from ..retrieval.tools import ToolContext
@@ -258,6 +264,10 @@ class ChatStreamReq(LLMPin):
     studyPreferences: dict | None = None
     # Study progress is on for the requester in this workspace.
     studyProgress: bool = False
+    # An earlier turn of the conversation was offered the Office tools.
+    officeTools: bool = False
+    # The requester's workspace role: owner, editor or viewer.
+    role: Literal["owner", "editor", "viewer"]
 
 
 def _bind_accounting(session_id: str):
@@ -287,6 +297,8 @@ class GenerateReq(LLMPin):
     diagramType: str
     chapters: list[str] | None = None
     fileIds: list[str] | None = None
+    # The names of fileIds, for the prompt's scope line.
+    fileNames: list[str] | None = None
     locale: str | None = None
     spendSessionId: str = ""
 
@@ -401,18 +413,20 @@ async def _chat_events(req: ChatStreamReq, request: Request):
     _bind_llm(req)
     accounting_token = None
     client = ClientDrop()
+    ctx = ToolContext(
+        workspace_id=req.workspaceId,
+        user_id=req.userId or "",
+        operations=frozenset(req.operations),
+        file_ids=None if req.fileIds is None else list(req.fileIds),
+        assistant_message_id=req.assistantMessageId or "",
+        library=req.library,
+        open_resource=dict(req.openResource or {}),
+        study_preferences=dict(req.studyPreferences or {}),
+        study_progress=req.studyProgress,
+        office_tools=req.officeTools,
+        role=req.role,
+    )
     try:
-        ctx = ToolContext(
-            workspace_id=req.workspaceId,
-            user_id=req.userId or "",
-            operations=frozenset(req.operations),
-            file_ids=None if req.fileIds is None else list(req.fileIds),
-            assistant_message_id=req.assistantMessageId or "",
-            library=req.library,
-            open_resource=dict(req.openResource or {}),
-            study_preferences=dict(req.studyPreferences or {}),
-            study_progress=req.studyProgress,
-        )
         accounting_token = accounting.bind(req.spendSessionId)
         agen = run_agent(
             query=req.query,
@@ -435,7 +449,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
         log.exception("chat stream failed")
         event = obs.reported_event(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE), exc)
         if not client.dropped:
-            yield _sse(event)
+            yield _sse(with_turn_state(event, ctx))
     finally:
         if accounting_token is not None:
             accounting.reset(accounting_token)
@@ -493,7 +507,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         )
     else:
         raise ValueError(f"unsupported generate kind {req.kind!r}")
-    scope = workflows.scope_label(chapters, [])
+    scope = workflows.scope_label(chapters, req.fileNames or [])
     context, _passages, changes = await workflows.generation_context(
         workspace_id=req.workspaceId,
         file_ids=file_ids or None,

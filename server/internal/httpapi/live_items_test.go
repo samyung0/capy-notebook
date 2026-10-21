@@ -2,11 +2,14 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -163,5 +166,121 @@ func TestQuizKeysTokensGoToEditorsOnly(t *testing.T) {
 		if rec.Code != narrow.status {
 			t.Fatalf("%s: editor keys = %d body=%s, want %d", narrow.name, rec.Code, rec.Body.String(), narrow.status)
 		}
+	}
+}
+
+// Embedded quizzes and sets sync inside their note's seat (Epo 2026-10-20):
+// their tokens, the quiz keys' too, name the note, which the collaboration
+// server checks against the channel the embed joins in. A note's own token
+// names none.
+func TestEmbeddedItemTokensNameTheirNote(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	t.Cleanup(st.Close)
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
+		AuthDisabled:        true,
+		E2EAuth:             true,
+		E2ESecret:           "e2e-test-secret",
+		E2EUserIDs:          []string{"u_owner", "u_editor"},
+		CollaborationSecret: "collab-test-secret",
+	})
+	quiz, err := st.CreateEmbeddedMaterial(ctx, "u_owner", "note_e2e_private", store.EmbeddedDraft{
+		Kind:      "quiz",
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := st.CreateEmbeddedMaterial(ctx, "u_owner", "note_e2e_private", store.EmbeddedDraft{Kind: "flashcards", Cards: [][2]string{{"front", "back"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, st, quiz.ID)
+	cleanupMaterial(t, st, set.ID)
+	parent := func(material string, body any) string {
+		t.Helper()
+		rec := doReq(t, h, http.MethodPost, "/api/materials/"+material+"/collaboration-token", "u_editor", body)
+		var token struct {
+			Token string `json:"token"`
+		}
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &token) != nil {
+			t.Fatalf("token for %s = %d body=%s", material, rec.Code, rec.Body.String())
+		}
+		parts := strings.Split(token.Token, ".")
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var claims struct {
+			Parent *string `json:"parent"`
+		}
+		if err := json.Unmarshal(payload, &claims); err != nil {
+			t.Fatal(err)
+		}
+		if claims.Parent == nil {
+			return ""
+		}
+		return *claims.Parent
+	}
+	for _, c := range []struct {
+		material string
+		body     any
+		want     string
+	}{
+		{quiz.ID, nil, "note_e2e_private"},
+		{quiz.ID, map[string]any{"document": "keys"}, "note_e2e_private"},
+		{set.ID, map[string]any{"access": "read"}, "note_e2e_private"},
+		{"note_e2e_private", nil, ""},
+	} {
+		if got := parent(c.material, c.body); got != c.want {
+			t.Fatalf("%s %v: parent %q, want %q", c.material, c.body, got, c.want)
+		}
+	}
+}
+
+// Security regression (Epo 2026-10-20, privacy): a room token names who the
+// connection is for the room's presence by the verified name alone; nothing
+// about the device (no browser or OS, no part of the User-Agent) goes in.
+func TestCollaborationTokensCarryNoDevice(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.New(ctx, testdb.URL(t))
+	if err != nil {
+		t.Fatalf("db: %v", err)
+	}
+	t.Cleanup(st.Close)
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
+		AuthDisabled:        true,
+		E2EAuth:             true,
+		E2ESecret:           "e2e-test-secret",
+		E2EUserIDs:          []string{"u_editor"},
+		CollaborationSecret: "collab-test-secret",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/materials/note_e2e_private/collaboration-token", nil)
+	req.Header.Set(auth.HeaderE2EUserID, "u_editor")
+	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var token struct {
+		Token string `json:"token"`
+	}
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &token) != nil {
+		t.Fatalf("token = %d body=%s", rec.Code, rec.Body.String())
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(strings.Split(token.Token, ".")[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var claims map[string]any
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		t.Fatal(err)
+	}
+	_, hasBrowser := claims["browser"]
+	_, hasOS := claims["os"]
+	if hasBrowser || hasOS || claims["name"] == "" || strings.Contains(string(payload), "Safari") || strings.Contains(string(payload), "Mac") {
+		t.Fatalf("claims = %s", payload)
 	}
 }

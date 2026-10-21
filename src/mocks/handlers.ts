@@ -32,6 +32,7 @@ import type {
   TagInput,
   Task,
   TrashItem,
+  UpdateConversationReq,
   Workspace,
   WorkspaceMember,
 } from '@/api/types';
@@ -161,16 +162,24 @@ const ownerMaterialAccess = {
   },
   role: 'owner' as const,
 };
+/** One typed address, as on the server: `invitedUserId` is empty while the
+ * row reaches no eligible account (inert, never acceptable). */
 interface MockWorkspaceInvite {
   acceptedAt?: string;
   email: string;
   expiresAt: string;
   id: string;
   invitedUserId: string;
+  revokedAt?: string;
   role: Exclude<WorkspaceMember['role'], 'owner'>;
+  sentAt: string;
   token: string;
   workspaceId: string;
 }
+const pendingInvite = (invite: MockWorkspaceInvite) =>
+  !invite.acceptedAt &&
+  !invite.revokedAt &&
+  new Date(invite.expiresAt).getTime() > Date.now();
 function copyText(
   locale: string,
   key: 'new_flashcards' | 'untitled_note' | 'untitled_quiz'
@@ -1340,34 +1349,29 @@ export const handlers = [
             member.workspaceId === workspaceId && member.userId === candidate.id
         )
       : false;
-    if (!candidate || alreadyMember)
-      return new HttpResponse(null, { status: 202 });
-
+    const typed = body.identifier.trim();
     const now = new Date();
+    const fields = {
+      email: typed,
+      expiresAt: new Date(
+        now.getTime() + 7 * 24 * 60 * 60 * 1000
+      ).toISOString(),
+      invitedUserId: candidate && !alreadyMember ? candidate.id : '',
+      role: body.role,
+      sentAt: now.toISOString(),
+      token: uid('invite-token'),
+    };
+    // Every typed address keeps one pending row; typing it again refreshes it.
     let invite = mockWorkspaceInvites.find(
       (item) =>
         item.workspaceId === workspaceId &&
-        item.invitedUserId === candidate.id &&
-        !item.acceptedAt
+        item.email.toLowerCase() === identifier &&
+        !item.acceptedAt &&
+        !item.revokedAt
     );
-    if (invite) {
-      invite.role = body.role;
-      invite.token = uid('invite-token');
-      invite.expiresAt = new Date(
-        now.getTime() + 7 * 24 * 60 * 60 * 1000
-      ).toISOString();
-    } else {
-      invite = {
-        email: candidate.email,
-        expiresAt: new Date(
-          now.getTime() + 7 * 24 * 60 * 60 * 1000
-        ).toISOString(),
-        id: uid('inv'),
-        invitedUserId: candidate.id,
-        role: body.role,
-        token: uid('invite-token'),
-        workspaceId,
-      };
+    if (invite) Object.assign(invite, fields);
+    else {
+      invite = { ...fields, id: uid('inv'), workspaceId };
       mockWorkspaceInvites.push(invite);
     }
     if (invite.invitedUserId === db.user.id) {
@@ -1399,6 +1403,30 @@ export const handlers = [
       }
     }
     return new HttpResponse(null, { status: 202 });
+  }),
+  http.get('/api/workspaces/:id/invites', ({ params }) =>
+    HttpResponse.json(
+      mockWorkspaceInvites
+        .filter((item) => item.workspaceId === params.id && pendingInvite(item))
+        .sort((a, b) => b.sentAt.localeCompare(a.sentAt))
+        .map((item) => ({
+          address: item.email,
+          expiresAt: item.expiresAt,
+          id: item.id,
+          sentAt: item.sentAt,
+        }))
+    )
+  ),
+  http.delete('/api/workspaces/:id/invites/:inviteId', ({ params }) => {
+    const invite = mockWorkspaceInvites.find(
+      (item) =>
+        item.id === params.inviteId &&
+        item.workspaceId === params.id &&
+        pendingInvite(item)
+    );
+    if (!invite) return new HttpResponse(null, { status: 404 });
+    invite.revokedAt = new Date().toISOString();
+    return new HttpResponse(null, { status: 204 });
   }),
   http.patch(
     '/api/workspaces/:id/members/:memberId',
@@ -1492,13 +1520,14 @@ export const handlers = [
     const invite = mockWorkspaceInvites.find(
       (item) =>
         (item.id === params.token || item.token === params.token) &&
-        !item.acceptedAt
+        pendingInvite(item)
     );
     if (!invite) return new HttpResponse(null, { status: 404 });
     if (!db.workspaces.some((workspace) => workspace.id === invite.workspaceId))
       return new HttpResponse(null, { status: 404 });
+    // Someone else's invite answers like a missing one, as on the server.
     if (invite.invitedUserId !== db.user.id) {
-      return new HttpResponse(null, { status: 403 });
+      return new HttpResponse(null, { status: 404 });
     }
     invite.acceptedAt = new Date().toISOString();
     const candidate = mockInviteCandidates.find(
@@ -2399,11 +2428,54 @@ export const handlers = [
   ),
   /* ---------------- chat & generate ---------------- */
   /* ---------------- conversations ---------------- */
-  http.get('/api/workspaces/:id/conversations', async ({ params }) => {
+  // The live list: pinned first (latest pin on top), then newest activity;
+  // ?archived=true: the archived threads, latest archived first.
+  http.get('/api/workspaces/:id/conversations', async ({ params, request }) => {
+    const archived =
+      new URL(request.url).searchParams.get('archived') === 'true';
+    const time = (at?: string) => (at ? +new Date(at) : 0);
     const list = db.conversations
-      .filter((c) => c.workspaceId === params.id)
-      .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+      .filter((c) => c.workspaceId === params.id && !!c.archivedAt === archived)
+      .sort((a, b) =>
+        archived
+          ? time(b.archivedAt) - time(a.archivedAt)
+          : time(b.pinnedAt) - time(a.pinnedAt) ||
+            time(b.updatedAt) - time(a.updatedAt)
+      );
     return HttpResponse.json(list);
+  }),
+  // Archiving drops the pin, as on the server.
+  http.patch('/api/conversations/:id', async ({ params, request }) => {
+    const conv = db.conversations.find((c) => c.id === params.id);
+    if (!conv) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as UpdateConversationReq;
+    const now = new Date().toISOString();
+    if (body.title !== undefined) conv.title = body.title;
+    if (body.pinned !== undefined)
+      conv.pinnedAt = body.pinned ? (conv.pinnedAt ?? now) : undefined;
+    if (body.archived !== undefined) {
+      conv.archivedAt = body.archived ? (conv.archivedAt ?? now) : undefined;
+      if (body.archived) conv.pinnedAt = undefined;
+    }
+    return HttpResponse.json(conv);
+  }),
+  http.post('/api/workspaces/:id/conversations/unarchive', ({ params }) => {
+    for (const c of db.conversations)
+      if (c.workspaceId === params.id) c.archivedAt = undefined;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.delete('/api/workspaces/:id/conversations/archived', ({ params }) => {
+    const gone = new Set(
+      db.conversations
+        .filter((c) => c.workspaceId === params.id && c.archivedAt)
+        .map((c) => c.id)
+    );
+    for (let i = db.conversations.length - 1; i >= 0; i--)
+      if (gone.has(db.conversations[i].id)) db.conversations.splice(i, 1);
+    for (let i = db.chatMessages.length - 1; i >= 0; i--)
+      if (gone.has(db.chatMessages[i].conversationId))
+        db.chatMessages.splice(i, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
   http.post(
     '/api/workspaces/:id/conversations',
@@ -2898,11 +2970,27 @@ export const handlers = [
   http.get('/api/attempts/:id', async ({ params }) => {
     const at = db.attempts.find((a) => a.id === params.id);
     if (!at) return new HttpResponse(null, { status: 404 });
+    // A set's attempt before this one, as the server reads it.
+    const previous =
+      at.kind === 'flashcards'
+        ? db.attempts
+            .filter(
+              (a) => a.materialId === at.materialId && a.takenAt < at.takenAt
+            )
+            .sort((a, b) => b.takenAt.localeCompare(a.takenAt))[0]
+        : undefined;
     return HttpResponse.json({
       ...at,
       answers: at.answers ?? {},
       cards: at.cards ?? [],
       questions: at.questions ?? [],
+      ...(previous && {
+        previous: {
+          correct: previous.correct,
+          takenAt: previous.takenAt,
+          total: previous.total,
+        },
+      }),
     });
   }),
   // Grades every part, records the attempt and returns it with the keys.
@@ -3121,9 +3209,9 @@ export const handlers = [
       creditsPeriodStart: new Date(
         Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)
       ).toISOString(),
-      creditsPurchasedMicros: 4070 * 1_000_000,
-      creditsReservedMicros: 40 * 1_000_000,
-      creditsUsedMicros: 1250 * 1_000_000,
+      creditsPurchasedMicros: 0,
+      creditsReservedMicros: 0,
+      creditsUsedMicros: PLAN_LIMITS.pro.creditLimitMicros,
       planTier: db.user.planTier,
       storageLimitBytes: db.accountStatus.storageLimitBytes,
       storageReservedBytes: 0,
@@ -3141,11 +3229,11 @@ export const handlers = [
   http.get('/api/usage', async () =>
     HttpResponse.json({
       bySurface: [
-        { creditMicros: 820 * 1_000_000, events: 9, key: 'chat' },
-        { creditMicros: 250 * 1_000_000, events: 3, key: 'generate' },
-        { creditMicros: 150 * 1_000_000, events: 6, key: 'ingest' },
-        { creditMicros: 20 * 1_000_000, events: 4, key: 'editor' },
-        { creditMicros: 10 * 1_000_000, events: 1, key: 'system' },
+        { creditMicros: 9000 * 1_000_000, events: 9, key: 'chat' },
+        { creditMicros: 3000 * 1_000_000, events: 3, key: 'generate' },
+        { creditMicros: 1700 * 1_000_000, events: 6, key: 'ingest' },
+        { creditMicros: 300 * 1_000_000, events: 4, key: 'editor' },
+        { creditMicros: 70 * 1_000_000, events: 1, key: 'system' },
       ],
     })
   ),

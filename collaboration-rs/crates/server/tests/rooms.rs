@@ -172,9 +172,31 @@ fn token(room: &str, user: &str, access: &str) -> String {
 
 /// A token for `room` that expires `ttl` seconds from now.
 fn token_for(room: &str, user: &str, access: &str, ttl: i64) -> String {
-    use base64::Engine;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use hmac::{Hmac, Mac};
+    signed_token(room, user, access, ttl, None)
+}
+
+/// An embedded item's token, naming its note as Go does.
+fn embed_token(room: &str, user: &str, note: &str) -> String {
+    signed_token(room, user, "write", 300, Some(note))
+}
+
+fn signed_token(room: &str, user: &str, access: &str, ttl: i64, parent: Option<&str>) -> String {
+    let mut claims = token_claims(room, user, access, ttl);
+    if let Some(parent) = parent {
+        claims["parent"] = parent.into();
+    }
+    sign_claims(&claims)
+}
+
+/// A token naming who the connection is, as Go mints one (Epo 2026-10-20):
+/// the user's name alone, nothing about the device.
+fn identity_token(room: &str, user: &str, access: &str, name: &str) -> String {
+    let mut claims = token_claims(room, user, access, 300);
+    claims["name"] = name.into();
+    sign_claims(&claims)
+}
+
+fn token_claims(room: &str, user: &str, access: &str, ttl: i64) -> serde_json::Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)
@@ -184,10 +206,16 @@ fn token_for(room: &str, user: &str, access: &str, ttl: i64) -> String {
         .next()
         .and_then(|n| n.parse().ok())
         .unwrap_or(1);
-    let claims = serde_json::json!({
+    serde_json::json!({
         "access": access, "aud": "capy-collaboration", "exp": now + ttl, "iat": now,
         "iss": "capy-api", "jti": format!("t_{now}_{user}"), "room": room, "schema": schema, "sub": user,
-    });
+    })
+}
+
+fn sign_claims(claims: &serde_json::Value) -> String {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use hmac::{Hmac, Mac};
     let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
     let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
     let mut mac = Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes()).expect("key");
@@ -231,15 +259,21 @@ fn varbytes(out: &mut Vec<u8>, bytes: &[u8]) {
 /// The client protocol an up-to-date browser sends: the server's own
 /// (`CLIENT_PROTOCOL` in `protocol.rs`).
 fn client_protocol() -> u64 {
+    protocol_constant("CLIENT_PROTOCOL")
+}
+
+/// A `pub const <name>: u32` of `protocol.rs`, so the tests follow a bump.
+fn protocol_constant(name: &str) -> u64 {
+    let prefix = format!("pub const {name}: u32 = ");
     include_str!("../src/protocol.rs")
         .lines()
         .find_map(|line| {
-            line.strip_prefix("pub const CLIENT_PROTOCOL: u32 = ")?
+            line.strip_prefix(prefix.as_str())?
                 .strip_suffix(';')?
                 .parse()
                 .ok()
         })
-        .expect("CLIENT_PROTOCOL in protocol.rs")
+        .unwrap_or_else(|| panic!("{name} in protocol.rs"))
 }
 
 /// A JOIN's payload: the room, the token and the client protocol (none from
@@ -439,22 +473,7 @@ impl Client {
 
     /// Appends text to the first block (an XmlText inside `content`).
     async fn type_text(&mut self, text: &str) {
-        let before = self.doc.transact().state_vector();
-        {
-            let root = self.doc.get_or_insert_text("content");
-            let mut txn = self.doc.transact_mut();
-            let diff = root.diff(&txn, yrs::types::text::YChange::identity);
-            let block = diff
-                .into_iter()
-                .find_map(|chunk| match chunk.insert {
-                    yrs::Out::YXmlText(block) => Some(block),
-                    _ => None,
-                })
-                .expect("a block");
-            let len = block.len(&txn);
-            block.insert(&mut txn, len, text);
-        }
-        let update = self.doc.transact().encode_state_as_update_v1(&before);
+        let update = self.typed(text);
         self.send(5, &sync(2, &update)).await;
     }
 
@@ -490,6 +509,26 @@ impl Client {
             }
             before.push(message);
         }
+    }
+
+    /// An update typing `text` into the first block, not sent.
+    fn typed(&mut self, text: &str) -> Vec<u8> {
+        let before = self.doc.transact().state_vector();
+        {
+            let root = self.doc.get_or_insert_text("content");
+            let mut txn = self.doc.transact_mut();
+            let diff = root.diff(&txn, yrs::types::text::YChange::identity);
+            let block = diff
+                .into_iter()
+                .find_map(|chunk| match chunk.insert {
+                    yrs::Out::YXmlText(block) => Some(block),
+                    _ => None,
+                })
+                .expect("a block");
+            let len = block.len(&txn);
+            block.insert(&mut txn, len, text);
+        }
+        self.doc.transact().encode_state_as_update_v1(&before)
     }
 
     fn block_text(&self) -> String {
@@ -615,9 +654,15 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 }
 
 /// The version gate: a JOIN or draft send without the client protocol (a tab
-/// from before the gate) or above the server's own (a rollback) is refused as
+/// from before the gate), below its family's minimum (`MIN_MATERIAL`,
+/// `MIN_SOURCE`, read from `protocol.rs`), one below the server's own (both
+/// minimums equal it since the rate-limit round: a tab without the
+/// open-slowed notice must reload) or above it (a rollback) is refused as
 /// `collaboration-outdated` before any lookup, in material and source rooms
 /// alike; a refused draft send stores nothing and is counted by family.
+/// The `client_protocol() - 1` rows hold both minimums at `CLIENT_PROTOCOL`:
+/// a later bump that breaks one family only (the other keeps its minimum)
+/// drops the other family's row and its count from the metrics below.
 #[tokio::test]
 async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let Some(env) = env() else { return };
@@ -626,21 +671,32 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let room = format!("material:{material}:schema:1");
     let write = token(&room, &user, "write");
     let mut client = Client::open(server.port).await;
-    for protocol in [None, Some(client_protocol() + 1)] {
+    for protocol in [
+        None,
+        Some(protocol_constant("MIN_MATERIAL") - 1),
+        Some(client_protocol() - 1),
+        Some(client_protocol() + 1),
+    ] {
         client.send(0, &join_payload(&room, &write, protocol)).await;
         let reason = text_payload(&client.until(2).await.expect("refused"));
         assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
     }
     // Before the gateway is asked about a file it does not know.
     let source = "source:file_outdated:epoch:1";
-    client
-        .send(
-            0,
-            &join_payload(source, &token(source, &user, "write"), None),
-        )
-        .await;
-    let reason = text_payload(&client.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-outdated");
+    for protocol in [
+        None,
+        Some(protocol_constant("MIN_SOURCE") - 1),
+        Some(client_protocol() - 1),
+    ] {
+        client
+            .send(
+                0,
+                &join_payload(source, &token(source, &user, "write"), protocol),
+            )
+            .await;
+        let reason = text_payload(&client.until(2).await.expect("refused"));
+        assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
+    }
     // The current protocol joins.
     assert_eq!(client.joined(&room, &write).await, 1);
     assert!(client.settle(|c| c.block_text() == "base").await);
@@ -667,8 +723,8 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     );
     let metrics = metrics_text(server.port).await;
     for line in [
-        "capy_collaboration_outdated_refusals_total{family=\"material\"} 3",
-        "capy_collaboration_outdated_refusals_total{family=\"source\"} 1",
+        "capy_collaboration_outdated_refusals_total{family=\"material\"} 5",
+        "capy_collaboration_outdated_refusals_total{family=\"source\"} 3",
         "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1",
     ] {
         assert!(
@@ -1290,6 +1346,1783 @@ async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconne
     );
 }
 
+/// A small update allowance (40 messages, then 20 a second; the 8 MiB byte
+/// burst, refilled 1 byte a second), so a test can spend it.
+const SMALL_ALLOWANCE: [(&str, &str); 4] = [
+    ("COLLABORATION_UPDATE_BURST", "40"),
+    ("COLLABORATION_UPDATES_PER_SECOND", "20"),
+    ("COLLABORATION_UPDATE_BURST_BYTES", "8388608"),
+    ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1"),
+];
+
+/// The same burst refilled one message a second: what a test spent stays
+/// spent for its few seconds.
+const SLOW_ALLOWANCE: [(&str, &str); 4] = [
+    ("COLLABORATION_UPDATE_BURST", "40"),
+    ("COLLABORATION_UPDATES_PER_SECOND", "1"),
+    ("COLLABORATION_UPDATE_BURST_BYTES", "8388608"),
+    ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1"),
+];
+
+/// A writer of a fresh note of its own, joined and synced: (user, room, client).
+async fn writer(env: &Env, port: u16, text: &str) -> (String, String, Client) {
+    let (user, material) = note(env, text).await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == text).await);
+    (user, room, client)
+}
+
+impl Client {
+    /// Sends `count` one-letter updates at once.
+    async fn flood(&mut self, count: usize) {
+        for _ in 0..count {
+            let update = self.typed("b");
+            self.send(5, &sync(2, &update)).await;
+        }
+    }
+
+    /// The next `update-timeout` notice: its time left in ms. It says
+    /// nothing else (never the allowance's numbers).
+    async fn timeout_notice(&mut self) -> u64 {
+        let (notice, _) = self.stateless("update-timeout").await;
+        let keys: Vec<&String> = notice.as_object().expect("an object").keys().collect();
+        assert_eq!(keys, ["remainingMs", "type"], "{notice}");
+        notice["remainingMs"].as_u64().expect("the time left")
+    }
+}
+
+/// Security regression (Epo 2026-10-18): a user past their allowance is put
+/// in a timeout instead of disconnected. Every socket of theirs hears it,
+/// with only the time left; nothing of theirs reaches the room until it
+/// ends; a channel joining meanwhile hears it instead of joining; afterwards
+/// a channel joined again on the same socket resyncs what its client held. Another
+/// user typing at a person's pace is untouched. Fails if the allowance is
+/// not enforced, if a timeout reaches only the socket that began it, or if
+/// updates sent during it are applied.
+#[tokio::test]
+async fn a_user_past_their_allowance_is_timed_out_on_every_socket() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SMALL_ALLOWANCE).await;
+    let (typist_user, typist_room, mut typist) = writer(&env, server.port, "rate").await;
+    // Ten keys a second for three seconds: under the sustained rate.
+    for _ in 0..30 {
+        typist.type_text("a").await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        typist
+            .settle(|c| c.block_text().ends_with(&"a".repeat(30)))
+            .await
+    );
+
+    // Another user's two sockets (each join takes three: JOIN, step 1, step
+    // 2); a flood of small updates on the first runs out of the 40-message
+    // burst.
+    let (user, room, mut first) = writer(&env, server.port, "flood").await;
+    let mut second = Client::open(server.port).await;
+    second.joined(&room, &token(&room, &user, "write")).await;
+    assert!(second.settle(|c| c.block_text() == "flood").await);
+    first.flood(300).await;
+    let remaining = first.timeout_notice().await;
+    assert!((1..=3000).contains(&remaining), "{remaining}");
+    assert!((1..=3000).contains(&second.timeout_notice().await));
+    // The second socket's edit meanwhile is dropped (it never resyncs), and
+    // so is its checkpoint request: no receipt answers it.
+    second.type_text("z").await;
+    let request = serde_json::json!({ "id": "in-timeout", "type": "checkpoint-request" });
+    let mut payload = Vec::new();
+    varbytes(&mut payload, request.to_string().as_bytes());
+    second.send(9, &payload).await;
+    let quiet = tokio::time::Instant::now() + Duration::from_secs(1);
+    while let Ok(Some(Ok(Ws::Binary(bytes)))) =
+        tokio::time::timeout_at(quiet, second.ws.next()).await
+    {
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("in-timeout"),
+            "a checkpoint request went on in the timeout"
+        );
+    }
+    let mut third = Client::open(server.port).await;
+    third.join(&room, &token(&room, &user, "write")).await;
+    assert!((1..=3000).contains(&third.timeout_notice().await));
+    assert!(third.inbox.iter().all(|message| message.kind != 1));
+
+    // Once it ends, the first socket joins its room again and resyncs the
+    // whole flood; a reader sees it, and no "z".
+    tokio::time::sleep(Duration::from_millis(remaining + 200)).await;
+    first.drain().await;
+    first.joined(&room, &token(&room, &user, "write")).await;
+    // Its step 2 answers the room's step 1, and is acknowledged.
+    assert!(first.until(6).await.is_some(), "the resync is acknowledged");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "read")).await;
+    let flooded = format!("flood{}", "b".repeat(300));
+    assert!(
+        reader.settle(|c| c.block_text() == flooded).await,
+        "{}",
+        reader.block_text()
+    );
+
+    // The typist was never timed out: its next update reaches a reader.
+    typist.type_text("c").await;
+    let mut typist_reader = Client::open(server.port).await;
+    typist_reader
+        .joined(&typist_room, &token(&typist_room, &typist_user, "read"))
+        .await;
+    assert!(
+        typist_reader
+            .settle(|c| c.block_text().ends_with('c'))
+            .await
+    );
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line == "capy_collaboration_timeouts_total 1"),
+        "{metrics}"
+    );
+}
+
+/// Security regression (Epo 2026-10-18): the allowance is the user's, not
+/// the socket's. A socket that spent most of it, closed, leaves its user a
+/// reconnect that goes on from what was left: the second socket is timed out
+/// within a few updates, not after a fresh burst. Fails if each socket (or
+/// each reconnect) gets its own allowance.
+#[tokio::test]
+async fn a_users_allowance_is_shared_by_their_sockets_and_reconnects() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
+    let (user, room, mut first) = writer(&env, server.port, "shared").await;
+    // Its join took three (JOIN, step 1, step 2); 34 more leave three.
+    first.flood(34).await;
+    assert!(first.until(6).await.is_some());
+    drop(first);
+    let mut second = Client::open(server.port).await;
+    second.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        second
+            .settle(|c| c.block_text().starts_with("shared"))
+            .await
+    );
+    // A fresh allowance would take 30 more after the join's three.
+    second.flood(30).await;
+    assert!(second.timeout_notice().await > 0);
+}
+
+/// Security regression (Epo 2026-10-18): a draft send takes from the same
+/// allowance as its user's sockets, and is refused while the user is in a
+/// timeout: 429 `too_fast` with the time left, counted; nothing reaches the
+/// room. Fails if draft sends bypass the allowance or the timeout.
+#[tokio::test]
+async fn a_draft_send_takes_from_the_users_allowance() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
+    let (user, room, mut editor) = writer(&env, server.port, "drafts").await;
+    editor.flood(100).await;
+    assert!(editor.timeout_notice().await > 0);
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        drafted(&editor.doc, typed_into_note(" late")),
+    )
+    .await;
+    assert_eq!(
+        (status, &answer["class"]),
+        (429, &serde_json::json!("too_fast"))
+    );
+    let remaining = answer["remainingMs"].as_u64().expect("the time left");
+    assert!((1..=300_000).contains(&remaining), "{answer}");
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line == "capy_collaboration_draft_refusals_total{class=\"too_fast\"} 1"),
+        "{metrics}"
+    );
+}
+
+/// Security regression (Epo 2026-10-18): no room takes an update over 8 MiB;
+/// its sender is timed out. A socket sending one hears the timeout (and stays
+/// open) before the room reads it, and a text source's draft send over it is
+/// answered 413 `too_large` (never sendable as it is, so the page stops
+/// retrying it, rate-limit review r3 S8) before the body is read past the
+/// cap, its user timed out too. Fails if either cap is removed (a note room
+/// would answer its own 4 MiB refusal on the channel; the source send would
+/// reach the room).
+#[tokio::test]
+async fn an_update_over_8_mib_times_its_user_out_and_a_draft_over_it_answers_too_large() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    // A byte burst past the cap, so the cap alone refuses the update.
+    let server = start_configured(
+        &env,
+        Some(&gateway.url),
+        &[("COLLABORATION_UPDATE_BURST_BYTES", "67108864")],
+    )
+    .await;
+    let (_, _, mut sender) = writer(&env, server.port, "cap").await;
+    sender
+        .send(5, &sync(2, &vec![0u8; 8 * 1024 * 1024 + 1]))
+        .await;
+    assert!((1..=3000).contains(&sender.timeout_notice().await));
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        vec![0u8; 8 * 1024 * 1024 + 1],
+    )
+    .await;
+    assert_eq!(
+        (status, &answer["class"]),
+        (413, &serde_json::json!("too_large"))
+    );
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line == "capy_collaboration_timeouts_total 2"),
+        "{metrics}"
+    );
+}
+
+/// Security regression (Epo 2026-10-19): awareness updates and awareness
+/// queries take from their user's allowance like SYNC messages: a flood of
+/// either times the user out. Fails if either is forwarded uncounted.
+#[tokio::test]
+async fn awareness_and_its_queries_take_from_the_users_allowance() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SMALL_ALLOWANCE).await;
+    let (_, _, mut presence) = writer(&env, server.port, "presence").await;
+    for clock in 1..=100 {
+        presence
+            .send(7, &awareness_update(4242, clock, "{\"cursor\":1}"))
+            .await;
+    }
+    assert!(presence.timeout_notice().await > 0);
+    let (_, _, mut asker) = writer(&env, server.port, "asker").await;
+    for _ in 0..100 {
+        asker.send(8, &[]).await;
+    }
+    assert!(asker.timeout_notice().await > 0);
+}
+
+/// What came of asking for a room's whole state.
+#[derive(Debug, PartialEq)]
+enum Answer {
+    Answered,
+    TimedOut,
+    Silent,
+}
+
+impl Client {
+    /// Asks for the room's whole state (a step 1 with an empty state vector)
+    /// and waits up to `wait` for its step 2 or a timeout notice.
+    async fn whole_state_within(&mut self, wait: Duration) -> Answer {
+        self.send(5, &sync(0, &StateVector::default().encode_v1()))
+            .await;
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                return Answer::Silent;
+            };
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = &bytes[at..at + len];
+                at += len;
+                if kind == 9 && text_payload(payload).contains("update-timeout") {
+                    return Answer::TimedOut;
+                }
+                if kind == 5 && payload.first() == Some(&1) {
+                    return Answer::Answered;
+                }
+            }
+        }
+    }
+
+    /// Reads (applying syncs) until nothing arrives for 300 ms, then forgets
+    /// what was read.
+    async fn drain(&mut self) {
+        while let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout(Duration::from_millis(300), self.ws.next()).await
+        {
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                if kind == 5 {
+                    self.on_sync(&payload).await;
+                }
+            }
+        }
+        self.inbox.clear();
+    }
+}
+
+/// The byte allowance refilled 1 byte a second, and an 8 MiB open budget
+/// full again over 84 s (about 0.1 MB a second).
+const OPEN_BUDGET: [(&str, &str); 4] = [
+    ("COLLABORATION_UPDATE_BURST_BYTES", "8388608"),
+    ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1"),
+    ("COLLABORATION_OPEN_BYTES", "8388608"),
+    ("COLLABORATION_OPEN_REFILL_SECONDS", "84"),
+];
+
+/// Security regression (Epo 2026-10-19): full-document answers (a step 1's)
+/// draw on their user's open budget by their bytes, not on the update
+/// allowance. With a 1.5 MB note and an 8 MiB budget the join's answer and
+/// five more go at once; the next waits until the budget is back (slowed,
+/// never refused), and the user is never timed out. Fails if answers go
+/// uncharged (the sixth answers at once) or are charged to the update
+/// allowance (a timeout).
+#[tokio::test]
+async fn full_document_answers_draw_on_the_open_budget_and_slow_when_it_is_spent() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &OPEN_BUDGET).await;
+    let text = "w".repeat(1_500_000);
+    let (_, _, mut asker) = writer(&env, server.port, &text).await;
+    for answer in 1..=5 {
+        assert_eq!(
+            asker.whole_state_within(Duration::from_secs(5)).await,
+            Answer::Answered,
+            "answer {answer}"
+        );
+    }
+    let asked = tokio::time::Instant::now();
+    assert_eq!(
+        asker.whole_state_within(Duration::from_secs(20)).await,
+        Answer::Answered
+    );
+    assert!(
+        asked.elapsed() >= Duration::from_millis(500),
+        "{:?}",
+        asked.elapsed()
+    );
+}
+
+impl Client {
+    /// Sends `count` step 1s with an empty state vector in one frame (the
+    /// socket reads them all before the room answers the first).
+    async fn ask_whole_state(&mut self, count: usize) {
+        let message = frame(1, 5, &sync(0, &StateVector::default().encode_v1()));
+        let burst: Vec<u8> = message.repeat(count);
+        self.ws.send(Ws::Binary(burst.into())).await.expect("send");
+    }
+
+    /// When each step 2 arrived in the next `window`, and the stateless
+    /// messages read meanwhile.
+    async fn step2_arrivals(&mut self, window: Duration) -> (Vec<Duration>, Vec<String>) {
+        let start = tokio::time::Instant::now();
+        let deadline = start + window;
+        let (mut arrivals, mut notices) = (Vec::new(), Vec::new());
+        while let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout_at(deadline, self.ws.next()).await
+        {
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = &bytes[at..at + len];
+                at += len;
+                if kind == 5 && payload.first() == Some(&1) {
+                    arrivals.push(start.elapsed());
+                }
+                if kind == 9 {
+                    notices.push(text_payload(payload));
+                }
+            }
+        }
+        (arrivals, notices)
+    }
+}
+
+/// Another note of `user`'s: its material id.
+async fn note_of(env: &Env, user: &str, text: &str) -> String {
+    let material = format!("m_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": text }] }],
+    });
+    db(env)
+        .await
+        .execute(
+            "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'note', 'IT', $3)",
+            &[&material, &user, &content],
+        )
+        .await
+        .expect("material");
+    material
+}
+
+/// Another note of `user`'s, joined and synced on a socket of its own.
+async fn second_note(env: &Env, port: u16, user: &str, text: &str) -> Client {
+    let material = note_of(env, user, text).await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(port).await;
+    client.joined(&room, &token(&room, user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == text).await);
+    client
+}
+
+/// Security regression (rate-limit review r4 B1, Epo 2026-10-20): the open
+/// budget is checked where the answer is charged, so a burst of step 1s
+/// read before the first answer is charged is not answered in full each.
+/// With 1 MB of a 2.5 MB budget left, 20 whole-state step 1s at once get
+/// one answer, then, the budget spent, wait as one (the channel's latest)
+/// and hear that the open is slowed. Fails if the budget is checked only
+/// before the room (20 answers) or waiting step 1s are not merged (a third
+/// answer).
+#[tokio::test]
+async fn a_burst_of_step_1s_gets_one_answer_while_the_open_budget_is_spent() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "2500000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "3"),
+        ],
+    )
+    .await;
+    let (_, _, mut asker) = writer(&env, server.port, &"w".repeat(1_500_000)).await;
+    asker.ask_whole_state(20).await;
+    let (arrivals, notices) = asker.step2_arrivals(Duration::from_secs(4)).await;
+    assert_eq!(arrivals.len(), 2, "{arrivals:?}");
+    assert!(
+        arrivals[1] - arrivals[0] >= Duration::from_millis(300),
+        "{arrivals:?}"
+    );
+    assert!(
+        notices.iter().any(|notice| notice.contains("open-slowed")),
+        "{notices:?}"
+    );
+}
+
+/// Security regression (Epo 2026-10-20): a step 1 whose answer is under
+/// 256 KiB (a returning member's resync) skips the wait on a spent open
+/// budget while its user owes less than a full budget, while a whole-state
+/// one waits. Fails if small answers wait too (the resync would wait about
+/// 150 s) or a spent budget lets the whole state through.
+#[tokio::test]
+async fn a_resync_skips_the_wait_within_a_full_budget_of_debt() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "1000000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "300"),
+        ],
+    )
+    .await;
+    // The join's answer spent the budget: 0.5 MB below zero.
+    let (_, _, mut asker) = writer(&env, server.port, &"w".repeat(1_500_000)).await;
+    let held = asker.doc.transact().state_vector().encode_v1();
+    asker.send(5, &sync(0, &held)).await;
+    let (arrivals, _) = asker.step2_arrivals(Duration::from_secs(2)).await;
+    assert_eq!(arrivals.len(), 1, "the resync answered at once");
+    assert_eq!(
+        asker.whole_state_within(Duration::from_secs(2)).await,
+        Answer::Silent
+    );
+}
+
+/// Security regression (rate-limit review r5 B-1, Epo 2026-10-20): answers
+/// under 256 KiB are charged and skip the wait only while their user owes
+/// less than a full budget. With 0.5 MB of a 1 MB budget owed, six resyncs
+/// each answered by the note's last 200 KB get three answers (the third
+/// takes the debt past 1 MB) and the rest wait, slowed. Fails if small
+/// answers never wait.
+#[tokio::test]
+async fn a_burst_of_small_answers_waits_past_a_full_budget_of_debt() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "1000000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "300"),
+        ],
+    )
+    .await;
+    // The join's answer spent the budget: 0.5 MB below zero.
+    let (_, _, mut asker) = writer(&env, server.port, &"w".repeat(1_500_000)).await;
+    let held = asker.doc.transact().state_vector();
+    let (author, clock) = held
+        .iter()
+        .map(|(client, clock)| (*client, *clock))
+        .max_by_key(|(_, clock)| *clock)
+        .expect("the note's text");
+    let since: StateVector = held
+        .iter()
+        .map(|(client, at)| {
+            (
+                *client,
+                if *client == author {
+                    clock - 200_000
+                } else {
+                    *at
+                },
+            )
+        })
+        .collect();
+    let step1 = sync(0, &since.encode_v1());
+    for _ in 0..6 {
+        asker.send(5, &step1).await;
+    }
+    let (arrivals, notices) = asker.step2_arrivals(Duration::from_secs(3)).await;
+    assert_eq!(arrivals.len(), 3, "{arrivals:?}");
+    assert!(
+        notices.iter().any(|notice| notice.contains("open-slowed")),
+        "{notices:?}"
+    );
+}
+
+/// Security regression (rate-limit review r4 B1, Epo 2026-10-20): large
+/// answers waiting in two rooms for one user's budget are released one at a
+/// time as it refills, each charged before the next is looked at. Fails if
+/// both go once the budget is back above zero.
+#[tokio::test]
+async fn waiting_large_answers_are_released_one_at_a_time() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "2000000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "4"),
+        ],
+    )
+    .await;
+    let text = "w".repeat(1_500_000);
+    let (user, _, mut first) = writer(&env, server.port, &text).await;
+    // Two joins' answers: 1 MB below zero, about 2 s to refill.
+    let mut second = second_note(&env, server.port, &user, &text).await;
+    first.ask_whole_state(1).await;
+    second.ask_whole_state(1).await;
+    let (a, b) = tokio::join!(
+        first.step2_arrivals(Duration::from_secs(4)),
+        second.step2_arrivals(Duration::from_secs(4)),
+    );
+    assert_eq!(a.0.len() + b.0.len(), 1, "{a:?} {b:?}");
+}
+
+/// Security regression (rate-limit review r3 S5): the awareness a JOIN sends
+/// draws on the joiner's open budget like an awareness query, so joining
+/// again and again does not fetch a crowded room's presence for free. Two
+/// more joins of a room holding about 240 KB of presence spend a 300 KB
+/// budget, and the user's next query waits. Fails if the join's awareness is
+/// sent uncharged (the query answers at once).
+#[tokio::test]
+async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "300000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "1000000"),
+        ],
+    )
+    .await;
+    let (user, room, mut client) = writer(&env, server.port, "crowd").await;
+    let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
+    for id in 1..=4 {
+        client.send(7, &awareness_update(id, 1, &state)).await;
+    }
+    let write = token(&room, &user, "write");
+    for channel in 2..=3 {
+        client
+            .send_on(
+                channel,
+                0,
+                &join_payload(&room, &write, Some(client_protocol())),
+            )
+            .await;
+        assert!(client.until(1).await.is_some(), "channel {channel} joined");
+    }
+    client.drain().await;
+    client.send_on(1, 8, &[]).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while let Ok(Some(Ok(Ws::Binary(bytes)))) =
+        tokio::time::timeout_at(deadline, client.ws.next()).await
+    {
+        let mut at = 0;
+        while at < bytes.len() {
+            let _channel = read_var(&bytes, &mut at);
+            let kind = bytes[at];
+            at += 1;
+            let len = read_var(&bytes, &mut at) as usize;
+            at += len;
+            assert_ne!(kind, 7, "the query answered at once");
+        }
+    }
+}
+
+/// Security regression (Epo 2026-10-20, rate-limit review r6 S-1): the
+/// awareness a JOIN sends counts against the open budget and, past the
+/// small-answer floor, waits like an awareness query. Two re-JOINs of a room
+/// holding about 480 KB of presence (two sockets of four ids) take a 300 KB
+/// budget 360 KB past its floor (300 KB owed); the next re-JOIN joins but
+/// hears no awareness until the budget refills (100 KB a second), and its
+/// step 1, waiting with it, hears that the open is slowed (review r7 S-1).
+/// Fails if the JOIN's awareness never waits, or its wait keeps the notice
+/// from the step 1.
+#[tokio::test]
+async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_OPEN_BYTES", "300000"),
+            ("COLLABORATION_OPEN_REFILL_SECONDS", "3"),
+        ],
+    )
+    .await;
+    let (user, room, mut client) = writer(&env, server.port, "crowd").await;
+    let write = token(&room, &user, "write");
+    let join = join_payload(&room, &write, Some(client_protocol()));
+    // A second presence socket, synced (so its channel serves) while the room
+    // holds none.
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &write).await;
+    assert!(other.settle(|c| c.block_text() == "crowd").await);
+    let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
+    for id in 1..=4 {
+        client.send(7, &awareness_update(id, 1, &state)).await;
+    }
+    // The other socket's four in one frame: once the first reaches this
+    // client, the room holds all eight.
+    let mut batch = Vec::new();
+    for id in 5..=8 {
+        batch.extend(frame(1, 7, &awareness_update(id, 1, &state)));
+    }
+    other.ws.send(Ws::Binary(batch.into())).await.expect("send");
+    assert!(client.heard_within(1, 7, Duration::from_secs(5)).await);
+    for round in 0..2 {
+        client.send_on(2, 0, &join).await;
+        assert!(
+            client
+                .awareness_after_join(2, Duration::from_secs(2))
+                .await
+                .0,
+            "re-JOIN {round} hears the presence"
+        );
+    }
+    client.send_on(2, 0, &join).await;
+    // A client's step 1 follows its JOIN.
+    client
+        .send_on(2, 5, &sync(0, &StateVector::default().encode_v1()))
+        .await;
+    let (heard, notices) = client.awareness_after_join(2, Duration::from_secs(2)).await;
+    assert!(!heard, "past the floor the JOIN's awareness waits");
+    assert!(
+        notices.iter().any(|notice| notice.contains("open-slowed")),
+        "{notices:?}"
+    );
+    assert!(
+        client.heard_within(2, 7, Duration::from_secs(12)).await,
+        "and comes once the budget refills"
+    );
+}
+
+/// Security regression (Epo 2026-10-20, rate-limit review r6 N-5): the server
+/// pings every socket and closes one that sends nothing for the silent
+/// window (here 1 s pings and 2 s of silence), freeing its places; any frame
+/// counts, a pong too. With two connections to a note allowed, a socket that
+/// stops reading is closed while one that only answers pings stays open, and
+/// a third connection then closes nothing. Fails if silent sockets keep their
+/// places (the third connection closes the oldest) or pongs do not count.
+#[tokio::test]
+async fn a_silent_socket_closes_and_frees_its_places_while_an_answering_one_stays() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_PING_SECONDS", "1"),
+            ("COLLABORATION_SILENT_SECONDS", "2"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+        ],
+    )
+    .await;
+    let (user, room, mut answering) = writer(&env, server.port, "pinged").await;
+    let write = token(&room, &user, "write");
+    let mut silent = Client::open(server.port).await;
+    silent.joined(&room, &write).await;
+    // The silent socket reads nothing from here on; the answering one only
+    // reads, so pongs are all it sends.
+    assert!(
+        answering.still_open(Duration::from_millis(3500)).await,
+        "a socket that answers pings stays open"
+    );
+    let mut third = Client::open(server.port).await;
+    third.joined(&room, &write).await;
+    let closes = answering.closes_within(Duration::from_millis(500)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+    assert!(
+        !silent.still_open(Duration::from_secs(2)).await,
+        "the silent socket was closed"
+    );
+}
+
+/// Security regression (rate-limit review r7 B-1): a join the per-document
+/// cap makes room for by closing an embed's channel, which holds no place
+/// among the user's joined documents, still closes their oldest joined
+/// document. With two of each allowed, a user holding note N with set S in
+/// it (S's oldest connection) and S on its own opens S on its own again: the
+/// embed closes, and so does N. Fails if any per-document close skips the
+/// joined cap's (a user could then hold any number of documents).
+#[tokio::test]
+async fn a_join_that_closes_an_embed_still_closes_the_users_oldest_document() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_JOINED_PER_USER", "2"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+        ],
+    )
+    .await;
+    let (user, room, mut note) = writer(&env, server.port, "a note").await;
+    let material = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &material, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let embed = embed_token(&set, &user, &material);
+    assert_eq!(note.join_embed(2, &set, &embed).await.0, 1);
+    let alone = join_payload(&set, &token(&set, &user, "write"), Some(client_protocol()));
+    let mut first = Client::open(server.port).await;
+    first.send(0, &alone).await;
+    assert!(first.until(1).await.is_some(), "joined on its own");
+    let mut second = Client::open(server.port).await;
+    second.send(0, &alone).await;
+    assert!(second.until(1).await.is_some(), "joined on its own again");
+    let closes = note.closes_within(Duration::from_secs(1)).await;
+    let closed: Vec<u64> = closes.iter().map(|(channel, _)| *channel).collect();
+    assert!(closed.contains(&2), "the embed closes: {closes:?}");
+    assert!(closed.contains(&1), "and the oldest document: {closes:?}");
+    let closes = first.closes_within(Duration::from_millis(300)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+}
+
+/// Security regression (Epo 2026-10-20, rate-limit review r7): a socket
+/// whose send moves no bytes for the silent window (here 2 s) closes, freeing
+/// its places, though a send has no total time limit (`seats.rs` tests a slow
+/// peer). With two connections to a 1.5 MB note allowed, a socket that asks
+/// for the whole state 20 times and reads none of it (far more than the
+/// buffers between them hold) is closed, so a third connection closes
+/// nothing. Fails if a stalled send holds the socket open.
+#[tokio::test]
+async fn a_socket_whose_send_moves_no_bytes_closes_and_frees_its_place() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_PING_SECONDS", "1"),
+            ("COLLABORATION_SILENT_SECONDS", "2"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+            ("COLLABORATION_OPEN_BYTES", "500000000"),
+        ],
+    )
+    .await;
+    let (user, room, mut reader) = writer(&env, server.port, &"w".repeat(1_500_000)).await;
+    let write = token(&room, &user, "write");
+    let mut stopped = Client::open(server.port).await;
+    stopped.joined(&room, &write).await;
+    stopped.ask_whole_state(20).await;
+    assert!(
+        reader.still_open(Duration::from_secs(5)).await,
+        "the reading socket stays open"
+    );
+    let mut third = Client::open(server.port).await;
+    third.joined(&room, &write).await;
+    let closes = reader.closes_within(Duration::from_millis(500)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+}
+
+/// Security regression (Epo 2026-10-19): a JOIN costs one message of its
+/// user's allowance, so a join loop runs into a timeout like any other flood
+/// (a JOIN on a joined channel leaves and joins again, reloading what the
+/// room sends a joiner). Fails if JOINs go uncounted.
+#[tokio::test]
+async fn a_join_costs_one_message_of_the_users_allowance() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
+    let (user, room, mut client) = writer(&env, server.port, "joins").await;
+    let join = join_payload(
+        &room,
+        &token(&room, &user, "write"),
+        Some(client_protocol()),
+    );
+    let mut timed_out = false;
+    'joins: for _ in 0..100 {
+        client.send_on(2, 0, &join).await;
+        // Its answer, read as it comes: nothing else is sent (no step 2).
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, client.ws.next()).await
+            else {
+                panic!("no answer to a JOIN");
+            };
+            let (mut at, mut joined) = (0, false);
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = &bytes[at..at + len];
+                at += len;
+                if kind == 9 && text_payload(payload).contains("update-timeout") {
+                    timed_out = true;
+                    break 'joins;
+                }
+                joined |= kind == 1;
+            }
+            if joined {
+                break;
+            }
+        }
+    }
+    assert!(timed_out, "a hundred JOINs went uncounted");
+}
+
+/// A note in a workspace of `owner`'s that `editor` edits too: (owner,
+/// editor, room).
+async fn shared_note(env: &Env, text: &str) -> (String, String, String) {
+    let client = db(env).await;
+    let (owner, editor) = (user(env).await, user(env).await);
+    let workspace = format!("ws_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','private')",
+            &[&workspace, &owner],
+        )
+        .await
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')",
+            &[&workspace, &editor],
+        )
+        .await
+        .expect("member");
+    let material = format!("m_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": text }] }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'IT', $4)",
+            &[&material, &owner, &workspace, &content],
+        )
+        .await
+        .expect("material");
+    (owner, editor, format!("material:{material}:schema:1"))
+}
+
+impl Client {
+    async fn send_on(&mut self, channel: u64, kind: u8, payload: &[u8]) {
+        self.ws
+            .send(Ws::Binary(frame(channel, kind, payload).into()))
+            .await
+            .expect("send");
+    }
+
+    /// Asks the room for its awareness states: (client, state) of each.
+    async fn awareness_states(&mut self, channel: u64) -> Vec<(u64, String)> {
+        self.drain().await;
+        self.send_on(channel, 8, &[]).await;
+        awareness_entries(&self.until(7).await.expect("awareness states"))
+    }
+}
+
+/// Security regression (Epo 2026-10-19): an awareness client id is its
+/// user's. Another member neither overwrites nor removes it, and one channel
+/// keeps at most four ids. Fails if the room takes an entry for a client id
+/// another user's channel holds, or keeps every id a channel sends.
+#[tokio::test]
+async fn a_member_writes_only_its_own_awareness_client_ids_up_to_a_cap() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let mut mine = Client::open(server.port).await;
+    mine.joined(&room, &token(&room, &owner, "write")).await;
+    mine.send(7, &awareness_update(111, 1, "{\"name\":\"owner\"}"))
+        .await;
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &token(&room, &editor, "write")).await;
+    other
+        .send(7, &awareness_update(111, 5, "{\"name\":\"other\"}"))
+        .await;
+    other.send(7, &awareness_update(111, 6, "null")).await;
+    for client in 201..=210 {
+        other
+            .send(7, &awareness_update(client, 1, "{\"name\":\"many\"}"))
+            .await;
+    }
+    let states = mine.awareness_states(1).await;
+    assert!(
+        states.contains(&(111, "{\"name\":\"owner\"}".to_owned())),
+        "{states:?}"
+    );
+    let many = states.iter().filter(|(client, _)| *client > 200).count();
+    assert_eq!(many, 4, "{states:?}");
+}
+
+/// Security regression (Epo 2026-10-19): a room keeps at most 256 awareness
+/// client ids: 65 channels of four ids each leave 256 in its states. A
+/// removed id counts until its removal went out (rate-limit review r3 S6),
+/// so adding and removing ids in a loop stays capped: a removal and a new id
+/// in one frame leave 255. Fails if the room keeps every id its members
+/// send, or counts only live ids.
+#[tokio::test]
+async fn a_room_keeps_at_most_256_awareness_client_ids() {
+    let Some(env) = env() else { return };
+    // One user's 66 channels, past the 22 joined documents a user holds and
+    // the 4 connections to one document.
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_JOINED_PER_USER", "100"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "100"),
+        ],
+    )
+    .await;
+    let (user, room, mut client) = writer(&env, server.port, "crowd").await;
+    let write = token(&room, &user, "write");
+    for channel in 2..=66u64 {
+        client
+            .send_on(
+                channel,
+                0,
+                &join_payload(&room, &write, Some(client_protocol())),
+            )
+            .await;
+        assert!(client.until(1).await.is_some(), "channel {channel} joined");
+        for id in 0..4 {
+            let entry = awareness_update(channel * 10 + id, 1, "{\"n\":1}");
+            client.send_on(channel, 7, &entry).await;
+        }
+    }
+    assert_eq!(client.awareness_states(1).await.len(), 256);
+    let mut churn = frame(2, 7, &awareness_update(20, 2, "null"));
+    churn.extend(frame(2, 7, &awareness_update(9999, 1, "{\"n\":1}")));
+    client
+        .ws
+        .send(Ws::Binary(churn.into()))
+        .await
+        .expect("send");
+    assert_eq!(client.awareness_states(1).await.len(), 255);
+}
+
+/// Security regression (Epo 2026-10-19): a socket that has joined no room
+/// within about 10 s is closed, while one that joined stays open. Fails if
+/// an idle socket is kept.
+#[tokio::test]
+async fn a_socket_that_joins_no_room_closes() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (_, _, mut joined) = writer(&env, server.port, "joined").await;
+    let mut idle = Client::open(server.port).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    let closed = loop {
+        match tokio::time::timeout_at(deadline, idle.ws.next()).await {
+            Ok(Some(Ok(Ws::Close(frame)))) => {
+                break frame.map(|frame| (u16::from(frame.code), frame.reason.to_string()));
+            }
+            Ok(Some(Ok(_))) => {}
+            _ => break None,
+        }
+    };
+    assert_eq!(closed, Some((1008, "no room joined".into())));
+    joined.type_text("!").await;
+    assert!(
+        joined.until(6).await.is_some(),
+        "the joined socket still serves"
+    );
+}
+
+/// A socket from 127.0.0.1, or from `address` behind Cloudflare.
+async fn connect(
+    port: u16,
+    address: Option<&str>,
+) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, tokio_tungstenite::tungstenite::Error> {
+    let mut request = format!("ws://127.0.0.1:{port}/")
+        .into_client_request()
+        .expect("request");
+    request
+        .headers_mut()
+        .insert("origin", ORIGIN.parse().expect("origin"));
+    if let Some(address) = address {
+        request
+            .headers_mut()
+            .insert("cf-connecting-ip", address.parse().expect("address"));
+    }
+    tokio_tungstenite::connect_async(request)
+        .await
+        .map(|(ws, _)| ws)
+}
+
+/// Security regression (Epo 2026-10-19): a client address holds a capped
+/// number of sockets (Cloudflare's `CF-Connecting-IP` when present); one more
+/// is refused before the upgrade, and a closed one frees its place. Fails if
+/// sockets are not counted per address.
+#[tokio::test]
+async fn a_client_address_holds_a_capped_number_of_sockets() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_SOCKETS_PER_ADDRESS", "2")],
+    )
+    .await;
+    let first = connect(server.port, None).await.expect("first");
+    let _second = connect(server.port, None).await.expect("second");
+    let refused = connect(server.port, None).await;
+    assert!(
+        matches!(
+            &refused,
+            Err(tokio_tungstenite::tungstenite::Error::Http(response))
+                if response.status() == 429
+        ),
+        "{refused:?}"
+    );
+    assert!(connect(server.port, Some("203.0.113.7")).await.is_ok());
+    drop(first);
+    let mut reopened = None;
+    for _ in 0..50 {
+        if let Ok(ws) = connect(server.port, None).await {
+            reopened = Some(ws);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(reopened.is_some(), "a closed socket frees its place");
+}
+
+/// Security regression (Epo 2026-10-20, rate-limit review r5 S-a): a user
+/// holds at most four connections to one document over all their sockets; a
+/// fifth closes their oldest one to it (`collaboration-oldest-closed`) and
+/// the other four stay. Fails without the per-document cap.
+#[tokio::test]
+async fn a_fifth_connection_to_one_note_closes_the_users_oldest_to_it() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut oldest) = writer(&env, server.port, "connections").await;
+    let write = token(&room, &user, "write");
+    let mut others = Vec::new();
+    for _ in 0..4 {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &write).await;
+        others.push(client);
+    }
+    let closed = oldest.until(4).await.expect("the oldest closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("collaboration-oldest-closed"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    for client in &mut others {
+        let closes = client.closes_within(Duration::from_millis(300)).await;
+        assert!(closes.is_empty(), "{closes:?}");
+    }
+}
+
+/// Security regression (Epo 2026-10-20): embed channels count toward their
+/// own room's four connections, apart from their note's. Four sockets each
+/// holding the note and its set inside it keep all eight channels; a fifth
+/// connection to the set (a token naming no note, joined on its own) closes
+/// the user's oldest embed channel of it, not that socket's note channel.
+/// Fails if embed channels are not counted.
+#[tokio::test]
+async fn embed_channels_count_toward_their_own_rooms_four_connections() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut first) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let write = token(&room, &user, "write");
+    let embed = embed_token(&set, &user, &note);
+    assert_eq!(first.join_embed(2, &set, &embed).await.0, 1);
+    let mut others = Vec::new();
+    for _ in 0..3 {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &write).await;
+        assert_eq!(client.join_embed(2, &set, &embed).await.0, 1);
+        others.push(client);
+    }
+    let closes = first.closes_within(Duration::from_millis(300)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+    let mut fifth = Client::open(server.port).await;
+    fifth
+        .send(
+            0,
+            &join_payload(&set, &token(&set, &user, "write"), Some(client_protocol())),
+        )
+        .await;
+    assert!(fifth.until(1).await.is_some(), "the fifth connection joins");
+    let closes = first.closes_within(Duration::from_secs(1)).await;
+    assert_eq!(closes.len(), 1, "{closes:?}");
+    assert_eq!(closes[0].0, 2);
+    assert!(
+        closes[0].1.contains("collaboration-oldest-closed"),
+        "{closes:?}"
+    );
+}
+
+/// Rate-limit review r6 S-3: a join closes only what its caps need. A note's
+/// second copy of a set closes the first (its twin) before taking a place
+/// among the user's connections to the set, so with four connections to it
+/// (two tabs and a phone on their own, the first copy in the note) only the
+/// first copy closes. Fails if the twin closes after the places are taken
+/// (the oldest tab's connection closes too).
+#[tokio::test]
+async fn a_twin_embed_closes_before_its_places_are_taken() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut note) = writer(&env, server.port, "a note").await;
+    let material = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &material, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let alone = token(&set, &user, "write");
+    let join_alone = |client: Client| {
+        let (set, alone) = (set.clone(), alone.clone());
+        async move {
+            let mut client = client;
+            client
+                .send(0, &join_payload(&set, &alone, Some(client_protocol())))
+                .await;
+            assert!(client.until(1).await.is_some(), "joined on its own");
+            client
+        }
+    };
+    let mut tabs = vec![
+        join_alone(Client::open(server.port).await).await,
+        join_alone(Client::open(server.port).await).await,
+    ];
+    let embed = embed_token(&set, &user, &material);
+    assert_eq!(note.join_embed(2, &set, &embed).await.0, 1);
+    tabs.push(join_alone(Client::open(server.port).await).await);
+    let mut payload = join_payload(&set, &embed, Some(client_protocol()));
+    var(&mut payload, 1);
+    note.send_on(3, 0, &payload).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut closes = Vec::new();
+    'joined: loop {
+        for (heard, kind, payload) in note.raw_until(deadline).await {
+            if kind == 4 {
+                closes.push((heard, String::from_utf8_lossy(&payload).into_owned()));
+            }
+            if heard == 3 && kind == 1 {
+                break 'joined;
+            }
+        }
+    }
+    closes.extend(note.closes_within(Duration::from_millis(300)).await);
+    assert_eq!(closes.len(), 1, "{closes:?}");
+    assert_eq!(closes[0].0, 2);
+    assert!(
+        closes[0].1.contains("collaboration-embed-closed"),
+        "{closes:?}"
+    );
+    for tab in &mut tabs {
+        let closes = tab.closes_within(Duration::from_millis(300)).await;
+        assert!(closes.is_empty(), "{closes:?}");
+    }
+}
+
+/// Rate-limit review r6 S-3: a join past both caps closes one channel. With
+/// three joined documents allowed and two connections to one document, a
+/// user holding another note and two connections to note N who opens N a
+/// third time closes their oldest connection to N, which frees a place among
+/// their documents too, so the other note stays. Fails if the joined-documents
+/// cap also closes its oldest.
+#[tokio::test]
+async fn a_join_past_both_caps_closes_only_the_oldest_connection_to_its_document() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_JOINED_PER_USER", "3"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "2"),
+        ],
+    )
+    .await;
+    let (user, _, mut other) = writer(&env, server.port, "another note").await;
+    let note = note_of(&env, &user, "note n").await;
+    let room = format!("material:{note}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut connections = Vec::new();
+    for _ in 0..3 {
+        let mut client = Client::open(server.port).await;
+        client.joined(&room, &write).await;
+        connections.push(client);
+    }
+    let closed = connections[0]
+        .until(4)
+        .await
+        .expect("the oldest to N closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("collaboration-oldest-closed"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    let closes = other.closes_within(Duration::from_millis(500)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+}
+
+/// Security regression (Epo 2026-10-19): a user holds a capped number of
+/// joined documents over all their sockets (22); one more join closes their
+/// oldest joined channel instead of being refused, and a channel left frees
+/// its place. Fails if joined channels are not counted per user.
+#[tokio::test]
+async fn a_join_past_the_users_cap_closes_their_oldest_channel() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_JOINED_PER_USER", "2")],
+    )
+    .await;
+    let (user, room, mut oldest) = writer(&env, server.port, "channels").await;
+    let write = token(&room, &user, "write");
+    let mut other = Client::open(server.port).await;
+    other.joined(&room, &write).await;
+    other
+        .send_on(2, 0, &join_payload(&room, &write, Some(client_protocol())))
+        .await;
+    assert!(other.until(1).await.is_some(), "the new join goes in");
+    let closed = oldest.until(4).await.expect("the oldest closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("collaboration-oldest-closed"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    // The other socket's two channels are the user's two: leaving one makes
+    // room for a third without closing the other.
+    other.send_on(2, 3, &[]).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    oldest.joined(&room, &write).await;
+    assert!(
+        oldest.settle(|c| c.block_text() == "channels").await,
+        "joined again"
+    );
+    other.drain().await;
+    assert!(other.inbox.iter().all(|message| message.kind != 4));
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line == "capy_collaboration_oldest_closed_total 1"),
+        "{metrics}"
+    );
+}
+
+impl Client {
+    /// Joins an embedded set's room on `channel` inside the note channel 1
+    /// (Epo 2026-10-20), and waits for the answer to that channel: JOINED
+    /// (1), REFUSED (2) or CLOSED (4), with its payload. Nothing read is
+    /// applied: the embeds' documents are not this client's.
+    async fn join_embed(&mut self, channel: u64, room: &str, token: &str) -> (u8, Vec<u8>) {
+        let mut payload = join_payload(room, token, Some(client_protocol()));
+        var(&mut payload, 1);
+        self.send_on(channel, 0, &payload).await;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            for (heard, kind, payload) in self.raw_until(deadline).await {
+                if heard == channel && matches!(kind, 1 | 2 | 4) {
+                    return (kind, payload);
+                }
+            }
+        }
+    }
+
+    /// The next frame's messages as (channel, kind, payload), unapplied;
+    /// panics at `deadline`.
+    async fn raw_until(&mut self, deadline: tokio::time::Instant) -> Vec<(u64, u8, Vec<u8>)> {
+        let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout_at(deadline, self.ws.next()).await
+        else {
+            panic!("nothing arrived in time");
+        };
+        let (mut at, mut messages) = (0, Vec::new());
+        while at < bytes.len() {
+            let channel = read_var(&bytes, &mut at);
+            let kind = bytes[at];
+            at += 1;
+            let len = read_var(&bytes, &mut at) as usize;
+            messages.push((channel, kind, bytes[at..at + len].to_vec()));
+            at += len;
+        }
+        messages
+    }
+
+    /// Whether a `kind` message arrives on `channel` within `window`
+    /// (answering pings meanwhile).
+    async fn heard_within(&mut self, channel: u64, kind: u8, window: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + window;
+        loop {
+            let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                return false;
+            };
+            let Ws::Binary(bytes) = message else { continue };
+            let mut at = 0;
+            while at < bytes.len() {
+                let heard = read_var(&bytes, &mut at);
+                let heard_kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                at += len;
+                if (heard, heard_kind) == (channel, kind) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    /// After a JOIN on `channel`: whether awareness reaches it within `window`
+    /// of its JOINED, and the stateless notices it heard after the JOINED
+    /// meanwhile; what came before the JOINED (an earlier join's) is skipped.
+    async fn awareness_after_join(
+        &mut self,
+        channel: u64,
+        window: Duration,
+    ) -> (bool, Vec<String>) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut joined: Option<tokio::time::Instant> = None;
+        let mut notices = Vec::new();
+        loop {
+            let limit = joined.map_or(deadline, |at| at + window);
+            let Ok(Some(Ok(message))) = tokio::time::timeout_at(limit, self.ws.next()).await else {
+                assert!(joined.is_some(), "channel {channel} joined");
+                return (false, notices);
+            };
+            let Ws::Binary(bytes) = message else { continue };
+            let mut at = 0;
+            while at < bytes.len() {
+                let heard = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = &bytes[at..at + len];
+                at += len;
+                if heard != channel {
+                    continue;
+                }
+                if kind == 1 {
+                    joined = Some(tokio::time::Instant::now());
+                } else if kind == 7 && joined.is_some() {
+                    return (true, notices);
+                } else if kind == 9 && joined.is_some() {
+                    notices.push(text_payload(payload));
+                }
+            }
+        }
+    }
+
+    /// Whether the socket stays open for `window`, reading (and so answering
+    /// pings) meanwhile.
+    async fn still_open(&mut self, window: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + window;
+        loop {
+            match tokio::time::timeout_at(deadline, self.ws.next()).await {
+                Err(_) => return true,
+                Ok(Some(Ok(Ws::Close(_)))) | Ok(Some(Err(_))) | Ok(None) => return false,
+                Ok(Some(Ok(_))) => {}
+            }
+        }
+    }
+
+    /// Every CLOSED heard in the next `window`, as (channel, payload)
+    /// (answering pings meanwhile).
+    async fn closes_within(&mut self, window: Duration) -> Vec<(u64, String)> {
+        let deadline = tokio::time::Instant::now() + window;
+        let mut closes = Vec::new();
+        while let Ok(Some(Ok(message))) = tokio::time::timeout_at(deadline, self.ws.next()).await {
+            let Ws::Binary(bytes) = message else { continue };
+            let mut at = 0;
+            while at < bytes.len() {
+                let channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                if kind == 4 {
+                    closes.push((
+                        channel,
+                        String::from_utf8_lossy(&bytes[at..at + len]).into_owned(),
+                    ));
+                }
+                at += len;
+            }
+        }
+        closes
+    }
+}
+
+/// `count` sets embedded in `note`, owned by `user`: their room names.
+async fn embedded_sets(env: &Env, user: &str, note: &str, count: usize) -> Vec<String> {
+    let mut rooms = Vec::new();
+    for _ in 0..count {
+        let set = flashcard_set(env, user, Some(note), &[("c1", "front", "back")]).await;
+        rooms.push(format!("material:{set}:schema:1"));
+    }
+    rooms
+}
+
+/// The material id in a `material:<id>:schema:<n>` room name.
+fn material_of(room: &str) -> &str {
+    room.split(':').nth(1).expect("a material room")
+}
+
+/// Security regression (Epo 2026-10-20): an embedded quiz's or set's channel
+/// joins inside its note's channel on the same socket and takes no place
+/// among the user's joined documents. With a cap of two, a note with 30
+/// embeds joined and another document joined keep the note's channel open.
+/// Fails if embed channels count toward the cap (the note closes as the
+/// oldest).
+#[tokio::test]
+async fn a_note_with_30_embeds_never_closes_its_own_channel() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_JOINED_PER_USER", "2")],
+    )
+    .await;
+    let (user, room, mut client) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    for (at, set) in embedded_sets(&env, &user, &note, 30)
+        .await
+        .iter()
+        .enumerate()
+    {
+        let (kind, payload) = client
+            .join_embed(at as u64 + 2, set, &embed_token(set, &user, &note))
+            .await;
+        assert_eq!(kind, 1, "embed {at}: {}", String::from_utf8_lossy(&payload));
+    }
+    // The user's second document, on a socket of their own: two with the note.
+    let _second = second_note(&env, server.port, &user, "second").await;
+    let closes = client.closes_within(Duration::from_secs(1)).await;
+    assert!(closes.is_empty(), "{closes:?}");
+}
+
+/// Security regression (Epo 2026-10-20): the server checks from an embed's
+/// token that its material belongs to the note whose channel it names. An
+/// embed of another note is refused as forbidden, and naming a channel that
+/// is not a joined note is refused as `collaboration-note-closed`. Fails if
+/// the token's note is not compared with the channel's.
+#[tokio::test]
+async fn an_embed_token_for_another_note_is_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, mut client) = writer(&env, server.port, "a note").await;
+    let other_note = note_of(&env, &user, "another note").await;
+    let [set] = embedded_sets(&env, &user, &other_note, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let (kind, payload) = client
+        .join_embed(2, &set, &embed_token(&set, &user, &other_note))
+        .await;
+    assert_eq!(kind, 2);
+    assert!(String::from_utf8_lossy(&payload).contains("collaboration-forbidden"));
+    // Its own note's channel is not joined here: not a note channel.
+    let mut payload = join_payload(
+        &set,
+        &embed_token(&set, &user, &other_note),
+        Some(client_protocol()),
+    );
+    var(&mut payload, 9);
+    client.send_on(3, 0, &payload).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let refused = loop {
+        if let Some((_, _, payload)) = client
+            .raw_until(deadline)
+            .await
+            .into_iter()
+            .find(|(channel, kind, _)| *channel == 3 && *kind == 2)
+        {
+            break payload;
+        }
+    };
+    assert!(String::from_utf8_lossy(&refused).contains("collaboration-note-closed"));
+}
+
+/// Security regression (rate-limit review r5 S-b): an embed whose note's
+/// channel leaves after the embed authenticated but while its room loads is
+/// refused `collaboration-note-closed` when the load ends, never joined
+/// without its note (it would take no place among the user's documents and
+/// never close with a note). The test holds the set's material lock so the
+/// load waits. Fails without the note re-check after the load.
+#[tokio::test]
+async fn an_embed_whose_note_leaves_while_its_room_loads_is_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut client) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let mut db = db(&env).await;
+    let lock = db.transaction().await.expect("transaction");
+    lock.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        &[&material_of(&set)],
+    )
+    .await
+    .expect("lock");
+    let mut payload = join_payload(
+        &set,
+        &embed_token(&set, &user, &note),
+        Some(client_protocol()),
+    );
+    var(&mut payload, 1);
+    client.send_on(2, 0, &payload).await;
+    // The embed authenticated once its room's load waits on the lock.
+    let mut waiting = false;
+    for _ in 0..250 {
+        let row = lock
+            .query_one(
+                "SELECT count(*) FROM pg_locks
+                 WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+                   AND ((classid::bigint << 32) | objid::bigint) = hashtextextended($1, 0)",
+                &[&material_of(&set)],
+            )
+            .await
+            .expect("locks");
+        if row.get::<_, i64>(0) > 0 {
+            waiting = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(waiting, "the embed's room load waits on the lock");
+    // The note leaves; a junk JOIN after it answers once the LEAVE is read.
+    client.send_on(1, 3, &[]).await;
+    client
+        .send_on(3, 0, &join_payload(&set, "junk", Some(client_protocol())))
+        .await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut heard = Vec::new();
+    while !heard.iter().any(|(channel, _, _)| *channel == 3) {
+        heard.extend(client.raw_until(deadline).await);
+    }
+    lock.rollback().await.expect("unlock");
+    // The room may announce JOINED before the socket hears that the load
+    // ended; the socket then refuses the channel.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let refusal = loop {
+        if let Some((_, _, payload)) = heard
+            .iter()
+            .find(|(channel, kind, _)| *channel == 2 && matches!(kind, 2 | 4))
+        {
+            break Some(String::from_utf8_lossy(payload).into_owned());
+        }
+        let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout_at(deadline, client.ws.next()).await
+        else {
+            break None;
+        };
+        let mut at = 0;
+        while at < bytes.len() {
+            let channel = read_var(&bytes, &mut at);
+            let kind = bytes[at];
+            at += 1;
+            let len = read_var(&bytes, &mut at) as usize;
+            heard.push((channel, kind, bytes[at..at + len].to_vec()));
+            at += len;
+        }
+    };
+    let refusal = refusal.expect("the embed is refused once its room loaded");
+    assert!(refusal.contains("collaboration-note-closed"), "{refusal}");
+}
+
+/// Security regression (rate-limit review r5 S-a): a note channel holds an
+/// embed's room once. Joining the same set again under it closes the earlier
+/// channel (`collaboration-embed-closed`, the client joins it again when near
+/// the screen), so one note channel cannot take a room's updates many times
+/// over. Fails if both channels stay joined.
+#[tokio::test]
+async fn joining_an_embed_again_under_its_note_closes_the_earlier_channel() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut client) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    let embed = embed_token(&set, &user, &note);
+    assert_eq!(client.join_embed(2, &set, &embed).await.0, 1);
+    let mut payload = join_payload(&set, &embed, Some(client_protocol()));
+    var(&mut payload, 1);
+    client.send_on(3, 0, &payload).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let mut closes = Vec::new();
+    'joined: loop {
+        for (heard, kind, payload) in client.raw_until(deadline).await {
+            if kind == 4 {
+                closes.push((heard, String::from_utf8_lossy(&payload).into_owned()));
+            }
+            if heard == 3 && kind == 1 {
+                break 'joined;
+            }
+        }
+    }
+    closes.extend(client.closes_within(Duration::from_millis(500)).await);
+    assert_eq!(closes.len(), 1, "{closes:?}");
+    assert_eq!(closes[0].0, 2);
+    assert!(
+        closes[0].1.contains("collaboration-embed-closed"),
+        "{closes:?}"
+    );
+}
+
+/// Security regression (Epo 2026-10-20): a note channel holds at most 64
+/// embed channels: the 65th closes its oldest (`collaboration-embed-closed`,
+/// the client joins it again when near the screen), and leaving the note
+/// closes every embed channel it holds (`collaboration-note-closed`). Fails
+/// without the per-note cap or if embeds outlive their note.
+#[tokio::test]
+async fn a_notes_65th_embed_closes_its_oldest_and_leaving_the_note_closes_them_all() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut client) = writer(&env, server.port, "a note").await;
+    let note = material_of(&room).to_owned();
+    let sets = embedded_sets(&env, &user, &note, 65).await;
+    let mut closes = Vec::new();
+    for (at, set) in sets.iter().enumerate() {
+        let channel = at as u64 + 2;
+        let mut payload = join_payload(
+            set,
+            &embed_token(set, &user, &note),
+            Some(client_protocol()),
+        );
+        var(&mut payload, 1);
+        client.send_on(channel, 0, &payload).await;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        'joined: loop {
+            for (heard, kind, payload) in client.raw_until(deadline).await {
+                if kind == 4 {
+                    closes.push((heard, String::from_utf8_lossy(&payload).into_owned()));
+                }
+                if heard == channel && kind == 1 {
+                    break 'joined;
+                }
+            }
+        }
+    }
+    closes.extend(client.closes_within(Duration::from_millis(500)).await);
+    assert_eq!(closes.len(), 1, "{closes:?}");
+    assert_eq!(closes[0].0, 2);
+    assert!(
+        closes[0].1.contains("collaboration-embed-closed"),
+        "{closes:?}"
+    );
+    client.send_on(1, 3, &[]).await;
+    let mut closed: Vec<u64> = client
+        .closes_within(Duration::from_secs(2))
+        .await
+        .into_iter()
+        .inspect(|(_, reason)| assert!(reason.contains("collaboration-note-closed"), "{reason}"))
+        .map(|(channel, _)| channel)
+        .collect();
+    closed.sort_unstable();
+    assert_eq!(closed, (3..=66).collect::<Vec<u64>>());
+}
+
+/// Security regression (rate-limit review r3 S9): a JOIN's token is checked
+/// before any lookup, so a junk token costs no Redis round trip (a room under
+/// its eviction lease answers a bad token as a bad token, not as busy; a
+/// draft send too), and a socket sending only such JOINs still closes at the
+/// join deadline. Fails if the lease is looked up first (the source answers
+/// `source-publishing`, the draft send 503).
+#[tokio::test]
+async fn a_join_with_a_bad_token_is_refused_before_any_lookup() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let room = "source:junk:epoch:1";
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let lease = format!("capy:collaboration:evicting:{room}");
+    let _: () = redis::cmd("SET")
+        .arg(&lease)
+        .arg("test")
+        .arg("EX")
+        .arg(60)
+        .query_async(&mut connection)
+        .await
+        .expect("lease");
+    let mut socket = Client::open(server.port).await;
+    let junk = join_payload(room, "junk", Some(client_protocol()));
+    socket.send(0, &junk).await;
+    let refused = text_payload(&socket.until(2).await.expect("refused"));
+    // A draft send runs the same checks.
+    let (status, answer) =
+        send_drafts(server.port, room, Some("junk"), Some(ORIGIN), vec![0]).await;
+    let _: i64 = redis::cmd("DEL")
+        .arg(&lease)
+        .query_async(&mut connection)
+        .await
+        .expect("release");
+    assert_eq!(refused, "permission-denied");
+    assert_eq!(
+        (status, &answer["class"]),
+        (403, &serde_json::json!("permission"))
+    );
+    // Junk JOINs every half second do not hold the deadline open.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(14);
+    let closed = loop {
+        socket.send(0, &junk).await;
+        match tokio::time::timeout(Duration::from_millis(500), socket.ws.next()).await {
+            Ok(Some(Ok(Ws::Close(frame)))) => {
+                break frame.map(|frame| u16::from(frame.code));
+            }
+            Ok(Some(Ok(_))) | Err(_) => {}
+            Ok(_) => break None,
+        }
+        assert!(tokio::time::Instant::now() < deadline, "still open");
+    };
+    assert_eq!(closed, Some(1008));
+}
 #[tokio::test]
 async fn redis_comments_and_user_evictions_reach_the_room() {
     let Some(env) = env() else { return };
@@ -3332,6 +5165,359 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
 }
 
 impl Client {
+    /// Reads the room's presence until it lists connections `check` accepts.
+    async fn presence(
+        &mut self,
+        check: impl Fn(&[serde_json::Value]) -> bool,
+    ) -> Vec<serde_json::Value> {
+        loop {
+            let (message, _) = self.stateless("room-presence").await;
+            let connections = message["connections"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if check(&connections) {
+                return connections;
+            }
+        }
+    }
+}
+
+/// Security regression (Epo 2026-10-20): the room's presence lists the
+/// people who can edit (an editor's reading tab too), each by its signed
+/// token's name with the awareness client ids it holds, never by what its
+/// awareness says, and never a viewer; a person is a number in the room,
+/// never a user id; nothing about a device is listed; a member hears every
+/// connection but its own (its user's other tabs included), and a viewer
+/// hears none. Fails if viewers are listed, a viewer hears it, a member hears
+/// its own connection, or an entry names a device.
+#[tokio::test]
+async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let viewer = member(&env, &room, "viewer").await;
+    drop_queued_evictions(&env, &room).await;
+    let mut desk = Client::open(server.port).await;
+    desk.joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    // What its awareness claims is never its label.
+    desk.send(
+        7,
+        &awareness_update(501, 1, "{\"data\":{\"name\":\"Mallory\"}}"),
+    )
+    .await;
+    let mut ed = Client::open(server.port).await;
+    ed.joined(&room, &identity_token(&room, &editor, "write", "Eddie"))
+        .await;
+    let mut phone = Client::open(server.port).await;
+    phone
+        .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    let mut reader = Client::open(server.port).await;
+    reader
+        .joined(&room, &identity_token(&room, &editor, "read", "Eddie"))
+        .await;
+    let mut watcher = Client::open(server.port).await;
+    watcher
+        .joined(&room, &identity_token(&room, &viewer, "read", "Vic"))
+        .await;
+
+    let seen = ed
+        .presence(|connections| {
+            connections.len() == 3 && connections.iter().any(|c| c["clients"][0] == 501)
+        })
+        .await;
+    let desk_entry = seen
+        .iter()
+        .find(|c| c["clients"][0] == 501)
+        .expect("the desk");
+    assert_eq!(desk_entry["name"], "Olive");
+    let names = |connections: &[serde_json::Value]| {
+        let mut names: Vec<String> = connections
+            .iter()
+            .map(|c| c["name"].as_str().unwrap_or("").to_owned())
+            .collect();
+        names.sort_unstable();
+        names
+    };
+    let persons = |connections: &[serde_json::Value], name: &str| {
+        let mut persons: Vec<u64> = connections
+            .iter()
+            .filter(|c| c["name"] == name)
+            .filter_map(|c| c["person"].as_u64())
+            .collect();
+        persons.dedup();
+        persons
+    };
+    // The desk hears the editor, the editor's reading tab and its own user's
+    // phone (one person per user), never itself.
+    let at_desk = desk.presence(|connections| connections.len() == 3).await;
+    assert_eq!(names(&at_desk), ["Eddie", "Eddie", "Olive"]);
+    assert_eq!(persons(&at_desk, "Eddie").len(), 1);
+    assert_eq!(
+        persons(&at_desk, "Olive"),
+        [desk_entry["person"].as_u64().unwrap()]
+    );
+    assert_ne!(persons(&at_desk, "Eddie"), persons(&at_desk, "Olive"));
+    let at_reader = reader.presence(|connections| connections.len() == 3).await;
+    assert_eq!(names(&at_reader), ["Eddie", "Olive", "Olive"]);
+    for id in [&owner, &editor] {
+        assert!(
+            !String::from_utf8_lossy(&reader.received).contains(id.as_str()),
+            "a reader learned a user id"
+        );
+    }
+    assert!(!watcher.hears(255, 1500).await);
+    assert!(
+        watcher
+            .inbox
+            .iter()
+            .all(|m| m.kind != 9 || !text_payload(&m.payload).contains("room-presence")),
+        "a viewer heard the room's presence"
+    );
+    for connections in [&seen, &at_desk, &at_reader] {
+        for connection in connections.iter() {
+            assert_ne!(connection["name"], "Vic", "{connections:?}");
+            let mut fields: Vec<&String> =
+                connection.as_object().expect("an entry").keys().collect();
+            fields.sort_unstable();
+            assert_eq!(
+                fields,
+                ["avatar", "clients", "name", "person"],
+                "{connection}"
+            );
+        }
+    }
+}
+
+/// Drops the evictions that inserting `room`'s workspace, members and
+/// material queued: the API's worker delivers them whenever it gets to them,
+/// and one landing after a join drains the room, closing its channels. The
+/// room is not loaded yet, so they have nothing to do.
+async fn drop_queued_evictions(env: &Env, room: &str) {
+    db(env)
+        .await
+        .execute(
+            "DELETE FROM collaboration_eviction_outbox WHERE payload->>'room' = $1",
+            &[&room],
+        )
+        .await
+        .expect("outbox");
+}
+
+/// A fresh user with `role` in the workspace of `room`'s material.
+async fn member(env: &Env, room: &str, role: &str) -> String {
+    let user = user(env).await;
+    db(env)
+        .await
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role)
+             SELECT workspace_id, $2, $3 FROM materials WHERE id = $1",
+            &[&material_of(room), &user, &role],
+        )
+        .await
+        .expect("member");
+    user
+}
+
+/// Security regression (header-presence review S2): the presence shrinks as
+/// connections go: a channel that leaves, then a socket that closes, each
+/// leave the next presence. Fails if a leave or a close sends none.
+#[tokio::test]
+async fn the_rooms_presence_drops_a_channel_that_leaves_and_a_socket_that_closes() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let third = member(&env, &room, "editor").await;
+    drop_queued_evictions(&env, &room).await;
+    let mut olive = Client::open(server.port).await;
+    olive
+        .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    let mut bea = Client::open(server.port).await;
+    bea.joined(&room, &identity_token(&room, &editor, "write", "Bea"))
+        .await;
+    let mut cal = Client::open(server.port).await;
+    cal.joined(&room, &identity_token(&room, &third, "write", "Cal"))
+        .await;
+    olive.presence(|connections| connections.len() == 2).await;
+    bea.send(3, &[]).await;
+    let left = olive.presence(|connections| connections.len() == 1).await;
+    assert_eq!(left[0]["name"], "Cal");
+    cal.ws.close(None).await.ok();
+    drop(cal);
+    olive.presence(|connections| connections.is_empty()).await;
+}
+
+/// Security regression (header-presence review S2, Epo 2026-10-20): a source
+/// (Office or text) room knows only a token's access, so its presence lists
+/// write channels only; a read channel, which a viewer holds, is neither
+/// listed nor hears it. Fails if a source room lists or tells its readers.
+#[tokio::test]
+async fn a_source_rooms_presence_lists_its_writers_and_never_a_reader() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello").await;
+    let (second, viewer) = (user(&env).await, user(&env).await);
+    let room = format!("source:{file}:epoch:1");
+    drop_queued_evictions(&env, &room).await;
+    let mut reader = Client::open(server.port).await;
+    reader
+        .joined(&room, &identity_token(&room, &viewer, "read", "Rae"))
+        .await;
+    let mut bea = Client::open(server.port).await;
+    bea.joined(&room, &identity_token(&room, &second, "write", "Bea"))
+        .await;
+    let mut wes = Client::open(server.port).await;
+    wes.joined(&room, &identity_token(&room, &owner, "write", "Wes"))
+        .await;
+    // Everyone joined before Wes: its first presence is the whole room.
+    let (first, _) = wes.stateless("room-presence").await;
+    let names: Vec<&serde_json::Value> = first["connections"]
+        .as_array()
+        .expect("connections")
+        .iter()
+        .map(|c| &c["name"])
+        .collect();
+    assert_eq!(names, ["Bea"], "{first}");
+    assert!(!reader.hears(255, 1500).await);
+    assert!(
+        reader
+            .inbox
+            .iter()
+            .all(|m| m.kind != 9 || !text_payload(&m.payload).contains("room-presence")),
+        "a reader heard the room's presence"
+    );
+}
+
+/// Security regression (header-presence review S2): an embed's channel
+/// inside its note's is listed in the embed room's presence but hears none
+/// (its page's header shows the note's). Fails if an embed channel hears it.
+#[tokio::test]
+async fn an_embed_channel_is_listed_but_hears_no_presence() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut note) = writer(&env, server.port, "a note").await;
+    let note_id = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note_id, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    drop_queued_evictions(&env, &set).await;
+    let (kind, _) = note
+        .join_embed(2, &set, &embed_token(&set, &user, &note_id))
+        .await;
+    assert_eq!(kind, 1);
+    let mut page = Client::open(server.port).await;
+    page.joined(&set, &identity_token(&set, &user, "write", "Pat"))
+        .await;
+    page.presence(|connections| connections.len() == 1).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(1500);
+    while tokio::time::Instant::now() < deadline {
+        let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout_at(deadline, note.ws.next()).await
+        else {
+            break;
+        };
+        let mut at = 0;
+        while at < bytes.len() {
+            let channel = read_var(&bytes, &mut at);
+            let kind = bytes[at];
+            at += 1;
+            let len = read_var(&bytes, &mut at) as usize;
+            let payload = &bytes[at..at + len];
+            at += len;
+            assert!(
+                !(channel == 2 && kind == 9 && text_payload(payload).contains("room-presence")),
+                "an embed channel heard its room's presence"
+            );
+        }
+    }
+}
+
+/// Security regression (header-presence review S1): an awareness client id
+/// its user released stays theirs until the room's presence that no longer
+/// lists it went out, so another user's cursor is never drawn under the
+/// departed user's verified name. Another editor claims a departed editor's
+/// id again and again from the moment it leaves; an observer hears that
+/// claim only after a presence that no longer labels the id with the
+/// departed editor. Fails if a released id is free to another user at once.
+#[tokio::test]
+async fn a_released_client_id_is_never_drawn_under_its_users_name() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let other = member(&env, &room, "editor").await;
+    drop_queued_evictions(&env, &room).await;
+    let mut observer = Client::open(server.port).await;
+    observer
+        .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    let mut taker = Client::open(server.port).await;
+    taker
+        .joined(&room, &identity_token(&room, &other, "write", "Mal"))
+        .await;
+    let mut leaver = Client::open(server.port).await;
+    leaver
+        .joined(&room, &identity_token(&room, &editor, "write", "Eddie"))
+        .await;
+    leaver
+        .send(7, &awareness_update(601, 1, "{\"by\":\"eddie\"}"))
+        .await;
+    observer
+        .presence(|connections| {
+            connections
+                .iter()
+                .any(|c| c["clients"][0] == 601 && c["name"] == "Eddie")
+        })
+        .await;
+    // It leaves just after a presence, so the next may wait a second.
+    leaver.ws.close(None).await.ok();
+    drop(leaver);
+    let claims = async {
+        for clock in 10..50 {
+            taker
+                .send(7, &awareness_update(601, clock, "{\"by\":\"mal\"}"))
+                .await;
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    };
+    let watch = async {
+        // Who the observer's latest presence says holds 601.
+        let mut label = Some("Eddie".to_owned());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            for (_, kind, payload) in observer.raw_until(deadline).await {
+                if kind == 9 && text_payload(&payload).contains("room-presence") {
+                    let message: serde_json::Value =
+                        serde_json::from_str(&text_payload(&payload)).expect("json");
+                    label = message["connections"]
+                        .as_array()
+                        .expect("connections")
+                        .iter()
+                        .find(|c| {
+                            c["clients"]
+                                .as_array()
+                                .is_some_and(|ids| ids.iter().any(|id| id == 601))
+                        })
+                        .and_then(|c| c["name"].as_str().map(str::to_owned));
+                } else if kind == 7
+                    && awareness_entries(&payload)
+                        .iter()
+                        .any(|(client, state)| *client == 601 && state.contains("mal"))
+                {
+                    return label;
+                }
+            }
+        }
+    };
+    let (_, label) = tokio::join!(claims, watch);
+    assert_ne!(label.as_deref(), Some("Eddie"));
+}
+
+impl Client {
     fn cards(&self) -> Vec<(String, String)> {
         items::flashcards::cards(&self.doc.transact())
             .into_iter()
@@ -3897,6 +6083,156 @@ async fn two_editors_converge_across_a_quizs_content_and_keys() {
         .expect("rows")
         .get(0);
     assert!(key_rows >= 1);
+}
+
+/// Stored update rows of a material's document (`material_yjs_updates`, or
+/// a quiz's `material_yjs_key_updates`).
+async fn update_rows(env: &Env, table: &str, material: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            &format!("SELECT count(*) FROM {table} WHERE material_id=$1"),
+            &[&material],
+        )
+        .await
+        .expect("rows")
+        .get(0)
+}
+
+/// An agent edit that only removes (a deletion moves no state vector) is
+/// committed and fanned into the live room like any other: a quiz's
+/// `remove_child` stores both its documents and the open editor loses the
+/// question; the stored quiz projects without it.
+#[tokio::test]
+async fn a_removal_only_agent_edit_of_a_quiz_is_stored_and_reaches_the_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let room = format!("material:{quiz}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(
+        client
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_some())
+            .await
+    );
+    let content_rows = update_rows(&env, "material_yjs_updates", &quiz).await;
+    let key_rows = update_rows(&env, "material_yjs_key_updates", &quiz).await;
+    let edit = serde_json::json!({
+        "actorUserId": owner,
+        "commands": [{ "type": "remove_child", "parentType": "quiz", "nodeId": "q2" }],
+        "operation": { "id": format!("op_{quiz}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": quiz, "kind": "material" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(update_rows(&env, "material_yjs_updates", &quiz).await > content_rows);
+    assert!(update_rows(&env, "material_yjs_key_updates", &quiz).await > key_rows);
+    assert!(
+        client
+            .settle(|c| map_at(&c.doc, &["questions", "q2"]).is_none())
+            .await,
+        "the room kept q2"
+    );
+    let (status, body) = internal(
+        server.port,
+        &format!("/internal/materials/{quiz}/project"),
+        &serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let stored: serde_json::Value = db(&env)
+        .await
+        .query_one("SELECT content FROM materials WHERE id=$1", &[&quiz])
+        .await
+        .expect("content")
+        .get(0);
+    let ids: Vec<&str> = stored["value"][0]["children"]
+        .as_array()
+        .expect("questions")
+        .iter()
+        .filter_map(|question| question["id"].as_str())
+        .collect();
+    assert_eq!(ids, ["q1"], "{stored}");
+}
+
+/// A set's removal-only change is stored and reaches the open editor, by an
+/// agent edit (`remove_child`) and by the content save API (a replace-block
+/// holding fewer cards).
+#[tokio::test]
+async fn a_removal_only_change_of_a_flashcard_set_is_stored_and_reaches_the_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let set = flashcard_set(
+        &env,
+        &owner,
+        None,
+        &[
+            ("c1", "Cell", ""),
+            ("c2", "Nucleus", ""),
+            ("c3", "Ribosome", ""),
+        ],
+    )
+    .await;
+    let room = format!("material:{set}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(client.settle(|c| c.cards().len() == 3).await);
+    let rows = update_rows(&env, "material_yjs_updates", &set).await;
+    let edit = serde_json::json!({
+        "actorUserId": owner,
+        "commands": [{ "type": "remove_child", "parentType": "flashcards", "nodeId": "c3" }],
+        "operation": { "id": format!("op_{set}"), "requestHash": "h1", "toolVersion": 1 },
+        "room": room,
+        "target": { "id": set, "kind": "material" },
+    });
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(update_rows(&env, "material_yjs_updates", &set).await > rows);
+    let two = vec![
+        ("c1".to_owned(), "Cell".to_owned()),
+        ("c2".to_owned(), "Nucleus".to_owned()),
+    ];
+    assert!(
+        client.settle(|c| c.cards() == two).await,
+        "{:?}",
+        client.cards()
+    );
+
+    // replace-block answers once the projection landed, so it needs the API.
+    if env.api.is_none() {
+        return;
+    }
+    let card = |id: &str, front: &str| {
+        items::flashcards::card_node(&items::flashcards::Card {
+            id: id.into(),
+            order: String::new(),
+            front: front.into(),
+            back: String::new(),
+            image: None,
+        })
+    };
+    let rows = update_rows(&env, "material_yjs_updates", &set).await;
+    let command = serde_json::json!({
+        "actorUserId": owner,
+        "expectedBlock": {},
+        "materialId": set,
+        "replacementBlock": { "type": "flashcards", "id": "flashcards", "children": [card("c1", "Cell")] },
+        "room": room,
+        "type": "replace-block",
+    });
+    let (status, answer) = internal(server.port, "/internal/commands", &command).await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(update_rows(&env, "material_yjs_updates", &set).await > rows);
+    let one = vec![("c1".to_owned(), "Cell".to_owned())];
+    assert!(
+        client.settle(|c| c.cards() == one).await,
+        "{:?}",
+        client.cards()
+    );
 }
 
 /// The `quiz-items` messages a channel heard so far (taken from its inbox),

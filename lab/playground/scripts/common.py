@@ -64,6 +64,8 @@ KNOWLEDGE_B2_KEYS = (
     "KNOWLEDGE_BASE_B2_KEY_ID",
     "KNOWLEDGE_BASE_B2_APP_KEY",
 )
+# The Office engine the playground runs (office.py, README "Office files").
+OFFICE_KEYS = ("OFFICE_SERVICE_BIN",)
 
 
 def ingest_key() -> Path:
@@ -175,7 +177,7 @@ def prepare_environment(target: str) -> str:
         if env.get(key):
             os.environ.setdefault(key, env[key])
     local_env = env_file(REPO / ".env.local")
-    for key in (*PROVIDER_KEYS, *LIBRARY_KEYS, *KNOWLEDGE_B2_KEYS):
+    for key in (*PROVIDER_KEYS, *LIBRARY_KEYS, *KNOWLEDGE_B2_KEYS, *OFFICE_KEYS):
         if local_env.get(key):
             os.environ.setdefault(key, local_env[key])
     if not os.environ.get("LIBRARY_DATABASE_URL") and env.get("LIBRARY_DATABASE_URL"):

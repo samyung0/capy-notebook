@@ -8,6 +8,7 @@ and return the hit passages.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import Counter
@@ -104,8 +105,21 @@ class Passage:
             header += f" [extraction confidence {self.confidence:.2f}: {reasons}]"
         return header
 
-    def as_context(self, index: int) -> str:
-        return source_block(f"[{index}] {self.location()}\n{self.text}")
+    def as_context(self, index: int, unindexed: int = 0) -> str:
+        """The passage as the model reads it. ``unindexed``: its document's
+        edits not in the index yet, named on a line of their own just above
+        the passage (outside its source block, which holds only source data),
+        so the agent reads the document before answering from a passage that
+        may be out of date (Epo 2026-10-20). No edit text."""
+        block = source_block(f"[{index}] {self.location()}\n{self.text}")
+        if not unindexed:
+            return block
+        edits = f"{unindexed} edit{'s' if unindexed > 1 else ''}"
+        name = json.dumps(self.file_name, ensure_ascii=False)
+        return (
+            f"[{index}] {name} has {edits} not indexed yet, so this passage may be "
+            "out of date: read the document for its current text.\n" + block
+        )
 
     def as_citation(self) -> dict[str, Any]:
         citation: dict[str, Any] = {

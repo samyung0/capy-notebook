@@ -32,6 +32,16 @@ x-pipeline-env: &pipeline-env
   # it because its APP_ENV stays `production` to exercise production checks.
   SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
 
+# The pipeline services run as capy-ingest (pipeline/Dockerfile), in the parse
+# spool's group, with no capabilities and no privilege gain. The worker decodes
+# uploads only in sandboxed children (pipeline/capy_sandbox.py), which keep its
+# uid.
+x-pipeline-user: &pipeline-user
+  user: "10002:10001"
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+
 services:
   parse-spool-init:
     image: alpine:3.20
@@ -56,16 +66,17 @@ services:
     network_mode: host
     # No `init: true`: the image's own PID 1 (tini, execute-only) reaps.
     # The parser reads untrusted documents: no capabilities, no privilege gain,
-    # Docker's default seccomp profile and a read-only root. HOME and /tmp are
-    # small RAM tmpfs mounts; sources, conversions and temporary files use the
-    # disk-backed parser_work volume (the image sets TMPDIR to it).
+    # Docker's default seccomp profile and a read-only root. HOME is a small
+    # RAM tmpfs mount and /tmp stays the image's, which the parser user cannot
+    # write (LibreOffice's IPC pipe then goes to each conversion's folder);
+    # sources, conversions and temporary files use the disk-backed parser_work
+    # volume (the image sets TMPDIR to it).
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
       - /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
-      - /tmp:noexec,nosuid,nodev,size=64m
     environment:
       APP_ENV: production
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
@@ -141,6 +152,7 @@ services:
     restart: unless-stopped
 
   parse-coordinator:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
@@ -174,6 +186,7 @@ services:
   # Drive/OneDrive imports: one provider file per claim, streamed into B2.
   # Its own service so a slow provider download never holds an ingest slot.
   import-worker:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
@@ -206,6 +219,7 @@ services:
       - parse_spool:/var/lib/capy-parse
 
   worker:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     build:
       context: ..
@@ -228,6 +242,9 @@ services:
       CAPY_TABULAR_TEXT_VERSION: ${CAPY_TABULAR_TEXT_VERSION:-v2}
       CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
       CAPY_PARSE_SPOOL_TTL_HOURS: ${CAPY_PARSE_SPOOL_TTL_HOURS:-2}
+      # VLM page reads in flight: across the workers, and within one job.
+      CAPY_VLM_PAGE_CAPACITY: ${CAPY_VLM_PAGE_CAPACITY:-64}
+      CAPY_VLM_PAGES_PER_JOB: ${CAPY_VLM_PAGES_PER_JOB:-40}
     command: ["python", "-m", "pipeline.ingest.worker"]
     mem_limit: ${CAPY_INGEST_WORKER_MEMORY_LIMIT:-1g}
     memswap_limit: ${CAPY_INGEST_WORKER_MEMORY_SWAP_LIMIT:-1280m}
@@ -244,6 +261,7 @@ services:
       - parse_spool:/var/lib/capy-parse
 
   host-sampler:
+    <<: *pipeline-user
     image: capy-ingest-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
     read_only: true

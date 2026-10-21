@@ -6,7 +6,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
+	"unicode"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
 type collaborationClaims struct {
@@ -19,9 +23,21 @@ type collaborationClaims struct {
 	Room      string `json:"room"`
 	Access    string `json:"access"`
 	Schema    int    `json:"schema"`
+	// Parent is the note an embedded quiz or flashcard set belongs to: its
+	// rooms join inside that note's channel, which the collaboration server
+	// checks against this claim (Epo 2026-10-20).
+	Parent string `json:"parent,omitempty"`
+	// Who the connection is, for the room's presence and cursor labels (Epo
+	// 2026-10-20): the verified display name and avatar, nothing about the
+	// device (Epo 2026-10-20, privacy). Both are bounded, since the
+	// collaboration server sends them to every co-editor.
 	Name      string `json:"name,omitempty"`
 	AvatarURL string `json:"avatarUrl,omitempty"`
 }
+
+// maxClaimAvatarURL bounds the avatar a token carries; a longer one (none
+// the app sets is near it) is left out, and co-editors see initials.
+const maxClaimAvatarURL = 1024
 
 func signCollaborationToken(secret string, claims collaborationClaims) (string, error) {
 	if secret == "" {
@@ -42,6 +58,9 @@ func signCollaborationToken(secret string, claims collaborationClaims) (string, 
 
 func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID string, schema int) collaborationClaims {
 	now := time.Now().UTC()
+	if len(avatarURL) > maxClaimAvatarURL {
+		avatarURL = ""
+	}
 	return collaborationClaims{
 		Audience:  "capy-collaboration",
 		ExpiresAt: now.Add(5 * time.Minute).Unix(),
@@ -52,7 +71,24 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 		Room:      room,
 		Access:    access,
 		Schema:    schema,
-		Name:      name,
+		Name:      fieldlimits.Clamp(claimName(name), fieldlimits.UserName),
 		AvatarURL: avatarURL,
 	}
+}
+
+// claimName is the name co-editors see on an avatar and a cursor label,
+// without bidi controls or the zero-width space, word joiner and BOM, which
+// could make one name read as another's. The zero-width joiner and non-joiner
+// stay: Persian names and emoji sequences need them.
+func claimName(name string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Bidi_Control, r) {
+			return -1
+		}
+		switch r {
+		case '\u200b', '\u2060', '\ufeff':
+			return -1
+		}
+		return r
+	}, name)
 }

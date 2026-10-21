@@ -4,7 +4,9 @@
 
 use std::sync::OnceLock;
 
-use office_service::{Checkpoint, Command, Determinism, Error, Format, ObjectRef, XlsxReplicas};
+use office_service::{
+    Checkpoint, Command, Determinism, Error, Format, InspectQuery, ObjectRef, XlsxReplicas,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -33,6 +35,9 @@ pub struct Args {
     pub commands: Option<Vec<Command>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ids: Option<Vec<String>>,
+    /// What a scoped read reads (`inspectOfficeScoped`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<InspectQuery>,
 }
 
 /// The process's XLSX replica cache, sized by the pool (its share of the
@@ -149,6 +154,27 @@ pub fn dispatch(request: &Frame) -> Answer {
                 office_service::export(blob(0)?, checkpoint(1)?, determinism).map_err(failure)?;
             Ok((Value::Null, vec![bytes]))
         }
+        "inspectOfficeScoped" => {
+            let query = args.query.clone().unwrap_or_default();
+            Ok((
+                office_service::inspect_scoped(blob(0)?, checkpoint(1)?, &query)
+                    .map_err(failure)?,
+                Vec::new(),
+            ))
+        }
+        "createOffice" => {
+            let format = format()?;
+            // A format without a starter is an edit refusal (409), not a fault.
+            let starter = office_service::starter(format).map_err(failure)?;
+            let determinism = Determinism {
+                seed: args.seed.as_deref().unwrap_or_default(),
+                now: args.now.as_deref().unwrap_or_default(),
+            };
+            let commands = args.commands.as_deref().unwrap_or_default();
+            let created =
+                office_service::create(format, starter, commands, determinism).map_err(failure)?;
+            Ok((json!({ "notice": created.notice }), vec![created.bytes]))
+        }
         "inspectOffice" => Ok((
             to_json(office_service::inspect(blob(0)?, checkpoint(1)?).map_err(failure)?)?,
             Vec::new(),
@@ -185,7 +211,8 @@ pub fn dispatch(request: &Frame) -> Answer {
 /// work (exports, rebases, inspect, agent commands, locate, assets).
 pub mod calls {
     use office_service::{
-        BaselineEntry, Command, CommandResult, Entry, Format, NetEffect, ObjectRef, Target,
+        BaselineEntry, Command, CommandResult, Entry, Format, InspectQuery, NetEffect, ObjectRef,
+        Target,
     };
     use serde::de::DeserializeOwned;
     use serde_json::Value;
@@ -333,6 +360,49 @@ pub mod calls {
                 vec![on.base.to_vec(), state.to_vec()],
             );
             parse(self.call(Lane::Background, on.room, request).await?.value)
+        }
+
+        /// What the agent reads of an Office file without the whole of it
+        /// (inspectOfficeScoped: an XLSX sheet list or a range's cells).
+        pub async fn inspect_scoped(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+            query: &InspectQuery,
+        ) -> Result<Value, EngineError> {
+            let mut request = args(on);
+            request.query = Some(query.clone());
+            let request = frame(
+                "inspectOfficeScoped",
+                &request,
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            Ok(self.call(Lane::Background, on.room, request).await?.value)
+        }
+
+        /// A new file: the format's starter with `commands` applied, exported
+        /// (createOffice): its bytes and the removed-characters notice.
+        pub async fn create(
+            &self,
+            format: Format,
+            commands: &[Command],
+            seed: &str,
+            now: &str,
+        ) -> Result<(Vec<u8>, Option<String>), EngineError> {
+            let request = frame(
+                "createOffice",
+                &Args {
+                    format: Some(format),
+                    seed: Some(seed.to_owned()),
+                    now: Some(now.to_owned()),
+                    commands: Some(commands.to_vec()),
+                    ..Args::default()
+                },
+                Vec::new(),
+            );
+            let mut reply = self.call(Lane::Background, None, request).await?;
+            let bytes = blob(&mut reply)?;
+            Ok((bytes, parse(reply.value["notice"].take())?))
         }
 
         /// Applies agent commands: the new state, the inverse in undo order and

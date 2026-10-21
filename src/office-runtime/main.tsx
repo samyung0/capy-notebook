@@ -36,6 +36,7 @@ import {
 } from '@/lib/fitImage';
 import { officeMark } from '@/lib/officeMarks';
 import { THEMES } from '@/theme/theme';
+import { reportInput } from './activity';
 import { useBottomInset } from './bottomInset';
 import { dropDocxViewerWorker } from './docxViewerWorker';
 import { exportCheckpoint } from './exportCheckpoint';
@@ -45,6 +46,7 @@ import type {
   OfficeFlusher,
   OfficeReplica,
 } from './officeCollaboration';
+import { type CursorChannel, createCursorChannel } from './officePresence';
 import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
 import { prewarmRuntime, runtimeChunks } from './prewarm';
 import {
@@ -125,6 +127,7 @@ function OfficeRuntime() {
   // Whether a local edit may change the capture; every edit without one.
   const captureScopeRef = useRef<OfficeCaptureScope | null>(null);
   const revisionRef = useRef<number | null>(null);
+  const cursorsRef = useRef<CursorChannel | null>(null);
   // PPTX Presenter view: Capy opens the notes window, even from a click here.
   const askPresenter = useCallback(() => {
     if (revisionRef.current !== null)
@@ -216,6 +219,9 @@ function OfficeRuntime() {
     readOnlyRef.current = readOnly;
   }, [readOnly]);
   const holding = () => pausedRef.current && !readOnlyRef.current;
+  // The tab holds back its collaboration messages (`sending`): the XLSX
+  // editor refuses edits with a busy cursor; DOCX and PPTX pause instead.
+  const [sending, setSending] = useState(false);
   // The host's narrowed canEdit, kept for a `load` that comes after it (a
   // runtime that boots before the source loads gets set-capabilities first).
   const canEditRef = useRef<boolean | null>(null);
@@ -316,6 +322,14 @@ function OfficeRuntime() {
     },
     [sendMenus]
   );
+  // The co-editors' cursors Capy sends, and this editor's to the room.
+  const [cursors] = useState(() =>
+    createCursorChannel((cursor) => {
+      const revision = revisionRef.current;
+      if (revision !== null) post({ cursor, revision, type: 'cursor' });
+    })
+  );
+  cursorsRef.current = cursors;
   const collaboration = useMemo(
     () =>
       file?.initialUpdate
@@ -323,11 +337,12 @@ function OfficeRuntime() {
             // Never 0, the client the DOCX seed is written under (Yrs does
             // not move a colliding id).
             clientId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
+            cursors,
             initialUpdate: file.initialUpdate,
             onReplica: reportReplica,
           }
         : null,
-    [file?.initialUpdate, reportReplica]
+    [cursors, file?.initialUpdate, reportReplica]
   );
   // An inserted image over the payer's plan cap, or over what the room may
   // still grow by, is shrunk first, and one older Office apps cannot open is
@@ -402,6 +417,10 @@ function OfficeRuntime() {
         // Below lg, for CSS that keeps clear of Capy's floating tools button.
         document.documentElement.toggleAttribute('data-narrow', message.narrow);
         setAppearance(true);
+        return;
+      }
+      if (message.type === 'peers') {
+        cursorsRef.current?.receive(message.peers);
         return;
       }
       if (message.type === 'load') {
@@ -507,6 +526,10 @@ function OfficeRuntime() {
         );
         return;
       }
+      if (message.type === 'sending') {
+        setSending(message.pending);
+        return;
+      }
       if (message.type === 'set-capabilities') {
         canEditRef.current = message.canEdit;
         pausedRef.current = pausedFor(message.canEdit);
@@ -590,7 +613,9 @@ function OfficeRuntime() {
     window.addEventListener('pointercancel', finishPointer);
     window.addEventListener('message', receive);
     post({ type: 'initialized' });
+    const stopInput = reportInput(() => post({ type: 'activity' }));
     return () => {
+      stopInput();
       window.removeEventListener('pointerup', finishPointer);
       window.removeEventListener('pointercancel', finishPointer);
       window.removeEventListener('message', receive);
@@ -773,6 +798,7 @@ function OfficeRuntime() {
               onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
               readOnly={readOnly}
+              sending={sending}
             />
           ) : (
             <PptxEditorHost

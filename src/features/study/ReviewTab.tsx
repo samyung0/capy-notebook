@@ -12,23 +12,20 @@ import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
+import { PastReviews } from './PastReviews';
 import type { ReviewSearch } from './reviewSearch';
 import { groupName, itemCount, REVIEW_MODE, reviewReason } from './reviewText';
 
 /** Learning → Review: suggested reviews with their reason, sessions left
- * before the end, then every workspace for a review of your own. */
+ * before the end, every workspace for a review of your own, then past
+ * reviews. */
 export function ReviewTab() {
   const { data, fetchStatus, isLoading } = useReviewOverview();
   const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <SkeletonList count={5} rowHeight={72} />;
-  if (!data?.workspaces.length && !data?.unfinished.length)
-    return (
-      <p className="py-8 text-center text-fg-muted">
-        {m.review_no_workspaces()}
-      </p>
-    );
+  if (!data) return null;
   const review = (workspaceId: string, search: ReviewSearch) =>
     navigate({
       params: { workspaceId },
@@ -37,6 +34,11 @@ export function ReviewTab() {
     });
   return (
     <div className="flex flex-col gap-9" ref={revealRef}>
+      {!data.workspaces.length && !data.unfinished.length && (
+        <p className="py-8 text-center text-fg-muted">
+          {m.review_no_workspaces()}
+        </p>
+      )}
       {data.suggestions.length > 0 && (
         <section>
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
@@ -130,6 +132,7 @@ export function ReviewTab() {
           ))}
         </section>
       )}
+      <PastReviews />
     </div>
   );
 }

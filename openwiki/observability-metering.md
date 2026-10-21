@@ -353,7 +353,30 @@ unavailable. A steady count means the cap is too small for the
 rooms open at once. Next to it, the gauge
 `capy_collaboration_source_disk_held_bytes` is the bytes of the files loaded
 rooms hold, which is what a refusal compares with the cap (idle files go
-first and are not in it). Sentry holds failures
+first and are not in it). A user put in a timeout for going past their
+update allowance or sending an update over 8 MiB (the update allowance in
+[plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals))
+is logged at warn as `user timed out` with the room, the socket and the user
+id (never content) when a socket's message starts it, counted once per
+timeout in `capy_collaboration_timeouts_total`, and never captured; a draft
+send that starts one is counted there too (one over 8 MiB answers
+`too_large`, `class="too_large"`), and every draft send refused during one
+answers `too_fast`, logged as `draft send refused` and counted in
+`capy_collaboration_draft_refusals_total{class="too_fast"}`. Capy's tab
+paces its own messages under the allowance and splits updates into 2 MiB
+pieces, so a count that keeps growing means a runaway or hostile client (or
+one user's several busy tabs), and the warn lines name it. A JOIN costs one
+message of the allowance, so a join loop is a timeout too. A socket refused
+for its client address's socket cap is logged at warn (`client address over
+its socket cap`) and counted in
+`capy_collaboration_seat_refusals_total{seat="address"}`; a channel closed as
+its user's oldest when they joined one past their 22, or one past their 4 to
+one document, is counted in
+`capy_collaboration_oldest_closed_total`; a socket closed for joining no room
+within 10 s is logged at warn as `socket closed before any join`, and one
+that missed timeout announcements (too many at once) as `timeout
+announcements missed`. Full-document answers slowed by a spent open budget
+are not counted: they wait, nothing is refused. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal
@@ -1397,6 +1420,16 @@ Three layers, each doing what the ones below it cannot:
 | Go middleware | Clerk identity, plan, route class | per-user semantic limits |
 | Credits ledger | measured cost | spend, in money rather than requests |
 
+The collaboration server limits its own writers apart: each user's SYNC,
+awareness and query messages, over every socket and draft send, take from an
+update allowance (a burst, then a rate, in messages and bytes; the step 1
+and query answers the room encodes for them are charged by their bytes), a
+user over it or sending an update over 8 MiB is in a timeout instead of
+disconnected, and sockets per client address, joined channels per user and
+awareness client ids per channel and room are capped
+([plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals),
+metrics above).
+
 The edge cannot express "200 AI requests an hour for this Clerk user" because
 it never sees the identity. `server/internal/ratelimit` uses Redis GCRA so
 limits hold across replicas — the in-process counters it replaces only ever
@@ -1485,8 +1518,9 @@ Missing capacity raises an explicit configuration error before a call row or
 provider request is created. A full gate polls with jitter within the call budget,
 then fails as `provider_busy`. Leases use the call id and receipt deadline and are
 released when the call ends. The VLM read of text-less document pages has a
-gate of its own: its leases use the fixed key `vlm_page` with a limit of 20
-across every worker (`models.VLM_PAGE_CAPACITY`) in place of the GLM row, so those
+gate of its own: its leases use the fixed key `vlm_page` with a limit of
+`CAPY_VLM_PAGE_CAPACITY` across every worker (64 in production, 20 in UAT and
+local) in place of the captioning row, so those
 reads need no `model_capacities` row and do not count against GLM's ingest
 share.
 
@@ -1737,7 +1771,8 @@ the likelihood grew every time the registry was reconfigured.
 | `VITE_POSTHOG_KEY` / `VITE_POSTHOG_HOST` | SPA | empty disables |
 | `LOG_FORMAT` | all | `json` \| `text` |
 | `LOG_LEVEL` | all | default `info` |
-| `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
+| `CORS_ALLOWED_ORIGINS` | gateway | comma separated; never `*`: empty answers no cross-origin request, and outside development and e2e the gateway refuses to boot without it |
+| `COLLABORATION_ALLOWED_ORIGINS` | gateway, collaboration | the gateway accepts a Clerk session token only when its `azp` is one of these; with Clerk on outside development and e2e it refuses to boot when the list is empty |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
 | `CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S` | retrieval | wait for an interactive stream's first event, whole-call bound for non-streaming interactive calls; default 15 |

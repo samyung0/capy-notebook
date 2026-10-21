@@ -1,8 +1,8 @@
 """LibreOffice conversion hardening in ``parser/odl/document.py``.
 
-The LibreOffice cases need the parser image (LibreOffice 7.4 at
-``/usr/bin/soffice``) and skip elsewhere. Run them there against the working
-tree:
+The LibreOffice cases need the parser image (LibreOffice 7.4, its soffice.bin
+under ``/usr/lib/libreoffice``) and skip elsewhere. Run them there against the
+working tree:
 
     docker build -f parser/Dockerfile --build-arg RELEASE_SHA=$(git rev-parse HEAD) \
       -t capy-parser:test .
@@ -13,12 +13,17 @@ tree:
 
 from __future__ import annotations
 
+import errno
 import http.server
 import io
+import json
+import os
+import shutil
 import subprocess
 import sys
 import threading
 import time
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -36,6 +41,13 @@ needs_soffice = pytest.mark.skipif(
 )
 needs_linux = pytest.mark.skipif(
     sys.platform != "linux", reason="needs process groups and /proc"
+)
+# A fake soffice.bin runs under LibreOffice's own sandbox, which reads only
+# system trees: a Python there, not this test's interpreter.
+SYSTEM_PYTHON = shutil.which("python3", path="/usr/local/bin:/usr/bin")
+needs_system_python = pytest.mark.skipif(
+    sys.platform != "linux" or SYSTEM_PYTHON is None,
+    reason="needs Linux and a python3 under /usr",
 )
 ZIP = b"PK\x03\x04"
 OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -146,7 +158,7 @@ def test_includetext_does_not_read_a_local_file(tmp_path: Path) -> None:
     # importer turns it into a section linked to the file, so save it as .doc.
     subprocess.run(
         [
-            document.SOFFICE,
+            "/usr/bin/soffice",
             f"-env:UserInstallation={(tmp_path / 'profile').as_uri()}",
             "--headless",
             "--convert-to",
@@ -221,56 +233,187 @@ def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
     data: bytes,
     infilter: str,
 ) -> None:
-    seen = tmp_path / "seen"
-    launcher = tmp_path / "soffice"
+    # It can write only its job folder: what it saw is the "PDF" it leaves.
+    launcher = tmp_path / "soffice.bin"
     launcher.write_text(
-        f'#!/bin/sh\nprintf "%s\\n" "$MALLOC_ARENA_MAX" "$TMPDIR" "$@" > {seen}\nexit 1\n'
+        '#!/bin/sh\nprintf "%s\\n" "$MALLOC_ARENA_MAX" "$TMPDIR" "$@" '
+        '> "$TMPDIR/source.pdf"\n'
     )
     launcher.chmod(0o755)
     monkeypatch.setattr(document, "SOFFICE", str(launcher))
     work = tmp_path / "work"
     work.mkdir()
 
-    with pytest.raises(document.OfficeConversionFailed):
-        document.normalize_document(data, name, work)
+    converted = document.normalize_document(data, name, work)
 
-    arenas, tmpdir, *argv = seen.read_text().splitlines()
+    arenas, tmpdir, *argv = converted.data.decode().splitlines()
     assert f"--infilter={infilter}" in argv
     # Two malloc arenas, so it fits the parse child's address-space limit.
     assert arenas == "2"
     # LibreOffice's temporary files and output share the job directory in the
     # work dir, which goes with the job.
     job = Path(tmpdir)
-    assert job.parent == work and job.name.startswith("capy_office_")
+    assert job.parent == work and job.name.startswith("lo-")
     assert argv[argv.index("--outdir") + 1] == tmpdir
     assert not job.exists()
+
+
+def _with_marker(marker: str) -> list[int]:
+    found = []
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdigit() and int(entry.name) != os.getpid():
+            try:
+                command = (entry / "cmdline").read_bytes()
+            except OSError:
+                continue
+            if marker.encode() in command and _running(int(entry.name)):
+                found.append(int(entry.name))
+    return found
+
+
+def test_a_work_folder_too_long_for_the_pipe_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Where LibreOffice may write neither /tmp nor /var/tmp (the image), its
+    pipe goes in the job folder, so a work folder too long for a Unix socket
+    path is refused; with a writable /tmp the length does not matter."""
+    monkeypatch.setattr(document.os, "access", lambda _path, _mode: False)
+    document.check_pipe_path(Path("/run/capy-parser/work/slot-15"))
+    with pytest.raises(RuntimeError, match="bytes too long"):
+        document.check_pipe_path(Path("/run/capy-parser/a-longer-work-volume/slot-0"))
+    monkeypatch.setattr(document.os, "access", lambda path, _mode: path == "/tmp")
+    document.check_pipe_path(Path("/run/capy-parser/a-longer-work-volume/slot-0"))
 
 
 @needs_linux
 def test_timeout_kills_the_whole_process_group(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A launcher whose child outlives it, as soffice.bin outlives soffice.
-    helper_pid = tmp_path / "helper.pid"
-    launcher = tmp_path / "soffice"
-    launcher.write_text(
-        "#!/bin/sh\n"
-        "sleep 600 </dev/null >/dev/null 2>&1 &\n"
-        f"echo $! > {helper_pid}\n"
-        "wait\n"
-    )
+    """A conversion past its timeout is killed with its whole group (it can
+    start no process to leave behind: see the sandbox test below)."""
+    marker = f"soffice-{uuid.uuid4().hex}"
+    launcher = tmp_path / marker
+    launcher.write_text("#!/bin/sh\nwhile :; do :; done\n")
     launcher.chmod(0o755)
     monkeypatch.setattr(document, "SOFFICE", str(launcher))
     monkeypatch.setattr(document, "OFFICE_CONVERT_TIMEOUT_S", 1)
 
-    with pytest.raises(document.OfficeConversionTimeout, match="exceeded 1 seconds"):
-        document.normalize_document(ZIP + b"office", "slow.docx", tmp_path)
+    try:
+        with pytest.raises(
+            document.OfficeConversionTimeout, match="exceeded 1 seconds"
+        ):
+            document.normalize_document(ZIP + b"office", "slow.docx", tmp_path)
+        deadline = time.monotonic() + 5
+        while _with_marker(marker) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not _with_marker(marker)
+    finally:
+        for pid in _with_marker(marker):
+            os.kill(pid, 9)
 
-    helper = int(helper_pid.read_text())
-    deadline = time.monotonic() + 5
-    while _running(helper) and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert not _running(helper)
+
+# A fake soffice.bin: the first run of a fresh profile exits 81 as the real
+# one does; the second leaves, as its PDF, what it could and could not do.
+_PROBE = """#!{python} -I
+import ctypes, json, os, resource, socket, sys
+from pathlib import Path
+
+profile = Path(next(a for a in sys.argv if a.startswith("-env:UserInstallation="))
+               .split("=", 1)[1].removeprefix("file://"))
+if not (profile / "created").exists():
+    (profile / "created").write_text("")
+    sys.exit(81)
+libc = ctypes.CDLL(None, use_errno=True)
+job = Path(os.environ["TMPDIR"])
+out = {{"env": {{k: v for k, v in os.environ.items() if k != "LC_CTYPE"}}}}
+
+def attempt(name, action):
+    try:
+        action()
+        out[name] = "ok"
+    except OSError as exc:
+        out[name] = exc.errno
+
+def fork():
+    pid = os.fork()
+    if pid == 0:
+        os._exit(0)
+    os.waitpid(pid, 0)
+
+attempt("inet_socket", lambda: socket.socket(socket.AF_INET).close())
+attempt("unix_socket", lambda: socket.socket(socket.AF_UNIX).close())
+attempt("fork", fork)
+attempt("setpgid", lambda: os.setpgid(0, 0))
+attempt("read_outside", lambda: (job.parent / "other-job.docx").read_bytes())
+attempt("read_source", lambda: next(job.glob("source.*")).read_bytes())
+
+def bind(path):
+    listener = socket.socket(socket.AF_UNIX)
+    try:
+        listener.bind(str(path))
+    finally:
+        listener.close()
+    os.unlink(path)
+
+attempt("tmp_socket", lambda: bind("/tmp/probe-" + str(os.getpid())))
+attempt("job_socket", lambda: bind(job / "probe"))
+out["argv"] = sys.argv
+out["no_new_privs"] = libc.prctl(39, 0, 0, 0, 0)
+out["seccomp"] = libc.prctl(21, 0, 0, 0, 0)
+out["limits"] = {{
+    name: list(resource.getrlimit(getattr(resource, "RLIMIT_" + name)))
+    for name in ("CPU", "NOFILE", "FSIZE", "CORE")
+}}
+(job / "source.pdf").write_text(json.dumps(out))
+"""
+
+
+@needs_system_python
+def test_libreoffice_runs_sandboxed_with_only_its_allowlisted_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(security regression: S1 LibreOffice) soffice.bin starts through the
+    sandbox: an explicit environment (no parser secret), its limits, no
+    network, no new processes or groups, and no file outside its job folder;
+    its IPC pipe goes in that folder, never /tmp. A fresh profile's exit 81
+    runs the conversion again."""
+    monkeypatch.setenv("PARSER_TOKEN", "parser-secret")
+    monkeypatch.setenv("CAPY_CANARY_SECRET", "canary")
+    fake = tmp_path / "soffice.bin"
+    fake.write_text(_PROBE.format(python=SYSTEM_PYTHON))
+    fake.chmod(0o755)
+    monkeypatch.setattr(document, "SOFFICE", str(fake))
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "other-job.docx").write_bytes(ZIP + b"another user's document")
+
+    report = json.loads(
+        document.normalize_document(ZIP + b"office", "notes.docx", work).data
+    )
+
+    env = report["env"]
+    job = Path(env["TMPDIR"])
+    expected = {"PATH", "HOME", "TMPDIR", "MALLOC_ARENA_MAX"} | (
+        {"LANG"} if "LANG" in os.environ else set()
+    )
+    assert set(env) == expected
+    assert env["HOME"] == str(job) and job.parent == work
+    assert report["limits"] == {
+        "CPU": [180, 180],
+        "NOFILE": [256, 256],
+        "FSIZE": [256 << 20] * 2,
+        "CORE": [0, 0],
+    }
+    assert report["no_new_privs"] == 1 and report["seccomp"] == 2
+    assert report["inet_socket"] == errno.EACCES
+    assert report["unix_socket"] == "ok"
+    assert report["fork"] == errno.EPERM
+    assert report["setpgid"] == errno.EPERM
+    assert report["read_source"] == "ok"
+    assert report["read_outside"] == errno.EACCES
+    assert f"-env:OSL_SOCKET_PATH={job}" in report["argv"]
+    assert report["job_socket"] == "ok"
+    assert report["tmp_socket"] == errno.EACCES
 
 
 def test_unreadable_pdfs_are_refused_and_owner_locked_ones_open() -> None:

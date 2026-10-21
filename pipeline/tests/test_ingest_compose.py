@@ -1,9 +1,10 @@
 """The ingest-host compose files: the parser reads untrusted documents, so it
-runs with no capabilities, no privilege gain and a read-only root (small tmpfs
-mounts, a disk-backed work volume), the Parser budget runs the image the same
-way, the deploy can supply every variable the files require, the image's
-own execute-only init is PID 1, and the host lets a process trace only its own
-descendants."""
+runs with no capabilities, no privilege gain and a read-only root (a small
+home tmpfs, an unwritable /tmp, a disk-backed work volume), the Parser budget
+runs the image the same way, the pipeline services run non-root with no
+capabilities, the deploy can supply every variable the files require, the
+image's own execute-only init is PID 1, and the host lets a process trace only
+its own descendants."""
 
 from __future__ import annotations
 
@@ -42,7 +43,11 @@ def test_parser_runs_unprivileged_on_a_read_only_root(name: str) -> None:
     assert parser["security_opt"] == ["no-new-privileges:true"]
     assert parser["read_only"] is True
     tmpfs = dict(entry.split(":", 1) for entry in parser["tmpfs"])
-    assert set(tmpfs) == {"/run/capy-parser/home", "/tmp"}
+    # (security regression: S1 LibreOffice pipe) No /tmp mount: the image's
+    # /tmp and /var/tmp, which the parser user cannot write, so LibreOffice
+    # puts its IPC pipe in each conversion's own folder.
+    assert set(tmpfs) == {"/run/capy-parser/home"}
+    assert "chmod 0755 /tmp /var/tmp" in (ROOT / "parser/Dockerfile").read_text()
     for options in tmpfs.values():
         assert {"noexec", "nosuid", "nodev"} <= set(options.split(","))
         assert re.search(r"(^|,)size=\d+[km]($|,)", options)
@@ -86,6 +91,7 @@ def test_the_parser_budget_runs_the_image_with_the_same_flags(name: str) -> None
         f"-e MALLOC_ARENA_MAX={parser['environment']['MALLOC_ARENA_MAX']} ",
     ):
         assert flag in budget
+    assert "--tmpfs /tmp" not in budget
 
 
 @pytest.mark.parametrize("name", COMPOSE)
@@ -94,6 +100,46 @@ def test_the_parser_runs_with_two_malloc_arenas(name: str) -> None:
     _, parser = _parser(name)
 
     assert parser["environment"]["MALLOC_ARENA_MAX"] == "2"
+
+
+@pytest.mark.parametrize("name", COMPOSE)
+def test_the_pipeline_services_run_unprivileged_in_the_spool_group(name: str) -> None:
+    """(security regression: S2 ingest containers) The worker, import worker,
+    parse coordinator and host sampler run as the image's capy-ingest user in
+    the spool's group (the parser's gid), with no capabilities and no
+    privilege gain; the image's sources are readable by that user."""
+    services = yaml.safe_load((DEPLOY / name).read_text())["services"]
+    pipeline = {
+        key: service
+        for key, service in services.items()
+        if "pipeline:" in service.get("image", "")
+    }
+    dockerfile = (ROOT / "pipeline/Dockerfile").read_text(encoding="utf-8")
+
+    roles = {key.removesuffix("-local").removesuffix("-uat") for key in pipeline}
+    assert roles == {"parse-coordinator", "import-worker", "worker", "host-sampler"}
+    for service in pipeline.values():
+        assert service["user"] == "10002:10001"
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert "cap_add" not in service and not service.get("privileged")
+    assert "useradd --uid 10002 --gid 10001" in dockerfile
+    assert "chmod -R a+rX /app/pipeline /app/server" in dockerfile
+    init = services["parse-spool-init"]["command"][-1]
+    assert "chown -R 10001:10001 /var/lib/capy-parse" in init
+    assert "chmod 2770 /var/lib/capy-parse " in init
+
+
+def test_the_local_stack_runs_the_ingest_services_as_deployed() -> None:
+    """(security regression: S2 ingest containers) The local compose file's
+    worker, parse coordinator and import worker run with the ingest host's
+    user and hardening."""
+    services = yaml.safe_load((DEPLOY / "docker-compose.yml").read_text())["services"]
+
+    for name in ("worker", "parse-coordinator", "import-worker"):
+        assert services[name]["user"] == "10002:10001", name
+        assert services[name]["cap_drop"] == ["ALL"], name
+        assert services[name]["security_opt"] == ["no-new-privileges:true"], name
 
 
 @pytest.mark.parametrize(("name", "targets"), COMPOSE.items())

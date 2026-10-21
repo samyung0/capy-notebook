@@ -20,10 +20,22 @@ export function arrayField(value: unknown, key: string): unknown[] {
 
 class ProviderError extends Error {
   readonly status: number;
-  constructor(provider: string, status: number) {
-    super(`${provider} request failed (${status})`);
+  constructor(provider: string, status: number, code = '') {
+    super(`${provider} request failed (${status}${code ? `, ${code}` : ''})`);
     this.status = status;
   }
+}
+
+/** A Stripe error's type and code (e.g. `rate_limit`, `lock_timeout`), never
+ * its message or the rest of the body. Empty for other providers. */
+async function errorCode(provider: string, response: Response) {
+  if (provider !== 'Stripe') return '';
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: { code?: unknown; type?: unknown };
+  };
+  return [body.error?.type, body.error?.code]
+    .filter((part) => typeof part === 'string' && /^[a-z_]{1,64}$/.test(part))
+    .join('/');
 }
 
 async function providerJSON(url: URL, init: RequestInit, provider: string) {
@@ -32,8 +44,14 @@ async function providerJSON(url: URL, init: RequestInit, provider: string) {
     redirect: 'error',
     signal: AbortSignal.timeout(30_000),
   });
-  // Provider bodies can contain addresses, tokens and signed links. Keep errors bounded to status.
-  if (!response.ok) throw new ProviderError(provider, response.status);
+  // Provider bodies can contain addresses, tokens and signed links. Keep errors
+  // bounded to the status and, for Stripe, its error type and code.
+  if (!response.ok)
+    throw new ProviderError(
+      provider,
+      response.status,
+      await errorCode(provider, response)
+    );
   return {
     body: (await response.json().catch(() => {
       throw new Error(`${provider} returned invalid JSON`);

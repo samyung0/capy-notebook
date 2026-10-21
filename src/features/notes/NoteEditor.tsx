@@ -19,6 +19,7 @@ import {
 } from '@/components/banners/SaveBanner';
 import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
+import type { PresenceConnection } from '@/features/collaboration/presence';
 import { FileError, FileLoading } from '@/features/files/FileStates';
 import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
 import { m } from '@/i18n';
@@ -49,11 +50,14 @@ export function NoteEditor({
   materialId,
   allowExternalAssets = false,
   onEditorStatusChange,
+  onPresenceChange,
   onReadOnly,
 }: {
   materialId: string;
   allowExternalAssets?: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** The room's other editors, for the header's avatar group. */
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   /** The room turned read-only (`code`: why, when it says): the note drops
    * to view mode and its unsaved edits are discarded. */
   onReadOnly?: (code?: ReadOnlyCode) => void;
@@ -106,6 +110,7 @@ export function NoteEditor({
       key={material.id}
       material={material}
       onEditorStatusChange={onEditorStatusChange}
+      onPresenceChange={onPresenceChange}
       onReadOnly={onReadOnly}
     />
   );
@@ -115,11 +120,13 @@ function CollaborativeNoteEditor({
   material,
   allowExternalAssets,
   onEditorStatusChange,
+  onPresenceChange,
   onReadOnly,
 }: {
   material: Material;
   allowExternalAssets: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   onReadOnly?: (code?: ReadOnlyCode) => void;
 }) {
   const qc = useQueryClient();
@@ -351,7 +358,6 @@ function CollaborativeNoteEditor({
                 allowExternalAssets={allowExternalAssets}
                 collaborationToken={collaborationTokenData}
                 currentUserId={meData.id}
-                currentUserName={meData.name}
                 discussions={discussionsData ?? NO_DISCUSSIONS}
                 draftKey={storedKey}
                 key={`${collaborationTokenData.room}:${editorGeneration}`}
@@ -360,6 +366,7 @@ function CollaborativeNoteEditor({
                 onEditorStatusChange={onEditorStatusChange}
                 onOffline={setOffline}
                 onOutdated={markOutdated}
+                onPresenceChange={onPresenceChange}
                 onReadOnly={reportReadOnly}
                 onSaveDelayed={setSaveDelayed}
                 onUnavailable={onUnavailable}

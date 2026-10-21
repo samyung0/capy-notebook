@@ -30,6 +30,21 @@ func (s *Store) MaterialRoom(ctx context.Context, materialID string) (string, er
 	return fmt.Sprintf("material:%s:schema:%d", materialID, schema), nil
 }
 
+// MaterialParentID is the note an embedded quiz or flashcard set belongs to,
+// "" for any other material: its collaboration token names the note, inside
+// whose channel its rooms join (Epo 2026-10-20).
+func (s *Store) MaterialParentID(ctx context.Context, materialID string) (string, error) {
+	var parent *string
+	err := s.pool.QueryRow(ctx, `SELECT parent_material_id FROM materials WHERE id=$1`, materialID).Scan(&parent)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	if err != nil || parent == nil {
+		return "", err
+	}
+	return *parent, nil
+}
+
 // WorkspaceMaterialIDs returns room identities that must be evicted when
 // workspace membership or workspace lifecycle permissions change.
 func (s *Store) WorkspaceMaterialIDs(ctx context.Context, workspaceID string) ([]string, error) {

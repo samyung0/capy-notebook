@@ -613,8 +613,9 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 			return AgentOperation{}, err
 		}
 	}
-	// Every step stores the one reversing it, so an Undo's Undo is Redo.
-	reversible := op.UndoOf == "" || hasInverseCommands(op.Inverse)
+	// Every step stores the one reversing it, so an Undo's Undo is Redo. A step
+	// the engine returned no inverse for keeps no Undo.
+	reversible := hasInverseCommands(op.Inverse)
 	if reversible {
 		effect.Undo = &agenttools.UndoRef{OperationID: receipt.ID, Status: agenttools.UndoAvailable}
 	}

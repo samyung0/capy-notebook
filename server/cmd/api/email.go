@@ -150,6 +150,18 @@ func sendOutboxEmail(
 		_ = guard.MarkFailed(ctx, fmt.Errorf("decode payload: %w", err))
 		return err
 	}
+	if item.Template == "workspace-invite" {
+		// The invite link's token is minted now, so it is never stored.
+		path, ok, err := guard.MintInviteLink(ctx)
+		if err != nil {
+			_ = guard.MarkFailed(ctx, fmt.Errorf("mint invite link: %w", err))
+			return err
+		}
+		if !ok {
+			return guard.Cancel(ctx)
+		}
+		payload["invitePath"] = path
+	}
 	locale := item.Locale
 	if locale != "zh" {
 		locale = "en"

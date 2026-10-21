@@ -4,6 +4,7 @@ import pytest
 from PIL import Image
 
 from pipeline.ingest import source_text
+from pipeline.jobs import TerminalError
 from pipeline.parse import caption_cache
 from pipeline.retrieval import chunking
 
@@ -68,7 +69,7 @@ def test_tabular_text_caps_columns_per_row_not_cells(monkeypatch, tmp_path) -> N
     # Quoted newlines split this five-column row over lines of two delimiters.
     wide = tmp_path / "wide.csv"
     wide.write_text('a,b,c,d\n1,"x\ny",2,"z\nw",3\n', encoding="utf-8")
-    with pytest.raises(source_text.TerminalError, match="column limit") as error:
+    with pytest.raises(TerminalError, match="column limit") as error:
         source_text.tabular_text(str(wide), wide.name)
     assert error.value.code == "tabular_column_limit"
 
@@ -80,9 +81,7 @@ def test_tabular_text_caps_the_estimated_tokens_of_its_projection(
     source.write_text("LongHeader\na\nb\nc\n", encoding="utf-8")
     monkeypatch.setattr(source_text, "_TABULAR_MAX_TOKENS", 12)
 
-    with pytest.raises(
-        source_text.TerminalError, match="searchable-text limit"
-    ) as error:
+    with pytest.raises(TerminalError, match="searchable-text limit") as error:
         source_text.tabular_text(str(source), source.name)
     assert error.value.code == "tabular_text_limit"
 
@@ -101,7 +100,7 @@ def test_tabular_text_refuses_a_line_whose_length_passes_the_cap_unestimated(
         lambda line: estimated.append(line) or estimate(line),
     )
 
-    with pytest.raises(source_text.TerminalError, match="searchable-text limit"):
+    with pytest.raises(TerminalError, match="searchable-text limit"):
         source_text.tabular_text(str(source), source.name)
     assert estimated
     assert all("x" * 400 not in line for line in estimated)

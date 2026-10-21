@@ -51,14 +51,16 @@ serially.
    tools are refused until `editing` and `deck_building` are in the request
    (`skills.REQUIRES`). The catalog words it as the chapters' skill when the
    output files are PowerPoint, else as one for a request that asks for a deck.
-2. **`create_deck {title, slides[{title, brief}], chapter_id?, excerpt_ids?}`.**
+2. **`create_deck {title, slides[{title, brief}], chapter_id?, sources?, excerpt_ids?}`.**
    1 to 30 slides. The outline lives on the turn (`ToolContext.decks`, id
    `deck_` + sha256(message, call)[:12]); nothing is stored. `chapter_id` must
    be one of the turn's chapters. Its `excerpt_ids` follow a material
    write's rule (`tools.write_sources`): named excerpts are credited, and
    omitted ones are the excerpts read since the last write, so each slide
    credits what was read for it. A deck write credits the reads but does not
-   retain them for later turns.
+   retain them for later turns. `sources` is the deck's made-from line, plain
+   strings kept on the outline and sent as written when the deck is stored
+   (agentic-retrieval.md, `generate_material`).
 3. **`write_slide {deck_id, slide, svg, excerpt_ids?}`.** At most 40,000
    characters of SVG. Our checks first: the XML parses, the root is `<svg>`
    with `viewBox="0 0 1280 720"` and `lang`, and every `<image>` is
@@ -101,7 +103,7 @@ with its credit; a BY-SA figure makes the deck BY-SA (Go computes the licence).
 ## Storing: `POST /api/internal/files`
 
 `{workspaceId, userId, assistantMessageId, toolCallId, name, chapterId,
-content (base64), provenance}` from the last `write_slide`
+content (base64), provenance, sources}` from the last `write_slide`
 (`server/internal/httpapi/internal_files.go`). The deck lands the way an upload
 does:
 
@@ -112,9 +114,12 @@ does:
   (`sourceupload.Validate`); the body is bounded by the absolute source
   ceiling as base64. Provenance names library books only and is bounded as a
   stored record (it was merged over many calls).
+- Sources take the materials' bounds and resolution (`validSources`,
+  `resolveSources`): the names land in `files.scope_file_names` (migration
+  `0100`), which no API response carries yet.
 - The receipt id is `ChatOperationID(message, call)`; the request hash covers
-  the name, chapter, provenance and the content's SHA-256. A replay returns the
-  receipt before any blob is written.
+  the name, chapter, provenance, sources and the content's SHA-256. A replay
+  returns the receipt before any blob is written.
 - The blob goes under `sources/`, then `store.CreateAgentFileOperation` runs
   `createSourceWithJobTx`: the editor lock, the chapter, the
   owner's quota gate on the bytes plus the provenance JSON, the workspace file

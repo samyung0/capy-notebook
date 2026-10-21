@@ -19,8 +19,12 @@ const (
 	ChapterName          = 60
 	FileName             = 120
 	MaterialTitle        = FileName
-	ConversationTitle    = 60
-	ChatMessage          = 5_000
+	// An agent-made material's or file's made-from line: at most
+	// MaterialSources entries of at most MaterialSource characters.
+	MaterialSources   = 20
+	MaterialSource    = 200
+	ConversationTitle = 60
+	ChatMessage       = 5_000
 	// Comment bounds the plain text of one note comment (its paragraphs joined).
 	Comment           = 3_000
 	LLMAPIKey         = 512
@@ -92,8 +96,8 @@ const (
 	AnonymousLocalID = 64
 	// A flashcard's front and back (human/frontend/plate-editor.md for the
 	// back); the collaboration server reads them from the embed catalog.
-	CardFront = 4_000
-	CardBack  = 2_000
+	CardFront = 200
+	CardBack  = 1_000
 )
 
 // QuestionBounds is exported into frontend and pipeline contracts; the

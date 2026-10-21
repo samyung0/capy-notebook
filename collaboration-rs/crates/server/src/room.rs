@@ -39,10 +39,27 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
+/// Awareness client ids one channel may hold, and a room (Epo 2026-10-19):
+/// an editor sends its document's one, a new one only when Yjs renews it.
+/// A new id past either is not kept.
+pub const MAX_CLIENTS_PER_MEMBER: usize = 4;
+pub const MAX_CLIENTS_PER_ROOM: usize = 256;
 /// Why a note room holding a block the embed catalog does not list refuses
 /// every writer (Epo 2026-10-13): the browser shows it for the
 /// `unsupported_block` code.
 pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can't edit";
+/// What a channel hears when its open waits on its user's open budget
+/// (`OPEN_SLOWED_TYPE` in src/features/collaboration/roomProvider.ts): the
+/// editor keeps loading and says so after a while, never offline.
+pub const OPEN_SLOWED_TYPE: &str = "open-slowed";
+/// The room's presence (Epo 2026-10-20): the editors in it, for the avatar
+/// group and cursor labels (`PRESENCE_TYPE` in
+/// src/features/collaboration/presence.ts). It goes out a flush window after
+/// a change and at most once a second, listing at most `MAX_PRESENCE`
+/// connections, oldest first.
+pub const PRESENCE_TYPE: &str = "room-presence";
+pub const PRESENCE_EVERY: Duration = Duration::from_secs(1);
+pub const MAX_PRESENCE: usize = 64;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -56,6 +73,8 @@ pub enum RoomCmd {
         context: Context,
         out: Outbox,
         socket: String,
+        /// An embed's channel inside its note's (Epo 2026-10-20).
+        inside: bool,
         reply: oneshot::Sender<Result<(), String>>,
     },
     Leave(MemberKey),
@@ -196,17 +215,48 @@ struct Member {
     held_read_only: bool,
     out: Outbox,
     socket: String,
+    /// An embed's channel inside its note's: it hears no room presence.
+    inside: bool,
     /// Awareness client ids this channel sent.
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
     unplaced: u32,
     /// Update and step 2 messages handled since the last ACK.
     acks: u64,
+    /// Its step 1 and awareness query waiting for its user's open budget.
+    opening: Option<Opening>,
+}
+
+/// A member's latest step 1 and awareness query while they wait on its
+/// user's open budget (Epo 2026-10-20), and its place among the waiting.
+struct Opening {
+    step1: Option<StateVector>,
+    query: bool,
+    order: u64,
+}
+
+/// A user's turn to encode a large answer (`Allowances::open_turn`): their
+/// next one waits until this one ends, charged by `bytes`. Dropped early (a
+/// panic in the encode), the turn ends anyway.
+struct OpenTurn {
+    app: Shared,
+    user: String,
+    bytes: usize,
+}
+
+impl Drop for OpenTurn {
+    fn drop(&mut self) {
+        self.app
+            .allowances
+            .end_turn(&self.user, self.bytes, Instant::now());
+    }
 }
 
 struct AwarenessEntry {
     entry: awareness::Entry,
     owner: Option<MemberKey>,
+    /// The user whose channel set it: only their channels write it.
+    user: String,
 }
 
 /// A note room's own state.
@@ -250,10 +300,13 @@ struct Note {
 struct Source {
     room: sources::SourceRoom,
     format: sources::SourceFormat,
-    /// The room's state size by applied bytes, for the cap check.
-    estimate: u64,
+    /// The room's state size by applied bytes less what deletes freed, for
+    /// the cap check.
+    estimate: sources::Estimate,
     /// The room's state cap (`sources::state_cap`).
     state_cap: u64,
+    /// An Office room's seed state vector (`sources::Loaded::seed`).
+    seed: Option<StateVector>,
     checkpoint: u64,
     log_bytes: i64,
     log_rows: i64,
@@ -339,6 +392,13 @@ pub struct Room {
     members: HashMap<MemberKey, Member>,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
+    /// Presence changed since it last went out; when it may go next.
+    presence_dirty: bool,
+    presence_at: Option<Instant>,
+    /// Each person's number in the room's presence, kept while they are in
+    /// it: never their user id, which a reader may not learn (Epo 2026-10-12).
+    people: HashMap<String, u64>,
+    next_person: u64,
     /// This window's updates and who sent each (none: everyone gets it).
     window: Vec<(Option<MemberKey>, Vec<u8>)>,
     flush_at: Option<Instant>,
@@ -361,6 +421,10 @@ pub struct Room {
     child_running: bool,
     /// An update is going into the document (see `update_panicked`).
     applying: bool,
+    /// When waiting opens look at their users' budgets again, and the next
+    /// one's place.
+    open_at: Option<Instant>,
+    openings: u64,
 }
 
 /// Spawns a room task; its handle goes into the registry. `actor` is the
@@ -609,8 +673,9 @@ async fn load(
             let source = Source {
                 room,
                 format: loaded.format,
-                estimate: loaded.bytes,
+                estimate: sources::Estimate::new(loaded.bytes),
                 state_cap: loaded.state_cap,
+                seed: loaded.seed,
                 checkpoint: loaded.checkpoint,
                 log_bytes: loaded.row_bytes as i64,
                 log_rows: loaded.rows as i64,
@@ -729,6 +794,10 @@ async fn run(
         members: HashMap::new(),
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
+        presence_dirty: false,
+        presence_at: None,
+        people: HashMap::new(),
+        next_person: 0,
         window: Vec::new(),
         flush_at: None,
         receipts: Vec::new(),
@@ -753,6 +822,8 @@ async fn run(
         child_passes: std::collections::VecDeque::new(),
         child_running: false,
         applying: false,
+        open_at: None,
+        openings: 0,
     };
     let log_bytes = match &room.kind {
         Kindly::Note(note) => note.log_bytes,
@@ -812,10 +883,17 @@ impl Room {
     }
 
     fn next_deadline(&self) -> Option<Instant> {
-        [self.flush_at, self.store_due(), self.idle_at]
-            .into_iter()
-            .flatten()
-            .min()
+        let presence = self.presence_at.filter(|_| self.presence_dirty);
+        [
+            self.flush_at,
+            self.store_due(),
+            self.idle_at,
+            self.open_at,
+            presence,
+        ]
+        .into_iter()
+        .flatten()
+        .min()
     }
 
     fn store_due(&self) -> Option<Instant> {
@@ -850,6 +928,13 @@ impl Room {
         if self.idle_at.is_some_and(|at| at <= now) {
             self.idle_at = None;
             self.start_projection().await;
+        }
+        if self.open_at.is_some_and(|at| at <= now) {
+            self.open_at = None;
+            self.release_openings().await;
+        }
+        if self.presence_dirty && self.presence_at.is_some_and(|at| at <= now) {
+            self.send_presence(now);
         }
     }
 
@@ -894,28 +979,31 @@ impl Room {
                 context,
                 out,
                 socket,
+                inside,
                 reply,
             } => {
-                let _ = reply.send(self.join(key, context, out, socket));
+                let _ = reply.send(self.join(key, context, out, socket, inside));
             }
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
-                // A joiner's step 1 is answered with up to the whole state,
-                // encoded on the blocking pool.
-                Some(since) => {
-                    let diff = self.encoded(since).await;
-                    self.send(key, Kind::Sync, &sync::encode(sync::STEP2, &diff));
-                }
+                Some(since) => self.on_step1(key, since).await,
                 None => self.on_sync(key, &payload),
             },
             RoomCmd::Awareness(key, payload) => self.on_awareness(key, &payload),
-            RoomCmd::QueryAwareness(key) => self.send_awareness_states(key),
+            RoomCmd::QueryAwareness(key) => self.on_query(key),
             RoomCmd::Stateless(key, payload) => self.on_stateless(key, &payload).await,
             RoomCmd::Token(key, context) => {
                 if let Some(member) = self.members.get_mut(&key) {
                     member.read_only = member.held_read_only || context.access == Access::Read;
+                    // A narrowed writer of a source room leaves its presence.
+                    let was = in_presence(member, &self.kind);
+                    let renamed = member.context.identity != context.identity;
                     member.context = context;
                     self.view_dirty = true;
+                    let now = in_presence(member, &self.kind);
+                    if was != now || (now && renamed) {
+                        self.mark_presence();
+                    }
                 }
             }
             RoomCmd::Stored(done) => self.stored(*done),
@@ -1232,6 +1320,8 @@ impl Room {
             token_id: "children-pass".into(),
             user_id: actor.to_owned(),
             viewer: false,
+            parent: None,
+            identity: Default::default(),
         };
         if let Some(marker) = self.markers.write(&self.doc, &context) {
             self.broadcast_update(None, marker);
@@ -1426,7 +1516,7 @@ impl Room {
             }
             Kindly::Source(source) => {
                 // An agent's growth counts toward the cap as a writer's does.
-                source.estimate += applied_bytes;
+                source.estimate.applied(applied_bytes, 0);
                 source.checkpoint = source.checkpoint.max(edit.version);
                 source.log_rows += 1;
                 source.log_bytes += edit.row_bytes as i64;
@@ -1505,7 +1595,7 @@ impl Room {
         // Else the room's estimate (a source room's applied bytes, a note's
         // stored ones), not an encode of the document on the room's thread.
         let size = bytes.or(Some(match &self.kind {
-            Kindly::Source(source) => source.estimate,
+            Kindly::Source(source) => source.estimate.bytes,
             kind => stored_bytes(kind).max(0) as u64,
         }));
         let list: Vec<Incident> = if users.is_empty() {
@@ -1620,16 +1710,224 @@ impl Room {
         }
     }
 
+    /// Charges a full-document answer of `bytes` to the member's user's open
+    /// budget (`rate.rs`).
+    fn charge_open(&self, key: MemberKey, bytes: usize) {
+        if let Some(member) = self.members.get(&key) {
+            self.app
+                .allowances
+                .charge_open(&member.context.user_id, bytes, Instant::now());
+        }
+    }
+
+    /// A member's step 1, answered with up to the whole state (encoded on the
+    /// blocking pool) and charged to its user's open budget by the answer's
+    /// bytes (Epo 2026-10-19). An answer under `SMALL_ANSWER` goes at once
+    /// while the user owes less than a full budget (Epo 2026-10-20). Any
+    /// other is encoded in its user's turn, so their waiting answers are
+    /// charged one at a time, and waits while the budget is spent or another
+    /// one of theirs is being encoded: the member then keeps only its latest
+    /// step 1 and hears once that its open is slowed. A bounded walk tells a
+    /// large answer before the encode (the encode checks it after), so a
+    /// waiting step 1 costs no encode.
+    async fn on_step1(&mut self, key: MemberKey, since: StateVector) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        if let Some(opening) = &mut member.opening {
+            // One joining a wait that held no step 1 (its JOIN's awareness)
+            // hears that its open is slowed too (rate-limit review r7 S-1).
+            if opening.step1.replace(since).is_none() {
+                self.open_slowed(key);
+            }
+            return;
+        }
+        let user = member.context.user_id.clone();
+        let small = crate::rate::SMALL_ANSWER;
+        if self.app.allowances.small_skips(&user, Instant::now())
+            && !ydoc::answer_at_least(&self.doc.transact(), &since, small)
+        {
+            let diff = self.encoded(since.clone()).await;
+            if diff.len() < small {
+                self.charge_open(key, diff.len());
+                self.answer(key, &diff);
+                return;
+            }
+            match self.app.allowances.open_turn(&user, Instant::now()) {
+                Ok(()) => {
+                    let mut turn = self.turn(user);
+                    turn.bytes = self.answer(key, &diff);
+                }
+                Err(wait) => self.wait_to_open(key, Some(since), false, wait),
+            }
+            return;
+        }
+        match self.app.allowances.open_turn(&user, Instant::now()) {
+            Ok(()) => {
+                let mut turn = self.turn(user);
+                let diff = self.encoded(since).await;
+                turn.bytes = self.answer(key, &diff);
+            }
+            Err(wait) => self.wait_to_open(key, Some(since), false, wait),
+        }
+    }
+
+    fn turn(&self, user: String) -> OpenTurn {
+        OpenTurn {
+            app: self.app.clone(),
+            user,
+            bytes: 0,
+        }
+    }
+
+    /// Sends a step 1's answer; its bytes, or 0 when the member left.
+    fn answer(&self, key: MemberKey, diff: &[u8]) -> usize {
+        if !self.members.contains_key(&key) {
+            return 0;
+        }
+        self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff));
+        diff.len()
+    }
+
+    /// A member's awareness query: answered and charged at once, or kept
+    /// (the latest) while its user's open budget is spent.
+    fn on_query(&mut self, key: MemberKey) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        if let Some(opening) = &mut member.opening {
+            opening.query = true;
+            return;
+        }
+        let user = &member.context.user_id;
+        if let Some(wait) = self.app.allowances.open_wait(user, Instant::now()) {
+            self.wait_to_open(key, None, true, wait);
+            return;
+        }
+        let sent = self.send_awareness_states(key);
+        self.charge_open(key, sent);
+    }
+
+    /// The member's step 1 or query begins to wait `wait` for its user's open
+    /// budget; a step 1 tells its channel that the open is slowed.
+    fn wait_to_open(
+        &mut self,
+        key: MemberKey,
+        step1: Option<StateVector>,
+        query: bool,
+        wait: Duration,
+    ) {
+        let order = self.openings;
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        self.openings += 1;
+        let slowed = step1.is_some();
+        let opening = member.opening.get_or_insert(Opening {
+            step1: None,
+            query: false,
+            order,
+        });
+        opening.query |= query;
+        if step1.is_some() {
+            opening.step1 = step1;
+        }
+        if slowed {
+            self.open_slowed(key);
+        }
+        self.look_again(wait);
+    }
+
+    fn open_slowed(&self, key: MemberKey) {
+        let notice = json!({ "type": OPEN_SLOWED_TYPE }).to_string();
+        self.send(key, Kind::Stateless, &protocol::text(&notice));
+    }
+
+    fn look_again(&mut self, wait: Duration) {
+        let at = Instant::now() + wait;
+        self.open_at = Some(self.open_at.map_or(at, |open_at| open_at.min(at)));
+    }
+
+    /// Waiting step 1s and queries look at their users' budgets again, in
+    /// the order they began to wait: a user's large answers go one at a
+    /// time, each charged before the next is looked at, and the rest wait
+    /// on. A user in a timeout meanwhile joins again when it ends and asks
+    /// again then, so their waiting opens are dropped.
+    async fn release_openings(&mut self) {
+        let mut waiting: Vec<(u64, MemberKey)> = self
+            .members
+            .iter()
+            .filter_map(|(key, member)| {
+                member.opening.as_ref().map(|opening| (opening.order, *key))
+            })
+            .collect();
+        waiting.sort_unstable();
+        for (_, key) in waiting {
+            let Some(member) = self.members.get_mut(&key) else {
+                continue;
+            };
+            let Some(opening) = member.opening.take() else {
+                continue;
+            };
+            let user = member.context.user_id.clone();
+            if self
+                .app
+                .allowances
+                .remaining(&user, Instant::now())
+                .is_some()
+            {
+                continue;
+            }
+            if let Some(since) = opening.step1 {
+                match self.app.allowances.open_turn(&user, Instant::now()) {
+                    Ok(()) => {
+                        let mut turn = self.turn(user.clone());
+                        let diff = self.encoded(since).await;
+                        turn.bytes = self.answer(key, &diff);
+                    }
+                    Err(wait) => {
+                        let step1 = Some(since);
+                        self.keep_waiting(key, Opening { step1, ..opening }, wait);
+                        continue;
+                    }
+                }
+            }
+            if opening.query {
+                match self.app.allowances.open_wait(&user, Instant::now()) {
+                    Some(wait) => {
+                        let step1 = None;
+                        self.keep_waiting(key, Opening { step1, ..opening }, wait);
+                    }
+                    None => {
+                        let sent = self.send_awareness_states(key);
+                        self.charge_open(key, sent);
+                    }
+                }
+            }
+        }
+    }
+
+    /// A waiting open looked again and waits on (its member handled nothing
+    /// meanwhile: the room awaits its encodes).
+    fn keep_waiting(&mut self, key: MemberKey, opening: Opening, wait: Duration) {
+        if let Some(member) = self.members.get_mut(&key) {
+            member.opening = Some(opening);
+        }
+        self.look_again(wait);
+    }
+
     fn join(
         &mut self,
         key: MemberKey,
         context: Context,
         out: Outbox,
         socket: String,
+        inside: bool,
     ) -> Result<(), String> {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
         }
+        let user = context.user_id.clone();
         // A writer of a document holding a block this version cannot edit
         // joins read-only and hears why.
         let unsupported = context.access == Access::Write && self.unsupported().is_some();
@@ -1657,11 +1955,20 @@ impl Room {
                 held_read_only: false,
                 out,
                 socket,
+                inside,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
+                opening: None,
             },
         );
+        if self
+            .members
+            .get(&key)
+            .is_some_and(|member| in_presence(member, &self.kind))
+        {
+            self.mark_presence();
+        }
         if unsupported && let Some(notice) = self.unsupported() {
             self.send(key, Kind::Stateless, &protocol::text(&notice));
         }
@@ -1669,7 +1976,19 @@ impl Room {
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
         if !(viewer || self.awareness.is_empty()) {
-            self.send_awareness_states(key);
+            // Past the small-answer floor it waits like an awareness query
+            // (Epo 2026-10-20, rate-limit review r6 S-1).
+            let now = Instant::now();
+            let allowances = &self.app.allowances;
+            match allowances.open_wait(&user, now) {
+                Some(wait) if !allowances.small_skips(&user, now) => {
+                    self.wait_to_open(key, None, true, wait);
+                }
+                _ => {
+                    let sent = self.send_awareness_states(key);
+                    self.charge_open(key, sent);
+                }
+            }
         }
         // A quiz's readers get the matching and ordering lists as they stand.
         if let Kindly::Note(note) = &self.kind
@@ -1703,12 +2022,18 @@ impl Room {
             return;
         };
         self.view_dirty = true;
+        if in_presence(&member, &self.kind) {
+            self.mark_presence();
+        }
         if let Kindly::Source(_) = &self.kind {
             self.app.handoff().closed(&self.name, member.channel_id);
         }
-        // Its awareness states go, as Hocuspocus removes a closed connection's.
+        // Its awareness states go, as Hocuspocus removes a closed connection's
+        // (not one another channel of its user took over since).
         for client in member.clients {
-            if let Some(state) = self.awareness.get_mut(&client) {
+            if let Some(state) = self.awareness.get_mut(&client)
+                && state.owner == Some(key)
+            {
                 if !state.entry.removed() {
                     state.entry.clock += 1;
                     state.entry.state = "null".into();
@@ -1797,9 +2122,12 @@ impl Room {
                 member.out.frame(frame.freeze());
             }
         }
-        // Removed clients are forgotten once their removal went out.
-        self.awareness
-            .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
+        // Removed clients are forgotten once their removal went out, or, while
+        // a presence is due, once it went out too (`send_presence`).
+        if !self.presence_dirty {
+            self.awareness
+                .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
+        }
     }
 
     fn broadcast_update(&mut self, sender: Option<MemberKey>, update: Vec<u8>) {
@@ -2025,7 +2353,8 @@ impl Room {
                     &self.doc.transact(),
                     &ydoc::Incoming::new(&update),
                     bytes.len(),
-                ) || source.estimate + bytes.len() as u64 > sources::admission_cap(source.state_cap)
+                ) || source.estimate.bytes + bytes.len() as u64
+                    > sources::admission_cap(source.state_cap)
             }
         };
         let mut admit = || match &mut self.kind {
@@ -2108,13 +2437,23 @@ impl Room {
             applied += marker.len();
             self.broadcast_update(None, marker);
         }
+        // A source room's estimate also takes off what the update's deletes
+        // freed (Epo 2026-10-19).
+        let seed = match &self.kind {
+            Kindly::Source(source) => Some(source.seed.as_ref()),
+            Kindly::Note(_) => None,
+        };
+        let apply = || match seed {
+            Some(seed) => ydoc::apply_freeing(&self.doc, update, seed),
+            None => ydoc::apply(&self.doc, update).map(|content| (content, 0)),
+        };
         let content = if heavy {
-            tokio::task::block_in_place(|| ydoc::apply(&self.doc, update))
+            tokio::task::block_in_place(apply)
         } else {
-            ydoc::apply(&self.doc, update)
+            apply()
         };
         self.applying = false;
-        let content = match content {
+        let (content, freed) = match content {
             Ok(content) => content,
             Err(error) => {
                 return Outcome::refused(
@@ -2125,7 +2464,7 @@ impl Room {
         };
         applied += content.len();
         if let Kindly::Source(source) = &mut self.kind {
-            source.estimate += applied as u64;
+            source.estimate.applied(applied as u64, freed);
         }
         self.ack(writer);
         if !content.is_empty() {
@@ -2371,8 +2710,19 @@ impl Room {
                 without_uploads(entry);
             }
         }
+        // Ids another channel of the same user held until now.
+        let mut taken_over = Vec::new();
+        // A channel's ids name its cursors in the room's presence.
+        let mut clients_changed = false;
         for entry in entries {
             let current = self.awareness.get(&entry.client);
+            // A client id is its user's: another user's channel neither
+            // writes nor removes it (Epo 2026-10-19), nor takes it once it is
+            // released until the presence after that went out, since until
+            // then co-editors still label it with its user's name.
+            if current.is_some_and(|state| state.user != member.context.user_id) {
+                continue;
+            }
             // y-protocols: a newer clock wins; at the same clock a removal wins.
             let take = match current {
                 None => !entry.removed(),
@@ -2386,28 +2736,120 @@ impl Room {
             if !take {
                 continue;
             }
-            if entry.removed() {
-                member.clients.remove(&entry.client);
-            } else {
-                member.clients.insert(entry.client);
+            let held = current.and_then(|state| state.owner);
+            // The room's cap counts every id it holds, removals not yet sent
+            // (forgotten at the next flush) included, so ids added and
+            // removed in a loop stay capped too.
+            if !entry.removed()
+                && held != Some(key)
+                && (member.clients.len() >= MAX_CLIENTS_PER_MEMBER
+                    || (current.is_none() && self.awareness.len() >= MAX_CLIENTS_PER_ROOM))
+            {
+                continue;
             }
+            if let Some(previous) = held.filter(|previous| *previous != key) {
+                taken_over.push((previous, entry.client));
+            }
+            clients_changed |= if entry.removed() {
+                member.clients.remove(&entry.client)
+            } else {
+                member.clients.insert(entry.client)
+            };
             self.changed_awareness.insert(entry.client);
             self.awareness.insert(
                 entry.client,
                 AwarenessEntry {
                     owner: (!entry.removed()).then_some(key),
+                    user: member.context.user_id.clone(),
                     entry,
                 },
             );
+        }
+        for (previous, client) in taken_over {
+            if let Some(member) = self.members.get_mut(&previous) {
+                clients_changed |= member.clients.remove(&client);
+            }
+        }
+        if clients_changed {
+            self.mark_presence();
         }
         if !self.changed_awareness.is_empty() {
             self.schedule_flush();
         }
     }
 
-    fn send_awareness_states(&self, key: MemberKey) {
-        if self.members.get(&key).is_none_or(|member| member.viewer) {
+    /// The room's presence changed: it goes out a flush window from now, and
+    /// at most once a second.
+    fn mark_presence(&mut self) {
+        if self.presence_dirty {
             return;
+        }
+        self.presence_dirty = true;
+        let soonest = Instant::now() + FLUSH_WINDOW;
+        self.presence_at = Some(self.presence_at.map_or(soonest, |at| at.max(soonest)));
+    }
+
+    /// Sends each editor in the room (`in_presence`) the others: each one's
+    /// verified identity from its token and the awareness client ids it
+    /// holds, which name its cursor. Its own user's other tabs and devices
+    /// are listed too, never its own connection. An embed's channel (inside
+    /// its note's) is listed but hears none: its page's header shows the
+    /// note's.
+    fn send_presence(&mut self, now: Instant) {
+        self.presence_dirty = false;
+        self.presence_at = Some(now + PRESENCE_EVERY);
+        let mut listed: Vec<(&MemberKey, &Member)> = self
+            .members
+            .iter()
+            .filter(|(_, member)| in_presence(member, &self.kind))
+            .collect();
+        listed.sort_by_key(|(_, member)| member.channel_id);
+        self.people.retain(|user, _| {
+            listed
+                .iter()
+                .any(|(_, member)| member.context.user_id == *user)
+        });
+        let entries: Vec<(MemberKey, String)> = listed
+            .into_iter()
+            .map(|(key, member)| {
+                let person = *self
+                    .people
+                    .entry(member.context.user_id.clone())
+                    .or_insert_with(|| {
+                        self.next_person += 1;
+                        self.next_person
+                    });
+                (*key, presence_entry(member, person).to_string())
+            })
+            .collect();
+        for (key, member) in &self.members {
+            if member.inside || !in_presence(member, &self.kind) {
+                continue;
+            }
+            let others: Vec<&str> = entries
+                .iter()
+                .filter(|(owner, _)| owner != key)
+                .take(MAX_PRESENCE)
+                .map(|(_, entry)| entry.as_str())
+                .collect();
+            let payload = format!(
+                "{{\"type\":\"{PRESENCE_TYPE}\",\"connections\":[{}]}}",
+                others.join(",")
+            );
+            self.send(*key, Kind::Stateless, &protocol::text(&payload));
+        }
+        // An id released before this presence, which no longer lists it, is
+        // free for anyone now that its removal went out too (`on_awareness`).
+        let unsent = &self.changed_awareness;
+        self.awareness.retain(|client, state| {
+            !(state.entry.removed() && state.owner.is_none()) || unsent.contains(client)
+        });
+    }
+
+    /// Sends the room's awareness states to a channel; returns their bytes.
+    fn send_awareness_states(&self, key: MemberKey) -> usize {
+        if self.members.get(&key).is_none_or(|member| member.viewer) {
+            return 0;
         }
         let entries: Vec<&awareness::Entry> = self
             .awareness
@@ -2415,13 +2857,12 @@ impl Room {
             .filter(|state| !state.entry.removed())
             .map(|state| &state.entry)
             .collect();
-        if !entries.is_empty() {
-            self.send(
-                key,
-                Kind::Awareness,
-                &awareness::encode(entries.into_iter()),
-            );
+        if entries.is_empty() {
+            return 0;
         }
+        let states = awareness::encode(entries.into_iter());
+        self.send(key, Kind::Awareness, &states);
+        states.len()
     }
 
     // ------------------------------------------------------------------ stateless
@@ -3447,6 +3888,35 @@ async fn sleep_until(deadline: Option<Instant>) {
         Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
         None => std::future::pending().await,
     }
+}
+
+/// Whether a channel is in the room's presence, listed and hearing it:
+/// people who can edit, never viewers (Epo 2026-10-20). A material room knows
+/// a viewer from the material's access at join, so an editor's reading tab (a
+/// View) and a narrowed editor are in and their cursors keep their names; a
+/// source room knows only the token's access, so only its write channels are.
+/// A quiz's keys room has none: its writers' page shows the content room's.
+fn in_presence(member: &Member, kind: &Kindly) -> bool {
+    !member.viewer
+        && match kind {
+            Kindly::Note(note) => note.doc != note_store::Doc::Keys,
+            Kindly::Source(_) => member.context.access == Access::Write,
+        }
+}
+
+/// One connection in the room's presence: its person's number, the token's
+/// name and avatar (nothing about its device, Epo 2026-10-20), and the
+/// awareness client ids it holds.
+fn presence_entry(member: &Member, person: u64) -> Value {
+    let identity = &member.context.identity;
+    let mut clients: Vec<u64> = member.clients.iter().copied().collect();
+    clients.sort_unstable();
+    json!({
+        "person": person,
+        "name": identity.name,
+        "avatar": identity.avatar_url,
+        "clients": clients,
+    })
 }
 
 /// A read-only channel names no uploads in presence (REVIEW5 E2): only a

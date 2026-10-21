@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
+import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 import { editorApi, openEditorNote } from './helpers';
 
@@ -25,9 +26,7 @@ async function dragOver(
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ height: 1100, width: 1440 });
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
 });
 
 test('floating add menu shares the header actions and dismisses without click-through', async ({

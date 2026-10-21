@@ -64,6 +64,20 @@ describe('office host protocol', () => {
     ).toBe(false);
   });
 
+  it('tells the runtime whether its update is still going out in pieces', () => {
+    for (const pending of [true, false])
+      expect(
+        isOfficeHostMessage({
+          pending,
+          type: 'sending',
+          version: OFFICE_PROTOCOL_VERSION,
+        })
+      ).toBe(true);
+    expect(
+      isOfficeHostMessage({ type: 'sending', version: OFFICE_PROTOCOL_VERSION })
+    ).toBe(false);
+  });
+
   it('accepts capability updates sent after the iframe loads', () => {
     expect(
       isOfficeHostMessage({
@@ -223,6 +237,62 @@ describe('office host protocol', () => {
     );
   });
 
+  // Co-editors' cursors (Epo 2026-10-20): the frame's own and the peers Capy
+  // sends, each within the bounds, in one of the three formats' shapes.
+  it('carries cursors both ways within their bounds', () => {
+    const docx = { anchor: [1, 2], head: [3], story: 'body' };
+    const xlsx = {
+      anchor: { col: 0, row: 1 },
+      head: { col: 2, row: 3 },
+      sheet: 'Sheet1',
+    };
+    const pptx = { shapeId: 'sp1', slideId: 's1' };
+    const cursor = (value: unknown) => ({
+      cursor: value,
+      revision: 1,
+      type: 'cursor',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    for (const value of [docx, xlsx, pptx, { slideId: 's1' }, null])
+      expect(isOfficeRuntimeMessage(cursor(value))).toBe(true);
+    for (const value of [
+      { ...docx, anchor: [256] },
+      { ...docx, head: new Array(1025).fill(0) },
+      { ...xlsx, head: { col: -1, row: 0 } },
+      { slideId: 'x'.repeat(1025) },
+      {},
+    ])
+      expect(isOfficeRuntimeMessage(cursor(value))).toBe(false);
+    const peers = (list: unknown[]) => ({
+      peers: list,
+      type: 'peers',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    expect(
+      isOfficeHostMessage(peers([{ clientId: 7, cursor: pptx, name: 'Bea' }]))
+    ).toBe(true);
+    expect(
+      isOfficeHostMessage(peers([{ clientId: 7, cursor: pptx, name: 1 }]))
+    ).toBe(false);
+    expect(
+      isOfficeHostMessage(
+        peers(new Array(257).fill({ clientId: 7, cursor: pptx, name: 'Bea' }))
+      )
+    ).toBe(false);
+  });
+  // Input in the frame reaches Capy's idle close only this way (review B1).
+  it('accepts input reported from the frame', () => {
+    expect(
+      isOfficeRuntimeMessage({
+        type: 'activity',
+        version: OFFICE_PROTOCOL_VERSION,
+      })
+    ).toBe(true);
+    expect(isOfficeRuntimeMessage({ type: 'activity', version: 1 })).toBe(
+      false
+    );
+  });
+
   it("accepts the bottom chrome's height, never negative", () => {
     const inset = (value: unknown) =>
       isOfficeRuntimeMessage({
@@ -307,8 +377,9 @@ describe('office host protocol', () => {
       'equation-text',
       'image-too-large',
       'image-type',
-      'clear-too-large',
+      'edit-too-large',
       'copy-too-large',
+      'copy-failed',
     ])
       expect(isOfficeRuntimeMessage(notice(value))).toBe(true);
     expect(isOfficeRuntimeMessage(notice('anything'))).toBe(false);

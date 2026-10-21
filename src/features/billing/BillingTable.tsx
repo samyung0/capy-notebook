@@ -13,6 +13,8 @@ export interface BillingColumn<S extends string = string> {
   align?: 'right';
   /** Long names: wrap to at most two lines in a bounded width. */
   clamp?: boolean;
+  /** Extra classes on the column's cells, e.g. `max-xl:hidden`. */
+  className?: string;
   id: string;
   label: string;
   muted?: boolean;
@@ -22,7 +24,7 @@ export interface BillingColumn<S extends string = string> {
 
 /** The one table design on Billing & usage: muted header, divider rows,
  * scrolling sideways. Detailed usage and Invoices use it, and Learning's Past
- * reviews and All results on smaller screens. */
+ * reviews, and All results on smaller screens. */
 export function BillingTable<S extends string = string>({
   columns,
   rows,
@@ -53,7 +55,8 @@ export function BillingTable<S extends string = string>({
                   't-meta whitespace-nowrap py-2.5 pr-4 font-medium text-fg-muted',
                   c.align === 'right' && 'pr-0 text-right',
                   // Room for the sort button's outset, so it never scrolls.
-                  c.align === 'right' && sorting && c.sort && 'pr-1'
+                  c.align === 'right' && sorting && c.sort && 'pr-1',
+                  c.className
                 )}
                 key={c.id}
               >
@@ -83,7 +86,8 @@ export function BillingTable<S extends string = string>({
                     'whitespace-nowrap py-3 pr-4',
                     c.align === 'right' && 'pr-0 text-right',
                     c.muted && 'text-fg-muted',
-                    c.clamp && 'min-w-36 max-w-56 whitespace-normal'
+                    c.clamp && 'min-w-36 max-w-56 whitespace-normal',
+                    c.className
                   )}
                   key={c.id}
                 >

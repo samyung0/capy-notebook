@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceSession, ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
+import { CollaborationHold } from '@/features/collaboration/CollaborationHold';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
 import {
@@ -132,7 +133,8 @@ export function SourceTextView({
     sourceHeaderStatus(source.status, {
       busy: leaving || source.handoff,
       editing,
-    })
+    }),
+    editing && source.slowed
   );
   const done = async () => {
     setLeaving(true);
@@ -195,20 +197,22 @@ export function SourceTextView({
       <div className="min-h-0 flex-1 overflow-auto">
         {editing ? (
           source.doc ? (
-            <SourceTextEditor
-              doc={source.doc}
-              onPendingChange={source.pendingInput}
-              onSave={source.save}
-              paused={
-                !canEdit ||
-                source.handoff ||
-                source.replaced ||
-                source.offlineLimit ||
-                source.outdated ||
-                source.status === 'recovery'
-              }
-              registerFlush={source.flushHandler}
-            />
+            <CollaborationHold className="h-full">
+              <SourceTextEditor
+                doc={source.doc}
+                onPendingChange={source.pendingInput}
+                onSave={source.save}
+                paused={
+                  !canEdit ||
+                  source.handoff ||
+                  source.replaced ||
+                  source.offlineLimit ||
+                  source.outdated ||
+                  source.status === 'recovery'
+                }
+                registerFlush={source.flushHandler}
+              />
+            </CollaborationHold>
           ) : (
             <div
               aria-label={m.a11y_loading()}

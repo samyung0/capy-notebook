@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -9,6 +10,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -135,6 +137,11 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 		UserID: userID(ctx), Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: b.Chapters,
 		Questions: apimodel.EncodeQuestions(b.Questions), Privacy: privacy, TimeLimitMin: nil,
 	})
+	if errors.Is(err, materialdoc.ErrInvalid) {
+		// The request's questions, answered as createMaterial does; generated
+		// content failing validation keeps its 500 elsewhere.
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	if err != nil {
 		return nil, hErr(err)
 	}

@@ -64,8 +64,9 @@ The permission boundary is layered:
 1. Go checks `MaterialEffectiveRole` before minting a short-lived token.
 2. Signed-in viewers receive `read` tokens for content documents (never quiz
    keys); the collaboration server joins them read-only, never relays awareness
-   to or from them and sends them no comment relays (Epo 2026-10-10). Narrowed
-   editors (a frozen account, a full owner) keep presence.
+   to or from them and sends them no comment relays and no room presence (Epo
+   2026-10-10, 2026-10-20). Narrowed editors (a frozen account, a full owner)
+   keep presence.
 3. The collaboration server checks the browser origin at the upgrade and, per
    room, the token's signature, issuer, audience, expiry, exact room, schema
    and access.
@@ -212,8 +213,10 @@ root's decorations down to every node they cover, and returning them per block
 and text drew each caret three times. A selection is a tinted range
 (`data-remote-cursor`); every peer also gets a caret at its focus, a collapsed
 decoration that renders as an empty, zero-width leaf with `data-remote-caret`.
-Both carry the peer's colour as `--remote-cursor`, and the `.note-editor`
-stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
+Both carry the peer's colour as `--remote-cursor` and its label, the verified
+name the [room presence](#room-presence) gives its awareness client id (never
+a name its awareness claims; notes send none, and a client the presence does
+not name reads "Collaborator"), and the `.note-editor` stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
 colours, which a hex alpha suffix made invalid) and the caret's 2 px bar as a
 `::before`, so the caret adds no DOM node to the text and leaves Slate's
 DOM-to-point mapping and native caret movement alone. slate-react renders no
@@ -232,6 +235,85 @@ they run for remote operations too.
 The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
+
+### Room presence
+
+Developer Epo decided the avatar group and verified cursor labels on
+2026-10-20, and for privacy the same day that the group has no tooltip and
+nothing about a device reaches anyone. The collaboration token names who a
+connection is by the user's display name and avatar alone
+(`collaboration_tokens.go`): the name without bidi controls, the zero-width
+space, word joiner or BOM (`claimName`; the joiner and non-joiner stay, for
+Persian names and emoji sequences) and cut to the 60-character user name limit, the
+avatar left out past 1,024 bytes (co-editors then see initials). The server
+keeps them in each channel's `Context` (`auth::Identity`).
+
+Each room sends its editors a stateless `room-presence` message
+(`send_presence` in `room.rs`, `PRESENCE_TYPE`) a flush window after a join, a
+leave, a token whose identity changed, or a change in a channel's awareness
+client ids, and at most once a second (`PRESENCE_EVERY`). It lists the room's
+other connections of people who can edit (`in_presence`: in a material room
+every non-viewer channel, an editor's reading tab and a narrowed editor
+included; in a source room, which knows only the token's access, its write
+channels; a quiz's keys room has none, its page showing the content room's),
+oldest first and at most 64 (`MAX_PRESENCE`): each one's person (a number the
+room keeps per user while they are in it, never the user id, which a reader
+may not learn: Epo 2026-10-12), name, avatar and the awareness client ids it
+holds. Only those channels hear it, and an embed's channel inside its note's
+hears none (its page's header shows the note's). A member's own connection is
+never in its list, so its user appears only for their other tabs and devices.
+The ids come from the room's own map of which channel holds which client id,
+so a client cannot label a cursor as someone else: labels and the group read
+only this message. An id its user released (a removal, a leave) stays theirs
+until the next presence, which no longer lists it, has gone out: until then
+co-editors still label it with their name, so another user's channel cannot
+take it.
+
+The browser (`presence.ts`) hands it to the open editor (`onPresence` on
+`RoomProvider`; it goes empty when the channel ends): notes keep it for cursor
+labels (`useRemotePeers`), Office files for theirs (below), and both report
+it, with items (quiz, set, Mermaid) and text sources (`PresenceContext`), to
+the pane's presence store, which the header's avatar group reads
+(`RoomPresence.tsx`, labelled "Also in this document"): one avatar per person,
+at most three, then +N, with no tooltip; hidden below sm. Hovering spreads the
+group as transitions.dev's avatar group does (the hovered avatar lifts 4 px
+and grows 5 %, neighbours lift 0.45 as much per step, 320 ms in on the
+smooth-out curve and back on the strong bounce; reduced motion keeps them
+still).
+
+### Office cursors
+
+Developer Epo decided on 2026-10-20 that Office files draw co-editors'
+cursors through BetterOffice's own overlays, labelled like notes. Each fork
+editor takes a presence object (DOCX `collaboration.presence`, XLSX
+`collaboration.provider`, PPTX `collaboration.presence`); the runtime gives
+it one over the frame (`officePresence.ts`, an adapter per editor host), so
+the fork's providers, which would read names from awareness, are not used.
+The editor's cursor goes out as a `cursor` message (at most every 80 ms, the
+last always; a DOCX edit's move waits for the next) and Capy puts it in the
+source room's awareness (`officeCursors.ts`, `useSourceSession`). Capy sends
+the frame the co-editors' cursors as `peers`: each client id with a cursor in
+the room's awareness and a name in the room's presence, under that name,
+never one from awareness; an id the presence does not list (a reader, or a
+peer not listed yet) is not drawn. A cursor is a DOCX story and its encoded
+positions, an XLSX sheet and cell range, or a PPTX slide and shape, each
+bounded (`isOfficeCursor`). The flags look as the fork draws them.
+
+### Idle close
+
+The browser closes a page's collaboration connections after 60 minutes
+without keyboard, pointer, touch or wheel input (`idle.ts`, Epo 2026-10-20);
+a hidden page gets no input, so 60 minutes hidden closes them too, and
+scroll events do not count since pages scroll themselves. Input inside an
+Office frame never reaches Capy's page, so the runtime reports it
+(`activity.ts`: an `activity` message at once, then at most once a minute)
+and Capy counts it as its own (`frameInput`). Each room's channel ends first,
+quietly, as a room closed as its user's oldest does (no close or drop
+reported; it waits not synced), then the tab's socket closes and stays closed
+(`CollabSocket.sleep`). The next input or window focus opens it (`wake`) and
+every room joins again, catching up with its step 1 (the small-answer path).
+The server keeps no idle timer of its own: the per-user caps bound a client
+that ignores this.
 
 ## Stable IDs and persisted node data
 
@@ -466,7 +548,11 @@ Remove per question and Add question, editing the quiz's content and keys
 rooms; the `FlashcardsEditor` grid with its hover toolbar and Add card, editing
 the set's room). An embed joins its rooms only while within about a viewport
 of the screen, stays joined 30 s after it leaves (`useNearScreen.ts`) and while
-it holds unacknowledged edits. Removing the last question or card removes the
+it holds unacknowledged edits. Its rooms join inside the note's channel (Epo
+2026-10-20; see [Socket and channel caps](#connection-lifetime-and-refusals)):
+the note editor and the live View hold the note's `NoteSeat`
+(`noteSeat.ts`, `NoteSeatContext`), and an embed's providers join only while
+the note's channel is joined, end with it and join again when it does. Removing the last question or card removes the
 block itself (the item follows the removed-block trash rule; Undo restores both). The static renderer takes the page's embed renderer from
 `EmbedViewContext` (the app's reads through the account and loads on demand; the
 share page feeds the note's public data). Blocks that need the browser in a read-only
@@ -876,9 +962,10 @@ The editor reports:
 - `Reconnecting…`: a later drop while the browser is online; the editor stays
   mounted and editable;
 - `Syncing…`: edits waiting for the checkpoint debounce or durable acknowledgment;
-- `Synced`: the initial room sync completed with no local work pending;
 - `Saved`: the server confirmed that a state containing this client's work was
-  committed;
+  committed, or the room synced with nothing of this client's to store (Epo
+  2026-10-20: the same in every format; only the PDF annotations' REST save
+  still shows `Synced` before its first write);
 - `Offline`: the room cannot be reached (the browser is offline, or
   reconnecting kept failing for 30 s); an editor that synced once keeps
   editing on this device (see [Offline editing](#offline-editing-and-drafts));
@@ -886,14 +973,28 @@ The editor reports:
 - `Collaboration unavailable`: the first connection never synced, or the
   provider could not start.
 
-The header shows these as Hugeicons cloud icons beside the title: Sync for
-Connecting, Reconnecting and Syncing, SavingDone01 for Synced, Check for Saved,
-Off for Offline, and a red Alert for Not saved and Collaboration unavailable.
+The header shows these as Hugeicons cloud icons beside the title, on its
+top row at every width, phones included (Epo 2026-10-20): CloudUpload
+for Connecting, Reconnecting and Syncing, the plain Cloud for Saved (and the
+PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
+Collaboration unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
 Pending work preserves Connecting, Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
+
+Saved means stored in the database (Epo 2026-10-19): the debounced store's
+receipt (`checkpoint-persisted`, the same receipt that deletes the stored
+drafts it covers), at most about 10 s after the last edit for notes and live
+items and 30 s for Office and text files, never the room's acknowledgment.
+Until it, the state shows Syncing. Notes and sources report Saved only on that
+receipt (`NoteEditorCore.tsx`, `useSourceSession.ts`). A live item (a quiz, a
+flashcard set, a live Mermaid diagram) shows Syncing while the room has not
+acknowledged its updates and then until a receipt covers them (`itemRoom.ts`
+asks for it once they are acknowledged), then Saved, as it is when it joined
+with nothing of this device's to store. A press with no edit sends nothing, so
+it never shows Syncing ([office-files](office-files.md)).
 
 ### Connection lifetime and refusals
 
@@ -920,6 +1021,251 @@ no access, or unavailable with Retry). A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
 something they can't reach is blocked or gone.
+
+**Update allowance and pieces** (Epo 2026-10-18, 2026-10-19). Each user
+may send SYNC messages (updates, step 2 replies, step 1s), awareness updates,
+awareness queries and JOINs at a burst of 10,000 messages or 8 MiB, then 200
+messages and 2 MiB a second (`rate.rs`, `COLLABORATION_UPDATE_BURST`,
+`COLLABORATION_UPDATE_BURST_BYTES`, `COLLABORATION_UPDATES_PER_SECOND`,
+`COLLABORATION_UPDATE_BYTES_PER_SECOND`, the same in every environment; test
+and stress stacks raise them; a lower value makes every tab time out, since
+the client paces by the defaults). An update costs its body's bytes, an
+awareness update its payload's, a JOIN one message (after its token and
+access checks), so a JOIN/LEAVE loop runs into a timeout. The allowance is
+the user's: every socket of theirs and every draft send (`POST /drafts`)
+takes from one allowance in the server process, kept at least a minute
+after its last use and until it has refilled (ten minutes after a timeout
+ends), so a reconnect goes on from what was left rather than with a fresh
+burst. Stateless, token and LEAVE messages do not count. A message is over
+the limit when either bucket holds less than it costs (one message, its
+bytes). The sizes come from what the editors send
+(`bench/collaboration/reports/2026-10-18-update-rates.md`, `pnpm bench:rates`):
+notes and PPTX send one update per key, at most 68 a second with a key held
+at macOS's fastest repeat and 105 when keys come as fast as the page takes
+them; DOCX coalesces keys; a note, XLSX or PPTX paste, a photo, a redo and a
+reconnect's replayed drafts are one update each (about 2 MB at most
+measured, 5 MB for a Pro photo); a DOCX paste is a burst of two updates per
+paragraph (4,999 in 0.8 s for 2,500 lines) and Replace All one per
+replacement, which the burst covers to a paste of about 5,000 paragraphs.
+
+**Open budget** (Epo 2026-10-19). The full-document answers a user's opens
+receive draw on a separate per-user budget of 80 MiB (`OPEN_BYTES`,
+`COLLABORATION_OPEN_BYTES`), enough to browse 3-4 large documents, refilled
+continuously back to full over 5 minutes from empty (`OPEN_REFILL`,
+`COLLABORATION_OPEN_REFILL_SECONDS`, about 0.27 MiB a second): the room
+charges a step 1's answer (up to the whole state), an awareness query's and
+the awareness it sends on JOIN by their bytes once encoded, so the budget may
+go below zero. A step 1 answer under 256 KiB (`SMALL_ANSWER`, a returning
+member's resync) is charged too and skips the wait while the user owes less
+than a full budget (80 MiB of debt, `Allowances::small_skips`, Epo
+2026-10-20); past that it waits like a larger one. A larger one waits in its
+room while the budget is spent, slowed, never refused, and so does an
+awareness query: the room checks the budget when it takes the step 1 off its queue,
+where the answer is charged, so a burst read before the first charge lands
+gets one answer, and each channel keeps only its latest step 1 and query
+while it waits (`room.rs` `on_step1`, `release_openings`). Whether an answer
+is that large is known from a walk over what lies past the asker's state
+that stops at 256 KiB (`ydoc::answer_at_least`), so a waiting step 1 costs no
+encode; the encode checks it again. A user's large answers are encoded one at
+a time (`Allowances::open_turn`): one waits while another is encoded, so
+answers waiting as the budget refills are released one by one, each charged
+before the next is looked at. A user in a timeout meanwhile asks again when it
+ends, so their waiting opens are dropped. The awareness sent on JOIN is
+charged too and, past the small-answer floor, waits like an awareness query
+(kept per channel, released as the budget refills; Epo 2026-10-20, r6 S-1);
+nothing else waits, and the edit allowance is untouched. The budget is the
+user's across rooms and sockets (in each server process), so rejoining spends
+it too: a user's step 1 answers, queries and JOIN awareness fetch at most the larger of two
+budgets (160 MiB) and one budget plus the largest document, plus one resync
+per open room (small answers encoded before their charges land), at once,
+and then the refill rate, per process, however many files they open or
+however they slice their asks.
+
+A step 1 that begins to wait tells its channel once (a stateless
+`{"type": "open-slowed"}`, `OPEN_SLOWED_TYPE`, with no numbers), also when it
+joins the wait of its JOIN's awareness (rate-limit review r7 S-1). The editor
+keeps its normal loading state, and after 5 s it adds the line "Opening is
+slowed because many large files were opened recently." (`SlowedOpenLine`,
+`useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
+(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and for an Office or text
+source in the header's sync indicator tooltip on the top row
+(`useReportEditorStatus`, Epo 2026-10-20). A note already on screen
+whose reconnect is slowed keeps its editor and holds its header's sync
+indicator tooltip open with the line (`NoteEditorStatus.slowed`,
+`EditorSaveStatus`; Epo 2026-10-20). The room is reachable, so the
+reconnector never counts the wait as stuck (`roomReconnector().slowed`), and
+an editor that went offline before (a socket drop) leaves offline mode when
+the notice arrives instead of when the answer does: notes, items and sources
+alike.
+
+No room takes an update over 8 MiB (`ydoc::MAX_UPDATE_BYTES`, the byte
+burst, which `COLLABORATION_UPDATE_BURST_BYTES` may not go below): the
+server reads WebSocket frames only up to it and its framing, puts the user
+who sends a larger update on a socket or a draft send in a timeout (below),
+and refuses an agent edit or a replace-block command whose update would be
+larger before it commits (the agent hears `quota_rejected`, "make it as
+several smaller edits"; the content command's 413 is a document limit).
+Capy's send path therefore cuts every update over 2 MiB into pieces
+(`splitUpdate`, `src/features/collaboration/pieces.ts`), for every format
+(notes, items, DOCX, PPTX, XLSX and text sources), the step 2 after a
+reconnect and draft sends alike: the update's structs go in dependency
+order, each piece a clock range per client, a struct only after the structs
+of the update its origin, right origin and parent name, so pieces applied in
+order never leave anything pending; a text or value run over the limit
+becomes runs of the same item, as Yjs splits items (never inside a surrogate
+pair); a new type (a note's block, an embed's figure map, an Office map) goes
+in one piece with its whole nested subtree (its attribute entries and every
+map, text and array inside them, as Yjs writes them in one transaction), so
+a room's admission never sees a block without its `type`, `id`, figure or
+asset, whatever the order its editor wrote them in; a subtree larger than
+the server's 8 MiB cap is cut as the rest; the delete set goes last. A
+resync's state holds a deleted nested type's children as garbage-collected
+structs that name no parent (a chart whose series was replaced); the subtree
+walk carries over a run of them when a nested item follows, so the figure's
+`id` and `type` after them stay in its piece. A struct that cannot be cut (a
+photo's binary, a format mark, a type) goes whole; one over the server's cap
+is never sent: the room stops and closes (`collaboration-update-too-large`)
+and joins again only when remounted, keeping the edit in the document and its
+drafts, instead of looping on timeouts. The room provider sends each piece as
+its own SYNC message, acknowledged on its own. The tab's socket paces SYNC
+and awareness frames under the same allowance (`allowance.ts`, mirroring the
+defaults; a load generator's own socket has its own): a frame waits while the
+allowance is spent, and every frame sent
+after it, a checkpoint request among them, waits behind it, so a receipt
+never covers a piece still waiting. Draft groups are cut in the drafts
+worker and sent one request per piece, in order, under the tab's allowance.
+Another tab of the same user is not paced against this one; both together
+can still go over, and then the user is in a timeout.
+
+**Held back.** While the tab holds back messages, every editor (notes,
+items, DOCX, PPTX, XLSX and text) takes no input: frames wait in the socket
+for the allowance, a split update's pieces wait for the server's
+acknowledgement of the last, a draft send waits for the allowance, or the
+user is in a timeout (`held.ts`). `CollaborationHold` wraps the note
+editor and its toolbar, the quiz form, the flashcards editor, a live Mermaid
+diagram and the text editor: its content is `inert` and `aria-busy`, with a
+loading cursor over it, and an editor's own state is untouched. What portals
+out of it consults the same flag: inside an editor (`EditorHoldScope`, at the
+note editor's root and in every `CollaborationHold`) the shared dialogs,
+popovers, dropdown and context menus, selects, floating toolbars and popups
+(`useEditorHeld` in `src/components/ui`) turn inert, an open one included
+(it stays open and takes input again once sent; its overlay and Escape still
+close it, dropping only the dialog's own form state, never document edits); the Ctrl+K palette neither
+opens nor runs a command (its listener is on `window`); the AI menu is a
+popup; the quiz and flashcard Undo and Redo buttons in the page header are
+disabled. A DOCX or PPTX editor pauses as for any other pause
+(`set-capabilities` with `canEdit: false`: read-only, selectable), and the
+XLSX editor takes the runtime's `sending` message instead: the runtime keeps
+it in state and passes it to `XlsxEditorHost` and the fork's `XlsxEditor`,
+which refuses edits with a busy cursor once the BetterOffice pin carries the
+prop ([office-files](office-files.md)).
+
+**Timeouts** (Epo 2026-10-18). A user over the allowance, or sending an
+update over 8 MiB, is put in a timeout instead of disconnected (closing would
+protect nothing, since a script reconnects at once): no SYNC, awareness,
+query or stateless message of theirs goes on, on any socket, and a draft
+send is refused `too_fast` (429) with `remainingMs`, until it ends. A draft
+send over 8 MiB answers `too_large` (413), which the page leaves to the
+editor, and starts a timeout as an update over the cap on a socket does
+(Epo 2026-10-20, replacing the too-fast answer). A socket
+misses an announcement only when too many users time out at once (the
+broadcast lags, logged); its channels learn at their next join. It lasts
+until the allowance covers the refused message, at least 3 s so it is seen,
+the least doubled for each further timeout starting within ten minutes of
+the last one's end, at most 5 minutes (`TIMEOUT_MIN`, `REPEAT_WINDOW`,
+`TIMEOUT_MAX`). Each joined channel of the user hears it when it starts, and
+a channel joining during one hears it instead of joining (checked right after
+the token, before any lookup; it joins again when the timeout ends): a
+stateless `{"type": "update-timeout", "remainingMs": n}`, never the
+allowance's numbers. The room provider pauses: it sends nothing, counts as not synced
+(so no checkpoint request goes, and a note resends its pending ones once
+synced again) and keeps the edits made meanwhile in the document and its
+drafts. When the time is up the socket's allowance is full again (the
+defaults kept in code), and each paused room sends JOIN again on the same
+channel of the same socket: the server leaves and rejoins the room, sends
+its step 1, and the client's step 2 carries everything the server lacks, in
+pieces. A socket that drops during a timeout forgets it; the server tells
+the channels again when they rejoin. Sockets still close for malformed
+frames. The server logs each timeout at warn and counts it
+(`capy_collaboration_timeouts_total`, [observability](../observability-metering.md)).
+
+**Socket and channel caps** (Epo 2026-10-19). A socket that has joined no
+room after 10 s, with none authenticating, is closed (1008, "no room
+joined"); a client joins as soon as it opens one, and a warmed socket's
+hold is 8 s. A JOIN's token is checked when it arrives (CPU only): a bad one
+is refused before any lookup, so it never holds the deadline open, and the
+user's timeout is checked next, before the eviction lease's Redis lookup and
+the database. A client address holds at most
+`COLLABORATION_SOCKETS_PER_ADDRESS` open sockets (500): one more is refused
+429 before the upgrade. The address is read as the gateway's limiter reads
+it (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
+peer's), an IPv6 one by its /64; the headers are trusted only while the
+origin is reachable through the tunnel alone
+([deployment runbook](../deployment-runbook.md)). A user holds at most 22
+joined documents over all their sockets (`JOINED_PER_USER`,
+`COLLABORATION_JOINED_PER_USER`, about 7 per device on 3 devices): one more
+JOIN closes that user's oldest joined channel (`collaboration-oldest-closed`,
+counted in `capy_collaboration_oldest_closed_total`) instead of being
+refused. A user also holds at most 4 connections to any one document or
+embed over all their sockets (`CONNECTIONS_PER_DOCUMENT`,
+`COLLABORATION_CONNECTIONS_PER_DOCUMENT`, Epo 2026-10-20;
+an embed channel counts toward its own room, not its note's): a fifth closes
+their oldest connection to it the same way. The closed room waits, not synced, and joins again once the user
+comes back to it: its tab shows again, or an edit is made in it (a local
+transaction; an applied update such as a restored draft is none); joining at
+once would close the user's next oldest. The server pings every socket every
+30 s and closes one that sends nothing for 60 s (`PING_EVERY`, `SILENT_CLOSE`,
+`COLLABORATION_PING_SECONDS`, `COLLABORATION_SILENT_SECONDS`; any frame counts,
+the browser's automatic pong too, a frame that waited while the socket was
+busy elsewhere as well; Epo 2026-10-20), so a dead connection (a laptop that
+changed networks) frees its places through the normal close; the client takes
+that close (1001) like any drop and reconnects. A send has no total time limit,
+since a whole-state answer is one frame that a slow link takes long to receive,
+but a send that moves no bytes for the silent window closes the socket the same
+way (logged `stalled socket closed`; Epo 2026-10-20, rate-limit review r7): the
+listener's connections record when their kernel last took bytes
+(`seats::TrackedListener`, `Sent`, `watched`), so a slow link that keeps taking
+bytes stays open however long one frame takes. The server refuses to start when
+the silent window is not longer than the pings.
+
+**Embeds in their note's seat** (Epo 2026-10-20). An embedded quiz's or
+flashcard set's room (content, and a writer's quiz keys) joins inside its
+note's channel on the same socket: its JOIN names the note's channel after
+the client protocol (`joinPayload(room, token, note)`), and its token names
+the note (`parent`, which Go reads from the material's `parent_material_id`).
+The server joins it only when that channel is a joined note channel of the
+same user on this socket whose material is the token's `parent` (another
+note's embed is refused `collaboration-forbidden`; a channel that is not a
+joined note `collaboration-note-closed`). An embed channel takes no place
+among the user's 22 joined documents; a note channel holds at most 64
+(`EMBEDS_PER_NOTE`), and one more closes its oldest
+(`collaboration-embed-closed`). It holds a room once: joining the same room
+again under it closes the earlier channel the same way (rate-limit review r5
+S-a), so the client shares one item room per material and document among a
+note's copies of it (`NoteSeat.hold`, `openItemRoom`; r6 S-2): a quiz embedded
+twice joins once and both copies are live. That close comes before the new
+channel takes its places, and a join whose per-document close ends a channel
+holding one of the user's 22 places takes that place and closes nothing more
+there (r6 S-3); one that ends an embed's channel, which holds none, still
+closes the user's oldest joined document (r7 B-1). A channel's places share one
+membership id (`seats::membership_id`), so a place another close already gave
+back is not given twice. A closed embed's
+room waits, as one closed as the user's oldest does, and joins again when its block comes near the screen again
+(`useNearScreen().entered`, `RoomProvider.wake`), its tab shows again or an
+edit is made in it. When the note's channel goes (left, closed, expired,
+joining again after a timeout) the server closes its embed channels
+(`collaboration-note-closed`) and the client ends them too, reporting no
+close; they join again once the note has joined. Each embed keeps its own
+document, storage, history, keys room and id; its own token refreshes and
+expiry apply as for any channel, and a JOIN costs one message of the
+allowance. With no note channel (an embedded set opened on its own study
+page, or under MSW) an item room joins as any document does. A room keeps at most 256 awareness
+client ids and a channel at most 4 (`MAX_CLIENTS_PER_ROOM`,
+`MAX_CLIENTS_PER_MEMBER`); a new id past either is not kept. The room's cap
+counts removed ids until their removal went out (the next flush forgets
+them), so adding and removing ids in a loop stays capped and needs no scan.
+A client id is its user's: another user's channel neither overwrites nor
+removes it, and a channel's leave removes only the ids it still holds.
 
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
 pending receipts (the failed-store retry answers them), shows Not saved and,
@@ -1057,6 +1403,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   The Office protocol 11 (the edit `load`'s growth budget, Epo 2026-10-17)
   raised `CLIENT_PROTOCOL` to 5 and `MIN_SOURCE` to 5; `MIN_MATERIAL` stays 4.
   Its deploy request names "client protocol 4 -> 5, source 3 -> 5".
+  The rate-limit round (the open-slowed notice in both families, an embed's
+  note channel in its JOIN; Epo 2026-10-20), landing with the XLSX pin and
+  Office protocol 12, raised `CLIENT_PROTOCOL` to 6 and both minimums to 6.
+  Its deploy request names "client protocol 5 -> 6, material 4 -> 6, source
+  5 -> 6, Office 12".
+  The room presence (a stateless message both families act on, cursor labels
+  from it instead of awareness; Epo 2026-10-20) raised `CLIENT_PROTOCOL` to 7
+  and both minimums to 7: an older client would keep reading names from
+  awareness. Its deploy request names "client protocol 6 -> 7, material
+  6 -> 7, source 6 -> 7".
 
 #### When to bump
 
@@ -1224,20 +1580,30 @@ go with the keys token (`{ document: 'keys' }`, room `keys:<id>:schema:<n>`);
 flashcard sets and a quiz's content go as notes do. With a write token the
 sweep takes the rows of the token's room that are neither refused nor
 `held` (left for the editor, below), one group per lineage (an Office file's rows of another base
-apart). The drafts worker merges each group (`merged`: the page's main
-thread pays about 4 ms for a 20 MB Office state, against 160-192 ms with a
-132-158 ms task when it merged there), and the page POSTs it to the
-collaboration service's `/drafts` on the host of the token's URL, the same
-URL for every document (so one preflight, kept 2 h, covers a sweep):
+apart). The drafts worker merges each group and cuts it into its pieces of
+at most 2 MiB (`merged`: the page's main thread pays about 4 ms for a 20 MB
+Office state, against 160-192 ms with a 132-158 ms task when it merged
+there), and the page POSTs each piece in order, paced under the tab's update
+allowance (see [Connection lifetime](#connection-lifetime-and-refusals)), to
+the collaboration service's `/drafts` on the host of the token's URL, the
+same URL for every document (so one preflight, kept 2 h, covers a sweep):
 `Authorization: Bearer <token>`, `X-Capy-Room: <room>`, `X-Capy-Base: <sha>`
-for a source, `X-Capy-Protocol: <client protocol>`, the update as the body
-(`collaboration-rs/crates/server/src/drafts.rs`). A note group past the
-4 MiB sync cap is not uploaded.
+for a source, `X-Capy-Protocol: <client protocol>`, the piece as the body
+(`collaboration-rs/crates/server/src/drafts.rs`). A piece over the service's
+8 MiB cap (a struct that cannot be cut) is not sent: the group is left for
+the editor (`held`). A piece the service does not take stops the group's
+send; the pieces before it are in the room, so
+the group's rows become one row of the pieces not sent (the worker's
+`unsent`), which the answer below applies to and recovery shows (Epo
+2026-10-18).
 
 The service runs a channel's JOIN checks (origin, token, access, the room's
 eviction and pause state), refuses a read-only token, checks the note's
-current schema, reads the body within a writer's sync message cap (4 MiB for
-a note, the frame cap for a source), checks the eviction lease and a local
+current schema, refuses the send while the user is in a timeout (checked
+right after the token, before any lookup), reads the body within 8 MiB (a
+larger one answers `too_large`, which the page leaves to the editor, and
+times the user out) and a note's 4 MiB sync cap, takes it from the user's update allowance (the one their sockets take
+from), checks the eviction lease and a local
 reset again (the body may have arrived after them), and hands the update to
 the room, loading it if need be: the same writer admission and apply as a
 channel's update (`admit_update` in `room.rs`, a read token's draft as a
@@ -1249,8 +1615,9 @@ publication handoff, and an Office file's only over the room's base. A room
 whose load failed answers the failure (one load per send). A successful send
 is silent: the edits just appear for everyone.
 
-A refusal answers its class alone (`{"class": ...}`); the service logs the
-detail with the room and counts it by class
+A refusal answers its class alone (`{"class": ...}`, a timeout's with
+`remainingMs`); the service logs the detail with the room and counts it by
+class
 (`capy_collaboration_draft_refusals_total`). Nothing is retried in a loop:
 
 - `limit` (422, over a content limit or a source's state cap) and
@@ -1269,8 +1636,8 @@ detail with the room and counts it by class
   [Client protocol](#client-protocol-and-the-release-nudge));
 - `permission` (403), `unavailable` (503) and any other answer: kept, and
   not sent again until the next page load;
-- no answer (offline) or rows that changed meanwhile: kept for the next
-  trigger.
+- `too_fast` (429, the user is in a timeout), no answer (offline) or rows
+  that changed meanwhile: kept for the next trigger.
 
 `held` is the sweep's own mark: a held group that enters recovery at the
 next open (its file moved on) is still reported as another epoch's draft,
@@ -1840,7 +2207,7 @@ ordered by fractional-index keys with the card id breaking ties
 `collaboration-rs/crates/items`). The server admits only that shape (a struct
 anywhere else, a card id outside 1-128 `[A-Za-z0-9_-]`, a non-text face, rich
 text in a face or an image that is not `{assetId}` closes the writer), caps a
-front at 4,000 and a back at 2,000 characters, measures the limits on every
+front at 200 and a back at 1,000 characters, measures the limits on every
 card, blank ones included, and projects the set to its Plate envelope with blank
 cards left out (a set keeps one card). `FlashcardsEditor` edits it in the
 workspace file's edit mode (a standalone set at `/materials/$id?mode=edit`; the

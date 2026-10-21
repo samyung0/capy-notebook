@@ -116,9 +116,6 @@ type generateOpts struct {
 	Detail      string
 	DiagramType string
 	Title       string
-	// AllowUnindexed skips the indexed-content requirement for a material whose
-	// grounding is outside the workspace (the knowledge library).
-	AllowUnindexed bool
 }
 
 func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
@@ -153,16 +150,18 @@ func normalizeGenerateTitle(title string) (string, error) {
 	return title, nil
 }
 
+// resolveScope resolves the Generate panel's ids: any untrashed file or
+// top-level material of the workspace, and chapters, which add every item
+// filed in them. No ids means every item. Items without indexed text
+// contribute none; a scope with no text at all is refused.
 func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, fileNames, chapterNames []string, err error) {
-	files, err := a.s.ListFiles(ctx, "", wsID)
+	items, err := a.s.SourceItems(ctx, wsID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	fileNamesByID := make(map[string]string, len(files))
-	indexedByID := make(map[string]bool, len(files))
-	for _, file := range files {
-		fileNamesByID[file.ID] = file.Name
-		indexedByID[file.ID] = file.Indexed
+	byID := make(map[string]store.SourceItem, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
 	}
 	seen := map[string]struct{}{}
 	fileIDs = make([]string, 0, len(opts.FileIds))
@@ -174,14 +173,14 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		fileIDs = append(fileIDs, id)
 	}
 	for _, id := range opts.FileIds {
-		if _, ok := fileNamesByID[id]; !ok {
-			return nil, nil, nil, unknownScopeIDError{kind: "file", id: id}
+		if _, ok := byID[id]; !ok {
+			return nil, nil, nil, unknownScopeIDError{kind: "item", id: id}
 		}
 		add(id)
 	}
 	if len(opts.FileIds) == 0 && len(opts.Chapters) == 0 {
-		for _, file := range files {
-			add(file.ID)
+		for _, item := range items {
+			add(item.ID)
 		}
 	}
 	if len(opts.Chapters) > 0 {
@@ -189,43 +188,45 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		byID := make(map[string]store.Chapter, len(chapters))
+		names := make(map[string]string, len(chapters))
 		for _, ch := range chapters {
-			byID[ch.ID] = ch
+			names[ch.ID] = ch.Name
 		}
 		for _, id := range opts.Chapters {
-			ch, ok := byID[id]
+			name, ok := names[id]
 			if !ok {
 				return nil, nil, nil, unknownScopeIDError{kind: "chapter", id: id}
 			}
-			chapterNames = append(chapterNames, ch.Name)
-			for _, fid := range ch.FileIDs {
-				if _, ok := fileNamesByID[fid]; !ok {
-					return nil, nil, nil, unknownScopeIDError{kind: "file", id: fid}
+			chapterNames = append(chapterNames, name)
+			for _, item := range items {
+				if item.ChapterID != nil && *item.ChapterID == id {
+					add(item.ID)
 				}
-				add(fid)
 			}
 		}
 	}
 	fileNames = make([]string, 0, len(fileIDs))
 	hasIndexed := false
 	for _, id := range fileIDs {
-		fileNames = append(fileNames, fileNamesByID[id])
-		hasIndexed = hasIndexed || indexedByID[id]
+		fileNames = append(fileNames, byID[id].Name)
+		hasIndexed = hasIndexed || byID[id].Indexed
 	}
-	if !hasIndexed && !opts.AllowUnindexed {
+	if !hasIndexed {
 		return nil, nil, nil, errScopeNoIndexedContent
 	}
 	return fileIDs, fileNames, chapterNames, nil
 }
 
 type unknownScopeIDError struct {
-	kind string
+	kind string // item or chapter
 	id   string
 }
 
 func (e unknownScopeIDError) Error() string {
-	return "The requested scope is invalid or unavailable."
+	if e.kind == "chapter" {
+		return fmt.Sprintf("No chapter has the id %q: it may have been deleted.", e.id)
+	}
+	return fmt.Sprintf("No workspace item has the id %q: it may have been deleted or moved to trash.", e.id)
 }
 
 func (a *api) generateViaPipe(
@@ -241,7 +242,7 @@ func (a *api) generateViaPipe(
 	}
 	body := map[string]any{
 		"workspaceId": wsID, "kind": opts.Kind, "types": opts.Types, "levels": opts.Levels,
-		"chapters": chapterNames, "fileIds": fileIDs,
+		"chapters": chapterNames, "fileIds": fileIDs, "fileNames": fileNames,
 		"detail": opts.Detail, "diagramType": opts.DiagramType,
 		"locale":         a.userLocale(ctx, userID),
 		"spendSessionId": spendSessionID,

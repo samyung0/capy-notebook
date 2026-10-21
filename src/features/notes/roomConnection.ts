@@ -154,6 +154,12 @@ export function roomReconnector({
     },
     /** A refusal worth retrying with a fresh token. */
     refused: reconnect,
+    /** Joined, and the room's answer waits on the user's open budget: the
+     * room is reachable, so the wait never counts as stuck. */
+    slowed() {
+      clearTimeout(stuck);
+      stuck = undefined;
+    },
   };
 }
 

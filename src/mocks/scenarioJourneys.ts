@@ -127,7 +127,7 @@ export async function runJourney(
   };
   const chat = async () => {
     await go(scenarioPath);
-    await ui.click(m.workspace_tab_chat());
+    await ui.panelView(m.workspace_tab_chat());
     await ui.fill(
       `textarea[aria-label="${m.chat_placeholder()}"]`,
       'Explain the source for this scenario.'
@@ -351,10 +351,7 @@ export async function runJourney(
         })
       );
     } else if (format === 'docx') {
-      await officeUI.fill(
-        '[aria-label="Document input"]:not([readonly])',
-        scenarioMarker
-      );
+      await officeUI.fill('[aria-label="Document input"]', scenarioMarker);
     } else {
       await officeUI.element('[data-testid="pptx-slide-canvas"]');
       frame.contentWindow!.dispatchEvent(
@@ -413,6 +410,8 @@ export async function runJourney(
     }
     if (id === 'auth-breached')
       return 'The normal sign-in flow requires a new password.';
+    if (id === 'auth-second-factor')
+      return 'The sign-in flow asks for the authenticator code.';
     if (id === 'auth-busy')
       return 'The sign-in request is pending for 15 seconds.';
     return;
@@ -663,6 +662,19 @@ export async function runJourney(
       await ui.fill('input[name="identifier"]', 'morgan@example.com');
       fail();
       await ui.click(m.members_invite());
+      return;
+    case 'invites-load':
+      fail();
+      await share();
+      return;
+    case 'invite-cancel':
+      await share();
+      await ui.fill('input[name="identifier"]', 'morgan@example.com');
+      await ui.click(m.members_invite());
+      fail();
+      await ui.click(
+        m.members_pending_cancel_label({ address: 'morgan@example.com' })
+      );
       return;
     case 'member-save':
     case 'member-remove':
@@ -923,7 +935,7 @@ export async function runJourney(
     case 'conversations-load':
       fail();
       await go(scenarioPath);
-      await ui.click(m.workspace_tab_chat());
+      await ui.panelView(m.workspace_tab_chat());
       await ui.click(m.chat_history());
       return 'Chat history currently suppresses its read error.';
     case 'generation-failed':
