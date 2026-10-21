@@ -318,6 +318,10 @@ check); it applies at the first promotion.
   (`set_cell_borders`; only API and agent callers, the toolbar sends
   `style: none`) comes back on save; a table with no `w:tblBorders` gains
   `w:tblBorders` holding its first cell's top side on save.
+- **DOCX run properties the model drops** (pre-existing, found by the fix 9
+  re-review 2026-10-21): `w:webHidden` and `w:noProof` are not modelled, so a
+  run that the save rebuilds loses them; TOC page numbers commonly carry
+  `w:webHidden`.
 - **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
   where the run inherits its size from the placeholder gets an explicit 24 pt
   (`pptx-parity/shots/slide-bulleted.png`, "Nested item").

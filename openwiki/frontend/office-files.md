@@ -2170,8 +2170,10 @@ explicit automatic colour under a coloured heading, character shading,
 properties, while adjacent runs with the same rPr (Word's rsid splits) save
 as one. In any other paragraph a run whose formatting is what the seed
 resolved for its source paragraph's runs saves their rPr when they all have
-the same one, and resolved values otherwise; a run the session reformatted
-saves resolved values. What the seed resolved is computed under the
+the same one and that rPr writes nothing the seed did not resolve (a pattern
+`w:shd`, `w:color auto` under a coloured style or a lone `w:cs` would spread
+to text that never had it), and resolved values otherwise; a run the session
+reformatted saves resolved values. What the seed resolved is computed under the
 paragraph's current style, so a paragraph restyled in the session saves the
 look the editor shows (its runs keep the old style's values; making them
 follow the new style is the seed-side todo). A source table cell saves its
