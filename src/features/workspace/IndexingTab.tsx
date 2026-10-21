@@ -203,7 +203,7 @@ function FileChanges({
                   aligned with the name; the failure's text stays hidden. */}
               {row.errorId && (
                 <ErrorId
-                  className="col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
+                  className="col-span-2 col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
                   id={row.errorId}
                 />
               )}
@@ -274,7 +274,7 @@ function FailedFiles({
             )}
             {file.errorId && (
               <ErrorId
-                className="col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
+                className="col-span-2 col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
                 id={file.errorId}
               />
             )}
