@@ -82,21 +82,27 @@ async function uploadText(
   text: string
 ) {
   const bytes = Buffer.from(text);
-  // One streamed request: the metadata part, then the file part.
+  // One streamed request: the metadata part, then the file part. A FormData
+  // keeps that order (a sorted object would send the file first).
+  const form = new FormData();
+  form.append(
+    'metadata',
+    JSON.stringify({
+      batchId: `stored-drafts-${randomUUID()}`,
+      batchTotal: 1,
+      contentType: 'text/markdown',
+      name,
+      sizeBytes: bytes.length,
+    })
+  );
+  form.append(
+    'file',
+    new Blob([new Uint8Array(bytes)], { type: 'text/markdown' }),
+    name
+  );
   const uploaded = await api.post(
     `/api/workspaces/${workspaceId}/sources/uploads`,
-    {
-      multipart: {
-        file: { buffer: bytes, mimeType: 'text/markdown', name },
-        metadata: JSON.stringify({
-          batchId: `stored-drafts-${randomUUID()}`,
-          batchTotal: 1,
-          contentType: 'text/markdown',
-          name,
-          sizeBytes: bytes.length,
-        }),
-      },
-    }
+    { multipart: form }
   );
   expect(uploaded.status(), await uploaded.text()).toBe(201);
   return ((await uploaded.json()) as { id: string }).id;
