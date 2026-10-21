@@ -64,7 +64,7 @@ jobs:
           docker volume create capy-parser-budget-spool
           docker volume create capy-parser-budget-work
           docker run --rm -v capy-parser-budget-spool:/var/lib/capy-parse \
-            -v capy-parser-budget-work:/run/capy-parser/work alpine:3.20 sh -c \
+            -v capy-parser-budget-work:/run/capy-parser/work alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 sh -c \
             'mkdir -p /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine && chown -R 10001:10001 /var/lib/capy-parse && chmod 2770 /var/lib/capy-parse /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine && chown 10001:10001 /run/capy-parser/work && chmod 0700 /run/capy-parser/work'
           # The compose files' hardening, so OCR and Office conversion run
           # under it here.
