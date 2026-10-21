@@ -1296,6 +1296,17 @@ export const ListMessagesResponse = zod.array(ListMessagesResponseItem)
 
 
 /**
+ * @summary Stop a conversation's running turn
+ */
+export const StopChatTurnParams = zod.object({
+  "id": zod.string().describe('Conversation id'),
+  "messageId": zod.string().describe('The turn\'s assistant message id')
+})
+
+export const StopChatTurnResponse = zod.void()
+
+
+/**
  * @summary Soft-delete a comment discussion
  */
 export const DeleteMaterialDiscussionParams = zod.object({

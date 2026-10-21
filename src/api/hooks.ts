@@ -1729,6 +1729,24 @@ export function useUpdateConversation(
   });
 }
 
+/** Stop a running turn: the server saves it as it stands and starts nothing
+ * further; a failure toasts and the turn goes on. */
+export function useStopChatTurn(options?: MutationUiOptions) {
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: ({
+      conversationId,
+      messageId,
+    }: {
+      conversationId: string;
+      messageId: string;
+    }) =>
+      api.post<void>(
+        `/conversations/${conversationId}/messages/${messageId}/stop`
+      ),
+  });
+}
+
 export function useDeleteConversation(
   wsId: string,
   options?: MutationUiOptions

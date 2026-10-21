@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { m } from '@/i18n';
-import { shouldApplyCitations, toChatMessage } from './useChatStream';
+import {
+  shouldApplyCitations,
+  toChatMessage,
+  turnStopper,
+} from './useChatStream';
 
 describe('shouldApplyCitations', () => {
   it('keeps a later version and ignores an older one', () => {
@@ -22,4 +26,39 @@ it('restores the safety notice from a persisted error code', () => {
   });
   expect(message.error).toBe(m.chat_response_flagged());
   expect(message.content).toBe('');
+});
+
+describe('turnStopper', () => {
+  const ids = { conversationId: 'c1', messageId: 'm1' };
+
+  it('asks the server to stop the named turn, then stops reading', async () => {
+    const order: string[] = [];
+    const request = vi.fn(async () => {
+      order.push('request');
+    });
+    const stopper = turnStopper(request, () => order.push('abort'));
+    stopper.stop(); // before the server named the turn
+    expect(request).not.toHaveBeenCalled();
+    stopper.named(ids);
+    await vi.waitFor(() => expect(order).toEqual(['request', 'abort']));
+    expect(request).toHaveBeenCalledWith(ids);
+  });
+
+  it('keeps reading when the request fails, for another press', async () => {
+    const abort = vi.fn();
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(undefined);
+    const stopper = turnStopper(request, abort);
+    stopper.named(ids);
+    stopper.stop();
+    stopper.stop(); // a second press while the first is in flight
+    await new Promise((resolve) => setTimeout(resolve, 0)); // the refusal lands
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(abort).not.toHaveBeenCalled();
+    stopper.stop();
+    await vi.waitFor(() => expect(abort).toHaveBeenCalledTimes(1));
+    expect(request).toHaveBeenCalledTimes(2);
+  });
 });

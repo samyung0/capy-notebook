@@ -1422,17 +1422,6 @@ def test_inspect_shows_a_notes_quiz_as_its_fence_and_edits_expect_it_back():
     assert view in text and "correct: B" in view and stored not in text
     command = {"type": "replace_block", "block_id": "b3", "expected_text": view}
     assert tools._stored_expectation(command, shown)["expected_text"] == stored
-    quiz = tools._render_inspection(
-        {
-            "title": "Quiz",
-            "materialKind": "quiz",
-            "supportedOperations": ["remove_question"],
-        }
-    )
-    assert (
-        "supported: remove_question, (add or replace questions with add_questions)"
-        in quiz
-    )
 
 
 def test_the_final_notice_says_an_unwritten_deck_was_not_saved():

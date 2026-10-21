@@ -7,6 +7,7 @@ import {
   streamChat,
 } from '@/api/chatStream';
 import { qk } from '@/api/client';
+import { useStopChatTurn } from '@/api/hooks';
 import type {
   ActivityBlock,
   ChatMessage,
@@ -90,6 +91,41 @@ export function shouldApplyCitations(
 
 type PendingSources = { fileIds: string[]; omitted: boolean };
 
+type TurnIds = { conversationId: string; messageId: string };
+
+/** One turn's Stop: a request to the server, which saves the turn and starts
+ * nothing further, then `abort` stops reading the stream. Pressed before the
+ * server names the turn (`named`), the request goes once it does. A failed
+ * request leaves the stream running (its toast says so) for another press. */
+export function turnStopper(
+  request: (ids: TurnIds) => Promise<unknown>,
+  abort: () => void
+) {
+  let ids: TurnIds | null = null;
+  let stopping = false;
+  const stop = async () => {
+    if (stopping) return;
+    stopping = true;
+    if (!ids) return;
+    try {
+      await request(ids);
+    } catch {
+      stopping = false;
+      return;
+    }
+    abort();
+  };
+  return {
+    named(next: TurnIds) {
+      ids = next;
+      if (!stopping) return;
+      stopping = false;
+      void stop();
+    },
+    stop: () => void stop(),
+  };
+}
+
 /** One conversation's live state. A turn keeps streaming into its own thread
  * after the learner starts or opens another conversation. */
 type Thread = {
@@ -110,8 +146,8 @@ const emptyThread = (): Thread => ({
  * Client state machine for the shown conversation plus any turns still
  * streaming in conversations the learner left. Holds each message list,
  * drives the SSE streams, and tracks each in-flight assistant turn so blocks
- * land on the right bubble. Abort propagates through the fetch signal to the
- * gateway; leaving a conversation does not abort its turn.
+ * land on the right bubble. Stop asks the server to end the turn, then stops
+ * reading; leaving a conversation, or the page, does not end its turn.
  */
 export function useChatStream(workspaceId: string) {
   const qc = useQueryClient();
@@ -124,7 +160,9 @@ export function useChatStream(workspaceId: string) {
   const activeRef = useRef(initialKey);
   const threadsRef = useRef(threads);
   threadsRef.current = threads;
-  const abortRefs = useRef(new Map<string, AbortController>());
+  const { mutateAsync: stopTurn } = useStopChatTurn();
+  // Each streaming thread's Stop.
+  const stopRefs = useRef(new Map<string, () => void>());
   const shown = threads[active] ?? emptyThread();
 
   const update = useCallback((key: string, up: (t: Thread) => Thread) => {
@@ -181,7 +219,7 @@ export function useChatStream(workspaceId: string) {
   const startNew = useCallback(() => show(tempId()), [show]);
 
   const stop = useCallback(
-    () => abortRefs.current.get(activeRef.current)?.abort(),
+    () => stopRefs.current.get(activeRef.current)?.(),
     []
   );
 
@@ -292,7 +330,8 @@ export function useChatStream(workspaceId: string) {
       }));
 
       const ac = new AbortController();
-      abortRefs.current.set(key, ac);
+      const stopper = turnStopper(stopTurn, () => ac.abort());
+      stopRefs.current.set(key, stopper.stop);
 
       const fail = (message: string, code?: string) => {
         if (terminal || ac.signal.aborted) return;
@@ -401,6 +440,7 @@ export function useChatStream(workspaceId: string) {
             }) => {
               currentId = messageId;
               conversationId = cid;
+              stopper.named({ conversationId: cid, messageId });
               update(key, (t) => ({
                 ...t,
                 conversationId: cid,
@@ -481,7 +521,8 @@ export function useChatStream(workspaceId: string) {
           complete('aborted');
           patch(key, currentId, { status: 'aborted' });
         }
-        if (abortRefs.current.get(key) === ac) abortRefs.current.delete(key);
+        if (stopRefs.current.get(key) === stopper.stop)
+          stopRefs.current.delete(key);
         // A turn that finished after the learner left its conversation drops
         // its thread; reopening it reads the history.
         setThreads((prev) => {
@@ -497,7 +538,7 @@ export function useChatStream(workspaceId: string) {
           void qc.invalidateQueries({ queryKey: qk.messages(conversationId) });
       }
     },
-    [qc, patch, setMessagesIn, update, workspaceId]
+    [qc, patch, setMessagesIn, stopTurn, update, workspaceId]
   );
 
   return {

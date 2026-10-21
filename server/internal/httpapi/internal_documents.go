@@ -291,7 +291,7 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			end := min(req.Start+req.Count, total)
 			body["lines"] = lines[min(req.Start, total):end]
 			body["total"], body["nextStart"] = total, nextStart(end, total)
-			body["supportedOperations"] = []string{"replace_text"}
+			body["supportedOperations"] = textOperations
 		default:
 			// DOCX and PPTX read as their paragraph and shape entries until
 			// the engine's scoped reads land.
@@ -299,7 +299,7 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			end := min(req.Start+req.Count, total)
 			body["entries"] = inspection.Entries[min(req.Start, total):end]
 			body["total"], body["nextStart"] = total, nextStart(end, total)
-			body["supportedOperations"] = []string{"replace_text"}
+			body["supportedOperations"] = textOperations
 		}
 		writeJSON(w, http.StatusOK, body)
 	default:
@@ -353,11 +353,16 @@ func utf16Len(s string) int {
 	return n
 }
 
+// textOperations are the edit commands a text or Office source supports.
+var textOperations = []string{"replace_text"}
+
+// materialOperations are the edit commands a material kind supports: the
+// "supported:" line of its inspection and of a refusal for its kind.
 func materialOperations(kind string) []string {
 	switch kind {
 	case "quiz":
 		// add_questions adds and replaces questions; the model's edit removes.
-		return []string{"remove_question"}
+		return []string{"remove_question", "(add or replace questions with add_questions)"}
 	case "flashcards":
 		return []string{"replace_card", "add_card", "remove_card"}
 	case "mindmap", "diagram":
@@ -772,6 +777,12 @@ func refusal(code agenttools.ErrorCode, format string, args ...any) error {
 	return &store.EditRefusal{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
+// kindRefusal refuses a command for its target's kind, naming the commands
+// that kind supports (Epo 2026-10-21).
+func kindRefusal(command, kind string, supported []string) error {
+	return refusal(agenttools.ErrUnsupportedOperation, "%s does not apply to a %s; supported: %s", command, kind, strings.Join(supported, ", "))
+}
+
 // documentRefusal names why converted note blocks cannot be stored, as the
 // create route does; a refusal already typed passes through.
 func documentRefusal(err error) error {
@@ -802,7 +813,7 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 		switch c.Type {
 		case "replace_text":
 			if kind != "note" {
-				return nil, refusal(agenttools.ErrUnsupportedOperation, "use the %s commands for this material", kind)
+				return nil, kindRefusal(c.Type, kind, materialOperations(kind))
 			}
 			if c.TargetID == "" {
 				return nil, refusal(agenttools.ErrInvalidInput, "replace_text on a material needs target_id")
@@ -810,7 +821,7 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			normalized = map[string]any{"type": "replace_text", "blockId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text}
 		case "insert_markdown", "replace_block":
 			if kind != "note" {
-				return nil, refusal(agenttools.ErrUnsupportedOperation, "use the %s commands for this material", kind)
+				return nil, kindRefusal(c.Type, kind, materialOperations(kind))
 			}
 			if strings.TrimSpace(c.Markdown) == "" {
 				return nil, refusal(agenttools.ErrInvalidInput, "%s needs markdown", c.Type)
@@ -829,12 +840,12 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			}
 		case "remove_block":
 			if kind != "note" {
-				return nil, refusal(agenttools.ErrUnsupportedOperation, "use the %s commands for this material", kind)
+				return nil, kindRefusal(c.Type, kind, materialOperations(kind))
 			}
 			normalized = map[string]any{"type": "remove_block", "blockId": c.BlockID, "expectedText": c.ExpectedText}
 		case "replace_card", "add_card", "remove_card":
 			if kind != "flashcards" {
-				return nil, refusal(agenttools.ErrUnsupportedOperation, "%s only applies to flashcard sets", c.Type)
+				return nil, kindRefusal(c.Type, kind, materialOperations(kind))
 			}
 			var card materialdoc.Card
 			if c.Type == "replace_card" {
@@ -870,7 +881,7 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			}
 		case "replace_question", "add_question", "remove_question":
 			if kind != "quiz" {
-				return nil, refusal(agenttools.ErrUnsupportedOperation, "%s only applies to quizzes", c.Type)
+				return nil, kindRefusal(c.Type, kind, materialOperations(kind))
 			}
 			if c.Type != "add_question" && strings.TrimSpace(c.QuestionID) == "" {
 				return nil, refusal(agenttools.ErrInvalidInput, "%s needs question_id", c.Type)
@@ -898,7 +909,7 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			}
 		case "set_mermaid":
 			if kind != "mindmap" && kind != "diagram" {
-				return nil, refusal(agenttools.ErrUnsupportedOperation, "set_mermaid only applies to mindmaps and diagrams")
+				return nil, kindRefusal(c.Type, kind, materialOperations(kind))
 			}
 			normalized = map[string]any{"type": "set_property", "nodeType": "mermaid", "property": "source",
 				"expectedValue": c.ExpectedSource, "value": c.Source}
@@ -924,7 +935,7 @@ func normalizeTextCommands(raw []json.RawMessage) ([]json.RawMessage, error) {
 			return nil, refusal(agenttools.ErrInvalidInput, "invalid command: %v", err)
 		}
 		if c.Type != "replace_text" {
-			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s only applies to study materials", c.Type)
+			return nil, kindRefusal(c.Type, "text file", textOperations)
 		}
 		encoded, err := json.Marshal(map[string]any{"type": "replace_text", "targetId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text})
 		if err != nil {

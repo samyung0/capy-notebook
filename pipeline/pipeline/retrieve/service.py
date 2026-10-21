@@ -375,6 +375,26 @@ async def _relay_until_disconnect(
             await asyncio.shield(pump)
 
 
+# The running turns' stop flags by assistant message id. The retrieval service
+# runs one process; several would need a shared channel for /chat/stop.
+_running: dict[str, ClientDrop] = {}
+
+
+class ChatStopReq(BaseModel):
+    assistantMessageId: str
+
+
+@app.post("/chat/stop")
+async def chat_stop(req: ChatStopReq):
+    """The user pressed Stop (Epo 2026-10-21): the turn starts no further model
+    or tool call and sends what its running calls did, then ends."""
+    client = _running.get(req.assistantMessageId)
+    if client is None:
+        return JSONResponse({"code": "not_running"}, status_code=404)
+    client.stop()
+    return {"stopped": True}
+
+
 async def _chat_events(req: ChatStreamReq, request: Request):
     if (
         len(req.query) > CHAT_CHARACTER_LIMIT
@@ -426,6 +446,9 @@ async def _chat_events(req: ChatStreamReq, request: Request):
         office_tools=req.officeTools,
         role=req.role,
     )
+    turn_id = req.assistantMessageId or ""
+    if turn_id:
+        _running[turn_id] = client
     try:
         accounting_token = accounting.bind(req.spendSessionId)
         agen = run_agent(
@@ -451,6 +474,8 @@ async def _chat_events(req: ChatStreamReq, request: Request):
         if not client.dropped:
             yield _sse(with_turn_state(event, ctx))
     finally:
+        if _running.get(turn_id) is client:
+            del _running[turn_id]
         if accounting_token is not None:
             accounting.reset(accounting_token)
 

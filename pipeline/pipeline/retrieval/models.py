@@ -18,6 +18,7 @@ import logging
 import math
 import random
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -728,6 +729,7 @@ async def stream_agent_response(
     on_event: Any | None = None,
     call_purpose: str = accounting.PURPOSE_AGENT,
     response_format: dict[str, Any] | None = None,
+    stopped: Callable[[], bool] | None = None,
 ) -> AssembledResponse:
     """Stream one tool-capable model response into a normalized assembly.
 
@@ -735,7 +737,8 @@ async def stream_agent_response(
     under the retry policy; a busy answer waits for Retry-After. A byte from
     the provider, or a token already handed to the client from this call,
     makes the attempt final: abandon and raise. The client not having seen
-    SSE yet does not make a post-byte failure retryable.
+    SSE yet does not make a post-byte failure retryable. Once ``stopped()``
+    says the turn was stopped, a failure raises instead of retrying.
     """
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec)
@@ -797,6 +800,8 @@ async def stream_agent_response(
             mapped = classify_user_key_error(exc)
             if mapped is not None and mapped.code == INVALID_KEY:
                 raise mapped from exc
+            if stopped is not None and stopped():
+                raise
             await _retry_or_raise(
                 exc,
                 attempt=attempt,

@@ -2528,6 +2528,11 @@ export const handlers = [
     );
     return HttpResponse.json(list);
   }),
+  // The mock stream ends when the browser stops reading after this.
+  http.post(
+    '/api/conversations/:id/messages/:messageId/stop',
+    () => new HttpResponse(null, { status: 204 })
+  ),
   http.delete('/api/conversations/:id', async ({ params }) => {
     const i = db.conversations.findIndex((c) => c.id === params.id);
     if (i >= 0) db.conversations.splice(i, 1);

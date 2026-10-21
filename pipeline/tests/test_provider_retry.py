@@ -246,6 +246,22 @@ async def test_agent_stream_retries_only_before_the_first_byte(monkeypatch, slee
     assert sleeps == [0.25]
 
 
+async def test_a_stopped_turn_starts_no_retry_of_its_model_call(monkeypatch, sleeps):
+    attempts = 0
+
+    async def stream(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise elitellm.ProviderError("connect failed", status_code=502)
+
+    monkeypatch.setattr(models, "_stream_via_adapter", stream)
+    with pytest.raises(elitellm.ProviderError, match="connect failed"):
+        await models.stream_agent_response(
+            [{"role": "user", "content": "hi"}], model=_spec(), stopped=lambda: True
+        )
+    assert attempts == 1 and sleeps == []
+
+
 async def test_interactive_completion_streams_and_assembles(monkeypatch):
     seen = {}
 

@@ -1951,9 +1951,8 @@ def _render_inspection(
     """An inspection as the model reads it; an embedded quiz block shows as the
     quiz fence an edit writes, recorded in ``shown``. A source file's content
     sits in one source block, the next start after it."""
+    # The gateway's list, which its refusals for a kind name too.
     supported = list(body.get("supportedOperations") or [])
-    if body.get("materialKind") == "quiz":
-        supported.append("(add or replace questions with add_questions)")
     head = [
         f"{body.get('title') or ''} format={body.get('format')}",
         "supported: " + ", ".join(supported),

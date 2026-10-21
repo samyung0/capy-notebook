@@ -2636,10 +2636,14 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `abandoned` (absorbed, no charge). A busy provider or a full per-model gate
    past that budget ends the turn with a retryable `provider_busy` error
    carrying `retryAfterSeconds`. Any later provider or SSE failure is not
-   retried and the client gets the same generic `agent_failed` error. If the browser
-   disconnects, Python stops writing SSE but finishes the in-flight provider
-   call, settles usage when it arrives, and does not start another planning
-   step.
+   retried and the client gets the same generic `agent_failed` error. A
+   browser that disconnects without Stop does not end the turn: Go relays on a
+   context detached from the browser request and finishes, saves and settles
+   the turn as usual (Epo 2026-10-21; it keeps the user's AI request slot until
+   then). Only Stop (below), lost authorization (Go's 5-second live check) or
+   the pipeline's own bounds end a turn early. If the Go hop itself goes away,
+   Python stops writing SSE but finishes the in-flight provider call, settles
+   usage when it arrives, and does not start another planning step.
 9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
    `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
@@ -2744,15 +2748,23 @@ the latest `activity` and `toolEvidence` from `turn_checkpoint`, `error` and
 `done`, writes each checkpoint onto the row while it is `streaming`
 (`store.CheckpointAssistantMessage`), and finalizes any ending with that state
 merged with the mutation receipts, on a context detached from the request.
-Only `complete` rows replay into later turns (`ConversationPrompt`), so the
-evidence an aborted or failed row keeps serves history and Ops.
+Every finalized row replays into later turns (`ConversationPrompt`, `status <>
+'streaming'`, each row with its status; Epo 2026-10-21): `evidence.history_turns`
+adds "[This reply was stopped before it finished.]" (a stop, lost
+authorization or a crash) or "[This reply failed
+before it finished.]" to an `aborted` or `error` assistant row (an empty one
+replays the line alone), and its tool results and passages replay like a
+finished turn's, under the same compaction. A turn that fails before any tool
+call keeps its empty tool record (empty lists).
 
 | Ending | Where handled | Tool calls saved | Results saved | Status |
 | --- | --- | --- | --- | --- |
 | Answer; planning, stall and tool caps | `agent._run_turn` `done` → `chat_stream.go` | all | all, cited passages included | `complete` |
 | Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | all, nothing cited | `error` |
 | Turn time cap | none exists; a provider call past its deadline is a provider error | — | — | — |
-| User stop, client disconnect | `chat_stream.go`: request cancelled, detached finalize | up to the last checkpoint, plus receipts | up to the last checkpoint | `aborted` |
+| User stop | `chat_stop.go` saves the row at once; `chat_stream.go` adds the late calls (`store.AddStoppedTurnCalls`) | all, the calls running at the stop included, plus receipts | all, nothing cited | `aborted` |
+| Browser disconnect without Stop | the turn runs on (`chat_stream.go` on a detached context) | as the turn's own ending | as the turn's own ending | the turn's |
+| Lost authorization mid-turn | `chat_stream.go`: the live check cancels the pipeline request | last checkpoint, plus receipts | last checkpoint | `aborted` |
 | Tool exception | `tools.run`: a failed result, the turn goes on | its failed row | its error text | the turn's |
 | `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | all, nothing cited | `error` |
 | Exception outside the step (loop code) | `service._chat_events` `error` with state | all | all, nothing cited | `error` |
@@ -2760,10 +2772,42 @@ evidence an aborted or failed row keeps serves history and Ops.
 | Pipeline dies | `relayChat` EOF → `chat_stream.go` | last checkpoint, plus receipts | last checkpoint | `error` |
 | Go dies | `AbortOrphanedStreams` at the next boot | last checkpoint on the row, plus receipts | last checkpoint | `aborted` |
 
-A stop or a lost hop ends what Go hears at the last checkpoint: calls of the
-batch that was running then keep only their receipts. The boot sweep marks
-every `streaming` row, so with several API replicas a restart would abort
-another replica's live turn.
+A lost hop (lost authorization, a pipeline that dies) ends what Go hears at
+the last checkpoint: calls of the batch that was running then keep only their
+receipts. The boot sweep marks every `streaming` row, so with several API
+replicas a restart would abort another replica's live turn.
+
+### Stop
+
+Stop ends a turn at once (Epo 2026-10-21). The browser sends
+`POST /api/conversations/{id}/messages/{messageId}/stop` (204; 404 unless the
+caller owns the conversation and may still chat in its workspace and the id
+is one of its assistant rows; a finished or already stopped turn answers 204
+and nothing changes), then stops reading.
+
+1. Go finds the turn in `api.turns`, the turns this API process relays by
+   assistant message id (one API instance today; several would need a shared
+   channel to reach the instance holding the turn). Under the turn's lock it
+   marks the turn stopped and saves the row `aborted` from what the relay has
+   heard (latest `turn_checkpoint`, text so far, citations) merged with the
+   receipts, so history lists it at once.
+2. Go posts `POST /chat/stop {assistantMessageId}` to the retrieval service,
+   which marks the turn's `ClientDrop.stopped` (a process-local map; one
+   uvicorn process). If that fails (not running there yet or any more, out of
+   reach), Go hangs up on the pipeline request instead, which stops it the
+   lost-hop way.
+3. The agent starts no further model call (step top, after compaction, after
+   a response), no later call of a serial write batch, and no retry of a model
+   call (`stream_agent_response(stopped=...)`); calls already running finish,
+   no prose is streamed after the stop, and nothing is sent back to the model.
+   A step exception after the stop logs at info, with no error event or
+   Sentry report. `run_agent` then sends one `turn_checkpoint` with
+   `stopped: true`, the turn's activity and evidence (nothing cited) and usage.
+4. When the pipeline stream ends, Go adds that state to the aborted row
+   (`store.AddStoppedTurnCalls`: only an `aborted` row, receipts merged by call
+   id, the token count), then settles credits once. No error is reported or
+   sent for a stopped turn. The browser that stopped reading sees the late
+   calls on its next history load.
 
 ### Chat below lg
 
@@ -3620,7 +3664,11 @@ text sources) and applied by the collaboration service on an isolated Y.Doc.
 and Go's `normalizeOfficeCommands` (Office tools, below). The agent's `edit_document` schema offers
 `remove_question` but not `add_question` or `replace_question`, which only the
 question tools send; inspecting a quiz lists `remove_question` and names
-`add_questions` for the rest. A `replace_card` keeps the side it is not sent
+`add_questions` for the rest. That list is Go's `materialOperations` (and
+`textOperations` for a text source), and a command refused for its target's
+kind names it the same way: "replace_text does not apply to a quiz;
+supported: remove_question, (add or replace questions with add_questions)"
+(`kindRefusal`, Epo 2026-10-21). A `replace_card` keeps the side it is not sent
 and the card's image, from the set's stored document (`ExtractFlashcards`; a
 card the set does not hold needs both sides). `insert_markdown` after block
 `"end"` appends after the note's last block: no block holds that id, so the
