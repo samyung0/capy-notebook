@@ -66,6 +66,10 @@ impl File {
             .zip(&applied.touched)
             .map(|(command, touched)| sources::undo_cost::office(command, *touched))
             .fold(0, usize::saturating_add);
+        let (content, items) = applied.touched.iter().fold((0, 0), |(content, items), t| {
+            (content + t.content, items + t.items)
+        });
+        eprintln!("touched: {items} items, {content} bytes");
         let copy = doc_of(&state);
         let captured = {
             let mut txn = copy.transact_mut();
@@ -760,6 +764,24 @@ fn covers(short: &mut Vec<String>, name: &str, cost: usize, (undo, redo): (usize
     }
 }
 
+/// How far a DOCX or PPTX estimate may sit above what its Undo or Redo
+/// sends (the Editor 2026-10-22): within it an ordinary 50-command call
+/// keeps its Undo.
+const CEILING: f64 = 10.0;
+
+/// [`covers`], and notes a DOCX or PPTX estimate past [`CEILING`] times
+/// what was sent.
+fn covers_closely(short: &mut Vec<String>, name: &str, cost: usize, sent: (usize, usize)) {
+    covers(short, name, cost, sent);
+    let most = sent.0.max(sent.1).max(1);
+    if cost as f64 > CEILING * most as f64 {
+        short.push(format!(
+            "{name}: cost {cost} over {CEILING}x Undo {} / Redo {}",
+            sent.0, sent.1
+        ));
+    }
+}
+
 fn command(value: serde_json::Value) -> Command {
     serde_json::from_value(value).unwrap()
 }
@@ -1036,7 +1058,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
                 text: format!("{} {}", entry.value, "and a longer replacement".repeat(3)),
             };
             let (cost, change) = file.costed_edit(&room, &[replace]);
-            covers(
+            covers_closely(
                 &mut short,
                 &format!("{path} replace_text"),
                 cost,
@@ -1070,7 +1092,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
             cases.push(("delete_paragraph", delete));
             for (name, case) in cases {
                 let (cost, change) = file.costed_edit(&room, &[case]);
-                covers(
+                covers_closely(
                     &mut short,
                     &format!("{path} {name}"),
                     cost,
@@ -1081,7 +1103,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
         if format == Format::Docx {
             for (name, case) in docx_cases(&file, &room) {
                 let (cost, change) = file.costed_edit(&room, &[case]);
-                covers(
+                covers_closely(
                     &mut short,
                     &format!("{path} {name}"),
                     cost,
@@ -1136,7 +1158,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
         }
         for (case, command) in cases {
             let (cost, change) = file.costed_edit(&room, &[command]);
-            covers(
+            covers_closely(
                 &mut short,
                 &format!("{name} {case}"),
                 cost,
@@ -1153,7 +1175,7 @@ fn every_command_costs_at_least_what_its_undo_and_redo_send() {
         let name = format!("delete_table {}x{}", grid.len(), grid[0].len());
         let (cost, change) =
             file.costed_edit(&room, &[Command::DeleteTable { id, expected: grid }]);
-        covers(&mut short, &name, cost, undo_and_redo(&room, change));
+        covers_closely(&mut short, &name, cost, undo_and_redo(&room, change));
     }
 
     // A text source: `replace_text` on its text.
