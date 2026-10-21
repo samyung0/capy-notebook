@@ -9,7 +9,7 @@
 //! ratios). A new command adds its rule here: both matches are exhaustive.
 
 use notes::edit::DocumentCommand;
-use office_service::Command;
+use office_service::{Command, Touched};
 use serde_json::Value;
 
 /// Bytes a revert takes per byte of content it re-inserts or removes: the
@@ -17,7 +17,8 @@ use serde_json::Value;
 pub const CONTENT: usize = 3;
 
 /// Bytes for one Yjs piece more: a run or block an edit splits at either
-/// end, a cell, a row or column entry, a sheet entry, a cell's style.
+/// end, a cell, a row or column entry, a sheet entry, a cell's style, and
+/// each item an Office Undo re-creates (a run, format marker or map entry).
 pub const PIECE: usize = 160;
 
 /// A note, live item or text source command. `touched` is the JSON size of
@@ -59,15 +60,18 @@ pub fn document(command: &DocumentCommand, touched: impl Fn(&str) -> usize) -> u
     content.saturating_mul(CONTENT).saturating_add(2 * PIECE)
 }
 
-/// An Office command. XLSX cells stay in Yjs when their row, column or sheet
-/// goes, so a structural command costs its entries, not their cells.
-pub fn office(command: &Command) -> usize {
+/// An Office command. `touched` is what the engine measured of its target
+/// before it applied (`office_service::Touched`, the Editor's design
+/// 2026-10-22): the live Yjs items its Undo re-creates and their content's
+/// bytes. That is the paragraph a text command, a list or an alignment
+/// names, a deleted paragraph, a deleted table with its cells and the tables
+/// in them, a deleted sheet's key in the sheet order (its cells stay in
+/// Yjs, as a row or column delete's do); nothing for a command whose Undo
+/// only deletes what it wrote. Each rule adds what the command writes
+/// itself, which its Redo writes again.
+pub fn office(command: &Command, touched: Touched) -> usize {
     let (content, pieces) = match command {
-        Command::ReplaceText {
-            expected_text,
-            text,
-            ..
-        } => (expected_text.len() + text.len(), 2),
+        Command::ReplaceText { text, .. } => (text.len(), 2),
         Command::SetCell {
             expected_value,
             value,
@@ -88,7 +92,7 @@ pub fn office(command: &Command) -> usize {
             name,
             ..
         } => (expected_name.len() + name.len(), 1),
-        Command::DeleteSheet { expected_name, .. } => (expected_name.len(), 1),
+        // An axis change entry: at most a span a row or column.
         Command::InsertRows { count, .. }
         | Command::DeleteRows { count, .. }
         | Command::InsertColumns { count, .. }
@@ -99,30 +103,33 @@ pub fn office(command: &Command) -> usize {
         Command::InsertParagraph { text, style, .. } => {
             (text.len() + style.as_ref().map_or(0, String::len), 8)
         }
-        // A deleted paragraph comes back with its runs' formatting and its
-        // mark's properties (a list item's: 950 bytes with its text).
-        Command::DeleteParagraph { expected_text, .. } => (expected_text.len(), 8),
-        // A paragraph mark's keys written and their old values: a list's four
-        // on each paragraph, or the alignment.
+        // The keys a list writes on each paragraph's mark, or the alignment.
         Command::SetList { ids, .. } => (0, ids.len().saturating_mul(3)),
         Command::SetAlignment { .. } => (0, 2),
-        // A span's formatting keys and the runs it splits at either end.
-        Command::FormatText { expected_text, .. } => (expected_text.len(), 6),
-        // A table's cells, each a story with its paragraph mark, the table
-        // embed and the paragraph it opens; a deleted one's cells and table
-        // come back with their properties (borders, widths, shading), which
-        // their text does not show (lesson.docx's 2x2 table: 4,906 bytes).
+        // The format written over the span, and the runs at either end split.
+        Command::FormatText { format, .. } => (
+            serde_json::to_string(format).map_or(0, |json| json.len()),
+            6,
+        ),
+        // A new table's cells, each a story with its paragraph mark, the
+        // table embed and the paragraph it opens.
         Command::InsertTable { rows, .. } => {
             (grid_len(rows), grid_cells(rows).saturating_mul(3) + 8)
         }
-        Command::DeleteTable { expected, .. } => (
-            grid_len(expected),
-            grid_cells(expected).saturating_mul(8) + 16,
-        ),
+        // A delete's own items are only deletions; the paragraph or table
+        // around the gap joins.
+        Command::DeleteParagraph { .. } | Command::DeleteTable { .. } => (0, 2),
+        Command::DeleteSheet { .. } => (0, 0),
     };
-    content
+    let size = |value: u64| usize::try_from(value).unwrap_or(usize::MAX);
+    size(touched.content)
+        .saturating_add(content)
         .saturating_mul(CONTENT)
-        .saturating_add(pieces.saturating_mul(PIECE))
+        .saturating_add(
+            size(touched.items)
+                .saturating_add(pieces)
+                .saturating_mul(PIECE),
+        )
 }
 
 fn json_len(value: &Value) -> usize {
@@ -181,7 +188,7 @@ mod tests {
             "expectedValue": "3", "value": "4",
         }))
         .unwrap();
-        assert_eq!(office(&cell), 2 * CONTENT + PIECE);
+        assert_eq!(office(&cell, Touched::default()), 2 * CONTENT + PIECE);
         let word = DocumentCommand::ReplaceText {
             block_id: None,
             expected_text: "world".into(),

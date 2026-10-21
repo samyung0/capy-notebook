@@ -2279,67 +2279,6 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 # One edit_office_document call's commands at most, as compact JSON (Epo
 # 2026-10-20); a larger call is refused before it leaves.
 OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
-# One call's limits (Epo 2026-10-21): commands, cells its XLSX commands name
-# (a range's area, a row or column delete's expected cells) and inserted DOCX
-# paragraphs. A call is sent only up to the first command that would pass
-# one; the rest come back unapplied. The engine counts the same way and
-# refuses a call past them, which the pipeline never sends.
-OFFICE_CALL_MAX_COMMANDS = 50
-OFFICE_CALL_MAX_CELLS = 10_000
-OFFICE_CALL_MAX_PARAGRAPHS = 20
-_A1_RANGE = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
-
-
-def _range_cells(text: str) -> int:
-    """The cells an A1 range covers; 0 for one the engine refuses anyway."""
-    match = _A1_RANGE.fullmatch(text.strip().upper())
-    if not match:
-        return 0
-
-    def column(letters: str) -> int:
-        return sum((ord(ch) - 64) * 26**i for i, ch in enumerate(reversed(letters)))
-
-    first, row = column(match[1]), int(match[2])
-    last, end = (column(match[3]), int(match[4])) if match[3] else (first, row)
-    return (abs(last - first) + 1) * (abs(end - row) + 1)
-
-
-def _office_fitting(commands: list[dict[str, Any]]) -> tuple[int, str]:
-    """How many leading commands fit one call's limits, and the limit the
-    next would pass ("" when all fit). A first command over a limit on its
-    own is sent, for the engine to refuse."""
-    cells = paragraphs = 0
-    for index, command in enumerate(commands):
-        if index == OFFICE_CALL_MAX_COMMANDS:
-            return index, f"{OFFICE_CALL_MAX_COMMANDS} commands"
-        kind = command.get("type")
-        if kind in ("set_range", "format_cells"):
-            cells += _range_cells(str(command.get("range") or ""))
-        elif kind in ("delete_rows", "delete_columns"):
-            expected = command.get("expected")
-            if isinstance(expected, list):
-                cells += sum(len(row) for row in expected if isinstance(row, list))
-        elif kind == "insert_paragraph":
-            paragraphs += 1
-        if index and cells > OFFICE_CALL_MAX_CELLS:
-            return index, f"{OFFICE_CALL_MAX_CELLS:,} cells"
-        if index and paragraphs > OFFICE_CALL_MAX_PARAGRAPHS:
-            return index, f"{OFFICE_CALL_MAX_PARAGRAPHS} inserted paragraphs"
-    return len(commands), ""
-
-
-def _unapplied(first: int, last: int, limit: str, file_id: str) -> str:
-    """The sentence naming the commands a call's limits left out."""
-    which = (
-        f"the command at index {first}"
-        if first == last
-        else f"the commands at indexes {first} to {last}"
-    )
-    target = f" with file_id {file_id}" if file_id else ""
-    return (
-        f"Not applied: {which} (counting from 0), past the limit of {limit} a call; "
-        f"send them in another call{target}."
-    )
 
 
 def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
@@ -2478,9 +2417,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             f"The commands are {-(-size // 1024)} KB, over the 256 KB one call may "
             "send; split the edit into several calls."
         )
-    # Past a call's limits, the commands wait for another call.
-    fitting, limit = _office_fitting(commands)
-    sent, unsent = commands[:fitting], len(commands) - fitting
+    # The engine alone counts a call's limits (Epo 2026-10-22): it applies
+    # the commands before the first past one and its notice names the rest.
     rid = str(args.get("file_id") or "")
     creating = commands[0].get("type") == "create"
     if creating == bool(rid):
@@ -2507,7 +2445,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
                 "format": create["format"],
                 "title": create["title"],
                 "chapterId": str(create.get("chapter_id") or ""),
-                "commands": sent[1:],
+                "commands": commands[1:],
             },
             op_id,
             ctx,
@@ -2530,7 +2468,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             {
                 **_chat_context(ctx, call_id),
                 "target": {"kind": "source_file", "id": rid},
-                "commands": sent,
+                "commands": commands,
                 "office": True,
             },
             op_id,
@@ -2538,17 +2476,10 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             failure="edit the file",
             explain=explain,
         )
-    changed = ""
     if result.effects:
         ctx._scope_outline = None
         changed = (result.effects[0].get("resource") or {}).get("id") or ""
         await _reload_pending(ctx, str(changed))
-    if unsent:
-        note = _unapplied(fitting, len(commands) - 1, limit, str(changed or rid))
-        if result.error:
-            result.detail = "\n\n".join(part for part in (result.detail, note) if part)
-        else:
-            result.text_parts.append(note)
     return result
 
 

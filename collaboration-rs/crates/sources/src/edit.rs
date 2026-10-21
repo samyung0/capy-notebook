@@ -251,15 +251,18 @@ impl Sources {
                 };
                 let commands: Vec<Command> =
                     parse(Value::Array(input.commands.clone()), "commands")?;
-                undo_cost = commands
-                    .iter()
-                    .map(crate::undo_cost::office)
-                    .fold(0, usize::saturating_add);
                 let applied = self
                     .engines()
                     .apply_commands(on, &state, &commands)
                     .await
                     .map_err(office_error)?;
+                // One `touched` a command the engine applied: the commands
+                // its limits left out cost nothing.
+                undo_cost = commands
+                    .iter()
+                    .zip(&applied.touched)
+                    .map(|(command, touched)| crate::undo_cost::office(command, *touched))
+                    .fold(0, usize::saturating_add);
                 notice = applied.notice;
                 // The engine's state is the checkpoint plus its edits: merged
                 // in, what it adds is the edit.

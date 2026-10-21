@@ -119,7 +119,11 @@ func TestOperationsForRole(t *testing.T) {
 // The committed Python asset must match the Go source of truth. Regenerate
 // with `pnpm gen:openapi`.
 func TestGeneratedContractIsCurrent(t *testing.T) {
-	want, err := Marshal()
+	limits, err := os.ReadFile(filepath.Join("..", "..", "..", OfficeLimitsPath))
+	if err != nil {
+		t.Fatalf("read the engine's limits: %v (check out vendor/betteroffice)", err)
+	}
+	want, err := Marshal(limits)
 	if err != nil {
 		t.Fatal(err)
 	}

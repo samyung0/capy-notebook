@@ -82,7 +82,7 @@ Edit, one file a call; one stale expectation refuses the whole call:
 
 Create: a new Excel or Word file is a create command first, without file_id, followed by the commands that fill it; a new Word file's insert_paragraph and insert_table commands omit after_id and build it in order. A deck is made with create_deck (the deck_building skill).
 
-Limits: a call applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted paragraphs; the commands past a limit come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it."""
+Limits: edit_office_document's description lists a call's limits, per command kind (commands, cells, paragraphs, table cells, formatted spans, list and alignment paragraphs, rows, sheets); past one, the commands before it apply and the rest come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it."""
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""

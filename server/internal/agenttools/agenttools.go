@@ -12,6 +12,7 @@ package agenttools
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
@@ -106,9 +107,10 @@ import (
 // optional (the body's end) and it takes a list; set_list, insert_table,
 // delete_table, format_text and set_alignment edit Word files; a DOCX read
 // marks lists, table cells, content controls and locked paragraphs and reads
-// headers, footers and notes after the body; a call applies at most 50
-// commands, 10,000 cells and 20 inserted paragraphs and returns the rest
-// unapplied by index (Epo 2026-10-21).
+// headers, footers and notes after the body; the engine applies a call's
+// commands up to its per-call limits (its limits.json, which Marshal writes
+// into the description) and returns the rest unapplied by index (Epo
+// 2026-10-21, 2026-10-22).
 const ContractVersion = 36
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
@@ -336,9 +338,22 @@ func Export() Contract {
 	}
 }
 
-// Marshal renders the contract deterministically for the generated file.
-func Marshal() ([]byte, error) {
-	out, err := json.MarshalIndent(Export(), "", "  ")
+// Marshal renders the contract deterministically for the generated file,
+// edit_office_document's description ending with the Office engine's
+// per-call limits from officeLimits (the file at OfficeLimitsPath).
+func Marshal(officeLimits []byte) ([]byte, error) {
+	sentence, err := officeLimitsSentence(officeLimits)
+	if err != nil {
+		return nil, err
+	}
+	contract := Export()
+	for i := range contract.Tools {
+		if contract.Tools[i].Name == "edit_office_document" {
+			contract.Tools[i].Description = strings.Replace(contract.Tools[i].Description,
+				"(Marshal adds the engine's per-call limits.)", sentence, 1)
+		}
+	}
+	out, err := json.MarshalIndent(contract, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -1122,9 +1137,8 @@ func Definitions() []Definition {
 			Description: "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
-				"whole call. Edits save directly. A call applies at most 50 commands, 10,000 cells " +
-				"(XLSX) and 20 inserted paragraphs; the commands past a limit come back unapplied, to " +
-				"send in another call. A call's commands are at most 256 KB; a larger call is refused.",
+				"whole call. Edits save directly. A call's commands are at most 256 KB; a larger call is " +
+				"refused. (Marshal adds the engine's per-call limits.)",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
 				"commands": map[string]any{

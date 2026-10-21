@@ -30,6 +30,7 @@ func main() {
 	pythonLimits := flag.String("python-limits", "", "optional generated Python field limits path")
 	typescriptLimits := flag.String("typescript-limits", "", "optional generated TypeScript field limits path")
 	agentTools := flag.String("agent-tools", "", "optional generated agent-tool contract JSON path")
+	officeLimits := flag.String("office-limits", "", "the Office engine's limits.json, required with -agent-tools")
 	embedCatalog := flag.String("embeds", "", "optional repository root to write the embed catalog's JSON, TypeScript and Rust files under")
 	flag.Parse()
 
@@ -62,7 +63,11 @@ func main() {
 		}
 	}
 	if *agentTools != "" {
-		contract, err := agenttools.Marshal()
+		limits, err := os.ReadFile(*officeLimits)
+		var contract []byte
+		if err == nil {
+			contract, err = agenttools.Marshal(limits)
+		}
 		if err == nil {
 			err = writeAtomic(*agentTools, contract)
 		}
