@@ -2078,6 +2078,58 @@ export const listMessages = async (id: string, options?: RequestInit): Promise<l
 
 
 
+export type stopChatTurnResponse204 = {
+  data: void
+  status: 204
+}
+
+export type stopChatTurnResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type stopChatTurnResponseSuccess = (stopChatTurnResponse204) & {
+  headers: Headers;
+};
+export type stopChatTurnResponseError = (stopChatTurnResponseDefault) & {
+  headers: Headers;
+};
+
+export type stopChatTurnResponse = (stopChatTurnResponseSuccess | stopChatTurnResponseError)
+
+export const getStopChatTurnUrl = (id: string,
+    messageId: string,) => {
+
+
+
+
+  return `/api/conversations/${id}/messages/${messageId}/stop`
+}
+
+/**
+ * @summary Stop a conversation's running turn
+ */
+export const stopChatTurn = async (id: string,
+    messageId: string, options?: RequestInit): Promise<stopChatTurnResponse> => {
+
+  const res = await fetch(getStopChatTurnUrl(id,messageId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: stopChatTurnResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as stopChatTurnResponse
+}
+
+
+
 export type deleteMaterialDiscussionResponse204 = {
   data: void
   status: 204

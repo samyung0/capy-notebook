@@ -1413,6 +1413,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   and both minimums to 7: an older client would keep reading names from
   awareness. Its deploy request names "client protocol 6 -> 7, material
   6 -> 7, source 6 -> 7".
+  The DOCX engine round (every DOCX seed changes, Word rooms reset; Epo
+  2026-10-20) raised `CLIENT_PROTOCOL` to 8 and `MIN_SOURCE` to 8;
+  `MIN_MATERIAL` stays 7. Its deploy request names "client protocol 7 -> 8,
+  source 7 -> 8".
 
 #### When to bump
 

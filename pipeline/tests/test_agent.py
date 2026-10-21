@@ -136,6 +136,7 @@ def _script_stream(responses: list[AssembledResponse]):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del model, call_purpose
         seen.append(
@@ -494,6 +495,49 @@ async def test_create_material_sends_its_sources_as_written(monkeypatch):
     assert "fileIds" not in seen and "chapterIds" not in seen
     assert seen["assistantMessageId"] == "m_1"
     assert seen["toolCallId"] == "call_1"
+
+
+@pytest.mark.parametrize(
+    "status, code, told",
+    [
+        (403, "permission_denied", True),
+        (403, "account_suspended", True),
+        (404, "", False),
+    ],
+)
+async def test_a_write_refused_for_permission_tells_the_model_to_stop(
+    monkeypatch, status, code, told
+):
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+    )
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    class _Resp:
+        status_code = status
+
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
+        def json(self):
+            return (
+                {"code": code, "message": "refused"}
+                if code
+                else {"message": "not found"}
+            )
+
+    monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
+    result = await tools._create_material(
+        {"kind": "note", "content": "body", "_tool_call_id": "call_1"}, ctx
+    )
+
+    assert result.refused
+    assert (tools.NO_PERMISSION in agent._result_text(result, [])) is told
+    assert tools.NO_PERMISSION not in result.error_payload()["message"]
 
 
 async def test_create_material_clamps_model_title(monkeypatch):
@@ -869,6 +913,7 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -1251,6 +1296,7 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, on_event
         purposes.append(call_purpose)
@@ -1650,6 +1696,7 @@ async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, call_purpose
         calls["n"] += 1
@@ -1689,6 +1736,7 @@ async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, on_event, call_purpose
         calls["n"] += 1
@@ -1725,6 +1773,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -1760,8 +1809,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
     assert not any(e.get("type") == "error" for e in events)
 
 
-@pytest.mark.asyncio
-async def test_relay_stops_sse_and_waits_for_agent():
+async def test_a_go_hang_up_marks_the_client_and_lets_the_running_call_finish():
     from pipeline.retrieve import service as retrieve_service
 
     released = asyncio.Event()
@@ -1773,33 +1821,23 @@ async def test_relay_stops_sse_and_waits_for_agent():
         finished["n"] += 1
         yield {"type": "done"}
 
-    class _Req:
-        def __init__(self) -> None:
-            self.gone = False
-
-        async def is_disconnected(self) -> bool:
-            return self.gone
-
-    req = _Req()
     client = agent.ClientDrop()
-    chunks: list[str] = []
+    first = asyncio.Event()
 
     async def _consume() -> None:
-        async for chunk in retrieve_service._relay_until_disconnect(
-            req, _agen(), client
-        ):
-            chunks.append(chunk)
-            req.gone = True
+        async for _chunk in retrieve_service._relay_until_disconnect(_agen(), client):
+            first.set()
 
     task = asyncio.create_task(_consume())
-    await asyncio.sleep(0.05)
-    assert finished["n"] == 0
-    assert client.dropped
+    await first.wait()
+    task.cancel()  # Starlette cancels the response when Go hangs up
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert client.dropped and finished["n"] == 0
     released.set()
-    await task
+    with pytest.raises(asyncio.CancelledError):
+        await task
     assert finished["n"] == 1
-    assert any("planning" in c for c in chunks)
-    assert not any("done" in c for c in chunks)
 
 
 # ------------------------------------- turn saves, however it ends (Epo 2026-10-21)
@@ -1900,6 +1938,140 @@ async def test_a_turn_without_an_answer_still_records_its_searches(monkeypatch):
     await _collect("q", ctx)
 
     assert [event["cited"] for event in recorded] == [[False]]
+
+
+# ------------------------------------------------------- Stop (Epo 2026-10-21)
+
+
+def _stop_turn(monkeypatch, responses: list[AssembledResponse], run) -> None:
+    """A turn that answers from ``responses`` and runs tools with ``run``; a
+    model call past them, or an error report, fails the test."""
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        assert responses, "a model call after the stop"
+        return responses.pop(0)
+
+    def _report(*_args, **_kwargs):
+        raise AssertionError("a stop reported an error")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.tools, "run", run)
+    monkeypatch.setattr(agent.obs, "reported_event", _report)
+
+
+def _stopped_calls(event: dict) -> list[tuple[str, str]]:
+    assert event["type"] == "turn_checkpoint" and event["stopped"]
+    return [
+        (b["callId"], b["outcome"]) for b in event["activity"] if b["kind"] == "tool"
+    ]
+
+
+async def test_a_stop_during_a_slow_tool_lets_it_finish_and_starts_nothing_more(
+    monkeypatch,
+):
+    client = agent.ClientDrop()
+    running, release = asyncio.Event(), asyncio.Event()
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        running.set()
+        await release.wait()
+        return ToolResult(text_parts=["slow listing"])
+
+    _stop_turn(monkeypatch, [_assembled("", [_call("list_sources", "{}", "c1")])], _run)
+    task = asyncio.create_task(
+        _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    )
+    await running.wait()
+    client.stop()
+    release.set()
+    events = await task
+
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+    assert [n["text"] for n in events[-1]["toolEvidence"]["tools"]] == ["slow listing"]
+    assert not any(e["type"] in ("done", "error") for e in events)
+
+
+async def test_a_stop_during_a_write_starts_no_further_call_of_its_batch(monkeypatch):
+    client = agent.ClientDrop()
+    ran: list[str] = []
+
+    async def _run(name, args, ctx):
+        del name, ctx
+        ran.append(args["_tool_call_id"])
+        client.stop()  # the user stops while the first write runs
+        return ToolResult(text_parts=["created"])
+
+    writes = [
+        _call("create_material", '{"kind":"note","title":"A"}', "c1"),
+        _call("create_material", '{"kind":"note","title":"B"}', "c2"),
+    ]
+    _stop_turn(monkeypatch, [_assembled("", writes)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert ran == ["c1"]
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+
+
+async def test_a_model_call_failing_after_a_stop_is_not_reported(monkeypatch):
+    client = agent.ClientDrop()
+
+    async def _stream(_messages, **_kwargs):
+        client.stop()
+        raise RuntimeError("provider session is closed")
+
+    def _report(*_args, **_kwargs):
+        raise AssertionError("a stop reported an error")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.obs, "reported_event", _report)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert _stopped_calls(events[-1]) == []
+    assert not any(e["type"] == "error" for e in events)
+
+
+async def test_chat_stop_marks_only_the_running_turn():
+    from pipeline.retrieve import service as retrieve_service
+
+    client = agent.ClientDrop()
+    retrieve_service._running["m_run"] = client
+    try:
+        stopped = await retrieve_service.chat_stop(
+            retrieve_service.ChatStopReq(assistantMessageId="m_run")
+        )
+        missing = await retrieve_service.chat_stop(
+            retrieve_service.ChatStopReq(assistantMessageId="m_other")
+        )
+    finally:
+        retrieve_service._running.pop("m_run", None)
+    assert stopped == {"stopped": True} and client.stopped and not client.dropped
+    assert missing.status_code == 404
+
+
+async def test_stopped_and_failed_turns_replay_marked_unfinished():
+    def _turn(id_: str, status: str, content: str, note: str) -> dict:
+        evidence = {"tools": [{"name": "list_sources", "text": note}], "passages": []}
+        return {
+            "id": id_,
+            "role": "assistant",
+            "content": content,
+            "status": status,
+            "toolEvidence": evidence,
+        }
+
+    history = [
+        {"id": "u1", "role": "user", "content": "make a note", "status": "complete"},
+        _turn("a1", "aborted", "Working on it", "stopped listing"),
+        {"id": "u2", "role": "user", "content": "try again", "status": "complete"},
+        _turn("a2", "error", "", "failed listing"),
+    ]
+    out = await agent.evidence.history_turns(history, ToolContext(workspace_id="ws_1"))
+    texts = [message["content"] for message in out]
+
+    assert texts[1] == "Working on it\n\n" + agent.evidence.UNFINISHED["aborted"]
+    assert agent.evidence.UNFINISHED["error"] in texts
+    assert sum("stopped listing" in t or "failed listing" in t for t in texts) == 2
 
 
 async def test_an_answer_that_fails_after_recording_does_not_record_again(
@@ -2045,10 +2217,6 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
         yield {"type": "phase", "phase": "planning"}
         raise RuntimeError("citation regions unavailable")
 
-    class _Request:
-        async def is_disconnected(self) -> bool:
-            return False
-
     monkeypatch.setattr(service, "run_agent", _agent)
     monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
     monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
@@ -2066,11 +2234,43 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
         spendSessionId="cr_1",
         role="editor",
     )
-    chunks = [chunk async for chunk in service._chat_events(req, _Request())]
+    chunks = [chunk async for chunk in service._chat_events(req)]
 
     last = json.loads(chunks[-1].removeprefix("data: "))
     assert last["code"] == "agent_failed"
     _saved_listing(last)
+
+
+async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
+    from pipeline.retrieve import service
+
+    registered = []
+
+    async def _agent(*, client, **_kwargs):
+        registered.append(service._running.get("m_turn") is client)
+        yield {"type": "done"}
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        providerSlug="deepseek",
+        modelSlug="deepseek-v4-flash",
+        configVersion=1,
+        userId="u_1",
+        paidBy="platform",
+        thinking="high",
+        query="q",
+        workspaceId="ws_1",
+        contractVersion=contract.VERSION,
+        operations=[],
+        assistantMessageId="m_turn",
+        spendSessionId="cr_1",
+        role="editor",
+    )
+    _chunks = [chunk async for chunk in service._chat_events(req)]
+
+    assert registered == [True] and "m_turn" not in service._running
 
 
 # ------------------------------------------------------------- trash tools
@@ -2839,6 +3039,7 @@ def _stream_chunks(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del model, call_purpose
         seen.append(

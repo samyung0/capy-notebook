@@ -1618,9 +1618,9 @@ async def _post_operation(
             ):
                 detail = _response_detail(resp)
                 details = _response_details(resp)
-                return _refused(
+                return _gateway_refused(
+                    resp,
                     f"Could not {failure}: {detail or resp.status_code}",
-                    code=_gateway_error_code(resp),
                     detail=explain(details) if explain and details else "",
                 )
         except (requests.Timeout, requests.ConnectionError) as exc:
@@ -1704,7 +1704,42 @@ def _response_details(resp: requests.Response) -> dict[str, Any]:
 _GATEWAY_CODES = {
     "storage_quota_exceeded": "quota_rejected",
     "account_over_quota": "lifecycle_rejected",
+    "permission_denied": "lifecycle_rejected",
 }
+
+# Gateway codes for an actor who may no longer act in the workspace: a role
+# change, a removed membership, a frozen or locked account. Chat turns run no
+# periodic access check, so the refused call tells the model to stop
+# (Epo 2026-10-21).
+_NO_PERMISSION_CODES = frozenset(
+    {
+        "permission_denied",
+        "account_over_quota",
+        "account_suspended",
+        "account_deleted",
+        "account_deletion_pending",
+        "account_locked",
+    }
+)
+NO_PERMISSION = (
+    "The user no longer has permission to edit this workspace. Stop editing: "
+    "make no more tool calls and tell the user the work stopped because they "
+    "lack permission."
+)
+
+
+def _gateway_refused(
+    resp: requests.Response, text: str, *, detail: str = ""
+) -> ToolResult:
+    """A gateway refusal as a tool result; one for lack of permission tells
+    the model, after the error, to stop editing."""
+    try:
+        code = str(resp.json().get("code") or "")
+    except ValueError:
+        code = ""
+    if code in _NO_PERMISSION_CODES:
+        detail = "\n\n".join(part for part in (detail, NO_PERMISSION) if part)
+    return _refused(text, code=_gateway_error_code(resp), detail=detail)
 
 
 def _gateway_error_code(resp: requests.Response) -> str:
@@ -1876,9 +1911,9 @@ async def _list_trashed_files(_args: dict[str, Any], ctx: ToolContext) -> ToolRe
     except requests.RequestException as exc:
         return _failed(f"Could not list the trash: {exc}")
     if resp.status_code != 200:
-        return _refused(
+        return _gateway_refused(
+            resp,
             f"Could not list the trash: {_response_detail(resp) or resp.status_code}",
-            code=_gateway_error_code(resp),
         )
     items = list((resp.json() or {}).get("items") or [])
     if not items:
@@ -1934,9 +1969,8 @@ async def _gateway_read(
     except requests.RequestException as exc:
         return _failed(f"Could not {failure}: {exc}")
     if resp.status_code != 200:
-        return _refused(
-            f"Could not {failure}: {_response_detail(resp) or resp.status_code}",
-            code=_gateway_error_code(resp),
+        return _gateway_refused(
+            resp, f"Could not {failure}: {_response_detail(resp) or resp.status_code}"
         )
     body = resp.json()
     return body if isinstance(body, dict) else {}
@@ -1951,9 +1985,8 @@ def _render_inspection(
     """An inspection as the model reads it; an embedded quiz block shows as the
     quiz fence an edit writes, recorded in ``shown``. A source file's content
     sits in one source block, the next start after it."""
+    # The gateway's list, which its refusals for a kind name too.
     supported = list(body.get("supportedOperations") or [])
-    if body.get("materialKind") == "quiz":
-        supported.append("(add or replace questions with add_questions)")
     head = [
         f"{body.get('title') or ''} format={body.get('format')}",
         "supported: " + ", ".join(supported),

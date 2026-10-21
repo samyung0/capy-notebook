@@ -34,3 +34,16 @@ def test_pipeline_secret_compare(monkeypatch):
     monkeypatch.setattr(service.cfg, "pipeline_secret", "")
     assert not service.pipeline_secret_ok("")
     assert not service.pipeline_secret_ok("abc")
+
+
+def test_chat_stop_needs_the_pipeline_secret(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(service.cfg, "pipeline_secret", "abc")
+    http = TestClient(service.app)  # no lifespan: no database
+    body = {"assistantMessageId": "m_1"}
+    assert http.post("/chat/stop", json=body).status_code == 401
+    wrong = http.post("/chat/stop", json=body, headers={"X-Pipeline-Secret": "abd"})
+    assert wrong.status_code == 401
+    right = http.post("/chat/stop", json=body, headers={"X-Pipeline-Secret": "abc"})
+    assert right.status_code == 404  # no such running turn

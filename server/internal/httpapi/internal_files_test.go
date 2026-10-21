@@ -190,7 +190,8 @@ func TestInternalFileRefusesAFullActorQuota(t *testing.T) {
 func TestInternalFileNeedsAnEditorOnTheMessagesWorkspace(t *testing.T) {
 	fx := openDeckFiles(t)
 	viewerMsg := seedAssistantMessage(t, fx.st, fx.viewer, fx.ws)
-	if rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/files", pipeSecret, fx.body(viewerMsg, fx.viewer)); rec.Code != http.StatusNotFound {
+	// A viewer is told it lacks permission, so the agent stops editing.
+	if rec := doInternal(t, fx.h, http.MethodPost, "/api/internal/files", pipeSecret, fx.body(viewerMsg, fx.viewer)); rec.Code != http.StatusForbidden || errorCode(t, rec) != "permission_denied" {
 		t.Fatalf("viewer: %d %s", rec.Code, rec.Body.String())
 	}
 	editorMsg := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)

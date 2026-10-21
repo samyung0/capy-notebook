@@ -2,8 +2,26 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
+
+// A note command sent to a quiz is refused with the commands a quiz supports,
+// as its inspection lists them (Epo 2026-10-21).
+func TestKindRefusalNamesTheQuizCommands(t *testing.T) {
+	_, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(
+		`{"type":"replace_text","target_id":"b1","expected_text":"old","text":"new"}`)}, nil, nil)
+	var refused *store.EditRefusal
+	if !errors.As(err, &refused) || refused.Code != agenttools.ErrUnsupportedOperation ||
+		!strings.Contains(refused.Message, "supported: "+strings.Join(materialOperations("quiz"), ", ")) ||
+		!strings.Contains(refused.Message, "remove_question") || !strings.Contains(refused.Message, "add_questions") {
+		t.Fatalf("refusal = %v", err)
+	}
+}
 
 func TestQuizQuestionCommandPreservesTargetIdentity(t *testing.T) {
 	for _, kind := range []string{"replace_question", "remove_question"} {

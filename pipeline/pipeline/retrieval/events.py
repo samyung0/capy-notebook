@@ -81,15 +81,22 @@ def checkpoint(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def turn_checkpoint(
-    activity: list[dict[str, Any]], tool_evidence: dict[str, Any]
+    activity: list[dict[str, Any]],
+    tool_evidence: dict[str, Any],
+    *,
+    stopped: bool = False,
 ) -> dict[str, Any]:
     """The turn so far, after each tool batch: Go saves it on the streaming
-    row, so a turn that never reaches ``done`` keeps its finished calls."""
-    return {
+    row, so a turn that never reaches ``done`` keeps its finished calls. The
+    last event of a stopped turn is one marked ``stopped``."""
+    event: dict[str, Any] = {
         "type": "turn_checkpoint",
         "activity": activity,
         "toolEvidence": tool_evidence,
     }
+    if stopped:
+        event["stopped"] = True
+    return event
 
 
 def done(
