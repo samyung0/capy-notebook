@@ -626,6 +626,21 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 	return err
 }
 
+// CheckpointAssistantMessage saves a streaming turn's activity and evidence so
+// far, so a crash keeps them for AbortOrphanedStreams. A finalized row is left
+// alone.
+func (s *Store) CheckpointAssistantMessage(ctx context.Context, msgID string, activity []ActivityBlock, toolEvidence json.RawMessage) error {
+	meta, err := json.Marshal(msgMetadata{Activity: activity, ToolEvidence: toolEvidence})
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx,
+		`UPDATE messages SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
+		  WHERE id=$1 AND status='streaming'`,
+		msgID, meta)
+	return err
+}
+
 // ConversationPrompt loads the rolling checkpoint (if any) and every completed
 // historical message after that pin. Call this before inserting the current
 // user row so the question is not sent twice.

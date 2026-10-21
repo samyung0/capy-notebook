@@ -17,7 +17,8 @@ from .search import Passage
 
 def pack(ctx: tools.ToolContext, cited_order: list[int]) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "tools": ctx.evidence_notes,
+        # A copy: a checkpoint sent mid-turn keeps the notes it was sent with.
+        "tools": list(ctx.evidence_notes),
         "passages": [],
         "skills": sorted(ctx.skills_read),
     }

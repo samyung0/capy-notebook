@@ -70,7 +70,8 @@ func chatQueryTooLong(text string) bool {
 
 // pipeChatEvent is one event line from the Python retrieval service.
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
-// tool_end | citations | checkpoint | pending_sources | done | error.
+// tool_end | citations | checkpoint | turn_checkpoint | pending_sources | done |
+// error.
 type pipeChatEvent struct {
 	Type              string                      `json:"type"`
 	SentryEventID     string                      `json:"sentryEventId,omitempty"`
@@ -270,6 +271,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
 			}
 			cpCancel()
+		case "turn_checkpoint":
+			// The turn so far, kept for any ending and saved on the streaming row
+			// so a crash of this process keeps it too (Epo 2026-10-21).
+			activity, toolEvidence = ev.Activity, ev.ToolEvidence
+			cpCtx, cpCancel := obs.Detach(ctx, 5*time.Second)
+			if err := a.s.CheckpointAssistantMessage(cpCtx, assistant.ID, activity, toolEvidence); err != nil {
+				log.Printf("persist turn checkpoint msg=%s: %v", assistant.ID, err)
+			}
+			cpCancel()
 		case "block_start":
 			currentText.Reset()
 			send(ev)
@@ -307,6 +317,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			if len(ev.Activity) > 0 {
 				activity = ev.Activity
 			}
+			if len(ev.ToolEvidence) > 0 {
+				toolEvidence = ev.ToolEvidence
+			}
 			if !ev.Usage.empty() {
 				usage = ev.Usage
 			}
@@ -321,7 +334,6 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				answer.WriteString(ev.Answer)
 			}
 			genID = ev.GenerationID
-			toolEvidence = ev.ToolEvidence
 		}
 	})
 
