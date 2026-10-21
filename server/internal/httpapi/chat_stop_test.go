@@ -24,7 +24,7 @@ const (
 	slowToolStart = `{"type":"tool_start","callId":"c2","name":"list_sources","detail":"listing sources","startedAt":"2026-10-21T00:00:02.000Z"}`
 	slowToolEnd   = `{"type":"tool_end","callId":"c2","outcome":"succeeded","endedAt":"2026-10-21T00:00:09.000Z"}`
 	stoppedFinal  = `{"type":"turn_checkpoint","stopped":true,"tokenCount":42,` +
-		`"activity":[{"id":"c1","kind":"tool","callId":"c1","name":"list_sources","outcome":"succeeded"},{"id":"c2","kind":"tool","callId":"c2","name":"list_sources","outcome":"succeeded"}],` +
+		`"activity":[{"id":"c1","kind":"tool","callId":"c1","name":"list_sources","detail":"listing sources","outcome":"succeeded"},{"id":"c2","kind":"tool","callId":"c2","name":"list_sources","detail":"listing sources","outcome":"succeeded"}],` +
 		`"toolEvidence":{"tools":[{"name":"list_sources","text":"checkpoint listing"},{"name":"list_sources","text":"slow listing"}],"passages":[],"skills":[]}}`
 )
 
@@ -42,6 +42,7 @@ type stopPipe struct {
 
 	mu             sync.Mutex
 	msgID, spendID string
+	history        json.RawMessage // the last request's
 }
 
 func newStopPipe(late func(w io.Writer, msgID string)) *stopPipe {
@@ -66,12 +67,13 @@ func (p *stopPipe) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		AssistantMessageID string `json:"assistantMessageId"`
-		SpendSessionID     string `json:"spendSessionId"`
+		AssistantMessageID string          `json:"assistantMessageId"`
+		SpendSessionID     string          `json:"spendSessionId"`
+		History            json.RawMessage `json:"history"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	p.mu.Lock()
-	p.msgID, p.spendID = body.AssistantMessageID, body.SpendSessionID
+	p.msgID, p.spendID, p.history = body.AssistantMessageID, body.SpendSessionID, body.History
 	p.mu.Unlock()
 	w.Header().Set("Content-Type", "text/event-stream")
 	frames(w, p.first...)
@@ -268,6 +270,39 @@ func TestChatStopSavesTheTurnAtOnceAndAddsTheRunningCall(t *testing.T) {
 	// Stopping a finished turn does nothing.
 	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
 		t.Fatalf("stop after the end: %d", code)
+	}
+}
+
+// A stopped turn replays every call on its row into the next turn's prompt,
+// the one that finished after the Stop included (Epo 2026-10-21): no answer
+// says what it did, and only full-retention results replay otherwise.
+func TestStoppedTurnReplaysTheCallsMergedAfterTheStop(t *testing.T) {
+	pipe := newStopPipe(lateRunningCall)
+	run := startStopTurn(t, pipe, nil)
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("stop: %d", code)
+	}
+	close(pipe.release)
+	waitClosed(t, run.finished, "the stopped turn's end")
+
+	_, next := browserTurn(t, run.h, run.convID)
+	waitClosed(t, next, "the next turn")
+	pipe.mu.Lock()
+	raw := pipe.history
+	pipe.mu.Unlock()
+	var history []struct {
+		Role, Status string
+		Calls        []struct{ Name, Detail, Outcome string }
+	}
+	if err := json.Unmarshal(raw, &history); err != nil || len(history) != 2 {
+		t.Fatalf("history: %s, %v", raw, err)
+	}
+	got := fmt.Sprint(history[1])
+	if want := "{assistant aborted [{list_sources listing sources succeeded} {list_sources listing sources succeeded}]}"; got != want {
+		t.Fatalf("stopped turn replayed as %s, want %s", got, want)
+	}
+	if history[0].Calls != nil {
+		t.Fatalf("a user row carries calls: %s", raw)
 	}
 }
 
