@@ -71,7 +71,10 @@ proxy) and shows it, small and copyable, only where the error stays on
 screen: boundary screens, a page or pane that failed with Retry, and form
 errors (`FormAlert`), for an unexpected failure (`unexpectedErrorId` in
 `src/lib/errors.ts`). Toasts and status banners show none (see
-`frontend/error-handling.md`).
+`frontend/error-handling.md`). A failed row in the workspace Indexing tab
+shows the trace of its failed ingest attempt instead, stored with the failure
+(`source_documents.refresh_trace_id`, `materials.index_trace_id`, migration
+0103).
 
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as

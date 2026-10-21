@@ -1,8 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api } from '@/api/client';
-import type { NoteChange, Workspace, WorkspaceStats } from '@/api/types';
+import { ApiError, api, qk } from '@/api/client';
+import type {
+  NoteChange,
+  SourceFile,
+  Workspace,
+  WorkspaceStats,
+} from '@/api/types';
+import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 import { IndexingTab } from './IndexingTab';
 
@@ -31,6 +37,8 @@ afterEach(() => {
 });
 
 const note = (materialId: string, state: NoteChange['state']): NoteChange => ({
+  // The server sends an error id on failed rows only.
+  ...(state === 'failed' && { errorId: `trace_${materialId}` }),
   lastEditedAt: '2026-10-21T09:00:00Z',
   materialId,
   state,
@@ -59,33 +67,38 @@ const stats = {
   notIndexed: 0,
 } as WorkspaceStats;
 
-function render(workspace: Partial<Workspace>) {
+function render(workspace: Partial<Workspace>, files: SourceFile[] = []) {
   buttons.length = 0;
+  const client = new QueryClient();
+  // FailedFiles reads the files list.
+  client.setQueryData(qk.files('ws_1'), files);
   return renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <IndexingTab
         error={null}
         stats={stats}
-        workspace={{ autoProcess: true, id: 'ws_1', ...workspace } as Workspace}
+        workspace={{ id: 'ws_1', ...workspace } as Workspace}
       />
     </QueryClientProvider>
   );
 }
 
+const rowOf = (html: string, name: string) =>
+  html.split('<li').find((item) => item.includes(name));
+
 describe('IndexingTab note changes', () => {
-  it('lists notes like files, with the automatic hint on a waiting note only while auto process is on, and counts the notes past the cap', () => {
+  it('lists notes like files, shows a failed row its error id, and counts the notes past the cap', () => {
     const html = render({ isOwner: true });
-    const row = (name: string) =>
-      html.split('<li').find((item) => item.includes(name));
     for (const { materialId, state } of stats.noteChanges) {
-      expect(row(`Note ${materialId}`)).toContain(`data-state="${state}"`);
+      expect(rowOf(html, `Note ${materialId}`)).toContain(
+        `data-state="${state}"`
+      );
     }
-    expect(html.split(m.workspace_note_change_auto()).length - 1).toBe(1);
-    expect(row('Note n_wait')).toContain(m.workspace_note_change_auto());
-    expect(html).toContain(m.workspace_note_changes_more({ count: '3' }));
-    expect(render({ autoProcess: false, isOwner: true })).not.toContain(
-      m.workspace_note_change_auto()
+    expect(rowOf(html, 'Note n_fail')).toContain(
+      m.error_id({ id: 'trace_n_fail' })
     );
+    expect(html.split('data-testid="error-id"').length - 1).toBe(1);
+    expect(html).toContain(m.workspace_note_changes_more({ count: '3' }));
   });
 
   it('gives the owner Process on waiting and failed notes, none on queued or processing ones, and no Cancel', async () => {
@@ -140,9 +153,33 @@ describe('IndexingTab note changes', () => {
     );
   });
 
-  it('shows editors the list without actions', () => {
-    const html = render({ isOwner: false });
-    expect(html).toContain('Note n_wait');
+  it("shows editors the owner's rows and status, the error id included, without any action", () => {
+    const failedFile = {
+      id: 'f_failed',
+      kind: 'pdf',
+      name: 'scan.pdf',
+      status: 'failed',
+      workspaceId: 'ws_1',
+    } as SourceFile;
+    render({ isOwner: true }, [failedFile]);
+    // The owner's four change actions, then Retry on the failed file.
+    expect(buttons).toHaveLength(5);
+    expect(buttons.at(-1)?.children).toBe(m.error_action_retry());
+    const html = render({ isOwner: false }, [failedFile]);
+    expect(rowOf(html, 'scan.pdf')).toBeDefined();
+    const edited = m.workspace_change_edited({
+      time: relativeTime('2026-10-21T09:00:00Z'),
+    });
+    for (const [name, status] of [
+      ['Note n_wait', edited],
+      ['Note n_fail', m.workspace_change_failed()],
+      ['Note n_fail', m.error_id({ id: 'trace_n_fail' })],
+      ['Note n_queue', m.workspace_change_queued()],
+      ['Note n_proc', m.workspace_change_processing()],
+    ]) {
+      // Static markup escapes the apostrophe in "Couldn't".
+      expect(rowOf(html, name)).toContain(status.replaceAll("'", '&#x27;'));
+    }
     expect(buttons).toEqual([]);
   });
 });

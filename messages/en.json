@@ -1428,7 +1428,6 @@
   "workspace_change_failed": "Couldn't process",
   "workspace_change_process": "Process",
   "workspace_change_process_all": "Process all",
-  "workspace_note_change_auto": "Indexes automatically once enough changes build up, or after 10 minutes.",
   "workspace_note_changes_more": "Notes not shown: {count}",
   "workspace_auto_process": "Auto process edits",
   "pdf_highlight": "Highlight",

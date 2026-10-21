@@ -1971,6 +1971,8 @@ export function copyEmbeddedInto(note: Material, sourceId: string): string {
  * since the state was entered, so the handler advances queued work as the tab
  * polls. */
 export type MockChange = {
+  /** A failed row's trace id, which the stats read sends while it is failed. */
+  errorId?: string;
   lastEditedAt: string;
   ticks: number;
   state: FileChange['state'];
@@ -1997,6 +1999,7 @@ export const fileChanges = new Map<string, MockChange>([
   [
     'bio-office-xlsx',
     {
+      errorId: '4bf92f3577b34da6a3ce929d0e0e4736',
       lastEditedAt: '2026-01-11T16:20:00Z',
       state: 'failed',
       ticks: 0,
@@ -2025,6 +2028,7 @@ export const noteChanges = new Map<string, MockChange>([
   [
     'mat_note_bio_transport',
     {
+      errorId: '0af7651916cd43dd8448eb211c80319c',
       lastEditedAt: '2026-01-12T08:15:00Z',
       state: 'failed',
       ticks: 0,

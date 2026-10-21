@@ -2147,6 +2147,8 @@ components:
     FileChange:
       additionalProperties: false
       properties:
+        errorId:
+          type: string
         fileId:
           type: string
         kind:
@@ -3399,6 +3401,8 @@ components:
     NoteChange:
       additionalProperties: false
       properties:
+        errorId:
+          type: string
         lastEditedAt:
           format: date-time
           type: string

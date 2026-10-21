@@ -1221,6 +1221,7 @@ export const handlers = [
       chapters: ws.chapterCount,
       fileChanges: advanceChanges(sourceFiles, db.fileChanges).map(
         ({ change, item }) => ({
+          ...(change.state === 'failed' && { errorId: change.errorId }),
           fileId: item.id,
           kind: item.kind,
           lastEditedAt: change.lastEditedAt,
@@ -1237,6 +1238,7 @@ export const handlers = [
         ),
         db.noteChanges
       ).map(({ change, item }) => ({
+        ...(change.state === 'failed' && { errorId: change.errorId }),
         lastEditedAt: change.lastEditedAt,
         materialId: item.id,
         state: change.state,

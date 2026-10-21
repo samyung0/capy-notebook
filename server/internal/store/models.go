@@ -663,6 +663,10 @@ type FileChange struct {
 	Kind         FileKind  `json:"kind"`
 	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
 	LastEditedAt time.Time `json:"lastEditedAt"`
+	// ErrorID is a failed row's error id: the trace id of its failed attempt
+	// (migration 0103), so a reported failure can be traced; the failure's
+	// text stays hidden. Absent on other rows and when none was recorded.
+	ErrorID string `json:"errorId,omitempty"`
 }
 
 // NoteChange is one workspace note in the same list: its content is ahead of
@@ -674,6 +678,7 @@ type NoteChange struct {
 	Title        string    `json:"title"`
 	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
 	LastEditedAt time.Time `json:"lastEditedAt"`
+	ErrorID      string    `json:"errorId,omitempty"` // as FileChange.ErrorID
 }
 
 type WorkspaceStats struct {

@@ -7255,6 +7255,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "avgScore": zod.int(),
   "chapters": zod.int(),
   "fileChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
   "fileId": zod.string(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
@@ -7267,6 +7268,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
   "noteChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
   "materialId": zod.string(),
   "state": zod.enum(['waiting', 'queued', 'processing', 'failed']),

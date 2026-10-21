@@ -38,7 +38,10 @@ it, through `ErrorState`'s `errorId`:
   the question bank, a review session, a quiz result, a file's download links
   or an Office file's view session (`FileError`'s `errorId`) and a note's
   collaboration token;
-- form errors (`FormAlert`'s `errorId`).
+- form errors (`FormAlert`'s `errorId`);
+- a failed row in the workspace settings Indexing tab (file or note, Epo
+  2026-10-21), under the row and aligned with its name: the failure's id
+  from the stats payload's `errorId` (below), never its text.
 
 Typed refusals, exceptions without a request, toasts and status banners show
 none. The id comes from `ApiError.traceId` (see the trace id in
@@ -671,13 +674,26 @@ tab lists every file with unprocessed edits as waiting, queued, processing
 (a spinner) or failed (an alert icon), polling the stats every 3 s while any
 file or note is queued or processing. The owner processes a waiting or failed file, or all
 of them, and cancels a queued one; a file whose processing started refuses
-with `processing_started`. Editors see the list without actions. Workspace
+with `processing_started`. Editors see the same rows and status as the owner
+(state, "Edited …", error id) without any action (Epo 2026-10-21). Workspace
 notes whose index is behind their content are listed in the same rows with
 the note icon and title (Epo 2026-10-21), since a note can wait up to 10
-minutes to index: a waiting note says it indexes automatically once enough
-changes build up or after 10 minutes while Auto process edits is on, and a
-failed one is a note parked after its failed jobs, shown like a failed file
-(the job's own error text never renders). The owner's Process (Retry when
+minutes to index; a note row reads like a file row, with no auto-processing
+hint (Epo 2026-10-21). A failed note is one parked after its failed jobs,
+shown like a failed file. A failed row shows its error id and never the
+job's own error text: the stats payload's `errorId`, sent on failed rows only,
+is `source_documents.refresh_trace_id` or `materials.index_trace_id`
+(migration 0103). Triggers keep it with its failure: when `refresh_error` or
+`index_error` is set they take the trace id of the failed job's last
+`ingest_job_attempts` row (the ingest worker's per-claim trace, which tags its
+logs and Sentry events), and clearing the error clears the id. An export
+failure the gateway records for the collaboration service
+(`FailSourceRefresh`, and `ClaimSourceRefresh` past two attempts) stores that
+request's trace instead, since the export records no attempt; a refusal before
+any job (the scheduler's 4xx when queuing) stores none and its row shows no
+id. An operator finds the failure by its id in the logs and Sentry, or with
+`WHERE refresh_trace_id=…` / `index_trace_id=…`, whose row keeps the error
+text. The owner's Process (Retry when
 failed, and Process all) indexes the note at once, also with auto process
 off; a `processing_started` answer (queued meanwhile by the scheduler or
 another tab) counts as started, and `nothing_to_process` toasts that there
