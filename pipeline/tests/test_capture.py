@@ -166,35 +166,59 @@ async def test_a_message_allows_sixteen_images(monkeypatch, rendered):
 
 
 async def test_source_change_images_share_the_cap(monkeypatch, rendered):
-    """resolve_source_change's images count with the page captures; one that
-    is the 16th carries the same sentence (Epo 2026-10-22)."""
+    """resolve_source_change's images count with the page captures both ways:
+    a 16th image from a capture carries the sentence, and a source change's
+    image past the cap fails with the reason (Epo 2026-10-22)."""
 
     async def _resolve(**_kwargs):
         return _jpeg(40, 20)
 
     monkeypatch.setattr(tools.pending, "resolve", _resolve)
     ctx = _ctx(2)
-    for n in range(15):
-        page = await tools._capture_page(
-            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
-        )
-        assert not page.refused
 
     def change(call_id: str):
         args = {"file_id": "f_1", "change_id": "c", "checkpoint": 1}
         return tools._resolve_source_change(args | {"_tool_call_id": call_id}, ctx)
 
-    sixteenth = await change("r16")
-    assert not sixteenth.refused and "r16" in ctx.pending_images
-    assert sixteenth.text().endswith(tools.IMAGE_LIMIT)
-    for refused in (
-        await change("r17"),
+    first = await change("r1")
+    assert not first.refused and not first.failed
+    assert tools.IMAGE_LIMIT not in first.text()
+    for n in range(2, 16):
+        page = await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+        )
+        assert not page.refused and tools.IMAGE_LIMIT not in page.text()
+    sixteenth = await tools._capture_page(
+        {"file_id": "f_1", "page": 2, "_tool_call_id": "k16"}, ctx
+    )
+    assert not sixteenth.refused and sixteenth.text().endswith(tools.IMAGE_LIMIT)
+
+    past = await change("r17")
+    assert past.failed and past.error_code == "limit_reached"
+    assert past.text() == tools.SOURCE_IMAGE_LIMIT
+    assert len(ctx.pending_images) == 16 and "r17" not in ctx.pending_images
+
+
+async def test_a_source_image_that_is_the_sixteenth_says_nothing(monkeypatch, rendered):
+    """The limit sentence comes only with a capture (Epo 2026-10-22)."""
+
+    async def _resolve(**_kwargs):
+        return _jpeg(40, 20)
+
+    monkeypatch.setattr(tools.pending, "resolve", _resolve)
+    ctx = _ctx(2)
+    for n in range(1, 16):
         await tools._capture_page(
-            {"file_id": "f_1", "page": 2, "_tool_call_id": "k17"}, ctx
-        ),
-    ):
-        assert refused.error_code == "limit_reached"
-    assert len(ctx.pending_images) == 16
+            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+        )
+    args = {"file_id": "f_1", "change_id": "c", "checkpoint": 1}
+    sixteenth = await tools._resolve_source_change(args | {"_tool_call_id": "r16"}, ctx)
+    assert not sixteenth.failed and "r16" in ctx.pending_images
+    assert tools.IMAGE_LIMIT not in sixteenth.text()
+    later = await tools._capture_page(
+        {"file_id": "f_1", "page": 2, "_tool_call_id": "k17"}, ctx
+    )
+    assert later.refused and later.error_code == "limit_reached"
 
 
 async def test_capture_rejects_a_page_past_the_end_and_a_bad_box(rendered):

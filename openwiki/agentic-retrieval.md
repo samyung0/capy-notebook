@@ -3459,10 +3459,11 @@ turn. A user message attaches 16 images, `capture_page`,
 `capture_knowledge_page` and `resolve_source_change`'s image changes together
 (`tools.MAX_IMAGES`, Epo 2026-10-22; counted in `ToolContext.images_taken` and
 checked again after the render, since a response's image calls run side by
-side): the 16th returns its image with "capture_page limit reached, do not
-call capture_page anymore." (the same sentence for a source change, for now)
-and later image calls are refused with that sentence (`limit_reached`). A
-`resolve_source_change` image stays attached through folds the
+side): a 16th image from a capture returns with "capture_page limit reached,
+do not call capture_page anymore." and later captures are refused with that
+sentence (`limit_reached`); a source change's image says nothing when it is the
+16th and fails past the cap with `tools.SOURCE_IMAGE_LIMIT` (`limit_reached`,
+Epo 2026-10-22). A `resolve_source_change` image stays attached through folds the
 same way. No capture image is carried to the next message. The chat prompt requires capture before
 using source-specific numerical results, formulas, table cells/relationships or
 figures, regardless of extraction confidence. Low-confidence text also requires

@@ -653,21 +653,33 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
 # A user message attaches at most this many images, capture_page,
 # capture_knowledge_page and resolve_source_change's image changes together, so
 # the images every request of the turn carries stay bounded (Epo 2026-10-21,
-# raised and shared 2026-10-22). The sentence is decided, also for a source change.
+# raised and shared 2026-10-22). Only a capture says the decided sentence; a
+# source change past the cap fails with its own reason.
 MAX_IMAGES = 16
 IMAGE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
+SOURCE_IMAGE_LIMIT = (
+    "resolve_source_change: this message's image limit is reached, so the "
+    "change's image cannot be attached."
+)
 
 
 def _image_limit(ctx: ToolContext) -> ToolResult | None:
-    """The refusal once the message's images are used; checked again after
-    the render, since the image calls of one response run side by side."""
+    """A capture's refusal once the message's images are used; checked again
+    after the render, since the image calls of one response run side by side."""
     if ctx.images_taken >= MAX_IMAGES:
         return _refused(IMAGE_LIMIT, code="limit_reached")
     return None
 
 
+def _source_image_limit(ctx: ToolContext) -> ToolResult | None:
+    """The same check for a source change's image, which fails instead."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return _failed(SOURCE_IMAGE_LIMIT, code="limit_reached")
+    return None
+
+
 def _imaged(ctx: ToolContext, text: str) -> ToolResult:
-    """Count an attached image; the last one allowed says so with its image."""
+    """Count a capture; the last image allowed says so with its image."""
     ctx.images_taken += 1
     if ctx.images_taken == MAX_IMAGES:
         text += "\n\n" + IMAGE_LIMIT
@@ -1824,7 +1836,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         or not isinstance(checkpoint, int)
     ):
         return _refused("A file id, change id and integer checkpoint are required.")
-    if (limit := _image_limit(ctx)) is not None:
+    if (limit := _source_image_limit(ctx)) is not None:
         return limit
     started = time.perf_counter()
     try:
@@ -1843,7 +1855,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         return _refused(f"resolve_source_change: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"resolve_source_change: {exc}")
-    if (limit := _image_limit(ctx)) is not None:
+    if (limit := _source_image_limit(ctx)) is not None:
         return limit
     call_id = str(args.get("_tool_call_id") or "")
     ctx.captures.append(
@@ -1861,9 +1873,9 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         f"resolve_source_change result: change {change_id} of file {file_id}",
         capture.data_url(jpeg),
     )
-    return _imaged(
-        ctx,
-        "The pending source image is attached to the next message; read it directly.",
+    ctx.images_taken += 1  # counted, with no limit sentence (Epo 2026-10-22)
+    return _result(
+        "The pending source image is attached to the next message; read it directly."
     )
 
 
