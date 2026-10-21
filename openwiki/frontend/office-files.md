@@ -2160,7 +2160,20 @@ what the seed gave it (direct formatting, else the list level, else the style,
 with a table style's paragraph formatting in cells; `seededParagraphProperties`,
 shared by the projector and the save). Style, list and table values are never
 copied into a paragraph, so an untouched paragraph saves with the paragraph
-properties its source had. The pPr children the model has no field for
+properties its source had. Runs and cells follow the same rule (2026-10-21,
+export-only; seeds and live state are unchanged): a run whose formatting is
+what the seed resolved for one of its source paragraph's runs saves that
+run's own rPr (its run style and direct formatting), so a style changed in
+Word later restyles it, and a run whose formatting the session changed saves
+it resolved; a source table cell saves its own tcPr plus only the border and
+margin sides that differ from what the seed resolved from its table and
+table style (a cell made in the session saves them all). Both save ports ask
+their own seed what it resolved (docx-edit `SeedResolution`, documentToYrs
+`seededRunAttrs` and `seededCellFrames`). An unedited save's document.xml is
+about the source's size: 5.6 MB for the 1,400-page handbook whose source has
+6.4 MB, 12.1 MB before; the x40 handbook export takes 14.1 s against 13.3 s.
+A paragraph made in the session, and a run whose formatting matches none of
+its source paragraph's runs, still save resolved values (`todo-office.md`). The pPr children the model has no field for
 (`w:kinsoku`, `w:wordWrap`, `w:overflowPunct`, `w:topLinePunct`,
 `w:adjustRightInd`, `w:mirrorIndents`, `w:suppressOverlap`, `w:textDirection`,
 `w:textAlignment`, `w:textboxTightWrap`, `w:divId`, `w:cnfStyle`) ride the

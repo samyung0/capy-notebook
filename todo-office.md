@@ -294,14 +294,20 @@ check); it applies at the first promotion.
   (`"":pha beta`) and two such paragraphs would share the empty Loc id. The
   duplicate rename skips marks without an id; giving one `{client}.{clock}`
   there would fix it. Probe `fork-small-review/undoBase.test.ts`.
-- **DOCX run formatting written as direct on every save** (pre-existing, found
-  by the docx-fidelity review 2026-10-06): every save writes the style's run
-  formatting as direct formatting on every run of a saved story (long-handbook
-  0 → 1103 `w:rFonts`; book-30p's Title gains `sz`, `kern`, `spacing`, its
-  Heading 1 runs colour, `kern` and `sz`, every run `lang`), so later style
-  changes in Word no longer reach those runs. The run-level counterpart of the
-  paragraph save: write each run property the editor holds differently from
-  what the seed gave it, source kept for the rest.
+- **DOCX seed stores resolved style values** (decision 2026-10-21 in
+  `human/frontend/office-files.md`): since the engine round the save writes
+  the runs and cells the session left as their source wrote them
+  (export-only; long-handbook 1103 `w:rFonts` back to 0), but the seed still
+  stores every paragraph's and run's resolved defaults (x40 handbook:
+  `defaultTextFormatting` 7.0 MB, docDefaults on runs about 8 MB, TOC
+  `fieldData` 9.9 MB, table rows 6.9 MB of a 51.6 MB state). The full
+  version is a seed with direct formatting only: style resolution on read in
+  docx-edit (bridge, read_state, TOC) and in the TS toolbar and style code,
+  compact field and table data, a Word room reset on that deploy. Left by
+  the export-only fix: a paragraph made in the session (an Enter split) or a
+  run whose formatting matches none of its source paragraph's runs saves
+  resolved values, and a vMerge continuation cell still takes its restart
+  cell's `w:tcPr` (item above).
 - **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
   where the run inherits its size from the placeholder gets an explicit 24 pt
   (`pptx-parity/shots/slide-bulleted.png`, "Nested item").
