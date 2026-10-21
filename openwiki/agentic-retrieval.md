@@ -2465,7 +2465,10 @@ check (Epo 2026-10-22). A call the Stop kept from starting (the later calls
 of a serial response, or the calls of a response that ended after the stop)
 is recorded with outcome `cancelled` and "Not run: the user stopped the turn
 before this call started." (`agent._cancelled`), whatever its tool, since it
-has no result for retention to trim.
+has no result for retention to trim. Replay applies the same rule
+(`evidence._kept`): a saved note replays only if its tool keeps results
+between messages or it records a cancelled call, so rows saved under an older
+retention (an inspection kept whole) follow the current one.
 
 Result retention was added in contract version 3. Every tool must declare a policy; the policy is
 internal and is not a model argument. Live results stay exact until live

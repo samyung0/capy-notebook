@@ -2235,9 +2235,10 @@ async def test_a_stopped_turn_keeps_its_edit_receipt_not_its_reads_or_captures(
     assert "Captured page 1." not in prompt and _JPEG not in prompt
 
 
-async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch):
-    """A turn stopped mid-answer keeps the passages the user saw cited, like
-    an answered turn (Epo 2026-10-22)."""
+@pytest.mark.parametrize("ending", ["stop", "failure"])
+async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch, ending):
+    """A turn stopped or failed mid-answer keeps the passages the user saw
+    cited, like an answered turn (Epo 2026-10-22)."""
     client = agent.ClientDrop()
     ctx = ToolContext(workspace_id="ws_1")
     program = _answer(("Mitosis has four phases.", [1]), ("More.", []))
@@ -2251,6 +2252,8 @@ async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch):
             if ctx.cited_shown:
                 break
             await asyncio.sleep(0)
+        if ending == "failure":
+            raise RuntimeError("provider disconnected")
         client.stop()
         on_event(StreamEvent(kind="text", text='"More' + rest))
         return _assembled(program)
@@ -2262,7 +2265,10 @@ async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch):
     monkeypatch.setattr(agent.tools, "run", _run)
     events = await _collect("q", ctx, client=client)
 
-    assert events[-1]["type"] == "turn_checkpoint" and events[-1]["stopped"]
+    if ending == "stop":
+        assert events[-1]["type"] == "turn_checkpoint" and events[-1]["stopped"]
+    else:
+        assert events[-1]["type"] == "error"
     passages = events[-1]["toolEvidence"]["passages"]
     assert [p["chunk_id"] for p in passages] == ["s1"]
 
@@ -2293,6 +2299,68 @@ async def test_a_call_the_stop_kept_from_starting_replays_as_cancelled(monkeypat
     assert len(replayed) == 1
     assert '"name":"create_material"' in replayed[0]
     assert evidence["tools"][1]["detail"] in replayed[0]
+
+
+async def test_a_stop_with_a_malformed_office_create_still_saves_its_record(
+    monkeypatch,
+):
+    """Review r2 L4: commands sent as an object instead of a list name nothing
+    in the call's detail instead of failing the stop checkpoint."""
+    client = agent.ClientDrop()
+    create = '{"commands": {"type": "create", "title": "Budget"}}'
+
+    async def _stream(_messages, **_kwargs):
+        client.stop()  # the response was still streaming at the stop
+        return _assembled("", [_call("edit_office_document", create, "c1")])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert events[-1]["type"] == "turn_checkpoint" and events[-1]["stopped"]
+    assert events[-1]["toolEvidence"]["tools"] == [
+        {
+            "name": "edit_office_document",
+            "detail": "",
+            "outcome": "cancelled",
+            "text": agent.CANCELLED,
+        }
+    ]
+
+
+async def test_a_note_its_tool_no_longer_keeps_is_not_replayed():
+    """Review r2 L5: a row saved while inspections were kept whole follows the
+    current retention; the record of a cancelled call still replays."""
+    saved = {
+        "tools": [
+            {
+                "name": "inspect_document",
+                "outcome": "succeeded",
+                "text": "quiz answers",
+            },
+            {"name": "list_sources", "outcome": "succeeded", "text": "a listing"},
+            {
+                "name": "search_workspace",
+                "outcome": "cancelled",
+                "text": agent.CANCELLED,
+            },
+        ]
+    }
+    out = await agent.evidence.history_turns(
+        [
+            {"id": "u1", "role": "user", "content": "q", "status": "complete"},
+            {
+                "id": "a1",
+                "role": "assistant",
+                "content": "Done.",
+                "status": "complete",
+                "toolEvidence": saved,
+            },
+        ],
+        ToolContext(workspace_id="ws_1"),
+    )
+    replayed = "\n".join(m["content"] for m in out)
+    assert "a listing" in replayed and agent.CANCELLED in replayed
+    assert "quiz answers" not in replayed
 
 
 async def test_the_calls_of_a_response_ending_after_the_stop_are_cancelled(

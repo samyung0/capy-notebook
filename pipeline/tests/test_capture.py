@@ -199,6 +199,56 @@ async def test_source_change_images_share_the_cap(monkeypatch, rendered):
     assert len(ctx.pending_images) == 16 and "r17" not in ctx.pending_images
 
 
+async def test_two_source_images_side_by_side_at_fifteen_attach_one(monkeypatch):
+    """Review r2 M1: the check after the render keeps parallel source changes
+    under the cap."""
+
+    async def _resolve(**_kwargs):
+        await asyncio.sleep(0)  # both pass the check before the render
+        return _jpeg(40, 20)
+
+    monkeypatch.setattr(tools.pending, "resolve", _resolve)
+    ctx = ToolContext(workspace_id="ws_1", images_taken=15)
+    results = await asyncio.gather(
+        *(
+            tools._resolve_source_change(
+                {"file_id": "f_1", "change_id": c, "checkpoint": 1, "_tool_call_id": c},
+                ctx,
+            )
+            for c in ("r1", "r2")
+        )
+    )
+    assert sorted(r.outcome for r in results) == ["failed", "succeeded"]
+    assert ctx.images_taken == 16 and len(ctx.pending_images) == 1
+
+
+async def test_two_knowledge_captures_side_by_side_at_fifteen_attach_one(
+    monkeypatch, pdf
+):
+    """Review r2 M1: the same for capture_knowledge_page."""
+
+    async def _target(excerpt_id):
+        return _capture_target([338, 339])
+
+    async def _render(object_key, max_bytes, page, bbox, max_edge):
+        await asyncio.sleep(0)  # both pass the check before the render
+        return capture.render(pdf, 1, bbox, max_edge)
+
+    monkeypatch.setattr(tools.library, "capture_target", _target)
+    monkeypatch.setattr(capture, "render_knowledge", _render)
+    ctx = ToolContext(workspace_id="ws_1", library=True, images_taken=15)
+    results = await asyncio.gather(
+        *(
+            tools._capture_knowledge_page(
+                {"excerpt_id": "e_1", "page": page, "_tool_call_id": f"k{page}"}, ctx
+            )
+            for page in (338, 339)
+        )
+    )
+    assert sorted(r.outcome for r in results) == ["refused", "succeeded"]
+    assert ctx.images_taken == 16 and len(ctx.pending_images) == 1
+
+
 async def test_a_source_image_that_is_the_sixteenth_says_nothing(monkeypatch, rendered):
     """The limit sentence comes only with a capture (Epo 2026-10-22)."""
 

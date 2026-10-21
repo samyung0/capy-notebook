@@ -172,8 +172,10 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
     elif name == "write_slide":
         detail = f"slide {args.get('slide')}"
     elif name == "edit_office_document" and not args.get("file_id"):
-        # A create names the new file by its title.
-        first = (args.get("commands") or [{}])[0]
+        # A create names the new file by its title; malformed commands name
+        # nothing (the model's arguments are unchecked here).
+        commands = args.get("commands")
+        first = commands[0] if isinstance(commands, list) and commands else {}
         detail = str(first.get("title") or "") if isinstance(first, dict) else ""
     else:
         detail = named(_target_id(name, args))
@@ -321,7 +323,7 @@ async def run_agent(
             yield event
         if client and client.stopped and not ended:
             # Stop: what the calls running at the stop did goes to the stopped
-            # turn's record, never back to the model (Epo 2026-10-21).
+            # turn's record, never back to the model in this turn (Epo 2026-10-21).
             yield _with_usage(
                 events.turn_checkpoint(
                     list(ctx.activity),
