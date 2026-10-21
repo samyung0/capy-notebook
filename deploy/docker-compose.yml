@@ -298,6 +298,9 @@ services:
       # Must match the gateway: whichever process sweeps first applies its own.
       CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
       CAPY_PARSE_SPOOL_TTL_HOURS: ${CAPY_PARSE_SPOOL_TTL_HOURS:-2}
+      # VLM page reads in flight: across the workers, and within one job.
+      CAPY_VLM_PAGE_CAPACITY: "20"
+      CAPY_VLM_PAGES_PER_JOB: "10"
     command: ["python", "-m", "pipeline.ingest.worker"]
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
