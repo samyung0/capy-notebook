@@ -3909,7 +3909,8 @@ expected swapped, `rename_sheet` back, a row or column insert as its delete,
 row and column deletes and `delete_paragraph` return none, as does an
 `insert_paragraph` whose paragraph ends its story (its delete would be
 refused); an insert's inverse is `delete_paragraph` of it. A call holding a
-command without an inverse keeps no Undo (no step row, no Undo ref on its receipt, no Undo line in its tool result).
+command without an inverse keeps no Undo (no step row, no Undo ref on its
+receipt, no Undo line in its tool result).
 
 A block's text, as `inspect_document` shows it and as every expected text
 (`replace_text`, `remove_block`, `replace_block`, their Undo) matches it, is its
