@@ -193,14 +193,14 @@ var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *string) (store.File, error) {
 	ctx := r.Context()
 	wsID := id(r)
-	if a.blob == nil {
-		return store.File{}, errors.New("blob store not configured")
-	}
 	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
 	if err != nil {
 		return store.File{}, err
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadMetadataMaxBytes)
+	if a.blob == nil {
+		return store.File{}, errors.New("blob store not configured")
+	}
 	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
 		return store.File{}, err
 	}
