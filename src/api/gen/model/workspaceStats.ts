@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { FileChange } from './fileChange.ts';
+import type { NoteChange } from './noteChange.ts';
 
 export interface WorkspaceStats {
   /** A URL to the JSON Schema for this object. */
@@ -15,8 +16,9 @@ export interface WorkspaceStats {
   fileChanges: FileChange[];
   files: number;
   indexed: number;
+  moreNoteChanges: number;
   notIndexable: number;
   notIndexed: number;
-  pendingNotes: number;
+  noteChanges: NoteChange[];
   quizzes: number;
 }

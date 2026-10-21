@@ -419,7 +419,6 @@
             "description": "The made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
             "items": {
               "maxLength": 200,
-              "minLength": 1,
               "type": "string"
             },
             "maxItems": 20,
@@ -574,7 +573,6 @@
             "description": "With title: the new quiz's made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
             "items": {
               "maxLength": 200,
-              "minLength": 1,
               "type": "string"
             },
             "maxItems": 20,
@@ -700,7 +698,6 @@
             "description": "The made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
             "items": {
               "maxLength": 200,
-              "minLength": 1,
               "type": "string"
             },
             "maxItems": 20,

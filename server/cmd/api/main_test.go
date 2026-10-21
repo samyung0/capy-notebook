@@ -52,8 +52,8 @@ func TestValidateAuthConfiguration(t *testing.T) {
 
 // Security regression (human deployment-runbook and authorization,
 // 2026-10-21): outside development and e2e the gateway refuses to boot without
-// a CORS allowlist, or with Clerk on and no origins for its session tokens'
-// azp (an empty list would accept every azp). The azp list is
+// a CORS allowlist or with a `*` in it, or with Clerk on and no origins for its
+// session tokens' azp (an empty list would accept every azp). The azp list is
 // COLLABORATION_ALLOWED_ORIGINS.
 func TestOriginConfiguration(t *testing.T) {
 	const cors, azps = "https://app.test", "https://app.test, https://local.app.test"
@@ -71,6 +71,9 @@ func TestOriginConfiguration(t *testing.T) {
 		{name: "production without CORS", appEnv: "production", clerkOn: true, azpsEnv: azps, wantErr: true},
 		{name: "uat without CORS", appEnv: "uat", azpsEnv: azps, wantErr: true},
 		{name: "production Clerk without azp origins", appEnv: "production", clerkOn: true, corsEnv: cors, wantErr: true},
+		{name: "production CORS wildcard", appEnv: "production", corsEnv: cors + ", *", wantErr: true},
+		{name: "uat CORS wildcard subdomain", appEnv: "uat", corsEnv: "https://*.app.test", wantErr: true},
+		{name: "development CORS wildcard", appEnv: "development", corsEnv: "*"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("CORS_ALLOWED_ORIGINS", test.corsEnv)

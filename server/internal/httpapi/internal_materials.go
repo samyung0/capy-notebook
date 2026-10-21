@@ -148,15 +148,19 @@ func mergeProvenance(stored, added *store.Provenance) (*store.Provenance, string
 }
 
 // sourcesBounds is the one refusal an agent's sources can get: their format.
-var sourcesBounds = fmt.Sprintf("sources: send at most %d sources of 1 to %d characters each.",
+var sourcesBounds = fmt.Sprintf("sources: send at most %d sources of at most %d characters each.",
 	fieldlimits.MaterialSources, fieldlimits.MaterialSource)
 
-// validSources counts a repeated source once, as resolveSources stores it.
+// validSources counts a repeated source once and a blank one not at all, as
+// resolveSources stores them.
 func validSources(sources []string) bool {
 	distinct := map[string]struct{}{}
 	for _, source := range sources {
 		source = strings.TrimSpace(source)
-		if n := utf8.RuneCountInString(source); n == 0 || n > fieldlimits.MaterialSource {
+		if source == "" {
+			continue
+		}
+		if utf8.RuneCountInString(source) > fieldlimits.MaterialSource {
 			return false
 		}
 		distinct[source] = struct{}{}
@@ -169,7 +173,8 @@ func validSources(sources []string) bool {
 // workspace file, top-level material of any kind or chapter becomes that
 // item's current name, and anything else (an exact name, which already is the
 // current one, a lecture, a web address) stays as written, trimmed. Duplicates
-// are kept once; no sources stores none.
+// are kept once and a blank source is dropped (Epo 2026-10-21); no sources
+// stores none.
 func (a *api) resolveSources(ctx context.Context, wsID string, sources []string) ([]string, error) {
 	names := []string{}
 	if len(sources) == 0 {
@@ -192,6 +197,9 @@ func (a *api) resolveSources(ctx context.Context, wsID string, sources []string)
 	}
 	for _, source := range sources {
 		source = strings.TrimSpace(source)
+		if source == "" {
+			continue
+		}
 		if name, ok := nameByID[source]; ok {
 			source = name
 		}

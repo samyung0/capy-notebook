@@ -1967,13 +1967,17 @@ export function copyEmbeddedInto(note: Material, sourceId: string): string {
   return mt.id;
 }
 
-/** Unprocessed source edits by file, for the Indexing tab. `ticks` counts the
- * stats reads since the state was entered, so the handler advances queued
- * work as the tab polls. */
-export const fileChanges = new Map<
-  string,
-  { lastEditedAt: string; ticks: number; state: FileChange['state'] }
->([
+/** An unprocessed change in the Indexing tab. `ticks` counts the stats reads
+ * since the state was entered, so the handler advances queued work as the tab
+ * polls. */
+export type MockChange = {
+  lastEditedAt: string;
+  ticks: number;
+  state: FileChange['state'];
+};
+
+/** Unprocessed source edits by file. */
+export const fileChanges = new Map<string, MockChange>([
   [
     'bio-office-docx',
     {
@@ -2003,6 +2007,26 @@ export const fileChanges = new Map<
     {
       lastEditedAt: '2026-01-12T11:00:00Z',
       state: 'waiting',
+      ticks: 0,
+    },
+  ],
+]);
+
+/** Workspace notes whose index is behind their content, by material id. */
+export const noteChanges = new Map<string, MockChange>([
+  [
+    'mat_note_1',
+    {
+      lastEditedAt: '2026-01-12T11:30:00Z',
+      state: 'waiting',
+      ticks: 0,
+    },
+  ],
+  [
+    'mat_note_bio_transport',
+    {
+      lastEditedAt: '2026-01-12T08:15:00Z',
+      state: 'failed',
       ticks: 0,
     },
   ],

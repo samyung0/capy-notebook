@@ -956,9 +956,12 @@ export const workspaceStatsQuery = (id: string) =>
     queryFn: () => api.get<WorkspaceStats>(`/workspaces/${id}/stats`),
     queryKey: qk.workspaceStats(id),
     // Processing reports nothing live, so the Indexing tab polls while a
-    // file change is queued or processing.
+    // file or note change is queued or processing.
     refetchInterval: (query) =>
-      query.state.data?.fileChanges.some(
+      [
+        ...(query.state.data?.fileChanges ?? []),
+        ...(query.state.data?.noteChanges ?? []),
+      ].some(
         (change) => change.state === 'queued' || change.state === 'processing'
       )
         ? 3000

@@ -846,3 +846,46 @@ func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
 	}
 	check("public editor", stranger, true)
 }
+
+// A file copy keeps its made-from names (scope_file_names), as a material
+// copy does (Epo 2026-10-21): a single clone and a workspace clone alike.
+func TestFileCopiesKeepTheirMadeFromNames(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_scope_names_clone")
+	source, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := s.createReadyFile(ctx, source.ID, owner, "deck.pptx", "pptx", nil, "", 100, "sources/"+uid("base"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Lecture 3", "notes.pdf"}
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET scope_file_names=$2 WHERE id=$1`, file.ID, want); err != nil {
+		t.Fatal(err)
+	}
+	names := func(where string, args ...any) []string {
+		t.Helper()
+		var got []string
+		if err := s.pool.QueryRow(ctx, `SELECT scope_file_names FROM files WHERE `+where, args...).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	clone, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: source.ID, Name: "deck (copy).pptx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(`id=$1`, clone.ID); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("file clone names = %q, want %q", got, want)
+	}
+	copied, err := s.CloneWorkspace(ctx, owner, source.ID, WorkspaceCreate{Name: "Copy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(`workspace_id=$1 AND name='deck.pptx'`, copied.ID); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("workspace clone names = %q, want %q", got, want)
+	}
+}

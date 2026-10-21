@@ -959,6 +959,10 @@ COLLABORATION_URL=wss://collab.capynotebook.com
 COLLABORATION_ALLOWED_ORIGINS=https://app.capynotebook.com
 ```
 
+Outside development and e2e the gateway refuses to boot when
+`CORS_ALLOWED_ORIGINS` is empty or contains a `*` anywhere (a bare `*` or a
+wildcard origin such as `https://*.example.com`): list exact origins.
+
 Ops uses one read/auth role and one shared admin-actions role. The admin pool
 opens lazily only after the application authorizes a registry Save or a
 reconciliation request:
@@ -1025,6 +1029,18 @@ subject must continue to match `users.id` and `operators.user_id`. The Clerk
 webhook remains `https://api.capynotebook.com/webhooks/clerk`; ops does not accept
 webhooks. Stripe remains `https://api.capynotebook.com/webhooks/stripe`. B2 CORS
 `allowedOrigins` is the SPA origin, not `api.` or `ops.`.
+
+Two-step verification is turned on and off on Clerk's hosted account page,
+not in Capy (Epo 2026-10-21). On the production instance, and the same on UAT
+(§12.3):
+
+1. Under multi-factor authentication, turn on the authenticator application
+   (TOTP, set up by QR code) factor and leave SMS verification codes off.
+2. Leave Clerk's new-device check off, so sign-in has no device-trust step.
+3. Keep the Account Portal on with its user profile page. Settings → Account
+   links its Two-step verification row to the URL Clerk's SDK builds for that
+   page (`buildUserProfileUrl()`). With the user profile turned off Clerk
+   builds no URL, and the row disappears from Settings without any error.
 
 ---
 
@@ -2946,6 +2962,9 @@ In the Clerk dashboard:
    `CLERK_SECRET_KEY`. The GitHub authenticated tests receive the same values
    as `CLERK_PUBLISHABLE_KEY` and the protected `CLERK_SECRET_KEY` environment
    secret. Never put the secret key in a repository variable or browser build.
+6. Set up two-step verification as on production (§1.4): the authenticator
+   application factor on, SMS codes off, the new-device check off, and the
+   Account Portal user profile on.
 
 The gateway refuses startup when normal Clerk authentication has either a
 blank `CLERK_SECRET_KEY` or a blank `CLERK_WEBHOOK_SECRET`. Development with
@@ -3300,8 +3319,14 @@ so GitHub holds the run until someone with write access approves it on the
 run page.
 
 Set `DEPLOYMENT_OPS_URL` in each GitHub environment and its local environment
-file for the optional ops edge check. The UAT workflow and local review scripts
-use this name directly; there is no repository-level ops URL fallback.
+file. Deploy Ops requires it: the render passes it to the Ops container as
+`OPS_ORIGIN`, the only `azp` the Ops API accepts on a Clerk session token, and
+Ops refuses to start with Clerk on outside development without it, or when it
+is not spelled as a browser writes an origin. Write it as a bare `https` origin
+in lower case (`https://ops.capynotebook.com`): no trailing slash, path, user
+or `:443`. The UAT
+edge check and local review scripts use the same name; there is no
+repository-level ops URL fallback.
 
 ```bash
 pnpm env:check --file deploy/.env.uat

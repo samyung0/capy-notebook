@@ -507,20 +507,23 @@ type MockUsageEvent = (typeof MOCK_USAGE_EVENTS)[number];
 const codeError = (status: number, code: string) =>
   HttpResponse.json({ errors: [{ message: code }], status }, { status });
 
-/** The workspace's unprocessed edits. One file processes at a time: queued
- * work starts on the second read without other work processing, and
- * processing finishes on the fourth read, as the tab polls every 3 s. */
-function mockFileChanges(sourceFiles: SourceFile[]) {
-  const changes = sourceFiles.flatMap((file) => {
-    const change = db.fileChanges.get(file.id);
-    return change ? [{ change, file }] : [];
+/** Advances one queue of unprocessed changes (files, or notes) as the tab
+ * polls: one item processes at a time, queued work starts on the second read
+ * without other work processing, and processing finishes on the fourth read. */
+function advanceChanges<T extends { id: string }>(
+  items: T[],
+  changes: Map<string, db.MockChange>
+) {
+  const tracked = items.flatMap((item) => {
+    const change = changes.get(item.id);
+    return change ? [{ change, item }] : [];
   });
-  for (const { change, file } of changes) {
+  for (const { change, item } of tracked) {
     change.ticks++;
     if (change.state === 'processing' && change.ticks > 3)
-      db.fileChanges.delete(file.id);
+      changes.delete(item.id);
   }
-  const live = changes.filter(({ file }) => db.fileChanges.has(file.id));
+  const live = tracked.filter(({ item }) => changes.has(item.id));
   const next = live.find(({ change }) => change.state === 'queued');
   if (
     next &&
@@ -528,13 +531,7 @@ function mockFileChanges(sourceFiles: SourceFile[]) {
     !live.some(({ change }) => change.state === 'processing')
   )
     Object.assign(next.change, { state: 'processing', ticks: 0 });
-  return live.map(({ change, file }) => ({
-    fileId: file.id,
-    kind: file.kind,
-    lastEditedAt: change.lastEditedAt,
-    name: file.name,
-    state: change.state,
-  }));
+  return live;
 }
 
 type SourceUploadReservation = {
@@ -757,13 +754,15 @@ export const handlers = [
       confirmEmail?: string;
       lifecycleGeneration?: number;
     };
+    // An account with no email confirms with the word, as on the server.
+    const expected = db.user.email || 'delete';
     if (
       !body.confirmEmail ||
       body.lifecycleGeneration !== 0 ||
-      body.confirmEmail.toLowerCase() !== db.user.email.toLowerCase()
+      body.confirmEmail.toLowerCase() !== expected.toLowerCase()
     ) {
       return HttpResponse.json(
-        { message: 'confirmation does not match the account email' },
+        { message: 'confirmation does not match' },
         { status: 400 }
       );
     }
@@ -1161,6 +1160,15 @@ export const handlers = [
       { status: 202 }
     );
   }),
+  // A note's Process queues its index job now, whatever its threshold.
+  http.post('/api/materials/:id/process-changes', ({ params }) => {
+    const change = db.noteChanges.get(String(params.id));
+    if (!change) return codeError(409, 'nothing_to_process');
+    if (change.state !== 'waiting' && change.state !== 'failed')
+      return codeError(409, 'processing_started');
+    Object.assign(change, { state: 'queued', ticks: 0 });
+    return new HttpResponse(null, { status: 202 });
+  }),
   // Retry processing: the owner reruns a failed file on its stored bytes; the
   // mock worker finishes it like an upload ('none' just stores it).
   http.post('/api/files/:id/retry-processing', async ({ params, request }) => {
@@ -1211,12 +1219,31 @@ export const handlers = [
       attempts: att.length,
       avgScore: avg,
       chapters: ws.chapterCount,
-      fileChanges: mockFileChanges(sourceFiles),
+      fileChanges: advanceChanges(sourceFiles, db.fileChanges).map(
+        ({ change, item }) => ({
+          fileId: item.id,
+          kind: item.kind,
+          lastEditedAt: change.lastEditedAt,
+          name: item.name,
+          state: change.state,
+        })
+      ),
       files: ws.fileCount,
       indexed,
+      moreNoteChanges: 0,
+      noteChanges: advanceChanges(
+        db.materials.filter(
+          (item) => item.workspaceId === ws.id && item.kind === 'note'
+        ),
+        db.noteChanges
+      ).map(({ change, item }) => ({
+        lastEditedAt: change.lastEditedAt,
+        materialId: item.id,
+        state: change.state,
+        title: item.title,
+      })),
       notIndexable,
       notIndexed: sourceFiles.length - indexed - notIndexable,
-      pendingNotes: 0,
       quizzes: wsQuizIds.size,
     });
   }),

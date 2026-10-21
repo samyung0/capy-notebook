@@ -128,7 +128,7 @@ export const requestAccountDeletionBodyLifecycleGenerationMin = 0;
 
 
 export const RequestAccountDeletionBody = zod.object({
-  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax),
+  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax).describe('The account email, or delete for an account with no email'),
   "lifecycleGeneration": zod.int().min(requestAccountDeletionBodyLifecycleGenerationMin)
 })
 
@@ -3634,6 +3634,16 @@ export const UpdateMaterialResponse = zod.object({
   "revision": zod.int(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
+
+
+/**
+ * @summary Index a workspace note's changes now
+ */
+export const ProcessNoteChangesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ProcessNoteChangesResponse = zod.void()
 
 
 /**
@@ -7253,9 +7263,15 @@ export const GetWorkspaceStatsResponse = zod.object({
 })),
   "files": zod.int(),
   "indexed": zod.int(),
+  "moreNoteChanges": zod.int(),
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
-  "pendingNotes": zod.int(),
+  "noteChanges": zod.array(zod.object({
+  "lastEditedAt": zod.iso.datetime({"offset":true}),
+  "materialId": zod.string(),
+  "state": zod.enum(['waiting', 'queued', 'processing', 'failed']),
+  "title": zod.string()
+})),
   "quizzes": zod.int()
 })
 
