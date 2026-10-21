@@ -294,14 +294,43 @@ check); it applies at the first promotion.
   (`"":pha beta`) and two such paragraphs would share the empty Loc id. The
   duplicate rename skips marks without an id; giving one `{client}.{clock}`
   there would fix it. Probe `fork-small-review/undoBase.test.ts`.
-- **DOCX run formatting written as direct on every save** (pre-existing, found
-  by the docx-fidelity review 2026-10-06): every save writes the style's run
-  formatting as direct formatting on every run of a saved story (long-handbook
-  0 → 1103 `w:rFonts`; book-30p's Title gains `sz`, `kern`, `spacing`, its
-  Heading 1 runs colour, `kern` and `sz`, every run `lang`), so later style
-  changes in Word no longer reach those runs. The run-level counterpart of the
-  paragraph save: write each run property the editor holds differently from
-  what the seed gave it, source kept for the rest.
+- **DOCX seed stores resolved style values** (decision 2026-10-21 in
+  `human/frontend/office-files.md`): since the engine round the save writes
+  the runs and cells the session left as their source wrote them
+  (export-only; long-handbook 1103 `w:rFonts` back to 0), but the seed still
+  stores every paragraph's and run's resolved defaults (x40 handbook:
+  `defaultTextFormatting` 7.0 MB, docDefaults on runs about 8 MB, TOC
+  `fieldData` 9.9 MB, table rows 6.9 MB of a 51.6 MB state). The full
+  version is a seed with direct formatting only: style resolution on read in
+  docx-edit (bridge, read_state, TOC) and in the TS toolbar and style code,
+  compact field and table data, a Word room reset on that deploy. Left by
+  the export-only fix: a paragraph made in the session (an Enter split), a
+  run whose formatting matches none of its source paragraph's runs, and runs
+  matching source runs with different rPr in an edited paragraph save
+  resolved values; a paragraph restyled in the session saves its runs with
+  the old style's values (as the editor shows them); a vMerge continuation
+  cell still takes its restart cell's `w:tcPr` (item above); and after a row
+  is inserted above or the first row deleted, Word gives cells their new
+  place's first-row and banding borders while the editor keeps the seeded
+  look, and table-style shading is still written as direct shading.
+- **DOCX cell and table borders on save** (pre-existing, found by the fix 9
+  review 2026-10-21): a cell's own border side dropped with JSON `null`
+  (`set_cell_borders`; only API and agent callers, the toolbar sends
+  `style: none`) comes back on save; a table with no `w:tblBorders` gains
+  `w:tblBorders` holding its first cell's top side on save.
+- **DOCX run properties the model drops** (pre-existing, found by the fix 9
+  re-reviews 2026-10-21): `w:webHidden`, `w:noProof`, `w:bdr`,
+  `w:eastAsianLayout` and `w14:*` run properties are not modelled, so a run
+  that the save rebuilds loses them; TOC page numbers commonly carry
+  `w:webHidden`.
+- **DOCX explicit off on save** (pre-existing, found by the fix 9 re-review
+  r3 2026-10-21): a run the session unbolds under a bold paragraph style
+  (Heading 1), un-italicises under Quote or un-underlines under Hyperlink saves
+  resolved values, which never write an off, so Word shows the style's bold,
+  italic or underline again. Lazy fix: when the resolved save writes a run
+  under a paragraph or character style that turns a toggle on and the run's
+  attributes have it off, write the explicit off (`w:b w:val="0"`). Fix 9 keeps
+  an off only when a source run of the paragraph had that same off.
 - **PPTX typed text size** (pre-existing, found by pptx-parity): text typed
   where the run inherits its size from the placeholder gets an explicit 24 pt
   (`pptx-parity/shots/slide-bulleted.png`, "Nested item").
