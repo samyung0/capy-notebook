@@ -1445,7 +1445,8 @@ async def resource_titles(workspace_id: str, ids: list[str]) -> dict[str, str]:
 
 
 async def workspace_outline(workspace_id: str) -> dict[str, Any]:
-    """Chapters, their files, and the per-file descriptor the listing tool prints."""
+    """Chapters, their files and top-level materials, and the per-file
+    descriptor the listing tool prints."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -1476,18 +1477,20 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         )
         files = [dict(row) for row in await cur.fetchall()]
 
-        # Indexed or not, every workspace note is a scope target; a note that
-        # is still dirty simply has no passages yet.
+        # Indexed or not, every top-level workspace material is a scope target
+        # (Epo 2026-10-21): a note that is still dirty has no passages yet, and
+        # a quiz, flashcard set, mindmap or diagram never has any.
         cur = await conn.execute(
             """
             SELECT m.id, m.title AS name, m.chapter_id, 'ready' AS status,
                    coalesce(cs.descriptor, '') AS descriptor, 'material' AS kind,
+                   m.kind AS material_kind,
                    (SELECT count(*) FROM rag_chunks c
                     WHERE c.content_id = mc.content_id) AS chunks
             FROM materials m
                  LEFT JOIN rag_material_contents mc ON mc.material_id = m.id
                  LEFT JOIN rag_content_summaries cs ON cs.content_id = mc.content_id
-            WHERE m.workspace_id = %s AND m.kind = 'note' AND m.trashed_at IS NULL
+            WHERE m.workspace_id = %s AND m.trashed_at IS NULL
               AND m.parent_material_id IS NULL
             ORDER BY m.position, m.created_at
             """,

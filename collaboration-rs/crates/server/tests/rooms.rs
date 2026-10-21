@@ -181,9 +181,22 @@ fn embed_token(room: &str, user: &str, note: &str) -> String {
 }
 
 fn signed_token(room: &str, user: &str, access: &str, ttl: i64, parent: Option<&str>) -> String {
-    use base64::Engine;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use hmac::{Hmac, Mac};
+    let mut claims = token_claims(room, user, access, ttl);
+    if let Some(parent) = parent {
+        claims["parent"] = parent.into();
+    }
+    sign_claims(&claims)
+}
+
+/// A token naming who the connection is, as Go mints one (Epo 2026-10-20):
+/// the user's name alone, nothing about the device.
+fn identity_token(room: &str, user: &str, access: &str, name: &str) -> String {
+    let mut claims = token_claims(room, user, access, 300);
+    claims["name"] = name.into();
+    sign_claims(&claims)
+}
+
+fn token_claims(room: &str, user: &str, access: &str, ttl: i64) -> serde_json::Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)
@@ -193,13 +206,16 @@ fn signed_token(room: &str, user: &str, access: &str, ttl: i64, parent: Option<&
         .next()
         .and_then(|n| n.parse().ok())
         .unwrap_or(1);
-    let mut claims = serde_json::json!({
+    serde_json::json!({
         "access": access, "aud": "capy-collaboration", "exp": now + ttl, "iat": now,
         "iss": "capy-api", "jti": format!("t_{now}_{user}"), "room": room, "schema": schema, "sub": user,
-    });
-    if let Some(parent) = parent {
-        claims["parent"] = parent.into();
-    }
+    })
+}
+
+fn sign_claims(claims: &serde_json::Value) -> String {
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use hmac::{Hmac, Mac};
     let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256","typ":"JWT"}"#);
     let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
     let mut mac = Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes()).expect("key");
@@ -5792,6 +5808,359 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     assert_eq!(from_writer.unwrap()["uploads"][0], "block-a");
     let escaped_key = escaped_key.unwrap();
     assert!(escaped_key.get("uploads").is_none(), "{escaped_key}");
+}
+
+impl Client {
+    /// Reads the room's presence until it lists connections `check` accepts.
+    async fn presence(
+        &mut self,
+        check: impl Fn(&[serde_json::Value]) -> bool,
+    ) -> Vec<serde_json::Value> {
+        loop {
+            let (message, _) = self.stateless("room-presence").await;
+            let connections = message["connections"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if check(&connections) {
+                return connections;
+            }
+        }
+    }
+}
+
+/// Security regression (Epo 2026-10-20): the room's presence lists the
+/// people who can edit (an editor's reading tab too), each by its signed
+/// token's name with the awareness client ids it holds, never by what its
+/// awareness says, and never a viewer; a person is a number in the room,
+/// never a user id; nothing about a device is listed; a member hears every
+/// connection but its own (its user's other tabs included), and a viewer
+/// hears none. Fails if viewers are listed, a viewer hears it, a member hears
+/// its own connection, or an entry names a device.
+#[tokio::test]
+async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let viewer = member(&env, &room, "viewer").await;
+    drop_queued_evictions(&env, &room).await;
+    let mut desk = Client::open(server.port).await;
+    desk.joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    // What its awareness claims is never its label.
+    desk.send(
+        7,
+        &awareness_update(501, 1, "{\"data\":{\"name\":\"Mallory\"}}"),
+    )
+    .await;
+    let mut ed = Client::open(server.port).await;
+    ed.joined(&room, &identity_token(&room, &editor, "write", "Eddie"))
+        .await;
+    let mut phone = Client::open(server.port).await;
+    phone
+        .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    let mut reader = Client::open(server.port).await;
+    reader
+        .joined(&room, &identity_token(&room, &editor, "read", "Eddie"))
+        .await;
+    let mut watcher = Client::open(server.port).await;
+    watcher
+        .joined(&room, &identity_token(&room, &viewer, "read", "Vic"))
+        .await;
+
+    let seen = ed
+        .presence(|connections| {
+            connections.len() == 3 && connections.iter().any(|c| c["clients"][0] == 501)
+        })
+        .await;
+    let desk_entry = seen
+        .iter()
+        .find(|c| c["clients"][0] == 501)
+        .expect("the desk");
+    assert_eq!(desk_entry["name"], "Olive");
+    let names = |connections: &[serde_json::Value]| {
+        let mut names: Vec<String> = connections
+            .iter()
+            .map(|c| c["name"].as_str().unwrap_or("").to_owned())
+            .collect();
+        names.sort_unstable();
+        names
+    };
+    let persons = |connections: &[serde_json::Value], name: &str| {
+        let mut persons: Vec<u64> = connections
+            .iter()
+            .filter(|c| c["name"] == name)
+            .filter_map(|c| c["person"].as_u64())
+            .collect();
+        persons.dedup();
+        persons
+    };
+    // The desk hears the editor, the editor's reading tab and its own user's
+    // phone (one person per user), never itself.
+    let at_desk = desk.presence(|connections| connections.len() == 3).await;
+    assert_eq!(names(&at_desk), ["Eddie", "Eddie", "Olive"]);
+    assert_eq!(persons(&at_desk, "Eddie").len(), 1);
+    assert_eq!(
+        persons(&at_desk, "Olive"),
+        [desk_entry["person"].as_u64().unwrap()]
+    );
+    assert_ne!(persons(&at_desk, "Eddie"), persons(&at_desk, "Olive"));
+    let at_reader = reader.presence(|connections| connections.len() == 3).await;
+    assert_eq!(names(&at_reader), ["Eddie", "Olive", "Olive"]);
+    for id in [&owner, &editor] {
+        assert!(
+            !String::from_utf8_lossy(&reader.received).contains(id.as_str()),
+            "a reader learned a user id"
+        );
+    }
+    assert!(!watcher.hears(255, 1500).await);
+    assert!(
+        watcher
+            .inbox
+            .iter()
+            .all(|m| m.kind != 9 || !text_payload(&m.payload).contains("room-presence")),
+        "a viewer heard the room's presence"
+    );
+    for connections in [&seen, &at_desk, &at_reader] {
+        for connection in connections.iter() {
+            assert_ne!(connection["name"], "Vic", "{connections:?}");
+            let mut fields: Vec<&String> =
+                connection.as_object().expect("an entry").keys().collect();
+            fields.sort_unstable();
+            assert_eq!(
+                fields,
+                ["avatar", "clients", "name", "person"],
+                "{connection}"
+            );
+        }
+    }
+}
+
+/// Drops the evictions that inserting `room`'s workspace, members and
+/// material queued: the API's worker delivers them whenever it gets to them,
+/// and one landing after a join drains the room, closing its channels. The
+/// room is not loaded yet, so they have nothing to do.
+async fn drop_queued_evictions(env: &Env, room: &str) {
+    db(env)
+        .await
+        .execute(
+            "DELETE FROM collaboration_eviction_outbox WHERE payload->>'room' = $1",
+            &[&room],
+        )
+        .await
+        .expect("outbox");
+}
+
+/// A fresh user with `role` in the workspace of `room`'s material.
+async fn member(env: &Env, room: &str, role: &str) -> String {
+    let user = user(env).await;
+    db(env)
+        .await
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role)
+             SELECT workspace_id, $2, $3 FROM materials WHERE id = $1",
+            &[&material_of(room), &user, &role],
+        )
+        .await
+        .expect("member");
+    user
+}
+
+/// Security regression (header-presence review S2): the presence shrinks as
+/// connections go: a channel that leaves, then a socket that closes, each
+/// leave the next presence. Fails if a leave or a close sends none.
+#[tokio::test]
+async fn the_rooms_presence_drops_a_channel_that_leaves_and_a_socket_that_closes() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let third = member(&env, &room, "editor").await;
+    drop_queued_evictions(&env, &room).await;
+    let mut olive = Client::open(server.port).await;
+    olive
+        .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    let mut bea = Client::open(server.port).await;
+    bea.joined(&room, &identity_token(&room, &editor, "write", "Bea"))
+        .await;
+    let mut cal = Client::open(server.port).await;
+    cal.joined(&room, &identity_token(&room, &third, "write", "Cal"))
+        .await;
+    olive.presence(|connections| connections.len() == 2).await;
+    bea.send(3, &[]).await;
+    let left = olive.presence(|connections| connections.len() == 1).await;
+    assert_eq!(left[0]["name"], "Cal");
+    cal.ws.close(None).await.ok();
+    drop(cal);
+    olive.presence(|connections| connections.is_empty()).await;
+}
+
+/// Security regression (header-presence review S2, Epo 2026-10-20): a source
+/// (Office or text) room knows only a token's access, so its presence lists
+/// write channels only; a read channel, which a viewer holds, is neither
+/// listed nor hears it. Fails if a source room lists or tells its readers.
+#[tokio::test]
+async fn a_source_rooms_presence_lists_its_writers_and_never_a_reader() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (owner, file) = text_file(&env, &gateway, "hello").await;
+    let (second, viewer) = (user(&env).await, user(&env).await);
+    let room = format!("source:{file}:epoch:1");
+    drop_queued_evictions(&env, &room).await;
+    let mut reader = Client::open(server.port).await;
+    reader
+        .joined(&room, &identity_token(&room, &viewer, "read", "Rae"))
+        .await;
+    let mut bea = Client::open(server.port).await;
+    bea.joined(&room, &identity_token(&room, &second, "write", "Bea"))
+        .await;
+    let mut wes = Client::open(server.port).await;
+    wes.joined(&room, &identity_token(&room, &owner, "write", "Wes"))
+        .await;
+    // Everyone joined before Wes: its first presence is the whole room.
+    let (first, _) = wes.stateless("room-presence").await;
+    let names: Vec<&serde_json::Value> = first["connections"]
+        .as_array()
+        .expect("connections")
+        .iter()
+        .map(|c| &c["name"])
+        .collect();
+    assert_eq!(names, ["Bea"], "{first}");
+    assert!(!reader.hears(255, 1500).await);
+    assert!(
+        reader
+            .inbox
+            .iter()
+            .all(|m| m.kind != 9 || !text_payload(&m.payload).contains("room-presence")),
+        "a reader heard the room's presence"
+    );
+}
+
+/// Security regression (header-presence review S2): an embed's channel
+/// inside its note's is listed in the embed room's presence but hears none
+/// (its page's header shows the note's). Fails if an embed channel hears it.
+#[tokio::test]
+async fn an_embed_channel_is_listed_but_hears_no_presence() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut note) = writer(&env, server.port, "a note").await;
+    let note_id = material_of(&room).to_owned();
+    let [set] = embedded_sets(&env, &user, &note_id, 1)
+        .await
+        .try_into()
+        .expect("one set");
+    drop_queued_evictions(&env, &set).await;
+    let (kind, _) = note
+        .join_embed(2, &set, &embed_token(&set, &user, &note_id))
+        .await;
+    assert_eq!(kind, 1);
+    let mut page = Client::open(server.port).await;
+    page.joined(&set, &identity_token(&set, &user, "write", "Pat"))
+        .await;
+    page.presence(|connections| connections.len() == 1).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(1500);
+    while tokio::time::Instant::now() < deadline {
+        let Ok(Some(Ok(Ws::Binary(bytes)))) =
+            tokio::time::timeout_at(deadline, note.ws.next()).await
+        else {
+            break;
+        };
+        let mut at = 0;
+        while at < bytes.len() {
+            let channel = read_var(&bytes, &mut at);
+            let kind = bytes[at];
+            at += 1;
+            let len = read_var(&bytes, &mut at) as usize;
+            let payload = &bytes[at..at + len];
+            at += len;
+            assert!(
+                !(channel == 2 && kind == 9 && text_payload(payload).contains("room-presence")),
+                "an embed channel heard its room's presence"
+            );
+        }
+    }
+}
+
+/// Security regression (header-presence review S1): an awareness client id
+/// its user released stays theirs until the room's presence that no longer
+/// lists it went out, so another user's cursor is never drawn under the
+/// departed user's verified name. Another editor claims a departed editor's
+/// id again and again from the moment it leaves; an observer hears that
+/// claim only after a presence that no longer labels the id with the
+/// departed editor. Fails if a released id is free to another user at once.
+#[tokio::test]
+async fn a_released_client_id_is_never_drawn_under_its_users_name() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "presence").await;
+    let other = member(&env, &room, "editor").await;
+    drop_queued_evictions(&env, &room).await;
+    let mut observer = Client::open(server.port).await;
+    observer
+        .joined(&room, &identity_token(&room, &owner, "write", "Olive"))
+        .await;
+    let mut taker = Client::open(server.port).await;
+    taker
+        .joined(&room, &identity_token(&room, &other, "write", "Mal"))
+        .await;
+    let mut leaver = Client::open(server.port).await;
+    leaver
+        .joined(&room, &identity_token(&room, &editor, "write", "Eddie"))
+        .await;
+    leaver
+        .send(7, &awareness_update(601, 1, "{\"by\":\"eddie\"}"))
+        .await;
+    observer
+        .presence(|connections| {
+            connections
+                .iter()
+                .any(|c| c["clients"][0] == 601 && c["name"] == "Eddie")
+        })
+        .await;
+    // It leaves just after a presence, so the next may wait a second.
+    leaver.ws.close(None).await.ok();
+    drop(leaver);
+    let claims = async {
+        for clock in 10..50 {
+            taker
+                .send(7, &awareness_update(601, clock, "{\"by\":\"mal\"}"))
+                .await;
+            tokio::time::sleep(Duration::from_millis(40)).await;
+        }
+    };
+    let watch = async {
+        // Who the observer's latest presence says holds 601.
+        let mut label = Some("Eddie".to_owned());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            for (_, kind, payload) in observer.raw_until(deadline).await {
+                if kind == 9 && text_payload(&payload).contains("room-presence") {
+                    let message: serde_json::Value =
+                        serde_json::from_str(&text_payload(&payload)).expect("json");
+                    label = message["connections"]
+                        .as_array()
+                        .expect("connections")
+                        .iter()
+                        .find(|c| {
+                            c["clients"]
+                                .as_array()
+                                .is_some_and(|ids| ids.iter().any(|id| id == 601))
+                        })
+                        .and_then(|c| c["name"].as_str().map(str::to_owned));
+                } else if kind == 7
+                    && awareness_entries(&payload)
+                        .iter()
+                        .any(|(client, state)| *client == 601 && state.contains("mal"))
+                {
+                    return label;
+                }
+            }
+        }
+    };
+    let (_, label) = tokio::join!(claims, watch);
+    assert_ne!(label.as_deref(), Some("Eddie"));
 }
 
 impl Client {

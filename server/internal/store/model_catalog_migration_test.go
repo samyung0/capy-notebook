@@ -148,7 +148,7 @@ func TestModelCapacityBootstrapPreservesOverrides(t *testing.T) {
 		total, reserve  int
 	}{
 		{"deepseek", "deepseek-flash", 91, 13},
-		{"zai", "glm-5.3-flash", 48, 40},
+		{"zai", "glm-5.3-flash", 150, 125},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
 		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
 	} {

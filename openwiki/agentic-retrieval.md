@@ -895,6 +895,11 @@ adds about 1.2 GiB, mostly its JVM. Seven 1,400-page books at once took
 round (293 s). Office files are light: three 705-page workbooks, two decks and
 two handbooks beside a book peaked at 4.3 GiB, LibreOffice at 0.88 GiB of its
 2 GiB address-space cap. The host is shared with the UAT stack, which is light.
+The v19 parser (flattening plus the decoder sandbox) peaked at 12.2 of 14 GiB
+with the same seven books, which left the host 1.1 GiB; releasing the
+flattening memory before Java brought it to 11.5 GiB (3.6 GiB left), and
+production keeps seven children until it has its own ingest host (decision
+2026-10-21).
 
 A new document upload lands `files.status=pending` with a pending `parse` row.
 Eight coordinator children claim only parse rows and flip the file to
@@ -1001,11 +1006,13 @@ The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
 `PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java starts with it lifted,
 its heap bounded by `-Xmx` (decision 2026-10-15) and the rest by a 2 GiB data
 cap. The
-container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice with
-it too, so the multithreaded LibreOffice and JVM reserve far less address
-space: LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to
-0.52 GiB, and without the setting that workbook fails to convert under the
-limit. A parse child reached 0.64 GiB on a 1,400-page book. A parse that needs more address space fails in the child (Python's
+container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice and
+Java with it too (their sandbox environments name it, decision 2026-10-21), so
+the multithreaded LibreOffice and JVM reserve far less address space:
+LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to 0.52 GiB, and
+without the setting that workbook fails to convert under the limit; a JVM keeps
+1-2 arenas instead of 27-36 and peaks at about 2.8 GiB of address space instead
+of 4.9. A parse child reached 0.64 GiB on a 1,400-page book. A parse that needs more address space fails in the child (Python's
 `MemoryError`, an OS call refused with `ENOMEM`, or MuPDF's failed `malloc`)
 and answers `parse_oom`: its fingerprint is quarantined and the child replaced
 before the next document. LibreOffice past the limit fails its conversion,
@@ -1027,7 +1034,12 @@ itself non-dumpable at startup, so no other process of the parser user can
 trace it or read its memory and environment; PID 1 is the image's
 execute-only `tini`, which the kernel runs non-dumpable as well. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
-1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work
+1.4 GiB of retained heap back to about 0.55 GiB. A PDF parse also does this
+(`odl/memory.py` `release_memory`) between flattening and Java (decision
+2026-10-21): font repair and flattening leave about 0.5 GiB freed but held on a
+1,400-page book, 0.2 GiB after the release, which seven children would
+otherwise hold beside their JVMs (container anonymous memory 12.0 → 10.5 GiB,
+output unchanged). Startup empties the work
 directory: abandoned transfer, document and slot files, and the temporary
 files of anything using `TMPDIR`, which the image points there. Cancelling an executing caller leaves the
 runtime-owned future, admission slot and deadline active. Cancelling waiting
@@ -1425,16 +1437,17 @@ three attempts, a transient error retries, and a definitive client error (400,
 401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
 Caption calls never inherit a user's chat reasoning level. The captioning
-default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on DeepInfra
-with fallbacks and reasoning off (decision 2026-10-19, after GLM-5.3-Flash on
-Relace stopped reading its input; the provider pin is described in
+default is `openrouter/deepseek/deepseek-v4.1-flash-1017`, held on InferenceNet
+then Cloudflare with fallbacks outside them and reasoning off (decision
+2026-10-19, after GLM-5.3-Flash on Relace stopped reading its input; DeepInfra
+until 2026-10-21; the provider pin is described in
 [Model registry and pinning](observability-metering.md#model-registry-and-pinning)).
 Its catalog and capacity rows
 are UAT data. The caption prompt rides as the system message and the image as
 the user turn (decided 2026-10-15, when Relace, GLM's host then, refused image
 input with no conversation context).
-On the `zai/glm-5.3-flash` row (served by Z.AI), which cannot turn thinking
-off, captioning sends `reasoning_effort: low`.
+On the `zai/glm-5.3-flash` row (served through OpenRouter), which cannot turn
+thinking off, captioning sends `reasoning: {effort: "low"}`.
 
 ### VLM page read
 
@@ -1458,15 +1471,21 @@ past its budget raises `ProviderBusy` instead and the job re-pends once; pages
 already read are cached. On the re-claim (`last_wait`: the job's
 `provider_waits` at `PROVIDER_WAITS_MAX`) a page still busy is unread instead,
 so the file ends partial rather than failing `provider_busy` (parts design
-§6). One job reads at most 10 pages
-at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
-its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
-flight (`VLM_PAGE_CAPACITY`), taken in place of the captioning model's `model_capacities` row,
-so page reads neither need that row nor count against its ingest share.
+§6). One job reads at most `CAPY_VLM_PAGES_PER_JOB` pages at once, and all
+ingest workers share a gate of its own: capacity leases under the fixed key
+`vlm_page`, at most `CAPY_VLM_PAGE_CAPACITY` calls in flight, taken in place of
+the captioning model's `model_capacities` row, so page reads neither need that
+row nor count against its ingest share. Both are per-environment settings
+(decision 2026-10-21): production allows 64 in flight and 40 per job
+(`docker-compose.ingest-host.yml`, a production input in the env manifest),
+UAT and local keep 20 and 10 (fixed in their Compose files, and the code's
+fallback); the per-job limit must be between 1 and the overall one. A scan's
+reads take far longer than its parse (a 500-page scan renders in about 13 s),
+so these gates, not the parser, bound scan-heavy ingest.
 
-On the OpenRouter pin, reads use the ingest worker's `OPENROUTER_API_KEY`; a
-slot pointed at GLM uses `ZAI_API_KEY`, the one Z.AI key chat also uses
-(decision 2026-10-20, replacing the second Relace account ingest had). GLM's
+Reads use the ingest worker's `OPENROUTER_API_KEY`, also when the slot points
+at GLM, since GLM is served through OpenRouter too (decision 2026-10-21; Z.AI's
+own key from 2026-10-20, a second Relace account before that). GLM's
 quality against RapidOCR on Relace, the 1,280 px render size, per-page speed
 and cost are in
 [`bench/parsers/reports/2026-10-15-glm-ocr.md`](../bench/parsers/reports/2026-10-15-glm-ocr.md).
@@ -1994,7 +2013,17 @@ always point at document passages.
    followed physical row order, so a copied or rebuilt index returned a
    different top five for the same query.
 3. Optional `file_ids` filter is applied **in SQL** and intersected with the
-   request scope. The agent cannot widen a scope the user narrowed.
+   request scope. The agent cannot widen a scope the user narrowed. The ids
+   may name any workspace item (`tools._resolve_scope` over
+   `store.workspace_outline`, which lists every untrashed top-level material
+   beside the files, Epo 2026-10-21); only source files and notes hold
+   chunks, so a quiz or flashcard set narrows the search to nothing of its
+   own. Each refusal names the id: unknown ("No workspace item has the id
+   …: it may have been deleted or moved to trash. list_sources shows the
+   current ids."), outside the chat's narrowed scope ("… is outside the
+   sources chosen for this chat, and the chat cannot widen that choice."),
+   or a chat scope whose source is gone ("A source chosen for this chat is
+   no longer in the workspace: it was deleted or moved to trash.").
 4. `search.rerank` reorders the first 20 fused candidates
    (`RERANK_CANDIDATES`) with the `rerank` slot's default, DeepInfra
    `Qwen/Qwen3-Reranker-4B` (decision 2026-09-25). It scores each row's
@@ -2595,12 +2624,13 @@ current pending changes applied. Embedded source instructions remain untrusted.
    editor authorization and storage quota checks still apply.
 8. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
    encrypted reasoning items inside the current tool loop. DeepSeek,
-   Anthropic, and ZAI GLM (served by Z.AI,
-   `api.z.ai/api/paas/v4/chat/completions`, model `glm-5.3-flash`,
-   `ZAI_API_KEY`, no fallback route) use Chat
-   Completions-compatible paths. The GLM
-   adapter preserves `reasoning_content` on the assistant message immediately
-   before the matching tool result in the next request. Raw chain-of-thought
+   Anthropic, and ZAI GLM (served through OpenRouter as `z-ai/glm-5.3-flash`
+   on DigitalOcean, then Z.AI, `OPENROUTER_API_KEY`, decision 2026-10-21) use
+   Chat Completions-compatible paths. The stream assembler keeps reasoning on
+   the assistant message immediately before the matching tool result in the
+   next request: DeepSeek's `reasoning_content`, and OpenRouter's `reasoning`
+   under that name, which OpenRouter passes back to GLM (decision 2026-10-21;
+   without it GLM on DigitalOcean built materials nobody asked for). Raw chain-of-thought
    is never streamed to the browser. The user's reasoning policy applies to
    every agent model response. Chat always requires an enabled reasoning level, including checkpoint and in-turn compaction calls; an Instant request is rejected before model admission. A provider failure before the first response
    byte is retried once on a new call id inside a three-second budget, waiting
@@ -2608,7 +2638,13 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `abandoned` (absorbed, no charge). A busy provider or a full per-model gate
    past that budget ends the turn with a retryable `provider_busy` error
    carrying `retryAfterSeconds`. Any later provider or SSE failure is not
-   retried and the client gets the same generic `agent_failed` error. If the browser
+   retried and the client gets the same generic `agent_failed` error.
+   OpenRouter reports a provider failure inside a started stream as an `error`
+   chunk whose choice finishes with `error`; elitellm raises it as a provider
+   error, so a cut-off answer is never assembled as complete and an empty one
+   never reads as `invalid_answer`. A 200 stream that sends no data at all is a
+   provider error too (before any byte, so it takes the one pre-byte retry);
+   the user is charged for neither. If the browser
    disconnects, Python stops writing SSE but finishes the in-flight provider
    call, settles usage when it arrives, and does not start another planning
    step.
@@ -2641,7 +2677,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `chatSendKey`, the same `PATCH /api/me/chat` with `{"sendKey"}`, migration
    0092), picks the composer key that sends; the other adds a new line and an
    IME's Enter never sends.
-   Checkpoint events stay on the Python→Go hop.
+   `checkpoint` (the conversation memory) and `turn_checkpoint` (the turn so
+   far, below) events stay on the Python→Go hop.
 
    The chat panel shows a turn's work as trace rows
    (`src/features/workspace/chat/ChatTrace.tsx`, logic in `trace.ts`). Each
@@ -2683,11 +2720,60 @@ current pending changes applied. Embedded source instructions remain untrusted.
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
 quota, retries POST, then GET. Same-id replay returns the original row. A
 confirmed 404 is a normal tool failure. An uncertain GET fails the turn
-without appending a failed tool result. Its optional `scope` contains
-`file_ids` and `chapter_ids`. Missing or empty scope means the current chat
-scope. The tool resolves and persists source provenance, cannot widen the chat
-scope, rejects the whole call if any id is invalid or unavailable, and rejects
-a valid scope with no indexed content.
+without appending a failed tool result. Its optional `sources` (also on
+`add_questions` creating a quiz and on `create_deck`) is the made-from line:
+plain strings, at most 20 of at most 200 characters (`fieldlimits.MaterialSources`
+and `MaterialSource`), sent as written. Go (`resolveSources` in
+`internal_materials.go`) stores each as a name in `scope_file_names`: the id or
+exact name of an untrashed file, a top-level material of any kind or a chapter
+of the same workspace becomes its current name, anything else (a lecture, a
+handout, a web address, an id from another workspace or of a trashed item)
+stays as written, trimmed, duplicates once (Epo 2026-10-21). A blank source
+(empty after trimming) is dropped silently, so the tool schema sets no minimum
+length. No sources stores none; the chat scope is not filled in. Over the
+bounds (more than 20 distinct non-blank sources after trimming, or one over 200
+characters) is the only refusal (`invalid_input`, "sources: send at most 20
+sources of at most 200 characters each."); nothing is refused for a source's
+kind or index state, and agent creates no longer return `invalid_scope` or
+`scope_has_no_indexed_content`. A deck's PPTX keeps the same names in
+`files.scope_file_names` (migration `0100`), not exposed by the API; a file
+copy (single or workspace clone) keeps them as a material copy does.
+
+### How a turn's work is saved
+
+However a turn ends, its assistant row keeps the tool calls that finished
+(activity blocks, which Ops' `ops_assistant_turns.tool_calls` counts) and
+their results (`toolEvidence`) (Epo 2026-10-21). Python keeps a call's
+evidence note when the call finishes (`agent._run_tools`; notes are put back
+in call order after the batch), sends `turn_checkpoint` with the turn's
+`activity` and `toolEvidence` (nothing cited yet) after every tool batch, and
+every `error` carries the same two fields (`agent.with_turn_state`, applied
+in `run_agent` and to the generic failure in `service._chat_events`). A turn
+without an answer still records its search telemetry, no hit cited. Go keeps
+the latest `activity` and `toolEvidence` from `turn_checkpoint`, `error` and
+`done`, writes each checkpoint onto the row while it is `streaming`
+(`store.CheckpointAssistantMessage`), and finalizes any ending with that state
+merged with the mutation receipts, on a context detached from the request.
+Only `complete` rows replay into later turns (`ConversationPrompt`), so the
+evidence an aborted or failed row keeps serves history and Ops.
+
+| Ending | Where handled | Tool calls saved | Results saved | Status |
+| --- | --- | --- | --- | --- |
+| Answer; planning, stall and tool caps | `agent._run_turn` `done` → `chat_stream.go` | all | all, cited passages included | `complete` |
+| Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | all, nothing cited | `error` |
+| Turn time cap | none exists; a provider call past its deadline is a provider error | — | — | — |
+| User stop, client disconnect | `chat_stream.go`: request cancelled, detached finalize | up to the last checkpoint, plus receipts | up to the last checkpoint | `aborted` |
+| Tool exception | `tools.run`: a failed result, the turn goes on | its failed row | its error text | the turn's |
+| `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | all, nothing cited | `error` |
+| Exception outside the step (loop code) | `service._chat_events` `error` with state | all | all, nothing cited | `error` |
+| Flagged response | `agent._run_turn` `response_flagged`, state from `run_agent` | all | all, nothing cited | `error` |
+| Pipeline dies | `relayChat` EOF → `chat_stream.go` | last checkpoint, plus receipts | last checkpoint | `error` |
+| Go dies | `AbortOrphanedStreams` at the next boot | last checkpoint on the row, plus receipts | last checkpoint | `aborted` |
+
+A stop or a lost hop ends what Go hears at the last checkpoint: calls of the
+batch that was running then keep only their receipts. The boot sweep marks
+every `streaming` row, so with several API replicas a restart would abort
+another replica's live turn.
 
 ### Chat below lg
 
@@ -2943,9 +3029,7 @@ build, and the knowledge library is one more source while the switch is on.
   is, as before (`tools._matching`, Epo 2026-10-13: on that day's runs only
   68% of the books the whole read set credited were used; this rule kept 86%
   precision and dropped 2 of 129 used books, while named excerpts were 95%
-  used). So a write that read the library always carries a book, which
-  `_material_scope` relies on to accept a library-only material in a
-  workspace with nothing indexed. Only the credited excerpts are retained for
+  used). So a write that read the library always carries a book. Only the credited excerpts are retained for
   later turns; a turn with no library reads credits nothing and needs
   nothing. An excerpt retained from an earlier turn's write counts as read but
   enters already credited, so it is credited again only when nothing new was
@@ -3191,18 +3275,18 @@ build, and the knowledge library is one more source while the switch is on.
 
 | Tool | Side effects | Notes |
 | --- | --- | --- |
-| `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
-| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
-| `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
+| `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; `file_ids` take any workspace item id, and any invalid supplied id rejects the call, naming it |
+| `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are indexed); sources retain passage counts, status and short descriptors; notes show their summaries the same way. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
+| `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading; a material other than a note is refused ("… is a quiz, which has no passages to read; inspect_document reads it.") |
 | `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard); a material with provenance is grounded in the library and does not require indexed workspace content. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
-| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
+| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
 | `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX and PPTX page their paragraph or shape entries with target ids by `start`/`count` as `inspect_document` paged them (their scoped reads are phases 2 and 3); a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
@@ -3210,7 +3294,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
-| `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `chapter_id`) on the turn; nothing is stored yet. The material `excerpt_ids` rule ([decks.md](decks.md)) |
+| `create_deck` | turn only | Needs `material.create` and ppt-master in the image. Outlines a deck (1 to 30 slides, optional `chapter_id` and `sources`, the latter stored with the PPTX as `files.scope_file_names`) on the turn; nothing is stored yet. The material `excerpt_ids` rule ([decks.md](decks.md)) |
 | `write_slide` | yes | Checks one SVG slide alone with ppt-master's checker (figures only this turn's bbox captures) and keeps it; once every slide is written, adds the Sources slide, exports the PPTX and stores it as a workspace file through `/api/internal/files` ([decks.md](decks.md)) |
 
 Read tools hit Postgres directly. Every mutation goes through the gateway with
@@ -3353,8 +3437,11 @@ and removes `browse_knowledge` and section reading (`read_knowledge` takes an
 stay shuffled, and `add_questions` and the editing skill say never to refer to
 an option by its letter or position. Version 32 (2026-10-20) adds
 `inspect_office_document` and `edit_office_document` and takes `set_cell` and
-Office targets out of `edit_document`. Go and the pipeline deploy
-together. `cmd/openapi -agent-tools`
+Office targets out of `edit_document`. Version 33 (2026-10-21) gives
+`create_material`, `add_questions` (a new quiz) and `create_deck` a `sources`
+made-from line of plain strings instead of an id scope, and lets
+`search_workspace`'s `file_ids` take any workspace item. Go and the pipeline
+deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3381,8 +3468,9 @@ request hash, outcome, effect and error. A retry with the same identity replays
 the receipt; a different payload under the same id is a 409. Materials created
 by chat use `mat_ + sha256(...)[:16]` so a duplicate call cannot create twice.
 Finalizing the assistant message merges receipts into the persisted activity
-blocks (`outcome`, `effects`, `error`), and `AbortOrphanedStreams` rebuilds the
-activity of an interrupted turn from its receipts. Tool blocks persisted
+blocks (`outcome`, `effects`, `error`), and `AbortOrphanedStreams` merges them
+into an interrupted turn's last checkpoint (How a turn's work is saved, above).
+Tool blocks persisted
 before this contract map their legacy `status` onto an outcome on hydration,
 anything unrecognised becoming `outcome_unknown`. Tool errors carry a stable
 code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
@@ -3704,8 +3792,8 @@ offered after read_skill("office_building").` The two tools are offered only
 once the `office_building` skill is read (`ToolContext.office_tools`): its
 `read_skill` sets the flag, and after that response's tools ran the agent
 appends the two schemas to the turn's tool list, so the rest of the request
-keeps its provider-cached prefix (a tool list change misses Z.AI's whole
-cached prompt; accepted once per chat). They stay offered for the rest of the
+keeps its provider-cached prefix (a tool list change misses the provider's
+whole cached prompt; accepted once per chat). They stay offered for the rest of the
 conversation: `evidence.pack` marks the turn's `toolEvidence.officeTools`,
 and Go's `ConversationPrompt` sends `officeTools` with every later turn when
 any completed message of the conversation carries that mark, a turn a
@@ -3838,10 +3926,21 @@ or evidence known only through a summary require retrieval for a new citation.
 `/generate` is **not** an agent loop. Scope is already known, the output shape
 is fixed, and the gateway must persist a parseable artifact.
 
-1. The gateway resolves file and chapter ids atomically. Omitted file and
-   chapter ids expand to every file in the workspace. One invalid id rejects
-   the request, and a valid scope with no indexed content fails before a model
-   call. `gather_context` samples chunks evenly across every document in scope (equal
+1. The gateway resolves item and chapter ids atomically (`resolveScope`
+   over `store.SourceItems`). An item id may name any untrashed file or
+   top-level material, notes, quizzes and flashcard sets included; a chapter
+   adds every item filed in it; omitted ids expand to every item in the
+   workspace (Epo 2026-10-21). One invalid id rejects the request, naming it
+   ("No workspace item has the id …: it may have been deleted or moved to
+   trash." or "No chapter has the id …: it may have been deleted."). Items
+   without indexed text contribute none, and a scope with none at all fails
+   before a model call as `scope_has_no_indexed_content`: "None of the chosen
+   sources has any text to generate from yet: they are still being indexed,
+   or they are quizzes or flashcard sets, which hold no source text." (the
+   pipeline's `GenerateNoContent` says the same). The resolved names go to
+   the pipeline as `fileNames` for the prompt's scope line and are stored in
+   `scope_file_names`. `gather_context` samples chunks evenly across every
+   document in scope that has chunks (equal
    share per file, not proportional to length). The gateway resolves the user's
    **Settings → LLM** chat preference and chat thinking (`resolveLLM` on the
    `chat` slot; migration `0044` merged the generate slot into chat) and
@@ -3929,7 +4028,14 @@ its questions: the answer is the response's prose as `Md` followed by one
 `AskUser(question, choices)` per call that carries a question, at most three
 as the format allows (choices sent as JSON text are read as a list), so the
 panel below shows them as usual. A call with no question is refused as an
-unknown tool.
+unknown tool. Since GLM moved to OpenRouter (decision 2026-10-21) its requests
+list `AskUser` as a real tool (`agent.ASK_USER_SCHEMA`, appended after the
+registry's tools): DigitalOcean drops a call to a tool the request does not
+list, which left answers empty or ending on "a few questions:" with the
+questions gone. Other models get no such tool and keep writing `AskUser` in
+the answer. The credit guard's terminal call sends no tools, so AskUser is not
+listed there and a GLM call to it on DigitalOcean is still dropped; that needs
+exhausted credits and a question in the same turn.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,
@@ -3999,9 +4105,33 @@ refuse answers 422 `material_content_unreadable`, which parks it. A due note get
 ingest credits reserved on the workspace owner and one `ingest` job carrying
 `materialId`, recorded in `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
-`pendingNotes` in workspace settings until the note changes again; transient
-failures retry on the next tick. Notes have no Process: with `auto_process`
-off, dirty notes wait until it is on again.
+failed in the settings Indexing tab until the note changes again; transient
+failures retry on the next tick. With `auto_process` off, dirty notes wait
+until it is on again, or until the owner's Process.
+
+The workspace stats (`noteChanges`) list every workspace note whose index is
+behind its content, as the Indexing tab shows them beside the file changes
+(Epo 2026-10-21): waiting (dirty), queued (its `ingest` job not yet claimed:
+pending with no attempts), processing, or failed (parked with `index_error`).
+Embedded quizzes and flashcard sets index inside their note and chapter-level
+ones are not indexed, so only notes are listed. The list takes the cap that
+bounds the file list, the workspace owner's files per workspace (100 on both
+plans today; notes do not count toward it): notes with a job come first, then
+the oldest edit, and `moreNoteChanges` counts the notes past the cap, which
+the tab shows as one count line. `POST
+/api/materials/{id}/process-changes` (`ProcessNoteChanges`) is a note's
+Process: it queues the index job at once, below the token threshold, before
+the idle wait, with `auto_process` off, and for a parked note, with the same
+credit reservation as the scheduler (ingest credits on the workspace owner;
+the payload's `automatic` is false). Unlike the scheduler's path, and like a
+file's Process, it refuses a frozen owner. It is the owner's alone: a
+non-member gets 404, any other member 403. A trashed or standalone note is
+404, a note with a job 409 `processing_started` (the tab takes it as started:
+the scheduler or another tab queued it), and a note whose index is current
+409 `nothing_to_process`. A queued note job has no Cancel.
+Admission clears a parked `index_error`; a failed manual job counts in
+`index_failures` like any other, so a parked note that fails again parks
+again.
 
 When the job ends, whatever ended it (the worker, the lease reaper,
 `cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
@@ -4015,8 +4145,8 @@ since its admission counts one in `index_failures` and leaves the note dirty
 with no error, so the scheduler admits it again: a note is retried at most
 twice (Epo 2026-10-20). The third such failure parks it: it stays dirty with
 `index_error` set (the job's error, or `index job failed` when it has none)
-and counts in `pendingNotes`, and nothing admits it again until its next edit
-clears the error and the count. The one wait inside a job
+and is listed as failed in the Indexing tab, and nothing admits it again
+until its next edit clears the error, or the owner's Process. The one wait inside a job
 is a busy embedding provider: like a file's job, a note job that finds it busy
 re-pends without spending an attempt (once, `PROVIDER_WAITS_MAX`, decided
 2026-10-15 in place of the five waits of 2026-10-14; Retry-After or 30 s) and
@@ -4177,8 +4307,8 @@ The workspace owner funds automatic refresh: provider calls only, since the
 parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
 gates every automatic Office reparse, text reindex and note index; off, file
-edits wait for the owner's Process, and notes, which have no Process, wait
-until the switch is on again.
+edits wait for the owner's Process, and notes wait for the owner's Process in
+the Indexing tab (Epo 2026-10-21) or until the switch is on again.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
 tokens count those excerpts. Net tokens measure editing, not context size: the
@@ -4361,8 +4491,8 @@ The lines are source data, in a `<source>` block. Two paths use it:
   saved with the answer (`toolEvidence.pendingHints`, snippets only) and
   replayed after their user message word for word, under the one heading the
   live message uses (worded to stay true later), so earlier requests stay a
-  cached prefix; providers reuse any shared prefix (GLM on Z.AI measured
-  2026-10-20). After a checkpoint, an edit hinted before it may be hinted
+  cached prefix; providers reuse any shared prefix (GLM measured on Z.AI
+  2026-10-20 and on DigitalOcean 2026-10-21). After a checkpoint, an edit hinted before it may be hinted
   again. The turn's own hint message survives a turn-start checkpoint and a
   live fold of its older exchanges. Hints stay in context until the chat is
   condensed; condensing (a checkpoint, a live-history fold or a turn fold)
@@ -4438,8 +4568,9 @@ no answer keys, so neither does any of this (2026-10-18). The read is of the
 stored content, as of the last projection; the live room comes with the Office
 live route. The notes' published index identities, read before the changes,
 are checked with the files'; a failed read keeps the turn going, with the
-outdated notice once the agent reads a note. Notes have no Process and no overflow notification: an
-omitted note change waits for its reindex.
+outdated notice once the agent reads a note. Notes have no overflow
+notification (their Process is in the Indexing tab only): an omitted note
+change waits for its reindex.
 
 A read's changes over 16,000 tokens (`READ_PENDING_TOKENS`, Epo 2026-10-20)
 are omitted: the read says the document's pending edits are larger than a
@@ -4473,7 +4604,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `ZAI_API_KEY`, `OPENROUTER_API_KEY` | The ingest queue env carries the same `ZAI_API_KEY` as chat and the `OPENROUTER_API_KEY` of the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `OPENROUTER_API_KEY` | The ingest queue env carries the `OPENROUTER_API_KEY` chat also uses (GLM) for the descriptor and captioning pins (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per catalog provider and model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
@@ -4485,7 +4616,8 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on DeepInfra with reasoning off; the ZAI GLM-5.3-Flash row (served by Z.AI) captions at `reasoning_effort: low`. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
+| VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |

@@ -33,6 +33,8 @@ export interface QuizRooms {
   keys: ItemRoom | null;
   /** The offline banner (the worse of the two rooms'). */
   offline: ItemRoomSnapshot['offline'];
+  /** The content room's other editors, for the header. */
+  presence: ItemRoomSnapshot['presence'];
   /** Why the content room is read-only for this writer, when it said. */
   readOnlyCode: ReadOnlyCode | null;
   /** Both documents hold their rooms' state (editable). */
@@ -128,6 +130,7 @@ export function useQuizRooms(
     content: content.room,
     keys: wantKeys ? keys.room : null,
     offline: offline ?? null,
+    presence: content.snapshot.presence,
     readOnlyCode: content.snapshot.readOnlyCode,
     ready,
     recovery,

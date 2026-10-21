@@ -57,7 +57,7 @@ async def run(output: Path, repeats: int, models: list[str]) -> None:
                 "cases_per_model": len(cases) * repeats,
                 "models": models,
                 "routes": {
-                    "glm": client.ZAI_CHAT_URL,
+                    "glm": client.OPENROUTER_CHAT_URL,
                     "deepseek": client.DEEPSEEK_CHAT_URL,
                 },
                 "thinking": {"glm": "low", "deepseek": "high"},
@@ -109,7 +109,7 @@ async def run(output: Path, repeats: int, models: list[str]) -> None:
                     model_slug=model,
                     slots=("chat",),
                 )
-                body = (client.zai_request if glm else client.deepseek_request)(
+                body = (client.openrouter_request if glm else client.deepseek_request)(
                     spec,
                     messages,
                     temperature=None,
@@ -120,14 +120,14 @@ async def run(output: Path, repeats: int, models: list[str]) -> None:
                     stream=True,
                     tool_choice=None,
                 )
-                key = secrets["ZAI_API_KEY" if glm else "DEEPSEEK_API_KEY"]
-                url = client.ZAI_CHAT_URL if glm else client.DEEPSEEK_CHAT_URL
+                key = secrets["OPENROUTER_API_KEY" if glm else "DEEPSEEK_API_KEY"]
+                url = client.OPENROUTER_CHAT_URL if glm else client.DEEPSEEK_CHAT_URL
                 record = {
                     "model": name,
                     "wire_model": model,
                     "thinking": "low" if glm else "high",
                     "wire_thinking": body.get("thinking"),
-                    "reasoning_effort": body.get("reasoning_effort"),
+                    "reasoning_effort": body.get("reasoning_effort") or body.get("reasoning"),
                     "case": case["id"],
                     "repeat": repeat,
                     "known_passages": 3 if case["evidence"] else 0,

@@ -286,6 +286,13 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM workspace_members WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
+	// A pending invite to this account stays listed for its owner, inert, until
+	// its own expiry or Cancel: a row vanishing at the purge would tell the
+	// owner the address had an account (human authorization, 2026-10-21).
+	if _, err := tx.Exec(ctx, `UPDATE workspace_invites SET invited_user_id=NULL
+		WHERE invited_user_id=$1 AND accepted_at IS NULL AND revoked_at IS NULL`, userID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspace_invites
 		WHERE invited_user_id=$1 OR invited_by=$1`, userID); err != nil {
 		return err

@@ -62,6 +62,44 @@ test('Indexing tab lists file changes, cancels queued work and processes waiting
   );
 });
 
+test('Indexing tab lists note changes and indexes a waiting note now', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio');
+  await page.getByLabel(m.workspace_settings(), { exact: true }).click();
+  const settings = page.getByRole('dialog', { name: m.workspace_settings() });
+  await settings
+    .getByRole('tab', { exact: true, name: m.workspace_indexing() })
+    .click();
+  const row = (name: string) =>
+    settings.getByRole('listitem').filter({ hasText: name });
+  const waiting = row('Lecture notes — the cell');
+  const failed = row('Membranes & transport cheatsheet');
+
+  await expect(waiting).toHaveAttribute('data-state', 'waiting');
+  // Auto process is on: the note says it indexes by itself.
+  await expect(waiting.getByText(m.workspace_note_change_auto())).toBeVisible();
+  await expect(failed).toHaveAttribute('data-state', 'failed');
+  await expect(
+    failed.getByRole('button', { exact: true, name: m.error_action_retry() })
+  ).toBeVisible();
+
+  await waiting
+    .getByRole('button', { exact: true, name: m.workspace_change_process() })
+    .click();
+  // Exact: the MSW scenario panel's toast previews carry a longer label.
+  await expect(
+    page.getByText(m.files_process_started_title(), { exact: true })
+  ).toBeVisible();
+  await expect(waiting).toHaveAttribute('data-state', 'queued');
+  // A queued note job has no Process and no Cancel.
+  await expect(waiting.getByRole('button')).toHaveCount(0);
+  await expect(waiting).toHaveAttribute('data-state', 'processing', {
+    timeout: 20_000,
+  });
+  await expect(waiting).toHaveCount(0, { timeout: 20_000 });
+});
+
 test('a failed file is retried from its row menu and listed in the Indexing tab', async ({
   page,
 }) => {

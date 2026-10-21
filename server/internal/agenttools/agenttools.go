@@ -93,7 +93,10 @@ import (
 // and edited or created with edit_office_document, offered once the
 // office_building skill is read (Epo 2026-10-20); edit_document loses set_cell
 // and its replace_text takes notes and text sources only.
-const ContractVersion = 32
+// v33: create_material, add_questions (a new quiz) and create_deck take
+// sources, a made-from line of plain strings, instead of an id scope;
+// search_workspace's file_ids take any workspace item (Epo 2026-10-21).
+const ContractVersion = 33
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -388,14 +391,20 @@ func idList(desc string, min, max int) map[string]any {
 	return s
 }
 
-// scopeSchema is the optional source scope shared by material creation.
-func scopeSchema() map[string]any {
-	s := obj(map[string]any{
-		"file_ids":    idList("", 0, 0),
-		"chapter_ids": idList("", 0, 0),
-	})
-	s["description"] = "Source scope for the material. Omit or leave empty to use the current chat scope."
-	return s
+// sourcesSchema is the made-from line of whatever a create tool makes
+// (Epo 2026-10-21): plain strings, which Go stores as names. lead prefixes the
+// description.
+func sourcesSchema(lead string) map[string]any {
+	return map[string]any{
+		"type":     "array",
+		"maxItems": fieldlimits.MaterialSources,
+		"items":    map[string]any{"type": "string", "maxLength": fieldlimits.MaterialSource},
+		"description": fmt.Sprintf("%smade-from line: each source it is made from, named in words or by id: "+
+			"workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or "+
+			"outside sources such as a lecture, a handout or a web address. At most %d, each at most %d "+
+			"characters. An id or exact name of a workspace item is stored as that item's current name. "+
+			"Omit it to name none.", lead, fieldlimits.MaterialSources, fieldlimits.MaterialSource),
+	}
 }
 
 // resourceTarget is the tagged reference the trash and document tools take.
@@ -696,8 +705,9 @@ func Definitions() []Definition {
 			Retention:   RetainCitedPassages,
 			Description: "Search the learner's sources for passages matching one focused query.",
 			InputSchema: obj(map[string]any{
-				"query":    str(""),
-				"file_ids": idList("Restrict to these files. Omit to search the current scope.", 0, 0),
+				"query": str(""),
+				"file_ids": idList("Restrict to these workspace items (ids from list_sources); only source "+
+					"files and notes hold text to search. Omit to search the current scope.", 0, 0),
 			}, "query"),
 			UsesEmbedding:      true,
 			Concurrency:        "search",
@@ -833,7 +843,7 @@ func Definitions() []Definition {
 					"type":        "string",
 					"description": "note, mindmap or diagram only: markdown.",
 				},
-				"scope":       scopeSchema(),
+				"sources":     sourcesSchema("The "),
 				"chapter_id":  str("The chapter to file it in; omit to leave it unfiled."),
 				"excerpt_ids": excerptIDs("Library excerpts it was written from; they become its attribution."),
 			}, "kind"),
@@ -861,6 +871,7 @@ func Definitions() []Definition {
 			InputSchema: obj(quizPlace(map[string]any{
 				"title":      str("Instead of quiz_id: create a quiz with this title."),
 				"chapter_id": str("With title: the new quiz's chapter."),
+				"sources":    sourcesSchema("With title: the new quiz's "),
 				"questions": map[string]any{
 					"type": "array", "minItems": 1, "maxItems": 20, "items": questionSchema(),
 				},
@@ -909,6 +920,7 @@ func Definitions() []Definition {
 					}, "title", "brief"),
 				},
 				"chapter_id":  str("The chapter to file the deck in; omit to leave it unfiled."),
+				"sources":     sourcesSchema("The "),
 				"excerpt_ids": deckExcerpts(),
 			}, "title", "slides"),
 			Mutates:            true,

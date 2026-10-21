@@ -294,7 +294,19 @@ interception cannot intercept the server's summary fetch.
 Workspace invitation acceptance uses the same non-disclosing surface for an
 invalid link or unavailable workspace. Network and server failures keep the
 invitation panel visible with inline error copy and a retry action. The mutation
-does not also emit a global toast.
+does not also emit a global toast. On the owner's side, sending an invite and
+cancelling a pending one render their failures inline under the form and the
+pending list (`FormAlert`) instead of the global toast, and a pending list
+that fails to load shows an inline error with Retry in its section rather than
+reading as "nothing pending".
+
+A few routes answer 404 rather than a false success (Epo 2026-10-21): deleting
+a label, event or task that is missing or someone else's, and marking a
+notification read that is not the caller's (re-reading one's own read
+notification stays a 204). `useDeleteLabel` treats the 404 as already deleted:
+no toast, and the label list refreshes. Creating a quiz whose questions fail
+validation answers 400 with the reason; generated content failing validation
+stays a 500.
 
 ## Offline and paused work
 
@@ -660,9 +672,24 @@ or that it could not start with the reason (`useProcessFileChanges`).
 Processing shows no progress anywhere else; the workspace settings Indexing
 tab lists every file with unprocessed edits as waiting, queued, processing
 (a spinner) or failed (an alert icon), polling the stats every 3 s while any
-is queued or processing. The owner processes a waiting or failed file, or all
+file or note is queued or processing. The owner processes a waiting or failed file, or all
 of them, and cancels a queued one; a file whose processing started refuses
-with `processing_started`. Editors see the list without actions.
+with `processing_started`. Editors see the list without actions. Workspace
+notes whose index is behind their content are listed in the same rows with
+the note icon and title (Epo 2026-10-21), since a note can wait up to 10
+minutes to index: a waiting note says it indexes automatically once enough
+changes build up or after 10 minutes while Auto process edits is on, and a
+failed one is a note parked after its failed jobs, shown like a failed file
+(the job's own error text never renders). The owner's Process (Retry when
+failed, and Process all) indexes the note at once, also with auto process
+off; a `processing_started` answer (queued meanwhile by the scheduler or
+another tab) counts as started, and `nothing_to_process` toasts that there
+are no saved changes to process. A queued or processing note shows no action,
+and there is no Cancel for a note. Notes past the list's cap (the owner's
+files per workspace) show as one "Notes not shown" count line under the
+list. The source coverage bar counts files only. Chapter-level quizzes and
+flashcard sets are not indexed and not listed; an embedded one's edits show
+under its note.
 
 A source file whose processing failed (`files.status='failed'`) is processed
 again only by its owner: automatic processing never picks it, even with Auto

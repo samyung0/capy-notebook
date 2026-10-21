@@ -30,6 +30,10 @@ type Config struct {
 	// LibraryDatabaseURL reaches the shared knowledge library on the ingest
 	// host. Optional: without it the Library section answers 404.
 	LibraryDatabaseURL string
+	// Origin is the Ops page's own origin, the only azp its Clerk session
+	// tokens may carry (Epo 2026-10-21). Required with Clerk outside
+	// development.
+	Origin string
 }
 
 // ClerkFrontendAPI is the https origin Clerk serves its browser bundle from.
@@ -65,6 +69,7 @@ func ConfigFromEnv() Config {
 		DevUserID:              envOr("OPS_DEV_USER_ID", "u_1"),
 		ClerkSecretKey:         os.Getenv("CLERK_SECRET_KEY"),
 		ClerkPublishableKey:    os.Getenv("VITE_CLERK_PUBLISHABLE_KEY"),
+		Origin:                 strings.TrimSpace(os.Getenv("OPS_ORIGIN")),
 		CloudflareAccessIssuer: os.Getenv("OPS_CF_ACCESS_ISSUER"),
 		CloudflareAccessAUD:    os.Getenv("OPS_CF_ACCESS_AUDIENCE"),
 		CloudflareAccessJWKS:   os.Getenv("OPS_CF_ACCESS_JWKS_URL"),
@@ -140,6 +145,11 @@ func (c Config) Validate() error {
 		}
 	} else if strings.TrimSpace(c.ClerkSecretKey) == "" {
 		return errors.New("CLERK_SECRET_KEY is required")
+	} else if c.Origin == "" && !c.development() {
+		return errors.New("OPS_ORIGIN is required with Clerk outside development")
+	}
+	if c.Origin != "" && !browserOrigin(c.Origin, c.development()) {
+		return errors.New("OPS_ORIGIN must be an origin as a browser writes it, such as https://ops.example.com")
 	}
 	if strings.TrimSpace(c.DatabaseURL) == "" {
 		return errors.New("OPS_DATABASE_URL is required")
@@ -159,6 +169,23 @@ func (c Config) Validate() error {
 		return errors.New("OPS_INGEST_LOCAL_DATABASE_URL duplicates the primary database")
 	}
 	return nil
+}
+
+// browserOrigin reports whether origin is spelled as a browser writes a
+// token's azp: scheme://host[:port] in lower case, no default port, nothing
+// else; any other spelling could never match. http only in development.
+func browserOrigin(origin string, development bool) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" || origin != parsed.Scheme+"://"+strings.ToLower(parsed.Host) {
+		return false
+	}
+	switch parsed.Scheme {
+	case "https":
+		return parsed.Port() != "443"
+	case "http":
+		return development && parsed.Port() != "80"
+	}
+	return false
 }
 
 func validateAccessIssuer(raw string) error {

@@ -128,7 +128,7 @@ export const requestAccountDeletionBodyLifecycleGenerationMin = 0;
 
 
 export const RequestAccountDeletionBody = zod.object({
-  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax),
+  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax).describe('The account email, or delete for an account with no email'),
   "lifecycleGeneration": zod.int().min(requestAccountDeletionBodyLifecycleGenerationMin)
 })
 
@@ -3635,6 +3635,16 @@ export const UpdateMaterialResponse = zod.object({
 
 
 /**
+ * @summary Index a workspace note's changes now
+ */
+export const ProcessNoteChangesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ProcessNoteChangesResponse = zod.void()
+
+
+/**
  * @summary Update standalone material sharing
  */
 export const UpdateMaterialSharingParams = zod.object({
@@ -6467,6 +6477,22 @@ export const GenerateResponse = zod.record(zod.string(), zod.unknown())
 
 
 /**
+ * @summary List pending workspace invites
+ */
+export const ListWorkspaceInvitesParams = zod.object({
+  "id": zod.string()
+})
+
+export const ListWorkspaceInvitesResponseItem = zod.object({
+  "address": zod.string(),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "sentAt": zod.iso.datetime({"offset":true})
+})
+export const ListWorkspaceInvitesResponse = zod.array(ListWorkspaceInvitesResponseItem)
+
+
+/**
  * @summary Privately invite a workspace member
  */
 export const CreateWorkspaceInviteParams = zod.object({
@@ -6483,6 +6509,17 @@ export const CreateWorkspaceInviteBody = zod.object({
 })
 
 export const CreateWorkspaceInviteResponse = zod.void()
+
+
+/**
+ * @summary Cancel a pending workspace invite
+ */
+export const CancelWorkspaceInviteParams = zod.object({
+  "id": zod.string(),
+  "inviteId": zod.string()
+})
+
+export const CancelWorkspaceInviteResponse = zod.void()
 
 
 /**
@@ -7222,9 +7259,15 @@ export const GetWorkspaceStatsResponse = zod.object({
 })),
   "files": zod.int(),
   "indexed": zod.int(),
+  "moreNoteChanges": zod.int(),
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
-  "pendingNotes": zod.int(),
+  "noteChanges": zod.array(zod.object({
+  "lastEditedAt": zod.iso.datetime({"offset":true}),
+  "materialId": zod.string(),
+  "state": zod.enum(['waiting', 'queued', 'processing', 'failed']),
+  "title": zod.string()
+})),
   "quizzes": zod.int()
 })
 

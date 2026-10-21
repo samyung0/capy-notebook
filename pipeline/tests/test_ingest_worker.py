@@ -2149,6 +2149,75 @@ async def test_a_busy_vlm_page_on_the_last_wait_stays_unread(
     assert unread == [3]
 
 
+async def test_one_job_reads_at_most_its_configured_pages_at_once(
+    monkeypatch, tmp_path: Path
+):
+    """CAPY_VLM_PAGES_PER_JOB bounds one job's reads in flight (decision
+    2026-10-21: 40 in production, 10 in UAT and local)."""
+    import asyncio
+
+    (tmp_path / "vlm").mkdir()
+    for page in range(8):
+        (tmp_path / "vlm" / f"{page}.jpg").write_bytes(str(page).encode())
+    in_flight = peak = 0
+
+    async def caption(**_kwargs):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.01)
+        in_flight -= 1
+        return "Scanned page", "", 0, False
+
+    monkeypatch.setattr(worker.caption_cache, "caption", caption)
+    monkeypatch.setattr(worker.cfg, "vlm_pages_per_job", 3)
+    token = worker._resource_rates.set(
+        {worker._RESOURCE_VLM_PAGE: {"version": 1, "creditMicrosPerUnit": 1_000_000}}
+    )
+    try:
+        _, unread = await worker._read_vlm_pages([], tmp_path, "f_1", "scan.pdf")
+    finally:
+        worker._resource_rates.reset(token)
+
+    assert unread == [] and peak == 3
+
+
+@pytest.mark.parametrize(
+    ("capacity", "per_job", "started"),
+    [("64", "40", True), ("64", "65", False), ("20", "0", False)],
+)
+def test_the_page_read_gates_need_a_per_job_limit_within_the_overall_one(
+    capacity: str, per_job: str, started: bool
+):
+    import os
+    import subprocess
+    import sys
+
+    env = {
+        **os.environ,
+        "CAPY_VLM_PAGE_CAPACITY": capacity,
+        "CAPY_VLM_PAGES_PER_JOB": per_job,
+    }
+    run = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from pipeline.config import cfg; "
+                "print(cfg.vlm_page_capacity, cfg.vlm_pages_per_job)"
+            ),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if started:
+        assert run.stdout.split() == [capacity, per_job]
+    else:
+        assert "CAPY_VLM_PAGES_PER_JOB must be between 1 and" in run.stderr
+
+
 async def test_refresh_reads_vlm_pages_through_the_caption_cache(
     monkeypatch, tmp_path: Path
 ):

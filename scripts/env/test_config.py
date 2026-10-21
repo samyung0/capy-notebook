@@ -157,7 +157,7 @@ class ConfigTest(unittest.TestCase):
             CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://uat.example.com",
-            ZAI_API_KEY="zai-key",
+            OPENROUTER_API_KEY="or-key",
         )
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
@@ -168,11 +168,12 @@ class ConfigTest(unittest.TestCase):
                 "postgres://capy:a%40%2F%3A%3F%24%23%25%20b@10.77.0.3:5432/capy?sslmode=disable",
             )
             self.assertEqual(queue["GATEWAY_URL"], "http://10.77.0.3:8080")
-            # Chat and ingest share the one Z.AI platform key (Epo 2026-10-20).
-            self.assertEqual(queue["ZAI_API_KEY"], "zai-key")
+            # Chat (GLM) and ingest share the one OpenRouter platform key
+            # (Epo 2026-10-21).
+            self.assertEqual(queue["OPENROUTER_API_KEY"], "or-key")
             self.assertEqual(
-                json.loads(Path(temp, "coolify.json").read_text())["ZAI_API_KEY"],
-                "zai-key",
+                json.loads(Path(temp, "coolify.json").read_text())["OPENROUTER_API_KEY"],
+                "or-key",
             )
             self.assertNotIn(
                 "DATABASE_URL",
@@ -314,6 +315,34 @@ class ConfigTest(unittest.TestCase):
                     config.render(values, environment, temp, "a" * 40)
                 coolify = json.loads(Path(temp, "coolify.json").read_text())
                 self.assertEqual(coolify["COLLABORATION_SOURCE_DISK_BYTES"], str(cap))
+
+    def test_render_gives_only_production_its_page_read_gates(self):
+        """Production's page-read gates (64/40, Epo 2026-10-21) come from its
+        configuration; UAT's ingest Compose fixes its own 20/10."""
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+            CAPY_VLM_PAGE_CAPACITY="64",
+            CAPY_VLM_PAGES_PER_JOB="40",
+        )
+        gates = {"CAPY_VLM_PAGE_CAPACITY": "64", "CAPY_VLM_PAGES_PER_JOB": "40"}
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "production", temp, "a" * 40)
+            prod = config.parse_dotenv(Path(temp, "prod.env").read_text())
+            self.assertEqual({key: prod[key] for key in gates}, gates)
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "uat", temp, "a" * 40)
+            for name in ("nonprod.env", "uat.queue.env"):
+                rendered = config.parse_dotenv(Path(temp, name).read_text())
+                self.assertFalse(gates.keys() & rendered.keys(), name)
 
     def test_render_requires_the_embed_frame_origin_for_the_build(self):
         values = {
@@ -502,6 +531,7 @@ class ConfigTest(unittest.TestCase):
                     "IMPORT_RELAY_SECRET",
                     "RELACE_API_KEY",
                     "RELACE_INGEST_API_KEY",
+                    "ZAI_API_KEY",
                 )
             )
         ]
@@ -528,7 +558,7 @@ class ConfigTest(unittest.TestCase):
             [
                 ("PATCH", "/envs/bulk"),
                 ("GET", "/envs"),
-                *[("DELETE", f"/envs/retired-{index}") for index in range(6)],
+                *[("DELETE", f"/envs/retired-{index}") for index in range(7)],
                 ("GET", "/envs"),
             ],
         )

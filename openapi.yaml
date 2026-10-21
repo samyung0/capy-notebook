@@ -3396,6 +3396,29 @@ components:
         - defaultModel
         - selectedThinking
       type: object
+    NoteChange:
+      additionalProperties: false
+      properties:
+        lastEditedAt:
+          format: date-time
+          type: string
+        materialId:
+          type: string
+        state:
+          enum:
+            - waiting
+            - queued
+            - processing
+            - failed
+          type: string
+        title:
+          type: string
+      required:
+        - materialId
+        - title
+        - state
+        - lastEditedAt
+      type: object
     Notification:
       additionalProperties: false
       properties:
@@ -3722,6 +3745,25 @@ components:
           type: string
       required:
         - type
+      type: object
+    PendingWorkspaceInvite:
+      additionalProperties: false
+      properties:
+        address:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        sentAt:
+          format: date-time
+          type: string
+      required:
+        - id
+        - address
+        - sentAt
+        - expiresAt
       type: object
     PlanTier:
       enum:
@@ -4449,6 +4491,7 @@ components:
           readOnly: true
           type: string
         confirmEmail:
+          description: The account email, or delete for an account with no email
           maxLength: 254
           minLength: 1
           type: string
@@ -7068,15 +7111,19 @@ components:
         indexed:
           format: int64
           type: integer
+        moreNoteChanges:
+          format: int64
+          type: integer
         notIndexable:
           format: int64
           type: integer
         notIndexed:
           format: int64
           type: integer
-        pendingNotes:
-          format: int64
-          type: integer
+        noteChanges:
+          items:
+            $ref: "#/components/schemas/NoteChange"
+          type: array
         quizzes:
           format: int64
           type: integer
@@ -7085,7 +7132,8 @@ components:
         - notIndexed
         - notIndexable
         - fileChanges
-        - pendingNotes
+        - noteChanges
+        - moreNoteChanges
         - chapters
         - files
         - quizzes
@@ -9550,6 +9598,27 @@ paths:
       summary: Update material metadata
       tags:
         - Materials
+  /api/materials/{id}/process-changes:
+    post:
+      operationId: processNoteChanges
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Index a workspace note's changes now
+      tags:
+        - Materials
   /api/materials/{id}/sharing:
     patch:
       operationId: updateMaterialSharing
@@ -11720,6 +11789,32 @@ paths:
       tags:
         - Generate
   /api/workspaces/{id}/invites:
+    get:
+      operationId: listWorkspaceInvites
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/PendingWorkspaceInvite"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List pending workspace invites
+      tags:
+        - Workspace collaboration
     post:
       operationId: createWorkspaceInvite
       parameters:
@@ -11744,6 +11839,32 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Privately invite a workspace member
+      tags:
+        - Workspace collaboration
+  /api/workspaces/{id}/invites/{inviteId}:
+    delete:
+      operationId: cancelWorkspaceInvite
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: inviteId
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Cancel a pending workspace invite
       tags:
         - Workspace collaboration
   /api/workspaces/{id}/materials:

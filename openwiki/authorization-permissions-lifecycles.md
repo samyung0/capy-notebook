@@ -375,9 +375,34 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   `workspace_limit_exceeded` and the browser toasts "Workspace limit reached".
   Workspaces already over the cap (after a downgrade) are kept.
 - An over-quota owner (grace or frozen) may still transfer because giving away
-  bytes is a recovery action; the recipient must be able to edit.
-- Invite email delivery is intentionally independent of later workspace
-  deletion. A message already queued may still send; its link is the authority.
+  bytes is a recovery action; the recipient must be able to edit. A transfer
+  cancels every pending invite (`revoked_at`), so the new owner starts with
+  none.
+- Invites are by exact email or user ID, and every typed address gets a
+  pending row (one per workspace and lowercased address; typing it again
+  refreshes the role, sent date and expiry). The owner's pending list
+  (`GET /api/workspaces/{id}/invites`, owner only) shows each address exactly as
+  typed, with its sent date, its 7-day expiry and a Cancel button
+  (`DELETE /api/workspaces/{id}/invites/{inviteId}`, 404 once it is no longer
+  pending), always as sent until that invite is accepted, cancelled or expires,
+  so the inviter never learns whether an address has an account (Epo
+  2026-10-21). The create response and its toast are the same for every
+  address. Only a row that resolves to one eligible account (live, not the
+  owner, not already a member) sets `invited_user_id` and gets the notification
+  and the email; any other row is inert: nothing is sent and it can never be
+  accepted. When an account accepts through one address, its other pending rows
+  in that workspace stay listed but go inert, since a vanishing row would tell
+  the inviter both addresses are one account. Purging an invitee's account
+  detaches its pending rows the same way: they stay listed, inert, until their
+  own expiry or Cancel. Migration 0101 cleared the pending invites stored
+  before it, since they held the resolved account email rather than the typed
+  address.
+- The emailed invite link's token is minted when the email is sent
+  (`MintInviteLink`), so no raw token is ever stored: the outbox payload holds
+  only the invite id and the current token hash, and each send rotates the
+  invite's hash. A queued email whose invite was accepted, cancelled, expired,
+  re-sent, went inert or was deleted with its workspace is cancelled at send instead of
+  carrying a dead link; acceptance stays the authority.
   A live account without a nonblank email still receives the in-app invite
   notification, but no email-outbox row is created. Role changes and removals
   are in-app notifications only; they never email. An acceptance tells the
@@ -389,8 +414,11 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   frozen, suspended, deletion-pending, deleted, expired, revoked, or
   otherwise invalid invite uses the same non-disclosing unavailable-workspace
   response as a missing shared workspace. A frozen recipient is refused with
-  `account_over_quota`, since joining is an edit. There is no separate
-  email-job retraction mechanism.
+  `account_over_quota`, since joining is an edit. An invite that belongs to
+  another account answers the same 404 as a missing one, by invite id or by
+  token, so neither is an existence oracle.
+- Role changes and removals refuse an empty actor rather than reading it as the
+  owner.
 - Acceptance locks the workspace first, then locks the owner and recipient
   accounts in canonical ID order. Reciprocal invitations therefore cannot take
   the same two account rows in opposite order.
@@ -471,7 +499,11 @@ and [material editor checks](../server/internal/store/share.go#L209).
   can delete another user's comment or discussion.
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
-  awareness to or from them and sends them no comment relays (Epo 2026-10-10).
+  awareness to or from them and sends them no comment relays (Epo 2026-10-10)
+  and no room presence; the presence lists only people who can edit, by
+  name and avatar with nothing about their device, and an Office file draws
+  no cursor for a client it does not list (Epo 2026-10-20,
+  [plate-editor](frontend/plate-editor.md#room-presence)).
   The app uses them for note View, flashcard sets and quizzes. Any user may ask
   for a read token (`{access: 'read'}`), and every reader room does (View, a
   study or attempt page), so an owner's or editor's reading tab writes nothing
@@ -904,6 +936,16 @@ full Stripe subscription when the event carries only its expandable ID before
 projecting paid entitlement. Deletion-pending, suspended, and deleted accounts
 remain ineligible, and a raced paid Checkout is compensated instead.
 
+One subscription Checkout per user is open at a time (Epo 2026-10-21). A second
+Subscribe click while the first is still open at Stripe for the same plan
+returns the same Stripe page; an open one for another plan is expired at
+Stripe, recorded expired, and a new one starts; one Stripe already expired is
+recorded expired and replaced. `subscription_exists` answers only a real
+subscription (or a Checkout Stripe already completed, whose webhook records
+it); the open session is read again after the expire, so one that completed in
+between answers `subscription_exists` instead of opening a second Checkout. A click that meets the first request's Checkout still being created
+answers `409 checkout_starting` ("Checkout is still opening").
+
 `over_quota_grace` behaves exactly like an active account at 100%: the lapse
 applies Free limits, stored bytes are over them, so every storage-creating
 write fails with `storage_quota_exceeded`, while sharing and invites keep
@@ -966,9 +1008,12 @@ close after the state changes. Suspension is currently database/operator-only;
 the Ops dashboard suspend/unsuspend workflow is a separate roadmap item.
 Clerk profile synchronization leaves suspended, deletion-pending, and deleted
 rows untouched, so a stale identity token cannot refresh PII before the
-middleware rejects the session. An empty email-address list means the refresh
-did not supply an email; it preserves the stored address instead of clearing
-it. Clerk identity events are claimed before
+middleware rejects the session. `users.email` is Clerk's primary address only
+when Clerk has verified it (`primary_email_address_id` whose `verification.status`
+is `verified`), in the request-time sync and the `user.created`/`user.updated`
+webhook alike; otherwise the account has no email, and a refresh without a
+verified primary clears the stored address. An unconfirmed address never becomes
+`users.email`, even when Clerk lists it first. Clerk identity events are claimed before
 profile provisioning without assigning an unknown user foreign key. A
 successful create/update is associated after the local user upsert. A deletion
 for an identity that never had a local account is terminally acknowledged with
@@ -983,6 +1028,15 @@ webhook, whichever runs first. Every later sync, including `user.updated`,
 refreshes email and avatar only. `PATCH /api/me` stores the name the user
 typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
 are created with that same name because no separate legal name is stored.
+
+A Clerk session token is accepted only when its `azp` (the origin that minted
+it) is one of `COLLABORATION_ALLOWED_ORIGINS` (Epo 2026-10-21); a token without
+`azp` (Backend API) is not checked. With Clerk on outside development and e2e
+the gateway refuses to boot when that list is empty, since an empty list would
+accept every origin. The Ops API checks `azp` the same way against its own
+origin (`OPS_ORIGIN`), and refuses to start with Clerk on outside development
+without it. Clerk's new-device check stays off, so sign-in has no device-trust
+step.
 
 Every Clerk-authenticated request reads the account once
 (`ClerkSession` in `store/account_state.go`): the lifecycle verdict, whether
@@ -1003,7 +1057,11 @@ Clerk profile retrieval and local identity provisioning are separate gates. A
 temporary profile-read failure skips synchronization for an existing local
 account, preserving its stored name, email, and avatar. If profile retrieval or
 upsert fails while the identity is still unknown locally, the request fails
-retryably with `503 account_state_unavailable`. Starter-workspace completion is
+retryably with `503 account_state_unavailable`. An address another live local
+account still holds (`users_email_active_uidx`, for example a row that has not
+yet seen its owner's address change) is reported to Sentry
+(`clerk_email_collision`) and the account is written without an email, instead
+of failing provisioning on every request. Starter-workspace completion is
 stored separately on the user row. A failed workspace insert also returns the
 retryable 503, and the next authenticated request retries it, without a
 profile read. Once marked complete, deleting every workspace does not recreate
@@ -1031,6 +1089,22 @@ redirect to the destination; `finalize` does not navigate. Links between auth
 pages use SPA navigation and preserve search parameters. Sign-up and new-password
 forms require 12 characters with a digit and a symbol; sign-in only checks
 non-empty. OAuth accounts are never asked for a password.
+
+MFA is optional (Epo 2026-10-21). Sign-in asks for a second factor only when
+Clerk answers `needs_second_factor`, which happens only for a user who turned
+MFA on: after the password, after a breached-password reset, after the
+forgot-password reset (which sends the user back to `/sign-in`), and on
+`/sign-in` itself, where an SSO callback lands such a sign-in
+(`secondFactorUrl`). The step is one code field: the authenticator (TOTP) code,
+with a "Use a backup code" switch when backup codes exist; a phone or email
+code only when Clerk reports no authenticator for the user, sent as the step
+opens. "Back to Log In" clears the local attempt (`signIn.reset()`) and shows the
+form, so the user can start over with another factor or account; it does not end
+the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Users turn
+two-step verification on and off on Clerk's hosted account page, with an
+authenticator app (QR code) and no SMS (Epo 2026-10-21): Settings → Account has
+a "Two-step verification" row whose Manage link opens the URL Clerk's SDK builds
+(`buildUserProfileUrl()`) in a new tab. Capy has no in-app enrolment.
 
 The dashboard opens a first-run dialog when the Clerk user has no
 `unsafeMetadata.onboardedAt`. The profile chooser uses the fixed catalog in
@@ -1352,7 +1426,8 @@ and [known-path calculation](../server/internal/store/blobs.go#L105).
 
 Self-service deletion requires all of the following:
 
-- the user confirms their account email;
+- the user types their account email, or the word `delete` (in every locale)
+  when the account has no stored email (Epo 2026-10-21);
 - the confirmation presents the `lifecycleGeneration` returned by the deletion
   preflight; and
 - no live subscription remains (a subscription set to cancel at period end is

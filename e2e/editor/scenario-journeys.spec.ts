@@ -415,6 +415,37 @@ test('page retry and form retry remain usable after the one-click fault retires'
   ).toBeVisible();
 });
 
+// Review M2: a user stuck on the code step (lost device, another account, a
+// stale attempt) can start the sign-in over.
+test('the MFA code step goes back to the sign-in form', async ({ page }) => {
+  await launch(page, 'auth-second-factor');
+  const codeStep = page.getByRole('heading', { name: m.auth_mfa_title() });
+  await expect(codeStep).toBeVisible();
+  await page.getByRole('button', { name: m.auth_back_to_signin() }).click();
+  await expect(codeStep).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: m.auth_signin_title() })
+  ).toBeVisible();
+  await expect(page.getByLabel(m.auth_email())).toBeVisible();
+});
+
+// Review L7: a pending list that fails to load says so, with a retry, instead
+// of reading as "nothing pending".
+test('a failed pending-invite list offers a retry in its section', async ({
+  page,
+}) => {
+  await launch(page, 'invites-load');
+  const people = page.locator(
+    'section[aria-labelledby="workspace-members-title"]'
+  );
+  await expect(people.getByText(m.members_pending_title())).toBeVisible();
+  await expect(
+    people
+      .getByRole('alert')
+      .getByRole('button', { name: m.error_action_retry() })
+  ).toBeVisible();
+});
+
 test('a new scenario cancels a pending auth request', async ({ page }) => {
   await page.evaluate(() => {
     const fetch = window.fetch;

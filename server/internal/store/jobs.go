@@ -93,6 +93,8 @@ type AgentFileDraft struct {
 	SizeBytes                            int64
 	BlobPath, Parser, ParseMode          string
 	Provenance                           *Provenance
+	// ScopeFileNames is its made-from line, as on a material.
+	ScopeFileNames []string
 }
 
 // CreateAgentFileOperation lands an agent's file the way an upload does (the
@@ -116,6 +118,11 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 		draft.ChapterID, "", draft.SizeBytes, draft.BlobPath, draft.Parser, draft.ParseMode, draft.Provenance)
 	if err != nil {
 		return AgentOperation{}, false, err
+	}
+	if len(draft.ScopeFileNames) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE files SET scope_file_names=$2 WHERE id=$1`, f.ID, draft.ScopeFileNames); err != nil {
+			return AgentOperation{}, false, err
+		}
 	}
 	// agent_operations.kind has no file kind; a deck is the agent's study
 	// material, stored as a file.

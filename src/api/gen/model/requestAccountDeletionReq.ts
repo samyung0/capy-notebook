@@ -9,6 +9,7 @@ export interface RequestAccountDeletionReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   /**
+     * The account email, or delete for an account with no email
      * @minLength 1
      * @maxLength 254
      */

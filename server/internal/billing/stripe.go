@@ -57,6 +57,8 @@ func CreateCustomer(email, name, userID, idempotencyKey string) (string, error) 
 type CheckoutSession struct {
 	ID  string
 	URL string
+	// Status is Stripe's: open, complete or expired.
+	Status string
 }
 
 func CreateCheckoutSession(
@@ -83,7 +85,20 @@ func CreateCheckoutSession(
 	if err != nil {
 		return CheckoutSession{}, err
 	}
-	return CheckoutSession{ID: s.ID, URL: s.URL}, nil
+	return CheckoutSession{ID: s.ID, URL: s.URL, Status: string(s.Status)}, nil
+}
+
+// GetCheckoutSession reads a Checkout Session's status and page. One Stripe
+// no longer knows reads as expired.
+func GetCheckoutSession(sessionID string) (CheckoutSession, error) {
+	remote, err := session.Get(sessionID, nil)
+	if stripeNotFound(err) {
+		return CheckoutSession{ID: sessionID, Status: string(stripe.CheckoutSessionStatusExpired)}, nil
+	}
+	if err != nil {
+		return CheckoutSession{}, err
+	}
+	return CheckoutSession{ID: remote.ID, URL: remote.URL, Status: string(remote.Status)}, nil
 }
 
 func stripeNotFound(err error) bool {

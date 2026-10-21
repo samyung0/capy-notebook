@@ -103,6 +103,7 @@ export const mockScenarioOptions = [
   { id: 'chat-invalid-key', label: 'Chat invalid key SSE error' },
   ...authScenarios,
   { id: 'auth-breached', label: 'Auth: require a new password' },
+  { id: 'auth-second-factor', label: 'Auth: MFA code step' },
   { id: 'auth-busy', label: 'Auth: pending request for 15 seconds' },
   ...failureScenarios,
   { id: 'account-grace', label: 'Grace period: dashboard' },
@@ -427,6 +428,12 @@ export function getMockScenarioHandlers(
       return [
         http.post('/__mock/auth/sign-in', () =>
           HttpResponse.json({ error: null, status: 'needs_new_password' })
+        ),
+      ];
+    case 'auth-second-factor':
+      return [
+        http.post('/__mock/auth/sign-in', () =>
+          HttpResponse.json({ error: null, status: 'needs_second_factor' })
         ),
       ];
     case 'auth-busy':

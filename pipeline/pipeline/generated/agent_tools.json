@@ -1,5 +1,5 @@
 {
-  "version": 32,
+  "version": 33,
   "operations": [
     "source.read",
     "material.read",
@@ -45,7 +45,7 @@
         "additionalProperties": false,
         "properties": {
           "file_ids": {
-            "description": "Restrict to these files. Omit to search the current scope.",
+            "description": "Restrict to these workspace items (ids from list_sources); only source files and notes hold text to search. Omit to search the current scope.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -415,26 +415,14 @@
             ],
             "type": "string"
           },
-          "scope": {
-            "additionalProperties": false,
-            "description": "Source scope for the material. Omit or leave empty to use the current chat scope.",
-            "properties": {
-              "chapter_ids": {
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "file_ids": {
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "type": "array"
-              }
+          "sources": {
+            "description": "The made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
             },
-            "type": "object"
+            "maxItems": 20,
+            "type": "array"
           },
           "title": {
             "maxLength": 120,
@@ -581,6 +569,15 @@
             "minLength": 1,
             "type": "string"
           },
+          "sources": {
+            "description": "With title: the new quiz's made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
           "title": {
             "description": "Instead of quiz_id: create a quiz with this title.",
             "minLength": 1,
@@ -695,6 +692,15 @@
             },
             "maxItems": 30,
             "minItems": 1,
+            "type": "array"
+          },
+          "sources": {
+            "description": "The made-from line: each source it is made from, named in words or by id: workspace files, notes, Office files, quizzes and flashcard sets (ids from list_sources), or outside sources such as a lecture, a handout or a web address. At most 20, each at most 200 characters. An id or exact name of a workspace item is stored as that item's current name. Omit it to name none.",
+            "items": {
+              "maxLength": 200,
+              "type": "string"
+            },
+            "maxItems": 20,
             "type": "array"
           },
           "title": {

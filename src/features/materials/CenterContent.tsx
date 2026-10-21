@@ -43,6 +43,10 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import {
+  createPresenceStore,
+  type PresenceConnection,
+} from '@/features/collaboration/presence';
+import {
   recentIcon,
   recentThumbnail,
 } from '@/features/dashboard/RecentItemsCard';
@@ -61,8 +65,10 @@ import {
   EditorStatusContext,
   FileActionsTarget,
   FileHeaderTarget,
+  FileMenuShown,
   FileMenuTarget,
   FileModeContext,
+  PresenceContext,
 } from '@/features/files/fileModeContext';
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
@@ -212,10 +218,17 @@ export function CenterContent({
   const [editorStatus] = useState(createEditorStatusStore);
   // Stable: the store's own setter, so reporting never re-renders this pane.
   const setEditorStatus = editorStatus.getState().report;
+  // The open room's other editors, for the header's avatar group.
+  const [presence] = useState(createPresenceStore);
+  const setPresence = presence.getState().report;
+  // An Office file's menus reached the header: its second row shows.
+  const [menuShown, setMenuShown] = useState(false);
 
   useEffect(() => {
     setImageZoom(IMAGE_MIN_ZOOM);
     setEditorStatus(null);
+    setPresence(null);
+    setMenuShown(false);
     setIsFullscreen(false);
   }, [item?.kind, item?.id]);
 
@@ -225,6 +238,7 @@ export function CenterContent({
 
   const changeMaterialMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
+    setPresence(null);
     if (item) saveDocumentMode(item, nextMode);
     // The open editor's live document goes into the cached material before
     // View renders, so View renders it once.
@@ -258,88 +272,98 @@ export function CenterContent({
           <FileActionsTarget.Provider value={fileActions}>
             <EditorStatusContext.Provider value={setEditorStatus}>
               <EditorStatusStoreContext.Provider value={editorStatus}>
-                <div
-                  className={cn(
-                    'flex min-h-0 flex-1 flex-col bg-surface',
-                    isFullscreen && 'fixed inset-0 z-40'
-                  )}
-                >
-                  <Header
-                    beforeFileDelete={beforeFileDelete}
-                    chapters={chapters}
-                    color={color}
-                    editorStatus={editorStatus}
-                    fileActions={
-                      <span
-                        className="flex items-center"
-                        ref={setFileActions}
-                      />
-                    }
-                    fileControls={
-                      <span className="flex items-center" ref={setFileHeader} />
-                    }
-                    imageZoom={imageZoom}
-                    isFullscreen={isFullscreen}
-                    item={item}
-                    leading={leading}
-                    materialMode={materialMode}
-                    menuBar={
-                      <span
-                        className="flex min-w-0 items-center"
-                        ref={setFileMenu}
-                      />
-                    }
-                    onDeleted={onDeleted}
-                    oneColumn={oneColumn}
-                    onImageZoomChange={setImageZoom}
-                    onMaterialModeChange={changeMaterialMode}
-                    onToggleFullscreen={() =>
-                      setIsFullscreen((value) => !value)
-                    }
-                    readOnly={readOnly}
-                    standalone={standalone}
-                    trailing={trailing}
-                    workspaceId={workspaceId}
-                  />
-                  {/* One strip at a time under the header: the newest shows. */}
-                  <BannerStack key={item.id}>
+                <PresenceContext.Provider value={setPresence}>
+                  <FileMenuShown.Provider value={setMenuShown}>
                     <div
                       className={cn(
-                        'relative min-h-0 flex-1',
-                        item.kind === 'file'
-                          ? 'flex flex-col overflow-hidden'
-                          : 'overflow-auto'
+                        'flex min-h-0 flex-1 flex-col bg-surface',
+                        isFullscreen && 'fixed inset-0 z-40'
                       )}
                     >
-                      {item.kind === 'material' && (
-                        <MaterialBody
-                          allowExternalAssets={!readOnly}
-                          centerQuiz={!standalone}
-                          key={item.id}
-                          materialId={item.id}
-                          mode={materialMode}
-                          onEditorStatusChange={setEditorStatus}
-                          readOnly={readOnly}
-                          target={item.target}
-                          workspaceId={workspaceId}
-                        />
-                      )}
-                      {item.kind === 'file' && (
-                        <FileBody
-                          citation={item.citation}
-                          color={color}
-                          fileId={item.id}
-                          imageZoom={imageZoom}
-                          key={item.id}
-                          onImageZoomChange={setImageZoom}
-                          onViewerDirtyChange={onFileViewerDirtyChange}
-                          page={item.page}
-                          regions={item.regions}
-                        />
-                      )}
+                      <Header
+                        beforeFileDelete={beforeFileDelete}
+                        chapters={chapters}
+                        color={color}
+                        editorStatus={editorStatus}
+                        fileActions={
+                          <span
+                            className="flex items-center"
+                            ref={setFileActions}
+                          />
+                        }
+                        fileControls={
+                          <span
+                            className="flex items-center"
+                            ref={setFileHeader}
+                          />
+                        }
+                        imageZoom={imageZoom}
+                        isFullscreen={isFullscreen}
+                        item={item}
+                        leading={leading}
+                        materialMode={materialMode}
+                        menuBar={
+                          <span
+                            className="flex min-w-0 items-center"
+                            ref={setFileMenu}
+                          />
+                        }
+                        menuShown={menuShown}
+                        onDeleted={onDeleted}
+                        oneColumn={oneColumn}
+                        onImageZoomChange={setImageZoom}
+                        onMaterialModeChange={changeMaterialMode}
+                        onToggleFullscreen={() =>
+                          setIsFullscreen((value) => !value)
+                        }
+                        presence={presence}
+                        readOnly={readOnly}
+                        standalone={standalone}
+                        trailing={trailing}
+                        workspaceId={workspaceId}
+                      />
+                      {/* One strip at a time under the header: the newest shows. */}
+                      <BannerStack key={item.id}>
+                        <div
+                          className={cn(
+                            'relative min-h-0 flex-1',
+                            item.kind === 'file'
+                              ? 'flex flex-col overflow-hidden'
+                              : 'overflow-auto'
+                          )}
+                        >
+                          {item.kind === 'material' && (
+                            <MaterialBody
+                              allowExternalAssets={!readOnly}
+                              centerQuiz={!standalone}
+                              key={item.id}
+                              materialId={item.id}
+                              mode={materialMode}
+                              onEditorStatusChange={setEditorStatus}
+                              onPresenceChange={setPresence}
+                              readOnly={readOnly}
+                              target={item.target}
+                              workspaceId={workspaceId}
+                            />
+                          )}
+                          {item.kind === 'file' && (
+                            <FileBody
+                              citation={item.citation}
+                              color={color}
+                              fileId={item.id}
+                              imageZoom={imageZoom}
+                              key={item.id}
+                              onImageZoomChange={setImageZoom}
+                              onViewerDirtyChange={onFileViewerDirtyChange}
+                              page={item.page}
+                              regions={item.regions}
+                            />
+                          )}
+                        </div>
+                      </BannerStack>
                     </div>
-                  </BannerStack>
-                </div>
+                  </FileMenuShown.Provider>
+                </PresenceContext.Provider>
               </EditorStatusStoreContext.Provider>
             </EditorStatusContext.Provider>
           </FileActionsTarget.Provider>
@@ -379,6 +403,7 @@ function MaterialBody({
   mode,
   allowExternalAssets,
   onEditorStatusChange,
+  onPresenceChange,
   readOnly,
   target,
 }: {
@@ -388,6 +413,7 @@ function MaterialBody({
   mode: MaterialMode | null;
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
+  onPresenceChange: (connections: PresenceConnection[] | null) => void;
   readOnly: boolean;
   target?: string;
 }) {
@@ -422,6 +448,7 @@ function MaterialBody({
       materialId={materialId}
       mode={mode}
       onEditorStatusChange={onEditorStatusChange}
+      onPresenceChange={onPresenceChange}
       staticNote={choice === 'readOnly'}
       target={target}
     />
@@ -463,6 +490,7 @@ export function MaterialContent({
   allowExternalAssets,
   forceReadOnly,
   onEditorStatusChange,
+  onPresenceChange,
   staticNote = false,
   target,
 }: {
@@ -474,6 +502,8 @@ export function MaterialContent({
   allowExternalAssets: boolean;
   forceReadOnly: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
+  /** The room's other editors, for the header's avatar group. */
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   /** A heavy note opened read-only: View paints the projection and never
    * joins the room, as the gate promises (REVIEW5 S3). */
   staticNote?: boolean;
@@ -552,6 +582,7 @@ export function MaterialContent({
           <QuizEditor
             action={<StudyLink kind="quiz" materialId={materialId} />}
             key={materialId}
+            onPresenceChange={onPresenceChange}
             onStatusChange={onEditorStatusChange}
             quizId={materialId}
             title={material.title}
@@ -572,6 +603,7 @@ export function MaterialContent({
             {activeMode === 'edit' ? (
               <LiveFlashcards
                 action={<StudyLink kind="flashcards" materialId={materialId} />}
+                onPresenceChange={onPresenceChange}
                 onStatusChange={onEditorStatusChange}
                 setId={materialId}
                 title={material.title}
@@ -604,6 +636,7 @@ export function MaterialContent({
             <MermaidMaterialEditor
               kind={material.kind}
               materialId={materialId}
+              onPresenceChange={onPresenceChange}
               onReadOnly={onReadOnly}
               onStatusChange={onEditorStatusChange}
               provenance={material.provenance}
@@ -677,6 +710,7 @@ export function MaterialContent({
                 key={`${materialId}:${activeMode}`}
                 materialId={materialId}
                 onEditorStatusChange={onEditorStatusChange}
+                onPresenceChange={onPresenceChange}
                 onReadOnly={onReadOnly}
               />
             </Suspense>

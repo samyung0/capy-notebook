@@ -309,6 +309,8 @@ async def test_vlm_page_retries_an_unusable_answer_and_charges_only_a_usable_rea
     monkeypatch, sleeps, ingest_mode, first_text, first_finish
 ):
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+    # Each attempt leases the page-read gate at CAPY_VLM_PAGE_CAPACITY.
+    monkeypatch.setattr(models.cfg, "vlm_page_capacity", 64)
     answers = iter([(first_text, first_finish), ("page text", "stop")])
     opened: list = []
     charged: list = []
@@ -333,7 +335,7 @@ async def test_vlm_page_retries_an_unusable_answer_and_charges_only_a_usable_rea
     monkeypatch.setattr(models.elitellm, "complete", complete)
     read = await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1_000)
     assert read == "page text"
-    assert opened == [models.VLM_PAGE_CAPACITY] * 2
+    assert opened == [("vlm_page", 64)] * 2
     assert charged == [0, 1_000]
 
 
@@ -406,7 +408,10 @@ async def test_captioning_on_openrouter_keeps_reasoning_off(
         assert caption == "text"
     [body] = bodies
     assert body["model"] == "deepseek/deepseek-v4.1-flash-1017"
-    assert body["provider"] == {"order": ["DeepInfra"], "allow_fallbacks": False}
+    assert body["provider"] == {
+        "order": ["InferenceNet", "Cloudflare"],
+        "allow_fallbacks": False,
+    }
     assert body["reasoning"] == {"enabled": False}
     if call == "vlm":
         assert body["max_tokens"] == models.VLM_PAGE_MAX_TOKENS == 2_000

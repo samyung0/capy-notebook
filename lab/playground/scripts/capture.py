@@ -137,7 +137,7 @@ def make_handler(
         file_id, page, bbox = args.get("file_id"), args.get("page"), args.get("bbox")
         if not isinstance(file_id, str) or type(page) is not int:
             return tools._refused("capture_page needs file_id and an integer page.")
-        scope = await tools._resolve_scope(ctx, {"file_ids": [file_id]})
+        scope = await tools._resolve_scope(ctx, [file_id])
         if isinstance(scope, tools.ToolResult):
             return scope
         if cap["require_seen_page"] and not any(

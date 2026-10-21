@@ -85,6 +85,10 @@ class Config:
     parse_coordinator_concurrency: int = int(
         _env("CAPY_PARSE_COORDINATOR_CONCURRENCY", "8")
     )
+    # VLM page reads in flight across every ingest worker, and within one job.
+    # UAT and local run 20/10; production sets 64/40 (decision 2026-10-21).
+    vlm_page_capacity: int = int(_env("CAPY_VLM_PAGE_CAPACITY", "20"))
+    vlm_pages_per_job: int = int(_env("CAPY_VLM_PAGES_PER_JOB", "10"))
     db_sync_pool_max_size: int = int(_env("CAPY_DB_SYNC_POOL_MAX_SIZE", "4"))
     db_async_pool_max_size: int = int(_env("CAPY_DB_ASYNC_POOL_MAX_SIZE", "8"))
     # Durable captions/transcripts expire independently of local parse handoffs.
@@ -101,9 +105,9 @@ class Config:
     )
     # Silence allowed once an interactive stream has started, restarting on
     # every event. Longer than the first-event bound because some providers
-    # (GLM-5.3-Flash, measured on Relace) send a tool call's arguments in one
-    # piece when they are complete: a large write streams nothing for 40 s or
-    # more.
+    # (GLM-5.3-Flash, measured on Relace and on DigitalOcean) send a tool
+    # call's arguments in one piece when they are complete: a large write
+    # streams nothing for 40 s or more.
     interactive_stream_idle_s: float = float(
         _env("CAPY_INTERACTIVE_STREAM_IDLE_S", "120")
     )
@@ -350,6 +354,11 @@ if not cfg.import_download_hosts:
 
 if not 1 <= cfg.parse_coordinator_concurrency <= 8:
     raise ValueError("CAPY_PARSE_COORDINATOR_CONCURRENCY must be between 1 and 8")
+
+if not 1 <= cfg.vlm_pages_per_job <= cfg.vlm_page_capacity:
+    raise ValueError(
+        "CAPY_VLM_PAGES_PER_JOB must be between 1 and CAPY_VLM_PAGE_CAPACITY"
+    )
 
 if cfg.db_sync_pool_max_size <= 0 or cfg.db_async_pool_max_size <= 0:
     raise ValueError("pipeline database pool limits must be positive")

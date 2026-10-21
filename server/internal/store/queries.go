@@ -1012,6 +1012,42 @@ func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, err
 	return out, rows.Err()
 }
 
+// SourceItem is a workspace item a material may be made from: a file or a
+// top-level material of any kind. Indexed says it has retrieval chunks; a
+// quiz or flashcard set never has.
+type SourceItem struct {
+	ID, Name  string
+	ChapterID *string
+	Indexed   bool
+}
+
+// SourceItems lists the workspace's untrashed files, then its untrashed
+// top-level materials, each in workspace order.
+func (s *Store) SourceItems(ctx context.Context, wsID string) ([]SourceItem, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, name, chapter_id, indexed FROM (
+		SELECT f.id, f.name, f.chapter_id, f.indexed, 0 AS src, f.position, f.added_at AS at
+		FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL
+		UNION ALL
+		SELECT m.id, m.title, m.chapter_id, EXISTS(
+			SELECT 1 FROM rag_material_contents mc JOIN rag_chunks c ON c.content_id=mc.content_id
+			WHERE mc.material_id=m.id), 1, m.position, m.created_at
+		FROM materials m WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+	) items ORDER BY src, position, at`, wsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SourceItem{}
+	for rows.Next() {
+		var item SourceItem
+		if err := rows.Scan(&item.ID, &item.Name, &item.ChapterID, &item.Indexed); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetFile(ctx context.Context, id string) (File, error) {
 	f, err := scanFile(s.pool.QueryRow(ctx, `SELECT `+fileCols+` FROM files WHERE id=$1 AND trashed_at IS NULL`, id))
 	if isNoRows(err) {
@@ -2310,8 +2346,13 @@ func (s *Store) DeleteLabel(ctx context.Context, userID, id string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM labels WHERE id=$1 AND user_id=$2`, id, userID); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM labels WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
 		return err
+	}
+	// A missing id and someone else's answer alike.
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return tx.Commit(ctx)
 }
@@ -2436,8 +2477,13 @@ func (s *Store) DeleteEvent(ctx context.Context, userID, id string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM events WHERE id=$1 AND user_id=$2`, id, userID); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM events WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
 		return err
+	}
+	// A missing id and someone else's answer alike.
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return tx.Commit(ctx)
 }
@@ -2497,8 +2543,13 @@ func (s *Store) DeleteTask(ctx context.Context, userID, id string) error {
 	if err := s.lockAccountSessionsTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM tasks WHERE id=$1 AND user_id=$2`, id, userID); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM tasks WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
 		return err
+	}
+	// A missing id and someone else's answer alike.
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 	return tx.Commit(ctx)
 }

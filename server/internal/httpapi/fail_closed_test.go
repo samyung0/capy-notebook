@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -56,8 +57,10 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	if got := body["diagramType"]; got != "auto" {
 		t.Errorf("diagramType = %#v, want auto", got)
 	}
-	if got, ok := body["fileIds"].([]any); !ok || len(got) == 0 {
-		t.Errorf("omitted scope did not expand to workspace files: %#v", body["fileIds"])
+	// An omitted scope is every workspace item, notes included.
+	if got, ok := body["fileIds"].([]any); !ok || !slices.Contains(got, any("f_e2e_private")) ||
+		!slices.Contains(got, any("note_e2e_private")) {
+		t.Errorf("omitted scope did not expand to every workspace item: %#v", body["fileIds"])
 	}
 	if got := body["count"]; got != float64(5) {
 		t.Errorf("count = %#v, want the panel's 5", got)
@@ -87,19 +90,66 @@ func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 	unknownFile["fileIds"] = []string{"f_does_not_exist"}
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", unknownFile)
-	if rec.Code != http.StatusBadRequest {
+	if rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), `No workspace item has the id \"f_does_not_exist\"`) {
 		t.Fatalf("unknown file = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "invalid or unavailable") {
-		t.Fatalf("unknown file leaked a distinct error: %s", rec.Body.String())
+
+	// Another workspace's file gets the missing id's answer, word for word
+	// (security regression: any-item-sources review F1).
+	unknownFile["fileIds"] = []string{"f_e2e_public"}
+	foreign := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_editor", unknownFile)
+	if foreign.Code != rec.Code ||
+		strings.ReplaceAll(foreign.Body.String(), "f_e2e_public", "f_does_not_exist") != rec.Body.String() {
+		t.Fatalf("foreign file = %d body=%s, missing body=%s", foreign.Code, foreign.Body.String(), rec.Body.String())
 	}
 
 	unknownChapter := generateBody("quiz", "Unknown chapter")
 	unknownChapter["chapters"] = []string{"ch_does_not_exist"}
 	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", unknownChapter)
-	if rec.Code != http.StatusBadRequest {
+	if rec.Code != http.StatusBadRequest ||
+		!strings.Contains(rec.Body.String(), `No chapter has the id \"ch_does_not_exist\"`) {
 		t.Fatalf("unknown chapter = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// Generate takes any workspace item id (Epo 2026-10-21); items without
+// indexed text add none, and a scope with no text at all is refused in words.
+func TestGenerateTakesAnyItemButNeedsSomeText(t *testing.T) {
+	seen := make(chan map[string]any, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		seen <- in
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[{"front":"a","back":"b"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := openShareAPI(t, pipeline.New(srv.URL, ""))
+
+	noText := generateBody("flashcards", "No text cards")
+	noText["fileIds"] = []string{"qz_e2e_private", "note_e2e_private"}
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", noText)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "scope_has_no_indexed_content") ||
+		!strings.Contains(rec.Body.String(), "None of the chosen sources has any text to generate from yet") {
+		t.Fatalf("no text = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	mixed := generateBody("flashcards", "Quiz and file cards")
+	mixed["fileIds"] = []string{"qz_e2e_private", "f_e2e_private"}
+	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate", "u_editor", mixed)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mixed = %d body=%s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodDelete, "/api/materials/"+generatedMaterialID(t, rec.Body.Bytes()), "u_owner", nil)
+	})
+	body := <-seen
+	if !reflect.DeepEqual(body["fileIds"], []any{"qz_e2e_private", "f_e2e_private"}) ||
+		!reflect.DeepEqual(body["fileNames"], []any{"E2E Private Quiz", "secret-notes.md"}) {
+		t.Fatalf("pipeline got %#v / %#v", body["fileIds"], body["fileNames"])
 	}
 }
 

@@ -64,8 +64,9 @@ The permission boundary is layered:
 1. Go checks `MaterialEffectiveRole` before minting a short-lived token.
 2. Signed-in viewers receive `read` tokens for content documents (never quiz
    keys); the collaboration server joins them read-only, never relays awareness
-   to or from them and sends them no comment relays (Epo 2026-10-10). Narrowed
-   editors (a frozen account, a full owner) keep presence.
+   to or from them and sends them no comment relays and no room presence (Epo
+   2026-10-10, 2026-10-20). Narrowed editors (a frozen account, a full owner)
+   keep presence.
 3. The collaboration server checks the browser origin at the upgrade and, per
    room, the token's signature, issuer, audience, expiry, exact room, schema
    and access.
@@ -212,8 +213,10 @@ root's decorations down to every node they cover, and returning them per block
 and text drew each caret three times. A selection is a tinted range
 (`data-remote-cursor`); every peer also gets a caret at its focus, a collapsed
 decoration that renders as an empty, zero-width leaf with `data-remote-caret`.
-Both carry the peer's colour as `--remote-cursor`, and the `.note-editor`
-stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
+Both carry the peer's colour as `--remote-cursor` and its label, the verified
+name the [room presence](#room-presence) gives its awareness client id (never
+a name its awareness claims; notes send none, and a client the presence does
+not name reads "Collaborator"), and the `.note-editor` stylesheet paints them: the tint through `color-mix` (peers send `hsl()`
 colours, which a hex alpha suffix made invalid) and the caret's 2 px bar as a
 `::before`, so the caret adds no DOM node to the text and leaves Slate's
 DOM-to-point mapping and native caret movement alone. slate-react renders no
@@ -232,6 +235,85 @@ they run for remote operations too.
 The toolbar subscribes directly to Yjs UndoManager stack events, including
 undo/redo and clear, so availability updates without editor focus or selection.
 Its actions use the same Yjs history as note editing.
+
+### Room presence
+
+Developer Epo decided the avatar group and verified cursor labels on
+2026-10-20, and for privacy the same day that the group has no tooltip and
+nothing about a device reaches anyone. The collaboration token names who a
+connection is by the user's display name and avatar alone
+(`collaboration_tokens.go`): the name without bidi controls, the zero-width
+space, word joiner or BOM (`claimName`; the joiner and non-joiner stay, for
+Persian names and emoji sequences) and cut to the 60-character user name limit, the
+avatar left out past 1,024 bytes (co-editors then see initials). The server
+keeps them in each channel's `Context` (`auth::Identity`).
+
+Each room sends its editors a stateless `room-presence` message
+(`send_presence` in `room.rs`, `PRESENCE_TYPE`) a flush window after a join, a
+leave, a token whose identity changed, or a change in a channel's awareness
+client ids, and at most once a second (`PRESENCE_EVERY`). It lists the room's
+other connections of people who can edit (`in_presence`: in a material room
+every non-viewer channel, an editor's reading tab and a narrowed editor
+included; in a source room, which knows only the token's access, its write
+channels; a quiz's keys room has none, its page showing the content room's),
+oldest first and at most 64 (`MAX_PRESENCE`): each one's person (a number the
+room keeps per user while they are in it, never the user id, which a reader
+may not learn: Epo 2026-10-12), name, avatar and the awareness client ids it
+holds. Only those channels hear it, and an embed's channel inside its note's
+hears none (its page's header shows the note's). A member's own connection is
+never in its list, so its user appears only for their other tabs and devices.
+The ids come from the room's own map of which channel holds which client id,
+so a client cannot label a cursor as someone else: labels and the group read
+only this message. An id its user released (a removal, a leave) stays theirs
+until the next presence, which no longer lists it, has gone out: until then
+co-editors still label it with their name, so another user's channel cannot
+take it.
+
+The browser (`presence.ts`) hands it to the open editor (`onPresence` on
+`RoomProvider`; it goes empty when the channel ends): notes keep it for cursor
+labels (`useRemotePeers`), Office files for theirs (below), and both report
+it, with items (quiz, set, Mermaid) and text sources (`PresenceContext`), to
+the pane's presence store, which the header's avatar group reads
+(`RoomPresence.tsx`, labelled "Also in this document"): one avatar per person,
+at most three, then +N, with no tooltip; hidden below sm. Hovering spreads the
+group as transitions.dev's avatar group does (the hovered avatar lifts 4 px
+and grows 5 %, neighbours lift 0.45 as much per step, 320 ms in on the
+smooth-out curve and back on the strong bounce; reduced motion keeps them
+still).
+
+### Office cursors
+
+Developer Epo decided on 2026-10-20 that Office files draw co-editors'
+cursors through BetterOffice's own overlays, labelled like notes. Each fork
+editor takes a presence object (DOCX `collaboration.presence`, XLSX
+`collaboration.provider`, PPTX `collaboration.presence`); the runtime gives
+it one over the frame (`officePresence.ts`, an adapter per editor host), so
+the fork's providers, which would read names from awareness, are not used.
+The editor's cursor goes out as a `cursor` message (at most every 80 ms, the
+last always; a DOCX edit's move waits for the next) and Capy puts it in the
+source room's awareness (`officeCursors.ts`, `useSourceSession`). Capy sends
+the frame the co-editors' cursors as `peers`: each client id with a cursor in
+the room's awareness and a name in the room's presence, under that name,
+never one from awareness; an id the presence does not list (a reader, or a
+peer not listed yet) is not drawn. A cursor is a DOCX story and its encoded
+positions, an XLSX sheet and cell range, or a PPTX slide and shape, each
+bounded (`isOfficeCursor`). The flags look as the fork draws them.
+
+### Idle close
+
+The browser closes a page's collaboration connections after 60 minutes
+without keyboard, pointer, touch or wheel input (`idle.ts`, Epo 2026-10-20);
+a hidden page gets no input, so 60 minutes hidden closes them too, and
+scroll events do not count since pages scroll themselves. Input inside an
+Office frame never reaches Capy's page, so the runtime reports it
+(`activity.ts`: an `activity` message at once, then at most once a minute)
+and Capy counts it as its own (`frameInput`). Each room's channel ends first,
+quietly, as a room closed as its user's oldest does (no close or drop
+reported; it waits not synced), then the tab's socket closes and stays closed
+(`CollabSocket.sleep`). The next input or window focus opens it (`wake`) and
+every room joins again, catching up with its step 1 (the small-answer path).
+The server keeps no idle timer of its own: the per-user caps bound a client
+that ignores this.
 
 ## Stable IDs and persisted node data
 
@@ -891,7 +973,8 @@ The editor reports:
 - `Collaboration unavailable`: the first connection never synced, or the
   provider could not start.
 
-The header shows these as Hugeicons cloud icons beside the title: CloudUpload
+The header shows these as Hugeicons cloud icons beside the title, on its
+top row at every width, phones included (Epo 2026-10-20): CloudUpload
 for Connecting, Reconnecting and Syncing, the plain Cloud for Saved (and the
 PDF's Synced), CloudOff for Offline, and a red CloudAlert for Not saved and
 Collaboration unavailable; a live item's footer status uses the same icons.
@@ -1004,8 +1087,9 @@ joins the wait of its JOIN's awareness (rate-limit review r7 S-1). The editor
 keeps its normal loading state, and after 5 s it adds the line "Opening is
 slowed because many large files were opened recently." (`SlowedOpenLine`,
 `useSlowedLine`): under a note's or a live Mermaid diagram's Connecting
-(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and as a strip
-over an Office or text source (`SourceBanners`). A note already on screen
+(`FileLoading`), under a quiz's, a set's or an embed's skeleton, and for an Office or text
+source in the header's sync indicator tooltip on the top row
+(`useReportEditorStatus`, Epo 2026-10-20). A note already on screen
 whose reconnect is slowed keeps its editor and holds its header's sync
 indicator tooltip open with the line (`NoteEditorStatus.slowed`,
 `EditorSaveStatus`; Epo 2026-10-20). The room is reachable, so the
@@ -1324,6 +1408,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   Office protocol 12, raised `CLIENT_PROTOCOL` to 6 and both minimums to 6.
   Its deploy request names "client protocol 5 -> 6, material 4 -> 6, source
   5 -> 6, Office 12".
+  The room presence (a stateless message both families act on, cursor labels
+  from it instead of awareness; Epo 2026-10-20) raised `CLIENT_PROTOCOL` to 7
+  and both minimums to 7: an older client would keep reading names from
+  awareness. Its deploy request names "client protocol 6 -> 7, material
+  6 -> 7, source 6 -> 7".
 
 #### When to bump
 

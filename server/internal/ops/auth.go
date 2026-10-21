@@ -26,19 +26,27 @@ type OperatorDirectory interface {
 	Touch(context.Context, string) error
 }
 
-type clerkVerifier struct{}
+// clerkVerifier accepts a session token minted by the Ops page itself: its
+// azp is origin, or absent (Backend API), as the gateway allows (Epo
+// 2026-10-21). An empty origin, allowed only in development, checks no azp.
+type clerkVerifier struct{ origin string }
 
-func NewClerkVerifier(secretKey string) (ClerkVerifier, error) {
+func NewClerkVerifier(secretKey, origin string) (ClerkVerifier, error) {
 	secretKey = strings.TrimSpace(secretKey)
 	if secretKey == "" {
 		return nil, errors.New("Clerk secret key is required")
 	}
 	clerk.SetKey(secretKey)
-	return clerkVerifier{}, nil
+	return clerkVerifier{origin: strings.TrimSpace(origin)}, nil
 }
 
-func (clerkVerifier) Verify(ctx context.Context, token string) (string, error) {
-	claims, err := clerkjwt.Verify(ctx, &clerkjwt.VerifyParams{Token: token})
+func (v clerkVerifier) Verify(ctx context.Context, token string) (string, error) {
+	claims, err := clerkjwt.Verify(ctx, &clerkjwt.VerifyParams{
+		Token: token,
+		AuthorizedPartyHandler: func(azp string) bool {
+			return azp == "" || v.origin == "" || azp == v.origin
+		},
+	})
 	if err != nil {
 		return "", err
 	}

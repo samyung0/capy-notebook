@@ -325,6 +325,7 @@ mod tests {
             user_id: user.into(),
             viewer: false,
             parent: None,
+            identity: Default::default(),
         }
     }
 
