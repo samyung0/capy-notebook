@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { authHeaders, USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
-import { createSourceUploadBodyNameMax } from '@/api/gen/validators';
+// A typed name has the file name limit, as a rename has it.
+import { updateFileBodyNameMax as fileNameMax } from '@/api/gen/validators';
 import {
   useChapters,
   useImportSources,
@@ -196,7 +197,7 @@ function workspaceRoomToast(workspaceRoom: number, filesLimit: number) {
 
 /** Server limit on files.name, counted in code points like the API. */
 function nameTooLong(name: string): boolean {
-  return [...name].length > createSourceUploadBodyNameMax;
+  return [...name].length > fileNameMax;
 }
 
 /** One toast for everything the provider refused in a selection. The
@@ -678,7 +679,7 @@ function SourceList({
             {nameTooLong(source.name) && (
               <p className="t-meta text-tint-error-fg">
                 {m.source_name_too_long({
-                  max: createSourceUploadBodyNameMax,
+                  max: fileNameMax,
                 })}
               </p>
             )}

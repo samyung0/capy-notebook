@@ -122,6 +122,8 @@ type api struct {
 	streamMu            sync.Mutex
 	streamByUser        map[string]int
 	streamTotal         int
+	// uploads admits the gateway uploads (upload_queue.go).
+	uploads *uploadQueue
 	// undos run the requests for one chat Undo step one at a time
 	// (huma_undo.go).
 	undos operationLocks
@@ -172,6 +174,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeReloadOutcome: billing.ReloadOutcome,
 		streamByUser:        make(map[string]int),
 	}
+	a.uploads = newUploadQueue(func(batch string) { a.failSourceBatchFile(context.Background(), batch) })
 	if rdb != nil {
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
 		go a.listenWorkspaceTree(context.Background())
@@ -261,8 +264,12 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	if cfg.E2EAuth && a.mailRecorder != nil {
 		r.Get("/api/e2e/emails", a.e2eEmails)
 	}
-	r.Post("/api/materials/{id}/editor-assets/uploads", a.reserveEditorAsset)
-	r.Post("/api/materials/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
+	r.Post("/api/workspaces/{id}/sources/uploads/tickets", a.sourceUploadTicket)
+	r.Post("/api/workspaces/{id}/sources/uploads", a.uploadSource)
+	r.Post("/api/materials/{id}/editor-assets/uploads/tickets", a.editorAssetUploadTicket)
+	r.Post("/api/materials/{id}/editor-assets/uploads", a.uploadEditorAsset)
+	r.Get("/api/uploads/tickets/{ticketId}", a.waitUploadTicket)
+	r.Delete("/api/uploads/tickets/{ticketId}", a.cancelUploadTicket)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)

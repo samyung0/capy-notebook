@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -54,9 +55,9 @@ func openThumbnailHarness(t *testing.T) thumbnailHarness {
 // was lost would.
 type failingPuts struct{ *blob.Memory }
 
-func (f failingPuts) PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error {
-	_ = f.Memory.PutObjectOnce(ctx, key, body, contentType, cacheControl)
-	return errors.New("the bucket did not answer")
+func (f failingPuts) PutObjectOnce(ctx context.Context, key string, body io.ReadSeeker, contentType, cacheControl string) (string, error) {
+	_, _ = f.Memory.PutObjectOnce(ctx, key, body, contentType, cacheControl)
+	return "", errors.New("the bucket did not answer")
 }
 
 // openThumbnailHarnessWith serves captures into bucket (none when nil).
@@ -302,10 +303,10 @@ type cancellingPuts struct {
 	cancel context.CancelFunc
 }
 
-func (c cancellingPuts) PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error {
-	_ = c.Memory.PutObjectOnce(ctx, key, body, contentType, cacheControl)
+func (c cancellingPuts) PutObjectOnce(ctx context.Context, key string, body io.ReadSeeker, contentType, cacheControl string) (string, error) {
+	_, _ = c.Memory.PutObjectOnce(ctx, key, body, contentType, cacheControl)
 	c.cancel()
-	return ctx.Err()
+	return "", ctx.Err()
 }
 
 type thumbnailSentryTransport struct{ events []*sentry.Event }

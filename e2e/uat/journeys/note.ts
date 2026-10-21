@@ -300,9 +300,9 @@ export async function insertNoteMedia(
     .click();
   const uploaded = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname.startsWith(
-        `/api/materials/${noteId}/editor-assets/uploads/`
-      ) && new URL(response.url()).pathname.endsWith('/complete')
+      new URL(response.url()).pathname ===
+        `/api/materials/${noteId}/editor-assets/uploads` &&
+      response.request().method() === 'POST'
   );
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),

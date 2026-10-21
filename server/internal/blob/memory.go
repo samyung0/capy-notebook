@@ -77,11 +77,15 @@ func (s *Memory) Put(id string, r io.Reader) (string, int64, error) {
 }
 
 // PutObjectOnce keeps the content type; Memory has no cache headers to keep.
-func (s *Memory) PutObjectOnce(_ context.Context, key string, body []byte, contentType, _ string) error {
+func (s *Memory) PutObjectOnce(_ context.Context, key string, body io.ReadSeeker, contentType, _ string) (string, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return "", err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.objects[key] = memoryObject{data: append([]byte(nil), body...), contentType: contentType, etag: "mem"}
-	return nil
+	s.objects[key] = memoryObject{data: data, contentType: contentType, etag: "mem"}
+	return "mem", nil
 }
 
 func (s *Memory) PresignGet(_ context.Context, path string) (string, error) {
@@ -106,7 +110,7 @@ func (s *Memory) PresignStableGet(_ context.Context, path string) (string, error
 	return s.url("memory://", path), nil
 }
 
-func (s *Memory) PresignPut(_ context.Context, path, contentType string, _ int64) (PresignedPut, error) {
+func (s *Memory) PresignPut(_ context.Context, path, contentType string) (PresignedPut, error) {
 	return PresignedPut{
 		URL:       s.url("memory-put://", path),
 		Headers:   map[string]string{"Content-Type": contentType},
@@ -122,22 +126,6 @@ func (s *Memory) Head(_ context.Context, path string) (ObjectInfo, error) {
 		return ObjectInfo{}, errors.New("blob: object not found")
 	}
 	return ObjectInfo{Size: int64(len(obj.data)), ContentType: obj.contentType, ETag: obj.etag}, nil
-}
-
-func (s *Memory) ReadPrefix(_ context.Context, path string, maxBytes int64) ([]byte, error) {
-	if maxBytes <= 0 {
-		return nil, errors.New("blob: prefix size must be positive")
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	obj, ok := s.objects[path]
-	if !ok {
-		return nil, errors.New("blob: object not found")
-	}
-	if int64(len(obj.data)) > maxBytes {
-		return append([]byte(nil), obj.data[:maxBytes]...), nil
-	}
-	return append([]byte(nil), obj.data...), nil
 }
 
 func (s *Memory) Open(_ context.Context, path string) (io.ReadCloser, error) {
@@ -292,9 +280,9 @@ func (s *Disk) Put(id string, r io.Reader) (string, int64, error) {
 }
 
 // PutObjectOnce writes the bytes; Disk keeps no headers.
-func (s *Disk) PutObjectOnce(_ context.Context, key string, body []byte, _, _ string) error {
-	_, _, err := s.Put(key, bytes.NewReader(body))
-	return err
+func (s *Disk) PutObjectOnce(_ context.Context, key string, body io.ReadSeeker, _, _ string) (string, error) {
+	_, _, err := s.Put(key, body)
+	return "disk", err
 }
 
 func (s *Disk) PresignGet(ctx context.Context, path string) (string, error) {
@@ -322,7 +310,7 @@ func (s *Disk) PresignStableGet(_ context.Context, path string) (string, error) 
 	return "file://" + full, nil
 }
 
-func (s *Disk) PresignPut(_ context.Context, path, contentType string, _ int64) (PresignedPut, error) {
+func (s *Disk) PresignPut(_ context.Context, path, contentType string) (PresignedPut, error) {
 	return PresignedPut{
 		URL:       "file-put://" + path,
 		Headers:   map[string]string{"Content-Type": contentType},
@@ -340,22 +328,6 @@ func (s *Disk) Head(_ context.Context, path string) (ObjectInfo, error) {
 		return ObjectInfo{}, err
 	}
 	return ObjectInfo{Size: info.Size(), ContentType: "application/octet-stream", ETag: "disk"}, nil
-}
-
-func (s *Disk) ReadPrefix(_ context.Context, path string, maxBytes int64) ([]byte, error) {
-	if maxBytes <= 0 {
-		return nil, errors.New("blob: prefix size must be positive")
-	}
-	full, err := s.resolve(path)
-	if err != nil {
-		return nil, err
-	}
-	f, err := os.Open(full)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return io.ReadAll(io.LimitReader(f, maxBytes))
 }
 
 func (s *Disk) Open(_ context.Context, path string) (io.ReadCloser, error) {

@@ -78,7 +78,7 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 	} else if err != nil {
 		return nil, hErr(err)
 	}
-	if err := a.blob.PutObjectOnce(ctx, key, in.RawBody, "image/webp", thumbnailCacheControl); err != nil {
+	if _, err := a.blob.PutObjectOnce(ctx, key, bytes.NewReader(in.RawBody), "image/webp", thumbnailCacheControl); err != nil {
 		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", in.ID, "error", err)
 		// A put that failed may still have written the object, also when the
 		// browser left mid-put and cancelled the request.

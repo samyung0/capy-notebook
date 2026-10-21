@@ -57,7 +57,6 @@ import type {
   CreateFlashcardSetReq,
   CreateMaterialReq,
   CreateQuizReq,
-  CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
   Customization,
@@ -166,7 +165,6 @@ import type {
   SourceRefreshPublish,
   SourceSession,
   SourceUploadPolicy,
-  SourceUploadReservation,
   SpendingLimitReq,
   StudyPreferences,
   StudySummary,
@@ -10543,123 +10541,6 @@ export const getSourceImport = async (id: string,
 
   const data: getSourceImportResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getSourceImportResponse
-}
-
-
-
-export type createSourceUploadResponse201 = {
-  data: SourceUploadReservation
-  status: 201
-}
-
-export type createSourceUploadResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createSourceUploadResponseSuccess = (createSourceUploadResponse201) & {
-  headers: Headers;
-};
-export type createSourceUploadResponseError = (createSourceUploadResponseDefault) & {
-  headers: Headers;
-};
-
-export type createSourceUploadResponse = (createSourceUploadResponseSuccess | createSourceUploadResponseError)
-
-export const getCreateSourceUploadUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/sources/uploads`
-}
-
-/**
- * @summary Reserve a direct source upload
- */
-export const createSourceUpload = async (id: string,
-    createSourceUploadReq: NonReadonly<CreateSourceUploadReq>, options?: RequestInit): Promise<createSourceUploadResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getCreateSourceUploadUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createSourceUploadReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createSourceUploadResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createSourceUploadResponse
-}
-
-
-
-export type completeSourceUploadResponse201 = {
-  data: File
-  status: 201
-}
-
-export type completeSourceUploadResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type completeSourceUploadResponseSuccess = (completeSourceUploadResponse201) & {
-  headers: Headers;
-};
-export type completeSourceUploadResponseError = (completeSourceUploadResponseDefault) & {
-  headers: Headers;
-};
-
-export type completeSourceUploadResponse = (completeSourceUploadResponseSuccess | completeSourceUploadResponseError)
-
-export const getCompleteSourceUploadUrl = (id: string,
-    uploadId: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/sources/uploads/${uploadId}/complete`
-}
-
-/**
- * @summary Complete a direct source upload
- */
-export const completeSourceUpload = async (id: string,
-    uploadId: string, options?: RequestInit): Promise<completeSourceUploadResponse> => {
-
-  const res = await fetch(getCompleteSourceUploadUrl(id,uploadId),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: completeSourceUploadResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as completeSourceUploadResponse
 }
 
 

@@ -470,9 +470,9 @@ func (a *api) claimSourceRefresh(ctx context.Context, in *sourceCandidateInput) 
 		return nil, hErr(err)
 	}
 	candidate.BaseSourceURL = url
-	// The collaboration service exports the candidate after this claim, so its
-	// size is unknown here (0 leaves it unsigned); the route is service-only.
-	upload, err := a.blob.PresignPut(ctx, candidate.SourceBlobPath, "application/octet-stream", 0)
+	// The collaboration service exports the candidate after this claim; the
+	// route is service-only.
+	upload, err := a.blob.PresignPut(ctx, candidate.SourceBlobPath, "application/octet-stream")
 	if err != nil {
 		return nil, hErr(err)
 	}

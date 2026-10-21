@@ -1707,9 +1707,9 @@ rows; on 2026-09-24 it rewrote 3,239 library chunks and 2,270 pilot chunks.
 
 Before parsing, the worker hashes the uploaded bytes (`files.source_sha256`) by
 streaming the object and digesting it. The object's stored
-`x-amz-checksum-sha256` is deliberately not trusted, however convenient: the
-browser PUTs through a presigned URL that signs only host and content-type, so
-that header is uploader-controlled, and a hash the uploader chooses would let
+`x-amz-checksum-sha256` is deliberately not trusted, however convenient: a
+checksum header is whatever its writer sent, and a hash the uploader chooses
+would let
 anyone claim the hash of a document they do not have and be handed its chunks
 and summary. One GET per ingest is the price. It then looks for a
 **ready** `rag_contents` row with the same
@@ -4179,7 +4179,11 @@ one table, `crates/office-service/limits.json` in the fork, keyed by
 format, which `limits.rs` reads (`include_str!`) and Go's `cmd/openapi
 -office-limits` writes into `edit_office_document`'s description
 (`agenttools/office_limits.go`; `pnpm gen:openapi` passes the vendor path),
-so description and engine cannot drift. It holds 50 commands and, per
+so description and engine cannot drift. A DOCX call reads each story's
+paragraphs once into an index (`ParaIndex` in `docx/agent.rs`) that
+`touched`, apply and the targets' lookup share; it follows the call's own
+replacements and formats, and any other commit drops it (review r2 L9).
+It holds 50 commands and, per
 format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
 cells), 1,000 inserted rows and columns and 5 sheets added, renamed or

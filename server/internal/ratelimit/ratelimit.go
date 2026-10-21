@@ -53,7 +53,7 @@ type Config struct {
 	// Editor applies to cheap inline editor completions so typing in the
 	// note does not consume the chat allowance.
 	Editor Rule
-	// Upload applies to upload reservation and import routes, which are cheap
+	// Upload applies to upload tickets and import routes, which are cheap
 	// to call but expensive downstream once ingest picks them up.
 	Upload Rule
 	// Incident applies to the browser's editing incident reports, a few an

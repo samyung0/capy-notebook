@@ -168,6 +168,21 @@ describe('transfer status', () => {
     expect(
       transferStatus({ ...transfer, stage: 'importing' }, undefined).kind
     ).toBe('indeterminate');
+    // Waiting in the gateway's line, then uploading once its turn comes.
+    const uploading: SourceTransfer = {
+      ...transfer,
+      stage: 'uploading',
+      uploadPct: 0,
+    };
+    expect(
+      transferStatus({ ...uploading, queuePosition: 3 }, undefined)
+    ).toEqual({
+      kind: 'queued',
+      label: m.source_transfer_upload_queued({ position: 3 }),
+    });
+    expect(
+      transferStatus({ ...uploading, queuePosition: 0 }, undefined)
+    ).toMatchObject({ label: m.source_transfer_uploading() });
     expect(
       transferStatus(
         { ...transfer, error: 'Storage limit reached', stage: 'failed' },

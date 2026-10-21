@@ -16,7 +16,7 @@ unanswerable in the other. All names, assignments, and measurements are fictiona
 | File | Purpose |
 | --- | --- |
 | `build_corpus.py` | Generate source documents, question labels, and a source hash manifest. Requires `reportlab`. |
-| `upload_corpus.py` | Upload through the normal reservation, object PUT, and completion APIs; journal progress for resume. |
+| `upload_corpus.py` | Frozen and broken: it uploads through the reservation, object PUT and completion APIs, which the gateway upload replaced on 2026-10-22 (it also predates `batchId`). Port it to the one multipart `POST .../sources/uploads` before running it again. |
 | `inspect_index.py` | Check every expected evidence span in the uploaded index, including parsed PDF table values. |
 | `lab_server.py` | Instrument actual agent tools and apply one explicitly selected experiment condition. |
 | `run_agent.py` | Run fresh conversations sequentially, capture SSE and all search/read evidence, and record diagnostic scores. |

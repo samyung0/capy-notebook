@@ -1461,7 +1461,8 @@ compaction, embedding, and cumulative input counts are telemetry. AI routes
 a 15/minute short-window guard so a scripted loop trips immediately. Cheap
 editor routes (`/ai/copilot`) have their own 120/minute
 class so typing in the note does not consume the chat allowance. Upload
-routes carry a tighter budget on top of the general one, and so do the
+routes (a gateway upload's ticket, which the upload itself needs, and the
+import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
@@ -1764,7 +1765,7 @@ Worth knowing before trusting a dashboard:
 Ingest enqueue used to be listed here as two fail-open billing holes and now
 fails closed instead, which is worth knowing because the failure is visible to
 users. `ingestJobPayload` returns an error — and `CreateAgentFileOperation` /
-`completeSourceUpload` roll back their transaction — when there is no
+`uploadSource` roll back their transaction — when there is no
 `actorUserId`, no registry, or no resolvable ingest/vision default. The worker
 does the same at claim time: `_account_allows_ingest` refuses a job with no
 actor, and a job whose pins do not resolve is failed with

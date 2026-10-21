@@ -3,7 +3,6 @@
 package blob
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -146,13 +145,16 @@ func (s *B2) PutObject(ctx context.Context, key string, body io.Reader, contentT
 // PutObjectOnce is one PutObject request: the client's retryer is limited to
 // a single attempt for this call only (the shared client keeps its retries
 // for everything else). The checksum is the CRC32 transfermanager sends.
-func (s *B2) PutObjectOnce(ctx context.Context, key string, body []byte, contentType, cacheControl string) error {
-	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(body),
+func (s *B2) PutObjectOnce(ctx context.Context, key string, body io.ReadSeeker, contentType, cacheControl string) (string, error) {
+	out, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: body,
 		ContentType: aws.String(contentType), CacheControl: aws.String(cacheControl),
 		ChecksumAlgorithm: s3types.ChecksumAlgorithmCrc32,
 	}, func(o *s3.Options) { o.RetryMaxAttempts = 1 })
-	return err
+	if err != nil {
+		return "", err
+	}
+	return strings.Trim(aws.ToString(out.ETag), `"`), nil
 }
 
 // PresignGet mints a time-limited GET URL so the gateway can redirect the
@@ -232,16 +234,12 @@ func (s *B2) PresignStableGet(ctx context.Context, path string) (string, error) 
 
 var stableExpiresQuery = "X-Amz-Expires=" + strconv.Itoa(int(StableLinkTTL/time.Second))
 
-func (s *B2) PresignPut(ctx context.Context, path, contentType string, size int64) (PresignedPut, error) {
+func (s *B2) PresignPut(ctx context.Context, path, contentType string) (PresignedPut, error) {
 	expiresAt := time.Now().UTC().Add(s.presignTTL)
 	in := &s3.PutObjectInput{
 		Bucket:      aws.String(s.bucket),
 		Key:         aws.String(path),
 		ContentType: aws.String(contentType),
-	}
-	// The browser sets Content-Length from the body itself; it is only signed.
-	if size > 0 {
-		in.ContentLength = aws.Int64(size)
 	}
 	req, err := s.presign.PresignPutObject(ctx, in, s3.WithPresignExpires(s.presignTTL))
 	if err != nil {
@@ -264,26 +262,6 @@ func (s *B2) Head(ctx context.Context, path string) (ObjectInfo, error) {
 		ContentType: aws.ToString(out.ContentType),
 		ETag:        strings.Trim(aws.ToString(out.ETag), `"`),
 	}, nil
-}
-
-func (s *B2) ReadPrefix(ctx context.Context, path string, maxBytes int64) ([]byte, error) {
-	if maxBytes <= 0 {
-		return nil, errors.New("blob: prefix size must be positive")
-	}
-	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(path),
-		Range:  aws.String("bytes=0-" + strconv.FormatInt(maxBytes-1, 10)),
-	})
-	if err != nil {
-		return nil, err
-	}
-	defer out.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(out.Body, maxBytes))
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
 }
 
 func (s *B2) Open(ctx context.Context, path string) (io.ReadCloser, error) {
