@@ -21,7 +21,9 @@ func validOpsConfig(env string) Config {
 
 // Security regression (human authorization 2026-10-21): with Clerk on outside
 // development Ops refuses to start without its own origin, which its session
-// tokens' azp must match; development may run without (no azp check).
+// tokens' azp must match, or with one spelled so no browser azp can equal it
+// (http, capitals, a default port, userinfo); development may run without (no
+// azp check).
 func TestConfigRequiresTheOpsOriginWithClerk(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
@@ -29,11 +31,18 @@ func TestConfigRequiresTheOpsOriginWithClerk(t *testing.T) {
 		ok          bool
 	}{
 		{"production", "https://ops.example.test", true},
+		{"production", "https://ops.example.test:8443", true},
 		{"production", "", false},
 		{"production", "https://ops.example.test/", false},
 		{"production", "ops.example.test", false},
+		{"production", "http://ops.example.test", false},
+		{"production", "https://Ops.example.test", false},
+		{"production", "HTTPS://ops.example.test", false},
+		{"production", "https://ops.example.test:443", false},
+		{"production", "https://operator@ops.example.test", false},
 		{"development", "", true},
 		{"development", "http://localhost:8082", true},
+		{"development", "http://localhost:80", false},
 	} {
 		config := validOpsConfig(test.env)
 		config.Origin = test.origin

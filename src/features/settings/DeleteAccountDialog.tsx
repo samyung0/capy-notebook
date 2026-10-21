@@ -3,10 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { USE_MSW } from '@/api/auth';
-import {
-  RequestAccountDeletionBody,
-  requestAccountDeletionBodyConfirmEmailMax,
-} from '@/api/gen/validators';
+import { requestAccountDeletionBodyConfirmEmailMax } from '@/api/gen/validators';
 import {
   useDeletionPreflight,
   useMe,
@@ -18,19 +15,19 @@ import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
+import {
+  deletionConfirmation,
+  deletionConfirmSchema,
+} from '@/features/settings/deletionConfirm';
 import { m } from '@/i18n';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-/** What a user with no stored email types instead, in every locale; the
- * server checks the same word (huma_account_lifecycle.go). */
-const CONFIRM_WORD = 'delete';
-
 type Props = { open: boolean; onClose: () => void };
 
-/** Account deletion confirmed by typing the account email (or CONFIRM_WORD
- * without one). The preflight lists what goes with it and blocks while a
- * subscription is still live. */
+/** Account deletion confirmed by typing the account email (or the word
+ * without one, deletionConfirm.ts). The preflight lists what goes with it
+ * and blocks while a subscription is still live. */
 export function DeleteAccountDialog(props: Props) {
   if (!CLERK_ACTIVE) return <DeleteAccountDialogInner {...props} />;
   return <ClerkDeleteAccountDialog {...props} />;
@@ -56,22 +53,8 @@ function DeleteAccountDialogInner({
   const { mutateAsync: requestDeletion } = useRequestAccountDeletion();
 
   const email = meData?.email;
-  const expected = meData && (email || CONFIRM_WORD);
-  const deletionSchema = useMemo(
-    () =>
-      RequestAccountDeletionBody.refine(
-        (v) =>
-          !!expected &&
-          v.confirmEmail.trim().toLowerCase() === expected.toLowerCase(),
-        {
-          message: email
-            ? m.settings_email_mismatch()
-            : m.settings_deletion_word_mismatch(),
-          path: ['confirmEmail'],
-        }
-      ),
-    [email, expected]
-  );
+  const expected = deletionConfirmation(email);
+  const deletionSchema = useMemo(() => deletionConfirmSchema(email), [email]);
 
   const {
     formState: { isValid, isSubmitting },

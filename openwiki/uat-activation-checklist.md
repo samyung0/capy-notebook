@@ -108,6 +108,14 @@ that sent the delivery. A `503` means `CLERK_WEBHOOK_SECRET` is still blank.
 The Clerk development instance has no webhook endpoint: local runs provision
 users on their first request, and webhooks are only checked here.
 
+### Two-step verification
+
+Set up in [deployment-runbook §12.3](deployment-runbook.md#123-clerk-a-separate-uat-application).
+Signed in on `app.uat.capynotebook.com`, Settings → Account shows a
+"Two-step verification" row. A missing row means the Account Portal user
+profile is off. Manage opens `accounts.uat.capynotebook.com` in a new tab, and
+its security section offers an authenticator app and no SMS codes.
+
 ### Cloud import consent
 
 After the [picker setup](deployment-runbook.md#11-google-drive-and-onedrive-pickers),

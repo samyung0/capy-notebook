@@ -1787,6 +1787,6 @@ the likelihood grew every time the registry was reconfigured.
 | `OPS_ADMIN_DATABASE_URL` | ops | lazy `capy_ops_admin` pool; restricted registry writes and reconciliation requests |
 | `OPS_CF_ACCESS_ISSUER` / `_AUDIENCE` | ops | required Cloudflare Access verification values |
 | `OPS_CF_ACCESS_JWKS_URL` | ops | optional; defaults to `<issuer>/cdn-cgi/access/certs` |
-| `OPS_ORIGIN` | ops | the Ops page origin, the only `azp` accepted on a Clerk session token (one without `azp` passes); required with Clerk outside development; deployments set it from `DEPLOYMENT_OPS_URL` |
+| `OPS_ORIGIN` | ops | the Ops page origin, the only `azp` accepted on a Clerk session token (one without `azp` passes); required with Clerk outside development, where it must be a lower-case `https` origin without a default port; deployments set it from `DEPLOYMENT_OPS_URL` |
 | `OPS_ACCESS_DISABLED` / `OPS_AUTH_DISABLED` | ops | fail-closed defaults; bypass requires explicit unsafe development mode |
 | `OPS_UNSAFE_DEVELOPMENT` | ops | allows owner DSNs/auth bypasses only when `APP_ENV=development`; false by default |
