@@ -637,6 +637,53 @@ async fn a_reopened_room_replays_its_log_and_folds_it_once_empty() {
     );
 }
 
+/// A stop (SIGTERM, what Docker sends before the compose file's 60 s grace
+/// period) stores every room's unsaved edits before the process exits. The
+/// debounce here is a minute, so only the stop's flush can store the edit;
+/// fails if the server exits without it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stop_stores_each_rooms_unsaved_edits_before_exiting() {
+    let Some(env) = env() else { return };
+    let mut server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_DEBOUNCE_MS", "60000"),
+            ("COLLABORATION_MAX_DEBOUNCE_MS", "60000"),
+        ],
+    )
+    .await;
+    let (_, room, mut client) = writer(&env, server.port, "kept").await;
+    client.type_text(" too").await;
+    client.until(6).await.expect("ack");
+    let material = room.split(':').nth(1).expect("the material").to_owned();
+    let before = update_rows(&env, "material_yjs_updates", &material).await;
+    let signalled = Command::new("kill")
+        .args(["-TERM", &server.child.id().to_string()])
+        .status()
+        .expect("kill");
+    assert!(signalled.success());
+    let mut exited = false;
+    for _ in 0..300 {
+        if server
+            .child
+            .try_wait()
+            .expect("the server's status")
+            .is_some()
+        {
+            exited = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(exited, "the server did not stop");
+    assert!(
+        update_rows(&env, "material_yjs_updates", &material).await > before,
+        "the stop stored nothing"
+    );
+}
+
 #[tokio::test]
 async fn refusals_carry_the_reasons_the_editor_acts_on() {
     let Some(env) = env() else { return };
