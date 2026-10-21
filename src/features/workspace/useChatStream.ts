@@ -6,7 +6,7 @@ import {
   chatErrorMessage,
   streamChat,
 } from '@/api/chatStream';
-import { qk } from '@/api/client';
+import { isApiError, qk } from '@/api/client';
 import { useStopChatTurn } from '@/api/hooks';
 import type {
   ActivityBlock,
@@ -95,8 +95,10 @@ type TurnIds = { conversationId: string; messageId: string };
 
 /** One turn's Stop: a request to the server, which saves the turn and starts
  * nothing further, then `abort` stops reading the stream. Pressed before the
- * server names the turn (`named`), the request goes once it does. A failed
- * request leaves the stream running (its toast says so) for another press. */
+ * server names the turn (`named`), the request goes once it does. A refused
+ * request leaves the stream running (its toast says so) for another press;
+ * one that cannot reach the server stops reading anyway, since the server
+ * finishes a turn whose browser left. */
 export function turnStopper(
   request: (ids: TurnIds) => Promise<unknown>,
   abort: () => void
@@ -109,9 +111,11 @@ export function turnStopper(
     if (!ids) return;
     try {
       await request(ids);
-    } catch {
-      stopping = false;
-      return;
+    } catch (error) {
+      if (isApiError(error)) {
+        stopping = false;
+        return;
+      }
     }
     abort();
   };

@@ -809,6 +809,10 @@ async def stream_agent_response(
                 deadline=deadline,
                 retry_any=True,
             )
+            # A stop during the wait (a backoff or the provider's Retry-After)
+            # starts no next attempt either.
+            if stopped is not None and stopped():
+                raise
     raise AssertionError("retry loop must return or raise")
 
 

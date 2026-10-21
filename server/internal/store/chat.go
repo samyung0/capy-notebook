@@ -643,27 +643,31 @@ func (s *Store) CheckpointAssistantMessage(ctx context.Context, msgID string, ac
 
 // AddStoppedTurnCalls adds to a stopped turn's aborted row what came after the
 // stop (Epo 2026-10-21): the calls that were still running, as the turn's
-// latest activity and evidence merged with the receipts by call id, and its
-// token count. Only an aborted row changes.
-func (s *Store) AddStoppedTurnCalls(ctx context.Context, msgID string, activity []ActivityBlock, toolEvidence json.RawMessage, tokenCount int) error {
+// latest activity and evidence merged with the receipts by call id, the
+// citations and generation id of a turn that finished as it stopped, and its
+// token count. Only an aborted row changes; saved is false when there is none.
+func (s *Store) AddStoppedTurnCalls(ctx context.Context, msgID string, activity []ActivityBlock, toolEvidence json.RawMessage, citations []Citation, generationID string, tokenCount int) (saved bool, err error) {
 	ops, err := messageOperationsTx(ctx, s.pool, msgID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	meta, err := json.Marshal(msgMetadata{Activity: mergeOperationEffects(activity, ops), ToolEvidence: toolEvidence})
+	meta, err := json.Marshal(msgMetadata{
+		Activity: mergeOperationEffects(activity, ops), ToolEvidence: toolEvidence,
+		Citations: citations, GenerationID: generationID,
+	})
 	if err != nil {
-		return err
+		return false, err
 	}
 	var tc *int
 	if tokenCount > 0 {
 		tc = &tokenCount
 	}
-	_, err = s.pool.Exec(ctx,
+	tag, err := s.pool.Exec(ctx,
 		`UPDATE messages SET token_count = COALESCE($3, token_count),
 		        metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb
 		  WHERE id=$1 AND status='aborted'`,
 		msgID, meta, tc)
-	return err
+	return err == nil && tag.RowsAffected() > 0, err
 }
 
 // IsAssistantMessageOf says whether msgID is an assistant row of convID.

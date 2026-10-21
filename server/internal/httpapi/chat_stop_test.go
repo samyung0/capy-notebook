@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -26,6 +27,72 @@ const (
 		`"toolEvidence":{"tools":[{"name":"list_sources","text":"checkpoint listing"},{"name":"list_sources","text":"slow listing"}],"passages":[],"skills":[]}}`
 )
 
+// stopPipe is a fake retrieval service for one turn. Its stream sends first,
+// then waits until the test releases it (or Go hangs up) and sends what late
+// writes; /chat/stop answers stopStatus.
+type stopPipe struct {
+	first      []string
+	late       func(w io.Writer, msgID string)
+	stopStatus int
+
+	release       chan struct{}
+	stops         atomic.Int32
+	lateCancelled atomic.Bool
+
+	mu             sync.Mutex
+	msgID, spendID string
+}
+
+func newStopPipe(late func(w io.Writer, msgID string)) *stopPipe {
+	return &stopPipe{
+		first:      []string{turnToolStart, turnToolEnd, turnCheckpoint, slowToolStart},
+		late:       late,
+		stopStatus: http.StatusOK,
+		release:    make(chan struct{}),
+	}
+}
+
+func frames(w io.Writer, list ...string) {
+	for _, frame := range list {
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", frame)
+	}
+}
+
+func (p *stopPipe) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/chat/stop" {
+		p.stops.Add(1)
+		w.WriteHeader(p.stopStatus)
+		return
+	}
+	var body struct {
+		AssistantMessageID string `json:"assistantMessageId"`
+		SpendSessionID     string `json:"spendSessionId"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	p.mu.Lock()
+	p.msgID, p.spendID = body.AssistantMessageID, body.SpendSessionID
+	p.mu.Unlock()
+	w.Header().Set("Content-Type", "text/event-stream")
+	frames(w, p.first...)
+	w.(http.Flusher).Flush()
+	select {
+	case <-p.release:
+	case <-r.Context().Done():
+	case <-time.After(10 * time.Second):
+		return
+	}
+	p.lateCancelled.Store(r.Context().Err() != nil)
+	if r.Context().Err() == nil {
+		p.late(w, body.AssistantMessageID)
+	}
+}
+
+func (p *stopPipe) spend() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.spendID
+}
+
 // browserTurn starts a chat turn as u_editor the way a browser does; cancel
 // is the browser going away. done closes when the handler returns.
 func browserTurn(t *testing.T, h http.Handler, convID string) (cancel context.CancelFunc, done chan struct{}) {
@@ -46,6 +113,46 @@ func browserTurn(t *testing.T, h http.Handler, convID string) (cancel context.Ca
 	}()
 	t.Cleanup(cancel)
 	return cancel, done
+}
+
+// stopTurnRun is one turn of a stopPipe as u_editor, up to its first
+// checkpoint on the streaming row.
+type stopTurnRun struct {
+	h        http.Handler
+	st       *store.Store
+	pipe     *stopPipe
+	convID   string
+	msgID    string
+	leave    context.CancelFunc
+	finished chan struct{}
+}
+
+func startStopTurn(t *testing.T, pipe *stopPipe, setStore func(*store.Store)) stopTurnRun {
+	t.Helper()
+	upstream := httptest.NewServer(pipe)
+	t.Cleanup(upstream.Close)
+	h, st, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(upstream.URL, ""))
+	if setStore != nil {
+		setStore(st)
+	}
+	run := stopTurnRun{h: h, st: st, pipe: pipe, convID: newTurnConversation(t, h, st)}
+	run.leave, run.finished = browserTurn(t, h, run.convID)
+	run.msgID = waitForCheckpoint(t, st, run.convID)
+	return run
+}
+
+func (r stopTurnRun) stopAs(t *testing.T, userID, convID string) int {
+	t.Helper()
+	return doAsUser(t, r.h, http.MethodPost, fmt.Sprintf("/api/conversations/%s/messages/%s/stop", convID, r.msgID), userID, nil).Code
+}
+
+func (r stopTurnRun) status(t *testing.T) string {
+	t.Helper()
+	var status string
+	if err := r.st.Pool().QueryRow(t.Context(), `SELECT status FROM messages WHERE id=$1`, r.msgID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	return status
 }
 
 // waitForCheckpoint waits until the turn's first checkpoint is on its
@@ -86,101 +193,45 @@ func sessionStatus(t *testing.T, st *store.Store, id string) string {
 	return status
 }
 
+// lateRunningCall finishes c2 and sends the stopped turn's last checkpoint.
+func lateRunningCall(w io.Writer, _ string) { frames(w, slowToolEnd, stoppedFinal) }
+
 // Stop ends the turn at once (Epo 2026-10-21): the row is listed aborted right
 // away, the call still running finishes on a pipeline request the browser's
 // departure does not cancel, and its call and result join the row once, with
 // its receipt; credits settle after it, once.
 func TestChatStopSavesTheTurnAtOnceAndAddsTheRunningCall(t *testing.T) {
-	var (
-		st                 *store.Store
-		stopOnce           sync.Once
-		mu                 sync.Mutex
-		spendID, messageID string
-		lateCancelled      atomic.Bool
-	)
-	stopped, release := make(chan struct{}), make(chan struct{})
-	lateCancelled.Store(true)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/chat/stop" {
-			var body struct {
-				AssistantMessageID string `json:"assistantMessageId"`
-			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-			mu.Lock()
-			running := messageID
-			mu.Unlock()
-			if body.AssistantMessageID == running {
-				stopOnce.Do(func() { close(stopped) })
-			}
-			_, _ = w.Write([]byte(`{"stopped":true}`))
-			return
-		}
-		var body struct {
-			AssistantMessageID string `json:"assistantMessageId"`
-			SpendSessionID     string `json:"spendSessionId"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Error(err)
-		}
-		mu.Lock()
-		messageID, spendID = body.AssistantMessageID, body.SpendSessionID
-		mu.Unlock()
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, frame := range []string{turnToolStart, turnToolEnd, turnCheckpoint, slowToolStart} {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", frame)
-		}
-		w.(http.Flusher).Flush()
-		select {
-		case <-stopped:
-		case <-time.After(10 * time.Second):
-			return
-		}
-		select {
-		case <-release:
-		case <-time.After(10 * time.Second):
-			return
-		}
-		lateCancelled.Store(r.Context().Err() != nil)
+	var st *store.Store
+	pipe := newStopPipe(func(w io.Writer, msgID string) {
 		// The running call committed a write: its receipt names c2 as well.
 		if _, err := st.Pool().Exec(context.Background(), `
 			INSERT INTO agent_operations (id, kind, request_hash, workspace_id, conversation_id, message_id, call_id, outcome, effect)
 			SELECT $1, 'create_material', 'h', 'ws_e2e_private', conversation_id, id, 'c2', 'succeeded',
 			       '{"operation":"created","resource":{"kind":"material","id":"mat_stop","title":"Note"}}'
-			  FROM messages WHERE id=$2`, "op_stop_"+body.AssistantMessageID, body.AssistantMessageID); err != nil {
+			  FROM messages WHERE id=$2`, "op_stop_"+msgID, msgID); err != nil {
 			t.Error(err)
 		}
-		for _, frame := range []string{slowToolEnd, stoppedFinal} {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", frame)
-		}
-	}))
-	t.Cleanup(upstream.Close)
-	h, opened, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(upstream.URL, ""))
-	st = opened
-	convID := newTurnConversation(t, h, st)
-	leave, finished := browserTurn(t, h, convID)
-	msgID := waitForCheckpoint(t, st, convID)
-	mu.Lock()
-	spend := spendID
-	mu.Unlock()
-	stopPath := fmt.Sprintf("/api/conversations/%s/messages/%s/stop", convID, msgID)
+		lateRunningCall(w, msgID)
+	})
+	run := startStopTurn(t, pipe, func(opened *store.Store) { st = opened })
 
 	// Someone else's turn, or a row that is not this conversation's turn.
-	if rec := doAsUser(t, h, http.MethodPost, stopPath, "u_owner", nil); rec.Code != http.StatusNotFound {
-		t.Fatalf("the workspace owner stopped another user's turn: %d %s", rec.Code, rec.Body.String())
+	if code := run.stopAs(t, "u_owner", run.convID); code != http.StatusNotFound {
+		t.Fatalf("the workspace owner stopped another user's turn: %d", code)
 	}
-	var userID string
-	if err := st.Pool().QueryRow(t.Context(), `SELECT id FROM messages WHERE conversation_id=$1 AND role='user'`, convID).Scan(&userID); err != nil {
+	var userMsg string
+	if err := st.Pool().QueryRow(t.Context(), `SELECT id FROM messages WHERE conversation_id=$1 AND role='user'`, run.convID).Scan(&userMsg); err != nil {
 		t.Fatal(err)
 	}
-	if rec := doAsUser(t, h, http.MethodPost, fmt.Sprintf("/api/conversations/%s/messages/%s/stop", convID, userID), "u_editor", nil); rec.Code != http.StatusNotFound {
-		t.Fatalf("a user message was stopped: %d", rec.Code)
+	if code := doAsUser(t, run.h, http.MethodPost, fmt.Sprintf("/api/conversations/%s/messages/%s/stop", run.convID, userMsg), "u_editor", nil).Code; code != http.StatusNotFound {
+		t.Fatalf("a user message was stopped: %d", code)
 	}
 
-	if rec := doAsUser(t, h, http.MethodPost, stopPath, "u_editor", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("stop: %d %s", rec.Code, rec.Body.String())
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("stop: %d", code)
 	}
 	// History lists the stopped turn now, with what it had finished.
-	rec := doAsUser(t, h, http.MethodGet, "/api/conversations/"+convID+"/messages", "u_editor", nil)
+	rec := doAsUser(t, run.h, http.MethodGet, "/api/conversations/"+run.convID+"/messages", "u_editor", nil)
 	var listed []store.Message
 	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil || len(listed) != 2 {
 		t.Fatalf("messages: %s, %v", rec.Body.String(), err)
@@ -188,80 +239,196 @@ func TestChatStopSavesTheTurnAtOnceAndAddsTheRunningCall(t *testing.T) {
 	if got := listed[1]; got.Status != "aborted" || len(got.Activity) != 1 || got.Activity[0].CallID != "c1" {
 		t.Fatalf("the stopped turn is not listed at once: %+v", got)
 	}
-	if status := sessionStatus(t, st, spend); status != "open" {
+	if status := sessionStatus(t, st, pipe.spend()); status != "open" {
 		t.Fatalf("credits settled before the running call finished: %s", status)
 	}
-	leave() // the browser stops reading
-	if rec := doAsUser(t, h, http.MethodPost, stopPath, "u_editor", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("a second stop: %d", rec.Code)
+	run.leave() // the browser stops reading
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("a second stop: %d", code)
 	}
-	close(release)
-	waitClosed(t, finished, "the turn's end")
+	close(pipe.release)
+	waitClosed(t, run.finished, "the turn's end")
 
-	if lateCancelled.Load() {
+	if pipe.lateCancelled.Load() {
 		t.Fatal("the pipeline request was cancelled after the stop")
 	}
-	turn := readTurn(t, st, convID)
+	turn := readTurn(t, st, run.convID)
 	checkTurn(t, turn, "aborted", "checkpoint listing", "slow listing")
 	if len(turn.Activity) != 2 || turn.Activity[1].CallID != "c2" || len(turn.Activity[1].Effects) != 1 {
 		t.Fatalf("the running call was not added once with its receipt: %+v", turn.Activity)
 	}
 	var tokens int
-	if err := st.Pool().QueryRow(t.Context(), `SELECT token_count FROM messages WHERE id=$1`, msgID).Scan(&tokens); err != nil || tokens != 42 {
+	if err := st.Pool().QueryRow(t.Context(), `SELECT token_count FROM messages WHERE id=$1`, run.msgID).Scan(&tokens); err != nil || tokens != 42 {
 		t.Fatalf("token count = %d, %v", tokens, err)
 	}
-	if status := sessionStatus(t, st, spend); status != "settled" {
+	if status := sessionStatus(t, st, pipe.spend()); status != "settled" {
 		t.Fatalf("credits = %s, want settled", status)
 	}
 	// Stopping a finished turn does nothing.
-	if rec := doAsUser(t, h, http.MethodPost, stopPath, "u_editor", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("stop after the end: %d", rec.Code)
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("stop after the end: %d", code)
+	}
+}
+
+// Security regression: user B cannot stop user A's running turn by naming it
+// under B's own conversation.
+func TestChatStopRefusesAnotherUsersTurnThroughItsOwnConversation(t *testing.T) {
+	pipe := newStopPipe(lateRunningCall)
+	run := startStopTurn(t, pipe, nil)
+	rec := doAsUser(t, run.h, http.MethodPost, "/api/workspaces/ws_e2e_private/conversations", "u_owner", map[string]any{"title": "Owner's chat"})
+	var own store.Conversation
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &own) != nil {
+		t.Fatalf("create conversation: %d %s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() {
+		_, _ = run.st.Pool().Exec(context.Background(), `DELETE FROM conversations WHERE id=$1`, own.ID)
+	})
+
+	if code := run.stopAs(t, "u_owner", own.ID); code != http.StatusNotFound {
+		t.Fatalf("another user's turn was stopped through their own conversation: %d", code)
+	}
+	if status, stops := run.status(t), pipe.stops.Load(); status != "streaming" || stops != 0 {
+		t.Fatalf("the turn was touched: status %s, %d stop requests", status, stops)
+	}
+	// Its owner still can.
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("stop: %d", code)
+	}
+	close(pipe.release)
+	waitClosed(t, run.finished, "the turn's end")
+}
+
+// A stop the pipeline does not take (not running there yet, unreachable) hangs
+// up on the pipeline request instead: the turn ends, saved and settled.
+func TestChatStopHangsUpWhenThePipelineCannotStop(t *testing.T) {
+	pipe := newStopPipe(lateRunningCall)
+	pipe.stopStatus = http.StatusNotFound
+	run := startStopTurn(t, pipe, nil)
+
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("stop: %d", code)
+	}
+	waitClosed(t, run.finished, "the turn's end")
+
+	if !pipe.lateCancelled.Load() || pipe.stops.Load() != 1 {
+		t.Fatalf("the pipeline request was not hung up on (stop requests %d)", pipe.stops.Load())
+	}
+	checkTurn(t, readTurn(t, run.st, run.convID), "aborted", "checkpoint listing")
+	if status := sessionStatus(t, run.st, pipe.spend()); status != "settled" {
+		t.Fatalf("credits = %s, want settled", status)
+	}
+}
+
+// A row the stop could not save is saved aborted when the turn ends, with the
+// calls that ran on, instead of staying hidden as streaming.
+func TestChatStopSavesTheRowAtTheEndWhenTheStopCouldNot(t *testing.T) {
+	var st *store.Store
+	pipe := newStopPipe(func(w io.Writer, msgID string) {
+		// As if the save at the stop had failed.
+		if _, err := st.Pool().Exec(context.Background(), `UPDATE messages SET status='streaming' WHERE id=$1`, msgID); err != nil {
+			t.Error(err)
+		}
+		lateRunningCall(w, msgID)
+	})
+	run := startStopTurn(t, pipe, func(opened *store.Store) { st = opened })
+
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("stop: %d", code)
+	}
+	close(pipe.release)
+	waitClosed(t, run.finished, "the turn's end")
+
+	checkTurn(t, readTurn(t, st, run.convID), "aborted", "checkpoint listing", "slow listing")
+}
+
+// A turn that finishes as it is stopped keeps its answer's citations and
+// generation id.
+func TestChatStopAsTheTurnFinishesKeepsItsCitations(t *testing.T) {
+	pipe := newStopPipe(func(w io.Writer, _ string) {
+		frames(w,
+			`{"type":"citations","version":1,"citations":[{"fileId":"f_e2e_private","fileName":"secret-notes.md","snippet":"notes","n":1}]}`,
+			`{"type":"done","generationId":"gen_stop","activity":[{"id":"c1","kind":"tool","callId":"c1","name":"list_sources","outcome":"succeeded"}],"toolEvidence":{"tools":[{"name":"list_sources","text":"checkpoint listing"}],"passages":[],"skills":[]}}`,
+		)
+	})
+	// The checkpoint last, so the answer is in when the test sees it saved.
+	pipe.first = []string{
+		`{"type":"block_start","blockId":"b2"}`,
+		`{"type":"block_delta","blockId":"b2","text":"The answer"}`,
+		`{"type":"block_end","blockId":"b2","kind":"answer"}`,
+		turnToolStart, turnToolEnd, turnCheckpoint,
+	}
+	run := startStopTurn(t, pipe, nil)
+
+	if code := run.stopAs(t, "u_editor", run.convID); code != http.StatusNoContent {
+		t.Fatalf("stop: %d", code)
+	}
+	close(pipe.release)
+	waitClosed(t, run.finished, "the turn's end")
+
+	var (
+		content, genID string
+		citations      int
+	)
+	if err := run.st.Pool().QueryRow(t.Context(), `
+		SELECT content, COALESCE(metadata->>'generationId',''), jsonb_array_length(COALESCE(metadata->'citations','[]'))
+		  FROM messages WHERE id=$1`, run.msgID).Scan(&content, &genID, &citations); err != nil {
+		t.Fatal(err)
+	}
+	if run.status(t) != "aborted" || content != "The answer" || genID != "gen_stop" || citations != 1 {
+		t.Fatalf("saved %q, generation %q, %d citations", content, genID, citations)
 	}
 }
 
 // A turn whose browser leaves without Stop runs to completion and is saved
 // with its answer (Epo 2026-10-21).
 func TestChatTurnRunsToCompletionAfterTheBrowserLeaves(t *testing.T) {
-	left := make(chan struct{})
-	var lateCancelled atomic.Bool
-	lateCancelled.Store(true)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, frame := range []string{turnToolStart, turnToolEnd, turnCheckpoint} {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", frame)
-		}
-		w.(http.Flusher).Flush()
-		select {
-		case <-left:
-		case <-time.After(10 * time.Second):
-			return
-		}
-		lateCancelled.Store(r.Context().Err() != nil)
-		for _, frame := range []string{
+	pipe := newStopPipe(func(w io.Writer, _ string) {
+		frames(w,
 			`{"type":"block_start","blockId":"b2"}`,
 			`{"type":"block_delta","blockId":"b2","text":"Finished answer"}`,
 			`{"type":"block_end","blockId":"b2","kind":"answer"}`,
 			`{"type":"done","activity":[{"id":"c1","kind":"tool","callId":"c1","name":"list_sources","outcome":"succeeded"}],"toolEvidence":{"tools":[{"name":"list_sources","text":"checkpoint listing"}],"passages":[],"skills":[]}}`,
-		} {
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", frame)
-		}
-	}))
-	t.Cleanup(upstream.Close)
-	h, st, _, _ := openInternalHTTPWithPipeline(t, pipeline.New(upstream.URL, ""))
-	convID := newTurnConversation(t, h, st)
-	leave, finished := browserTurn(t, h, convID)
-	waitForCheckpoint(t, st, convID)
+		)
+	})
+	pipe.first = []string{turnToolStart, turnToolEnd, turnCheckpoint}
+	run := startStopTurn(t, pipe, nil)
 
-	leave()
-	close(left)
-	waitClosed(t, finished, "the turn's end")
+	run.leave()
+	close(pipe.release)
+	waitClosed(t, run.finished, "the turn's end")
 
-	if lateCancelled.Load() {
+	if pipe.lateCancelled.Load() {
 		t.Fatal("the browser leaving cancelled the pipeline request")
 	}
-	checkTurn(t, readTurn(t, st, convID), "complete", "checkpoint listing")
+	checkTurn(t, readTurn(t, run.st, run.convID), "complete", "checkpoint listing")
 	var content string
-	if err := st.Pool().QueryRow(t.Context(), `SELECT content FROM messages WHERE conversation_id=$1 AND role='assistant'`, convID).Scan(&content); err != nil || content != "Finished answer" {
+	if err := run.st.Pool().QueryRow(t.Context(), `SELECT content FROM messages WHERE id=$1`, run.msgID).Scan(&content); err != nil || content != "Finished answer" {
 		t.Fatalf("answer = %q, %v", content, err)
+	}
+}
+
+// Each replayed row carries its status, by which the pipeline marks stopped
+// and failed turns unfinished (Epo 2026-10-21).
+func TestStreamSendsEachHistoryRowsStatus(t *testing.T) {
+	h, st, bodies := streamCapture(t)
+	if rec := doAsUser(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/chat/stream", "u_editor", map[string]any{"text": "teach me replay"}); rec.Code != http.StatusOK {
+		t.Fatalf("first turn: %d", rec.Code)
+	}
+	var convID string
+	if err := st.Pool().QueryRow(t.Context(), `SELECT id FROM conversations WHERE user_id='u_editor' AND title='teach me replay'`).Scan(&convID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(t.Context(), `UPDATE messages SET status='aborted' WHERE conversation_id=$1 AND role='assistant'`, convID); err != nil {
+		t.Fatal(err)
+	}
+	if rec := doAsUser(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/chat/stream", "u_editor", map[string]any{"conversationId": convID, "text": "teach me more"}); rec.Code != http.StatusOK {
+		t.Fatalf("second turn: %d", rec.Code)
+	}
+	var history []struct{ Role, Status string }
+	if len(*bodies) != 2 || json.Unmarshal((*bodies)[1]["history"], &history) != nil {
+		t.Fatalf("relayed bodies: %d", len(*bodies))
+	}
+	if fmt.Sprint(history) != "[{user complete} {assistant aborted}]" {
+		t.Fatalf("history rows = %v", history)
 	}
 }

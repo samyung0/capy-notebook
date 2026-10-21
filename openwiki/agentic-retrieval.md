@@ -2794,11 +2794,14 @@ is one of its assistant rows; a finished or already stopped turn answers 204
 and nothing changes), then stops reading.
 
 1. Go finds the turn in `api.turns`, the turns this API process relays by
-   assistant message id (one API instance today; several would need a shared
-   channel to reach the instance holding the turn). Under the turn's lock it
-   marks the turn stopped and saves the row `aborted` from what the relay has
-   heard (latest `turn_checkpoint`, text so far, citations) merged with the
-   receipts, so history lists it at once.
+   assistant message id. A stop must reach the instance relaying the stream:
+   one API instance (and one retrieval process) today; with several, a stop
+   landing elsewhere finds no turn and answers 204 without stopping it, so
+   scaling out needs a shared channel first. Under the turn's lock it marks
+   the turn stopped and saves the row `aborted` from what the relay has heard
+   (latest `turn_checkpoint`, citations, and as the body the answer, or the
+   text of a block still streaming; a finished narration stays only in the
+   activity) merged with the receipts, so history lists it at once.
 2. Go posts `POST /chat/stop {assistantMessageId}` to the retrieval service,
    which marks the turn's `ClientDrop.stopped` (a process-local map; one
    uvicorn process). If that fails (not running there yet or any more, out of
@@ -2806,16 +2809,20 @@ and nothing changes), then stops reading.
    lost-hop way.
 3. The agent starts no further model call (step top, after compaction, after
    a response), no later call of a serial write batch, and no retry of a model
-   call (`stream_agent_response(stopped=...)`); calls already running finish,
+   call, also when the stop lands during the retry's wait
+   (`stream_agent_response(stopped=...)`); calls already running finish,
    no prose is streamed after the stop, and nothing is sent back to the model.
    A step exception after the stop logs at info, with no error event or
    Sentry report. `run_agent` then sends one `turn_checkpoint` with
    `stopped: true`, the turn's activity and evidence (nothing cited) and usage.
 4. When the pipeline stream ends, Go adds that state to the aborted row
    (`store.AddStoppedTurnCalls`: only an `aborted` row, receipts merged by call
-   id, the token count), then settles credits once. No error is reported or
-   sent for a stopped turn. The browser that stopped reading sees the late
-   calls on its next history load.
+   id, the token count, and the citations and generation id of a turn that
+   finished as it stopped), then settles credits once. A row the stop could
+   not save (a database error) is still `streaming` then and is saved
+   `aborted` with that state instead. No error is reported or sent for a
+   stopped turn. The browser that stopped reading sees the late calls on its
+   next history load.
 
 ### Chat below lg
 

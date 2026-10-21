@@ -27,7 +27,10 @@ type runningTurn struct {
 
 // turnState is what the relay has heard of a turn so far.
 type turnState struct {
-	currentText  strings.Builder
+	currentText strings.Builder
+	// open says currentText is a block still streaming; a finished narration
+	// block is in activity already.
+	open         bool
 	answer       strings.Builder
 	citations    []store.Citation
 	activity     []store.ActivityBlock
@@ -49,11 +52,13 @@ func (s *turnState) hear(ev pipeChatEvent) bool {
 		s.usageFrom(ev)
 	case "block_start":
 		s.currentText.Reset()
+		s.open = true
 		return true
 	case "block_delta":
 		s.currentText.WriteString(ev.Text)
 		return true
 	case "block_end":
+		s.open = false
 		if ev.Kind == "answer" {
 			s.answer.Reset()
 			s.answer.WriteString(s.currentText.String())
@@ -112,10 +117,11 @@ type turnSave struct {
 }
 
 // save is the row for a turn ending with status: an aborted turn without an
-// answer keeps the text it was streaming.
+// answer keeps the text of the block it was streaming, and no finished
+// narration, which its activity holds.
 func (s *turnState) save(status string) turnSave {
 	content := s.answer.String()
-	if status == "aborted" && content == "" {
+	if status == "aborted" && content == "" && s.open {
 		content = s.currentText.String()
 	}
 	tokens := s.tokens

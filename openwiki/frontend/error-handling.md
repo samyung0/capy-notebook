@@ -428,8 +428,10 @@ Stop is a request, not a dropped connection (Epo 2026-10-21): the button calls
 and only then stops reading the stream (`turnStopper` in `useChatStream.ts`),
 so the turn shows "Stopped" and history already lists it aborted. Pressed
 before the `start` frame names the turn, the request goes once it does. A
-failed stop request shows the default mutation toast and the stream keeps
-running, for another press. Closing the tab or losing the network does not
+stop request the server refuses shows the default mutation toast and the
+stream keeps running, for another press; one that cannot reach the server
+(a network error, no HTTP status) toasts too but stops reading anyway, since
+the server finishes the turn regardless. Closing the tab or losing the network does not
 stop a turn: the server finishes and saves it, and reopening the conversation
 shows it once it ends. The one events stream
 (`useEventStream`, mounted by `AppShell`) updates cached connection status,

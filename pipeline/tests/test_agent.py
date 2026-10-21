@@ -2213,6 +2213,42 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
     _saved_listing(last)
 
 
+async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
+    from pipeline.retrieve import service
+
+    registered = []
+
+    async def _agent(*, client, **_kwargs):
+        registered.append(service._running.get("m_turn") is client)
+        yield {"type": "done"}
+
+    class _Request:
+        async def is_disconnected(self) -> bool:
+            return False
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        providerSlug="deepseek",
+        modelSlug="deepseek-v4-flash",
+        configVersion=1,
+        userId="u_1",
+        paidBy="platform",
+        thinking="high",
+        query="q",
+        workspaceId="ws_1",
+        contractVersion=contract.VERSION,
+        operations=[],
+        assistantMessageId="m_turn",
+        spendSessionId="cr_1",
+        role="editor",
+    )
+    _chunks = [chunk async for chunk in service._chat_events(req, _Request())]
+
+    assert registered == [True] and "m_turn" not in service._running
+
+
 # ------------------------------------------------------------- trash tools
 
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/api/client';
 import { m } from '@/i18n';
 import {
   shouldApplyCitations,
@@ -44,11 +45,22 @@ describe('turnStopper', () => {
     expect(request).toHaveBeenCalledWith(ids);
   });
 
-  it('keeps reading when the request fails, for another press', async () => {
+  it('stops reading when the request cannot reach the server', async () => {
+    const abort = vi.fn();
+    const stopper = turnStopper(
+      vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
+      abort
+    );
+    stopper.named(ids);
+    stopper.stop();
+    await vi.waitFor(() => expect(abort).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps reading when the server refuses, for another press', async () => {
     const abort = vi.fn();
     const request = vi
       .fn()
-      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new ApiError(500, 'Internal Server Error'))
       .mockResolvedValueOnce(undefined);
     const stopper = turnStopper(request, abort);
     stopper.named(ids);

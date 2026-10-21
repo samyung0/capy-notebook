@@ -316,13 +316,21 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	run.mu.Lock()
 	run.finished = true
 	stopped := run.stopped
+	if stopped {
+		status = "aborted"
+	}
 	saved := run.state.save(status)
 	run.mu.Unlock()
 	if stopped {
 		// The row was saved aborted at the stop; what the calls still running
-		// then did is added now (Epo 2026-10-21).
-		if err := a.s.AddStoppedTurnCalls(saveCtx, assistant.ID, saved.activity, saved.toolEvidence, saved.tokens); err != nil {
+		// then did is added now (Epo 2026-10-21). A row the stop could not
+		// save is still streaming: it is saved aborted now.
+		added, err := a.s.AddStoppedTurnCalls(saveCtx, assistant.ID, saved.activity, saved.toolEvidence, saved.citations, saved.genID, saved.tokens)
+		switch {
+		case err != nil:
 			obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_stopped_calls"})
+		case !added:
+			a.finalizeTurn(saveCtx, assistant.ID, status, saved)
 		}
 	} else {
 		a.finalizeTurn(saveCtx, assistant.ID, status, saved)
