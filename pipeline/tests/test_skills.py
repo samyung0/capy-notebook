@@ -41,10 +41,11 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     assert "add_questions" in editing and "Flashcards:" in editing
     assert "Edits not yet in search show up as hints" in editing
     office = (await tools._read_skill({"name": "office_building"}, ctx)).text()
-    # Per-call limits return the rest unapplied; 256 KB still refuses (Epo 2026-10-21).
+    # Per-call limits return the rest unapplied (the engine counts them, Epo
+    # 2026-10-22); 256 KB still refuses.
     assert (
-        "a call applies at most 50 commands, 10,000 cells (XLSX) and 20 inserted "
-        "paragraphs; the commands past a limit come back unapplied" in office
+        "edit_office_document's description lists a call's limits" in office
+        and "the rest come back unapplied, by index" in office
     )
     assert "at most 256 KB; a larger call is refused" in office
     # Word files are read, edited and created (Epo 2026-10-20, phase 2).

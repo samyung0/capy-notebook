@@ -181,7 +181,10 @@ pub fn dispatch(request: &Frame) -> Answer {
             let commands = args.commands.as_deref().unwrap_or_default();
             let result = office_service::apply_commands(blob(0)?, checkpoint(1)?, commands)
                 .map_err(failure)?;
-            Ok((json!({ "notice": result.notice }), vec![result.state]))
+            Ok((
+                json!({ "notice": result.notice, "touched": result.touched }),
+                vec![result.state],
+            ))
         }
         other => Err(Failure::invalid(format!("unknown engine method {other}"))),
     }
@@ -209,12 +212,15 @@ pub mod calls {
         pub room: Option<&'a str>,
     }
 
-    /// Agent commands applied: the new state and the engine's note on the
-    /// characters the text lost.
+    /// Agent commands applied: the new state, the engine's note on the
+    /// characters the text lost and the commands its limits left unapplied,
+    /// and for each applied command what its range held
+    /// (`office_service::CommandResult::touched`, for `undo_cost`).
     #[derive(Debug)]
     pub struct Applied {
         pub state: Vec<u8>,
         pub notice: Option<String>,
+        pub touched: Vec<office_service::Touched>,
     }
 
     fn frame(method: &str, args: &Args, blobs: Vec<Vec<u8>>) -> Frame {
@@ -413,6 +419,7 @@ pub mod calls {
             Ok(Applied {
                 state: blob(&mut reply)?,
                 notice: parse(reply.value["notice"].take())?,
+                touched: parse(reply.value["touched"].take())?,
             })
         }
 

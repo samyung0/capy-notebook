@@ -204,6 +204,9 @@ class ToolContext:
     # widen the scope to every file.
     file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
+    # The citation numbers the answer has shown so far: a turn stopped or
+    # failed mid-answer keeps their passages like an answered one (Epo 2026-10-22).
+    cited_shown: list[int] = field(default_factory=list)
     # The turn's narration and tool blocks so far: what its checkpoints and
     # whatever event ends it carry, so Go saves them however the turn ends.
     activity: list[dict[str, Any]] = field(default_factory=list)
@@ -229,6 +232,8 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Images this message attached: page captures and source-change images.
+    images_taken: int = 0
     # Decks this turn outlined (deck.py records, by deck id) and the working
     # directory their figures and exports go to; the agent removes it at turn end.
     decks: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -645,6 +650,42 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
     return passage.page_start <= page <= (passage.page_end or passage.page_start)
 
 
+# A user message attaches at most this many images, capture_page,
+# capture_knowledge_page and resolve_source_change's image changes together, so
+# the images every request of the turn carries stay bounded (Epo 2026-10-21,
+# raised and shared 2026-10-22). Only a capture says the decided sentence; a
+# source change past the cap fails with its own reason.
+MAX_IMAGES = 16
+IMAGE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
+SOURCE_IMAGE_LIMIT = (
+    "resolve_source_change: this message's image limit is reached, so the "
+    "change's image cannot be attached."
+)
+
+
+def _image_limit(ctx: ToolContext) -> ToolResult | None:
+    """A capture's refusal once the message's images are used; checked again
+    after the render, since the image calls of one response run side by side."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return _refused(IMAGE_LIMIT, code="limit_reached")
+    return None
+
+
+def _source_image_limit(ctx: ToolContext) -> ToolResult | None:
+    """The same check for a source change's image, which fails instead."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return _failed(SOURCE_IMAGE_LIMIT, code="limit_reached")
+    return None
+
+
+def _imaged(ctx: ToolContext, text: str) -> ToolResult:
+    """Count a capture; the last image allowed says so with its image."""
+    ctx.images_taken += 1
+    if ctx.images_taken == MAX_IMAGES:
+        text += "\n\n" + IMAGE_LIMIT
+    return _result(text)
+
+
 async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """Render a cited page (or a box on it) and attach it to the next request.
 
@@ -652,8 +693,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     browse the document by pixels, and a capture adds no citation of its own:
     the tool result names the numbers already covering that page.
     """
-    # No per-turn cap: a capture is dropped when its exchange folds into the
-    # turn note anyway, and a whole set of materials can be one turn.
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
     refused = await _refuse_material_as_file(ctx, file_id)
     if refused is not None:
@@ -679,6 +720,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_page: {exc}")
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     changes = ctx.pending_sources.for_read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
@@ -701,10 +744,11 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         capture.data_url(jpeg),
     )
     numbers = "".join(f"[{i}]" for i in existing)
-    result = _result(
+    result = _imaged(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
-        f"{numbers}; cite those numbers for what the capture shows."
+        f"{numbers}; cite those numbers for what the capture shows.",
     )
     result.pending = changes
     return result
@@ -962,6 +1006,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     reprinted text the library does not reproduce). Like ``capture_page`` it adds no
     citation: the attribution lives on the material.
     """
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     excerpt_id, page, bbox = args["excerpt_id"], args["page"], args.get("bbox")
     try:
         target = await library.capture_target(excerpt_id)
@@ -986,6 +1032,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         return _refused(f"capture_knowledge_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_knowledge_page: {exc}")
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
     label = f"{target.book_title} page {page}" + (
@@ -1008,9 +1056,10 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         f"capture_knowledge_page result {n}: {label}",
         capture.data_url(jpeg),
     )
-    return _result(
+    return _imaged(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next "
-        "message; read it directly."
+        "message; read it directly.",
     )
 
 
@@ -1787,6 +1836,8 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         or not isinstance(checkpoint, int)
     ):
         return _refused("A file id, change id and integer checkpoint are required.")
+    if (limit := _source_image_limit(ctx)) is not None:
+        return limit
     started = time.perf_counter()
     try:
         raw = await pending.resolve(
@@ -1804,6 +1855,8 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         return _refused(f"resolve_source_change: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"resolve_source_change: {exc}")
+    if (limit := _source_image_limit(ctx)) is not None:
+        return limit
     call_id = str(args.get("_tool_call_id") or "")
     ctx.captures.append(
         capture.record(
@@ -1820,6 +1873,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         f"resolve_source_change result: change {change_id} of file {file_id}",
         capture.data_url(jpeg),
     )
+    ctx.images_taken += 1  # counted, with no limit sentence (Epo 2026-10-22)
     return _result(
         "The pending source image is attached to the next message; read it directly."
     )
@@ -2280,67 +2334,6 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 # One edit_office_document call's commands at most, as compact JSON (Epo
 # 2026-10-20); a larger call is refused before it leaves.
 OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
-# One call's limits (Epo 2026-10-21): commands, cells its XLSX commands name
-# (a range's area, a row or column delete's expected cells) and inserted DOCX
-# paragraphs. A call is sent only up to the first command that would pass
-# one; the rest come back unapplied. The engine counts the same way and
-# refuses a call past them, which the pipeline never sends.
-OFFICE_CALL_MAX_COMMANDS = 50
-OFFICE_CALL_MAX_CELLS = 10_000
-OFFICE_CALL_MAX_PARAGRAPHS = 20
-_A1_RANGE = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
-
-
-def _range_cells(text: str) -> int:
-    """The cells an A1 range covers; 0 for one the engine refuses anyway."""
-    match = _A1_RANGE.fullmatch(text.strip().upper())
-    if not match:
-        return 0
-
-    def column(letters: str) -> int:
-        return sum((ord(ch) - 64) * 26**i for i, ch in enumerate(reversed(letters)))
-
-    first, row = column(match[1]), int(match[2])
-    last, end = (column(match[3]), int(match[4])) if match[3] else (first, row)
-    return (abs(last - first) + 1) * (abs(end - row) + 1)
-
-
-def _office_fitting(commands: list[dict[str, Any]]) -> tuple[int, str]:
-    """How many leading commands fit one call's limits, and the limit the
-    next would pass ("" when all fit). A first command over a limit on its
-    own is sent, for the engine to refuse."""
-    cells = paragraphs = 0
-    for index, command in enumerate(commands):
-        if index == OFFICE_CALL_MAX_COMMANDS:
-            return index, f"{OFFICE_CALL_MAX_COMMANDS} commands"
-        kind = command.get("type")
-        if kind in ("set_range", "format_cells"):
-            cells += _range_cells(str(command.get("range") or ""))
-        elif kind in ("delete_rows", "delete_columns"):
-            expected = command.get("expected")
-            if isinstance(expected, list):
-                cells += sum(len(row) for row in expected if isinstance(row, list))
-        elif kind == "insert_paragraph":
-            paragraphs += 1
-        if index and cells > OFFICE_CALL_MAX_CELLS:
-            return index, f"{OFFICE_CALL_MAX_CELLS:,} cells"
-        if index and paragraphs > OFFICE_CALL_MAX_PARAGRAPHS:
-            return index, f"{OFFICE_CALL_MAX_PARAGRAPHS} inserted paragraphs"
-    return len(commands), ""
-
-
-def _unapplied(first: int, last: int, limit: str, file_id: str) -> str:
-    """The sentence naming the commands a call's limits left out."""
-    which = (
-        f"the command at index {first}"
-        if first == last
-        else f"the commands at indexes {first} to {last}"
-    )
-    target = f" with file_id {file_id}" if file_id else ""
-    return (
-        f"Not applied: {which} (counting from 0), past the limit of {limit} a call; "
-        f"send them in another call{target}."
-    )
 
 
 def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
@@ -2604,9 +2597,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             f"The commands are {-(-size // 1024)} KB, over the 256 KB one call may "
             "send; split the edit into several calls."
         )
-    # Past a call's limits, the commands wait for another call.
-    fitting, limit = _office_fitting(commands)
-    sent, unsent = commands[:fitting], len(commands) - fitting
+    # The engine alone counts a call's limits (Epo 2026-10-22): it applies
+    # the commands before the first past one and its notice names the rest.
     rid = str(args.get("file_id") or "")
     creating = commands[0].get("type") == "create"
     if creating == bool(rid):
@@ -2633,7 +2625,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
                 "format": create["format"],
                 "title": create["title"],
                 "chapterId": str(create.get("chapter_id") or ""),
-                "commands": sent[1:],
+                "commands": commands[1:],
             },
             op_id,
             ctx,
@@ -2656,7 +2648,7 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             {
                 **_chat_context(ctx, call_id),
                 "target": {"kind": "source_file", "id": rid},
-                "commands": sent,
+                "commands": commands,
                 "office": True,
             },
             op_id,
@@ -2664,17 +2656,10 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             failure="edit the file",
             explain=explain,
         )
-    changed = ""
     if result.effects:
         ctx._scope_outline = None
         changed = (result.effects[0].get("resource") or {}).get("id") or ""
         await _reload_pending(ctx, str(changed))
-    if unsent:
-        note = _unapplied(fitting, len(commands) - 1, limit, str(changed or rid))
-        if result.error:
-            result.detail = "\n\n".join(part for part in (result.detail, note) if part)
-        else:
-            result.text_parts.append(note)
     return result
 
 

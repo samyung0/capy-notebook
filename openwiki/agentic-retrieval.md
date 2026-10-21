@@ -2430,10 +2430,15 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
 One user send creates one assistant row. `messages.content` is the final answer
 only. Completed narration and tool-display blocks live in `messages.metadata`
 and are not sent back as LLM history. Separately, `metadata.toolEvidence` retains
-conversation evidence according to each tool's `retention` contract field:
+conversation evidence in two scopes (Epo 2026-10-21). Within a turn, until its
+answer is finished, every result stays whole. Between user messages each tool
+keeps what its `retention` contract field says
+(`agenttools_test.TestRetentionBetweenMessages` pins the list):
 
-- `full`: listing, descriptions, document inspection and mutation tools retain
-  the full text result already limited to 8,192 tool-output tokens.
+- `full`: `list_sources` and the mutation tools (`create_material`, the
+  question tools, `create_deck`, `write_slide`, `edit_document`,
+  `edit_office_document`, `trash_file`, `restore_file`) retain the full text
+  result already limited to 8,192 tool-output tokens.
 - `cited_passages`: `search_workspace` and `read_document` retain only whole
   chunks cited in the final answer, deduplicated by chunk id.
 - `used_excerpts`: `read_knowledge` retains its exact bounded text only when the
@@ -2442,8 +2447,28 @@ conversation evidence according to each tool's `retention` contract field:
   excerpt ID and start at the latest owning turn. Replay revalidates them with
   read-only library queries. Full text remaining after compaction counts as read;
   changed/missing text or a compacted summary does not.
-- `none`: captures persist no result context or image bytes; library search
-  and browsing results are not replayed as source evidence.
+- `none`: `inspect_document`, `inspect_office_document`, `read_study_progress`,
+  `list_trashed_files`, `search_knowledge`, both captures and
+  `resolve_source_change` (no image bytes), and `read_skill` (the skill itself
+  replays by name, below).
+
+A turn keeps its notes as its calls finish (`agent._run_tools`: name, detail,
+outcome and text of each `full` result), and every `turn_checkpoint`, `error`
+and `done` packs only those plus the passages the answer cited
+(`evidence.pack`), so a row never stores a result that will not replay. A
+stopped or failed turn counts as finished (Epo 2026-10-22): from the next
+message on it replays like an answered one, its reads and capture images
+dropped and its edit receipts kept, and the passages its partial answer cited
+before it ended (`ToolContext.cited_shown`) follow the cited-passage path with
+its re-check. What a retained result carries replays without a further access
+check (Epo 2026-10-22). A call the Stop kept from starting (the later calls
+of a serial response, or the calls of a response that ended after the stop)
+is recorded with outcome `cancelled` and "Not run: the user stopped the turn
+before this call started." (`agent._cancelled`), whatever its tool, since it
+has no result for retention to trim. Replay applies the same rule
+(`evidence._kept`): a saved note replays only if its tool keeps results
+between messages or it records a cancelled call, so rows saved under an older
+retention (an inspection kept whole) follow the current one.
 
 Result retention was added in contract version 3. Every tool must declare a policy; the policy is
 internal and is not a model argument. Live results stay exact until live
@@ -2608,7 +2633,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
    calls, passage numbers with their locations and facts, gaps, and the intended
    next step; citation numbers stay valid because the number→chunk map lives on
    `ToolContext`, not in the messages. The note is turn-local and never persisted
-   or checkpointed. There is no percentage trigger and no deterministic clipping
+   or checkpointed. The images of folded exchanges (page captures, source-change images) stay attached right
+   after the note and in the budget (capture_page, below). There is no percentage trigger and no deterministic clipping
    fallback. Tool output is capped at 8,192 estimated tokens with a visible
    truncation marker. If protected context still cannot fit, the turn fails with
    `context_too_large`. Keep-tail folding drops whole exchanges only; on providers
@@ -2769,7 +2795,8 @@ copy (single or workspace clone) keeps them as a material copy does.
 
 However a turn ends, its assistant row keeps the tool calls that finished
 (activity blocks, which Ops' `ops_assistant_turns.tool_calls` counts) and
-their results (`toolEvidence`) (Epo 2026-10-21). Python keeps a call's
+their retained results (`toolEvidence`) (Epo 2026-10-21; retained only since
+2026-10-22). Python keeps a call's
 evidence note when the call finishes (`agent._run_tools`; notes are put back
 in call order after the batch), sends `turn_checkpoint` with the turn's
 `activity` and `toolEvidence` (nothing cited yet) after every tool batch, and
@@ -2785,26 +2812,23 @@ Every finalized row replays into later turns (`ConversationPrompt`, `status <>
 adds "[This reply was stopped before it finished.]" (a stop or a crash) or
 "[This reply failed
 before it finished.]" to an `aborted` or `error` assistant row (an empty one
-replays the line alone), and its tool results and passages replay like a
-finished turn's, under the same compaction. Since no answer says what such a
-turn did, and search and read results replay only as cited passages, Go also
-sends an `aborted` or `error` row's tool calls from its activity (name,
-detail, outcome; the calls added after a stop included), and
-`history_turns` replays them as one historical-data message after the turn. A turn that fails before any tool
+replays the line alone), and its retained results (the calls added after a
+stop included) and cited passages replay like a finished turn's, under the same
+compaction (Chat agent workflow, above). A turn that fails before any tool
 call keeps its empty tool record (empty lists).
 
 | Ending | Where handled | Tool calls saved | Results saved | Status |
 | --- | --- | --- | --- | --- |
-| Answer; planning, stall and tool caps | `agent._run_turn` `done` → `chat_stream.go` | all | all, cited passages included | `complete` |
-| Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | all, nothing cited | `error` |
+| Answer; planning, stall and tool caps | `agent._run_turn` `done` → `chat_stream.go` | all | retained, cited passages included | `complete` |
+| Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | retained, passages cited so far | `error` |
 | Turn time cap | none exists; a provider call past its deadline is a provider error | — | — | — |
-| User stop | `chat_stop.go` saves the row at once; `chat_stream.go` adds the late calls (`store.AddStoppedTurnCalls`) | all, the calls running at the stop included, plus receipts | all, nothing cited | `aborted` |
+| User stop | `chat_stop.go` saves the row at once; `chat_stream.go` adds the late calls (`store.AddStoppedTurnCalls`) | all, the calls running at the stop included, plus receipts | retained, passages cited so far | `aborted` |
 | Browser disconnect without Stop | the turn runs on (`chat_stream.go` on a detached context) | as the turn's own ending | as the turn's own ending | the turn's |
 | Permission lost mid-turn | the refused tool call tells the agent to stop editing (`permission_denied`, account lock codes) | as the turn's own ending | as the turn's own ending | the turn's |
 | Tool exception | `tools.run`: a failed result, the turn goes on | its failed row | its error text | the turn's |
-| `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | all, nothing cited | `error` |
-| Exception outside the step (loop code) | `service._chat_events` `error` with state | all | all, nothing cited | `error` |
-| Flagged response | `agent._run_turn` `response_flagged`, state from `run_agent` | all | all, nothing cited | `error` |
+| `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | retained, passages cited so far | `error` |
+| Exception outside the step (loop code) | `service._chat_events` `error` with state | all | retained, passages cited so far | `error` |
+| Flagged response | `agent._run_turn` `response_flagged`, state from `run_agent` | all | retained, passages cited so far | `error` |
 | Pipeline dies | `relayChat` EOF → `chat_stream.go` | last checkpoint, plus receipts | last checkpoint | `error` |
 | Go dies | `AbortOrphanedStreams` at the next boot | last checkpoint on the row, plus receipts | last checkpoint | `aborted` |
 
@@ -2842,7 +2866,9 @@ and nothing changes), then stops reading.
    no prose is streamed after the stop, and nothing is sent back to the model.
    A step exception after the stop logs at info, with no error event or
    Sentry report. `run_agent` then sends one `turn_checkpoint` with
-   `stopped: true`, the turn's activity and evidence (nothing cited) and usage.
+   `stopped: true`, the turn's activity and retained evidence (with the
+   passages the answer cited before the stop, and the calls the stop kept from
+   starting recorded as cancelled) and usage.
 4. When the pipeline stream ends, Go adds that state to the aborted row
    (`store.AddStoppedTurnCalls`: only an `aborted` row, receipts merged by call
    id, the token count, and the citations and generation id of a turn that
@@ -3010,9 +3036,9 @@ build, and the knowledge library is one more source while the switch is on.
   how to read each format, each command's purpose, expected values exactly as
   the read shows them, formulas only with functions the workbook supports and
   only its own sheets, `create` first for a new Excel or Word file (decks stay
-  `create_deck`), and one limits line (a call's commands up to 256 KB,
-  10,000 cells or 20 inserted paragraphs, the commands past one coming
-  back unapplied; a larger request is refused). Reading it offers the Office tools (Office tools, above).
+  `create_deck`), and one limits line (the tool description lists a
+  call's per-command-kind limits, the commands past one coming back
+  unapplied; a request over 256 KB is refused). Reading it offers the Office tools (Office tools, above).
   `editing` carries no Office instructions and says that after reading a
   document the agent sees its most recent changes, recent edits not yet in
   search possibly showing as hints.
@@ -3059,7 +3085,8 @@ build, and the knowledge library is one more source while the switch is on.
   `FINAL_ANSWER_NOTICE` instead (answer with what was found). The message's
   private `_kind` is `turn_context`.
 - **Limits** (`retrieval/limits.py`). Every turn: four tool calls per response,
-  one `search_workspace` per response and no capture cap. Until its first
+  one `search_workspace` per response and 16 images per user message
+  (`tools.MAX_IMAGES`, below). Until its first
   successful write a turn gets 12 responses (`PLANNING_RESPONSES`, lowered by
   `CAPY_AGENT_MAX_STEPS` and stated in the prompt from that value), the last
   with tools off, and an empty response ends it with `invalid_answer`; reads
@@ -3360,15 +3387,16 @@ build, and the knowledge library is one more source while the switch is on.
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
-| `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
-| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
+| `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
+| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
 | `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (Epo 2026-10-21: 50 commands, 10,000 cells its XLSX commands name, 20 inserted paragraphs) only the commands before the first that would pass one are sent, and the result ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call with file_id …` (the refusal's detail, when the sent part is refused); the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
+
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3428,10 +3456,20 @@ through the ordinary LLM usage path. Context telemetry and the compaction
 budget count each attached image by its 28-px patch estimate
 (`capture.patch_tokens`), not by its base64; the captures ride outside the
 compacted history, so their estimate is passed to compaction as extra weight.
-A capture is attached after its own tool result, so it lives exactly as long as
-that exchange stays verbatim: once live compaction folds the exchange into the
-turn note (decision 2026-09-16), the image leaves the request and
-`capture.image_tokens` stops counting it. The chat prompt requires capture before
+A capture is attached after its own tool result, and every capture stays
+attached until the turn's answer (Epo 2026-10-21): once live compaction folds
+its exchange into the turn note, `capture.inject_images` attaches its image
+right after the note, and `capture.image_tokens` counts every capture of the
+turn. A user message attaches 16 images, `capture_page`,
+`capture_knowledge_page` and `resolve_source_change`'s image changes together
+(`tools.MAX_IMAGES`, Epo 2026-10-22; counted in `ToolContext.images_taken` and
+checked again after the render, since a response's image calls run side by
+side): a 16th image from a capture returns with "capture_page limit reached,
+do not call capture_page anymore." and later captures are refused with that
+sentence (`limit_reached`); a source change's image says nothing when it is the
+16th and fails past the cap with `tools.SOURCE_IMAGE_LIMIT` (`limit_reached`,
+Epo 2026-10-22). A `resolve_source_change` image stays attached through folds the
+same way. No capture image is carried to the next message. The chat prompt requires capture before
 using source-specific numerical results, formulas, table cells/relationships or
 figures, regardless of extraction confidence. Low-confidence text also requires
 capture when the uncertain passage matters. The model reads the image directly
@@ -3456,9 +3494,9 @@ of its figures, may be captured (`library.capture_target`). A page in the
 book's `library_books.withheld_pages` (reprinted texts the library withholds,
 written at publish from the run manifest like `figure_exclusions`) is never
 captured, also on a boundary page shared with open text or through a guessed
-excerpt id, and a request for one is refused as withheld. Neither capture
-tool has a per-turn cap: a capture leaves the request once its exchange folds
-into the turn note. It adds no citation, and its JPEG
+excerpt id, and a request for one is refused as withheld. It shares the
+message's 16 images with `capture_page` and stays attached until the answer
+like it. It adds no citation, and its JPEG
 rides in the same user message after the step's tool results. An unset bucket
 leaves the tool unoffered; the five settings are validated all-or-none.
 
@@ -3527,10 +3565,12 @@ read's paragraph styles. Version 36 (2026-10-21) creates Word files, makes
 `insert_paragraph`'s anchor optional with a `list`, adds `set_list`,
 `insert_table`, `delete_table`, `format_text` and `set_alignment`, reads
 headers, footers and notes with lists, table cells and `locked` marks, and
-caps a call at 50 commands, 10,000 cells and 20 inserted paragraphs, the
-rest returned unapplied. Version 38 (2026-10-22) reads a PPTX by slide (its
-slides with their layouts and shapes; one slide's shapes and paragraphs) and
-adds `set_shape_text`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+lists in its description the engine's per-call limits (one table, a
+limit per command kind), the rest returned unapplied. Version 38 (2026-10-22)
+reads a PPTX by slide (its slides with their layouts and shapes; one slide's
+shapes and paragraphs) and adds `set_shape_text`, `add_slide`,
+`delete_slide`, `move_slide` and `add_text_box`, with PPTX `format_text` and
+`set_alignment`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3821,32 +3861,41 @@ called with that id is Redo, for any number of steps.
 
 An agent edit's Undo is sized from its commands (Epo 2026-10-21), never by
 reverting on a copy of the document: `sources::undo_cost` holds one rule per
-command type, named after it and scaled by what it touches, and the edit's
-estimate is their sum. An Undo re-inserts what the edit removed and a Redo
-what it inserted, so each rule counts both sides:
-- removed or replaced content (an expected text or value, a removed or
-  replaced block or child read from the document before the edit, an XLSX
-  grid): its bytes times `CONTENT` (3);
+command type, named after it, and the edit's estimate is their sum. An Undo
+re-inserts what the edit removed and a Redo what it inserted, so each rule
+counts both sides:
+- removed or replaced content of a note, live item or text source (an
+  expected text, a removed or replaced block or child read from the document
+  before the edit) and an XLSX value or grid: its bytes times `CONTENT` (3);
 - an insert (a replacement text, inserted blocks, a card or question): its
   text or JSON times `CONTENT`, plus a `PIECE` (160 bytes) for each run or
   block it splits at either end;
 - formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
-- XLSX structure (rows, columns, sheets): a `PIECE` per row, column or sheet
-  entry, since the cells stay in Yjs;
-- a DOCX or PPTX paragraph insert: its text and style times `CONTENT` plus 8
-  `PIECE`s (the new mark, a copy of its anchor's properties, and the run it
-  splits; a list item's mark alone measured 837 bytes); a paragraph delete:
-  its expected text times `CONTENT` plus 8 `PIECE`s (its runs' formatting
-  and its mark come back). On lesson.docx (given a section end and a list
-  item) and lesson.pptx they over-estimate 1.5 to 11 times;
-- the DOCX-only commands: `set_list` 3 `PIECE`s a paragraph and
-  `set_alignment` 2 (the mark keys written and their old values),
-  `format_text` its expected text times `CONTENT` plus 6 `PIECE`s,
-  `insert_table` its cells' text times `CONTENT` plus 3 `PIECE`s a cell and
-  8 more, `delete_table` its expected cells' text times `CONTENT` plus 8
-  `PIECE`s a cell and 16 more (the cells' and table's properties come back:
-  lesson.docx's 2x2 table sent 4,906 bytes); on lesson.docx they
-  over-estimate 1.6 to 11 times.
+- XLSX structure: a `PIECE` per inserted or deleted row or column (a delete
+  writes an axis change; the cells stay in Yjs), a new sheet's name and 4
+  `PIECE`s, a rename's two names and 1;
+- what an Office command's Undo re-creates (the Editor's design,
+  2026-10-22): the engine measures the command's target before it applies
+  (`office_service::Touched`, one per applied command in
+  `CommandResult::touched`, from `touched.rs` in the fork): the target's
+  live Yjs items (text runs, format markers, embeds, map entries, nested
+  types whole) and their content's bytes. The target is the paragraph a
+  DOCX or PPTX `replace_text`, `delete_paragraph`, `format_text` or
+  `set_alignment` names, each paragraph of a `set_list`, a deleted table's
+  embed and cell stories (with the tables in its cells), and a deleted
+  sheet's key in the sheet order; a command whose Undo only deletes what it
+  wrote measures nothing. `undo_cost::office` takes those bytes times
+  `CONTENT` and a `PIECE` an item, plus what the command writes itself: a
+  paragraph insert's text and style times `CONTENT` and 8 `PIECE`s (the new
+  mark, a copy of its anchor's properties: a list item's measured 837
+  bytes, and the run it splits), a replacement's text and 2, `format_text`'s
+  format JSON and 6, `set_list` 3 a paragraph, `set_alignment` 2,
+  `insert_table` its cells' text, 3 a cell and 8, a paragraph or table
+  delete 2. On the fixtures (lesson.docx and .pptx, paragraphs of
+  5-character runs and of one run a character, 1x1 to 10x10 tables) inserts,
+  formats and table deletes over-estimate 1.5 to 8 times; a `replace_text`,
+  `set_alignment` or paragraph delete on a run-heavy paragraph up to 170
+  times, since its Undo leaves the paragraph's format markers where they are.
 
 A new command adds its rule there; both matches are exhaustive, so it does
 not compile without one. The factors were
@@ -3864,7 +3913,8 @@ Go records its receipt without a Redo ref. A removal is the usual large
 case: a small update whose Undo brings the removed content back. XLSX
 `delete_sheet` and `delete_rows` are not: they leave the cells in Yjs, and
 their Undo measures tens of bytes whatever the sheet holds (measured
-2026-10-21). The room checks the estimate again when an Undo is asked,
+2026-10-21; 2026-10-22 on a sheet of 10,000 written cells and the large
+gradebook's 16,000-cell sheet: 32 to 54 bytes). The room checks the estimate again when an Undo is asked,
 against the room as it is then (a person may have filled a source room
 since), and refuses one that no longer fits with `undo_unavailable`,
 dropping the step. A timed-out Undo whose reverse was too large to keep is not
@@ -4105,14 +4155,27 @@ empty cells and rows left out, so `[]` expects an empty band and cells holding
 tabs or line breaks match exactly (review finding 6); Go refuses an `expected`
 that is not such a grid. A stale band's refusal carries `details.block.grid`,
 the exact grid to copy, cut after 2,000 cells (an empty row counting as one)
-with `gridCut`, beside its TSV `text`. A call's commands name at most 10,000 cells
-(Epo 2026-10-21; review finding 3): a range's area for `set_range` and
-`format_cells` and a row or column delete's `expected` cells, inserts and
-sheet changes counting none. The retrieval service sends a call only up to
-its limits (`_office_fitting` in `tools.py`), counting as the engine does;
-the engine's own refusals past them (the XLSX session's count, 50 commands
-and 20 inserted paragraphs in `apply_commands` and `create`) guard other
-callers.
+with `gridCut`, beside its TSV `text`. Per-call limits (Epo 2026-10-21 and 2026-10-22; agent tool only,
+people's edits are not limited): the Office engine alone counts them, from
+one table, `crates/office-service/limits.json` in the fork, keyed by
+format, which `limits.rs` reads (`include_str!`) and Go's `cmd/openapi
+-office-limits` writes into `edit_office_document`'s description
+(`agenttools/office_limits.go`; `pnpm gen:openapi` passes the vendor path),
+so description and engine cannot drift. It holds 50 commands and, per
+format, XLSX 10,000 cells written (a range's area for `set_range` and
+`format_cells`, 1 for `set_cell`, a row or column delete's `expected`
+cells), 1,000 inserted rows and columns and 20 sheets added, renamed or
+deleted; DOCX 20 inserted and 20 deleted paragraphs, 400 table cells
+inserted or deleted, 30 formatted spans and 200 paragraphs given a list or
+an alignment; PPTX 20 inserted and 20 deleted paragraphs (`replace_text`
+counts toward the 50 commands only). `apply_commands` and `create` apply
+the commands up to the first that would pass a limit and end the result's
+notice with `Not applied: the commands at indexes N to M (counting from 0),
+past the limit of … a call; send them in another call.` (after a create
+command the indexes start at 1, the agent's call counting it); a first
+command alone past one is refused as `invalid_input`. The retrieval service
+counts nothing: its result passes the receipt's notice through. Measured at
+each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`.
 
 Undo (Epo 2026-10-20): every Office command, structural ones included
 (`format_cells`, `add_sheet`, `delete_sheet`, row and column inserts and
@@ -4881,7 +4944,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default and maximum 12 (`PLANNING_RESPONSES`): the responses a turn gets until its first successful write, the last with tools off. 4 tool calls per response on every turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Once a write lands there is no response ceiling: `BUILD_TOOLS_PER_TURN` (160) and the `STALL_RESPONSES` guard (5, plus `WRITE_ERROR_GRACE` 2 per errored write for at most 2 errors) bound it. No context-window minimum |
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
-| capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
+| capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 16 images per user message |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |

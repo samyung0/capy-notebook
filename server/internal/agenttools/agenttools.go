@@ -12,6 +12,7 @@ package agenttools
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
@@ -106,13 +107,15 @@ import (
 // optional (the body's end) and it takes a list; set_list, insert_table,
 // delete_table, format_text and set_alignment edit Word files; a DOCX read
 // marks lists, table cells, content controls and locked paragraphs and reads
-// headers, footers and notes after the body; a call applies at most 50
-// commands, 10,000 cells and 20 inserted paragraphs and returns the rest
-// unapplied by index (Epo 2026-10-21).
+// headers, footers and notes after the body; the engine applies a call's
+// commands up to its per-call limits (its limits.json, which Marshal writes
+// into the description) and returns the rest unapplied by index (Epo
+// 2026-10-21, 2026-10-22).
 // v38: inspect_office_document reads a PPTX by slide (its slides with their
-// layouts and shapes, the deck's layouts; a slide's shapes and paragraphs)
-// and edit_office_document's set_shape_text replaces a PPTX shape's text
-// (Epo 2026-10-20).
+// layouts and shapes, the deck's layouts; a slide's shapes and paragraphs);
+// edit_office_document's set_shape_text, add_slide, delete_slide,
+// move_slide and add_text_box edit PowerPoint files, and format_text and
+// set_alignment take PPTX paragraphs too (Epo 2026-10-20).
 const ContractVersion = 38
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
@@ -177,7 +180,8 @@ type Definition struct {
 	Concurrency        string         `json:"concurrency" enum:"search,read,mutate"`
 	AllowedSlots       []Slot         `json:"allowedSlots"`
 	RequiredOperations []Operation    `json:"requiredOperations"`
-	// Retention applies after the answer completes; live tool results stay exact.
+	// Retention applies between user messages; until a turn's answer is
+	// finished every result stays whole (Epo 2026-10-21).
 	Retention ResultRetention `json:"retention" enum:"full,cited_passages,used_excerpts,none"`
 }
 
@@ -340,9 +344,22 @@ func Export() Contract {
 	}
 }
 
-// Marshal renders the contract deterministically for the generated file.
-func Marshal() ([]byte, error) {
-	out, err := json.MarshalIndent(Export(), "", "  ")
+// Marshal renders the contract deterministically for the generated file,
+// edit_office_document's description ending with the Office engine's
+// per-call limits from officeLimits (the file at OfficeLimitsPath).
+func Marshal(officeLimits []byte) ([]byte, error) {
+	sentence, err := officeLimitsSentence(officeLimits)
+	if err != nil {
+		return nil, err
+	}
+	contract := Export()
+	for i := range contract.Tools {
+		if contract.Tools[i].Name == "edit_office_document" {
+			contract.Tools[i].Description = strings.Replace(contract.Tools[i].Description,
+				"(Marshal adds the engine's per-call limits.)", sentence, 1)
+		}
+	}
+	out, err := json.MarshalIndent(contract, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -846,7 +863,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "read_study_progress",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read the learner's study progress in this workspace: files and " +
 				"materials done or started, recent quiz results, and the chapters they retain least.",
 			InputSchema:        obj(map[string]any{}),
@@ -1058,7 +1075,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "inspect_document",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read a document's current content as editable targets with stable " +
 				"ids. Inspect before editing; never take edit positions from search results. A quiz's " +
 				"answers, solutions and marking schemes appear only when the user may edit it.",
@@ -1108,7 +1125,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "list_trashed_files",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "List the trashed source files and study materials of this " +
 				"workspace with their ids, names and expiry. Use it before restore_file " +
 				"so you never guess an id.",
@@ -1134,7 +1151,7 @@ func Definitions() []Definition {
 		// of the request's prefix.
 		chatTool(Definition{
 			Name:      "inspect_office_document",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
@@ -1161,9 +1178,8 @@ func Definitions() []Definition {
 			Description: "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
-				"whole call. Edits save directly. A call applies at most 50 commands, 10,000 cells " +
-				"(XLSX) and 20 inserted paragraphs; the commands past a limit come back unapplied, to " +
-				"send in another call. A call's commands are at most 256 KB; a larger call is refused.",
+				"whole call. Edits save directly. A call's commands are at most 256 KB; a larger call is " +
+				"refused. (Marshal adds the engine's per-call limits.)",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
 				"commands": map[string]any{

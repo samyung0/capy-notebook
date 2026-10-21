@@ -167,6 +167,24 @@ async def test_a_created_word_file_reads_back_and_a_stale_delete_shows_the_parag
     assert stale.refused and stale.error_code == "stale_target"
     assert f"Paragraph {method} now reads:\nMethod" in stale.detail
 
+    # The engine alone counts a call's limits (Epo 2026-10-22): past one,
+    # the rest come back in the result, unapplied, by index.
+    bold = {
+        "type": "format_text",
+        "target_id": method,
+        "expected_text": "Method",
+        "bold": True,
+    }
+    limited = await tools.run(
+        "edit_office_document",
+        {"_tool_call_id": "c3", "file_id": "f_local_1", "commands": [bold] * 31},
+        ctx,
+    )
+    assert limited.text().endswith(
+        "Not applied: the command at index 30 (counting from 0), past the limit of "
+        "30 formatted spans a call; send them in another call."
+    )
+
 
 async def test_a_deck_reads_by_slide_and_a_stale_shape_write_shows_its_text(run):
     import office

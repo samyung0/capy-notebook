@@ -3,6 +3,7 @@ image transport. The provider call itself is covered by the agent tests."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import time
@@ -129,6 +130,145 @@ async def test_capture_attaches_the_image_and_adds_no_citation(rendered):
     )
     # A 200x300 pt box rendered to a 200 px long edge.
     assert list(record["pixels"]) == [134, 200]
+
+
+async def test_a_message_allows_sixteen_images(monkeypatch, rendered):
+    """The 16th image returns with the limit sentence and later image calls
+    are refused, also when a response's captures run side by side (Epo
+    2026-10-21, 16 since 2026-10-22)."""
+    real = capture.render_file
+
+    async def _side_by_side(*args):
+        await asyncio.sleep(0)
+        return await real(*args)
+
+    monkeypatch.setattr(capture, "render_file", _side_by_side)
+    ctx = _ctx(2)
+    results = await asyncio.gather(
+        *(
+            tools._capture_page(
+                {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+            )
+            for n in range(1, 18)
+        )
+    )
+    taken = [r for r in results if not r.refused]
+    assert len(taken) == 16 == len(ctx.pending_images)
+    assert [r.text().endswith(tools.IMAGE_LIMIT) for r in taken] == [False] * 15 + [
+        True
+    ]
+    knowledge = await tools._capture_knowledge_page(
+        {"excerpt_id": "e_1", "page": 1, "_tool_call_id": "k18"}, ctx
+    )
+    for refused in [*(r for r in results if r.refused), knowledge]:
+        assert refused.error_code == "limit_reached"
+        assert refused.text() == tools.IMAGE_LIMIT
+
+
+async def test_source_change_images_share_the_cap(monkeypatch, rendered):
+    """resolve_source_change's images count with the page captures both ways:
+    a 16th image from a capture carries the sentence, and a source change's
+    image past the cap fails with the reason (Epo 2026-10-22)."""
+
+    async def _resolve(**_kwargs):
+        return _jpeg(40, 20)
+
+    monkeypatch.setattr(tools.pending, "resolve", _resolve)
+    ctx = _ctx(2)
+
+    def change(call_id: str):
+        args = {"file_id": "f_1", "change_id": "c", "checkpoint": 1}
+        return tools._resolve_source_change(args | {"_tool_call_id": call_id}, ctx)
+
+    first = await change("r1")
+    assert not first.refused and not first.failed
+    assert tools.IMAGE_LIMIT not in first.text()
+    for n in range(2, 16):
+        page = await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+        )
+        assert not page.refused and tools.IMAGE_LIMIT not in page.text()
+    sixteenth = await tools._capture_page(
+        {"file_id": "f_1", "page": 2, "_tool_call_id": "k16"}, ctx
+    )
+    assert not sixteenth.refused and sixteenth.text().endswith(tools.IMAGE_LIMIT)
+
+    past = await change("r17")
+    assert past.failed and past.error_code == "limit_reached"
+    assert past.text() == tools.SOURCE_IMAGE_LIMIT
+    assert len(ctx.pending_images) == 16 and "r17" not in ctx.pending_images
+
+
+async def test_two_source_images_side_by_side_at_fifteen_attach_one(monkeypatch):
+    """Review r2 M1: the check after the render keeps parallel source changes
+    under the cap."""
+
+    async def _resolve(**_kwargs):
+        await asyncio.sleep(0)  # both pass the check before the render
+        return _jpeg(40, 20)
+
+    monkeypatch.setattr(tools.pending, "resolve", _resolve)
+    ctx = ToolContext(workspace_id="ws_1", images_taken=15)
+    results = await asyncio.gather(
+        *(
+            tools._resolve_source_change(
+                {"file_id": "f_1", "change_id": c, "checkpoint": 1, "_tool_call_id": c},
+                ctx,
+            )
+            for c in ("r1", "r2")
+        )
+    )
+    assert sorted(r.outcome for r in results) == ["failed", "succeeded"]
+    assert ctx.images_taken == 16 and len(ctx.pending_images) == 1
+
+
+async def test_two_knowledge_captures_side_by_side_at_fifteen_attach_one(
+    monkeypatch, pdf
+):
+    """Review r2 M1: the same for capture_knowledge_page."""
+
+    async def _target(excerpt_id):
+        return _capture_target([338, 339])
+
+    async def _render(object_key, max_bytes, page, bbox, max_edge):
+        await asyncio.sleep(0)  # both pass the check before the render
+        return capture.render(pdf, 1, bbox, max_edge)
+
+    monkeypatch.setattr(tools.library, "capture_target", _target)
+    monkeypatch.setattr(capture, "render_knowledge", _render)
+    ctx = ToolContext(workspace_id="ws_1", library=True, images_taken=15)
+    results = await asyncio.gather(
+        *(
+            tools._capture_knowledge_page(
+                {"excerpt_id": "e_1", "page": page, "_tool_call_id": f"k{page}"}, ctx
+            )
+            for page in (338, 339)
+        )
+    )
+    assert sorted(r.outcome for r in results) == ["refused", "succeeded"]
+    assert ctx.images_taken == 16 and len(ctx.pending_images) == 1
+
+
+async def test_a_source_image_that_is_the_sixteenth_says_nothing(monkeypatch, rendered):
+    """The limit sentence comes only with a capture (Epo 2026-10-22)."""
+
+    async def _resolve(**_kwargs):
+        return _jpeg(40, 20)
+
+    monkeypatch.setattr(tools.pending, "resolve", _resolve)
+    ctx = _ctx(2)
+    for n in range(1, 16):
+        await tools._capture_page(
+            {"file_id": "f_1", "page": 2, "_tool_call_id": f"k{n}"}, ctx
+        )
+    args = {"file_id": "f_1", "change_id": "c", "checkpoint": 1}
+    sixteenth = await tools._resolve_source_change(args | {"_tool_call_id": "r16"}, ctx)
+    assert not sixteenth.failed and "r16" in ctx.pending_images
+    assert tools.IMAGE_LIMIT not in sixteenth.text()
+    later = await tools._capture_page(
+        {"file_id": "f_1", "page": 2, "_tool_call_id": "k17"}, ctx
+    )
+    assert later.refused and later.error_code == "limit_reached"
 
 
 async def test_capture_rejects_a_page_past_the_end_and_a_bad_box(rendered):
@@ -302,11 +442,39 @@ def test_context_measurement_counts_images_by_pixels_not_base64():
         {"callId": "k2", "estimatedImageTokens": 5},
     ]
     assert capture.image_tokens(captures) == 15
-    # k1's exchange folded into the turn note: its image no longer rides along.
-    folded = [{"role": "user", "content": "note", "_kind": "turn_note"}] + [
-        {"role": "tool", "tool_call_id": "k2", "content": "Captured page 2."}
+
+
+def test_a_folded_capture_stays_attached_after_the_turn_note():
+    """Live compaction folded k1's exchange into the turn note: its image rides
+    right after the note until the answer (Epo 2026-10-21)."""
+    messages = [
+        {"role": "system", "content": "s"},
+        {"role": "user", "content": "q", "_kind": "query"},
+        {"role": "user", "content": "note", "_kind": "turn_note"},
+        {"role": "assistant", "content": "", "tool_calls": []},
+        {"role": "tool", "tool_call_id": "k2", "content": "Captured page 2."},
     ]
-    assert capture.image_tokens(captures, folded) == 5
+    images = {
+        "k1": ("capture 1", "data:image/jpeg;base64,AA=="),
+        "k2": ("capture 2", "data:image/jpeg;base64,BB=="),
+    }
+
+    out = capture.inject_images(messages, images, "zai")
+
+    assert [m.get("_kind") or m["role"] for m in out] == [
+        "system",
+        "query",
+        "turn_note",
+        "user",
+        "assistant",
+        "tool",
+        "user",
+    ]
+    assert (
+        out[3]["content"][0]["text"] == "Images from the tool calls this note folded:"
+    )
+    assert out[3]["content"][2]["image_url"]["url"].endswith("AA==")
+    assert out[6]["content"][2]["image_url"]["url"].endswith("BB==")
 
 
 async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):
@@ -418,13 +586,6 @@ async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pd
     assert url.startswith("data:image/jpeg;base64,")
     assert rendered == [("books/aaa.pdf", 1024, 341)]
     assert ctx.captures[0]["fileId"] == "e_1" and ctx.captures[0]["page"] == 341
-
-    # There is no per-turn capture cap: a capture is dropped when its
-    # exchange folds into the turn note anyway.
-    again = await tools._capture_knowledge_page(
-        {"excerpt_id": "e_1", "page": 338, "_tool_call_id": "c"}, ctx
-    )
-    assert not again.refused and len(ctx.captures) == 2
 
 
 async def test_knowledge_pdf_cache_is_keyed_by_the_object_key(tmp_path, monkeypatch):
