@@ -170,6 +170,24 @@ func (b *bodyReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// readTicketMetadata decodes a ticket request's JSON body within
+// uploadTicketReadBound, then lifts the deadline so it never cancels the
+// checks that follow.
+func readTicketMetadata(w http.ResponseWriter, r *http.Request, v any) error {
+	conn := http.NewResponseController(w)
+	if err := conn.SetReadDeadline(time.Now().Add(uploadTicketReadBound)); err != nil {
+		return err
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, uploadMetadataMaxBytes)
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			return huma.NewError(http.StatusRequestTimeout, "the ticket request took too long to send")
+		}
+		return bodyError(err, "invalid upload metadata")
+	}
+	return conn.SetReadDeadline(time.Time{})
+}
+
 // bodyError refuses a body the client sent wrong: past the cap is 413, past
 // its deadline 408, and anything else (a cut-off, malformed or misordered
 // body) a 400 with msg.

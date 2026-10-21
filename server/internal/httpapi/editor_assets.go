@@ -3,7 +3,6 @@ package httpapi
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -142,17 +141,18 @@ func (a *api) editorAssetUploadTicket(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) takeEditorAssetTicket(w http.ResponseWriter, r *http.Request, scope editorAssetScope) (uploadTurn, error) {
 	var in reserveEditorAssetRequest
-	r.Body = http.MaxBytesReader(w, r.Body, uploadMetadataMaxBytes)
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		return uploadTurn{}, bodyError(err, "invalid upload metadata")
+	if err := readTicketMetadata(w, r, &in); err != nil {
+		return uploadTurn{}, err
 	}
-	if _, _, _, err := a.checkEditorAsset(in, scope); err != nil {
+	name, _, contentType, err := a.checkEditorAsset(in, scope)
+	if err != nil {
 		return uploadTurn{}, err
 	}
 	if err := a.s.AssertEditorAssetRoom(r.Context(), scope.workspaceID, scope.materialID, uid(r), in.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
-	return a.uploads.take(uid(r), editorAssetTarget(scope.materialID), "")
+	return a.uploads.take(uid(r), editorAssetTarget(scope.materialID),
+		uploadClaim{name: name, contentType: contentType, size: in.SizeBytes})
 }
 
 // checkEditorAsset checks an editor asset's metadata for its ticket and again
@@ -188,7 +188,7 @@ func (a *api) uploadEditorAsset(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope editorAssetScope) (store.EditorAsset, error) {
 	ctx := r.Context()
-	release, err := a.uploads.start(r.URL.Query().Get("ticket"), uid(r), editorAssetTarget(scope.materialID))
+	claim, release, err := a.uploads.start(r.URL.Query().Get("ticket"), uid(r), editorAssetTarget(scope.materialID))
 	if err != nil {
 		return store.EditorAsset{}, err
 	}
@@ -205,6 +205,9 @@ func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope e
 	}
 	name, ext, contentType, err := a.checkEditorAsset(in, scope)
 	if err != nil {
+		return store.EditorAsset{}, err
+	}
+	if err := claim.matches(uploadClaim{name: name, contentType: contentType, size: in.SizeBytes}); err != nil {
 		return store.EditorAsset{}, err
 	}
 

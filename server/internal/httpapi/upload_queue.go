@@ -18,8 +18,10 @@ import (
 // holds a slot for uploadTurnTTL; an upload that has not started by then
 // passes the slot to the next ticket. The line lives in this process, since
 // the API runs as one instance; a scaled-out API would need it in Redis. A
-// source ticket that ends without its upload (its turn passed, or the browser
-// cancelled it) settles as a failed file of its batch at once.
+// ticket holds what it was issued for (uploadClaim), and its upload must
+// match it. A source ticket whose turn passes settles as a failed file of its
+// batch at once; a cancelled one does not, since the browser cancels a ticket
+// it retries with a new one.
 const (
 	uploadSlots        = 32
 	uploadQueueMax     = 128
@@ -38,6 +40,9 @@ var (
 	// moving fast costs each waiting browser one poll per gap, inside the
 	// per-user rate limit. A turn answers at once.
 	uploadPollGap = 2 * time.Second
+	// uploadTicketReadBound is how long a ticket request has to send its
+	// JSON body.
+	uploadTicketReadBound = 10 * time.Second
 )
 
 // uploadQueueFull refuses a ticket when the line, or the user's share of it,
@@ -51,8 +56,30 @@ func uploadQueueFull() error {
 	}
 }
 
+// uploadTicketGone refuses an unknown, foreign, spent, cancelled or passed
+// ticket, typed for the browser's own copy.
 func uploadTicketGone() error {
-	return huma.Error410Gone("the upload's ticket is unknown or its turn has passed")
+	return &huma.ErrorModel{
+		Status: http.StatusGone,
+		Title:  http.StatusText(http.StatusGone),
+		Detail: "the upload's ticket is unknown or its turn has passed",
+		Errors: []*huma.ErrorDetail{{Message: "upload_ticket_gone"}},
+	}
+}
+
+// uploadClaim is what a ticket was issued for: its upload must name the same
+// file, size, type and batch (a source upload's; empty for an editor asset).
+type uploadClaim struct {
+	name, contentType, batch string
+	size                     int64
+}
+
+// matches refuses an upload whose metadata differs from its ticket's.
+func (c uploadClaim) matches(upload uploadClaim) error {
+	if c != upload {
+		return huma.Error400BadRequest("the upload's metadata differs from its ticket")
+	}
+	return nil
 }
 
 // uploadTurn answers a ticket: its place in line, 0 once its turn has come.
@@ -63,8 +90,9 @@ type uploadTurn struct {
 
 type uploadTicket struct {
 	// target is the route the ticket admits: a workspace's source uploads or
-	// a material's editor assets. batch is a source upload's batch.
-	id, user, target, batch string
+	// a material's editor assets.
+	id, user, target string
+	claim            uploadClaim
 	// turn is set when the ticket's turn comes; it frees the slot if the
 	// upload does not start in time.
 	turn *time.Timer
@@ -93,10 +121,10 @@ func editorAssetTarget(materialID string) string   { return "assets:" + material
 // take gives user a ticket for target: its turn at once when a slot is free,
 // else a place in line, or uploadQueueFull when the line, or the user's
 // share of it, is full.
-func (q *uploadQueue) take(user, target, batch string) (uploadTurn, error) {
+func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	t := &uploadTicket{id: randID("utk"), user: user, target: target, batch: batch}
+	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim}
 	// A free slot means nobody waits: every move grants the line first.
 	if q.free > 0 {
 		q.tickets[t.id] = t
@@ -134,13 +162,15 @@ func (q *uploadQueue) pass(t *uploadTicket) {
 		q.dropLocked(t)
 	}
 	q.mu.Unlock()
-	if unused {
-		q.settleTicket(t)
+	if unused && t.claim.batch != "" {
+		q.settle(t.claim.batch)
 	}
 }
 
-// cancel drops the user's ticket whose upload the browser cancelled before it
-// started: its place in line, or its turn's slot, goes to the next ticket.
+// cancel drops the user's ticket whose upload the browser cancelled, or
+// retries with a new ticket, before it started: its place in line, or its
+// turn's slot, goes to the next ticket. Its batch is not settled: the retry
+// counts the file.
 func (q *uploadQueue) cancel(id, user string) error {
 	q.mu.Lock()
 	t, ok := q.tickets[id]
@@ -151,7 +181,6 @@ func (q *uploadQueue) cancel(id, user string) error {
 	if !ok || t.user != user {
 		return uploadTicketGone()
 	}
-	q.settleTicket(t)
 	return nil
 }
 
@@ -168,12 +197,6 @@ func (q *uploadQueue) dropLocked(t *uploadTicket) {
 	q.advanceLocked()
 }
 
-func (q *uploadQueue) settleTicket(t *uploadTicket) {
-	if t.batch != "" {
-		q.settle(t.batch)
-	}
-}
-
 // advanceLocked grants free slots to the line, oldest first, and wakes the
 // polls.
 func (q *uploadQueue) advanceLocked() {
@@ -187,22 +210,23 @@ func (q *uploadQueue) advanceLocked() {
 }
 
 // start spends a ticket whose turn has come on its upload, before the
-// gateway reads the upload's body. A ticket of another user or target is
-// as unknown as an expired one. The upload calls release once it is done.
-func (q *uploadQueue) start(id, user, target string) (release func(), err error) {
+// gateway reads the upload's body, and returns what the ticket was issued
+// for. A ticket of another user or target is as unknown as an expired one.
+// The upload calls release once it is done.
+func (q *uploadQueue) start(id, user, target string) (claim uploadClaim, release func(), err error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	t, ok := q.tickets[id]
 	if !ok || t.user != user || t.target != target {
-		return nil, uploadTicketGone()
+		return uploadClaim{}, nil, uploadTicketGone()
 	}
 	if t.turn == nil {
-		return nil, huma.Error409Conflict("the upload's ticket is still waiting for its turn")
+		return uploadClaim{}, nil, huma.Error409Conflict("the upload's ticket is still waiting for its turn")
 	}
 	t.turn.Stop()
 	delete(q.tickets, id)
 	var once sync.Once
-	return func() { once.Do(q.release) }, nil
+	return t.claim, func() { once.Do(q.release) }, nil
 }
 
 func (q *uploadQueue) release() {

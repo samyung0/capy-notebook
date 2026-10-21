@@ -88,6 +88,9 @@ export function errorKind(error: unknown): ErrorKind {
     if (error.code === 'source_changed') return 'sourceChanged';
     // A connection too slow for the gateway's 5-minute upload deadline.
     if (error.code === 'upload_timeout') return 'network';
+    // An upload whose turn in the gateway's line passed, or whose ticket a
+    // restart forgot: the user adds it again.
+    if (error.code === 'upload_ticket_gone') return 'validation';
     if (error.code === 'account_over_quota' || error.code === 'account_locked')
       return 'quota';
     if (error.status === 401) return 'auth';
@@ -240,6 +243,12 @@ function codeCopy(code: string): ErrorDescription | null {
         action: 'retry',
         description: m.error_upload_timeout(),
         title: m.error_upload_timeout(),
+      };
+    case 'upload_ticket_gone':
+      return {
+        action: 'retry',
+        description: m.error_upload_ticket_gone(),
+        title: m.error_upload_ticket_gone(),
       };
     case 'upload_queue_full':
       return {

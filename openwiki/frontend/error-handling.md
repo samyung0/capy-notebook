@@ -21,6 +21,20 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+### Gateway upload codes
+
+The gateway's upload line answers two typed 4xx codes the browser gives their
+own copy, as both title and description, so the transfer row (its title) and
+the note placeholder (`errorCopy`) show it inline:
+
+- `upload_timeout` (408): the upload's body took past 5 minutes. Its kind is
+  overridden to `network` (a coded 4xx otherwise reads as `unknown`, which
+  `errorCopy` replaces with its fallback). A connection dropped before the
+  answer is an ordinary network error.
+- `upload_ticket_gone` (410): the upload's turn passed, or a restart or a
+  deploy forgot its ticket ("Your turn to upload passed. Try again."). Its
+  kind is overridden to `validation`.
+
 ### Error ids where the error stays
 
 An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx

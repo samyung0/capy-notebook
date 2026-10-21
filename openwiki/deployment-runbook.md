@@ -1564,6 +1564,9 @@ playbook revision.
    the API keeps in its process: run one API instance, or move the line to
    Redis before scaling it out
    ([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
+   A deploy whose old and new containers overlap briefly is the same as a
+   restart: a ticket one container issued is a 410 on the other, which the
+   browser shows as the turn passed, and the user adds the file again.
 4. **CORS rules on the bucket.** The browser reads B2 through presigned GETs,
    so B2 itself must allow the SPA origin. Apply the file for the bucket's
    environment rather than hand-writing rules:

@@ -341,8 +341,11 @@ parse download is its only B2 egress.
 
 An upload first takes a ticket in the gateway's line (Epo 2026-10-22,
 `server/internal/httpapi/upload_queue.go`): `POST …/sources/uploads/tickets`
-or `POST …/editor-assets/uploads/tickets` with the upload's metadata as JSON.
-The ticket runs the checks its upload repeats (editor access, the metadata's
+or `POST …/editor-assets/uploads/tickets` with the upload's metadata as JSON
+(its body has 10 s to arrive). The ticket keeps the file name, size, type
+and, for a source, batch it was issued for; an upload whose metadata differs
+is refused (400, its ticket's batch counting the file). The ticket runs the
+checks its upload repeats (editor access, the metadata's
 bounds, size, type, parse pages and credit headroom) and the reservation's
 gates in a rolled-back transaction (`AssertSourceUploadRoom`: the uploader's
 account and storage and the workspace's file cap; `AssertEditorAssetRoom`:
@@ -358,15 +361,18 @@ turn comes, when the ticket's place differs from N but no sooner than 2 s
 after the ask (so a fast line costs a browser one poll per 2 s, inside the
 per-user rate limit), and otherwise after 25 s, under Cloudflare's 100 s. A
 turn holds its slot for 30 s; an upload that has not started by then passes
-the slot to the next ticket, and its own upload is refused. A browser that
-cancels an upload while it waits (a note placeholder's cancel, or the
-placeholder removed) sends `DELETE /api/uploads/tickets/{id}` (its owner
-only), which gives the ticket's place, or its turn's slot, to the next ticket
-at once; an abandoned tab sends nothing, and its ticket waits for its turn to
-pass. The upload carries
+the slot to the next ticket, and its own upload is refused. When waiting or
+the upload fails in the browser (a cancel, a closed editor or dialog, or a
+429 the browser retries with a new ticket), it gives the ticket back with
+`DELETE /api/uploads/tickets/{id}` (its owner only), which hands the ticket's
+place, or its turn's slot, to the next ticket at once and settles nothing:
+the retry counts the file. Giving back a ticket the upload already spent is a
+harmless 410. An abandoned tab sends nothing, and its ticket waits for its
+turn to pass. The upload carries
 `?ticket=` and is refused before its body is read when the ticket is missing,
-unknown, another user's or another route's, spent or passed (410), or still
-waiting (409). Its slot frees when the upload request ends. The upload has
+unknown, another user's or another route's, spent, given back or passed
+(410 `upload_ticket_gone`, which the browser shows as "Your turn to upload
+passed. Try again."), or still waiting (409). Its slot frees when the upload request ends. The upload has
 5 minutes from the gateway's first read of its body to send it (the
 connection's read deadline, lifted once the body is read so it never cuts the
 PUT); past that it answers 408 `upload_timeout`, which the browser shows as
@@ -375,8 +381,8 @@ before the answer reads as a network error), and releases its reservation
 like any failure.
 The line lives in the API process, which runs as one instance; a scaled-out
 API would need it in Redis. A restart forgets it: a waiting browser's next
-poll is refused 410 and the user tries again. A source ticket that ends
-without its upload (its turn passed, or the browser cancelled it) counts at
+poll is refused 410 and the user tries again (so is a ticket that a deploy's
+overlapping old container issued). A source ticket whose turn passes counts at
 once as a failed file of its batch, so the batch's notification does not wait
 for the idle sweep (`SourceBatchIdle`, 1 h). The transfer panel shows a waiting file as "Waiting to upload (position
 N)"; an editor asset's placeholder waits without a place.

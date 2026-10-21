@@ -171,9 +171,8 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 		return uploadTurn{}, err
 	}
 	var body apimodel.CreateSourceUploadReq
-	r.Body = http.MaxBytesReader(w, r.Body, uploadMetadataMaxBytes)
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		return uploadTurn{}, bodyError(err, "invalid upload metadata")
+	if err := readTicketMetadata(w, r, &body); err != nil {
+		return uploadTurn{}, err
 	}
 	if _, _, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch); err != nil {
 		return uploadTurn{}, err
@@ -181,7 +180,20 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), body.SizeBytes); err != nil {
 		return uploadTurn{}, err
 	}
-	return a.uploads.take(uid(r), sourceUploadTarget(wsID), body.BatchID)
+	return a.uploads.take(uid(r), sourceUploadTarget(wsID), sourceClaim(&body))
+}
+
+// sourceClaim is what a source upload's metadata asks for, as its ticket
+// keeps it: the trimmed name and the type with its default.
+func sourceClaim(body *apimodel.CreateSourceUploadReq) uploadClaim {
+	contentType := body.ContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return uploadClaim{
+		name: strings.TrimSpace(string(body.Name)), contentType: contentType,
+		batch: body.BatchID, size: body.SizeBytes,
+	}
 }
 
 // uploadSource streams one source file through the gateway (Epo 2026-10-22;
@@ -232,7 +244,7 @@ var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *string) (store.File, error) {
 	ctx := r.Context()
 	wsID := id(r)
-	release, err := a.uploads.start(r.URL.Query().Get("ticket"), uid(r), sourceUploadTarget(wsID))
+	claim, release, err := a.uploads.start(r.URL.Query().Get("ticket"), uid(r), sourceUploadTarget(wsID))
 	if err != nil {
 		return store.File{}, err
 	}
@@ -251,6 +263,12 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	var body apimodel.CreateSourceUploadReq
 	stream, err := readUploadMetadata(w, r, &body)
 	if err != nil {
+		return store.File{}, err
+	}
+	// The ticket's batch counts a mismatch, which the upload's own does not
+	// reach.
+	if err := claim.matches(sourceClaim(&body)); err != nil {
+		*batch = claim.batch
 		return store.File{}, err
 	}
 	name, chapterName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)

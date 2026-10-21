@@ -39,6 +39,17 @@ describe('frontend error normalization', () => {
     expect(errorCopy(error, 'fallback')).toBe(m.error_upload_timeout());
   });
 
+  it('names an upload whose turn in the line passed', () => {
+    const error = new ApiError(410, 'Gone', undefined, {
+      code: 'upload_ticket_gone',
+    });
+    expect(describeError(error)).toMatchObject({
+      action: 'retry',
+      title: m.error_upload_ticket_gone(),
+    });
+    expect(errorCopy(error, 'fallback')).toBe(m.error_upload_ticket_gone());
+  });
+
   it('explains captured source changes as a manually retryable request', () => {
     const error = new ApiError(409, 'Conflict', undefined, {
       code: 'source_changed',

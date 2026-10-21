@@ -149,7 +149,7 @@ import type {
   WorkspaceRecent,
   WorkspaceStats,
 } from './types';
-import { takeUploadTurn } from './uploadTurn';
+import { uploadWithTicket } from './uploadTurn';
 
 export interface QueryUiOptions {
   errorBoundary?: false | 'unlessMissing';
@@ -1619,7 +1619,7 @@ export function useUploadSource(wsId: string) {
        * refuses one past the policy's maxPages. */
       pageCount?: number;
       /** The upload's place in the gateway's line while it waits, 0 once
-       * its turn comes (takeUploadTurn). */
+       * its turn comes (uploadWithTicket). */
       onQueued?: (position: number) => void;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
@@ -1637,19 +1637,21 @@ export function useUploadSource(wsId: string) {
         parseMode,
         sizeBytes: file.size,
       };
-      const path = await takeUploadTurn(
+      return uploadWithTicket(
         `/workspaces/${wsId}/sources/uploads`,
         metadata,
-        signal,
-        onQueued
+        async (path) => {
+          if (USE_MSW)
+            await simulateMswUploadProgress(onUploadProgress, signal);
+          // The metadata part comes first: the gateway reserves storage from
+          // it before it reads the file part.
+          const form = new FormData();
+          form.append('metadata', JSON.stringify(metadata));
+          form.append('file', file);
+          return api.upload<SourceFile>(path, form, onUploadProgress, signal);
+        },
+        { onQueued, signal }
       );
-      if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
-      // The metadata part comes first: the gateway reserves storage from it
-      // before it reads the file part.
-      const form = new FormData();
-      form.append('metadata', JSON.stringify(metadata));
-      form.append('file', file);
-      return api.upload<SourceFile>(path, form, onUploadProgress, signal);
     },
     onSuccess: (file, vars) => {
       track('source_uploaded', {

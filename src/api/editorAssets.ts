@@ -2,7 +2,7 @@ import { fitImage } from '@/lib/fitImage';
 import { api } from './client';
 import { materialQuery } from './hooks';
 import { queryClient } from './queryClient';
-import { takeUploadTurn } from './uploadTurn';
+import { uploadWithTicket } from './uploadTurn';
 
 /** A note's media are images and audio only (Epo 2026-10-15). */
 export type EditorAssetPurpose = 'image' | 'audio';
@@ -69,21 +69,23 @@ export async function uploadEditorAsset(
     purpose,
     sizeBytes: file.size,
   };
-  const path = await takeUploadTurn(
+  return uploadWithTicket(
     uploadsPath(materialId),
     metadata,
-    options.signal
-  );
-  // The metadata part comes first: the gateway reserves storage from it
-  // before it reads the file part.
-  const form = new FormData();
-  form.append('metadata', JSON.stringify(metadata));
-  form.append('file', file);
-  return api.upload<EditorAsset>(
-    path,
-    form,
-    options.onProgress,
-    options.signal
+    (path) => {
+      // The metadata part comes first: the gateway reserves storage from it
+      // before it reads the file part.
+      const form = new FormData();
+      form.append('metadata', JSON.stringify(metadata));
+      form.append('file', file);
+      return api.upload<EditorAsset>(
+        path,
+        form,
+        options.onProgress,
+        options.signal
+      );
+    },
+    { signal: options.signal }
   );
 }
 

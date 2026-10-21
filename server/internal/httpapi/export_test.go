@@ -12,6 +12,14 @@ func SetUploadPutBound(t *testing.T, bound time.Duration) {
 	t.Cleanup(func() { uploadPutBound = previous })
 }
 
+// SetUploadTicketReadBound shortens how long a ticket request has to send its
+// body, for one test.
+func SetUploadTicketReadBound(t *testing.T, bound time.Duration) {
+	previous := uploadTicketReadBound
+	uploadTicketReadBound = bound
+	t.Cleanup(func() { uploadTicketReadBound = previous })
+}
+
 // SetUploadQueueTimings shortens the upload line's clocks for one test: a
 // turn's hold, an upload's body deadline and a poll's longest wait.
 func SetUploadQueueTimings(t *testing.T, turn, body, poll time.Duration) {

@@ -112,7 +112,16 @@ type ticketTurn struct {
 // takeTicket asks the upload route at path for a ticket for meta.
 func takeTicket(t *testing.T, h http.Handler, path, userID string, meta map[string]any) (*httptest.ResponseRecorder, ticketTurn) {
 	t.Helper()
-	rec := doReq(t, h, http.MethodPost, path+"/tickets", userID, meta)
+	body, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path+"/tickets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(auth.HeaderE2EUserID, userID)
+	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(deadlineRecorder{rec}, req)
 	var turn ticketTurn
 	if rec.Code == http.StatusCreated {
 		if err := json.Unmarshal(rec.Body.Bytes(), &turn); err != nil {

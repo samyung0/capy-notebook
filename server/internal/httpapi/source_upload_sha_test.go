@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"regexp"
 	"strings"
@@ -342,15 +343,17 @@ func TestUploadBodiesStopAtTheCap(t *testing.T) {
 }
 
 // An upload is its metadata part, then its file part, and nothing else; the
-// metadata keeps the bounds its JSON schema had. Anything else is refused and
+// ticket's metadata keeps the bounds its JSON schema had, and an upload's
+// metadata past them differs from its ticket. Anything else is refused and
 // holds nothing.
 func TestSourceUploadRefusesAMalformedForm(t *testing.T) {
 	bucket := blob.NewMemory()
 	th := openThumbnailHarnessWith(t, bucket)
 	ws := uploadWorkspace(t, th)
 	body := []byte("%PDF-1.7")
+	base := sourceMeta("notes.pdf", "application/pdf", len(body))
 	meta := func(change func(map[string]any)) formPart {
-		m := sourceMeta("notes.pdf", "application/pdf", len(body))
+		m := maps.Clone(base)
 		if change != nil {
 			change(m)
 		}
@@ -366,12 +369,21 @@ func TestSourceUploadRefusesAMalformedForm(t *testing.T) {
 		{"no metadata", []formPart{file}, http.StatusBadRequest},
 		{"the metadata twice", []formPart{meta(nil), meta(nil), file}, http.StatusBadRequest},
 		{"a part after the file", []formPart{meta(nil), file, {name: "note", body: []byte("x")}}, http.StatusBadRequest},
-		{"a batch id out of its pattern", []formPart{meta(func(m map[string]any) { m["batchId"] = "bad id" }), file}, http.StatusUnprocessableEntity},
-		{"a name past its limit", []formPart{meta(func(m map[string]any) { m["name"] = strings.Repeat("n", 121) + ".pdf" }), file}, http.StatusUnprocessableEntity},
+		{"a batch id out of its pattern", []formPart{meta(func(m map[string]any) { m["batchId"] = "bad id" }), file}, http.StatusBadRequest},
+		{"a name past its limit", []formPart{meta(func(m map[string]any) { m["name"] = strings.Repeat("n", 121) + ".pdf" }), file}, http.StatusBadRequest},
 	} {
-		route := ticketed(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("notes.pdf", "application/pdf", len(body)))
+		route := ticketed(t, th.h, sourceUploads(ws), "u_owner", base)
 		rec, _ := postForm(t, th.h, route, "u_owner", tc.parts...)
 		expectStatus(t, rec, tc.status, "an upload with "+tc.what)
+	}
+	for what, change := range map[string]func(map[string]any){
+		"a batch id out of its pattern": func(m map[string]any) { m["batchId"] = "bad id" },
+		"a name past its limit":         func(m map[string]any) { m["name"] = strings.Repeat("n", 121) + ".pdf" },
+	} {
+		m := sourceMeta("notes.pdf", "application/pdf", len(body))
+		change(m)
+		rec, _ := takeTicket(t, th.h, sourceUploads(ws), "u_owner", m)
+		expectStatus(t, rec, http.StatusUnprocessableEntity, "a ticket with "+what)
 	}
 	if held, keys := leftovers(t, th, bucket, ws); held != 0 || len(keys) != 0 {
 		t.Fatalf("malformed uploads left %d held sessions and objects %q", held, keys)
