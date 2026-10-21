@@ -24,7 +24,7 @@
     "@platejs/table": "^53.0.9",
     "@platejs/toc": "^53.0.0",
     "esbuild": "^0.25.12",
-    "katex": "^0.17.0",
+    "katex": "^0.19.0",
     "lowlight": "^3.3.0",
     "platejs": "^53.2.4",
     "react": "^19.0.0",
