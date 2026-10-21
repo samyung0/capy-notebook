@@ -11,7 +11,7 @@ import (
 // A failed row in the Indexing tab carries its error id (human frontend
 // error-handling, 2026-10-21): the trace of the failed job's last ingest
 // attempt, or of the gateway request that recorded an export failure; a row
-// that is not failed carries none, and a save clears it (migration 0103).
+// that is not failed carries none, and a save clears it (migration 0105).
 func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()

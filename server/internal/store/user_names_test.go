@@ -39,12 +39,12 @@ func TestClerkProfileSyncNamesAnUnnamedAccountAfterItsEmailLocalPart(t *testing.
 	}
 }
 
-// Migration 0102 renames accounts named after their whole address (any case,
+// Migration 0104 renames accounts named after their whole address (any case,
 // cut to 60 characters) to the local part and leaves typed names alone.
 func TestUnnamedUserMigrationRenamesEmailNamesToTheLocalPart(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	sql, err := migrations.FS.ReadFile("0102_unnamed_user_names.sql")
+	sql, err := migrations.FS.ReadFile("0104_unnamed_user_names.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

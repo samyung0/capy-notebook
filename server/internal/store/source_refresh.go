@@ -137,7 +137,7 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 	if attempts >= 2 {
 		const detail = "Source export exceeded its two-attempt limit"
 		// The export ran in the collaboration service, which records no ingest
-		// attempt: the failure's error id is this request's trace (0103).
+		// attempt: the failure's error id is this request's trace (0105).
 		if _, err = tx.Exec(ctx, `UPDATE source_documents SET running_job_id=NULL,refresh_error=$2,refresh_trace_id=NULLIF($3,'') WHERE file_id=$1`, fileID, detail, obs.TraceID(ctx)); err != nil {
 			return out, err
 		}
