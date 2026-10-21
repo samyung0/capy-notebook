@@ -6,6 +6,7 @@
 -- a refusal before any job has none. Clearing the error clears the id.
 ALTER TABLE source_documents ADD COLUMN refresh_trace_id text;
 ALTER TABLE materials ADD COLUMN index_trace_id text;
+ALTER TABLE files ADD COLUMN failure_trace_id text;
 CREATE INDEX ingest_job_attempts_job_idx ON ingest_job_attempts (job_id, id DESC);
 
 CREATE FUNCTION source_refresh_trace() RETURNS trigger AS $$
@@ -40,3 +41,21 @@ CREATE TRIGGER materials_index_trace
   FOR EACH ROW
   WHEN (OLD.index_error IS DISTINCT FROM NEW.index_error)
   EXECUTE FUNCTION note_index_trace();
+
+-- A file whose processing failed (Failed files) keeps the trace of the last
+-- ingest attempt of a job naming it, the one that failed it or left it
+-- partial; leaving 'failed' clears it.
+CREATE FUNCTION file_failure_trace() RETURNS trigger AS $$
+BEGIN
+  NEW.failure_trace_id := CASE WHEN NEW.status = 'failed' THEN
+    (SELECT a.trace_id FROM ingest_job_attempts a JOIN jobs j ON j.id = a.job_id
+      WHERE j.payload->>'fileId' = NEW.id ORDER BY a.id DESC LIMIT 1) END;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+REVOKE EXECUTE ON FUNCTION file_failure_trace() FROM PUBLIC;
+
+CREATE TRIGGER files_failure_trace
+  BEFORE UPDATE OF status ON files
+  FOR EACH ROW
+  WHEN (OLD.status IS DISTINCT FROM NEW.status)
+  EXECUTE FUNCTION file_failure_trace();

@@ -2087,6 +2087,8 @@ components:
         chapterId:
           nullable: true
           type: string
+        errorId:
+          type: string
         hasBytes:
           type: boolean
         id:

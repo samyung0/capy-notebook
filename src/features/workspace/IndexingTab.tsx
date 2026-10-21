@@ -222,9 +222,10 @@ function FileChanges({
   );
 }
 
-/** Files whose processing failed. Automatic processing skips them; the owner
- * retries one through the upload dialog's Retry processing, or in one click
- * when it is still indexed (a part missing, parts design Q8). */
+/** Files whose processing failed, each with its error id. Automatic
+ * processing skips them; the owner retries one through the upload dialog's
+ * Retry processing, or in one click when it is still indexed (a part missing,
+ * parts design Q8). */
 function FailedFiles({
   owner,
   workspaceId,
@@ -247,7 +248,7 @@ function FailedFiles({
       <ul className="m-0 mt-3 flex list-none flex-col p-0">
         {failed.map((file) => (
           <li
-            className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex"
+            className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex sm:flex-wrap"
             key={file.id}
           >
             <FileIcon className="size-3.75" name={fileIconName(file)} />
@@ -270,6 +271,12 @@ function FailedFiles({
               >
                 {m.error_action_retry()}
               </Button>
+            )}
+            {file.errorId && (
+              <ErrorId
+                className="col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
+                id={file.errorId}
+              />
             )}
           </li>
         ))}

@@ -153,20 +153,24 @@ describe('IndexingTab note changes', () => {
     );
   });
 
-  it("shows editors the owner's rows and status, the error id included, without any action", () => {
+  it("shows editors the owner's rows and status, error ids included (a failed file's too), without any action", () => {
     const failedFile = {
+      errorId: 'trace_f_failed',
       id: 'f_failed',
       kind: 'pdf',
       name: 'scan.pdf',
       status: 'failed',
       workspaceId: 'ws_1',
     } as SourceFile;
-    render({ isOwner: true }, [failedFile]);
+    const failedFileId = m.error_id({ id: 'trace_f_failed' });
     // The owner's four change actions, then Retry on the failed file.
+    expect(
+      rowOf(render({ isOwner: true }, [failedFile]), 'scan.pdf')
+    ).toContain(failedFileId);
     expect(buttons).toHaveLength(5);
     expect(buttons.at(-1)?.children).toBe(m.error_action_retry());
     const html = render({ isOwner: false }, [failedFile]);
-    expect(rowOf(html, 'scan.pdf')).toBeDefined();
+    expect(rowOf(html, 'scan.pdf')).toContain(failedFileId);
     const edited = m.workspace_change_edited({
       time: relativeTime('2026-10-21T09:00:00Z'),
     });

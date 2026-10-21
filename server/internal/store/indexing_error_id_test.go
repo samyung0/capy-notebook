@@ -11,7 +11,8 @@ import (
 // A failed row in the Indexing tab carries its error id (human frontend
 // error-handling, 2026-10-21): the trace of the failed job's last ingest
 // attempt, or of the gateway request that recorded an export failure; a row
-// that is not failed carries none, and a save clears it (migration 0105).
+// that is not failed carries none, and a save or a retry clears it
+// (migration 0105). Failed files carry theirs on the file rows.
 func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -96,5 +97,43 @@ func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 	}
 	if got := stats().NoteChanges; len(got) != 1 || got[0].State != "failed" || got[0].ErrorID != "trace-note-"+noteJob {
 		t.Fatalf("noteChanges = %+v, want the failed note with its attempt's trace", got)
+	}
+
+	// A file whose first processing failed (Failed files): the trace of the
+	// last attempt of a job naming it, on the file rows, cleared by a retry.
+	upload, err := s.createReadyFile(ctx, ws.ID, owner, "scan.pdf", "pdf", nil, "", 100, "sources/"+uid("upload"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parseJob := uid("job_parse")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs(id,type,payload,status) VALUES($1,'parse',jsonb_build_object('fileId',$2::text),'failed')`, parseJob, upload.ID); err != nil {
+		t.Fatal(err)
+	}
+	attempt(parseJob, 1, "trace-upload-"+parseJob)
+	fileErrorID := func(status string) string {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET status=$2 WHERE id=$1`, upload.ID, status); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.GetFile(ctx, upload.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		listed, err := s.ListFiles(ctx, owner, ws.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range listed {
+			if f.ID == upload.ID && f.ErrorID != got.ErrorID {
+				t.Fatalf("listed error id %q, got %q", f.ErrorID, got.ErrorID)
+			}
+		}
+		return got.ErrorID
+	}
+	if got := fileErrorID("failed"); got != "trace-upload-"+parseJob {
+		t.Fatalf("failed file error id = %q, want its attempt's trace", got)
+	}
+	if got := fileErrorID("pending"); got != "" {
+		t.Fatalf("retried file error id = %q, want none", got)
 	}
 }

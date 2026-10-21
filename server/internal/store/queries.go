@@ -955,18 +955,20 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, COALESCE(blob_path, '') <> '',
 	CASE WHEN status='ready' AND (kind='pdf' AND blob_path IS NOT NULL)
 		THEN '/api/files/' || id || '/preview' END,
-	revision, provenance, index_limit, COALESCE(thumbnail_key, ''), preview`
+	revision, provenance, index_limit, COALESCE(thumbnail_key, ''), preview,
+	CASE WHEN status='failed' THEN COALESCE(failure_trace_id, '') ELSE '' END`
 
 // fileListCols is fileCols qualified for joins.
 const fileListCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, COALESCE(f.blob_path, '') <> '',
 	CASE WHEN f.status='ready' AND (f.kind='pdf' AND f.blob_path IS NOT NULL)
 		THEN '/api/files/' || f.id || '/preview' END,
-	f.revision, f.provenance, f.index_limit, COALESCE(f.thumbnail_key, ''), f.preview`
+	f.revision, f.provenance, f.index_limit, COALESCE(f.thumbnail_key, ''), f.preview,
+	CASE WHEN f.status='failed' THEN COALESCE(f.failure_trace_id, '') ELSE '' END`
 
 func scanFile(row pgx.Row) (File, error) {
 	var f File
 	var provenance []byte
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit, &f.ThumbnailKey, &f.Preview)
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.HasBytes, &f.PreviewURL, &f.Revision, &provenance, &f.IndexLimit, &f.ThumbnailKey, &f.Preview, &f.ErrorID)
 	if err == nil {
 		f.Provenance, err = decodeProvenance(provenance)
 	}

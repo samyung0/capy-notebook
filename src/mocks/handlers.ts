@@ -1177,6 +1177,8 @@ export const handlers = [
     if (file.status !== 'failed') return codeError(409, 'conflict');
     const { parseMode } = (await request.json()) as { parseMode: string };
     file.status = 'pending';
+    // The server sends an error id on failed files only.
+    delete file.errorId;
     setTimeout(() => {
       file.status = 'ready';
       file.indexed = parseMode !== 'none' && file.kind !== 'audio';

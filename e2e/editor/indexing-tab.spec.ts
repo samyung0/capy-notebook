@@ -119,12 +119,13 @@ test('a failed file is retried from its row menu and listed in the Indexing tab'
   await settings
     .getByRole('tab', { exact: true, name: m.workspace_indexing() })
     .click();
+  const failedRow = settings.getByRole('listitem').filter({ hasText: name });
   await expect(
-    settings
-      .getByRole('listitem')
-      .filter({ hasText: name })
-      .getByRole('button', { exact: true, name: m.error_action_retry() })
+    failedRow.getByRole('button', { exact: true, name: m.error_action_retry() })
   ).toBeVisible();
+  await expect(failedRow.getByTestId('error-id')).toHaveText(
+    m.error_id({ id: 'a3ce929d0e0e47364bf92f3577b34da6' })
+  );
   await page.keyboard.press('Escape');
 
   // The row menu opens the upload panel on the stored file.

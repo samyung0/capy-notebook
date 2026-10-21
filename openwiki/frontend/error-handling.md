@@ -39,9 +39,10 @@ it, through `ErrorState`'s `errorId`:
   or an Office file's view session (`FileError`'s `errorId`) and a note's
   collaboration token;
 - form errors (`FormAlert`'s `errorId`);
-- a failed row in the workspace settings Indexing tab (file or note, Epo
-  2026-10-21), under the row and aligned with its name: the failure's id
-  from the stats payload's `errorId` (below), never its text.
+- a failed row in the workspace settings Indexing tab (file or note
+  changes and Failed files, Epo 2026-10-21), under the row and aligned with
+  its name: the failure's id from the payload's `errorId` (below), never its
+  text.
 
 Typed refusals, exceptions without a request, toasts and status banners show
 none. The id comes from `ApiError.traceId` (see the trace id in
@@ -691,9 +692,13 @@ failure the gateway records for the collaboration service
 (`FailSourceRefresh`, and `ClaimSourceRefresh` past two attempts) stores that
 request's trace instead, since the export records no attempt; a refusal before
 any job (the scheduler's 4xx when queuing) stores none and its row shows no
-id. An operator finds the failure by its id in the logs and Sentry, or with
-`WHERE refresh_trace_id=…` / `index_trace_id=…`, whose row keeps the error
-text. The owner's Process (Retry when
+id. A file under Failed files carries its id on the file rows (`errorId`,
+sent while `status='failed'`): `files.failure_trace_id`, which a trigger sets
+when the status turns `failed` from the last ingest attempt of a job naming
+the file (the one that failed it or left it partial) and clears when the
+status moves on. An operator finds the failure by its id in the logs and
+Sentry, or with `WHERE refresh_trace_id=…` / `index_trace_id=…` /
+`failure_trace_id=…`, whose row keeps the error text where one is stored. The owner's Process (Retry when
 failed, and Process all) indexes the note at once, also with auto process
 off; a `processing_started` answer (queued meanwhile by the scheduler or
 another tab) counts as started, and `nothing_to_process` toasts that there

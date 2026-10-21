@@ -172,6 +172,10 @@ type File struct {
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
+	// ErrorID is a failed file's error id for the Indexing tab's Failed files:
+	// the trace of the ingest attempt that failed it (migration 0105). Absent
+	// unless status is failed and one was recorded.
+	ErrorID string `json:"errorId,omitempty"`
 	// WorkspaceName and LostAccess: owned-list rows only (ListOwnedFiles).
 	WorkspaceName string `json:"workspaceName,omitempty"`
 	LostAccess    bool   `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`

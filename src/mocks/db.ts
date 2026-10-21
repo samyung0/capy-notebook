@@ -720,6 +720,9 @@ export const files: SourceFile[] = [
       status,
       workspaceId: 'ws_bio',
       ...(status === 'processing' ? { ingestPct: 45 } : {}),
+      ...(status === 'failed'
+        ? { errorId: 'a3ce929d0e0e47364bf92f3577b34da6' }
+        : {}),
     })
   ),
   {
