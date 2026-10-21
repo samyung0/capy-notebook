@@ -115,8 +115,9 @@ does:
   ceiling as base64. Provenance names library books only and is bounded as a
   stored record (it was merged over many calls).
 - Sources take the materials' bounds and resolution (`validSources`,
-  `resolveSources`): the names land in `files.scope_file_names` (migration
-  `0100`), which no API response carries yet.
+  `resolveSources`; a blank one is dropped): the names land in
+  `files.scope_file_names` (migration `0100`), which no API response carries
+  yet and a copy of the file keeps.
 - The receipt id is `ChatOperationID(message, call)`; the request hash covers
   the name, chapter, provenance, sources and the content's SHA-256. A replay
   returns the receipt before any blob is written.

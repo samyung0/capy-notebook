@@ -1033,7 +1033,10 @@ A Clerk session token is accepted only when its `azp` (the origin that minted
 it) is one of `COLLABORATION_ALLOWED_ORIGINS` (Epo 2026-10-21); a token without
 `azp` (Backend API) is not checked. With Clerk on outside development and e2e
 the gateway refuses to boot when that list is empty, since an empty list would
-accept every origin.
+accept every origin. The Ops API checks `azp` the same way against its own
+origin (`OPS_ORIGIN`), and refuses to start with Clerk on outside development
+without it. Clerk's new-device check stays off, so sign-in has no device-trust
+step.
 
 Every Clerk-authenticated request reads the account once
 (`ClerkSession` in `store/account_state.go`): the lifecycle verdict, whether
@@ -1097,9 +1100,11 @@ with a "Use a backup code" switch when backup codes exist; a phone or email
 code only when Clerk reports no authenticator for the user, sent as the step
 opens. "Back to Log In" clears the local attempt (`signIn.reset()`) and shows the
 form, so the user can start over with another factor or account; it does not end
-the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Enrolment is not built yet:
-Clerk's prebuilt profile page is not mounted, so turning MFA on waits for a
-Capy settings UI.
+the attempt at Clerk, so a reload may open the code step again. Everyone else signs in exactly as before. Users turn
+two-step verification on and off on Clerk's hosted account page, with an
+authenticator app (QR code) and no SMS (Epo 2026-10-21): Settings → Account has
+a "Two-step verification" row whose Manage link opens the URL Clerk's SDK builds
+(`buildUserProfileUrl()`) in a new tab. Capy has no in-app enrolment.
 
 The dashboard opens a first-run dialog when the Clerk user has no
 `unsafeMetadata.onboardedAt`. The profile chooser uses the fixed catalog in
@@ -1421,7 +1426,8 @@ and [known-path calculation](../server/internal/store/blobs.go#L105).
 
 Self-service deletion requires all of the following:
 
-- the user confirms their account email;
+- the user types their account email, or the word `delete` (in every locale)
+  when the account has no stored email (Epo 2026-10-21);
 - the confirmation presents the `lifecycleGeneration` returned by the deletion
   preflight; and
 - no live subscription remains (a subscription set to cancel at period end is

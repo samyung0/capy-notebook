@@ -128,7 +128,7 @@ export const requestAccountDeletionBodyLifecycleGenerationMin = 0;
 
 
 export const RequestAccountDeletionBody = zod.object({
-  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax),
+  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax).describe('The account email, or delete for an account with no email'),
   "lifecycleGeneration": zod.int().min(requestAccountDeletionBodyLifecycleGenerationMin)
 })
 

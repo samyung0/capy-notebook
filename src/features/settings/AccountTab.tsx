@@ -7,14 +7,15 @@ import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
 import { UpdateMeBody, updateMeBodyNameMax } from '@/api/gen/validators';
 import { useMe, useUpdateMe } from '@/api/hooks';
-import { TabHeader } from '@/components/app/tabPanel';
+import { SettingRow, TabHeader } from '@/components/app/tabPanel';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { clerkMessage } from '@/features/auth/clerk';
-import { useUser } from '@/features/auth/clerkHooks';
+import { useClerk, useUser } from '@/features/auth/clerkHooks';
 import { PhotoEditorDialog } from '@/features/auth/PhotoEditorDialog';
 import { useProfilePhoto } from '@/features/auth/useProfilePhoto';
 import { m } from '@/i18n';
@@ -33,7 +34,35 @@ export function AccountTab() {
 
 function ClerkAccountTab() {
   const { user } = useUser();
-  return <AccountForm user={user} />;
+  const { buildUserProfileUrl } = useClerk();
+  return (
+    <>
+      <AccountForm user={user} />
+      <TwoStepRow url={buildUserProfileUrl()} />
+    </>
+  );
+}
+
+/** Two-step verification is turned on and off on Clerk's hosted account page
+ * (Epo 2026-10-21); Capy only links to it. The URL is empty until Clerk
+ * loads. */
+function TwoStepRow({ url }: { url: string | undefined }) {
+  if (!url) return null;
+  return (
+    <div className="mt-8 flex flex-col gap-6">
+      <div className="border-divider border-t" />
+      <SettingRow
+        hint={m.settings_two_step_hint()}
+        title={m.settings_two_step()}
+      >
+        <UnderlineLink asChild>
+          <a href={url} rel="noopener noreferrer" target="_blank">
+            {m.settings_two_step_manage()}
+          </a>
+        </UnderlineLink>
+      </SettingRow>
+    </div>
+  );
 }
 
 /** Profile, saved together: photo to Clerk, name and icon to Capy. Without

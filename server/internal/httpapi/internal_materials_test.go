@@ -348,8 +348,9 @@ func TestInternalMaterialConcurrentSameIDConverges(t *testing.T) {
 
 // An agent's sources are its made-from line (Epo 2026-10-21): the id or exact
 // name of a workspace item of any kind, or of a chapter, is stored as its
-// current name and any other string as written. Nothing in the private
-// workspace's quiz, flashcard set or note is indexed, and none is refused.
+// current name and any other string as written; a blank one is dropped.
+// Nothing in the private workspace's quiz, flashcard set or note is indexed,
+// and none is refused.
 func TestInternalMaterialStoresItsSourcesAsNames(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
@@ -386,7 +387,7 @@ func TestInternalMaterialStoresItsSourcesAsNames(t *testing.T) {
 				"kind": tt.kind, "title": "Sourced " + tt.kind,
 				"sources": []string{
 					"note_e2e_private", "E2E Private Quiz", "dk_e2e_private", "ch_e2e_private",
-					" Lecture 3, 14 Oct ", "https://example.org/cells", "Secret private title",
+					" Lecture 3, 14 Oct ", "https://example.org/cells", "Secret private title", "  ", "",
 				},
 			}
 			for key, value := range tt.body {
@@ -438,7 +439,7 @@ func TestInternalMaterialWithoutSourcesStoresNone(t *testing.T) {
 }
 
 // The only refusal sources can get is their format: at most 20 distinct ones
-// of 1 to 200 characters each.
+// of at most 200 characters each.
 func TestInternalMaterialRefusesSourcesOverTheirBounds(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
@@ -447,15 +448,14 @@ func TestInternalMaterialRefusesSourcesOverTheirBounds(t *testing.T) {
 		tooMany[i] = fmt.Sprintf("Lecture %d", i)
 	}
 	for name, sources := range map[string][]string{
-		"too many":  tooMany,
-		"too long":  {strings.Repeat("é", 201)},
-		"blank one": {"Lecture 1", "  "},
+		"too many": tooMany,
+		"too long": {strings.Repeat("é", 201)},
 	} {
 		body := noteBody(msgID, "call_bounds", "Bounded "+name, "body")
 		body["sources"] = sources
 		rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
 		if rec.Code != http.StatusBadRequest ||
-			!strings.Contains(rec.Body.String(), "sources: send at most 20 sources of 1 to 200 characters each.") {
+			!strings.Contains(rec.Body.String(), "sources: send at most 20 sources of at most 200 characters each.") {
 			t.Fatalf("%s: status = %d body=%s", name, rec.Code, rec.Body.String())
 		}
 	}

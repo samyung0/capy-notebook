@@ -502,10 +502,11 @@ func EncodeRaw(v any) json.RawMessage {
 	return b
 }
 
-// RequestAccountDeletionReq confirms an irreversible action. The email is
-// re-typed by the user and verified server-side.
+// RequestAccountDeletionReq confirms an irreversible action. The user re-types
+// the account email, or the word "delete" when the account has no email, and
+// the server verifies it.
 type RequestAccountDeletionReq struct {
-	ConfirmEmail        Email `json:"confirmEmail" required:"true" minLength:"1"`
+	ConfirmEmail        Email `json:"confirmEmail" required:"true" minLength:"1" doc:"The account email, or delete for an account with no email"`
 	LifecycleGeneration int64 `json:"lifecycleGeneration" required:"true" minimum:"0"`
 }
 
