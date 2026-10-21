@@ -3726,7 +3726,7 @@ called with that id is Redo, for any number of steps. Go names the step's
 document (`target`) and the room cross-checks that every room holding the
 step is that document's. Go records each Undo's receipt (`agent_operations`,
 kind `undo_edit`) with `undo_of` naming the step it reversed (unique, so a
-step is reversed once; migration 0100 dropped `agent_edit_inverses`). The
+step is reversed once; migration 0102 dropped `agent_edit_inverses`). The
 effect alternates: an edit is `edited`, its Undo `edit_undone`, the Undo of
 that `edited` again, each carrying its next step's ref. A step ends with its
 room: any unload (the last editor leaving, an epoch change or publication

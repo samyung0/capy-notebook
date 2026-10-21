@@ -82,7 +82,7 @@ func TestCutoverResetMigration(t *testing.T) {
 			`UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',running_job_id=NULL,rebuild_pending=false,
 				rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL WHERE file_id NOT IN ('` + office + `','` + text + `')`,
 			`UPDATE material_yjs_documents SET projected_version=stored_version WHERE material_id<>'` + note.ID + `'`,
-			// 0100 dropped the AI edit Undo table this body still releases.
+			// 0102 dropped the AI edit Undo table this body still releases.
 			`CREATE TEMP TABLE agent_edit_inverses (resource_kind text, resource_id text, undo_status text, undo_reason text,
 				inverse jsonb, guards jsonb, inverse_bytes bigint, updated_at timestamptz) ON COMMIT DROP`,
 		}, steps...) {
