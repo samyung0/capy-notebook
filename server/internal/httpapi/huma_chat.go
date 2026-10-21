@@ -48,6 +48,7 @@ func (a *api) registerChat(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/conversations", "listConversations", tag, "List a workspace's chat conversations", http.StatusOK, a.listConversations)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/conversations", "createConversation", tag, "Start a new chat conversation", http.StatusCreated, a.createConversation)
 	reg(api, http.MethodGet, "/api/conversations/{id}/messages", "listMessages", tag, "Load a conversation's message history", http.StatusOK, a.listMessages)
+	reg(api, http.MethodPost, "/api/conversations/{id}/messages/{messageId}/stop", "stopChatTurn", tag, "Stop a conversation's running turn", http.StatusNoContent, a.stopTurn)
 	reg(api, http.MethodPatch, "/api/conversations/{id}", "updateConversation", tag, "Rename, pin or archive a conversation", http.StatusOK, a.updateConversation)
 	reg(api, http.MethodDelete, "/api/conversations/{id}", "deleteConversation", tag, "Delete a conversation", http.StatusNoContent, a.deleteConversation)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/conversations/unarchive", "unarchiveConversations", tag, "Put every archived conversation back in the list", http.StatusNoContent, a.unarchiveConversations)

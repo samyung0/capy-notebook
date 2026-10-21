@@ -73,3 +73,59 @@ func TestAbortOrphanedStreamsKeepsTheLastTurnCheckpoint(t *testing.T) {
 		t.Fatalf("aborted turn = %s %+v, evidence %v", status, meta.Activity, saved)
 	}
 }
+
+// Stopped and failed turns replay into later prompts like finished ones, each
+// with its status; a turn still streaming does not (Epo 2026-10-21).
+func TestConversationPromptReplaysStoppedAndFailedTurns(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	ws, err := s.CreateWorkspace(ctx, userID, WorkspaceCreate{Name: "Replay"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := s.CreateConversation(ctx, userID, ws.ID, "replay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SlotChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := json.RawMessage(`{"tools":[{"name":"list_sources","text":"listing"}],"passages":[],"skills":[]}`)
+	for _, status := range []string{"aborted", "error", "streaming"} {
+		if _, err := s.AddUserMessage(ctx, userID, conv.ID, "ask "+status); err != nil {
+			t.Fatal(err)
+		}
+		assistant, err := s.StartAssistantMessage(ctx, userID, conv.ID, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status != "streaming" {
+			if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "", status, 0, nil, "", nil, evidence, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	prompt, err := s.ConversationPrompt(ctx, conv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, m := range prompt.History {
+		got = append(got, m.Role+":"+m.Status)
+		if m.Role == "assistant" && len(m.ToolEvidence) == 0 {
+			t.Fatalf("the %s turn replays without its tool results", m.Status)
+		}
+	}
+	want := []string{"user:complete", "assistant:aborted", "user:complete", "assistant:error", "user:complete"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("history = %v, want %v", got, want)
+	}
+}
