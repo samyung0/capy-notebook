@@ -22,7 +22,7 @@ verify these before redirecting old browser pages:
 - Sign-in/up/out, password reset, OAuth, invitations and post-login destinations
   reach the new app. Clerk still uses the existing UAT instance. Test an old
   bookmark with `redirect_url` before enabling page redirects.
-- Direct B2 upload/read, collaboration, Office view/edit/save, Google import and
+- Upload through the gateway, B2 read, collaboration, Office view/edit/save, Google import and
   OneDrive import work on the new app. Office accepts both app origins and
   `local.uat` during overlap and carries no app credentials. Test local UAT too.
 - New checkout/portal returns and product links use the new app. Existing email
@@ -179,7 +179,7 @@ then run Caddy and `pnpm dev:uat`:
 | Sign in on `https://local.uat.capynotebook.com` | Trusted local HTTPS and matching UAT Clerk instance |
 | Open a note and type | Collaboration WebSocket accepted the shared local origin |
 | Open an Office document | Office Worker permits the shared local parent origin |
-| Upload a file | Presigned PUT passed bucket CORS, `complete` recorded the object |
+| Upload a file | The upload request (metadata, then file) answered 201 and the file row names its object |
 | Open a citation preview | Gateway-served preview path and B2 read credentials |
 
 A `401` on every API call with sign-in working means the browser key belongs to

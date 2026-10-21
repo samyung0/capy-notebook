@@ -1554,22 +1554,24 @@ playbook revision.
    `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`.
    Record `B2_KEY_ID` / `B2_APP_KEY` — the secret is shown once.
 3. Set `B2_ENDPOINT`, `B2_REGION`, `B2_BUCKET`, `B2_PRESIGN_TTL` (default
-   900 s: upload PUT lifetime and the reservation deadline completion checks,
-   so it must cover a slow full-size upload) and `B2_LINK_TTL` (default 300 s:
-   read links, which the browser fetches as soon as they land).
-4. **CORS rules on the bucket.** The browser uploads directly to B2 via
-   presigned PUT (the only source upload path), so B2 itself must allow the
-   SPA origin. Apply the file for the bucket's environment rather than
-   hand-writing rules:
+   900 s: the lifetime of the PUT the collaboration service writes a source
+   refresh candidate with) and `B2_LINK_TTL` (default 300 s: read links, which
+   the browser fetches as soon as they land). Browser uploads no longer use a
+   presigned PUT: they stream through the API host (Epo 2026-10-22), whose
+   Cloudflare proxy accepts request bodies up to 100 MB, above the 30 MiB
+   largest per-file cap.
+4. **CORS rules on the bucket.** The browser reads B2 through presigned GETs,
+   so B2 itself must allow the SPA origin. Apply the file for the bucket's
+   environment rather than hand-writing rules:
 
    | Bucket             | File                       | Origins                                            |
    | ------------------ | -------------------------- | -------------------------------------------------- |
    | production         | `deploy/b2-cors.prod.json` | the production SPA                                  |
    | UAT (local shares it) | `deploy/b2-cors.uat.json` | UAT SPA, the tunnelled dev origin, `localhost:5173` |
 
-   `PresignPut` sends only `Content-Type`, so the allowed headers do not grow
-   as the app does. `etag` must be exposed or upload completion cannot verify
-   what was stored.
+   The files still allow `s3_put`, which only the removed browser upload
+   used; dropping it is a separate bucket change, applied after a release
+   without the presigned upload is live everywhere.
 
 5. **Lifecycle rule:** delete unfinished large-file uploads after 1 day. An
    aborted multipart upload is billed indefinitely and is invisible in the
@@ -1774,9 +1776,9 @@ at production launch.
 ## 7. Dedicated ingest host
 
 The Netcup ingest host runs the parse coordinator, ingest workers, parser, and
-host sampler, and the Drive/OneDrive import worker. Browser uploads go straight
-to B2 and imported files are streamed into B2 by the import worker here; source
-bytes do not traverse the Go application process.
+host sampler, and the Drive/OneDrive import worker. Browser uploads stream
+through the Go gateway, which writes each to B2 in one PUT (Epo 2026-10-22);
+imported files are streamed into B2 by the import worker here.
 Coordinator, worker, and parser containers mount the same `parse_spool` volume.
 The compose init service gives the unprivileged pipeline user access before
 those services start.

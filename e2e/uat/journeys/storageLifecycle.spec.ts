@@ -162,13 +162,27 @@ const comment = {
 
 /** A 1 KiB store-only reservation, under the Free per-file cap so only the
  * lifecycle or storage gate can refuse it. */
-const probe = () => ({
-  batchId: randomUUID(),
-  batchTotal: 1,
-  name: 'probe.bin',
-  parseMode: 'none',
-  sizeBytes: 1024,
-});
+/** A 1 KiB upload as the browser streams one: metadata, then the file. */
+const probe = () => {
+  const form = new FormData();
+  form.append(
+    'metadata',
+    JSON.stringify({
+      batchId: randomUUID(),
+      batchTotal: 1,
+      contentType: 'application/octet-stream',
+      name: 'probe.bin',
+      parseMode: 'none',
+      sizeBytes: 1024,
+    })
+  );
+  form.append(
+    'file',
+    new Blob([new Uint8Array(1024)], { type: 'application/octet-stream' }),
+    'probe.bin'
+  );
+  return form;
+};
 
 /** The file's first bytes through its signed read link (a ranged GET). */
 async function downloadHead(actor: Actor, fileId: string, length: number) {

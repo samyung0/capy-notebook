@@ -1578,8 +1578,8 @@ async function simulateMswUploadProgress(
   }
 }
 
-/** Reserve a B2 object, upload it directly, then ask the gateway to verify and
- * enqueue it. File bytes never traverse the Go gateway. */
+/** Stream the file through the gateway, which stores it, records its SHA-256
+ * and queues its processing in the same request (Epo 2026-10-22). */
 export function useUploadSource(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1620,14 +1620,12 @@ export function useUploadSource(wsId: string) {
       signal?: AbortSignal;
     }) => {
       if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
-      return api
-        .post<{
-          uploadId: string;
-          url: string;
-          method: 'PUT';
-          headers: Record<string, string>;
-          expiresAt: string;
-        }>(`/workspaces/${wsId}/sources/uploads`, {
+      // The metadata part comes first: the gateway reserves storage from it
+      // before it reads the file part.
+      const form = new FormData();
+      form.append(
+        'metadata',
+        JSON.stringify({
           batchId,
           batchTotal,
           chapterId: chapterId ?? null,
@@ -1640,19 +1638,14 @@ export function useUploadSource(wsId: string) {
           parseMode,
           sizeBytes: file.size,
         })
-        .then(async (reservation) => {
-          await api.putFile(
-            reservation.url,
-            file,
-            reservation.headers,
-            onUploadProgress,
-            signal
-          );
-          onUploadProgress?.(100);
-          return api.post<SourceFile>(
-            `/workspaces/${wsId}/sources/uploads/${reservation.uploadId}/complete`
-          );
-        });
+      );
+      form.append('file', file);
+      return api.upload<SourceFile>(
+        `/workspaces/${wsId}/sources/uploads`,
+        form,
+        onUploadProgress,
+        signal
+      );
     },
     onSuccess: (file, vars) => {
       track('source_uploaded', {

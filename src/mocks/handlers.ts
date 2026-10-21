@@ -2,9 +2,9 @@ import { zipSync } from 'fflate';
 import { delay, HttpResponse, http } from 'msw';
 import {
   createMaterialBodyTitleMax,
-  createSourceUploadBodyNameMax,
   ReportEditIncidentBody,
   SetCustomizationBody,
+  updateFileBodyNameMax,
 } from '@/api/gen/validators';
 import type {
   Attempt,
@@ -535,17 +535,12 @@ function advanceChanges<T extends { id: string }>(
   return live;
 }
 
-type SourceUploadReservation = {
-  body: {
-    chapterId?: string | null;
-    chapterName?: string | null;
-    kind: string;
-    name: string;
-  };
-  bytes?: Blob;
-  workspaceId: string;
+type SourceUploadMetadata = {
+  chapterId?: string | null;
+  chapterName?: string | null;
+  kind: string;
+  name: string;
 };
-const sourceUploadReservations = new Map<string, SourceUploadReservation>();
 
 /** A clone's chapter: the picked one, or one by name (any case), created
  * when missing. */
@@ -2351,53 +2346,28 @@ export const handlers = [
   http.get('/api/source-upload-policy', async () =>
     HttpResponse.json(sourceUploadPolicy)
   ),
-  // Mirrors the direct B2 flow: reserve, PUT the bytes, then complete.
+  // Mirrors the streamed upload: one multipart request, metadata then file.
   http.post(
     '/api/workspaces/:id/sources/uploads',
     async ({ params, request }) => {
-      const body = (await request.json()) as SourceUploadReservation['body'];
-      if ([...body.name].length > createSourceUploadBodyNameMax) {
+      const form = await request.formData();
+      const body = JSON.parse(
+        String(form.get('metadata'))
+      ) as SourceUploadMetadata;
+      const bytes = form.get('file');
+      if (!(bytes instanceof Blob)) {
+        return HttpResponse.json(
+          { message: 'an upload carries its file part' },
+          { status: 400 }
+        );
+      }
+      if ([...body.name].length > updateFileBodyNameMax) {
         return HttpResponse.json(
           { message: 'validation failed' },
           { status: 422 }
         );
       }
-      const uploadId = uid('up');
-      sourceUploadReservations.set(uploadId, {
-        body,
-        workspaceId: String(params.id),
-      });
-      return HttpResponse.json(
-        {
-          expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
-          headers: {},
-          method: 'PUT',
-          uploadId,
-          url: `/__mock/b2/${uploadId}`,
-        },
-        { status: 201 }
-      );
-    }
-  ),
-  http.put('/__mock/b2/:uploadId', async ({ params, request }) => {
-    const reservation = sourceUploadReservations.get(String(params.uploadId));
-    if (!reservation) return new HttpResponse(null, { status: 404 });
-    reservation.bytes = await request.blob();
-    return new HttpResponse(null, { status: 200 });
-  }),
-  http.post(
-    '/api/workspaces/:id/sources/uploads/:uploadId/complete',
-    async ({ params }) => {
       await delay(500);
-      const reservation = sourceUploadReservations.get(String(params.uploadId));
-      if (!reservation?.bytes || reservation.workspaceId !== params.id) {
-        return HttpResponse.json(
-          { message: 'upload not found' },
-          { status: 404 }
-        );
-      }
-      sourceUploadReservations.delete(String(params.uploadId));
-      const { body, bytes } = reservation;
       const name = body.name;
       const kind = body.kind as SourceKindFix;
       let chapterId = body.chapterId ?? null;

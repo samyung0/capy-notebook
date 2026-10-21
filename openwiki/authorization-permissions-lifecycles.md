@@ -1214,9 +1214,9 @@ live row references them.
 
 | Stage                                | Database/storage effect                                                                                                                                                                                            | Bucket effect                                                                        | Background cleanup                                                                   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Upload reserved                      | Creates a pending `upload_sessions` row and reserves the declared bytes against the uploader                                                                                                                       | Browser receives a presigned PUT for an `incoming/` or `editor-assets/incoming/` key | Pending session is eligible for expiry after its presigned deadline                  |
-| Upload finalized                     | Creates the source file or editor asset, converts reserved bytes into used bytes, and marks the session completed                                                                                                  | Incoming object is promoted to its stable `sources/` or `editor-assets/` key         | Completed session remains temporarily as an idempotency record                       |
-| Upload abandoned/expired             | Marks the session expired and releases its storage reservation                                                                                                                                                     | Both incoming and possible promoted paths are queued, with a 24-hour presign grace   | Upload sweeper runs at startup and every minute, up to 100 expired sessions per pass |
+| Upload reserved                      | Creates a pending `upload_sessions` row and reserves the declared bytes against the uploader (a drive import's row too)                                                                                            | A browser upload's gateway PUTs its stable key; the import worker writes `incoming/` | Pending session is eligible for expiry after its deadline                            |
+| Upload finalized                     | Creates the source file or editor asset, converts reserved bytes into used bytes, and marks the session completed                                                                                                  | A drive import's incoming object is promoted to its stable `sources/` key            | Completed session remains temporarily as an idempotency record                       |
+| Upload failed/abandoned/expired      | Marks the session expired and releases its storage reservation (a failed browser upload at once, in its request)                                                                                                   | Both paths are queued, with a 24-hour grace; a failed upload also deletes its object | Upload sweeper runs at startup and every minute, up to 100 expired sessions per pass |
 | File/asset deleted                   | Logical row is deleted; workspace deletion and account purge do this through foreign-key cascades too. Pending/running parse, ingest, import, and provider reservations are cancelled at the same boundary.        | The path is queued only when its last database reference disappears                  | Blob reaper runs at startup and every minute                                         |
 | Shared blob still referenced         | One row/reference is removed, but the remaining clone/reference keeps the blob live                                                                                                                                | Object is not deleted                                                                | Reaper re-checks references before every claim                                       |
 | Stable object has no database record | No row exists to enqueue it, for example after a request dies between PUT and row creation                                                                                                                         | Object remains in the bucket                                                         | Monthly orphan sweep reports it after 48 hours; it currently **does not delete it**  |
@@ -1246,31 +1246,37 @@ while processing continues; the viewer shows progress above the preview.
 Source uploads and editor assets share the `upload_sessions` table but use
 different targets. Reserving an upload immediately reserves its declared bytes
 against the uploader. Editor assets upload through their material, so
-only that material's editors can reserve them, and every asset names it. The
-presigned PUT signs the declared size as its Content-Length (`blob.PresignPut`),
-so B2 refuses a body of any other size with a 403 (checked on the UAT bucket
-2026-10-06); the S3 SDK cannot sign a zero length, so a declared empty source
-file stays unbound and finalize's size check still refuses a mismatch. A successful finalize promotes the object from a
-temporary incoming key, creates the durable resource row, and marks the upload
-session completed. Finalization is idempotent, so retrying a completed source
-upload returns the already-created file. Concurrent duplicate completions may
-race before either database commit. If one request has already moved the
-incoming object, the other accepts the stable object only when its recorded
-size and content type match, then converges through the same idempotent
-finalization transaction. For a file with source sessions the gateway reads
-the promoted object back once and records its SHA-256 in that transaction;
-it never takes a hash from the browser, since the collaboration server checks
-the originals it loads against it ([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
+only that material's editors can reserve them, and every asset names it. A
+browser upload is one request through the gateway (Epo 2026-10-22,
+[backend-storage-quota](backend-storage-quota.md#reservations-and-clones)): it
+reserves, spools and hashes the bytes, writes them to the stable key in one
+bounded PUT and finalizes in the same request, so no browser ever holds a
+bucket URL it could write with and only its own uploader can finish an upload.
+A failure in that request releases the reservation and deletes the object.
+A drive import completes separately (`internalCompleteSourceImport`):
+finalization promotes the object from a temporary `incoming/` key, creates the
+durable resource row, and marks the upload session completed. Finalization is
+idempotent, so retrying a completed import returns the already-created file.
+Concurrent duplicate completions may race before either database commit. If
+one request has already moved the incoming object, the other accepts the
+stable object only when its recorded size and content type match, then
+converges through the same idempotent finalization transaction. For a file
+with source sessions the gateway reads the promoted object back once and
+records its SHA-256 in that transaction; it never takes a hash from the
+browser or the worker, since the collaboration server checks the originals it
+loads against it.
 
 The upload sweeper runs once on server startup and every minute afterward. It
-finds pending sessions whose presigned deadline has passed, marks each one
-expired, releases the owner's reserved bytes, and queues both the incoming and
-stable destination paths in the same transaction. Both paths are included
-because a late or partially completed request may have written either one.
+finds pending sessions whose deadline has passed (a drive import's, or a
+browser upload whose gateway died mid-request: its deadline is an hour,
+`uploadSessionTTL`), marks each one expired, releases the owner's reserved
+bytes, and queues both the incoming and stable destination paths in the same
+transaction. Both paths are included because a late or partially completed
+request may have written either one.
 
-Queued upload paths are delayed by a further 24-hour presign grace. This delay
-outlasts an already-issued PUT URL so a late upload is collected rather than
-appearing after cleanup has already run. Independently, bucket lifecycle rules
+Queued upload paths are delayed by a further 24-hour grace, so a late write
+(an import worker's, or a PUT that answered after its 60 s bound) is collected
+rather than appearing after cleanup has already run. Independently, bucket lifecycle rules
 expire `incoming/` and `editor-assets/incoming/` objects after one day. The
 database sweep repairs quota/accounting state; the bucket rule is the final
 backstop for temporary objects that never obtained a database session.

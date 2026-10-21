@@ -1084,34 +1084,25 @@ const OFFICE = {
 async function uploadOffice(api: APIRequestContext, format: OfficeFormat) {
   const { contentType, name } = OFFICE[format];
   const bytes = readFileSync(`e2e/fixtures/files/basic/${name}`);
-  const reserved = await api.post(
+  const uploadName = `${randomUUID().slice(0, 8)}-${name}`;
+  // One streamed request: the metadata part, then the file part.
+  const uploaded = await api.post(
     `/api/workspaces/${workspaceId}/sources/uploads`,
     {
-      data: {
-        batchId: `agent-writes-${randomUUID()}`,
-        batchTotal: 1,
-        contentType,
-        name: `${randomUUID().slice(0, 8)}-${name}`,
-        sizeBytes: bytes.length,
+      multipart: {
+        file: { buffer: bytes, mimeType: contentType, name: uploadName },
+        metadata: JSON.stringify({
+          batchId: `agent-writes-${randomUUID()}`,
+          batchTotal: 1,
+          contentType,
+          name: uploadName,
+          sizeBytes: bytes.length,
+        }),
       },
     }
   );
-  expect(reserved.status(), await reserved.text()).toBe(201);
-  const upload = (await reserved.json()) as {
-    headers?: Record<string, string>;
-    uploadId: string;
-    url: string;
-  };
-  const put = await api.put(upload.url, {
-    data: bytes,
-    headers: upload.headers,
-  });
-  expect(put.status(), await put.text()).toBe(200);
-  const completed = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads/${upload.uploadId}/complete`
-  );
-  expect(completed.status(), await completed.text()).toBe(201);
-  const { id } = (await completed.json()) as { id: string };
+  expect(uploaded.status(), await uploaded.text()).toBe(201);
+  const { id } = (await uploaded.json()) as { id: string };
   made.push(`/api/files/${id}`);
   return id;
 }

@@ -170,11 +170,13 @@ async function api(
       }
     ).Clerk.session.getToken()
   );
+  // A FormData body is a streamed upload; fetch sets its multipart type.
+  const json = body !== undefined && !(body instanceof FormData);
   const response = await fetch(`${appUrl}${route}`, {
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: json ? JSON.stringify(body) : (body as FormData | undefined),
     headers: {
       Authorization: `Bearer ${token}`,
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(json ? { 'Content-Type': 'application/json' } : {}),
     },
     method,
   });
@@ -217,30 +219,31 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
     const bytes = await readFile(
       path.join(directory, '../../../e2e/fixtures/files/basic', upload.name)
     );
-    // Store only: nothing is parsed, embedded or sent to a model.
-    const reservation = await api(
-      page,
-      `/api/workspaces/${workspace.id}/sources/uploads`,
-      'POST',
-      {
+    // Store only: nothing is parsed, embedded or sent to a model. One
+    // request streams the metadata, then the bytes, through the gateway.
+    const form = new FormData();
+    form.append(
+      'metadata',
+      JSON.stringify({
         batchId,
         batchTotal: UPLOADS.length,
         chapterName: upload.chapter,
+        contentType: 'application/octet-stream',
         name: upload.name,
         parseMode: 'none',
         sizeBytes: bytes.length,
-      }
+      })
     );
-    const put = await fetch(String(reservation.url), {
-      body: bytes,
-      headers: reservation.headers as Record<string, string>,
-      method: String(reservation.method),
-    });
-    if (!put.ok) throw new Error(`Upload ${upload.name}: ${put.status}`);
+    form.append(
+      'file',
+      new Blob([bytes], { type: 'application/octet-stream' }),
+      upload.name
+    );
     await api(
       page,
-      `/api/workspaces/${workspace.id}/sources/uploads/${reservation.uploadId}/complete`,
-      'POST'
+      `/api/workspaces/${workspace.id}/sources/uploads`,
+      'POST',
+      form
     );
   }
   const sharedWorkspace = await api(

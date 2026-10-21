@@ -8,76 +8,56 @@ import { m } from '../i18n';
 async function sourceResponses(
   page: Page,
   workspaceId: string,
-  failure?: 'reservation' | 'put' | 'ingest'
+  failure?: 'upload' | 'ingest'
 ) {
   const endpoint = '/api/workspaces/' + workspaceId + '/sources/uploads';
-  const reservations: Record<string, unknown>[] = [];
-  const puts: Buffer[] = [];
-  const completed: string[] = [];
+  const uploads: Record<string, unknown>[] = [];
+  const bodies: Buffer[] = [];
   const files: Record<string, unknown>[] = [];
-  const order: string[] = [];
   await page.route('**/api/me/ingest-slots', (route) =>
     route.fulfill({ json: { slotsFree: 1, slotsLimit: 1, slotsUsed: 0 } })
   );
   await page.route('**/api/workspaces/' + workspaceId + '/files', (route) =>
     route.fulfill({ json: files })
   );
+  // One streamed request per source: its metadata part, then its file part.
   await page.route('**' + endpoint, async (route) => {
-    reservations.push(
-      route.request().postDataJSON() as Record<string, unknown>
-    );
-    order.push('reserve');
-    if (failure === 'reservation' && reservations.length === 1) {
+    const request = route.request();
+    const form = await new Response(request.postDataBuffer(), {
+      headers: { 'content-type': request.headers()['content-type'] },
+    }).formData();
+    const metadata = JSON.parse(String(form.get('metadata'))) as Record<
+      string,
+      unknown
+    >;
+    uploads.push(metadata);
+    bodies.push(Buffer.from(await (form.get('file') as Blob).arrayBuffer()));
+    if (failure === 'upload' && uploads.length === 1) {
       await route.fulfill({
-        json: { detail: 'Injected reservation failure', status: 503 },
+        json: { detail: 'Injected upload failure', status: 503 },
         status: 503,
       });
       return;
     }
-    const uploadId = 'up_failure_' + reservations.length;
-    await route.fulfill({
-      json: {
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        headers: { 'Content-Type': 'text/plain' },
-        method: 'PUT',
-        uploadId,
-        url: process.env.E2E_BASE_URL + '/__source-test-put/' + uploadId,
-      },
-      status: 201,
-    });
-  });
-  await page.route('**/__source-test-put/*', async (route) => {
-    puts.push(route.request().postDataBuffer() ?? Buffer.alloc(0));
-    order.push('put');
-    await route.fulfill({
-      body: '',
-      status: failure === 'put' && puts.length === 1 ? 503 : 200,
-    });
-  });
-  await page.route('**' + endpoint + '/*/complete', async (route) => {
-    const uploadId = new URL(route.request().url()).pathname.split('/').at(-2)!;
-    completed.push(uploadId);
-    order.push('complete');
-    const reservation = reservations[Number(uploadId.split('_').at(-1)) - 1];
-    const failed = failure === 'ingest' && completed.length === 1;
+    const failed = failure === 'ingest' && files.length === 0;
     const file = {
       addedAt: new Date().toISOString(),
       chapterId: null,
       hasBytes: true,
-      id: 'f_' + uploadId,
+      id: 'f_upload_' + uploads.length,
       indexed: !failed,
       kind: 'txt',
-      name: String(reservation.name),
-      position: completed.length,
+      name: String(metadata.name),
+      position: files.length + 1,
       revision: 1,
-      sizeBytes: Number(reservation.sizeBytes),
+      sizeBytes: Number(metadata.sizeBytes),
       status: failed ? 'processing' : 'ready',
       workspaceId,
     };
     files.push(file);
     await route.fulfill({ json: file, status: 201 });
   });
-  return { completed, files, order, puts, reservations };
+  return { bodies, files, uploads };
 }
 
 async function chooseSources(page: Page, workspaceId: string, names: string[]) {
@@ -103,73 +83,60 @@ async function chooseSources(page: Page, workspaceId: string, names: string[]) {
   );
 }
 
-for (const failure of ['reservation', 'put'] as const) {
-  test(
-    'a failed ' +
-      failure +
-      ' is reported in the panel and toast, and adding it again succeeds',
-    async ({ ownerApi, ownerPage, workspaceFactory }) => {
-      const workspace = await workspaceFactory.create({
-        name: 'Failed ' + failure,
-      });
-      const requests = await sourceResponses(ownerPage, workspace.id, failure);
-      const name = failure + '-recovery.txt';
-      const bytes = Buffer.from('Study facts for ' + name + '.\n');
-      await chooseSources(ownerPage, workspace.id, [name]);
-      const submit = ownerPage.getByRole('button', {
-        exact: true,
-        name: m.action_upload(),
-      });
-      const failedPath =
-        failure === 'reservation'
-          ? '/api/workspaces/' + workspace.id + '/sources/uploads'
-          : '/__source-test-put/up_failure_1';
-      const rejected = ownerPage.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname === failedPath &&
-          response.status() === 503
-      );
-      await submit.click();
-      expect((await rejected).status()).toBe(503);
-      // The dialog hands the source to the transfer panel and closes.
-      await expect(ownerPage.getByRole('dialog')).toHaveCount(0);
-      const panel = ownerPage.getByTestId('source-transfer-panel');
-      await expect(
-        panel.locator('[data-transfer-status="error"]', { hasText: name })
-      ).toBeVisible();
-      await expect(ownerPage.locator('[data-sonner-toast]')).toContainText(
-        name
-      );
-      expect(requests.reservations).toHaveLength(1);
-      expect(requests.completed).toEqual([]);
-      expect(requests.puts).toHaveLength(failure === 'put' ? 1 : 0);
-
-      await chooseSources(ownerPage, workspace.id, [name]);
-      await submit.click();
-      await expect.poll(() => requests.completed).toEqual(['up_failure_2']);
-      // Adding it again is a new submission, so a new batch of one.
-      expect(requests.reservations).toEqual([
-        expect.objectContaining({
-          batchTotal: 1,
-          name,
-          parseMode: 'none',
-          sizeBytes: bytes.length,
-        }),
-        { ...requests.reservations[0], batchId: expect.any(String) },
-      ]);
-      expect(requests.reservations[1].batchId).not.toBe(
-        requests.reservations[0].batchId
-      );
-      expect(requests.puts.at(-1)).toEqual(bytes);
-      expect(requests.files[0].status).toBe('ready');
-      const persisted = await ownerApi.get(
-        '/api/workspaces/' + workspace.id + '/files'
-      );
-      expect(persisted.status()).toBe(200);
-      expect(await persisted.json()).toEqual([]);
-    }
+test('a failed upload is reported in the panel and toast, and adding it again succeeds', async ({
+  ownerApi,
+  ownerPage,
+  workspaceFactory,
+}) => {
+  const workspace = await workspaceFactory.create({ name: 'Failed upload' });
+  const requests = await sourceResponses(ownerPage, workspace.id, 'upload');
+  const name = 'upload-recovery.txt';
+  const bytes = Buffer.from('Study facts for ' + name + '.\n');
+  await chooseSources(ownerPage, workspace.id, [name]);
+  const submit = ownerPage.getByRole('button', {
+    exact: true,
+    name: m.action_upload(),
+  });
+  const rejected = ownerPage.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+        '/api/workspaces/' + workspace.id + '/sources/uploads' &&
+      response.status() === 503
   );
-}
+  await submit.click();
+  expect((await rejected).status()).toBe(503);
+  // The dialog hands the source to the transfer panel and closes.
+  await expect(ownerPage.getByRole('dialog')).toHaveCount(0);
+  const panel = ownerPage.getByTestId('source-transfer-panel');
+  await expect(
+    panel.locator('[data-transfer-status="error"]', { hasText: name })
+  ).toBeVisible();
+  await expect(ownerPage.locator('[data-sonner-toast]')).toContainText(name);
+  expect(requests.uploads).toHaveLength(1);
+  expect(requests.files).toEqual([]);
+
+  await chooseSources(ownerPage, workspace.id, [name]);
+  await submit.click();
+  await expect.poll(() => requests.files.length).toBe(1);
+  // Adding it again is a new submission, so a new batch of one.
+  expect(requests.uploads).toEqual([
+    expect.objectContaining({
+      batchTotal: 1,
+      name,
+      parseMode: 'none',
+      sizeBytes: bytes.length,
+    }),
+    { ...requests.uploads[0], batchId: expect.any(String) },
+  ]);
+  expect(requests.uploads[1].batchId).not.toBe(requests.uploads[0].batchId);
+  expect(requests.bodies).toEqual([bytes, bytes]);
+  expect(requests.files[0].status).toBe('ready');
+  const persisted = await ownerApi.get(
+    '/api/workspaces/' + workspace.id + '/files'
+  );
+  expect(persisted.status()).toBe(200);
+  expect(await persisted.json()).toEqual([]);
+});
 
 test('a terminal ingest failure releases the next queued source', async ({
   ownerPage,
@@ -207,29 +174,19 @@ test('a terminal ingest failure releases the next queued source', async ({
   await ownerPage
     .getByRole('button', { exact: true, name: m.action_upload() })
     .click();
-  await expect.poll(() => requests.completed).toEqual(['up_failure_1']);
+  await expect.poll(() => requests.files.length).toBe(1);
   const processing = await readAfterReconnect();
   expect(processing[0].status).toBe('processing');
-  expect(requests.reservations).toHaveLength(1);
+  expect(requests.uploads).toHaveLength(1);
   requests.files[0].status = 'failed';
   const failed = await readAfterReconnect();
   expect(failed[0]).toMatchObject({ indexed: false, status: 'failed' });
-  await expect
-    .poll(() => requests.completed)
-    .toEqual(['up_failure_1', 'up_failure_2']);
-  expect(requests.order).toEqual([
-    'reserve',
-    'put',
-    'complete',
-    'reserve',
-    'put',
-    'complete',
-  ]);
-  expect(requests.reservations.map((request) => request.name)).toEqual([
+  await expect.poll(() => requests.files.length).toBe(2);
+  expect(requests.uploads.map((request) => request.name)).toEqual([
     'failed-ingest.txt',
     'next-source.txt',
   ]);
-  expect(requests.puts).toEqual([
+  expect(requests.bodies).toEqual([
     Buffer.from('Study facts for failed-ingest.txt.\n'),
     Buffer.from('Study facts for next-source.txt.\n'),
   ]);

@@ -18,15 +18,6 @@ export interface EditorAsset {
   workspaceId: string;
 }
 
-export interface EditorAssetReservation {
-  assetId: string;
-  expiresAt: string;
-  headers: Record<string, string>;
-  method: 'PUT';
-  uploadId: string;
-  url: string;
-}
-
 export interface ResolvedEditorAsset {
   assetId: string;
   contentType: string;
@@ -49,55 +40,6 @@ export interface EditorAssetUploadOptions {
   signal?: AbortSignal;
 }
 
-export function reserveEditorAsset(
-  materialId: string,
-  file: File,
-  purpose: EditorAssetPurpose,
-  options: Pick<EditorAssetUploadOptions, 'signal'> = {}
-) {
-  return api.post<EditorAssetReservation>(
-    uploadsPath(materialId),
-    {
-      contentType: file.type,
-      name: file.name,
-      purpose,
-      sizeBytes: file.size,
-    },
-    { signal: options.signal }
-  );
-}
-
-export function uploadReservedEditorAsset(
-  reservation: EditorAssetReservation,
-  file: File,
-  options: EditorAssetUploadOptions = {}
-) {
-  if (reservation.method !== 'PUT') {
-    throw new Error(
-      `Unsupported editor asset upload method: ${reservation.method}`
-    );
-  }
-  return api.putFile(
-    reservation.url,
-    file,
-    reservation.headers,
-    options.onProgress,
-    options.signal
-  );
-}
-
-export function completeEditorAssetUpload(
-  materialId: string,
-  uploadId: string,
-  signal?: AbortSignal
-) {
-  return api.post<EditorAsset>(
-    `${uploadsPath(materialId)}/${encodeURIComponent(uploadId)}/complete`,
-    undefined,
-    { signal }
-  );
-}
-
 /** The plan image cap of the account paying for the material's assets. The
  * editors already hold the material, so this reads the cache. */
 export async function editorImageMaxBytes(materialId: string) {
@@ -107,9 +49,9 @@ export async function editorImageMaxBytes(materialId: string) {
   return imageMaxBytes;
 }
 
-// Returns only stable metadata. Plate documents should persist assetId, never
-// the reservation URL or a resolved short-lived URL. An image over the plan
-// cap is shrunk first.
+// Streams the file through the gateway, which stores it and returns only
+// stable metadata (Epo 2026-10-22). Plate documents should persist assetId,
+// never a resolved short-lived URL. An image over the plan cap is shrunk first.
 export async function uploadEditorAsset(
   materialId: string,
   picked: File,
@@ -120,16 +62,23 @@ export async function uploadEditorAsset(
     purpose === 'image'
       ? await fitImage(picked, await editorImageMaxBytes(materialId))
       : picked;
-  const reservation = await reserveEditorAsset(
-    materialId,
-    file,
-    purpose,
-    options
+  // The metadata part comes first: the gateway reserves storage from it
+  // before it reads the file part.
+  const form = new FormData();
+  form.append(
+    'metadata',
+    JSON.stringify({
+      contentType: file.type,
+      name: file.name,
+      purpose,
+      sizeBytes: file.size,
+    })
   );
-  await uploadReservedEditorAsset(reservation, file, options);
-  return completeEditorAssetUpload(
-    materialId,
-    reservation.uploadId,
+  form.append('file', file);
+  return api.upload<EditorAsset>(
+    uploadsPath(materialId),
+    form,
+    options.onProgress,
     options.signal
   );
 }

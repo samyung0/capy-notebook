@@ -38,7 +38,7 @@ func TestOnlyTheServedMemoryStoreServesItsObjects(t *testing.T) {
 	}
 	served := blob.NewServedMemory()
 	handler := httpapi.New(st, served, nil, nil, "opendataloader", config)
-	upload, err := served.PresignPut(ctx, "sources/a.md", "text/markdown", 5)
+	upload, err := served.PresignPut(ctx, "sources/a.md", "text/markdown")
 	if err != nil || upload.URL != blob.ServedPath+"sources/a.md" {
 		t.Fatalf("put URL = %q, %v", upload.URL, err)
 	}

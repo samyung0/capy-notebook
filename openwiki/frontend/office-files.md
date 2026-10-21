@@ -2068,7 +2068,7 @@ needed: production has no data and UAT data was cleared.
 Office view never reads it: it opens from its source session). Each
 consumer reads its link on mount; links are dropped on unmount. Unsupported-file
 download signs on click, and audio retry signs a fresh link. Read links use
-`B2_LINK_TTL` and upload PUTs use `B2_PRESIGN_TTL`.
+`B2_LINK_TTL`.
 
 ## Edit and save lifecycle
 

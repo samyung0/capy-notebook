@@ -82,34 +82,24 @@ async function uploadText(
   text: string
 ) {
   const bytes = Buffer.from(text);
-  const reserved = await api.post(
+  // One streamed request: the metadata part, then the file part.
+  const uploaded = await api.post(
     `/api/workspaces/${workspaceId}/sources/uploads`,
     {
-      data: {
-        batchId: `stored-drafts-${randomUUID()}`,
-        batchTotal: 1,
-        contentType: 'text/markdown',
-        name,
-        sizeBytes: bytes.length,
+      multipart: {
+        file: { buffer: bytes, mimeType: 'text/markdown', name },
+        metadata: JSON.stringify({
+          batchId: `stored-drafts-${randomUUID()}`,
+          batchTotal: 1,
+          contentType: 'text/markdown',
+          name,
+          sizeBytes: bytes.length,
+        }),
       },
     }
   );
-  expect(reserved.status(), await reserved.text()).toBe(201);
-  const upload = (await reserved.json()) as {
-    headers?: Record<string, string>;
-    uploadId: string;
-    url: string;
-  };
-  const put = await api.put(upload.url, {
-    data: bytes,
-    headers: upload.headers,
-  });
-  expect(put.status(), await put.text()).toBe(200);
-  const completed = await api.post(
-    `/api/workspaces/${workspaceId}/sources/uploads/${upload.uploadId}/complete`
-  );
-  expect(completed.status(), await completed.text()).toBe(201);
-  return ((await completed.json()) as { id: string }).id;
+  expect(uploaded.status(), await uploaded.text()).toBe(201);
+  return ((await uploaded.json()) as { id: string }).id;
 }
 
 test('a note edited offline in a closed tab reaches a co-editor from another page', async ({

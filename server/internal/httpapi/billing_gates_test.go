@@ -266,9 +266,10 @@ func TestUploadRefusesActorCreditsAndStorageSeparately(t *testing.T) {
 		"batchId": fx.workspaceID, "batchTotal": 1,
 	}
 
+	pdf := make([]byte, 1024)
 	exhaustCredits(t, fx.store, fx.pool, fx.actorID)
-	credits := doReq(t, fx.handler, http.MethodPost,
-		"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, body)
+	credits := postUpload(t, fx.handler,
+		"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, body, "application/pdf", pdf)
 	if credits.Code != http.StatusForbidden || errorCode(t, credits) != "llm_credits_exhausted" {
 		t.Fatalf("actor credits: %d %s", credits.Code, credits.Body.String())
 	}
@@ -279,17 +280,17 @@ func TestUploadRefusesActorCreditsAndStorageSeparately(t *testing.T) {
 		t.Fatal(err)
 	}
 	body["batchId"] = fx2.workspaceID
-	if rec := doReq(t, fx2.handler, http.MethodPost,
-		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body); rec.Code != http.StatusCreated {
+	if rec := postUpload(t, fx2.handler,
+		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body, "application/pdf", pdf); rec.Code != http.StatusCreated {
 		t.Fatalf("upload beside a full owner: %d %s", rec.Code, rec.Body.String())
 	}
-	// The reservation above already holds 1024 bytes of the actor's quota.
+	// The upload above already holds 1024 bytes of the actor's quota.
 	if _, err := uploadSource(context.Background(), fx2.store, fx2.workspaceID, fx2.actorID,
 		"ballast.pdf", mustPlanLimits(t, fx2.store, store.PlanFree).StorageBytes-1024, "sources/"+fx2.actorID); err != nil {
 		t.Fatal(err)
 	}
-	storage := doReq(t, fx2.handler, http.MethodPost,
-		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body)
+	storage := postUpload(t, fx2.handler,
+		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body, "application/pdf", pdf)
 	if storage.Code != http.StatusForbidden || errorCode(t, storage) != "storage_quota_exceeded" {
 		t.Fatalf("uploader storage: %d %s", storage.Code, storage.Body.String())
 	}
@@ -320,12 +321,12 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 	}
 
 	reserve := func(parseMode string, pages int) *httptest.ResponseRecorder {
-		return doReq(t, fx.handler, http.MethodPost,
+		return postUpload(t, fx.handler,
 			"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, map[string]any{
 				"name": "book.pdf", "kind": "pdf", "parseMode": parseMode,
 				"sizeBytes": 1024, "contentType": "application/pdf", "pageCount": pages,
 				"batchId": fx.workspaceID, "batchTotal": 3,
-			})
+			}, "application/pdf", make([]byte, 1024))
 	}
 	if over := reserve("fast", 1401); over.Code != http.StatusBadRequest ||
 		!strings.Contains(over.Body.String(), "at most 1400 pages") {

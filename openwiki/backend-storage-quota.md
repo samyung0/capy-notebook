@@ -131,7 +131,9 @@ uploaded as a source takes the source cap, not the image cap. They follow the
 **uploader's** plan, create-only (no retroactive invalidation): **10 MiB**
 free, **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy` returns the caller's own cap, which
-the dialog enforces.
+the dialog enforces. Uploads stream through the API host, which Cloudflare
+proxies with a 100 MB request body limit; the 30 MiB largest per-file cap stays
+well under it.
 
 Office parsing keeps its structured handoff temporarily on the ingest host, with
 no durable B2 parse cache or preview PDF. Temporary parse output is a platform
@@ -299,29 +301,50 @@ net-growth check stay.
 
 ## Reservations and clones
 
-Direct B2 uploads call `reserveStorageTx` on the uploader's counter, and
-editor-asset reservations on the material's payer's counter, before the client
-receives a signed PUT URL. Reserved bytes
-count toward the gate immediately so concurrent uploads cannot double-spend
-remaining quota. Finalize converts reservation → used (via status transitions
-/ triggers). Only the account that reserved an upload completes it (Sam
-2026-10-18): another editor's completion answers 404 (`completeSourceUpload`,
-`completeEditorAssetUpload`, `FinalizeUploadSession`).
-Completion (`completeSourceUpload`, and a drive import's internal completion)
-checks the object's size and type by HEAD (a missing type is a mismatch: the
-PUT signs it and the import worker writes it), promotes it to its `sources/` key,
-and, for a file with source sessions (DOCX, XLSX, PPTX and text), reads it
-back once and records its SHA-256 as `files.source_sha256` in the finalize
-transaction (Epo 2026-10-17), so the first source session names its base and
-the browser's device copy works from the first reopen. The gateway hashes the
-stored bytes itself: Backblaze documents no checksum header on PutObject that
-the bucket would verify, and the collaboration server checks every original
-it loads against this SHA, so a browser-sent hash is never trusted. Bytes read
-back at another size than the HEAD reported refuse the completion (409; the
-upload stays pending). A PDF, image or other file without source sessions is
-not read. Ingest still hashes its own download and writes the same value (its
-cache key, and the SHA of files uploaded before this); the first save no longer
-writes the file's SHA.
+Source uploads and editor assets stream through the gateway (Epo 2026-10-22):
+one multipart request (`POST /api/workspaces/{id}/sources/uploads`,
+`POST /api/materials/{id}/editor-assets/uploads`; raw chi routes, outside the
+OpenAPI spec) whose first part, `metadata`, is the upload's JSON and whose
+second part, `file`, is its bytes (`uploadSource`, `uploadEditorAsset`,
+helpers in `server/internal/httpapi/uploads.go`). The request body is capped
+(`http.MaxBytesReader`) at the payer's per-file cap plus 64 KiB of metadata
+and framing. From the metadata the gateway reserves storage as before:
+`reserveStorageTx` on the uploader's counter for a source, on the material's
+payer's counter for an editor asset. Reserved bytes count toward the gate
+immediately so concurrent uploads cannot double-spend remaining quota. It
+then spools the file part to a temporary file, hashing it (SHA-256) as it
+streams, and refuses a part whose type differs from the metadata's or whose
+length differs from the declared size; an editor asset's first bytes must also
+carry its type's signature. The spooled bytes go to the final key
+(`sources/blob_…`, `editor-assets/{id}/blob_…`) in one PutObject
+(`blob.Store.PutObjectOnce`, no SDK retries) bounded at 60 s, which logs one
+`upload b2 put` line with the upload id, `duration_ms` and `outcome` (ok,
+error, timeout; never keys or URLs; Epo 2026-10-21, kept 2026-10-22). Spooling
+first keeps the bound on B2 alone, not on the browser's upload. The same
+request finalizes: a source's file row and first pipeline job, with the hash
+as `files.source_sha256` for every kind (so the first source session names its
+base and the device copy works from the first reopen, Epo 2026-10-17), or the
+editor asset's ready row. Finalize converts reservation → used (via status
+transitions / triggers). Any failure after the reservation releases it
+(`MarkUploadExpired`, `MarkEditorAssetUploadExpired`, which also queue the key
+for the reaper), and any failure once the PUT started deletes the object it may
+have written. A PUT past its bound answers the generic 500, which the browser
+shows as a server error to try again; nothing retries it. A refusal is answered
+after the rest of the capped body is read, so the browser receives it rather
+than a reset connection. The upload's parse download is its only B2 egress.
+
+A drive import keeps its own completion (`internalCompleteSourceImport`): the
+import worker writes an `incoming/` object, and the gateway checks its size and
+type by HEAD (a missing type is a mismatch: the worker writes it), promotes it
+to its `sources/` key, and, for a file with source sessions (DOCX, XLSX, PPTX
+and text), reads it back once and records its SHA-256 in the finalize
+transaction. The gateway hashes the stored bytes itself: Backblaze documents no
+checksum header on PutObject that the bucket would verify, and the
+collaboration server checks every original it loads against this SHA. Bytes
+read back at another size than the HEAD reported refuse the completion (409;
+the upload stays pending). Ingest still hashes its own download and writes the
+same value (its cache key, and the SHA of files uploaded before this); the
+first save no longer writes the file's SHA.
 Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
@@ -457,11 +480,10 @@ the same rule (trashed for a day, see
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
 Pending reservations are left to the upload expiry. Purging the material
 deletes the rest through the `material_id` cascade, including leftovers of a
-material never saved again. Both write to an `editor-assets/incoming/…` key and are promoted to
-an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
-still-valid upload URL cannot overwrite a ready object. If creating the
-durable DB row fails after a source object was written, handlers delete the
-orphan object.
+material never saved again. Both are written straight to their stable
+`editor-assets/{id}/…` key by the gateway, as above; no presigned URL exists
+that could overwrite a ready object. If creating the durable DB row fails
+after a source object was written, handlers delete the orphan object.
 
 A library figure the chat agent places in a note is stored by the gateway as
 the same kind of asset (`server/internal/httpapi/agent_figures.go`,
