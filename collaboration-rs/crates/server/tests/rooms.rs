@@ -8796,6 +8796,149 @@ async fn a_refused_edit_keeps_its_writer_and_the_room() {
     assert_eq!(room_schema(&env, &material).await, 1);
 }
 
+/// An agent edit that removes a note's last block leaves one empty paragraph,
+/// made in the edit's own transaction, and the edit's Undo takes that
+/// paragraph out with the edit, bringing the removed block back alone (Epo
+/// 2026-10-21, review r1 L2). Fails if the repair moves outside the edit's
+/// captured items (the Undo would leave the paragraph beside the block) or
+/// the removal is refused again.
+#[tokio::test]
+async fn an_agent_edit_emptying_a_note_leaves_a_paragraph_its_undo_takes_out() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "the only block").await;
+    let room = format!("material:{material}:schema:1");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block_text() == "the only block").await);
+    let blocks = |c: &Client| notes::plate::value(&c.doc.transact()).expect("projection");
+    let operation = format!("e_{material}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "remove_block", "blockId": "b1", "expectedText": "the only block" }],
+            "operation": { "id": operation, "requestHash": operation },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        receipt["effect"]["undo"]["status"], "available",
+        "{receipt}"
+    );
+    let repaired = |c: &Client| {
+        let value = blocks(c);
+        value.len() == 1
+            && value[0]["type"] == "p"
+            && value[0]["id"] != "b1"
+            && value[0]["children"] == serde_json::json!([{ "text": "" }])
+    };
+    assert!(person.settle(repaired).await, "{:?}", blocks(&person));
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &operation, &format!("u_{material}"), &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let restored = serde_json::json!([{ "type": "p", "id": "b1", "children": [{ "text": "the only block" }] }]);
+    assert!(
+        person
+            .settle(|c| serde_json::Value::Array(blocks(c)) == restored)
+            .await,
+        "{:?}",
+        blocks(&person)
+    );
+}
+
+/// An agent Undo that would leave a note with no block gets one empty
+/// paragraph instead of a refusal, the repair every writer gets (Epo
+/// 2026-10-22): the agent adds a block, a person deletes the rest, and the
+/// chat Undo succeeds with the note holding one empty paragraph. The
+/// paragraph is outside the Undo's reverse, so the Redo puts the agent's
+/// block back beside it. Fails if the Undo is refused again (the store's
+/// "non-empty array") or the Redo fails.
+#[tokio::test]
+async fn an_agent_undo_emptying_a_note_leaves_a_paragraph_and_its_redo_restores_the_block() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "the person's block").await;
+    let room = format!("material:{material}:schema:1");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        person
+            .settle(|c| c.block_text() == "the person's block")
+            .await
+    );
+    let blocks = |c: &Client| notes::plate::value(&c.doc.transact()).expect("projection");
+    let added = serde_json::json!({ "type": "p", "id": "n1", "children": [{ "text": "the agent's block" }] });
+    let (edit, undo, redo) = (
+        format!("e_{material}"),
+        format!("u_{material}"),
+        format!("r_{material}"),
+    );
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "insert_block", "afterBlockId": "b1", "blocks": [added.clone()] }],
+            "operation": { "id": edit, "requestHash": edit },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert!(person.settle(|c| c.block("n1").is_some()).await);
+    person
+        .write(|doc| {
+            let root = doc.get_or_insert_text("content");
+            root.remove_range(&mut doc.transact_mut(), 0, 1);
+        })
+        .await;
+    assert!(person.until(6).await.is_some(), "the person's ack");
+    assert_eq!(blocks(&person), std::slice::from_ref(&added));
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &edit, &undo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let repaired = |c: &Client| {
+        let value = blocks(c);
+        value.len() == 1
+            && value[0]["type"] == "p"
+            && value[0]["children"] == serde_json::json!([{ "text": "" }])
+    };
+    assert!(person.settle(repaired).await, "{:?}", blocks(&person));
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &undo, &redo, &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let redone = |c: &Client| {
+        let value = blocks(c);
+        value.len() == 2
+            && c.block("n1") == Some(added.clone())
+            && value
+                .iter()
+                .any(|block| block["children"] == serde_json::json!([{ "text": "" }]))
+    };
+    assert!(person.settle(redone).await, "{:?}", blocks(&person));
+}
+
 /// Security regression (Epo 2026-10-19): two writers each delete one of a
 /// note's last two blocks at once, as people editing together do. Both
 /// deletes go in, the emptied note gets an empty paragraph on entry, it

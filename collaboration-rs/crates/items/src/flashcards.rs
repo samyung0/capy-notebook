@@ -588,10 +588,14 @@ pub fn apply_commands(
                 ) else {
                     return unavailable(format!("{card_id} no longer exists"));
                 };
-                let stale = |expected: &Option<String>, side: &str| {
-                    expected.as_ref().is_some_and(|expected| expected != side)
+                // Each side is a target of its own (Epo 2026-10-22): only a
+                // side the command replaces is held to its expected text.
+                let stale = |side: &Option<String>, expected: &Option<String>, live: &str| {
+                    side.is_some() && expected.as_ref().is_some_and(|expected| expected != live)
                 };
-                if stale(expected_front, &current.front) || stale(expected_back, &current.back) {
+                if stale(front, expected_front, &current.front)
+                    || stale(back, expected_back, &current.back)
+                {
                     return Err(EditError::Edit {
                         code: EditErrorCode::StaleTarget,
                         message: format!("card {card_id} changed"),

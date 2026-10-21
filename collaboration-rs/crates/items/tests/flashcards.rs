@@ -483,6 +483,79 @@ fn replace_card_keeps_typing_in_the_side_it_leaves_out() {
     );
 }
 
+/// A card's front and back are separate targets (Epo 2026-10-22): the front
+/// changes after the agent's inspection, and a back-only replace_card still
+/// lands, even carrying the front it inspected, which only a front it
+/// replaced would be held to. The front keeps the typing. Fails if the
+/// other side's expectation or text makes the edit stale.
+#[test]
+fn typing_on_the_front_never_makes_a_back_only_replace_card_stale() {
+    let (doc, client) = room(&set_value(&[("c1", "Osmosis", "Water moves")]));
+    face(&client, "c1", "front").insert(&mut client.transact_mut(), 7, " (cells)");
+    let typed = diff(&client, &doc);
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&typed).unwrap())
+        .unwrap();
+    Kind::Flashcards
+        .apply_commands(
+            &mut doc.transact_mut(),
+            &[DocumentCommand::ReplaceCard {
+                card_id: "c1".into(),
+                front: None,
+                back: Some("Water crosses a membrane".into()),
+                expected_front: Some("Osmosis".into()),
+                expected_back: Some("Water moves".into()),
+            }],
+        )
+        .unwrap();
+    let after = cards(&doc);
+    assert_eq!(
+        (after[0].front.as_str(), after[0].back.as_str()),
+        ("Osmosis (cells)", "Water crosses a membrane")
+    );
+}
+
+/// A card's sides as inspect prints them (JSON, Epo 2026-10-21) read back
+/// exactly: a side holding a quote, a backslash and a line break, parsed from
+/// the inspection, is an expectation the live card meets, so the agent's
+/// replace_card is not refused as stale (review r1 L5).
+#[test]
+fn a_card_with_a_quote_and_a_line_break_round_trips_through_inspect() {
+    let front = r#"Who said "osmosis"?"#;
+    let back = "Pfeffer, 1877\nC:\\notes";
+    let (doc, _) = room(&set_value(&[("c1", front, back)]));
+    let value = Kind::Flashcards.value(&doc.transact());
+    let plate = Doc::with_options(ydoc::doc_options(5));
+    plate
+        .transact_mut()
+        .apply_update(Update::decode_v1(&notes::slate_yjs::state_from_value(&value, 0)).unwrap())
+        .unwrap();
+    let inspected = notes::edit::inspect_material(&plate.transact()).unwrap();
+    let card = &inspected[0].children.as_ref().unwrap()[0];
+    let sides: Value = serde_json::from_str(&card.text).unwrap();
+    assert_eq!(
+        (sides["front"].as_str(), sides["back"].as_str()),
+        (Some(front), Some(back))
+    );
+    Kind::Flashcards
+        .apply_commands(
+            &mut doc.transact_mut(),
+            &[DocumentCommand::ReplaceCard {
+                card_id: "c1".into(),
+                front: Some(r#"Who named "osmosis"?"#.into()),
+                back: Some("Pfeffer\n1877".into()),
+                expected_front: sides["front"].as_str().map(Into::into),
+                expected_back: sides["back"].as_str().map(Into::into),
+            }],
+        )
+        .unwrap();
+    let after = cards(&doc);
+    assert_eq!(
+        (after[0].front.as_str(), after[0].back.as_str()),
+        (r#"Who named "osmosis"?"#, "Pfeffer\n1877")
+    );
+}
+
 #[test]
 fn the_save_api_writes_only_what_differs() {
     let (room_doc, client) = room(&set_value(&[("c1", "Osmosis", "Water"), ("c2", "B", "b")]));

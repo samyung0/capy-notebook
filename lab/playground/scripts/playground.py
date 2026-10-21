@@ -718,9 +718,11 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
         # replace_block of the one mermaid block, from a ```mermaid fence.
         if command.get("block_id") != "source":
             return f"{where}.block_id: no {command.get('block_id')} in this {kind}"
-        fence = FENCE.search(command["markdown"])
-        if fence is None or fence.group(1) != "mermaid":
-            return f"{where}.markdown: a {kind} is one ```mermaid fence"
+        # The gateway refuses anything beside the one fence (review r1 M1).
+        markdown = command["markdown"].strip()
+        fence = FENCE.fullmatch(markdown)
+        if fence is None or fence.group(1) != "mermaid" or "```" in fence.group(2):
+            return f"{where}.markdown: replace_block on a {kind} takes one ```mermaid fence and nothing else"
         draft["content"] = fence.group(2).strip()
         return ""
     items = draft["cards"] if kind == "flashcards" else draft["blocks"]

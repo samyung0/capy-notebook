@@ -49,28 +49,52 @@ func TestReplaceBlockConvertsItsMarkdown(t *testing.T) {
 
 // A mindmap's or diagram's Mermaid block changes through replace_block, as a
 // note's does; set_mermaid is gone and nothing else edits them (Epo
-// 2026-10-21).
+// 2026-10-21). The converted markdown must be that one mermaid block: a
+// paragraph, a second fence or a figure beside it would be stored where the
+// diagram's editor draws nothing (review r1 M1).
 func TestADiagramTakesReplaceBlockOnly(t *testing.T) {
-	fence := func(int, string) ([]any, error) {
-		return []any{map[string]any{"id": "m2", "type": "mermaid"}}, nil
+	mermaid := func(id string) map[string]any {
+		return map[string]any{"id": id, "type": "mermaid", "source": "flowchart LR\n  A --> B",
+			"children": []any{map[string]any{"type": "mermaid_caption", "children": []any{map[string]any{"text": ""}}}}}
+	}
+	// What the collaboration service's converter returns for each markdown.
+	converted := map[string][]any{
+		"fence":           {mermaid("m2")},
+		"fence+paragraph": {mermaid("m2"), map[string]any{"id": "p1", "type": "p", "children": []any{map[string]any{"text": "Notes"}}}},
+		"two fences":      {mermaid("m2"), mermaid("m3")},
+		"figure":          {map[string]any{"id": "f1", "type": "img", "assetId": "figure:fig_1", "children": []any{map[string]any{"text": ""}}}},
+	}
+	convert := func(_ int, markdown string) ([]any, error) { return converted[markdown], nil }
+	replace := func(markdown string) json.RawMessage {
+		return json.RawMessage(`{"type":"replace_block","block_id":"m1","expected_text":"","markdown":"` + markdown + `"}`)
 	}
 	for _, kind := range []string{"mindmap", "diagram"} {
-		if _, err := normalizeMaterialCommands(kind, []json.RawMessage{json.RawMessage(
-			`{"type":"replace_block","block_id":"m1","expected_text":"","markdown":"` + "```mermaid\\nflowchart LR\\n  A --> B\\n```" + `"}`,
-		)}, fence); err != nil {
+		if _, err := normalizeMaterialCommands(kind, []json.RawMessage{replace("fence")}, convert); err != nil {
 			t.Fatalf("%s replace_block: %v", kind, err)
+		}
+		for _, markdown := range []string{"fence+paragraph", "two fences", "figure"} {
+			_, err := normalizeMaterialCommands(kind, []json.RawMessage{replace(markdown)}, convert)
+			var refused *store.EditRefusal
+			if !errors.As(err, &refused) || refused.Code != agenttools.ErrInvalidInput ||
+				refused.Message != "replace_block on a "+kind+" takes one ```mermaid fence and nothing else" {
+				t.Fatalf("%s %s: %v", kind, markdown, err)
+			}
 		}
 		for _, command := range []string{
 			`{"type":"set_mermaid","expected_source":"a","source":"b"}`,
 			`{"type":"insert_markdown","after_block_id":null,"markdown":"x"}`,
 			`{"type":"remove_block","block_id":"m1","expected_text":""}`,
 		} {
-			_, err := normalizeMaterialCommands(kind, []json.RawMessage{json.RawMessage(command)}, fence)
+			_, err := normalizeMaterialCommands(kind, []json.RawMessage{json.RawMessage(command)}, convert)
 			var refused *store.EditRefusal
 			if !errors.As(err, &refused) || refused.Code != agenttools.ErrUnsupportedOperation {
 				t.Fatalf("%s %.30s: %v", kind, command, err)
 			}
 		}
+	}
+	// A note takes the same blocks.
+	if _, err := normalizeMaterialCommands("note", []json.RawMessage{replace("fence+paragraph")}, convert); err != nil {
+		t.Fatalf("note replace_block: %v", err)
 	}
 	if got := materialOperations("diagram"); len(got) != 1 || got[0] != "replace_block" {
 		t.Fatalf("diagram operations = %v", got)

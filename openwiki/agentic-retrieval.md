@@ -3715,7 +3715,9 @@ applied by the collaboration service on an isolated Y.Doc. A mindmap or
 diagram takes `replace_block` only: its one Mermaid block is rewritten from a
 ```` ```mermaid ```` fence with a new id, like a note's block, and loses its
 caption and width, which the fence cannot hold (Epo 2026-10-21, `set_mermaid`
-removed).
+removed). Go refuses (`invalid_input`) markdown that converts to anything but
+that one mermaid block, and library figures for these kinds, since their
+editor and viewer draw only the mermaid block (review r1 M1).
 `edit_office_document` commands go through the same route with `office: true`
 and Go's `normalizeOfficeCommands` (Office tools, below). The agent's `edit_document` schema offers
 `remove_question` but not `add_question` or `replace_question`, which only the
@@ -3728,8 +3730,11 @@ supported: remove_question, (add or replace questions with add_questions)"
 replaces, each with what it expects there (`expected_front` with `front`,
 `expected_back` with `back`, else `invalid_input` from Go); the items crate
 reads the card from the set as the live room holds it, so a side left out and
-the card's image keep typing made since the inspection, and a side whose text
-moved on refuses as `stale_target` with the card's sides as they read now
+the card's image keep typing made since the inspection, and a side it replaces
+whose text moved on refuses as `stale_target` with the card's sides as they
+read now; the sides are separate targets, so only a replaced side is held to
+its expected text and typing on the other side never makes the edit stale
+(Epo 2026-10-22)
 (`DocumentCommand::ReplaceCard`, `items::flashcards::apply_commands`; Epo
 2026-10-21, the stored set the gateway filled sides from lagged typing).
 The pipeline keeps a blank `expected_front` or `expected_back` beside a sent
@@ -3793,7 +3798,11 @@ person's deletion, and the Undo's children pass and projection restore it. It
 inserts no media but a library figure (`inserts_media`). An edit that removes
 a note's last block gets one empty paragraph in its own transaction
 (`repair::emptied` in `compute`), so no editor sees the note empty and its
-Undo takes the paragraph out again. Only notes: a mindmap or diagram takes
+Undo takes the paragraph out again. An agent Undo or Redo that would leave a
+note with no block (a person deleted the rest meanwhile) gets the paragraph
+too, in a transaction of its own outside the step's reverse, so the chat Undo
+succeeds and a Redo neither fails nor takes the paragraph out (Epo 2026-10-22,
+`agent_undo` in `room.rs`). Only notes: a mindmap or diagram takes
 `replace_block` alone, whose blocks are never empty, and the store's check
 refuses one left without its Mermaid block; items keep their own rules
 (`remove_card` keeps a set's last card, `remove_question` may empty a quiz).

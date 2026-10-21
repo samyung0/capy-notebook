@@ -570,6 +570,10 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			a.fail(w, err)
 			return
 		}
+		if len(req.Figures) > 0 && mt.Kind != "note" && mt.Kind != "quiz" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "only a note or a quiz shows figures"})
+			return
+		}
 		var drafts []store.EmbeddedDraft
 		figures := newAgentFigures(req.AssistantMessageID, req.ToolCallID, req.Figures)
 		commands := req.Commands
@@ -844,6 +848,17 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			blocks, err := insertMarkdown(i, c.Markdown)
 			if err != nil {
 				return nil, err
+			}
+			// A mindmap or diagram holds its one mermaid block and nothing else,
+			// which its editor and viewer draw (review r1 M1).
+			if kind != "note" {
+				var block map[string]any
+				if len(blocks) == 1 {
+					block, _ = blocks[0].(map[string]any)
+				}
+				if block["type"] != "mermaid" {
+					return nil, refusal(agenttools.ErrInvalidInput, "replace_block on a %s takes one ```mermaid fence and nothing else", kind)
+				}
 			}
 			if c.Type == "replace_block" {
 				normalized = map[string]any{"type": "replace_block", "blockId": c.BlockID, "expectedText": c.ExpectedText, "blocks": blocks}

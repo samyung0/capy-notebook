@@ -1040,6 +1040,47 @@ test.describe('agent writes to notes', () => {
     // set_mermaid is gone: the diagram's one block is replaced from a
     // ```mermaid fence like any block (Epo 2026-10-21), with a new id.
     const [diagram] = await blocks(anonymousApi, id);
+    // The rewrite is one ```mermaid fence and nothing else (review r1 M1): a
+    // paragraph or a second fence beside it, or a figure, is refused and the
+    // diagram stays as it was.
+    const fence = (body: string) => `\`\`\`mermaid\n${body}\n\`\`\``;
+    const oneFence =
+      'replace_block on a diagram takes one ```mermaid fence and nothing else';
+    const figure = await jpeg(ownerPage, '#c63');
+    for (const attempt of [
+      {
+        markdown: `${fence(source)}\n\nA paragraph the diagram would not show.`,
+        message: oneFence,
+      },
+      {
+        markdown: `${fence(source)}\n\n${fence('flowchart LR\n  Hidden --> Diagram')}`,
+        message: oneFence,
+      },
+      {
+        figures: [{ id: 'fig_diagram', image: figure }],
+        markdown: '![A marsh transect](figure:fig_diagram)',
+        message: 'only a note or a quiz shows figures',
+      },
+    ]) {
+      const refused = await call(anonymousApi, '/api/internal/documents/edit', {
+        commands: [
+          {
+            block_id: diagram.id,
+            expected_text: diagram.text,
+            markdown: attempt.markdown,
+            type: 'replace_block',
+          },
+        ],
+        figures: attempt.figures ?? [],
+        target: { id, kind: 'material' },
+      });
+      expect(refused.status(), attempt.markdown).not.toBe(200);
+      expect(await refused.json()).toMatchObject({
+        code: 'invalid_input',
+        message: attempt.message,
+      });
+    }
+    expect(await projection(ownerApi, id)).toEqual(before);
     const rewritten = 'flowchart LR\n  SeaWall --> Saltmarsh --> Estuary';
     const operation = await edit(anonymousApi, { id, kind: 'material' }, [
       {

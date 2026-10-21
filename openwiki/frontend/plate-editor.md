@@ -1815,7 +1815,9 @@ editor gets in the same flush (`Model::repair_on_entry`,
 and `suggestion` keys are removed, a note left with no block gets an empty
 paragraph with an id of its own (two writers each deleting one of the last
 two blocks leave it so; an agent edit removing the last block gets it in its
-own transaction instead, Epo 2026-10-21, so no editor sees the note empty),
+own transaction instead, Epo 2026-10-21, so no editor sees the note empty,
+and an agent Undo or Redo emptying the note gets it right after its revert,
+Epo 2026-10-22),
 and a set left with no card, after an update that
 deletes, a blank card under a fresh id (a card id is a global key). A key
 held at null is absent to the store as to the catalog and admission (Rust
