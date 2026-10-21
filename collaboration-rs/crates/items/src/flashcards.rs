@@ -14,7 +14,7 @@ use yrs::{
     TextRef, Transact, TransactionMut, WriteTxn,
 };
 
-use notes::edit::{DocumentCommand, EditError, EditErrorCode, EditOutcome, GuardTarget};
+use notes::edit::{DocumentCommand, EditError, EditErrorCode};
 use ydoc::Incoming;
 use ydoc::steps::{Walk, step};
 
@@ -552,22 +552,6 @@ fn invalid<T>(code: EditErrorCode, message: impl Into<String>) -> Result<T, Edit
     })
 }
 
-/// A card's Plate node as it reads now, or null when it is gone.
-fn card_value<T: ReadTxn>(txn: &T, id: &str) -> Value {
-    cards(txn)
-        .iter()
-        .find(|card| card.id == id)
-        .map(card_node)
-        .unwrap_or(Value::Null)
-}
-
-fn guard<T: ReadTxn>(txn: &T, id: &str) -> GuardTarget {
-    GuardTarget::Item {
-        path: vec![ROOT.into(), id.into()],
-        value: card_value(txn, id),
-    }
-}
-
 fn parse_card(node: &Value, what: &str) -> Result<Card, EditError> {
     match card_from_node(node) {
         Some(card) => Ok(card),
@@ -579,15 +563,12 @@ fn parse_card(node: &Value, what: &str) -> Result<Card, EditError> {
 }
 
 /// The agent's card commands (`replace_child`, `insert_child`,
-/// `remove_child` on the `flashcards` parent) on the set document, with
-/// their inverses and guards (each touched card as it reads after the edit).
+/// `remove_child` on the `flashcards` parent) on the set document.
 pub fn apply_commands(
     txn: &mut TransactionMut,
     commands: &[DocumentCommand],
-) -> Result<EditOutcome, EditError> {
+) -> Result<(), EditError> {
     let root = txn.get_or_insert_map(ROOT);
-    let mut outcome = EditOutcome::default();
-    let mut touched: Vec<String> = Vec::new();
     for command in commands {
         let ordered = cards(txn);
         match command {
@@ -607,19 +588,9 @@ pub fn apply_commands(
                     );
                 }
                 next.order = previous.order.clone();
-                let previous_node = card_node(previous);
                 if let Some(map) = card_map(txn, &root, node_id) {
                     write_card(txn, &map, &next);
                 }
-                outcome.inverse.insert(
-                    0,
-                    DocumentCommand::ReplaceChild {
-                        node: previous_node,
-                        node_id: node_id.clone(),
-                        parent_type: parent_type.clone(),
-                    },
-                );
-                touched.push(node_id.clone());
             }
             DocumentCommand::InsertChild {
                 parent_type,
@@ -650,22 +621,14 @@ pub fn apply_commands(
                 let after = ordered.get(at).map(|c| c.order.as_str());
                 let key = order::between(before, after).unwrap_or_else(|| order::after(before));
                 root.insert(txn, card.id.clone(), card_prelim(&card, &key));
-                outcome.inverse.insert(
-                    0,
-                    DocumentCommand::RemoveChild {
-                        node_id: card.id.clone(),
-                        parent_type: parent_type.clone(),
-                    },
-                );
-                touched.push(card.id);
             }
             DocumentCommand::RemoveChild {
                 parent_type,
                 node_id,
             } if parent_type == "flashcards" => {
-                let Some(at) = ordered.iter().position(|c| &c.id == node_id) else {
+                if !ordered.iter().any(|c| &c.id == node_id) {
                     return unavailable(format!("{node_id} no longer exists"));
-                };
+                }
                 if ordered.len() == 1 {
                     return invalid(
                         EditErrorCode::UnsupportedOperation,
@@ -673,15 +636,6 @@ pub fn apply_commands(
                     );
                 }
                 root.remove(txn, node_id);
-                outcome.inverse.insert(
-                    0,
-                    DocumentCommand::InsertChild {
-                        after_node_id: at.checked_sub(1).map(|i| ordered[i].id.clone()),
-                        node: card_node(&ordered[at]),
-                        parent_type: parent_type.clone(),
-                    },
-                );
-                touched.push(node_id.clone());
             }
             _ => {
                 return invalid(
@@ -689,39 +643,6 @@ pub fn apply_commands(
                     "use the flashcard commands for this material",
                 );
             }
-        }
-    }
-    touched.dedup();
-    outcome.guards = touched.iter().map(|id| guard(txn, id)).collect();
-    Ok(outcome)
-}
-
-/// Undo's check: every card an edit touched reads as the edit left it.
-pub fn verify_guards<T: ReadTxn>(txn: &T, guards: &[GuardTarget]) -> Result<(), EditError> {
-    for target in guards {
-        let GuardTarget::Item { path, value } = target else {
-            return invalid(
-                EditErrorCode::StaleTarget,
-                "the set changed since this edit",
-            );
-        };
-        let [root, id] = path.as_slice() else {
-            return invalid(
-                EditErrorCode::StaleTarget,
-                "the set changed since this edit",
-            );
-        };
-        if root != ROOT {
-            return invalid(
-                EditErrorCode::StaleTarget,
-                "the set changed since this edit",
-            );
-        }
-        if &card_value(txn, id) != value {
-            return invalid(
-                EditErrorCode::StaleTarget,
-                format!("card {id} changed since this edit"),
-            );
         }
     }
     Ok(())

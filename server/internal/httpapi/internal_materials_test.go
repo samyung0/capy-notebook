@@ -163,6 +163,9 @@ type receiptBody struct {
 			Title        string `json:"title"`
 			MaterialKind string `json:"materialKind"`
 		} `json:"resource"`
+		Undo *struct {
+			OperationID string `json:"operationId"`
+		} `json:"undo"`
 	} `json:"effect"`
 }
 

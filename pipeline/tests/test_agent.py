@@ -2758,6 +2758,7 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
     assert seen["assistantMessageId"] == "m_1" and seen["toolCallId"] == "c1"
     assert result.effects[0]["operation"] == "edited"
     assert ctx._scope_outline is None and reloaded["n"] == 1
+    assert "The user can undo this" in result.text()
 
 
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
@@ -2924,9 +2925,9 @@ def test_an_office_edit_receipt_says_which_characters_it_removed():
 
 
 def test_an_edit_receipt_offers_undo_only_when_it_has_one():
-    """An edit the engine returned no inverse for has no Undo ref, so its
-    result does not promise one (Epo 2026-10-20)."""
-    undo = " The user can undo this edit from the chat result."
+    """An edit no loaded room took has no Undo ref, so its result does not
+    promise one (Epo 2026-10-20)."""
+    undo = " The user can undo this from the chat result."
     body = _receipt("edited", "source_file", "f_1")
     assert undo not in tools._receipt_result(body).text()
     body["effect"]["undo"] = {"operationId": "op_x", "status": "available"}
@@ -4714,6 +4715,7 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                         {"id": "Normal", "name": "Normal"},
                         {"id": "Heading1", "name": "heading 1"},
                     ],
+                    "stylesMore": 3,
                 },
             },
             {
@@ -4757,7 +4759,7 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
     assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
     assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
     # A DOCX page is the engine's scoped read, its first page listing the
-    # paragraph styles (Epo 2026-10-21).
+    # paragraph styles, at most 50 and a count of the rest (Epo 2026-10-21).
     paragraphs = (await inspect(start=0, count=60)).text()
     assert paragraphs == (
         "essay.docx format=docx\n"
@@ -4765,6 +4767,7 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
         + source_block(
             "[p1] Paragraph 1: Intro\n"
             "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
+            " and 3 more"
         )
         + "\n(next start = 60 of 80)"
     )

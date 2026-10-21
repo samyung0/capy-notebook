@@ -2114,6 +2114,8 @@ components:
         chapterId:
           nullable: true
           type: string
+        errorId:
+          type: string
         hasBytes:
           type: boolean
         id:
@@ -2174,6 +2176,8 @@ components:
     FileChange:
       additionalProperties: false
       properties:
+        errorId:
+          type: string
         fileId:
           type: string
         kind:
@@ -3426,6 +3430,8 @@ components:
     NoteChange:
       additionalProperties: false
       properties:
+        errorId:
+          type: string
         lastEditedAt:
           format: date-time
           type: string
@@ -5349,12 +5355,8 @@ components:
     SourceCheckpointOperation:
       additionalProperties: false
       properties:
-        guards: {}
-        inverse: {}
         receipt:
           $ref: "#/components/schemas/SourceCheckpointReceipt"
-        undoOf:
-          type: string
       required:
         - receipt
       type: object
@@ -6489,14 +6491,10 @@ components:
       properties:
         operationId:
           type: string
-        reason:
-          type: string
         status:
           enum:
             - available
-            - undone
             - unavailable
-            - pending
           type: string
       required:
         - operationId

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ApiError } from '@/api/client';
 import type { ActivityBlock, ResourceEffect } from '@/api/types';
 import {
   buildTrace,
@@ -9,6 +10,7 @@ import {
   type ToolBlock,
   toolIcon,
   undoAction,
+  undoRefused,
 } from './trace';
 
 const at = (s: number) =>
@@ -149,7 +151,7 @@ describe('buildTrace', () => {
     expect(stopped.at(-1)).toMatchObject({ state: 'stopped' });
   });
 
-  it('folds later steps on a created file into its card and keeps edit receipts', () => {
+  it('folds later steps on a created file into its card and keeps edit receipts, Undo or not', () => {
     const edit: ResourceEffect = {
       operation: 'edited',
       resource: { id: 'f_2', kind: 'source_file', title: 'Notes.md' },
@@ -163,11 +165,16 @@ describe('buildTrace', () => {
           effects: [{ ...quiz, operation: 'edited', undo: undefined }],
         }),
         tool('c', 'edit_document', [3, 4], { effects: [edit] }),
+        // An edit no loaded room took has no Undo; its receipt still shows.
+        tool('d', 'edit_document', [4, 5], {
+          effects: [{ ...edit, undo: undefined }],
+        }),
       ],
     });
     expect(rows.map((row) => row.type)).toEqual([
       'thinking',
       'created',
+      'edited',
       'edited',
     ]);
   });
@@ -237,4 +244,18 @@ it('offers Undo until a step is undone, then Redo', () => {
   expect(undoAction('restored')).toBe('undo');
   expect(undoAction('edit_undone')).toBe('redo');
   expect(undoAction('trashed')).toBe('redo');
+});
+
+it('keeps Undo after an unknown outcome and hides it after a refusal', () => {
+  expect(undoRefused(new ApiError(409, 'Conflict'))).toBe(true);
+  expect(undoRefused(new ApiError(503, 'Service Unavailable'))).toBe(false);
+  expect(undoRefused(new TypeError('Failed to fetch'))).toBe(false);
+});
+
+it('keeps Undo after a refusal for a moment (review r2 L2)', () => {
+  const refusal = (code: string) =>
+    undoRefused(new ApiError(409, 'Conflict', undefined, { code }));
+  expect(refusal('office_editing_paused')).toBe(false);
+  expect(refusal('unavailable_target')).toBe(false);
+  expect(refusal('undo_unavailable')).toBe(true);
 });

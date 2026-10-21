@@ -96,10 +96,13 @@ import (
 // v33: create_material, add_questions (a new quiz) and create_deck take
 // sources, a made-from line of plain strings, instead of an id scope;
 // search_workspace's file_ids take any workspace item (Epo 2026-10-21).
-// v34: edit_office_document inserts and deletes DOCX and PPTX paragraphs
-// (insert_paragraph, delete_paragraph), and a DOCX read lists the file's
-// paragraph styles (Epo 2026-10-21).
-const ContractVersion = 34
+// v34: the live Undo (Epo 2026-10-20): an edit receipt carries effect.undo
+// only when a loaded room holds the edit's Undo, and edit_document and
+// edit_office_document no longer promise one.
+// v35: edit_office_document inserts and deletes DOCX and PPTX paragraphs
+// (insert_paragraph, delete_paragraph), and a DOCX read names each
+// paragraph's style and lists the file's paragraph styles (Epo 2026-10-21).
+const ContractVersion = 35
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -231,22 +234,20 @@ type ToolError struct {
 	Message string    `json:"message"`
 }
 
-// UndoStatus is the advisory availability of an edit's Undo action.
+// UndoStatus is the availability of a step's Undo: the server sends
+// available; the chat marks a refused step unavailable for the session.
 type UndoStatus string
 
 const (
 	UndoAvailable   UndoStatus = "available"
-	UndoUndone      UndoStatus = "undone"
 	UndoUnavailable UndoStatus = "unavailable"
-	UndoPending     UndoStatus = "pending"
 )
 
-// UndoRef points at the durable edit operation whose inverse the server holds.
-// The inverse payload itself never leaves the server.
+// UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
+// room holds its Yjs items while the step is live (Epo 2026-10-20).
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
-	Status      UndoStatus `json:"status" enum:"available,undone,unavailable,pending"`
-	Reason      string     `json:"reason,omitempty"`
+	Status      UndoStatus `json:"status" enum:"available,unavailable"`
 }
 
 // EffectOperation names what a mutation did to a resource.
@@ -262,7 +263,7 @@ const (
 
 // ResourceEffect is one durable mutation receipt as shown in chat and stored
 // on the assistant message. It carries identity and status only, never the
-// document content or an inverse payload.
+// document content.
 type ResourceEffect struct {
 	Operation   EffectOperation `json:"operation" enum:"created,edited,edit_undone,trashed,restored"`
 	Resource    ResourceRef     `json:"resource"`
@@ -994,9 +995,9 @@ func Definitions() []Definition {
 			Retention: RetainFull,
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
-				"the whole call. Edits save directly, each with an Undo; replace_block rewrites a note " +
+				"the whole call. Edits save directly; replace_block rewrites a note " +
 				"block with formatting or math. Uploaded media and PDFs cannot be edited; a library " +
-				"figure placed in a note is removed only by the learner's Undo. Quiz questions are " +
+				"figure placed in a note is removed only by the learner. Quiz questions are " +
 				"added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
@@ -1078,7 +1079,7 @@ func Definitions() []Definition {
 			Description: "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
-				"whole call. Edits save directly; most can be undone from the chat. A call's commands " +
+				"whole call. Edits save directly. A call's commands " +
 				"are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),

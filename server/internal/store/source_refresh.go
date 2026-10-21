@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
@@ -135,7 +135,9 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 	}
 	if attempts >= 2 {
 		const detail = "Source export exceeded its two-attempt limit"
-		if _, err = tx.Exec(ctx, `UPDATE source_documents SET running_job_id=NULL,refresh_error=$2 WHERE file_id=$1`, fileID, detail); err != nil {
+		// The export ran in the collaboration service, which records no ingest
+		// attempt: the failure's error id is this request's trace (0105).
+		if _, err = tx.Exec(ctx, `UPDATE source_documents SET running_job_id=NULL,refresh_error=$2,refresh_trace_id=NULLIF($3,'') WHERE file_id=$1`, fileID, detail, obs.TraceID(ctx)); err != nil {
 			return out, err
 		}
 		if _, err = tx.Exec(ctx, `DELETE FROM source_refresh_candidates WHERE file_id=$1`, fileID); err != nil {
@@ -147,6 +149,7 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 		if err = tx.Commit(ctx); err != nil {
 			return out, err
 		}
+		logRefreshFailure(ctx, fileID, jobID, detail)
 		return out, ErrConflict
 	}
 	out.LeaseToken = uid("srclease")
@@ -457,11 +460,6 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 			return doc, err
 		}
 		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
-		if err == nil {
-			// Rebase can change native identities. Release AI edit guards and
-			// their Undo with the old editing epoch.
-			err = invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased")
-		}
 	}
 	if err != nil {
 		return doc, err
@@ -548,7 +546,8 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 		}
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET running_job_id=NULL,refresh_error=CASE WHEN $3 THEN NULL ELSE $2 END,desired_checkpoint=CASE WHEN $3 THEN checkpoint ELSE desired_checkpoint END WHERE file_id=$1`, fileID, detail, stale); err != nil {
+	// As in ClaimSourceRefresh, the failure's error id is this request's trace.
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET running_job_id=NULL,refresh_error=CASE WHEN $3 THEN NULL ELSE $2 END,refresh_trace_id=CASE WHEN NOT $3 THEN NULLIF($4,'') END,desired_checkpoint=CASE WHEN $3 THEN checkpoint ELSE desired_checkpoint END WHERE file_id=$1`, fileID, detail, stale, obs.TraceID(ctx)); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM source_refresh_candidates WHERE file_id=$1`, fileID); err != nil {
@@ -557,7 +556,20 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 	if _, err = tx.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'failed','source_refresh','source_refresh_failed',$2)`, jobID, detail); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	if !stale {
+		logRefreshFailure(ctx, fileID, jobID, detail)
+	}
+	return nil
+}
+
+// logRefreshFailure writes the line an operator finds by the error id a
+// failed row shows for an export failure the gateway recorded: obs.Log adds
+// this request's trace, the id stored with the failure.
+func logRefreshFailure(ctx context.Context, fileID, jobID, detail string) {
+	obs.Log(ctx).Warn("source refresh failed", "file_id", fileID, "job_id", jobID, "detail", detail)
 }
 
 // WorkspaceIndexCounts partitions logical files by their current searchable
@@ -616,6 +628,7 @@ func (s *Store) workspaceNoteChanges(ctx context.Context, ws string, limit int) 
 	rows, err := s.pool.Query(ctx, `SELECT m.id,m.title,m.updated_at,
 		CASE WHEN m.index_job_id IS NOT NULL THEN CASE WHEN j.status='pending' AND j.attempts=0 THEN 'queued' ELSE 'processing' END
 		  WHEN m.index_error IS NOT NULL THEN 'failed' ELSE 'waiting' END,
+		CASE WHEN m.index_job_id IS NULL AND m.index_error IS NOT NULL THEN COALESCE(m.index_trace_id,'') ELSE '' END,
 		count(*) OVER ()
 		FROM materials m LEFT JOIN jobs j ON j.id=m.index_job_id
 		WHERE m.workspace_id=$1 AND m.kind='note' AND m.trashed_at IS NULL
@@ -627,7 +640,7 @@ func (s *Store) workspaceNoteChanges(ctx context.Context, ws string, limit int) 
 	total := 0
 	changes, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (NoteChange, error) {
 		var change NoteChange
-		err := row.Scan(&change.MaterialID, &change.Title, &change.LastEditedAt, &change.State, &total)
+		err := row.Scan(&change.MaterialID, &change.Title, &change.LastEditedAt, &change.State, &change.ErrorID, &total)
 		return change, err
 	})
 	return changes, total - len(changes), err
@@ -640,7 +653,8 @@ func (s *Store) workspaceNoteChanges(ctx context.Context, ws string, limit int) 
 func (s *Store) workspaceFileChanges(ctx context.Context, ws string) ([]FileChange, error) {
 	rows, err := s.pool.Query(ctx, `SELECT f.id,f.name,f.kind,d.last_edited_at,
 		CASE WHEN j.id IS NOT NULL THEN CASE WHEN j.type='source_refresh' AND j.status='pending' AND j.attempts=0 THEN 'queued' ELSE 'processing' END
-		  WHEN d.refresh_error IS NOT NULL THEN 'failed' ELSE 'waiting' END
+		  WHEN d.refresh_error IS NOT NULL THEN 'failed' ELSE 'waiting' END,
+		CASE WHEN j.id IS NULL AND d.refresh_error IS NOT NULL THEN COALESCE(d.refresh_trace_id,'') ELSE '' END
 		FROM source_documents d JOIN files f ON f.id=d.file_id LEFT JOIN jobs j ON j.id=d.running_job_id
 		WHERE f.workspace_id=$1 AND f.trashed_at IS NULL AND COALESCE(j.payload->>'paidBy','')<>'system'
 		  AND (j.id IS NOT NULL OR d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
@@ -650,7 +664,7 @@ func (s *Store) workspaceFileChanges(ctx context.Context, ws string) ([]FileChan
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (FileChange, error) {
 		var change FileChange
-		err := row.Scan(&change.FileID, &change.Name, &change.Kind, &change.LastEditedAt, &change.State)
+		err := row.Scan(&change.FileID, &change.Name, &change.Kind, &change.LastEditedAt, &change.State, &change.ErrorID)
 		return change, err
 	})
 }
@@ -761,11 +775,6 @@ func (s *Store) RebuildSource(ctx context.Context, fileID string, in SourceRebui
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,log_bytes=0,log_rows=0,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
-		return err
-	}
-	// Rebase can change native identities. Release AI edit guards and their
-	// Undo with the old editing epoch.
-	if err = invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased"); err != nil {
 		return err
 	}
 	if err = releaseArtifactCacheTx(ctx, tx, oldSHA, published); err != nil {

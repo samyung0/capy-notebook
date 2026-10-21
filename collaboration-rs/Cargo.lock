@@ -2987,6 +2987,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "deadpool-postgres",
+ "flate2",
  "futures",
  "hmac 0.12.1",
  "items",
@@ -3148,6 +3149,8 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "betteroffice-office-service",
+ "betteroffice-opc",
+ "betteroffice-xlsx",
  "cpu-time",
  "deadpool-postgres",
  "futures",
@@ -4086,7 +4089,6 @@ checksum = "550a2b930b62486a393c52d5c3b84bff264b28aa437ed64694d31e93b1757af7"
 name = "ydoc"
 version = "0.1.0"
 dependencies = [
- "serde",
  "stats_alloc",
  "thiserror",
  "yrs",

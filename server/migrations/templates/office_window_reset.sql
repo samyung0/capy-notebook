@@ -34,19 +34,11 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- One statement: release AI edit Undo tied to the old engine's identities,
--- delete refresh candidates and saved rows, then bump the epoch (old rooms and
--- tabs can no longer write), drop the state (rooms reseed on the new engine)
--- and empty pending effects.
+-- One statement: delete refresh candidates and saved rows, then bump the
+-- epoch (old rooms and tabs can no longer write), drop the state (rooms reseed
+-- on the new engine) and empty pending effects.
 WITH dropped AS (
   SELECT file_id FROM source_documents WHERE format IN ({{FORMATS}})
-), released AS (
-  UPDATE agent_edit_inverses i
-  SET undo_status = 'unavailable', undo_reason = 'source_rebased', inverse = '[]'::jsonb,
-      guards = '[]'::jsonb, inverse_bytes = 0, updated_at = now()
-  FROM dropped
-  WHERE i.resource_kind = 'source_file' AND i.resource_id = dropped.file_id
-    AND i.undo_status = 'available'
 ), candidates AS (
   DELETE FROM source_refresh_candidates c USING dropped WHERE c.file_id = dropped.file_id
 ), saved_rows AS (

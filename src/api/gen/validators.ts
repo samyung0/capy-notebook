@@ -1117,8 +1117,7 @@ export const UndoEditOperationResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -1248,8 +1247,7 @@ export const ListMessagesResponseItem = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 })).nullish(),
   "endedAt": zod.iso.datetime({"offset":true}).optional(),
@@ -1685,6 +1683,7 @@ export const ListOwnedFilesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -1783,6 +1782,7 @@ export const GetFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -1870,6 +1870,7 @@ export const UpdateFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -2157,6 +2158,7 @@ export const CloneFileResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -5756,8 +5758,7 @@ export const PurgeTrashedResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -5814,8 +5815,7 @@ export const RestoreTrashedResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({
@@ -6491,6 +6491,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -6913,6 +6914,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -7285,6 +7287,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
+  "errorId": zod.string().optional(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
@@ -7365,6 +7368,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "avgScore": zod.int(),
   "chapters": zod.int(),
   "fileChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
   "fileId": zod.string(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
@@ -7377,6 +7381,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
   "noteChanges": zod.array(zod.object({
+  "errorId": zod.string().optional(),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
   "materialId": zod.string(),
   "state": zod.enum(['waiting', 'queued', 'processing', 'failed']),
@@ -7680,8 +7685,6 @@ export const CheckpointSourceDocumentBody = zod.object({
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
   "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
   "operation": zod.object({
-  "guards": zod.unknown().optional(),
-  "inverse": zod.unknown().optional(),
   "receipt": zod.object({
   "actorUserId": zod.string(),
   "callId": zod.string().optional(),
@@ -7690,8 +7693,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "messageId": zod.string().optional(),
   "requestHash": zod.string(),
   "toolVersion": zod.int()
-}),
-  "undoOf": zod.string().optional()
+})
 }).optional(),
   "pendingEffects": zod.unknown(),
   "preview": zod.string().optional(),
@@ -7727,8 +7729,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "trashEpisodeId": zod.string().optional(),
   "undo": zod.object({
   "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
+  "status": zod.enum(['available', 'unavailable'])
 }).optional()
 }).optional(),
   "error": zod.object({

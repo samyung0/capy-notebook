@@ -7,6 +7,7 @@
 import type { NoteChangeState } from './noteChangeState.ts';
 
 export interface NoteChange {
+  errorId?: string;
   lastEditedAt: string;
   materialId: string;
   state: NoteChangeState;

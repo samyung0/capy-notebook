@@ -14,6 +14,7 @@ import { openWorkspaceMaterial } from '../helpers/workspace';
  * checks that the write lands where it was meant, that untouched blocks keep
  * their content and ids, that one Undo restores the whole change, and that
  * editors already open (the owner's tab and a collaborator's) show it live.
+ * The open editors keep the room loaded, which is what gives an edit its Undo.
  */
 
 const workspaceId = seed.agentWorkspace.id;
@@ -920,7 +921,7 @@ test.describe('agent writes to notes', () => {
     expect(await projection(ownerApi, id)).toEqual(note);
   });
 
-  test("the agent reads a collaborator's unsaved typing; an edit beside it keeps both; Undo keeps typing elsewhere and refuses once its block changed", async ({
+  test("the agent reads a collaborator's unsaved typing; an edit beside it keeps both; Undo keeps everyone's typing, in the edited block too", async ({
     anonymousApi,
     editorPage,
     ownerApi,
@@ -990,7 +991,8 @@ test.describe('agent writes to notes', () => {
     await shows('Owner types here. Typed live.');
     await shows('Collaborator types here. Kept.');
 
-    // Typing in the edited block takes the Undo away.
+    // Typing in the edited block keeps the Undo, which reverts the agent's
+    // text alone, as an editor's undo does (Epo 2026-10-20).
     const second = await edit(anonymousApi, target, [
       {
         expected_text: 'rewrites this',
@@ -1003,22 +1005,15 @@ test.describe('agent writes to notes', () => {
     await typeAtEnd(editorPage, 'The agent rewrote that sentence.', ' Edited.');
     // Shown in the owner's page too, so the room holds the keystrokes.
     await shows('The agent rewrote that sentence. Edited.');
-    const refused = await ownerApi.post(
-      `/api/chat/edit-operations/${second}/undo`,
-      { data: { requestId: randomUUID() } }
-    );
-    expect(refused.status()).toBe(409);
-    expect((await refused.json()).errors).toEqual([
-      { message: 'stale_target' },
-    ]);
-    await shows('The agent rewrote that sentence. Edited.');
+    await undo(ownerApi, second);
+    await shows('The agent rewrites this sentence. Edited.');
     await expect
       .poll(async () => (await projection(ownerApi, id)).map(textOf), {
         timeout: 30_000,
       })
       .toEqual([
         'Owner types here. Typed live.',
-        'The agent rewrote that sentence. Edited.',
+        'The agent rewrites this sentence. Edited.',
         'Collaborator types here. Kept.',
       ]);
   });

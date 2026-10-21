@@ -1358,6 +1358,9 @@ function editScenarios() {
       Object.assign(action, { commands, kind: 'apply' });
       return applyMaterialCommands(document, commands);
     };
+  // Node's stored Undo (guards and inverse). The Rust port has none since the
+  // live Undo (2026-10-20) and `tests/edits.rs` skips these `verify`/`undo`
+  // steps; drop them the next time the corpus is generated from Node.
   const outcomeOf = (records: Record<string, unknown>[], index: number) =>
     records[index].ok as { guards: GuardTarget[]; inverse: DocumentCommand[] };
   const verify =

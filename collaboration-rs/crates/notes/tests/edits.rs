@@ -1,9 +1,11 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
-//! Agent edit commands, guards, Undo, inspect, text-source commands, the
-//! replace-block command and the children pass, replayed on the states the
-//! Node server saw (tests/corpus/{edits,children,commands,inspect}.json.gz):
-//! the same result or refusal (code and message), the same Plate value after,
-//! and, where the update bytes match, the same guards.
+//! Agent edit commands, inspect, text-source commands, the replace-block
+//! command and the children pass, replayed on the states the Node server saw
+//! (tests/corpus/{edits,children,commands,inspect}.json.gz): the same result
+//! or refusal (code and message) and the same Plate value after. The corpus's
+//! inverse commands and guards (Node's stored Undo), and the offset-anchored
+//! spans only an inverse used, are left out: an edit's Undo now reverts its
+//! Yjs items in the live room (`ydoc::undo`).
 mod common;
 
 use notes::children::{self, ChildAnswer};
@@ -38,7 +40,6 @@ struct Tally {
     updates: usize,
     same_bytes: usize,
     raw_bytes: usize,
-    guards_compared: usize,
 }
 
 fn outcome_json(result: &Result<Value, EditError>) -> Value {
@@ -59,22 +60,11 @@ fn outcome_json(result: &Result<Value, EditError>) -> Value {
     }
 }
 
-fn strip_runs(value: &Value) -> Value {
-    let mut value = value.clone();
-    if let Some(guards) = value.get_mut("guards").and_then(Value::as_array_mut) {
-        for guard in guards {
-            guard.as_object_mut().unwrap().remove("runs");
-        }
-    }
-    value
-}
-
 /// One recorded step: what Rust does on the same state, compared.
 fn replay_step(
     script: &str,
     index: usize,
     step: &Value,
-    records: &[Value],
     text_source: bool,
     tally: &mut Tally,
     failures: &mut Vec<String>,
@@ -92,39 +82,28 @@ fn replay_step(
         plate::CONTENT_ROOT
     });
     let before = doc.transact().state_vector();
-    let commands =
-        |value: &Value| -> Vec<DocumentCommand> { serde_json::from_value(value.clone()).unwrap() };
-    let of = |field: &str| records[action["of"].as_u64().unwrap() as usize]["ok"][field].clone();
+    // An offset-anchored span is the form only Node's stored Undo sent.
+    let offsets = action["commands"]
+        .as_array()
+        .is_some_and(|commands| commands.iter().any(|c| c.get("offset").is_some()));
+    if kind == "apply" && offsets {
+        return;
+    }
     let result: Result<Value, EditError> = match kind {
-        "apply" | "undo" => {
-            let list = if kind == "apply" {
-                commands(&action["commands"])
-            } else {
-                commands(&of("inverse"))
-            };
-            let mut txn = doc.transact_mut();
-            let outcome = if text_source {
-                edit::apply_text_commands(&mut txn, &root, &list)
-            } else {
-                edit::apply_material_commands(&mut txn, &root, &list)
-            };
-            outcome.map(|o: EditOutcome| {
-                let mut value = serde_json::to_value(o).unwrap();
-                if text_source {
-                    value["text"] = Value::String(root.get_string(&txn));
-                }
-                value
-            })
-        }
-        "verify" => {
-            let guards: Vec<edit::GuardTarget> = serde_json::from_value(of("guards")).unwrap();
+        "apply" => {
+            let list: Vec<DocumentCommand> =
+                serde_json::from_value(action["commands"].clone()).unwrap();
             let mut txn = doc.transact_mut();
             if text_source {
-                edit::verify_text_guards(&txn, &root, &guards).map(|()| Value::Null)
+                edit::apply_text_commands(&mut txn, &root, &list)
+                    .map(|()| json!({ "text": root.get_string(&txn) }))
             } else {
-                edit::verify_material_guards(&mut txn, &root, &guards).map(|_| Value::Null)
+                edit::apply_material_commands(&mut txn, &root, &list)
+                    .map(|outcome: EditOutcome| serde_json::to_value(outcome).unwrap())
             }
         }
+        // Node's stored Undo: its inverse applied, its guards checked.
+        "undo" | "verify" => return,
         "inspect" => edit::inspect_material(&doc.transact())
             .map(|blocks| serde_json::to_value(blocks).unwrap()),
         "edit" => {
@@ -147,7 +126,12 @@ fn replay_step(
         error.remove("details");
     }
     let theirs = if step.get("ok").is_some() {
-        json!({ "ok": step["ok"] })
+        let mut ok = step["ok"].clone();
+        if let Some(ok) = ok.as_object_mut() {
+            ok.remove("guards");
+            ok.remove("inverse");
+        }
+        json!({ "ok": ok })
     } else if step.get("error").is_some() {
         json!({ "error": step["error"] })
     } else {
@@ -177,14 +161,7 @@ fn replay_step(
     }
     tally.same_bytes += usize::from(bytes_match);
     let (ours, theirs) = (&ours["ok"], &theirs["ok"]);
-    let has_guards = ours.get("guards").is_some();
-    if bytes_match || !has_guards {
-        tally.guards_compared += usize::from(has_guards);
-        if !same(ours, theirs) {
-            failures.push(format!("{at}: result {ours} != JS {theirs}"));
-        }
-    } else if !same(&strip_runs(ours), &strip_runs(theirs)) {
-        // Guards name items; with other bytes, other items.
+    if !same(ours, theirs) {
         failures.push(format!("{at}: result {ours} != JS {theirs}"));
     }
     if !text_source && step.get("value").is_some() {
@@ -208,21 +185,13 @@ fn edit_commands_match_the_node_server() {
             let name = script["name"].as_str().unwrap();
             let steps = script["steps"].as_array().unwrap();
             for (index, step) in steps.iter().enumerate() {
-                replay_step(
-                    name,
-                    index,
-                    step,
-                    steps,
-                    text_source,
-                    &mut tally,
-                    &mut failures,
-                );
+                replay_step(name, index, step, text_source, &mut tally, &mut failures);
             }
         }
     }
     eprintln!(
-        "{} steps, {} with a result: {} updates with the same items ({} byte-identical), guards compared exactly on {}",
-        tally.steps, tally.updates, tally.same_bytes, tally.raw_bytes, tally.guards_compared
+        "{} steps, {} with a result: {} updates with the same items ({} byte-identical)",
+        tally.steps, tally.updates, tally.same_bytes, tally.raw_bytes
     );
     assert!(
         failures.is_empty(),
@@ -289,7 +258,6 @@ fn ambiguous_spans_and_stale_properties_carry_the_current_target() {
                 block_id: Some("b1".into()),
                 expected_text: "the cell".into(),
                 text: "a cell".into(),
-                offset: None,
             },
         ),
         (
@@ -334,7 +302,6 @@ fn an_ambiguous_text_source_span_lists_the_lines_it_occurs_in() {
             block_id: None,
             expected_text: expected.into(),
             text: "x".into(),
-            offset: None,
         };
         match edit::apply_text_commands(&mut doc.transact_mut(), &root, &[command]) {
             Err(EditError::Edit {
@@ -416,34 +383,54 @@ fn an_edit_inserts_a_figure_image_and_no_other_media() {
     }
 }
 
-/// The Undo of an edit that placed a library figure removes it again (the
-/// children pass then lets its asset go), while an edit itself still may not
-/// remove a block holding media.
+/// The live Undo of an edit that placed a library figure removes it again
+/// (the room reverts the edit's own items; the children pass then lets the
+/// asset go), while an edit itself still may not remove a block holding
+/// media. (The deleted `undo_removes_the_figure_its_edit_inserted`, for the
+/// live Undo.)
 #[test]
 fn undo_removes_the_figure_its_edit_inserted() {
+    use yrs::updates::decoder::Decode;
     let value = vec![json!({ "type": "p", "id": "b1", "children": [{ "text": "intro" }] })];
-    let doc = common::doc(&notes::slate_yjs::state_from_value(&value, 3), 4);
-    let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+    let room = common::doc(&notes::slate_yjs::state_from_value(&value, 3), 4);
     let figure = json!({
         "assetId": "ea_figure", "caption": [{ "text": "A leaf" }],
         "children": [{ "text": "" }], "id": "f1", "type": "img",
     });
-    let outcome = edit::apply_material_commands(
-        &mut doc.transact_mut(),
-        &root,
-        &[DocumentCommand::InsertBlock {
-            after_block_id: Some("b1".into()),
-            blocks: vec![figure],
+    let scratch = common::doc(&common::state(&room), 9);
+    let root = scratch.get_or_insert_text(plate::CONTENT_ROOT);
+    let captured = {
+        let mut txn = scratch.transact_mut();
+        edit::apply_material_commands(
+            &mut txn,
+            &root,
+            &[DocumentCommand::InsertBlock {
+                after_block_id: Some("b1".into()),
+                blocks: vec![figure],
+            }],
+        )
+        .unwrap();
+        ydoc::undo::Captured::of(&mut txn)
+    };
+    let update = scratch
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    ydoc::undo::apply_kept(&room, yrs::Update::decode_v1(&update).unwrap()).unwrap();
+    let content = room.get_or_insert_text(plate::CONTENT_ROOT);
+    let removal = edit::apply_material_commands(
+        &mut room.transact_mut(),
+        &content,
+        &[DocumentCommand::RemoveBlock {
+            block_id: "f1".into(),
+            expected_text: String::new(),
         }],
-    )
-    .unwrap();
-    let refused = edit::apply_material_commands(&mut doc.transact_mut(), &root, &outcome.inverse);
-    assert!(
-        matches!(&refused, Err(EditError::Edit { message, .. }) if message == "blocks holding media cannot be removed by an edit"),
-        "{refused:?}"
     );
-    edit::undo_material_commands(&mut doc.transact_mut(), &root, &outcome.inverse).unwrap();
-    assert_eq!(plate::value(&doc.transact()).unwrap(), value);
+    assert!(
+        matches!(&removal, Err(EditError::Edit { message, .. }) if message == "blocks holding media cannot be removed by an edit"),
+        "{removal:?}"
+    );
+    ydoc::undo::revert(&room, captured.change(&room)).unwrap();
+    assert_eq!(plate::value(&room.transact()).unwrap(), value);
 }
 
 #[test]

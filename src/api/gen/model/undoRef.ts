@@ -8,6 +8,5 @@ import type { UndoRefStatus } from './undoRefStatus.ts';
 
 export interface UndoRef {
   operationId: string;
-  reason?: string;
   status: UndoRefStatus;
 }
