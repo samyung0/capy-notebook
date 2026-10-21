@@ -1,5 +1,5 @@
 {
-  "version": 34,
+  "version": 35,
   "operations": [
     "source.read",
     "material.read",
@@ -878,7 +878,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a mindmap's or diagram's mermaid block as one ```mermaid fence. Any note block may be removed or replaced, media included; the only media an edit adds are library figures. PDFs cannot be edited. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1003,6 +1003,16 @@
                       "minLength": 1,
                       "type": "string"
                     },
+                    "expected_back": {
+                      "description": "The card's back as inspect_document shows it; required with back.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "expected_front": {
+                      "description": "The card's front as inspect_document shows it; required with front.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
                     "front": {
                       "maxLength": 200,
                       "type": "string"
@@ -1076,30 +1086,6 @@
                   "required": [
                     "type",
                     "question_id"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "expected_source": {
-                      "description": "Current mermaid source.",
-                      "maxLength": 200000,
-                      "type": "string"
-                    },
-                    "source": {
-                      "description": "New mermaid source.",
-                      "maxLength": 200000,
-                      "type": "string"
-                    },
-                    "type": {
-                      "const": "set_mermaid"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "expected_source",
-                    "source"
                   ],
                   "type": "object"
                 }

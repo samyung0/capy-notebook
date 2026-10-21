@@ -5599,8 +5599,106 @@ async fn image_asset(client: &tokio_postgres::Client, user: &str, id: &str, mate
         .expect("asset");
 }
 
+async fn asset_trashed(client: &tokio_postgres::Client, id: &str) -> bool {
+    client
+        .query_one(
+            "SELECT trashed_at IS NOT NULL FROM editor_assets WHERE id=$1",
+            &[&id],
+        )
+        .await
+        .expect("asset")
+        .get(0)
+}
+
 fn image_block(id: &str, asset: &str) -> serde_json::Value {
     serde_json::json!({ "type": "img", "id": id, "assetId": asset, "children": [{ "text": "" }] })
+}
+
+/// An agent edit may remove a block holding media (Epo 2026-10-21): the
+/// image leaves the open note, the projection trashes its asset like a
+/// person's deletion does (`pruneMaterialAssetsTx`, the asset completed over
+/// a minute ago), and the edit's Undo brings the block back with its asset
+/// out of the trash. Fails if the media refusal comes back or the Undo
+/// leaves the asset trashed.
+#[tokio::test]
+async fn an_image_the_agent_removes_is_trashed_and_its_undo_restores_it() {
+    let Some(env) = env() else { return };
+    if env.api.is_none() {
+        return;
+    }
+    let server = start(&env).await;
+    let (user, material) = note(&env, "intro").await;
+    let client = db(&env).await;
+    let asset = format!("asset_it_removed_{}", uuid_like());
+    image_asset(&client, &user, &asset, &material).await;
+    client
+        .execute(
+            "UPDATE materials SET content=$2 WHERE id=$1",
+            &[
+                &material,
+                &serde_json::json!({ "schemaVersion": 1, "value": [
+                    { "type": "p", "id": "b1", "children": [{ "text": "intro" }] },
+                    image_block("img1", &asset),
+                ] }),
+            ],
+        )
+        .await
+        .expect("content");
+    let room = format!("material:{material}:schema:1");
+    let mut person = Client::open(server.port).await;
+    person.joined(&room, &token(&room, &user, "write")).await;
+    assert!(person.settle(|c| c.block("img1").is_some()).await);
+    assert!(!asset_trashed(&client, &asset).await);
+
+    let operation = format!("e_{material}");
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "remove_block", "blockId": "img1", "expectedText": "" }],
+            "operation": { "id": operation, "requestHash": operation },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        }),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(
+        receipt["effect"]["undo"]["status"], "available",
+        "{receipt}"
+    );
+    assert!(person.settle(|c| c.block("img1").is_none()).await);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !asset_trashed(&client, &asset).await {
+        assert!(tokio::time::Instant::now() < deadline, "the asset stayed");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&user, &operation, &format!("u_{material}"), &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(
+        person
+            .settle(|c| c
+                .block("img1")
+                .is_some_and(|block| block["assetId"] == asset.as_str()))
+            .await,
+        "{:?}",
+        person.block("img1")
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while asset_trashed(&client, &asset).await {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the asset stayed trashed"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
 
 /// Pasted children (Node `children.ts`, `server.ts` childrenPass): a block
@@ -6465,6 +6563,107 @@ fn add_card(doc: &Doc, id: &str, order: &str, front: &str) {
             ("front", yrs::In::from(TextPrelim::new(front))),
             ("back", yrs::In::from(TextPrelim::new(""))),
         ]),
+    );
+}
+
+/// replace_card fills the side it leaves out from the live set (Epo
+/// 2026-10-21): a person types in a card's back after the agent inspected
+/// the card, the agent replaces its front, and the back keeps the typing; a
+/// back it expects as inspected is stale and refuses with the card's sides
+/// as they read now. Fails if a left-out side is written from the stored
+/// set, which reverted the typing.
+#[tokio::test]
+async fn replace_card_keeps_the_typing_since_the_agents_inspection() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let set = flashcard_set(&env, &owner, None, &[("c1", "Cell", "unit of life")]).await;
+    let room = format!("material:{set}:schema:1");
+    let mut person = Client::open(server.port).await;
+    assert_eq!(
+        person.joined(&room, &token(&room, &owner, "write")).await,
+        1
+    );
+    assert!(person.settle(|c| c.cards().len() == 1).await);
+    let inspect = serde_json::json!({
+        "actorUserId": owner, "room": room, "target": { "id": set, "kind": "material" },
+    });
+    let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    let card = notes::edit::card_text("Cell", "unit of life");
+    assert_eq!(
+        view["blocks"][0]["children"][0]["text"],
+        card.as_str(),
+        "{view}"
+    );
+
+    person
+        .write(|doc| {
+            let back = card_face(doc, "c1", "back").expect("back");
+            yrs::Text::insert(&back, &mut doc.transact_mut(), 12, ", smallest");
+        })
+        .await;
+    assert!(person.until(6).await.is_some(), "the person's ack");
+    let edit = |id: &str, command: serde_json::Value| {
+        serde_json::json!({
+            "actorUserId": owner,
+            "commands": [command],
+            "operation": { "id": id, "requestHash": id },
+            "room": room,
+            "target": { "id": set, "kind": "material" },
+        })
+    };
+    let (status, receipt) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(
+            &format!("e1_{set}"),
+            serde_json::json!({ "type": "replace_card", "cardId": "c1", "front": "Cell (biology)", "expectedFront": "Cell" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    let sides = |c: &Client| {
+        let doc = &c.doc;
+        let read = |face: &str| {
+            card_face(doc, "c1", face)
+                .map(|text| text.get_string(&doc.transact()))
+                .unwrap_or_default()
+        };
+        (read("front"), read("back"))
+    };
+    let now = (
+        "Cell (biology)".to_owned(),
+        "unit of life, smallest".to_owned(),
+    );
+    assert!(
+        person.settle(|c| sides(c) == now).await,
+        "{:?}",
+        sides(&person)
+    );
+
+    let (status, refusal) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(
+            &format!("e2_{set}"),
+            serde_json::json!({ "type": "replace_card", "cardId": "c1", "back": "the smallest unit", "expectedBack": "unit of life" }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        (status, refusal["code"].as_str()),
+        (409, Some("stale_target")),
+        "{refusal}"
+    );
+    assert_eq!(
+        refusal["details"],
+        serde_json::json!({ "block": {
+            "id": "c1",
+            "text": notes::edit::card_text("Cell (biology)", "unit of life, smallest"),
+            "type": "flashcard",
+        } }),
+        "{refusal}"
     );
 }
 
@@ -7408,11 +7607,12 @@ impl Client {
 }
 
 /// Two writers typing into one Mermaid source at once both keep their
-/// characters (shape A merges per character), and an agent's `set_mermaid`
-/// (`set_property` of `source`) during typing is a text diff, so a writer's
-/// keystroke made before it and sent after it stays too.
+/// characters (shape A merges per character). An agent changes the diagram
+/// through replace_block (Epo 2026-10-21, set_mermaid gone): both writers
+/// get the new block, whose source they type into again, and the edit's
+/// Undo puts the typed source back.
 #[tokio::test]
-async fn two_writers_type_in_one_mermaid_source_and_an_agent_edit_keeps_both() {
+async fn two_writers_type_in_one_mermaid_source_and_an_agent_replaces_it() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (owner, material) = diagram(&env, "graph TD\n  A --> B").await;
@@ -7433,27 +7633,52 @@ async fn two_writers_type_in_one_mermaid_source_and_an_agent_edit_keeps_both() {
     assert!(a.settle(|c| c.source() == merged).await, "{}", a.source());
     assert!(b.settle(|c| c.source() == merged).await, "{}", b.source());
 
-    // A types; before it sends, an agent rewrites the head of the source.
-    let from_a = a.type_source(merged.len() as u32, " --> D");
+    // The agent's ```mermaid fence, converted, replaces the block whole.
+    let rewritten = "flowchart LR\n  A --> B --> C";
+    let operation = format!("op_{material}");
     let edit = serde_json::json!({
         "actorUserId": owner,
         "commands": [{
-            "type": "set_property",
-            "nodeType": "mermaid",
-            "property": "source",
-            "expectedValue": merged,
-            "value": "%% b\nflowchart TD\n  A --> B --> C",
+            "type": "replace_block",
+            "blockId": "d1",
+            "expectedText": "",
+            "blocks": [{
+                "children": [{ "children": [{ "text": "" }], "type": "mermaid_caption" }],
+                "id": "d2",
+                "source": rewritten,
+                "type": "mermaid",
+            }],
         }],
-        "operation": { "id": format!("op_{material}"), "requestHash": "h1", "toolVersion": 1 },
+        "operation": { "id": operation, "requestHash": "h1", "toolVersion": 1 },
         "room": room,
         "target": { "id": material, "kind": "material" },
     });
     let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit).await;
     assert_eq!(status, 200, "{receipt}");
-    a.send(5, &sync(2, &from_a)).await;
-    let both = "%% b\nflowchart TD\n  A --> B --> C --> D";
-    assert!(a.settle(|c| c.source() == both).await, "{}", a.source());
+    assert!(
+        a.settle(|c| c.source() == rewritten).await,
+        "{}",
+        a.source()
+    );
+    assert!(
+        b.settle(|c| c.source() == rewritten).await,
+        "{}",
+        b.source()
+    );
+    let typed = a.type_source(rewritten.len() as u32, " --> D");
+    a.send(5, &sync(2, &typed)).await;
+    let both = "flowchart LR\n  A --> B --> C --> D";
     assert!(b.settle(|c| c.source() == both).await, "{}", b.source());
+
+    let (status, answer) = internal(
+        server.port,
+        "/internal/documents/undo",
+        &undo_step(&owner, &operation, &format!("u_{material}"), &material),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    assert!(a.settle(|c| c.source() == merged).await, "{}", a.source());
+    assert!(b.settle(|c| c.source() == merged).await, "{}", b.source());
 }
 
 // ---------------------------------------------------------- live note View

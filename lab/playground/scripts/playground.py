@@ -537,8 +537,8 @@ def keep_images(state: dict[str, Any], images: dict[str, bytes]) -> dict[str, An
 OPERATIONS = {
     "quiz": ["remove_question"],
     "flashcards": ["replace_card", "add_card", "remove_card"],
-    "mindmap": ["set_mermaid"],
-    "diagram": ["set_mermaid"],
+    "mindmap": ["replace_block"],
+    "diagram": ["replace_block"],
 }
 NOTE_OPERATIONS = ["replace_text", "replace_block", "insert_markdown", "remove_block"]
 FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,})\s*([\w-]*)")
@@ -614,12 +614,19 @@ def inspected(record: dict[str, Any]) -> list[dict[str, Any]]:
         for card in record["cards"]:
             if "id" not in card:
                 card["id"] = fresh_id(record, "c")
+        # A card's sides as JSON, the texts expected_front and expected_back match.
         return [
-            {"id": c["id"], "type": "card", "text": f"{c['front']} | {c['back']}"}
+            {
+                "id": c["id"],
+                "type": "flashcard",
+                "text": json.dumps(
+                    {"back": c["back"], "front": c["front"]}, ensure_ascii=False, separators=(",", ":")
+                ),
+            }
             for c in record["cards"]
         ]
     if kind in ("mindmap", "diagram"):
-        return [{"id": "source", "type": kind, "text": "", "properties": {"source": record["content"]}}]
+        return [{"id": "source", "type": "mermaid", "text": "", "properties": {"source": record["content"]}}]
     if "blocks" not in record:
         record["blocks"] = new_blocks(record, record["content"])
     return [
@@ -707,10 +714,14 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
     offered = OPERATIONS.get(kind, NOTE_OPERATIONS)
     if op not in offered:
         return f"{where}: a {kind} takes {', '.join(offered)}"
-    if op == "set_mermaid":
-        if command["expected_source"].strip() != draft["content"].strip():
-            return f"{where}.expected_source: the source changed; inspect it again"
-        draft["content"] = command["source"]
+    if kind in ("mindmap", "diagram"):
+        # replace_block of the one mermaid block, from a ```mermaid fence.
+        if command.get("block_id") != "source":
+            return f"{where}.block_id: no {command.get('block_id')} in this {kind}"
+        fence = FENCE.search(command["markdown"])
+        if fence is None or fence.group(1) != "mermaid":
+            return f"{where}.markdown: a {kind} is one ```mermaid fence"
+        draft["content"] = fence.group(2).strip()
         return ""
     items = draft["cards"] if kind == "flashcards" else draft["blocks"]
     ids = [item["id"] for item in items]
@@ -741,6 +752,12 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
         return ""
     i = ids.index(target)
     if op == "replace_card":
+        for side in ("front", "back"):
+            expected = command.get(f"expected_{side}")
+            if side in command and expected is None:
+                return f"{where}: send expected_{side} with {side}"
+            if expected is not None and expected != items[i][side]:
+                return f"{where}.expected_{side}: card {target} now reads {inspected(draft)[i]['text']}"
         items[i] = {**items[i], **{k: command[k] for k in ("front", "back") if k in command}}
     elif op == "remove_card":
         del items[i]
@@ -2588,7 +2605,7 @@ def check_edits() -> None:
         )
         assert not cards.refused, cards.text()
         deck_ = {"kind": "material", "id": state["materials"][-1]["id"]}
-        assert "[c1] (card) a | b" in inspect_locally({"target": deck_}, ctx, state).text()
+        assert '[c1] (flashcard) {"back":"b","front":"a"}' in inspect_locally({"target": deck_}, ctx, state).text()
         add = [{"type": "add_card", "after_card_id": "c1", "front": "x", "back": "y"}]
         added = await edit_material_locally({"target": deck_, "commands": add}, ctx, state)
         assert not added.refused and [c["id"] for c in state["materials"][-1]["cards"]] == ["c1", "c2"]

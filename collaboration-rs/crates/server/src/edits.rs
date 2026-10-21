@@ -690,6 +690,11 @@ fn compute(
         let previous = notes::limits::measure_value(&before);
         let cost = undo_cost(&commands, &[&before]);
         let outcome = notes::edit::apply_material_commands(&mut txn, &root, &commands)?;
+        // A note the edit emptied gets its empty paragraph in the same
+        // transaction, so no editor sees it empty and its Undo takes the
+        // paragraph out again (Epo 2026-10-21). Other kinds require their
+        // block: the check below refuses one left without it.
+        notes::repair::emptied(&mut txn, &kind);
         let value = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
         // A whole note the check refuses (an 11th interactive block across
         // it) is a refusal naming the rule, as for a live item; logged, since
@@ -1695,6 +1700,52 @@ mod tests {
         );
     }
 
+    /// A note an agent edit empties gets one empty paragraph in the edit's
+    /// own transaction (Epo 2026-10-21), so no editor sees it empty and its
+    /// Undo takes the paragraph out with the edit; a diagram left without
+    /// its mermaid block is refused by the store's check instead. Fails if
+    /// the edit refuses the removal of the last block again or stores an
+    /// empty note.
+    #[test]
+    fn an_agent_edit_that_empties_a_note_leaves_an_empty_paragraph() {
+        let remove = |kind: &str, value: serde_json::Value| {
+            let id = value["id"].as_str().unwrap().to_owned();
+            let expected = if kind == "note" { "last" } else { "" };
+            compute(
+                Model::Note.state_from_value(&[value]),
+                Vec::new(),
+                None,
+                kind.into(),
+                vec![notes::edit::DocumentCommand::RemoveBlock {
+                    block_id: id,
+                    expected_text: expected.into(),
+                }],
+                None,
+            )
+        };
+        let computed = remove(
+            "note",
+            json!({ "type": "p", "id": "b1", "children": [{ "text": "last" }] }),
+        )
+        .unwrap();
+        assert_eq!(computed.value.len(), 1, "{:?}", computed.value);
+        assert_eq!(computed.value[0]["type"], "p");
+        assert_eq!(computed.value[0]["children"], json!([{ "text": "" }]));
+        assert_ne!(computed.value[0]["id"], "b1");
+        let diagram = remove(
+            "diagram",
+            json!({
+                "type": "mermaid", "id": "m1", "source": "flowchart LR\n  A --> B",
+                "children": [{ "type": "mermaid_caption", "children": [{ "text": "" }] }],
+            }),
+        );
+        assert!(
+            matches!(&diagram, Err(DocumentError::Edit { code, .. }) if code == "invalid_input"),
+            "{:?}",
+            diagram.as_ref().err()
+        );
+    }
+
     /// A server write of a quiz (an agent edit, the save API) whose documents
     /// hold a block kind its rooms do not admit is refused, so no rebuilt
     /// quiz drops the block (review M1). Fails if the quiz is rebuilt.
@@ -1935,13 +1986,15 @@ mod tests {
             0,
         );
         let cards = |command| cost_and_sent("flashcards", &set, None, vec![command]);
-        for id in ["c1", "c2", "c3"] {
+        for (id, words) in [("c1", 3), ("c2", 40), ("c3", 190)] {
             check(
-                "replace_child",
-                cards(DocumentCommand::ReplaceChild {
-                    parent_type: "flashcards".into(),
-                    node_id: id.into(),
-                    node: card(id, 60),
+                "replace_card",
+                cards(DocumentCommand::ReplaceCard {
+                    card_id: id.into(),
+                    front: Some("new front ".repeat(15)),
+                    back: Some("new back ".repeat(60)),
+                    expected_front: Some("front ".repeat(words.min(30))),
+                    expected_back: Some("back ".repeat(words)),
                 }),
             );
             check(
@@ -2019,7 +2072,7 @@ mod tests {
             "replace_block",
             "insert_block",
             "replace_text",
-            "replace_child",
+            "replace_card",
             "remove_child",
             "insert_child",
             "quiz replace_child",

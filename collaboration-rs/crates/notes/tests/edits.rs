@@ -82,11 +82,14 @@ fn replay_step(
         plate::CONTENT_ROOT
     });
     let before = doc.transact().state_vector();
-    // An offset-anchored span is the form only Node's stored Undo sent.
-    let offsets = action["commands"]
-        .as_array()
-        .is_some_and(|commands| commands.iter().any(|c| c.get("offset").is_some()));
-    if kind == "apply" && offsets {
+    // An offset-anchored span is the form only Node's stored Undo sent, and
+    // set_property was set_mermaid's, gone since (Epo 2026-10-21).
+    let dropped = action["commands"].as_array().is_some_and(|commands| {
+        commands
+            .iter()
+            .any(|c| c.get("offset").is_some() || c["type"] == "set_property")
+    });
+    if kind == "apply" && dropped {
         return;
     }
     let result: Result<Value, EditError> = match kind {
@@ -137,6 +140,21 @@ fn replay_step(
     } else {
         json!({ "thrown": step["thrown"] })
     };
+    // Refusals relaxed since (Epo 2026-10-21): an edit removes or replaces a
+    // block holding media, and the last block (the server then gives a note
+    // its empty paragraph).
+    if ours.get("ok").is_some()
+        && step["error"]["message"].as_str().is_some_and(|message| {
+            [
+                "blocks holding media cannot be removed by an edit",
+                "blocks holding media cannot be replaced by an edit",
+                "a material must keep at least one block",
+            ]
+            .contains(&message)
+        })
+    {
+        return;
+    }
     let ok = ours.get("ok").is_some() && theirs.get("ok").is_some();
     if !ok {
         if !same(&ours, &theirs) {
@@ -234,53 +252,41 @@ fn a_listing_preview_cut_inside_an_emoji_keeps_it_whole() {
 }
 
 /// Refusals the agent retries carry the target as it reads now (2026-10-14):
-/// an expected text that occurs more than once comes with its block, and a
-/// stale `set_mermaid` (a set_property) with the source the diagram holds.
+/// an expected text that occurs more than once comes with its block.
 #[test]
-fn ambiguous_spans_and_stale_properties_carry_the_current_target() {
-    let refusal = |value: Value, command: DocumentCommand| {
-        let doc = common::doc(&notes::slate_yjs::state_from_value(&[value], 3), 4);
-        let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
-        match edit::apply_material_commands(&mut doc.transact_mut(), &root, &[command]) {
-            Err(EditError::Edit {
-                code,
-                message,
-                details,
-            }) => (json!(code), message, details),
-            other => panic!("expected a refusal, got {other:?}"),
-        }
-    };
+fn ambiguous_spans_carry_the_current_block() {
     let text = "the cell and the cell wall";
-    assert_eq!(
-        refusal(
-            json!({ "type": "p", "id": "b1", "children": [{ "text": text }] }),
-            DocumentCommand::ReplaceText {
-                block_id: Some("b1".into()),
-                expected_text: "the cell".into(),
-                text: "a cell".into(),
-            },
+    let doc = common::doc(
+        &notes::slate_yjs::state_from_value(
+            &[json!({ "type": "p", "id": "b1", "children": [{ "text": text }] })],
+            3,
         ),
+        4,
+    );
+    let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+    let refusal = edit::apply_material_commands(
+        &mut doc.transact_mut(),
+        &root,
+        &[DocumentCommand::ReplaceText {
+            block_id: Some("b1".into()),
+            expected_text: "the cell".into(),
+            text: "a cell".into(),
+        }],
+    );
+    let Err(EditError::Edit {
+        code,
+        message,
+        details,
+    }) = refusal
+    else {
+        panic!("expected a refusal, got {refusal:?}");
+    };
+    assert_eq!(
+        (json!(code), message.as_str(), details),
         (
             json!("invalid_input"),
-            "expected text occurs 2 times; include more context".to_owned(),
+            "expected text occurs 2 times; include more context",
             Some(json!({ "block": { "id": "b1", "text": text, "type": "p" } })),
-        )
-    );
-    let source = "graph TD\n  A --> B";
-    assert_eq!(
-        refusal(
-            json!({ "type": "mermaid", "id": "m1", "source": source, "children": [{ "text": "" }] }),
-            DocumentCommand::SetProperty {
-                node_type: "mermaid".into(),
-                property: "source".into(),
-                expected_value: "graph TD\n  A".into(),
-                value: "graph LR\n  A --> C".into(),
-            },
-        ),
-        (
-            json!("stale_target"),
-            "mermaid.source changed".to_owned(),
-            Some(json!({ "block": { "id": "m1", "text": source, "type": "mermaid" } })),
         )
     );
 }
@@ -385,9 +391,8 @@ fn an_edit_inserts_a_figure_image_and_no_other_media() {
 
 /// The live Undo of an edit that placed a library figure removes it again
 /// (the room reverts the edit's own items; the children pass then lets the
-/// asset go), while an edit itself still may not remove a block holding
-/// media. (The deleted `undo_removes_the_figure_its_edit_inserted`, for the
-/// live Undo.)
+/// asset go). (The deleted `undo_removes_the_figure_its_edit_inserted`, for
+/// the live Undo.)
 #[test]
 fn undo_removes_the_figure_its_edit_inserted() {
     use yrs::updates::decoder::Decode;
@@ -416,21 +421,78 @@ fn undo_removes_the_figure_its_edit_inserted() {
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
     ydoc::undo::apply_kept(&room, yrs::Update::decode_v1(&update).unwrap()).unwrap();
-    let content = room.get_or_insert_text(plate::CONTENT_ROOT);
-    let removal = edit::apply_material_commands(
-        &mut room.transact_mut(),
-        &content,
-        &[DocumentCommand::RemoveBlock {
-            block_id: "f1".into(),
-            expected_text: String::new(),
-        }],
-    );
-    assert!(
-        matches!(&removal, Err(EditError::Edit { message, .. }) if message == "blocks holding media cannot be removed by an edit"),
-        "{removal:?}"
-    );
     ydoc::undo::revert(&room, captured.change(&room)).unwrap();
     assert_eq!(plate::value(&room.transact()).unwrap(), value);
+}
+
+/// An agent edit removes or replaces any note block, media included (Epo
+/// 2026-10-21): an image or placed figure, audio and a YouTube video, and
+/// the last block, which leaves the root empty here (the server's compute
+/// adds the note's empty paragraph). Inserting media other than a library
+/// figure stays refused. Fails if the media refusal comes back.
+#[test]
+fn an_edit_removes_or_replaces_media_and_the_last_block() {
+    let media = [
+        json!({ "type": "img", "id": "i1", "assetId": "ea_1", "children": [{ "text": "" }] }),
+        json!({ "type": "audio", "id": "a1", "assetId": "ea_2", "children": [{ "text": "" }] }),
+        json!({
+            "type": "video", "id": "v1", "provider": "youtube", "videoId": "dQw4w9WgXcQ",
+            "children": [{ "text": "" }],
+        }),
+    ];
+    let apply = |value: &[Value], command: DocumentCommand| {
+        let doc = common::doc(&notes::slate_yjs::state_from_value(value, 3), 4);
+        let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+        // The write transaction ends with this statement, before the read.
+        let applied = edit::apply_material_commands(&mut doc.transact_mut(), &root, &[command]);
+        applied.map(|_| plate::value(&doc.transact()).unwrap())
+    };
+    let paragraph = |id: &str| json!({ "type": "p", "id": id, "children": [{ "text": "kept" }] });
+    for block in &media {
+        let id = block["id"].as_str().unwrap();
+        let value = [paragraph("b1"), block.clone()];
+        let removed = apply(
+            &value,
+            DocumentCommand::RemoveBlock {
+                block_id: id.into(),
+                expected_text: String::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(removed, [paragraph("b1")], "{id}");
+        let replaced = apply(
+            &value,
+            DocumentCommand::ReplaceBlock {
+                block_id: id.into(),
+                expected_text: String::new(),
+                blocks: vec![paragraph("n1")],
+            },
+        )
+        .unwrap();
+        assert_eq!(replaced, [paragraph("b1"), paragraph("n1")], "{id}");
+    }
+    let emptied = apply(
+        &[paragraph("b1")],
+        DocumentCommand::RemoveBlock {
+            block_id: "b1".into(),
+            expected_text: "kept".into(),
+        },
+    )
+    .unwrap();
+    // A root with no block reads as one empty text.
+    assert_eq!(emptied, [json!({ "text": "" })]);
+    let inserted = apply(
+        &[paragraph("b1")],
+        DocumentCommand::ReplaceBlock {
+            block_id: "b1".into(),
+            expected_text: "kept".into(),
+            blocks: vec![media[1].clone()],
+        },
+    );
+    assert!(
+        matches!(&inserted, Err(EditError::Edit { message, .. }) if message == "media nodes cannot be inserted by an edit"),
+        "{inserted:?}"
+    );
 }
 
 #[test]
@@ -456,10 +518,32 @@ fn inspect_matches_the_node_server() {
         }
         v
     };
+    // A card's sides print as JSON since 2026-10-21; Node ran them together.
+    let joined = |mut v: Value| {
+        for block in v.as_array_mut().unwrap() {
+            for child in block
+                .get_mut("children")
+                .and_then(Value::as_array_mut)
+                .into_iter()
+                .flatten()
+            {
+                if child["type"] == "flashcard" {
+                    let sides: Value =
+                        serde_json::from_str(child["text"].as_str().unwrap()).unwrap();
+                    child["text"] = json!(format!(
+                        "{}{}",
+                        sides["front"].as_str().unwrap(),
+                        sides["back"].as_str().unwrap()
+                    ));
+                }
+            }
+        }
+        v
+    };
     for case in corpus.as_array().unwrap() {
         let doc = common::doc(&common::bytes(&case["state"]), 99);
         let ours = serde_json::to_value(edit::inspect_material(&doc.transact()).unwrap()).unwrap();
-        if !same(&parse(ours.clone()), &parse(case["blocks"].clone())) {
+        if !same(&parse(joined(ours.clone())), &parse(case["blocks"].clone())) {
             failures.push(format!("{}: {ours} != JS {}", case["name"], case["blocks"]));
         }
     }

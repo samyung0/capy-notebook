@@ -3,8 +3,8 @@
 //! the bootstrap writes it so, it reads as its string, typing and pastes
 //! stay on the bound while the size cap still refuses, crafted updates
 //! putting a text anywhere else or anything but strings in it are refused
-//! within a bounded walk, and a command's new source is a text diff that
-//! keeps typing which reaches the room meanwhile.
+//! within a bounded walk, and an agent's replace_block puts a new block
+//! whose source is a text again.
 
 mod common;
 
@@ -287,36 +287,32 @@ fn crafted_sources_are_refused_within_a_bounded_walk() {
     ));
 }
 
-/// An agent's `set_mermaid` (`set_property` of `source`) writes the change
-/// as a text diff: a writer's typing that reaches the room after it, made
-/// against the source before it, stays. Fails if the command replaces the
-/// source text with a string again.
+/// A Mermaid block changes through replace_block like any block (Epo
+/// 2026-10-21, set_mermaid gone): the agent's ```mermaid fence, converted,
+/// replaces the diagram's block whole, and the new block's source is a text
+/// again, so editors type into it as before. Fails if the replacement's
+/// source lands as a plain string.
 #[test]
-fn a_source_set_by_command_keeps_typing_that_arrives_meanwhile() {
+fn a_replaced_mermaid_block_holds_its_source_as_a_text() {
     let room = room(&[mermaid(SOURCE)]);
-    let typing = edit(&room, 3, |peer| {
-        let text = source(peer, 0);
-        let end = text.len(&peer.transact());
-        text.insert(&mut peer.transact_mut(), end, " --> C");
-    });
     let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+    let mut next = mermaid("flowchart LR\n  A --> C");
+    next["id"] = json!("d2");
     edit::apply_material_commands(
         &mut room.transact_mut(),
         &root,
-        &[DocumentCommand::SetProperty {
-            expected_value: SOURCE.into(),
-            node_type: "mermaid".into(),
-            property: "source".into(),
-            value: "flowchart TD\n  A --> B".into(),
+        &[DocumentCommand::ReplaceBlock {
+            block_id: "d1".into(),
+            expected_text: String::new(),
+            blocks: vec![next],
         }],
     )
     .unwrap();
-    common::apply(&room, &typing);
-    assert_eq!(projected_source(&room), "flowchart TD\n  A --> B --> C");
-    assert_eq!(
-        source(&room, 0).get_string(&room.transact()),
-        "flowchart TD\n  A --> B --> C"
-    );
+    assert_eq!(projected_source(&room), "flowchart LR\n  A --> C");
+    let text = source(&room, 0);
+    text.insert(&mut room.transact_mut(), 0, "%% typed\n");
+    assert_eq!(projected_source(&room), "%% typed\nflowchart LR\n  A --> C");
+    notes::material::assert_canonical(&plate::value(&room.transact()).unwrap(), "diagram").unwrap();
 }
 
 /// The store requires a `mermaid` block's `source` (rust-core REVIEW5 R2b's

@@ -109,11 +109,20 @@ pub enum DocumentCommand {
         parent_type: String,
         node_id: String,
     },
-    SetProperty {
-        node_type: String,
-        property: String,
-        expected_value: String,
-        value: String,
+    /// A flashcard set's card (the items crate applies it): each side sent
+    /// replaces that side, which must still read as its expected text; a
+    /// side left out and the image stay as the live set holds them (Epo
+    /// 2026-10-21).
+    ReplaceCard {
+        card_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        front: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        back: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_front: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_back: Option<String>,
     },
 }
 
@@ -135,9 +144,10 @@ pub struct EditOutcome {
     pub relocated: Vec<Relocation>,
 }
 
-/// A media block an agent's edit cannot write: an uploaded file
-/// ([crate::material::MEDIA_TYPES]) or an embedded video (the catalog's
-/// elements that require or forbid `assetId`).
+/// A media block: an uploaded file ([crate::material::MEDIA_TYPES]) or an
+/// embedded video (the catalog's elements that require or forbid `assetId`).
+/// An agent's edit may remove or replace one (Epo 2026-10-21) but inserts
+/// none except a library figure ([inserts_media]).
 pub fn media_type(kind: &str) -> bool {
     kind == "video" || crate::material::MEDIA_TYPES.contains(&kind)
 }
@@ -703,18 +713,10 @@ fn run_command(
                     current_block(&block, text),
                 );
             }
-            if has_media(&block) {
-                return edit(
-                    UnsupportedOperation,
-                    "blocks holding media cannot be removed by an edit",
-                );
-            }
-            if editor.root.children.len() == 1 {
-                return edit(
-                    UnsupportedOperation,
-                    "a material must keep at least one block",
-                );
-            }
+            // Media included, and the last block too: the server gives an
+            // emptied note its empty paragraph in the edit's transaction (Epo
+            // 2026-10-21, `repair::emptied`), and the store refuses any other
+            // kind left without its block.
             let before: Vec<String> = editor.root.children[..index]
                 .iter()
                 .map(stable_id)
@@ -740,12 +742,6 @@ fn run_command(
                     StaleTarget,
                     format!("block {block_id} changed"),
                     current_block(&block, text),
-                );
-            }
-            if has_media(&block) {
-                return edit(
-                    UnsupportedOperation,
-                    "blocks holding media cannot be replaced by an edit",
                 );
             }
             let ids: Vec<String> = blocks.iter().map(stable_id).collect();
@@ -815,25 +811,8 @@ fn run_command(
             }
             editor.remove_node(vec![parent_index, at])?;
         }
-        DocumentCommand::SetProperty {
-            node_type,
-            property,
-            expected_value,
-            value,
-        } => {
-            let (node, index) = require_parent(editor, node_type)?;
-            let current = node.get(property).and_then(Value::as_str).unwrap_or("");
-            if current != expected_value {
-                // The value as it is now (a diagram's source), as a stale
-                // block carries its text.
-                return edit_with(
-                    StaleTarget,
-                    format!("{node_type}.{property} changed"),
-                    current_block(&node, current.to_owned()),
-                );
-            }
-            let props = Map::from_iter([(property.clone(), Value::String(value.clone()))]);
-            editor.set_nodes_at(vec![index], &props)?;
+        DocumentCommand::ReplaceCard { .. } => {
+            return edit(UnsupportedOperation, "replace_card edits a flashcard set");
         }
     }
     Ok(())
@@ -911,6 +890,13 @@ pub struct InspectedBlock {
     pub kind: String,
 }
 
+/// A card as inspect shows it and a stale `replace_card` carries it: its
+/// sides as JSON, `{"back":…,"front":…}`, the texts the expected sides
+/// match (Epo 2026-10-21; the sides ran together before).
+pub fn card_text(front: &str, back: &str) -> String {
+    json!({ "back": back, "front": front }).to_string()
+}
+
 /// `inspectMaterial`: top-level blocks with ids and flattened text. Object
 /// values (a quiz question, a chart block) print with sorted keys: the
 /// document keeps no key order for them.
@@ -933,15 +919,24 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                         .iter()
                         .map(|child| {
                             let child_kind = js_string(child.get("type"));
+                            let side = |side: &str| {
+                                children(child)
+                                    .iter()
+                                    .find(|node| js_string(node.get("type")) == side)
+                                    .map_or(Ok(String::new()), node_string)
+                            };
                             Ok(InspectedChild {
                                 id: stable_id(child),
-                                text: if child_kind == "quiz_question" {
-                                    child
+                                text: match child_kind.as_str() {
+                                    "quiz_question" => child
                                         .get("question")
                                         .map(crate::json::stringify)
-                                        .unwrap_or_default()
-                                } else {
-                                    node_string(child)?
+                                        .unwrap_or_default(),
+                                    "flashcard" => card_text(
+                                        &side("flashcard_front")?,
+                                        &side("flashcard_back")?,
+                                    ),
+                                    _ => node_string(child)?,
                                 },
                                 kind: child_kind,
                             })

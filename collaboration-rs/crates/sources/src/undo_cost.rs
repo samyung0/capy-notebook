@@ -50,11 +50,18 @@ pub fn document(command: &DocumentCommand, touched: impl Fn(&str) -> usize) -> u
         DocumentCommand::ReplaceChild { node_id, node, .. } => touched(node_id) + json_len(node),
         DocumentCommand::InsertChild { node, .. } => json_len(node),
         DocumentCommand::RemoveChild { node_id, .. } => touched(node_id),
-        DocumentCommand::SetProperty {
-            expected_value,
-            value,
+        // The card before (both sides) and the sides it writes; what it
+        // expects is not written.
+        DocumentCommand::ReplaceCard {
+            card_id,
+            front,
+            back,
             ..
-        } => expected_value.len() + value.len(),
+        } => {
+            touched(card_id)
+                + front.as_deref().map_or(0, str::len)
+                + back.as_deref().map_or(0, str::len)
+        }
     };
     content.saturating_mul(CONTENT).saturating_add(2 * PIECE)
 }

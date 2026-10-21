@@ -356,10 +356,12 @@ fn node(id: &str, front: &str, back: &str) -> Value {
 fn agent_card_commands_apply_and_undo_in_the_room() {
     let (doc, _) = room(&set_value(&[("c1", "A", "a"), ("c2", "B", "b")]));
     let commands = vec![
-        DocumentCommand::ReplaceChild {
-            parent_type: "flashcards".into(),
-            node_id: "c1".into(),
-            node: node("c1", "A2", "a2"),
+        DocumentCommand::ReplaceCard {
+            card_id: "c1".into(),
+            front: Some("A2".into()),
+            back: Some("a2".into()),
+            expected_front: Some("A".into()),
+            expected_back: Some("a".into()),
         },
         DocumentCommand::InsertChild {
             parent_type: "flashcards".into(),
@@ -405,6 +407,79 @@ fn agent_card_commands_apply_and_undo_in_the_room() {
             ("c1".into(), "A".into(), "a".into()),
             ("c2".into(), "B".into(), "b".into())
         ]
+    );
+}
+
+/// replace_card reads the set as the room holds it (Epo 2026-10-21): typing
+/// in a card since the agent inspected it stays in the side the command
+/// leaves out, and the image stays; a side whose text moved on refuses as
+/// stale with the card's sides as they read now. Fails if the left-out side
+/// is written from anything but the live set (Go filled it from the stored
+/// set, which reverted the typing).
+#[test]
+fn replace_card_keeps_typing_in_the_side_it_leaves_out() {
+    let mut value = set_value(&[("c1", "Osmosis", "Water moves")]);
+    value[0]["children"][0]["image"] = json!({ "assetId": "a1" });
+    let (doc, client) = room(&value);
+    // The agent inspected "Osmosis" / "Water moves"; then a person typed.
+    face(&client, "c1", "back").insert(&mut client.transact_mut(), 11, " in");
+    let typed = diff(&client, &doc);
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&typed).unwrap())
+        .unwrap();
+    let replace = |front: &str| DocumentCommand::ReplaceCard {
+        card_id: "c1".into(),
+        front: Some(front.into()),
+        back: None,
+        expected_front: Some("Osmosis".into()),
+        expected_back: None,
+    };
+    Kind::Flashcards
+        .apply_commands(&mut doc.transact_mut(), &[replace("Osmosis (cells)")])
+        .unwrap();
+    let after = cards(&doc);
+    assert_eq!(
+        (after[0].front.as_str(), after[0].back.as_str()),
+        ("Osmosis (cells)", "Water moves in")
+    );
+    assert_eq!(after[0].image.as_deref(), Some("a1"));
+
+    let stale = Kind::Flashcards.apply_commands(
+        &mut doc.transact_mut(),
+        &[DocumentCommand::ReplaceCard {
+            card_id: "c1".into(),
+            front: None,
+            back: Some("Water crosses".into()),
+            expected_front: None,
+            expected_back: Some("Water moves".into()),
+        }],
+    );
+    match stale {
+        Err(notes::edit::EditError::Edit {
+            code: notes::edit::EditErrorCode::StaleTarget,
+            details: Some(details),
+            ..
+        }) => assert_eq!(
+            details,
+            json!({ "block": {
+                "id": "c1",
+                "text": notes::edit::card_text("Osmosis (cells)", "Water moves in"),
+                "type": "flashcard",
+            } })
+        ),
+        other => panic!("expected a stale refusal, got {other:?}"),
+    }
+    // Sent again, the first command's expected front is stale too.
+    let again = Kind::Flashcards.apply_commands(&mut doc.transact_mut(), &[replace("x")]);
+    assert!(
+        matches!(
+            again,
+            Err(notes::edit::EditError::Edit {
+                code: notes::edit::EditErrorCode::StaleTarget,
+                ..
+            })
+        ),
+        "{again:?}"
     );
 }
 

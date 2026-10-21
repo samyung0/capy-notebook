@@ -99,7 +99,11 @@ import (
 // v34: the live Undo (Epo 2026-10-20): an edit receipt carries effect.undo
 // only when a loaded room holds the edit's Undo, and edit_document and
 // edit_office_document no longer promise one.
-const ContractVersion = 34
+// v35: edit_document loses set_mermaid (a mindmap's or diagram's Mermaid
+// block changes through replace_block), may remove or replace any note
+// block, media included, and replace_card takes expected_front and
+// expected_back, required with the side it replaces (Epo 2026-10-21).
+const ContractVersion = 35
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -451,9 +455,11 @@ func editCommandSchema() map[string]any {
 				"expected_text": text("The block's current text as inspect_document shows it."),
 			}, "block_id", "expected_text"),
 			variant("replace_card", map[string]any{
-				"card_id": str("A side left out stays as it is."),
-				"front":   cardFront(),
-				"back":    cardBack(),
+				"card_id":        str("A side left out stays as it is."),
+				"front":          cardFront(),
+				"back":           cardBack(),
+				"expected_front": text("The card's front as inspect_document shows it; required with front."),
+				"expected_back":  text("The card's back as inspect_document shows it; required with back."),
 			}, "card_id"),
 			variant("add_card", map[string]any{
 				"front":         cardFront(),
@@ -462,10 +468,6 @@ func editCommandSchema() map[string]any {
 			}, "front", "back"),
 			variant("remove_card", map[string]any{"card_id": str("")}, "card_id"),
 			variant("remove_question", map[string]any{"question_id": str("")}, "question_id"),
-			variant("set_mermaid", map[string]any{
-				"expected_source": text("Current mermaid source."),
-				"source":          text("New mermaid source."),
-			}, "expected_source", "source"),
 		},
 	}
 }
@@ -983,9 +985,10 @@ func Definitions() []Definition {
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly; replace_block rewrites a note " +
-				"block with formatting or math. Uploaded media and PDFs cannot be edited; a library " +
-				"figure placed in a note is removed only by the learner. Quiz questions are " +
-				"added and replaced with the question tools.",
+				"block with formatting or math, and a mindmap's or diagram's mermaid block as one " +
+				"```mermaid fence. Any note block may be removed or replaced, media included; " +
+				"the only media an edit adds are library figures. PDFs cannot be edited. Quiz " +
+				"questions are added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{

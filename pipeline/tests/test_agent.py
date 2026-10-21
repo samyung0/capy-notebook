@@ -3004,6 +3004,21 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
     assert tools.without_blanks(
         "create_material", {"kind": "note", "sources": [], "title": "null", "cards": {}}
     ) == {"kind": "note"}
+    # A blank expectation beside its side is one: a card's empty front
+    # (Epo 2026-10-21); without the side it means nothing and goes.
+    card = {"type": "replace_card", "card_id": "c1", "front": "F", "expected_front": ""}
+    assert tools.without_blanks(
+        "edit_document", {"target": edit["target"], "commands": [card]}
+    )["commands"] == [card]
+    assert tools.without_blanks(
+        "edit_document",
+        {
+            "target": edit["target"],
+            "commands": [{**card, "front": None, "back": "B", "expected_back": "b"}],
+        },
+    )["commands"] == [
+        {"type": "replace_card", "card_id": "c1", "back": "B", "expected_back": "b"}
+    ]
 
     # Dispatch hands the handler the cleaned arguments.
     seen = {}

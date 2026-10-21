@@ -1975,6 +1975,41 @@ async def _gateway_read(
     return body if isinstance(body, dict) else {}
 
 
+# How long a chart's, plot's or graph's block an inspection prints as JSON; a
+# longer one is summed up, so inspect pages stay lean (Epo 2026-10-21).
+FIGURE_JSON_CHARS = 1500
+
+
+def _figure_view(printed: str) -> str:
+    """A chart's, plot's or graph's block as inspect_document prints it: its
+    compact JSON without a graph's drawn SVG (``image``), or past
+    FIGURE_JSON_CHARS its type, kind, title, labels and series names."""
+    try:
+        block = json.loads(printed)
+    except ValueError:
+        block = None
+    if not isinstance(block, dict):
+        return printed[:FIGURE_JSON_CHARS]
+    block.pop("image", None)
+    shown = json.dumps(block, ensure_ascii=False, separators=(",", ":"))
+    if len(shown) <= FIGURE_JSON_CHARS:
+        return shown
+    summary = {k: block[k] for k in ("type", "kind", "title") if block.get(k)}
+    labels = block.get("labels") or []
+    if labels:
+        more = [f"… {len(labels) - 12} more"] if len(labels) > 12 else []
+        summary["labels"] = labels[:12] + more
+    series = [s.get("name") for s in block.get("series") or [] if isinstance(s, dict)]
+    if series:
+        summary["series"] = series
+    if block.get("elements"):
+        summary["elements"] = len(block["elements"])
+    return (
+        json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+        + f" (summed up from {len(shown)} characters of JSON)"
+    )
+
+
 def _render_inspection(
     body: dict[str, Any],
     shown: dict[str, tuple[str, str]] | None = None,
@@ -2006,6 +2041,10 @@ def _render_inspection(
             )
         if props.get("source") is not None:
             lines.append(f"    source: {props['source']}")
+        if props.get("block") is not None:
+            lines.append(f"    block: {_figure_view(str(props['block']))}")
+        if props.get("caption"):
+            lines.append(f"    caption: {props['caption']}")
         if props.get("refKind"):
             if props.get("materialId"):
                 lines.append(

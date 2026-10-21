@@ -722,9 +722,10 @@ it by the block's path, top-level or nested (`mermaidSourceText`). A source a ro
 string (written before shape A) becomes a text when an editor first binds it,
 outside every Undo. The Rust server bootstraps sources as texts, reads them as
 their strings in the projection and the metrics, bounds a string typed into
-one by its escaped bytes (no copy of the room per keystroke), and writes an
-agent's `set_mermaid` (`set_property` of `source`) as a text diff, so typing
-that reaches the room meanwhile stays. Its admit lets a text in as `source`
+one by its escaped bytes (no copy of the room per keystroke), and writes the
+source of a block an agent's `replace_block` puts in as a text too (Epo
+2026-10-21: `set_mermaid` is gone, so an agent replaces the whole block and
+typing in the old one meanwhile goes with it). Its admit lets a text in as `source`
 on a `mermaid` block only, with strings and nothing else inside
 (`collaboration-rs/crates/notes/src/limits.rs`): a text under another key or
 on another element, a block retyped while it holds one, and a format, embed,
@@ -1813,7 +1814,9 @@ editor gets in the same flush (`Model::repair_on_entry`,
 `notes::repair::on_entry`, `items::flashcards::repair`): an element's `text`
 and `suggestion` keys are removed, a note left with no block gets an empty
 paragraph with an id of its own (two writers each deleting one of the last
-two blocks leave it so), and a set left with no card, after an update that
+two blocks leave it so; an agent edit removing the last block gets it in its
+own transaction instead, Epo 2026-10-21, so no editor sees the note empty),
+and a set left with no card, after an update that
 deletes, a blank card under a fresh id (a card id is a global key). A key
 held at null is absent to the store as to the catalog and admission (Rust
 `material.rs` and Go `document.go`), so a key set to null and a retype that
