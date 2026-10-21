@@ -22,6 +22,7 @@ import {
   trackItemCloned,
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
+import { emitSyncedCustomization } from '@/theme/customizationEvents';
 import { USE_MSW } from './auth';
 import { api, isApiError, qk } from './client';
 import {
@@ -58,6 +59,7 @@ import type {
   CreateQuizReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
+  Customization,
   DeletionPreflight,
   EditableQuiz,
   FileLinks,
@@ -388,6 +390,16 @@ export function applyNotificationEvent(
       void qc.invalidateQueries({ queryKey: qk.billing });
     return;
   }
+  // A device synced its look (the sender hears it too and finds its own).
+  if (event.type === 'customization') {
+    void qc
+      .fetchQuery({ ...meQuery(), staleTime: 0 })
+      .then((me) => {
+        if (me.customization) emitSyncedCustomization(me.customization);
+      })
+      .catch(() => undefined);
+    return;
+  }
   // The list joins each row's workspace and member for its icon, which a
   // pushed row lacks, so a new notification refetches instead of inserting.
   if (event.type === 'created') {
@@ -667,6 +679,20 @@ export function useSetChatPrefs() {
     },
     onSettled: () =>
       refetchIfLast(qc, qk.me, () => qc.invalidateQueries({ queryKey: qk.me })),
+  });
+}
+
+/** Sync in the Theme drawer: stores this device's look on the account; the
+ * server then tells the user's other tabs and devices to adopt it. */
+export function useSyncCustomization() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (customization: Customization) =>
+      api.put<void>('/me/customization', customization),
+    onSuccess: (_, customization) =>
+      qc.setQueryData<User>(qk.me, (me) =>
+        me ? { ...me, customization } : me
+      ),
   });
 }
 

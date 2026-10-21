@@ -3788,6 +3788,22 @@ export const UpdateMaterialSharingResponse = zod.object({
 /**
  * @summary Current user
  */
+export const getMeResponseCustomizationPageFrameDotsItemXMin = 0;
+export const getMeResponseCustomizationPageFrameDotsItemXMax = 1;
+
+export const getMeResponseCustomizationPageFrameDotsItemYMin = 0;
+export const getMeResponseCustomizationPageFrameDotsItemYMax = 1;
+
+export const getMeResponseCustomizationPageFrameDotsMax = 3;
+
+export const getMeResponseCustomizationPageFrameGrainMin = 0;
+export const getMeResponseCustomizationPageFrameGrainMax = 1;
+
+export const getMeResponseCustomizationPageFrameStrengthMin = 0;
+export const getMeResponseCustomizationPageFrameStrengthMax = 1;
+
+
+
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
@@ -3812,6 +3828,21 @@ export const GetMeResponse = zod.object({
   "chatSendKey": zod.enum(['enter', 'shift_enter']),
   "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
+  "customization": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "pageFrame": zod.object({
+  "colours": zod.enum(['dusk', 'sea', 'meadow', 'rose', 'sunset', 'wheat', 'mist', 'custom']),
+  "dots": zod.array(zod.object({
+  "x": zod.number().min(getMeResponseCustomizationPageFrameDotsItemXMin).max(getMeResponseCustomizationPageFrameDotsItemXMax),
+  "y": zod.number().min(getMeResponseCustomizationPageFrameDotsItemYMin).max(getMeResponseCustomizationPageFrameDotsItemYMax)
+})).min(1).max(getMeResponseCustomizationPageFrameDotsMax).nullable(),
+  "grain": zod.number().min(getMeResponseCustomizationPageFrameGrainMin).max(getMeResponseCustomizationPageFrameGrainMax),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "strength": zod.number().min(getMeResponseCustomizationPageFrameStrengthMin).max(getMeResponseCustomizationPageFrameStrengthMax)
+}),
+  "style": zod.enum(['classroom', 'notion']),
+  "theme": zod.enum(['latte', 'frappe', 'mocha'])
+}).optional(),
   "editorModel": zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
@@ -3852,6 +3883,22 @@ export const UpdateMeBody = zod.object({
   "name": zod.string().min(1).max(updateMeBodyNameMax).describe('Display name')
 })
 
+export const updateMeResponseCustomizationPageFrameDotsItemXMin = 0;
+export const updateMeResponseCustomizationPageFrameDotsItemXMax = 1;
+
+export const updateMeResponseCustomizationPageFrameDotsItemYMin = 0;
+export const updateMeResponseCustomizationPageFrameDotsItemYMax = 1;
+
+export const updateMeResponseCustomizationPageFrameDotsMax = 3;
+
+export const updateMeResponseCustomizationPageFrameGrainMin = 0;
+export const updateMeResponseCustomizationPageFrameGrainMax = 1;
+
+export const updateMeResponseCustomizationPageFrameStrengthMin = 0;
+export const updateMeResponseCustomizationPageFrameStrengthMax = 1;
+
+
+
 export const UpdateMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
@@ -3876,6 +3923,21 @@ export const UpdateMeResponse = zod.object({
   "chatSendKey": zod.enum(['enter', 'shift_enter']),
   "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
+  "customization": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "pageFrame": zod.object({
+  "colours": zod.enum(['dusk', 'sea', 'meadow', 'rose', 'sunset', 'wheat', 'mist', 'custom']),
+  "dots": zod.array(zod.object({
+  "x": zod.number().min(updateMeResponseCustomizationPageFrameDotsItemXMin).max(updateMeResponseCustomizationPageFrameDotsItemXMax),
+  "y": zod.number().min(updateMeResponseCustomizationPageFrameDotsItemYMin).max(updateMeResponseCustomizationPageFrameDotsItemYMax)
+})).min(1).max(updateMeResponseCustomizationPageFrameDotsMax).nullable(),
+  "grain": zod.number().min(updateMeResponseCustomizationPageFrameGrainMin).max(updateMeResponseCustomizationPageFrameGrainMax),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "strength": zod.number().min(updateMeResponseCustomizationPageFrameStrengthMin).max(updateMeResponseCustomizationPageFrameStrengthMax)
+}),
+  "style": zod.enum(['classroom', 'notion']),
+  "theme": zod.enum(['latte', 'frappe', 'mocha'])
+}).optional(),
   "editorModel": zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
@@ -3912,6 +3974,43 @@ export const SetChatPrefsBody = zod.object({
 })
 
 export const SetChatPrefsResponse = zod.void()
+
+
+/**
+ * @summary Sync the app's look to the account
+ */
+export const setCustomizationBodyPageFrameDotsItemXMin = 0;
+export const setCustomizationBodyPageFrameDotsItemXMax = 1;
+
+export const setCustomizationBodyPageFrameDotsItemYMin = 0;
+export const setCustomizationBodyPageFrameDotsItemYMax = 1;
+
+export const setCustomizationBodyPageFrameDotsMax = 3;
+
+export const setCustomizationBodyPageFrameGrainMin = 0;
+export const setCustomizationBodyPageFrameGrainMax = 1;
+
+export const setCustomizationBodyPageFrameStrengthMin = 0;
+export const setCustomizationBodyPageFrameStrengthMax = 1;
+
+
+
+export const SetCustomizationBody = zod.object({
+  "pageFrame": zod.object({
+  "colours": zod.enum(['dusk', 'sea', 'meadow', 'rose', 'sunset', 'wheat', 'mist', 'custom']),
+  "dots": zod.array(zod.object({
+  "x": zod.number().min(setCustomizationBodyPageFrameDotsItemXMin).max(setCustomizationBodyPageFrameDotsItemXMax),
+  "y": zod.number().min(setCustomizationBodyPageFrameDotsItemYMin).max(setCustomizationBodyPageFrameDotsItemYMax)
+})).min(1).max(setCustomizationBodyPageFrameDotsMax).nullable(),
+  "grain": zod.number().min(setCustomizationBodyPageFrameGrainMin).max(setCustomizationBodyPageFrameGrainMax),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "strength": zod.number().min(setCustomizationBodyPageFrameStrengthMin).max(setCustomizationBodyPageFrameStrengthMax)
+}),
+  "style": zod.enum(['classroom', 'notion']),
+  "theme": zod.enum(['latte', 'frappe', 'mocha'])
+})
+
+export const SetCustomizationResponse = zod.void()
 
 
 /**

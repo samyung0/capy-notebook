@@ -6,8 +6,9 @@ import type { AppNotification, FileStatus } from './types';
 export interface NotificationStreamEvent {
   ids?: string[];
   notification?: AppNotification;
-  /** `billing` carries nothing: it asks the tab to refetch billing. */
-  type: 'billing' | 'created' | 'read' | 'removed';
+  /** `billing` and `customization` carry nothing: they ask the tab to
+   * refetch billing, or /api/me and adopt the look another device synced. */
+  type: 'billing' | 'created' | 'customization' | 'read' | 'removed';
 }
 
 export interface IngestEvent {

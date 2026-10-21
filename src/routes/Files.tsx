@@ -31,11 +31,7 @@ import {
   toggleValue,
   useListView,
 } from '@/components/app/ListToolbar';
-import {
-  PageBody,
-  PageHeader,
-  PanelWithInvertedRadius,
-} from '@/components/app/layout';
+import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import type { ColumnSort } from '@/components/app/SortHeader';
 import { Button, ErrorAction } from '@/components/ui/Button';
@@ -87,7 +83,7 @@ export default function Files() {
   const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
 
   return (
-    <PanelWithInvertedRadius
+    <PagePanel
       header={
         <PageHeader
           actions={
@@ -141,7 +137,7 @@ export default function Files() {
           view={view}
         />
       )}
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }
 

@@ -93,7 +93,7 @@ export function AttemptBody({
   onGraded,
   provenance,
   questions,
-  topBar,
+  inApp = false,
   trail,
 }: {
   actions?: ReactNode;
@@ -118,9 +118,9 @@ export function AttemptBody({
   provenance?: Provenance;
   /** Answer-free: the key arrives with the graded attempt. */
   questions: (Question | LearnerQuestion)[];
-  /** The app's top bar. Public pages pass none: their ⋮ stays on every state
+  /** The app's page. Public pages leave it off: their ⋮ stays on every state
    * and the title sits higher, with no label row above it. */
-  topBar?: ReactNode;
+  inApp?: boolean;
   trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
@@ -167,16 +167,15 @@ export function AttemptBody({
 
   // Public pages keep their ⋮ on every state; the app page shows Clone only
   // while taking the quiz.
-  const header = (headerActions = topBar ? undefined : actions) =>
+  const header = (headerActions = inApp ? undefined : actions) =>
     !embedded && (
       <QuizPageHeader
         actions={headerActions}
         byline={byline}
-        className={topBar ? undefined : 'pt-4 sm:pt-2'}
+        className={inApp ? undefined : 'pt-4 sm:pt-2'}
         meta={quizMeta(questions)}
         onBack={onBack}
         title={name}
-        topBar={topBar}
         trail={trail}
       />
     );

@@ -60,7 +60,6 @@
   --top-inset-bar-radius: 8px;
   --top-inset-bar-height: 52px;
   --top-inset-bar-width: 100%;
-  --top-inset-bar-inverted-radius-gap: 12px;
 }
 
 @media (min-width: 1024px) {

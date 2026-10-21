@@ -1,7 +1,7 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useNotificationPrefs, useSetNotificationPrefs } from '@/api/hooks';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { PageHeader, PagePanel } from '@/components/app/layout';
 import { StyleIcon } from '@/components/app/ThemeDrawer';
 import {
   DangerZone,
@@ -196,9 +196,7 @@ export default function Settings() {
   const { tab = 'account' } = useSearch({ from: '/auth-shell/settings' });
 
   return (
-    <PanelWithInvertedRadius
-      header={<PageHeader title={m.profile_menu_settings()} />}
-    >
+    <PagePanel header={<PageHeader title={m.profile_menu_settings()} />}>
       <Tabs
         className="page-tabs-px"
         onChange={(value) => {
@@ -240,6 +238,6 @@ export default function Settings() {
           <AccountTab />
         )}
       </TabContent>
-    </PanelWithInvertedRadius>
+    </PagePanel>
   );
 }

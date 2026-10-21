@@ -3,11 +3,7 @@ import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
 import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
 import { InlineErrorState } from '@/components/app/ErrorState';
-import {
-  PageBody,
-  PageHeader,
-  PanelWithInvertedRadius,
-} from '@/components/app/layout';
+import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import DashboardBanner from '@/components/banners/DashboardBanner';
 import { Button } from '@/components/ui/Button';
@@ -135,7 +131,7 @@ export default function Dashboard() {
     recent.items.length === 0;
   return (
     <>
-      <PanelWithInvertedRadius
+      <PagePanel
         header={
           <PageHeader
             subtitle={m.dashboard_empty_intro()}
@@ -155,7 +151,7 @@ export default function Dashboard() {
             </>
           )}
         </PageBody>
-      </PanelWithInvertedRadius>
+      </PagePanel>
       {CLERK_ACTIVE && <OnboardingDialog />}
       <CloneLinkDialog />
     </>
