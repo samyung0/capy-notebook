@@ -637,6 +637,56 @@ async fn a_reopened_room_replays_its_log_and_folds_it_once_empty() {
     );
 }
 
+/// A stop (SIGTERM, what Docker sends before the compose file's 60 s grace
+/// period) stores every room's unsaved edits before the process exits: a new
+/// server opens the room with the typed text. The debounce here is a minute,
+/// so only the stop's flush can store the edit; fails if the server exits
+/// without it.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stop_stores_each_rooms_unsaved_edits_before_exiting() {
+    let Some(env) = env() else { return };
+    let mut server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_DEBOUNCE_MS", "60000"),
+            ("COLLABORATION_MAX_DEBOUNCE_MS", "60000"),
+        ],
+    )
+    .await;
+    let (user, room, mut client) = writer(&env, server.port, "kept").await;
+    client.type_text(" too").await;
+    client.until(6).await.expect("ack");
+    let signalled = Command::new("kill")
+        .args(["-TERM", &server.child.id().to_string()])
+        .status()
+        .expect("kill");
+    assert!(signalled.success());
+    let mut exited = false;
+    for _ in 0..300 {
+        if server
+            .child
+            .try_wait()
+            .expect("the server's status")
+            .is_some()
+        {
+            exited = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(exited, "the server did not stop");
+    let again = start(&env).await;
+    let mut reader = Client::open(again.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        reader.settle(|c| c.block_text() == "kept too").await,
+        "{}",
+        reader.block_text()
+    );
+}
+
 #[tokio::test]
 async fn refusals_carry_the_reasons_the_editor_acts_on() {
     let Some(env) = env() else { return };
@@ -655,14 +705,11 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
 
 /// The version gate: a JOIN or draft send without the client protocol (a tab
 /// from before the gate), below its family's minimum (`MIN_MATERIAL`,
-/// `MIN_SOURCE`, read from `protocol.rs`), one below the server's own (both
-/// minimums equal it since the rate-limit round: a tab without the
-/// open-slowed notice must reload) or above it (a rollback) is refused as
-/// `collaboration-outdated` before any lookup, in material and source rooms
-/// alike; a refused draft send stores nothing and is counted by family.
-/// The `client_protocol() - 1` rows hold both minimums at `CLIENT_PROTOCOL`:
-/// a later bump that breaks one family only (the other keeps its minimum)
-/// drops the other family's row and its count from the metrics below.
+/// `MIN_SOURCE`, read from `protocol.rs`) or above the server's own (a
+/// rollback) is refused as `collaboration-outdated` before any lookup; one
+/// below the server's own still joins a material room (the DOCX engine round's
+/// pin raised only `MIN_SOURCE`). A refused draft send stores nothing and is
+/// counted by family.
 #[tokio::test]
 async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     let Some(env) = env() else { return };
@@ -674,7 +721,6 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     for protocol in [
         None,
         Some(protocol_constant("MIN_MATERIAL") - 1),
-        Some(client_protocol() - 1),
         Some(client_protocol() + 1),
     ] {
         client.send(0, &join_payload(&room, &write, protocol)).await;
@@ -683,11 +729,7 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     }
     // Before the gateway is asked about a file it does not know.
     let source = "source:file_outdated:epoch:1";
-    for protocol in [
-        None,
-        Some(protocol_constant("MIN_SOURCE") - 1),
-        Some(client_protocol() - 1),
-    ] {
+    for protocol in [None, Some(protocol_constant("MIN_SOURCE") - 1)] {
         client
             .send(
                 0,
@@ -697,6 +739,15 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
         let reason = text_payload(&client.until(2).await.expect("refused"));
         assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
     }
+    let mut previous = Client::open(server.port).await;
+    let protocol = client_protocol() - 1;
+    previous
+        .send(0, &join_payload(&room, &write, Some(protocol)))
+        .await;
+    assert!(
+        previous.until(1).await.is_some(),
+        "protocol {protocol} joins a material room"
+    );
     // The current protocol joins.
     assert_eq!(client.joined(&room, &write).await, 1);
     assert!(client.settle(|c| c.block_text() == "base").await);
@@ -723,8 +774,8 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     );
     let metrics = metrics_text(server.port).await;
     for line in [
-        "capy_collaboration_outdated_refusals_total{family=\"material\"} 5",
-        "capy_collaboration_outdated_refusals_total{family=\"source\"} 3",
+        "capy_collaboration_outdated_refusals_total{family=\"material\"} 4",
+        "capy_collaboration_outdated_refusals_total{family=\"source\"} 2",
         "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1",
     ] {
         assert!(
