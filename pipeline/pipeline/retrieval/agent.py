@@ -1265,10 +1265,13 @@ async def _run_tools(
             "detail": runs[call.id].detail,
             "outcome": result.outcome,
             # A capture keeps its page and box; its image never outlives the turn.
-            "text": f"{image[0]}; the image is not kept, capture it again to see it."
+            "text": f"{image[0]}; the image is not kept."
             if image
             else _result_text(result, []),
         }
+        if call.name in tools.KNOWLEDGE_TOOLS:
+            # A replay runs the call again to check the library still says this.
+            note["args"] = _parse_args(call.arguments)
         if result.passages:
             note["passages"] = [
                 asdict(p)

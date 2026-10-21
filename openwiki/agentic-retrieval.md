@@ -2453,18 +2453,26 @@ keeps what its `retention` contract field says
   `resolve_source_change`.
 
 `agent._run_tools` keeps every call's note as it finishes (name, detail,
-outcome, the result text with its passages beside it; a capture keeps its
-label, page and box, never its image; `read_skill` keeps none). Every
+outcome, the result text with its passages beside it; a capture or a
+`resolve_source_change` image keeps its label, page and box, never its image;
+`read_skill` keeps none; a library search or read also keeps its arguments). Every
 `turn_checkpoint` and every `error` carries all of them; only `done` trims to
 the retention above (`evidence.pack(answered=True)`), unless the turn was
 stopped. A stopped or failed turn never finished its answer, so
 `evidence.history_turns` replays its notes whole into the next message, a
-search's or read's passages revalidated and numbered afresh (citable, and kept
-with that answer if it cites them). Once a later message is answered, every
+search's or read's passages revalidated and numbered afresh like cited ones
+(a passage no longer indexed or in scope replays as unavailable, never its
+stored text; each passage once per turn), citable and kept with that answer if
+it cites them. Once a later message is answered, every
 earlier turn replays trimmed to its tools' retention: the unfinished turn's
 other notes and passages stay on its row but no longer replay. A carried
 library note (`search_knowledge`, `read_knowledge`, `capture_knowledge_page`)
-replays only with the Library on, like library excerpts.
+replays only with the Library on, like library excerpts, and a carried search
+or read runs again first (`evidence._library_current`, as
+`library_evidence.history_parts` reads a retained excerpt again): it replays
+only while the library returns the same text, so a book withheld or
+republished since replays as changed or unavailable. A search re-run costs one
+query embedding and rerank.
 
 Result retention was added in contract version 3. Every tool must declare a policy; the policy is
 internal and is not a model argument. Live results stay exact until live

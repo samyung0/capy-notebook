@@ -2268,6 +2268,147 @@ async def test_once_the_next_message_is_answered_the_stopped_turn_is_trimmed(
     assert "Mitosis has four phases." not in replayed and not ctx.citations
 
 
+async def test_a_stopped_turns_trashed_passage_never_reaches_the_next_prompt(
+    monkeypatch,
+):
+    """Security regression (review retention-round M3): a carried passage is
+    checked against the current index like a cited one, so the text of a
+    passage no longer indexed (its file trashed) is never replayed."""
+    evidence = await _stopped_evidence(monkeypatch)
+
+    async def _rows(workspace, ids):
+        assert workspace == "ws_1"
+        return (
+            [{**asdict(_READ), "id": _READ.chunk_id}] if _READ.chunk_id in ids else []
+        )
+
+    monkeypatch.setattr(agent.evidence.store, "history_passages", _rows)
+    ctx = ToolContext(workspace_id="ws_1")
+    out = await agent.evidence.history_turns(_after_stop(evidence), ctx)
+    replayed = "\n".join(m["content"] for m in out)
+
+    assert "Historical passage s1 in file f_1 is no longer available" in replayed
+    assert _SEARCHED.text not in replayed
+    assert _READ.text in replayed and [p.chunk_id for p in ctx.citations] == ["r1"]
+
+
+async def test_a_passage_both_searched_and_read_replays_once(monkeypatch):
+    _current(monkeypatch)
+    snapshot = asdict(_SEARCHED)
+    evidence = {
+        "tools": [
+            {"name": "search_workspace", "detail": "", "outcome": "succeeded"}
+            | {"text": "", "passages": [snapshot]},
+            {"name": "read_document", "detail": "", "outcome": "succeeded"}
+            | {"text": "", "passages": [snapshot]},
+        ]
+    }
+    out = await agent.evidence.history_turns(
+        _after_stop(evidence), ToolContext(workspace_id="ws_1")
+    )
+    assert sum(_SEARCHED.text in m["content"] for m in out) == 1
+
+
+async def test_a_stopped_turns_captures_keep_their_record_not_their_image(
+    monkeypatch,
+):
+    client = agent.ClientDrop()
+
+    async def _run(name, args, ctx):
+        call_id = args["_tool_call_id"]
+        label = {
+            "capture_page": "capture_page result 1: bio.pdf page 1",
+            "resolve_source_change": "resolve_source_change result: change c of file f_1",
+        }[name]
+        ctx.pending_images[call_id] = (label, "data:image/jpeg;base64,AA==")
+        if name == "resolve_source_change":
+            client.stop()
+        return ToolResult(text_parts=["The image is attached to the next message."])
+
+    calls = [
+        _call("capture_page", '{"file_id":"f_1","page":1}', "k1"),
+        _call("resolve_source_change", '{"file_id":"f_1","change_id":"c"}', "k2"),
+    ]
+    _stop_turn(monkeypatch, [_assembled("", calls)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    evidence = events[-1]["toolEvidence"]
+
+    assert [n["text"] for n in evidence["tools"]] == [
+        "capture_page result 1: bio.pdf page 1; the image is not kept.",
+        "resolve_source_change result: change c of file f_1; the image is not kept.",
+    ]
+    assert "base64" not in json.dumps(evidence)
+
+
+def _carried_library(name: str, text: str) -> dict:
+    return {
+        "name": name,
+        "detail": "",
+        "outcome": "succeeded",
+        "text": text,
+        "args": {"excerpt_id": "ex_1"},
+    }
+
+
+async def test_a_carried_library_read_replays_only_while_the_library_agrees(
+    monkeypatch,
+):
+    """As a retained excerpt is read again: a book withheld since the stopped
+    turn does not replay its text (review retention-round L2)."""
+    library_now: dict[str, str | None] = {"text": "Sondheim lyric"}
+
+    async def _read(args, ctx):
+        assert args == {"excerpt_id": "ex_1"} and ctx.library
+        if library_now["text"] is None:
+            return tools._refused("read_knowledge: unknown excerpt 'ex_1'")
+        return ToolResult(text_parts=[library_now["text"]])
+
+    spec = replace(tools.REGISTRY["read_knowledge"], handler=_read)
+    monkeypatch.setitem(tools.REGISTRY, "read_knowledge", spec)
+    evidence = {"tools": [_carried_library("read_knowledge", "Sondheim lyric")]}
+
+    async def _replayed() -> str:
+        ctx = ToolContext(
+            workspace_id="ws_1", library=True, operations=frozenset({"library.read"})
+        )
+        out = await agent.evidence.history_turns(_after_stop(evidence), ctx)
+        return "\n".join(m["content"] for m in out)
+
+    assert "Sondheim lyric" in await _replayed()
+    library_now["text"] = None  # the book's work was withheld
+    replayed = await _replayed()
+    assert "Sondheim lyric" not in replayed
+    assert "read_knowledge result changed or is unavailable" in replayed
+
+
+async def test_carried_library_results_need_the_library_on(monkeypatch):
+    async def _search(args, ctx):
+        return ToolResult(text_parts=["[ex_1] Cells, page 4"])
+
+    spec = replace(tools.REGISTRY["search_knowledge"], handler=_search)
+    monkeypatch.setitem(tools.REGISTRY, "search_knowledge", spec)
+    evidence = {
+        "tools": [
+            _carried_library("search_knowledge", "[ex_1] Cells, page 4"),
+            _carried_library(
+                "capture_knowledge_page", "Cells page 4; the image is not kept."
+            ),
+        ]
+    }
+    on = ToolContext(
+        workspace_id="ws_1", library=True, operations=frozenset({"library.read"})
+    )
+    off = ToolContext(workspace_id="ws_1")
+
+    def _text(out: list[dict]) -> str:
+        return "\n".join(m["content"] for m in out)
+
+    with_library = _text(await agent.evidence.history_turns(_after_stop(evidence), on))
+    without = _text(await agent.evidence.history_turns(_after_stop(evidence), off))
+    assert "[ex_1] Cells, page 4" in with_library and "Cells page 4;" in with_library
+    assert "Cells" not in without
+
+
 async def test_the_office_tools_stay_offered_after_a_dropped_office_inspection(
     monkeypatch,
 ):
