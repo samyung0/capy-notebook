@@ -8,6 +8,7 @@ import * as Y from 'yjs';
 import { setHeld } from './held';
 import type { NoteSeat, SeatedRoom } from './noteSeat';
 import { MAX_UPDATE_BYTES, splitUpdate } from './pieces';
+import { type PresenceConnection, readPresence } from './presence';
 import {
   joinPayload,
   type Message,
@@ -37,6 +38,8 @@ export interface RoomProviderConfig {
   onDestroy?: () => void;
   /** The socket dropped or the room was left. */
   onDisconnect?: () => void;
+  /** The room's other editors (`presence.ts`); none once the channel ends. */
+  onPresence?: (connections: PresenceConnection[]) => void;
   /** The room's answer waits on the user's open budget (many large opens
    * lately): joined and still loading, not offline (true); or that wait
    * ended with its channel, closed or parked unsynced (false). */
@@ -121,6 +124,8 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private slowedOpen = false;
   /** An update over the server's cap: no more joins. */
   private stopped = false;
+  /** The room's presence reported others since the channel joined. */
+  private presence = false;
   private readonly config: RoomProviderConfig;
   private readonly socket: CollabSocket;
   private channel: number | null = null;
@@ -235,6 +240,13 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     void this.sendJoin(channel);
   }
 
+  /** The page went idle (`idle.ts`, Epo 2026-10-20): the channel ends with
+   * no close or drop reported, and the room joins again when the socket
+   * opens on the next input or focus. */
+  onSleep() {
+    if (this.channel !== null) this.endChannel();
+  }
+
   onSocketClose() {
     if (this.channel === null) return;
     this.endChannel();
@@ -293,6 +305,12 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
             }
             return;
           }
+        }
+        const presence = readPresence(event);
+        if (presence) {
+          this.presence = presence.length > 0;
+          this.config.onPresence?.(presence);
+          return;
         }
         if (event.includes(TIMEOUT_TYPE)) {
           const notice = JSON.parse(event) as {
@@ -509,6 +527,10 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       (client) => client !== this.document.clientID
     );
     if (remote.length) removeAwarenessStates(this.awareness, remote, this);
+    if (this.presence) {
+      this.presence = false;
+      this.config.onPresence?.([]);
+    }
     if (wasJoined) this.noteSeat?.ended();
     if (wasSynced) this.config.onSynced?.({ state: false });
     // A parked room's slowed line goes with its channel (r6 N-4).

@@ -17,6 +17,10 @@ import {
   itemSaveState,
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
+import {
+  type PresenceConnection,
+  useReportPresence,
+} from '@/features/collaboration/presence';
 import type { UndoTarget } from '@/features/collaboration/undo';
 import {
   LOCAL_EDIT,
@@ -71,6 +75,7 @@ import { textLength } from '@/lib/textLength';
 export default function MermaidMaterialEditor({
   kind,
   materialId,
+  onPresenceChange,
   onReadOnly,
   onStatusChange,
   provenance,
@@ -83,6 +88,8 @@ export default function MermaidMaterialEditor({
    * drops to View. */
   onReadOnly: (code?: ReadOnlyCode) => void;
   onStatusChange: (status: NoteEditorStatus | null) => void;
+  /** The room's other editors, for the header's avatar group. */
+  onPresenceChange?: (connections: PresenceConnection[] | null) => void;
   title: string;
 }) {
   const qc = useQueryClient();
@@ -98,6 +105,7 @@ export default function MermaidMaterialEditor({
     onStatusChange(saveState ? { saveState } : null);
   }, [snapshot.status, snapshot.recovery, snapshot.offline, onStatusChange]);
   useEffect(() => () => onStatusChange(null), [onStatusChange]);
+  useReportPresence(onPresenceChange, snapshot.presence);
   useEffect(() => {
     if (snapshot.access === 'read')
       onReadOnly(snapshot.readOnlyCode ?? undefined);

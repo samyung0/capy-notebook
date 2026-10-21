@@ -59,6 +59,18 @@ pub struct Context {
     pub viewer: bool,
     /// The token's note, for an embedded quiz or set.
     pub parent: Option<String>,
+    /// Who the connection is, as the signed token says: the room's presence
+    /// and cursor labels show only this (Epo 2026-10-20). Boxed: a channel
+    /// holds its context.
+    pub identity: Box<Identity>,
+}
+
+/// A connection's verified name and avatar, from its token's claims (Go
+/// bounds both); nothing about its device (Epo 2026-10-20, privacy).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Identity {
+    pub name: Option<String>,
+    pub avatar_url: Option<String>,
 }
 
 impl From<&Claims> for Context {
@@ -70,6 +82,10 @@ impl From<&Claims> for Context {
             user_id: claims.sub.clone(),
             viewer: false,
             parent: claims.parent.clone(),
+            identity: Box::new(Identity {
+                name: claims.name.clone(),
+                avatar_url: claims.avatar_url.clone(),
+            }),
         }
     }
 }

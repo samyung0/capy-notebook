@@ -36,6 +36,7 @@ import {
   recoveryDocument,
 } from '@/lib/editDrafts';
 import type { NoteSeat } from './noteSeat';
+import { NO_PRESENCE, type PresenceConnection } from './presence';
 import { RoomProvider, type RoomProviderConfig } from './roomProvider';
 import { type UndoTarget, undoTarget } from './undo';
 import { markUnsent } from './unsentItems';
@@ -88,6 +89,8 @@ export interface ItemRoomSnapshot {
     | 'outdated'
     | 'outdated-unstored'
   > | null;
+  /** The room's other editors (`presence.ts`), for the header. */
+  presence: PresenceConnection[];
   /** Why the room is read-only for this writer, when it said (a block
    * this version cannot edit). */
   readOnlyCode: ReadOnlyCode | null;
@@ -170,6 +173,7 @@ export class ItemRoom {
     access: null,
     listsVersion: 0,
     offline: null,
+    presence: NO_PRESENCE,
     readOnlyCode: null,
     recovery: null,
     slowed: false,
@@ -334,6 +338,7 @@ export class ItemRoom {
         }
         this.refused();
       },
+      onPresence: (presence) => this.set({ presence }),
       onSlowed: (slowed) =>
         slowed ? this.slowed() : this.set({ slowed: false }),
       onStateless: ({ payload }) => this.stateless(payload),
@@ -763,6 +768,7 @@ const INITIAL: ItemRoomSnapshot = {
   access: null,
   listsVersion: 0,
   offline: null,
+  presence: NO_PRESENCE,
   readOnlyCode: null,
   recovery: null,
   slowed: false,

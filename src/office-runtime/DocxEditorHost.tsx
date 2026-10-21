@@ -1,3 +1,8 @@
+import {
+  type CollaborationPeer,
+  type CollaborationPresence,
+  resolvePresenceColor,
+} from '@betteroffice/docx/collaboration';
 import { configureDefaultFonts } from '@betteroffice/docx/layout';
 import { setGoogleFontsEnabled } from '@betteroffice/docx/utils';
 import {
@@ -7,7 +12,7 @@ import {
   type DocxMenuModel,
   type DocxPagesPresentedDetail,
 } from '@betteroffice/docx-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
@@ -22,6 +27,7 @@ import type {
   OfficeFlusher,
 } from './officeCollaboration';
 import { officeFonts, onOfficeFontFailure } from './officeFonts';
+import { type CursorChannel, mappedPeers } from './officePresence';
 import {
   canvasPage,
   type OfficeMenuReporter,
@@ -35,6 +41,46 @@ import { readViewToggle, writeViewToggle } from './viewToggles';
 configureDefaultFonts({ fonts: officeFonts });
 // Fonts come only from Capy's own assets: no fonts.googleapis.com lookup.
 setGoogleFontsEnabled(false);
+
+/** The DOCX editor's presence over the frame's cursor channel: co-editors
+ * under the names Capy gives them, in the editor's clock (performance.now). */
+function docxPresence(channel: CursorChannel): CollaborationPresence {
+  const peers = mappedPeers(channel, (peer): CollaborationPeer | null => {
+    if (!('story' in peer.cursor)) return null;
+    const shift = performance.now() - Date.now();
+    return {
+      clientId: peer.clientId,
+      clock: 0,
+      cursor: {
+        anchor: Uint8Array.from(peer.cursor.anchor),
+        head: Uint8Array.from(peer.cursor.head),
+        story: peer.cursor.story,
+      },
+      cursorMovedAt: peer.movedAt + shift,
+      inferredCursor: null,
+      lastSeenAt: peer.seenAt + shift,
+      user: {
+        color: resolvePresenceColor(peer.clientId, undefined),
+        name: peer.name,
+      },
+    };
+  });
+  return {
+    onPeers: (listener) => channel.subscribe(() => listener(peers())),
+    get peers() {
+      return peers();
+    },
+    setCursor: (cursor, broadcast) =>
+      channel.send(
+        cursor && {
+          anchor: [...cursor.anchor],
+          head: [...cursor.head],
+          story: cursor.story,
+        },
+        broadcast
+      ),
+  };
+}
 
 export function DocxEditorHost({
   bytes,
@@ -85,6 +131,13 @@ export function DocxEditorHost({
 }) {
   const editorRef = useRef<DocxEditorRef>(null);
   const hostRef = useRef<HTMLDivElement>(null);
+  const editorCollaboration = useMemo(
+    () => ({
+      ...collaboration,
+      presence: docxPresence(collaboration.cursors),
+    }),
+    [collaboration]
+  );
   // View › Show ruler, one choice per person for every DOCX file.
   const [ruler, setRuler] = useState(() => readViewToggle('docxRuler'));
   const setRulerShown = useCallback((shown: boolean) => {
@@ -156,7 +209,7 @@ export function DocxEditorHost({
         // only from View › Show comments or a new comment.
         autoOpenComments={!compact}
         className="office-editor-host"
-        collaboration={collaboration}
+        collaboration={editorCollaboration}
         colorMode={colorMode}
         // The note toolbar's palette, as PPTX and the notes pick colours.
         colorPalette={DOCUMENT_COLORS}

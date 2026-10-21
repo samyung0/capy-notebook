@@ -168,7 +168,6 @@ export function SourceBanners({
   readOnly = false,
   reloading,
   replaced,
-  slowed = false,
   storageFull,
 }: {
   actions: FileBannerAction[];
@@ -182,16 +181,11 @@ export function SourceBanners({
   readOnly?: boolean;
   reloading: boolean;
   replaced: boolean;
-  /** The edit session's open waits on the user's open budget: after 5 s a
-   * strip says so while the file loads. */
-  slowed?: boolean;
   /** The file's payer is at its storage limit, so it opens view-only. */
   storageFull?: StorageFullBy;
 }) {
-  const slowedLine = useSlowedLine(slowed);
   return (
     <>
-      {slowedLine && <FileBanner message={m.editor_open_slowed()} />}
       {storageFull ? (
         <StorageFullBanner by={storageFull} />
       ) : (
