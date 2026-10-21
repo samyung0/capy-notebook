@@ -38,12 +38,31 @@ async function errorCode(provider: string, response: Response) {
     .join('/');
 }
 
+/** Tries for a Stripe 429. Test-clock objects are briefly locked while Stripe
+ * advances the clock (`lock_timeout`), and a 429 is a request Stripe did not
+ * process. This is the journey harness talking to Stripe, not a user-facing
+ * endpoint a user retries, so AGENTS.md's no-retry rule does not apply. */
+const STRIPE_TRIES = 3;
+
 async function providerJSON(url: URL, init: RequestInit, provider: string) {
-  const response = await fetch(url, {
-    ...init,
-    redirect: 'error',
-    signal: AbortSignal.timeout(30_000),
-  });
+  let response: Response;
+  for (let attempt = 1; ; attempt++) {
+    response = await fetch(url, {
+      ...init,
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (
+      provider !== 'Stripe' ||
+      response.status !== 429 ||
+      attempt === STRIPE_TRIES
+    )
+      break;
+    await response.body?.cancel();
+    const after = Number(response.headers.get('retry-after'));
+    const wait = after > 0 ? Math.min(after * 1000, 5000) : 1500;
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
   // Provider bodies can contain addresses, tokens and signed links. Keep errors
   // bounded to the status and, for Stripe, its error type and code.
   if (!response.ok)
