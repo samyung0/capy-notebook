@@ -1290,7 +1290,6 @@
   "editor_ai_reject": "Reject",
   "editor_ai_accept": "Accept",
   "editor_ai_generated_changes": "Generated block changes",
-  "editor_ai_target_removed": "The text this suggestion was for was removed from the note",
   "editor_ai_accept_failed": "The suggestion could not be added to the note",
   "editor_ai_not_ready": "The collaborative document is not ready",
   "editor_copy_code": "Copy code",

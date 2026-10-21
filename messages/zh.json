@@ -1290,7 +1290,6 @@
   "editor_ai_reject": "拒绝",
   "editor_ai_accept": "接受",
   "editor_ai_generated_changes": "已生成块更改",
-  "editor_ai_target_removed": "此建议对应的内容已从笔记中删除",
   "editor_ai_accept_failed": "无法将此建议添加到笔记中",
   "editor_ai_not_ready": "协作文档尚未就绪",
   "editor_copy_code": "复制代码",

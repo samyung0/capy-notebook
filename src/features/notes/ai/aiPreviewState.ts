@@ -114,27 +114,35 @@ function plainParagraph(node: Descendant): node is TElement {
   );
 }
 
-/** The preview's targets as the document reads now; throws when one left it. */
-function liveTargets(editor: PlateEditor, preview: AiLocalPreview) {
-  const range =
-    preview.kind === 'edit' && preview.targetRange
+/**
+ * The preview's targets as the document reads now, or null when the text it
+ * was for was removed entirely: an edit range whose block left the document
+ * or whose text is all gone, an insert's block, every table cell. A table
+ * cell removed alone is skipped.
+ */
+function liveTargets(
+  editor: PlateEditor,
+  preview: AiLocalPreview
+): { after?: Path; cells: (Path | null)[]; range?: Range } | null {
+  if (preview.kind === 'edit') {
+    const range = preview.targetRange
       ? liveSlateRange(editor as PlateEditor & YjsEditor, preview.targetRange)
       : null;
-  const after =
-    preview.kind === 'insert' && preview.insertAfterId
+    if (!range || (RangeApi.isCollapsed(range) && preview.originalText)) {
+      return null;
+    }
+    return { cells: [], range };
+  }
+  if (preview.kind === 'insert') {
+    const after = preview.insertAfterId
       ? findPath(editor.children, preview.insertAfterId)
       : null;
+    return after ? { after, cells: [] } : null;
+  }
   const cells = (preview.tableUpdates ?? []).map(({ id }) =>
     findPath(editor.children, id)
   );
-  if (
-    (preview.kind === 'edit' && !range) ||
-    (preview.kind === 'insert' && !after) ||
-    cells.some((path) => !path)
-  ) {
-    throw new CopyError(m.editor_ai_target_removed());
-  }
-  return { after, cells: cells as Path[], range };
+  return cells.some(Boolean) ? { cells } : null;
 }
 
 /**
@@ -235,20 +243,26 @@ function deleteRange(
  * Writes the preview over its target as the target reads now, whatever
  * changed there since the preview (Epo 2026-10-21). It is applied once, by
  * local operations that slate-yjs sends in one transaction with its local
- * origin, so Undo reverts it in one step. A target whose block left the
- * document, or an answer with nothing to write, writes nothing and throws.
- * False when the preview was rejected or replaced while it was converted.
+ * origin, so Undo reverts it in one step. When the text it was for was
+ * removed entirely, the preview is dropped with no message (Epo 2026-10-21):
+ * the removal is already visible. An answer with nothing to write throws.
+ * True once the preview is done with (written or dropped); false when it was
+ * rejected or replaced while it was converted.
  */
 export async function applyAiPreview(editor: PlateEditor) {
   const preview = getAiPreview(editor);
   if (!preview) return false;
   const yjs = editor as PlateEditor & YHistoryEditor;
   if (!yjs.sharedRoot?.doc) throw new CopyError(m.editor_ai_not_ready());
+  const drop = () => {
+    setAiPreview(editor, null);
+    return true;
+  };
   // Earlier typing is sent first: the targets resolve against the room, and
   // the accept is an Undo step of its own.
   YjsEditor.flushLocalChanges(yjs);
   // Checked before the conversion too, which creates a fence's row.
-  liveTargets(editor, preview);
+  if (!liveTargets(editor, preview)) return drop();
 
   const nodes =
     preview.kind === 'table'
@@ -264,21 +278,22 @@ export async function applyAiPreview(editor: PlateEditor) {
     })
   );
   if (getAiPreview(editor) !== preview) return false;
+  const targets = liveTargets(editor, preview);
+  if (!targets) return drop();
   if (preview.kind !== 'table' && nodes.length === 0) {
     throw new CopyError(m.editor_ai_accept_failed());
   }
-  const { after, cells: cellPaths, range } = liveTargets(editor, preview);
 
   YjsEditor.flushLocalChanges(yjs);
   yjs.undoManager.stopCapturing();
   editor.tf.withoutNormalizing(() => {
-    if (range) writeOverRange(editor, range, nodes);
-    if (after) editor.tf.insertNodes(nodes, { at: PathApi.next(after) });
+    if (targets.range) writeOverRange(editor, targets.range, nodes);
+    if (targets.after) {
+      editor.tf.insertNodes(nodes, { at: PathApi.next(targets.after) });
+    }
     cells.forEach((children, index) => {
-      editor.tf.replaceNodes(children, {
-        at: cellPaths[index],
-        children: true,
-      });
+      const at = targets.cells[index];
+      if (at) editor.tf.replaceNodes(children, { at, children: true });
     });
   });
   YjsEditor.flushLocalChanges(yjs);

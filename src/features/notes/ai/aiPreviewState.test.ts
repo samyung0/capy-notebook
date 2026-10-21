@@ -190,17 +190,48 @@ describe('applyAiPreview', () => {
     await applyAiPreview(editor);
     const cells = (room()[0].children[0] as TElement).children as TElement[];
     expect(cells.map((node) => NodeApi.string(node))).toEqual(['', 'dos']);
+
+    // A cell removed alone is skipped; the others are written.
+    setAiPreview(editor, {
+      kind: 'table',
+      originalText: '',
+      proposedText: '',
+      tableUpdates: [
+        { content: 'gone', id: 'c9' },
+        { content: 'tres', id: 'c2' },
+      ],
+    });
+    await expect(applyAiPreview(editor)).resolves.toBe(true);
+    const after = (room()[0].children[0] as TElement).children as TElement[];
+    expect(after.map((node) => NodeApi.string(node))).toEqual(['', 'tres']);
   });
 
-  it('writes nothing when the previewed block was removed', async () => {
+  // Epo 2026-10-21: the removal is already visible, so no message.
+  it('drops the suggestion when the text it was for was removed', async () => {
     const { edit, editor, texts } = roomEditor([
       paragraph('p1', 'gone'),
-      paragraph('p2', 'kept'),
+      paragraph('p2', 'kept text'),
     ]);
     setAiPreview(editor, edit('replacement', 0, 4));
     editor.tf.removeNodes({ at: [0] });
-    await expect(applyAiPreview(editor)).rejects.toThrow();
-    expect(texts(editor.children as TElement[])).toEqual(['kept']);
+    await expect(applyAiPreview(editor)).resolves.toBe(true);
+    expect(getAiPreview(editor)).toBeNull();
+    expect(texts(editor.children as TElement[])).toEqual(['kept text']);
+
+    // Its block stays but all of its text is gone.
+    setAiPreview(editor, {
+      ...edit('replacement', 0, 4),
+      originalText: 'kept',
+    });
+    editor.tf.delete({
+      at: {
+        anchor: { offset: 0, path: [0, 0] },
+        focus: { offset: 4, path: [0, 0] },
+      },
+    });
+    await expect(applyAiPreview(editor)).resolves.toBe(true);
+    expect(getAiPreview(editor)).toBeNull();
+    expect(texts(editor.children as TElement[])).toEqual([' text']);
   });
 
   it('keeps whole blocks with their type, properties and Yjs text', async () => {
@@ -308,9 +339,7 @@ describe('applyAiPreview', () => {
     setAiPreview(editor, edit(QUIZ_FENCE, 0, 4));
     editor.tf.removeNodes({ at: [0] });
     vi.mocked(resolveImported).mockClear();
-    await expect(applyAiPreview(editor)).rejects.toThrow(
-      m.editor_ai_target_removed()
-    );
+    await expect(applyAiPreview(editor)).resolves.toBe(true);
     expect(resolveImported).not.toHaveBeenCalled();
   });
 });

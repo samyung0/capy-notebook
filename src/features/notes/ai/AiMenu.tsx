@@ -320,8 +320,8 @@ export function AiMenu() {
                 onClick={() => {
                   setAccepting(true);
                   applyAiPreview(editor)
-                    .then((applied) => {
-                      if (!applied) return;
+                    .then((done) => {
+                      if (!done) return;
                       setPreviewError(null);
                       editor.getApi(AIChatPlugin).aiChat.hide();
                     })

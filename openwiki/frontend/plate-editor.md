@@ -2468,13 +2468,15 @@ preview (Epo 2026-10-21, no stale check):
   transaction of its own origin, which slate-yjs read as remote and applied a
   second time, and Undo never saw.
 
-A target whose block left the document (the edit range's block, the insert's
-block or a table cell) writes nothing: the menu keeps the preview and shows
-"The text this suggestion was for was removed from the note". It is checked
-before the conversion as well as after it, so a refused Accept creates no
-fence rows. An answer that converts to no nodes (a lone fence whose row could
-not be created) also writes nothing and shows "The suggestion could not be
-added to the note". Reject is disabled while Accept converts, and a preview
+When the text a suggestion was for was removed entirely (the edit range's
+block left the document or all of its text is gone, the insert's block is
+gone, every updated table cell is gone), Accept drops the suggestion and
+closes the menu with no message, since the removal is already visible (Epo
+2026-10-21); a table cell removed alone is skipped and the others are written.
+The targets are checked before the conversion as well as after it, so a
+dropped Accept creates no fence rows. An answer that converts to no nodes (a
+lone fence whose row could not be created) writes nothing and shows "The
+suggestion could not be added to the note". Reject is disabled while Accept converts, and a preview
 replaced meanwhile (a new command) is not written. The command's range is
 unhung first (`commandRange` in `aiMenuState.ts`), so a Shift+Down selection
 neither inserts below nor edits the next block.
