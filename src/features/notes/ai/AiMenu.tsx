@@ -304,6 +304,7 @@ export function AiMenu() {
             )}
             <div className="flex justify-end gap-1">
               <Button
+                disabled={accepting}
                 onClick={() => {
                   setAiPreview(editor, null);
                   setPreviewError(null);
@@ -319,7 +320,8 @@ export function AiMenu() {
                 onClick={() => {
                   setAccepting(true);
                   applyAiPreview(editor)
-                    .then(() => {
+                    .then((applied) => {
+                      if (!applied) return;
                       setPreviewError(null);
                       editor.getApi(AIChatPlugin).aiChat.hide();
                     })

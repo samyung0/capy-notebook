@@ -7,13 +7,10 @@ import {
   useChatChunk,
 } from '@platejs/ai/react';
 import { serializeMd, stripMarkdown } from '@platejs/markdown';
-import {
-  BlockSelectionPlugin,
-  CursorOverlayPlugin,
-} from '@platejs/selection/react';
+import { CursorOverlayPlugin } from '@platejs/selection/react';
 import { slateRangeToRelativeRange, type YjsEditor } from '@slate-yjs/core';
 import { RangeApi, type TElement } from 'platejs';
-import { type PlateEditor, useEditorRef, usePluginOption } from 'platejs/react';
+import { useEditorRef, usePluginOption } from 'platejs/react';
 import { useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';
 import { useCreateMaterialDiscussion } from '@/api/hooks';
@@ -26,7 +23,7 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { llmKeyUserMessage } from '@/lib/errors';
 import { useEditorRuntime } from '../EditorRuntime';
-import { openAiMenu } from './aiMenuState';
+import { commandRange, openAiMenu } from './aiMenuState';
 import { getAiPreview, setAiPreview } from './aiPreviewState';
 import {
   AiAnchorElement,
@@ -132,14 +129,6 @@ function usePlateChat(workspaceId: string) {
   }, [editor]);
 
   return stableChatRef.current;
-}
-
-/** What a command acts on: the selected blocks, else the selection the
- * menu opened with. */
-function commandRange(editor: PlateEditor) {
-  const blocks = editor.getApi(BlockSelectionPlugin).blockSelection.getNodes();
-  if (blocks.length > 0) return editor.api.nodesRange(blocks) ?? null;
-  return editor.getOption(AIChatPlugin, 'chatSelection') ?? editor.selection;
 }
 
 function createAiChatPlugin(workspaceId: string) {

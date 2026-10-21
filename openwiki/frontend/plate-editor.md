@@ -2449,11 +2449,19 @@ preview (Epo 2026-10-21, no stale check):
   markdown import (`importMarkdownDocument`, as a pasted file: URL images
   upload, quiz and flashcards fences become rows first), so it lands as
   formatted nodes;
-- an edit selects its relative range and inserts the nodes as a paste
-  (Plate's table and code-block `insertFragment` ignore `at`); a range
-  covering a whole block gives the first new block that block's id, keeping
-  its comments; an insert goes after its block; a table update replaces the
-  cell's children, keeping the cell;
+- an edit whose answer keeps the range's block count in plain paragraphs
+  (Improve, Grammar and the like) replaces each covered block's text in
+  place, so every block keeps its type, list, alignment, id and Yjs text (a
+  peer's concurrent typing elsewhere in the block and comment highlights in
+  it survive; the adapter sends no marker for indent lists or h4-h6, so the
+  model answers those in plain text);
+- any other edit deletes the range, its void blocks (images, embeds,
+  dividers) whole, and inserts the nodes there as a paste (Plate's table and
+  code-block `insertFragment` ignore `at`); when the range covered a whole
+  block, a plain first paragraph takes that block's type, properties and id,
+  and any other first block keeps the model's shape with the block's id;
+- an insert goes after its block; a table update replaces the cell's
+  children, keeping the cell, and a cell the model emptied is written empty;
 - the operations are local, and slate-yjs sends them in one transaction with
   its local origin, so they apply once and `Y.UndoManager` records one step
   (capture stopped before and after). The old code wrapped the flush in a
@@ -2462,7 +2470,14 @@ preview (Epo 2026-10-21, no stale check):
 
 A target whose block left the document (the edit range's block, the insert's
 block or a table cell) writes nothing: the menu keeps the preview and shows
-"The text this suggestion was for was removed from the note".
+"The text this suggestion was for was removed from the note". It is checked
+before the conversion as well as after it, so a refused Accept creates no
+fence rows. An answer that converts to no nodes (a lone fence whose row could
+not be created) also writes nothing and shows "The suggestion could not be
+added to the note". Reject is disabled while Accept converts, and a preview
+replaced meanwhile (a new command) is not written. The command's range is
+unhung first (`commandRange` in `aiMenuState.ts`), so a Shift+Down selection
+neither inserts below nor edits the next block.
 
 Copilot ghost text remains plugin-local and continues in the note's language.
 Generate/comment replies follow the account locale injected by the gateway; edits

@@ -29,3 +29,15 @@ export function openAiMenu(
   editor.getApi(AIChatPlugin).aiChat.show();
   editor.setOption(AIChatPlugin, 'chatSelection', selection);
 }
+
+/** What a command acts on: the selected blocks, else the selection the menu
+ * opened with, unhung (a Shift+Down selection ends at the next block's
+ * start, which is not part of it). */
+export function commandRange(editor: PlateEditor) {
+  const blocks = editor.getApi(BlockSelectionPlugin).blockSelection.getNodes();
+  const range =
+    blocks.length > 0
+      ? editor.api.nodesRange(blocks)
+      : (editor.getOption(AIChatPlugin, 'chatSelection') ?? editor.selection);
+  return range ? editor.api.unhangRange(range) : null;
+}

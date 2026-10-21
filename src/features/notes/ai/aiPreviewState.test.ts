@@ -6,18 +6,29 @@ import {
   YjsEditor,
   yTextToSlateElement,
 } from '@slate-yjs/core';
-import { NodeApi, type TElement } from 'platejs';
+import { NodeApi, type Point, type TElement } from 'platejs';
 import { createPlateEditor } from 'platejs/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { StaticMaterialKit } from '@/features/materials/staticPlugins';
+import { m } from '@/i18n';
 import { noteMarkdownPlugin } from '../markdown';
+import { resolveImported } from '../pendingRefs';
 import { stableElementIdsPlugin } from '../stableElementIds';
 import {
   type AiLocalPreview,
   applyAiPreview,
+  getAiPreview,
   setAiPreview,
 } from './aiPreviewState';
+
+// Spied to see whether fence rows were created; the real one runs.
+vi.mock('../pendingRefs', async (original) => {
+  const actual = await original<typeof import('../pendingRefs')>();
+  return { ...actual, resolveImported: vi.fn(actual.resolveImported) };
+});
+
+const QUIZ_FENCE = ['```quiz', 'questions: []', '```'].join('\n');
 
 /** A Plate editor bound to a Yjs room as the note editor is (YjsPlugin first,
  * its stable ids, the note's markdown rules), with Yjs Undo. */
@@ -39,26 +50,36 @@ function roomEditor(value: TElement[]) {
   const room = () => yTextToSlateElement(root).children as TElement[];
   const texts = (nodes: TElement[]) =>
     nodes.map((node) => NodeApi.string(node));
+  const over = (
+    proposedText: string,
+    anchor: Point,
+    focus: Point
+  ): AiLocalPreview => ({
+    kind: 'edit',
+    originalText: '',
+    proposedText,
+    targetRange: slateRangeToRelativeRange(root, yjs, { anchor, focus }),
+  });
   const edit = (
     proposedText: string,
     anchor: number,
     focus: number,
     path = [0, 0]
-  ): AiLocalPreview => ({
-    kind: 'edit',
-    originalText: '',
-    proposedText,
-    targetRange: slateRangeToRelativeRange(root, yjs, {
-      anchor: { offset: anchor, path },
-      focus: { offset: focus, path },
-    }),
-  });
-  return { edit, editor: yjs, room, texts };
+  ) => over(proposedText, { offset: anchor, path }, { offset: focus, path });
+  return { edit, editor: yjs, over, room, texts, ydoc };
 }
 
 const paragraph = (id: string, text: string): TElement => ({
   children: [{ text }],
   id,
+  type: 'p',
+});
+
+const listItem = (): TElement => ({
+  children: [{ text: 'item text' }],
+  id: 'l1',
+  indent: 1,
+  listStyleType: 'disc',
   type: 'p',
 });
 
@@ -155,6 +176,20 @@ describe('applyAiPreview', () => {
     ]);
     expect(second).toEqual(cell('c2', 'two'));
     expect(editor.undoManager.undoStack).toHaveLength(1);
+
+    // A cell the model emptied is written empty; the others still change.
+    setAiPreview(editor, {
+      kind: 'table',
+      originalText: '',
+      proposedText: '',
+      tableUpdates: [
+        { content: '', id: 'c1' },
+        { content: 'dos', id: 'c2' },
+      ],
+    });
+    await applyAiPreview(editor);
+    const cells = (room()[0].children[0] as TElement).children as TElement[];
+    expect(cells.map((node) => NodeApi.string(node))).toEqual(['', 'dos']);
   });
 
   it('writes nothing when the previewed block was removed', async () => {
@@ -166,5 +201,116 @@ describe('applyAiPreview', () => {
     editor.tf.removeNodes({ at: [0] });
     await expect(applyAiPreview(editor)).rejects.toThrow();
     expect(texts(editor.children as TElement[])).toEqual(['kept']);
+  });
+
+  it('keeps whole blocks with their type, properties and Yjs text', async () => {
+    const { editor, over, room, ydoc } = roomEditor([
+      listItem(),
+      {
+        align: 'center',
+        children: [{ text: 'Old title' }],
+        id: 'h',
+        type: 'h2',
+      },
+    ]);
+    // A peer types at the heading's end while the answer is accepted.
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(ydoc));
+    const [, heading] = peer.get('content', Y.XmlText).toDelta() as {
+      insert: Y.XmlText;
+    }[];
+    heading.insert.insert(9, '!');
+
+    // Both blocks, as a block selection gives them, answered without the
+    // list marker or the heading's ## (the adapter sends neither).
+    setAiPreview(
+      editor,
+      over(
+        'Better item\n\nNew title',
+        { offset: 0, path: [0, 0] },
+        { offset: 9, path: [1, 0] }
+      )
+    );
+    await applyAiPreview(editor);
+    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(peer), 'room');
+
+    const [item, title] = room();
+    expect(item).toEqual({
+      ...listItem(),
+      children: [{ text: 'Better item' }],
+    });
+    expect(title).toMatchObject({ align: 'center', id: 'h', type: 'h2' });
+    // The peer's typing stays (on either side: concurrent inserts order by
+    // client id).
+    expect(NodeApi.string(title).replace('!', '')).toBe('New title');
+    expect(NodeApi.string(title)).toContain('!');
+    expect(editor.undoManager.undoStack).toHaveLength(1);
+  });
+
+  it('gives a plain first paragraph the shape of the whole block it replaces', async () => {
+    const { edit, editor, room } = roomEditor([listItem()]);
+    setAiPreview(editor, edit('First\n\nSecond', 0, 9));
+    await applyAiPreview(editor);
+    expect(room()[0]).toEqual({ ...listItem(), children: [{ text: 'First' }] });
+    expect(room().map((node) => NodeApi.string(node))).toEqual([
+      'First',
+      'Second',
+    ]);
+  });
+
+  it('writes over a range that ends on a void block', async () => {
+    const { editor, over, texts } = roomEditor([
+      paragraph('p1', 'text'),
+      { children: [{ text: '' }], id: 'hr', type: 'hr' } as TElement,
+      paragraph('p2', 'after'),
+    ]);
+    setAiPreview(
+      editor,
+      over(
+        'Rewritten',
+        { offset: 0, path: [0, 0] },
+        { offset: 0, path: [1, 0] }
+      )
+    );
+    await expect(applyAiPreview(editor)).resolves.toBe(true);
+    expect(texts(editor.children as TElement[])).toEqual([
+      'Rewritten',
+      'after',
+    ]);
+  });
+
+  it('refuses an answer with nothing to write and keeps the preview', async () => {
+    const { edit, editor, texts } = roomEditor([paragraph('p1', 'kept')]);
+    // A fence whose row cannot be created leaves no nodes.
+    const preview = edit(QUIZ_FENCE, 0, 4);
+    setAiPreview(editor, preview);
+    await expect(applyAiPreview(editor)).rejects.toThrow(
+      m.editor_ai_accept_failed()
+    );
+    expect(texts(editor.children as TElement[])).toEqual(['kept']);
+    expect(getAiPreview(editor)).toBe(preview);
+  });
+
+  it('writes nothing once the preview was rejected while it was converted', async () => {
+    const { edit, editor, texts } = roomEditor([paragraph('p1', 'kept')]);
+    setAiPreview(editor, edit('replaced', 0, 4));
+    const accepting = applyAiPreview(editor);
+    setAiPreview(editor, null);
+    await expect(accepting).resolves.toBe(false);
+    expect(texts(editor.children as TElement[])).toEqual(['kept']);
+  });
+
+  it('creates no fence rows for a target that was removed', async () => {
+    const { edit, editor } = roomEditor([
+      paragraph('p1', 'gone'),
+      paragraph('p2', 'kept'),
+    ]);
+    setAiPreview(editor, edit(QUIZ_FENCE, 0, 4));
+    editor.tf.removeNodes({ at: [0] });
+    vi.mocked(resolveImported).mockClear();
+    await expect(applyAiPreview(editor)).rejects.toThrow(
+      m.editor_ai_target_removed()
+    );
+    expect(resolveImported).not.toHaveBeenCalled();
   });
 });
