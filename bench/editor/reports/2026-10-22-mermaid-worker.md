@@ -55,3 +55,22 @@ The worker carries its own mermaid build, so the emitted JS grows by about
 worker's mermaid instead of the page's, plus DOMPurify on the page (11 KB);
 the page's mermaid loads only for "Draw diagram" or an export of such a type.
 No bundle budget exists in `bench/editor` or the editor perf checks.
+
+## Editor perf budgets
+
+`pnpm bench:editor` on this branch: the near-limit open cost, small-note
+typing and near-limit typing and save cycle pass. The near-limit scroll
+budget (average FPS over 38 at 4x) does not: 22.7-31.9 FPS over four runs,
+against 42.5-44.7 for main at de8c1c627 run the same way on this PC. With
+diagrams kept from drawing it scores 45.8-46.1, and with the diagram drawn
+on the page instead of the worker 32.8-33.9.
+
+The load-test note's one diagram sits more than a screen below the top, so
+it now draws during the measured scroll, not while the note opens: the
+worker starts and loads mermaid (about 4 s in the dev build), then the page
+sanitizes and inserts the SVG. In this harness (a Vite dev build with MSW)
+the worker's module requests pass through MSW's service worker, which asks
+the page about each one, so the long frames during the scroll are mostly
+MSW's message handlers. In a separate probe of the same scroll (its own
+frame count, not the budget's), the rate went from 34 to over 100 frames a
+second when the diagram had drawn before the scroll started.
