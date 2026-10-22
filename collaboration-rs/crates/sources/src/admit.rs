@@ -312,13 +312,15 @@ enum Parent {
 
 /// [Slot] of a decoded entry as yrs integrates it. Its left is its origin,
 /// or the last unit the room holds of its client when the room holds its
-/// first units (`UpdateBlocks::exclude` splits those off), and its right is
-/// its right origin; a side reads as absent when the room collected it or yrs
-/// drops it. Its type is the one it names, else its left's, else its right's
-/// (`Update::repair`); its key is its left's, else its right's, else its own
-/// (`TransactionMut::integrate_item`). The update's entries it refers to are
-/// placed first, each once (`slots`), without recursion; a reference cycle (an
-/// unheld update, never checked) reads as absent.
+/// first units (`BlockSet::exclude` splits those off), and its right is its
+/// right origin; a side reads as absent when the room collected it, or when it
+/// is an update entry with no type to land in (a type the update creates is
+/// taken as placed). Its type is the one it names, else its left's, else its
+/// right's (`Update::missing_dependency`); its key is its left's, else its
+/// right's, else its own (`TransactionMut::integrate_item`). The update's
+/// entries it refers to are placed first, each once (`slots`), without
+/// recursion; a reference cycle (an unheld update, never checked) reads as
+/// absent.
 fn slot_of<T: ReadTxn>(
     txn: &T,
     state: &StateVector,
@@ -796,6 +798,14 @@ mod tests {
             .id()
     }
 
+    /// The item holding a slide's notes value.
+    fn notes_entry(doc: &Doc, id: &str) -> ID {
+        *BranchPtr::from(slide(doc, id).as_ref())
+            .entry_item(NOTES_KEY)
+            .unwrap()
+            .id()
+    }
+
     /// The code points slide s1's notes would hold with `update` applied (to
     /// a copy of the room).
     fn s1_notes_after(room: &Doc, update: &[u8]) -> usize {
@@ -863,6 +873,81 @@ mod tests {
             60,
             0,
             &[(None, None, s1, Some("zzz"), &["x", long.as_str()])],
+        );
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review r2 L1): with no
+    // left, or a left the room collected, an entry takes its map and key from
+    // its right origin. yrs places it before that map's value, so it never
+    // shows, but it is held to the cap there all the same.
+    #[test]
+    fn an_entry_with_no_left_takes_its_map_and_key_from_its_right_origin() {
+        let room = two_slides();
+        let slides = room.get_or_insert_map("pptx:slides");
+        let s3 = slides.insert(&mut room.transact_mut(), "s3", MapPrelim::default());
+        s3.insert(&mut room.transact_mut(), NOTES_KEY, "gone");
+        let collected = notes_entry(&room, "s3");
+        slides.remove(&mut room.transact_mut(), "s3");
+        assert!(room.transact().store().get_item(&collected).is_none());
+        let (s1, s1_notes) = (slide_holder(&room, "s1"), notes_entry(&room, "s1"));
+        let long = "n".repeat(4001);
+        for (client, left) in [(50, None), (51, Some(collected))] {
+            let update = crafted(
+                client,
+                0,
+                &[(left, Some(s1_notes), s1, None, &[long.as_str()])],
+            );
+            assert_eq!(s1_notes_after(&room, &update), "short".len());
+            assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+        }
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review r2 L1): an entry
+    // re-sent from a held unit in slide 2's notes, naming slide 1, lands in
+    // slide 1's map as its notes (yrs deletes slide 2's value), so it is held
+    // to slide 1's notes, not to slide 2's over-cap upload.
+    #[test]
+    fn an_entry_naming_its_map_is_held_there_not_at_its_lefts() {
+        let room = two_slides();
+        let client = Doc::with_client_id(60);
+        apply(&client, &encode(&room, &StateVector::default()));
+        let upload = delta(&client, || {
+            slide(&client, "s2").insert(&mut client.transact_mut(), NOTES_KEY, "o".repeat(5000));
+        });
+        apply(&room, &upload);
+        let long = "n".repeat(4001);
+        let s1 = slide_holder(&room, "s1");
+        let update = crafted(
+            60,
+            0,
+            &[(None, None, s1, Some("zzz"), &["o", long.as_str()])],
+        );
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review r2 L1): a chain
+    // of the update's own entries carries the key: a keyless entry in slide
+    // 1's map, one after it before slide 2's notes (slide 1's notes, as shape
+    // a), then the long one after that, which becomes slide 1's notes.
+    #[test]
+    fn a_chain_of_the_updates_entries_carries_the_key() {
+        let room = two_slides();
+        let s1 = slide_holder(&room, "s1");
+        let s2_notes = notes_entry(&room, "s2");
+        let keyless = ID::new(ClientID::new(50), 0);
+        let first = ID::new(ClientID::new(50), 1);
+        let long = "n".repeat(4001);
+        let update = crafted(
+            50,
+            0,
+            &[
+                (None, None, s1, None, &["L"]),
+                (Some(keyless), Some(s2_notes), s1, None, &["first"]),
+                (Some(first), None, s1, None, &[long.as_str()]),
+            ],
         );
         assert_eq!(s1_notes_after(&room, &update), 4001);
         assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
