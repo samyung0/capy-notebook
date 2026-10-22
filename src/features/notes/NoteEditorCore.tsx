@@ -115,7 +115,6 @@ import {
   afterPaint,
   dropComposedText,
   holdModel,
-  keepsReadingPlace,
   type NoteView,
   pauseEdits,
 } from './roomSwap';
@@ -446,8 +445,6 @@ const NoteEditorContent = memo(function NoteEditorContent({
 const scrollSelectionIntoView: NonNullable<
   React.ComponentProps<typeof PlateContent>['scrollSelectionIntoView']
 > = (editor, domRange) => {
-  // A swapped-in note keeps the reader's place until they act in it.
-  if (keepsReadingPlace(editor)) return;
   const block = domRange.startContainer.parentElement?.closest(
     '[data-slate-void="true"]'
   );

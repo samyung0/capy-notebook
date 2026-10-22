@@ -91,26 +91,6 @@ function pointIn(editor: PlateEditor, point: BlockPoint) {
     : null;
 }
 
-/** Editors that keep a restored reading place: Slate does not scroll their
- * selection into view until the reader acts in them (NoteEditorCore's
- * `scrollSelectionIntoView`). */
-const keptPlaces = new WeakSet<object>();
-
-export const keepsReadingPlace = (editor: object) => keptPlaces.has(editor);
-
-/** What the reader does to act in a note, as opposed to reading it. */
-const ACTING = ['beforeinput', 'keydown', 'pointerdown'];
-
-function keepReadingPlace(editor: PlateEditor, scrollArea: HTMLElement) {
-  keptPlaces.add(editor);
-  const release = () => {
-    keptPlaces.delete(editor);
-    for (const type of ACTING)
-      scrollArea.removeEventListener(type, release, true);
-  };
-  for (const type of ACTING) scrollArea.addEventListener(type, release, true);
-}
-
 /** Puts the selection (and the focus) back where its blocks still exist,
  * then the same block at the same height, else the same scroll offset: the
  * reading place wins over the caret (review M2), as in a DOCX. */
@@ -121,7 +101,6 @@ export function restoreNotePosition(view: NoteView, position: NotePosition) {
   const focus =
     editor && position.selection && pointIn(editor, position.selection.focus);
   if (editor && anchor && focus) {
-    keepReadingPlace(editor, scrollArea);
     editor.tf.select({ anchor, focus });
     if (position.focused) editor.tf.focus();
   }

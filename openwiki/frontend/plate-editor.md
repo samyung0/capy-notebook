@@ -1917,11 +1917,9 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
   (`captureNotePosition`/`restoreNotePosition`): first the selection by
   top-level block id plus path and offset, focus too when the paused editor
   still held it, then the first top-level block under the scroll box's top
-  edge at the same offset (else the old scroll offset). The reading place
-  wins over the caret: Slate does not scroll the restored selection into view
-  until the reader acts in the note (a key, a pointer, an input;
-  `keepsReadingPlace` in `NoteEditorCore`'s `scrollSelectionIntoView`). Yjs
-  ids are never used: a compaction gives the room new ones.
+  edge at the same offset (else the old scroll offset), last, so the
+  reading place wins over the caret. Yjs ids are never used: a compaction
+  gives the room new ones.
 
 A hidden tab swaps at once (no paused phase; a tab that hides meanwhile
 swaps then). A phone (below sm) holds one renderer: the paused view is
