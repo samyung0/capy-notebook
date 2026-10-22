@@ -4263,8 +4263,10 @@ they changed, from the paragraph mark before them; a commit no command
 followed (an Undo) drops it. docx-edit keeps each story's segment index in
 step the same way for every edit, the agent's or a person's
 (`segments.rs`, `follow_commit`), so no command reads a whole story again
-(speed round 2026-10-22: 50 commands of each type take 0.9 to 1.6 s on
-10,000 paragraphs and 0.2 to 0.35 s on 2,000).
+(speed round 2026-10-22: a call of one command type, 50 commands or that
+type's per-call limit (20 replace_text, insert_paragraph or delete_paragraph,
+30 format_text), takes 0.9 to 1.6 s on 10,000 paragraphs and 0.2 to 0.35 s
+on 2,000).
 It holds 50 commands and, per
 format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
