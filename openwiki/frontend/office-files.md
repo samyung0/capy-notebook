@@ -1718,12 +1718,18 @@ end: typing at the cap changes nothing and keeps the caret, and a paste, drop
 or autocorrect keeps what fits with the caret after it. The label's row then
 shows "Speaker notes hold at most 4,000 characters per slide." (`notes.tooLong`
 in pptx-i18n, English and Chinese; role `alert`, in the error colour of the
-XLSX refusal line) until an input fits again, so the slide keeps its size. An
+XLSX refusal line) until an input fits again. From 3,600 code points (90% of
+the cap) the same row ends in an x/4,000 counter (`NOTES_COUNT_FROM`; Epo
+2026-10-22), copied from Capy's `CharCount` in `src/components/ui/Input.tsx`:
+muted, in the error colour at or over the cap. Both sit on the label's row, so
+the slide keeps its size. An
 IME composition that would pass the cap is shown but not sent until it ends,
 then cut the same way (cutting it while the IME holds it would break the
 composition); one that fits is sent as it goes. Notes already over the cap,
-from an uploaded deck (uploads get no special handling), may shrink or be
-retyped to the same length, never grow. The server refuses an update that
+from an uploaded deck (uploads get no special handling, Epo 2026-10-22), may
+shrink or be retyped to the same length, never grow, and an Undo that would
+bring such notes back is refused like any growth (the editor goes to
+recovery). The server refuses an update that
 grows a slide's notes past the cap (see the root rule below), so no client
 gets around the panel.
 
