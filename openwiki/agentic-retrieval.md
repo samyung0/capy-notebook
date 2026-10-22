@@ -3390,12 +3390,13 @@ build, and the knowledge library is one more source while the switch is on.
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
-| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
+| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX pages its paragraph entries as `inspect_document` paged them (its scoped read is phase 3), and a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX: `set_list`, `insert_table`, `delete_table`, `format_text`, `set_alignment`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
+
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3565,7 +3566,18 @@ read's paragraph styles. Version 36 (2026-10-21) creates Word files, makes
 `insert_table`, `delete_table`, `format_text` and `set_alignment`, reads
 headers, footers and notes with lists, table cells and `locked` marks, and
 lists in its description the engine's per-call limits (one table, a
-limit per command kind), the rest returned unapplied. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+limit per command kind), the rest returned unapplied. Version 37
+(2026-10-22) drops `set_mermaid` (a mindmap's or diagram's Mermaid block
+changes through `replace_block`, expecting its source), lets
+`edit_document` remove or replace any note block, media included, keeps a
+rewritten block's caption and width (a diagram's theme too; a swapped
+picture brings its own), and gives `replace_card`
+`expected_front` and `expected_back`. Version 38 (2026-10-22) reads a
+PPTX by slide (its slides with their layouts and first shapes; one
+slide's shapes and paragraphs, paged together, with its speaker notes)
+and adds `set_shape_text`, `add_slide`, `delete_slide` (naming the
+notes), `move_slide` and `add_text_box`, with PPTX `format_text` and
+`set_alignment`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3749,8 +3761,14 @@ playground's write stubs run the same code.
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,
 `replace_card`, `add_card`, `remove_card`, `replace_question`, `add_question`,
-`remove_question`, `set_mermaid` for Plate materials; `replace_text` for
-text sources) and applied by the collaboration service on an isolated Y.Doc.
+`remove_question` for Plate materials; `replace_text` for text sources) and
+applied by the collaboration service on an isolated Y.Doc. A mindmap or
+diagram takes `replace_block` only: its one Mermaid block is rewritten from a
+```` ```mermaid ```` fence with a new id, like a note's block (Epo 2026-10-21,
+`set_mermaid` removed), expecting the source and keeping the caption and
+width (Epo 2026-10-22, below). Go refuses (`invalid_input`) markdown that converts to anything but
+that one mermaid block, and library figures for these kinds, since their
+editor and viewer draw only the mermaid block (review r1 M1).
 `edit_office_document` commands go through the same route with `office: true`
 and Go's `normalizeOfficeCommands` (Office tools, below). The agent's `edit_document` schema offers
 `remove_question` but not `add_question` or `replace_question`, which only the
@@ -3759,9 +3777,19 @@ question tools send; inspecting a quiz lists `remove_question` and names
 `textOperations` for a text source), and a command refused for its target's
 kind names it the same way: "replace_text does not apply to a quiz;
 supported: remove_question, (add or replace questions with add_questions)"
-(`kindRefusal`, Epo 2026-10-21). A `replace_card` keeps the side it is not sent
-and the card's image, from the set's stored document (`ExtractFlashcards`; a
-card the set does not hold needs both sides). `insert_markdown` after block
+(`kindRefusal`, Epo 2026-10-21). A `replace_card` sends Rust only the sides it
+replaces, each with what it expects there (`expected_front` with `front`,
+`expected_back` with `back`, else `invalid_input` from Go); the items crate
+reads the card from the set as the live room holds it, so a side left out and
+the card's image keep typing made since the inspection, and a side it replaces
+whose text moved on refuses as `stale_target` with the card's sides as they
+read now; the sides are separate targets, so only a replaced side is held to
+its expected text and typing on the other side never makes the edit stale
+(Epo 2026-10-22)
+(`DocumentCommand::ReplaceCard`, `items::flashcards::apply_commands`; Epo
+2026-10-21, the stored set the gateway filled sides from lagged typing).
+The pipeline keeps a blank `expected_front` or `expected_back` beside a sent
+side (`contract.drop_blanks`): an empty side is an expectation. `insert_markdown` after block
 `"end"` appends after the note's last block: no block holds that id, so the
 collaboration server lands it at the end (the gone-anchor rule, 2026-10-09)
 and the pipeline leaves that relocation out of the receipt. The receipt of a
@@ -3814,8 +3842,21 @@ that it took the step (`ServiceEdit.taken`), the server stores
 which never sets the ref). An edit of a file or material no room has loaded
 gets no Undo: nothing opens or holds a room for it, and its receipt shows
 none. A room that loaded after the edit committed already holds its items and
-takes no step either. An edit may
-not remove or replace a block holding media.
+takes no step either. An edit may remove or replace any note block, media
+included (an image, a placed library figure, audio, a YouTube video; Epo
+2026-10-21): the next projection trashes an asset no block references, like a
+person's deletion, and the Undo's children pass and projection restore it. It
+inserts no media but a library figure (`inserts_media`). An edit that removes
+a note's last block gets one empty paragraph in its own transaction
+(`repair::emptied` in `compute`), so no editor sees the note empty and its
+Undo takes the paragraph out again. An agent Undo or Redo that would leave a
+note with no block (a person deleted the rest meanwhile) gets the paragraph
+too, in a transaction of its own outside the step's reverse, so the chat Undo
+succeeds and a Redo neither fails nor takes the paragraph out (Epo 2026-10-22,
+`agent_undo` in `room.rs`). Only notes: a mindmap or diagram takes
+`replace_block` alone, whose blocks are never empty, and the store's check
+refuses one left without its Mermaid block; items keep their own rules
+(`remove_card` keeps a set's last card, `remove_question` may empty a quiz).
 `inspect_document` reads what the editors see (Epo 2026-10-13): the
 stored state with this replica's live room merged in, a quiz's keys room
 too, as an edit reads it (`inspect_material` in
@@ -3864,7 +3905,10 @@ counts both sides:
   before the edit) and an XLSX value or grid: its bytes times `CONTENT` (3);
 - an insert (a replacement text, inserted blocks, a card or question): its
   text or JSON times `CONTENT`, plus a `PIECE` (160 bytes) for each run or
-  block it splits at either end;
+  block it splits at either end. A `replace_block` rewrite also writes the
+  old block's caption and width (`keep_caption`), part of the replaced block
+  already counted, so the Redo stays under the estimate (a long caption kept
+  on a small new block measures 3.0 in the server's `edits.rs` ratio test);
 - formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
 - XLSX structure: a `PIECE` per inserted or deleted row or column (a delete
   writes an axis change; the cells stay in Yjs), a new sheet's name and 4
@@ -3880,8 +3924,16 @@ counts both sides:
   (`numPr`, `listIsBullet`, `listNumFmt`, `listMarker`) write, a deleted
   paragraph's text and mark (its format markers stay where they are), a
   deleted table's embed and cell stories whole (with the tables in its
-  cells), and a deleted sheet's key in the sheet order; a command whose
-  Undo only deletes what it wrote measures nothing. `undo_cost::office`
+  cells), a deleted sheet's key in the sheet order, the text and marks of
+  the shape a PPTX `set_shape_text` rewrites, and a deleted slide whole
+  (its entry and notes, its shapes and their stories, its comments, read
+  from that slide alone); a command whose Undo only deletes what it wrote
+  measures nothing. Two PPTX commands add, read after they apply, what
+  they wrote, which their Redo re-creates and the command alone cannot
+  size (the Editor 2026-10-22): `add_slide` the slide whole (its layout's
+  placeholders; review H1) and `set_shape_text` the shape's story whole
+  (each paragraph takes its runs' formatting, a start and an end marker a
+  key; review M3). `undo_cost::office`
   takes those bytes times `CONTENT` and an `ITEM` (33 bytes: the most the
   fixtures sent beyond content was 22 bytes an item, plus half again) an
   item, plus what the command writes itself: a replacement's text and 3
@@ -3891,11 +3943,18 @@ counts both sides:
   paragraph, a paragraph or table delete 1; a paragraph insert's text and
   style times `CONTENT` and 8 `PIECE`s (the new mark, a copy of its
   anchor's properties: a list item's measured 837 bytes, and the run it
-  splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8. On the
-  fixtures (lesson.docx and .pptx, paragraphs of 5-character runs and of
-  one run a character, 1x1 to 10x10 tables) every DOCX and PPTX command
-  over-estimates 1.4 to 7.4 times, and the calibration fails one past 10
-  times (`CEILING`), so an ordinary 50-command call keeps its Undo.
+  splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8;
+  `set_shape_text` its paragraphs' text and 2 items a paragraph plus 2,
+  `add_text_box` the same and 12 `PIECE`s (the shape entry), `move_slide`
+  the slide's id and 2 items, `delete_slide` 1 item, `add_slide` its
+  layout's path and 1 item (its id in the slide order). On the fixtures
+  (lesson.docx and .pptx, paragraphs of 5-character runs and of one run a
+  character, 1x1 to 50x10 tables, a slide on each of lesson.pptx's 11
+  layouts and on a layout of nine text placeholders with 200-character
+  names, 50 short paragraphs over a run of six formats) every DOCX and PPTX
+  command over-estimates 1.4 to 7.4 times, and the calibration fails one
+  past 10 times (`CEILING`), so an ordinary 50-command call keeps its
+  Undo.
 
 A new command adds its rule there; both matches are exhaustive, so it does
 not compile without one. The factors were
@@ -4005,7 +4064,7 @@ A read reaches Go's `/api/internal/documents/inspect` with an `office` query
 (`sheet`, `range`, `start`, `count`, `slide`); for XLSX Go forwards
 `{sheet, range}` and for DOCX `{start, count}` (Go's `pageCount` sends 60 for a count
 outside 1 to 200) as the collaboration inspect body's `office` and passes the engine's
-`scoped` answer through unchanged, and PPTX pages its existing entries. An edit reaches `/api/internal/documents/edit` with
+`scoped` answer through unchanged, and for PPTX `{start, count}` with `slide` when one is read. An edit reaches `/api/internal/documents/edit` with
 `office: true`, where only an Office source takes it and
 `normalizeOfficeCommands` turns each command into the engine's JSON (type
 snake_case, fields camelCase, `format_cells`' flat fields into its `style`
@@ -4069,17 +4128,80 @@ build and store.
 
 The collaboration server runs both on the engine's Background lane: its
 inspect route answers an `office` query with the engine's scoped read
-(`inspect_scoped`, XLSX and DOCX; a range over 2,000 cells or a DOCX count
-outside 1 to 200, which only a direct caller can send, is refused like an
-edit, with its sentence), and
+(`inspect_scoped`; a range over 2,000 cells, a DOCX or PPTX count outside 1
+to 200 or a slide number outside the deck, which only a direct caller can
+send, is refused like an edit, with its sentence), and
 `/internal/documents/create` seeds the committed starter
 (`crates/office-service/starters/blank.xlsx`, Excel's blank workbook, or
 `blank.docx`, python-docx's default template, in the fork), applies the
 commands and exports at a fixed time with a seed from the request, so a
 retried create gives the same bytes. The engine has every XLSX command above
 (`crates/office-service/src/xlsx.rs`) and every DOCX one
-(`crates/office-service/src/docx/agent.rs`); PPTX's scoped read and new
-commands are phase 3.
+(`crates/office-service/src/docx/agent.rs`), and every PPTX one
+(`crates/office-service/src/pptx/agent.rs`).
+
+Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
+expected_text, paragraphs}` replaces a shape's whole text, `expected_text`
+being its paragraphs joined by line breaks (`stale_target` with
+`details.block {type: "shape", text}` when it differs) and `paragraphs`
+the new text, strings without line breaks within `limits.json`'s
+`shapeText` (50 paragraphs and 5,000 characters, as for `add_text_box`;
+`cmd/openapi` writes them into both schemas and into the contract's
+`officeShapeText`, which the office_building skill reads; review L2); the paragraphs it keeps keep their properties (level,
+bullet, alignment) and take their first run's formatting, added ones
+continue the last, and fewer ones join into the last kept one. A table's
+cells are refused (they are edited by paragraph), as are a shape with no
+text (a picture, a shape without a text body) and an equation's text.
+`add_slide {after_slide?, before_slide?, layout?}` puts a slide right
+after or before a slide (at most one; neither: last) on `layout` (a layout
+part path the read lists; an unknown one is `unavailable_target`),
+by default the layout of the slide it follows, else of the one it
+precedes; it gives the slide its layout's title, subtitle, body and
+content placeholders (not date, footer, slide number, header, picture,
+chart, table or media ones) as empty text shapes tied to them by a copy of
+the layout's `p:ph` (type, orientation, size, index), at the layout's box,
+else the master's (a placeholder with neither is refused): pptx-edit
+`DeckSession::add_layout_placeholders`, saved by the PPTX writer's new
+`ShapeAdd.placeholder` (`p:nvPr/p:ph` on the added shape, with its box
+written out), so the shapes inherit the layout's text formatting in
+PowerPoint and in the editor. A deck made by `create_deck` has one blank
+layout, so its new slides are empty and `add_text_box {slide_id,
+paragraphs, x, y, w, h}` puts text on them: a text box at a box in points
+from the slide's top left corner, refused unless it lies on the slide
+with a positive size. `delete_slide {slide_id, expected_text}` names the
+slide's text, every paragraph one a line in the read's shape order, then
+its speaker notes as the slide read shows them, cut marker included (Epo
+2026-10-22), compared without blank lines and the spaces around a line
+(`stale_target` with `details.block {type: "slide", text}` in that
+form), so notes edited after the read make it stale, and never deletes a
+deck's only slide; `move_slide {slide_id,
+after_slide | before_slide}` takes exactly one anchor. A PPTX
+`format_text` takes what DOCX's does but `highlight` (refused), writing
+the run's `b`, `i`, `u` (`sng`/`none`), `strike`
+(`sngStrike`/`noStrike`), colour, size and latin font, and
+`set_alignment` writes `algn` (`l`, `ctr`, `r`, `just`). New slides and
+shapes get ids the call cannot know, so the agent reads again before
+filling them.
+
+The PPTX read (`inspect_scoped` in `pptx/agent.rs`) reads the slides it
+shows (`slide_scope`), never the whole deck. Without `slide` it pages the
+slides, each with its layout name and its first 20 shapes (id, kind,
+placeholder type, first line) and `moreShapes`, the count of the rest; the
+first page lists the deck's layouts. With `slide` it pages that slide's
+shapes and paragraphs together (review M1: a slide of hundreds of shapes
+pages like its text): `start` and `count` count both, each shape (name,
+placeholder type, box in points unless in a group) followed by its
+paragraphs, and `nextStart` names the first one not shown. Its first page
+also gives the slide's speaker notes, at most `limits.json`'s
+`slideNotes` characters (2,000; people's own notes input takes 4,000, the
+Editor's build) with `… [notes cut: N more characters]` after them (Epo
+2026-10-22). The retrieval service renders the notes and every shape and
+paragraph inside the source fence and cuts a page at the tool output
+limit between shapes and paragraphs, naming the next start; a page that
+begins inside a shape names the shape its first paragraphs continue. A
+slide's paragraph id never changes story, so a call keeps its paragraph
+lookup across slide and shape commands and reads the deck again only
+when it misses an id (review L5).
 
 The other DOCX commands (Epo 2026-10-20, phase 2) edit through docx-edit's
 own ops in one session per call and set a paragraph's style id and direct
@@ -4142,16 +4264,21 @@ format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
 cells), 1,000 inserted rows and columns and 5 sheets added, renamed or
 deleted; DOCX 20 text replacements, 20 inserted and 20 deleted
-paragraphs, 400 table cells inserted or deleted, 30 formatted spans and 200
-paragraphs given a list or an alignment; PPTX 20 text replacements and 20
-inserted and 20 deleted paragraphs. `apply_commands` and `create` apply
+paragraphs, 400 inserted table cells, 5 deleted tables (a table of any
+size counts one; Epo 2026-10-22), 30 formatted spans and 200 paragraphs
+given a list or an alignment; PPTX 20 text replacements, 20 inserted and
+20 deleted paragraphs, 30 formatted spans, 200 paragraphs given an
+alignment, 500 paragraphs and 50,000 characters of shape and text box
+text, 20 slides added, 20 deleted, 50 moved and 20 text boxes added. `apply_commands` and `create` apply
 the commands up to the first that would pass a limit and end the result's
 notice with `Not applied: the commands at indexes N to M (counting from 0),
 past the limit of … a call; send them in another call.` (after a create
 command the indexes start at 1, the agent's call counting it); a first
 command alone past one is refused as `invalid_input`. The retrieval service
 counts nothing: its result passes the receipt's notice through. Measured at
-each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`.
+each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`,
+`bench_pptx.py` (a 60-slide deck) and `bench_pptx500.py` (50 commands of
+each PPTX type on a 500-slide deck, against 10 s).
 
 Undo (Epo 2026-10-20): every Office command, structural ones included
 (`format_cells`, `add_sheet`, `delete_sheet`, row and column inserts and
@@ -4166,7 +4293,27 @@ inverse is not used.
 A block's text, as `inspect_document` shows it and as every expected text
 (`replace_text`, `remove_block`, `replace_block`) matches it, is its
 flattened text with inline math written `$tex$` and display math `$$tex$$`
-(`block_text` in `collaboration-rs/crates/notes/src/edit.rs`). `replace_text` replaces
+(`block_text` in `collaboration-rs/crates/notes/src/edit.rs`). Agent edits
+never change a block's caption and a stale check never compares one (Epo
+2026-10-22): a Mermaid block's text is its source, its caption printed apart
+(`properties.caption`), and `replace_text` on it is refused, since its text
+leaf is the caption. A Mermaid block inside a container (a callout, a column)
+reads as its source in the container's text too, and a `replace_text` span
+reaching into it is refused like one over math (review r2 L1). An image's,
+audio's, video's or interactive block's caption is an attribute outside the
+text. In a `replace_block`, the replacement's first block of the replaced
+one's type is that block rewritten, whatever else the markdown adds beside
+it (review r2 M1): it takes the old block's caption (a Mermaid block's
+caption element, another's `caption`), `width` and a Mermaid block's `theme`
+as they read at the edit, over any the agent's markdown gave
+(`keep_caption`). A rewrite that shows a different picture, file or video
+(another `assetId`, or `provider`/`videoId`) is a new block instead and keeps
+its own caption, so a swapped-in library figure carries its printed credit
+(Epo 2026-10-22, refining the caption rule). Inspect prints a
+Mermaid source without showing its edge whitespace, so the pipeline maps an
+expectation matching a shown source, edge whitespace aside, to the stored one,
+from the inspection or a stale refusal (`_stored_expectation`, as for a quiz
+fence view; review r2 L3). `replace_text` replaces
 plain text only: a span over math is refused (`invalid_input`) with a pointer
 to `replace_block`, which rewrites the whole block from note markdown and keeps
 its place, Undo putting the original back there. The headless editor every
@@ -4182,8 +4329,9 @@ passes through unchanged and the pipeline gives the model only
 `stale_target` from `replace_text`, `remove_block` or `replace_block` carries
 the block's current text (shown up to 2,000 characters), as does every other
 refused `replace_text` span (an expected text occurring more than once, an
-empty or overlong one; 2026-10-14), a stale `set_mermaid` carries the source
-the diagram holds as its block's text, and an id that is gone carries the
+empty or overlong one; 2026-10-14), a stale `replace_card` carries the card
+as inspect shows it (`type: "flashcard"`, its sides as JSON), and an id that
+is gone carries the
 material's first 60 blocks with an 80-character preview and the total, as
 does an edit of a material rebuilt since it was read (its room schema moved,
 `edit::listing`). A text source's expected text that occurs more than once

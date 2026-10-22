@@ -51,6 +51,9 @@ pub fn document(command: &DocumentCommand, touched: impl Fn(&str) -> usize) -> u
             block_id,
             expected_text,
         } => touched(block_id).max(expected_text.len()),
+        // A rewrite also writes the old block's caption and width
+        // (`keep_caption`), part of the old block this already counts, so
+        // the Redo stays under it too.
         DocumentCommand::ReplaceBlock {
             block_id,
             expected_text,
@@ -61,11 +64,18 @@ pub fn document(command: &DocumentCommand, touched: impl Fn(&str) -> usize) -> u
         DocumentCommand::ReplaceChild { node_id, node, .. } => touched(node_id) + json_len(node),
         DocumentCommand::InsertChild { node, .. } => json_len(node),
         DocumentCommand::RemoveChild { node_id, .. } => touched(node_id),
-        DocumentCommand::SetProperty {
-            expected_value,
-            value,
+        // The card before (both sides) and the sides it writes; what it
+        // expects is not written.
+        DocumentCommand::ReplaceCard {
+            card_id,
+            front,
+            back,
             ..
-        } => expected_value.len() + value.len(),
+        } => {
+            touched(card_id)
+                + front.as_deref().map_or(0, str::len)
+                + back.as_deref().map_or(0, str::len)
+        }
     };
     content.saturating_mul(CONTENT).saturating_add(2 * PIECE)
 }
@@ -143,6 +153,26 @@ pub fn office(command: &Command, touched: Touched) -> usize {
         // around the gap joins.
         Command::DeleteParagraph { .. } | Command::DeleteTable { .. } => (0, 1, 0),
         Command::DeleteSheet { .. } => (0, 0, 0),
+        // A shape's new text: each paragraph's run and mark; `touched` adds
+        // the story it wrote, formats included (read after it applied).
+        Command::SetShapeText { paragraphs, .. } => (
+            paragraphs.iter().map(|p| p.len() + 1).sum(),
+            2 * paragraphs.len() + 2,
+            0,
+        ),
+        // A new box: its shape entry (a few maps) and its text, as above.
+        Command::AddTextBox { paragraphs, .. } => (
+            paragraphs.iter().map(|p| p.len() + 1).sum(),
+            2 * paragraphs.len(),
+            12,
+        ),
+        // The slide itself is in `touched` (the engine reads it after the
+        // add: its layout's placeholders are not in the command); this is
+        // its id in the slide order.
+        Command::AddSlide { layout, .. } => (layout.as_ref().map_or(0, String::len), 1, 0),
+        // The slide's id moved in the slide order.
+        Command::MoveSlide { slide_id, .. } => (slide_id.len(), 2, 0),
+        Command::DeleteSlide { .. } => (0, 1, 0),
     };
     let size = |value: u64| usize::try_from(value).unwrap_or(usize::MAX);
     size(touched.content)

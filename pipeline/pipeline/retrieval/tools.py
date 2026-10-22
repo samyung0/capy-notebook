@@ -242,10 +242,11 @@ class ToolContext:
     # -> text), from inspect_document and its own replace_text edits, so a
     # refused edit can say its target changed since.
     seen_blocks: dict[str, dict[str, str]] = field(default_factory=dict)
-    # Embedded quiz blocks inspect_document showed as a quiz fence (material id
-    # -> block id -> (shown, stored text)): an edit expecting the shown text
-    # expects the stored one.
-    shown_quizzes: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
+    # Blocks whose shown text an edit may not copy exactly (material id ->
+    # block id -> (shown, stored text)): an embedded quiz shown as a quiz
+    # fence, a Mermaid source whose edge whitespace the view hides. An edit
+    # expecting the shown text, edge whitespace aside, expects the stored one.
+    shown_views: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
     # What the chat's tool rows call a resource or excerpt (id -> file name,
     # material title, or book and chapter), learned from this turn's results
     # so a row names its target without a lookup per call.
@@ -2029,6 +2030,41 @@ async def _gateway_read(
     return body if isinstance(body, dict) else {}
 
 
+# How long a chart's, plot's or graph's block an inspection prints as JSON; a
+# longer one is summed up, so inspect pages stay lean (Epo 2026-10-21).
+FIGURE_JSON_CHARS = 1500
+
+
+def _figure_view(printed: str) -> str:
+    """A chart's, plot's or graph's block as inspect_document prints it: its
+    compact JSON without a graph's drawn SVG (``image``), or past
+    FIGURE_JSON_CHARS its type, kind, title, labels and series names."""
+    try:
+        block = json.loads(printed)
+    except ValueError:
+        block = None
+    if not isinstance(block, dict):
+        return printed[:FIGURE_JSON_CHARS]
+    block.pop("image", None)
+    shown = json.dumps(block, ensure_ascii=False, separators=(",", ":"))
+    if len(shown) <= FIGURE_JSON_CHARS:
+        return shown
+    summary = {k: block[k] for k in ("type", "kind", "title") if block.get(k)}
+    labels = block.get("labels") or []
+    if labels:
+        more = [f"… {len(labels) - 12} more"] if len(labels) > 12 else []
+        summary["labels"] = labels[:12] + more
+    series = [s.get("name") for s in block.get("series") or [] if isinstance(s, dict)]
+    if series:
+        summary["series"] = series
+    if block.get("elements"):
+        summary["elements"] = len(block["elements"])
+    return (
+        json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+        + f" (summed up from {len(shown)} characters of JSON)"
+    )
+
+
 def _render_inspection(
     body: dict[str, Any],
     shown: dict[str, tuple[str, str]] | None = None,
@@ -2050,6 +2086,8 @@ def _render_inspection(
         flags = " [media]" if props.get("media") else ""
         text = str(block.get("text") or "")
         view = questions.quiz_fence_view(text) if block.get("type") == "quiz" else None
+        if block.get("type") == "mermaid":
+            view = text
         if view is not None and shown is not None:
             shown[str(block.get("id"))] = (view, text)
             text = view
@@ -2058,8 +2096,10 @@ def _render_inspection(
             lines.append(
                 f"    [{child.get('id')}] ({child.get('type')}) {child.get('text') or ''}"
             )
-        if props.get("source") is not None:
-            lines.append(f"    source: {props['source']}")
+        if props.get("block") is not None:
+            lines.append(f"    block: {_figure_view(str(props['block']))}")
+        if props.get("caption"):
+            lines.append(f"    caption: {props['caption']}")
         if props.get("refKind"):
             if props.get("materialId"):
                 lines.append(
@@ -2113,7 +2153,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         seen = ctx.seen_blocks.setdefault(rid, {})
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
-        shown = ctx.shown_quizzes.setdefault(rid, {})
+        shown = ctx.shown_views.setdefault(rid, {})
     result = _result(_render_inspection(body, shown, source=kind == "source_file"))
     result.pending = changes
     return result
@@ -2130,6 +2170,7 @@ _OFFICE_TARGETS = {
     "sheet": "Sheet {id} now reads:",
     "paragraph": "Paragraph {id} now reads:",
     "shape": "Shape {id} now reads:",
+    "slide": "Slide {id} now reads:",
 }
 
 
@@ -2215,8 +2256,9 @@ def _saw_edit(seen: dict[str, str], commands: list[dict[str, Any]]) -> None:
 def _stored_expectation(
     command: dict[str, Any], shown: dict[str, tuple[str, str]]
 ) -> dict[str, Any]:
-    """A command expecting an embedded quiz block's text as inspect_document
-    showed it (_render_inspection) expects the block's stored text."""
+    """A command expecting an embedded quiz block's or a Mermaid block's text
+    as inspect_document or a refusal showed it, edge whitespace aside, expects
+    the block's stored text (_render_inspection, review r2 L3)."""
     view = shown.get(str(command.get("block_id") or ""))
     if view and str(command.get("expected_text") or "").strip() == view[0].strip():
         return {**command, "expected_text": view[1]}
@@ -2231,7 +2273,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
     commands = [
-        _stored_expectation(c, ctx.shown_quizzes.get(rid, {}))
+        _stored_expectation(c, ctx.shown_views.get(rid, {}))
         for c in args.get("commands") or []
     ]
     # Note markdown may hold quiz fences and place library figures; a source
@@ -2283,6 +2325,11 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     }
 
     def explain(details: dict[str, Any]) -> str:
+        block = details.get("block")
+        if isinstance(block, dict) and block.get("type") == "mermaid":
+            # A retry copies the source the refusal shows, as an inspected one.
+            stored = str(block.get("text") or "")
+            ctx.shown_views.setdefault(rid, {})[str(block.get("id"))] = (stored, stored)
         # A source's text as it reads now sits in a source block.
         text = _missed_target(details, ctx.seen_blocks.get(rid, {}))
         return source_block(text) if text and kind == "source_file" else text
@@ -2394,12 +2441,157 @@ def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
     return _fitting(page, len(lines))[1]
 
 
+def _points(value: Any) -> str:
+    return f"{value:g}" if isinstance(value, int | float) else str(value)
+
+
+def _pptx_shape(shape: dict[str, Any], *, boxed: bool = False) -> str:
+    """``[id] kind "name" (placeholder, equation, in a group) at x, y size w x h``,
+    the name and box in a slide read only."""
+    line = f"[{shape.get('id')}] {shape.get('kind')}"
+    if boxed:
+        line += f' "{shape.get("name") or ""}"'
+    marks = [f"{shape['placeholder']} placeholder"] if shape.get("placeholder") else []
+    if shape.get("equation"):
+        marks.append("equation, not editable")
+    if shape.get("inGroup"):
+        marks.append("in a group")
+    if marks:
+        line += f" ({', '.join(marks)})"
+    if boxed and isinstance(shape.get("box"), list):
+        x, y, w, h = (_points(value) for value in shape["box"])
+        line += f" at {x}, {y} size {w} x {h}"
+    return line
+
+
+def _render_pptx_deck(head: str, scoped: dict[str, Any], start: int) -> str:
+    """A PPTX deck read: the first page's layouts as ``[id] name``, then its
+    slides from ``start`` as ``N. [id] (layout)``, each listed shape under one
+    as ``[id] kind (placeholder): first line`` and how many more it holds,
+    inside the source fence, cut to the slides that fit the tool output
+    limit."""
+    head += (
+        f"\nslide size {_points(scoped.get('width'))} x {_points(scoped.get('height'))} "
+        "points; slides as N. [id] (layout), each shape as [id] kind (placeholder): its "
+        "first line of text (… when longer); read one slide by its number for all its "
+        "shapes and its paragraphs:"
+    )
+    layouts = scoped.get("layouts") or []
+    prelude = (
+        [
+            "layouts as [id] name: "
+            + ", ".join(
+                f"[{layout.get('id')}] {layout.get('name')}" for layout in layouts
+            )
+        ]
+        if layouts
+        else []
+    )
+    blocks = []
+    for slide in scoped.get("slides") or []:
+        lines = [f"{slide.get('number')}. [{slide.get('id')}] ({slide.get('layout')})"]
+        for shape in slide.get("shapes") or []:
+            text = f": {shape['text']}" if shape.get("text") else ""
+            lines.append(f"  {_pptx_shape(shape)}{text}")
+        if more := slide.get("moreShapes"):
+            lines.append(f"  … and {more} more shapes")
+        blocks.append("\n".join(lines))
+    total = scoped.get("total")
+
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(prelude + blocks[:n]))
+        if n < len(blocks):
+            return body, (
+                "\n(page cut at the tool output limit; "
+                f"next start = {start + n} of {total} slides)"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, f"\n(next start = {scoped['nextStart']} of {total} slides)"
+        return body, ""
+
+    return _fitting(page, len(blocks))[1]
+
+
+def _render_pptx_slide(head: str, scoped: dict[str, Any], start: int) -> str:
+    """One PPTX slide: a page of its shapes and paragraphs from ``start``, each
+    shape as ``[id] kind "name" (marks) at x, y size w x h`` followed by its
+    paragraphs as ``[id] (level, table cell) text``, the first page also giving
+    the slide's speaker notes, inside the source fence, cut to the shapes and
+    paragraphs that fit the tool output limit so the next start names the
+    first one not shown (review M1)."""
+    slide = scoped.get("slide") or {}
+    layout = slide.get("layout") or {}
+    head += (
+        f"\nslide size {_points(scoped.get('width'))} x {_points(scoped.get('height'))} "
+        'points; shapes as [id] kind "name" (marks) at x, y size w x h points from the '
+        "top left corner (shapes in a group show no box), each followed by its paragraphs "
+        "as [id] (level, table cell) text; a page counts shapes and paragraphs:"
+    )
+    title = f"slide {slide.get('number')} of {scoped.get('slides')} [{slide.get('id')}]"
+    if layout:
+        title += f", layout [{layout.get('id')}] {layout.get('name')}"
+    prelude = [title]
+    if slide.get("notes"):
+        prelude.append(f"speaker notes:\n{slide['notes']}")
+    shapes = scoped.get("shapes") or []
+    paragraphs = scoped.get("paragraphs") or []
+    total = scoped.get("total")
+
+    def paragraph_line(paragraph: dict[str, Any]) -> str:
+        marks = [f"level {paragraph['level']}"] if paragraph.get("level") else []
+        if paragraph.get("row") is not None:
+            marks.append(
+                f"row {int(paragraph['row']) + 1} "
+                f"column {int(paragraph.get('column') or 0) + 1}"
+            )
+        group = f" ({', '.join(marks)})" if marks else ""
+        return f"  [{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
+
+    # The page's shapes and paragraphs in the engine's order: a shape the
+    # page before began goes on first, then each shape and its paragraphs.
+    listed = {shape.get("id") for shape in shapes}
+    units = [
+        paragraph_line(paragraph)
+        for paragraph in paragraphs
+        if paragraph.get("shape") not in listed
+    ]
+    if units:
+        prelude.append(f"[{paragraphs[0].get('shape')}] continued:")
+    for shape in shapes:
+        units.append(_pptx_shape(shape, boxed=True))
+        units.extend(
+            paragraph_line(paragraph)
+            for paragraph in paragraphs
+            if paragraph.get("shape") == shape.get("id")
+        )
+
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(prelude + units[:n]))
+        if n < len(units):
+            return body, (
+                "\n(slide cut at the tool output limit; "
+                f"next start = {start + n} of {total} shapes and paragraphs)"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, (
+                f"\n(next start = {scoped['nextStart']} of {total} shapes and paragraphs)"
+            )
+        return body, ""
+
+    return _fitting(page, len(units))[1]
+
+
 def _render_scoped(body: dict[str, Any], scoped: dict[str, Any], start: int) -> str:
     """An XLSX read: its sheets as ``[id] name used-range``, or a range's
     cells as ``A1: input``, followed by ``→ shown value`` where that differs.
-    A DOCX read: a page of its paragraphs from ``start``."""
+    A DOCX read: a page of its paragraphs from ``start``. A PPTX read: a page
+    of its slides, or a page of one slide's shapes and paragraphs."""
     head = f"{body.get('title') or ''} format={body.get('format')}"
     lines: list[str] = []
+    if "slide" in scoped:
+        return _render_pptx_slide(head, scoped, start)
+    if "slides" in scoped:
+        return _render_pptx_deck(head, scoped, start)
     if "paragraphs" in scoped:
         return _render_docx_page(head, scoped, start)
     if "sheets" in scoped:

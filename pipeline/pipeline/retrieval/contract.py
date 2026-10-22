@@ -15,7 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
 
-SUPPORTED_VERSION = 36
+SUPPORTED_VERSION = 38
 
 
 def _load() -> dict[str, Any]:
@@ -43,6 +43,9 @@ DEFINITIONS: dict[str, dict[str, Any]] = {t["name"]: t for t in CONTRACT["tools"
 FORMATS: dict[str, str] = CONTRACT["formats"]
 # The chart and plot schemas add_question_media checks media against.
 MEDIA_BLOCKS: dict[str, dict[str, Any]] = CONTRACT["mediaBlocks"]
+# The Office engine's bound on the text one PPTX command writes into a shape
+# (its limits.json, through gen:openapi; review L2).
+OFFICE_SHAPE_TEXT: dict[str, int] = CONTRACT["officeShapeText"]
 # Tools whose handlers check every argument themselves, naming each problem at
 # once with its path, and save the valid questions of a call
 # (retrieval/questions.py).
@@ -78,7 +81,9 @@ def drop_blanks(schema: dict[str, Any], value: Any) -> Any:
     """``value`` without the blank properties ``schema`` does not require, at
     any depth the schema describes (properties, array items, and an edit
     command's variant by its type). Blank means absent (Epo 2026-10-13); a
-    required property is kept as sent, so its own check still names it."""
+    required property is kept as sent, so its own check still names it, and so
+    is an ``expected_<field>`` beside a sent ``<field>``: a blank expectation
+    (a card's empty side) is one."""
     if isinstance(value, list) and isinstance(schema.get("items"), dict):
         return [drop_blanks(schema["items"], v) for v in value]
     if not isinstance(value, dict):
@@ -102,7 +107,12 @@ def drop_blanks(schema: dict[str, Any], value: Any) -> Any:
     return {
         k: drop_blanks(schema["properties"].get(k, {}), v)
         for k, v in value.items()
-        if k in required or not blank(v)
+        if k in required
+        or not blank(v)
+        or (
+            k.startswith("expected_")
+            and not blank(value.get(k.removeprefix("expected_")))
+        )
     }
 
 

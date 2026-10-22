@@ -3012,8 +3012,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
                     {
                         "id": "m1",
                         "type": "mermaid",
-                        "text": "",
-                        "properties": {"source": "graph TD"},
+                        "text": "graph TD",
+                        "properties": {"caption": "Tide flow"},
                     },
                     {
                         "id": "r1",
@@ -3067,7 +3067,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
     text = material.text()
     assert "[b1] (p) hello" in text
     assert "    [qq1] (quiz_question) Why?" in text
-    assert "source: graph TD" in text
+    # A Mermaid block reads as its source, its caption apart (Epo 2026-10-22).
+    assert "[m1] (mermaid) graph TD\n    caption: Tide flow" in text
     assert "embedded quiz material id=mat_q: inspect it as kind material" in text
     assert "embedded flashcards reference, not yet created" in text
 
@@ -3237,6 +3238,60 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
     assert twice.text().endswith("Block b1 (p) now reads:\nalpha delta")
 
 
+async def test_a_mermaid_expectation_is_its_stored_source(monkeypatch):
+    """A Mermaid source's edge whitespace does not show where inspect or a
+    stale refusal prints it, so an edit expecting the source as shown expects
+    the stored one (review r2 L3: the model looped on stale_target)."""
+    ctx = _owner_ctx()
+    ctx.skills_read = {"editing"}
+    stored, typed = "flowchart LR\n  A --> B\n", "flowchart LR\n  A --> C \n"
+    sent: list[dict] = []
+    answers = iter(
+        [
+            _JsonResp(
+                {
+                    "format": "plate",
+                    "title": "Notes",
+                    "blocks": [{"id": "m1", "type": "mermaid", "text": stored}],
+                }
+            ),
+            _JsonResp(
+                {
+                    "code": "stale_target",
+                    "message": "block m1 changed",
+                    "details": {
+                        "block": {"id": "m1", "type": "mermaid", "text": typed}
+                    },
+                },
+                status=409,
+            ),
+            _JsonResp(_receipt("edited", "material", "mat_1")),
+        ]
+    )
+
+    def _post(url, **kwargs):
+        if "data" in kwargs:
+            sent.append(json.loads(kwargs["data"]))
+        return next(answers)
+
+    _gateway(monkeypatch, post=_post)
+    target = {"kind": "material", "id": "mat_1"}
+    await tools.run("inspect_document", {"target": target, "_tool_call_id": "c0"}, ctx)
+
+    def remove(n, expected):
+        command = {"type": "remove_block", "block_id": "m1", "expected_text": expected}
+        return tools.run(
+            "edit_document",
+            {"target": target, "commands": [command], "_tool_call_id": f"c{n}"},
+            ctx,
+        )
+
+    assert (await remove(1, stored.strip())).outcome != "succeeded"
+    assert (await remove(2, typed.strip())).outcome == "succeeded"
+    expected = [body["commands"][0]["expected_text"] for body in sent[-2:]]
+    assert expected == [stored, typed]
+
+
 async def test_a_write_naming_unread_excerpts_credits_them(monkeypatch):
     """Named excerpts are credited whether this turn read them or not (Epo
     2026-10-14): no refusal sends the model back to read them."""
@@ -3355,6 +3410,21 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
     assert tools.without_blanks(
         "create_material", {"kind": "note", "sources": [], "title": "null", "cards": {}}
     ) == {"kind": "note"}
+    # A blank expectation beside its side is one: a card's empty front
+    # (Epo 2026-10-21); without the side it means nothing and goes.
+    card = {"type": "replace_card", "card_id": "c1", "front": "F", "expected_front": ""}
+    assert tools.without_blanks(
+        "edit_document", {"target": edit["target"], "commands": [card]}
+    )["commands"] == [card]
+    assert tools.without_blanks(
+        "edit_document",
+        {
+            "target": edit["target"],
+            "commands": [{**card, "front": None, "back": "B", "expected_back": "b"}],
+        },
+    )["commands"] == [
+        {"type": "replace_card", "card_id": "c1", "back": "B", "expected_back": "b"}
+    ]
 
     # Dispatch hands the handler the cleaned arguments.
     seen = {}
@@ -5183,10 +5253,93 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "pptx",
                 "title": "deck.pptx",
-                "supportedOperations": ["replace_text"],
-                "entries": [{"id": "s1", "label": "Slide 1, Title", "value": "Cells"}],
-                "total": 1,
-                "nextStart": None,
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slides": [
+                        {
+                            "id": "slide:0:256",
+                            "number": 1,
+                            "layout": "Title Slide",
+                            "shapes": [
+                                {
+                                    "id": "slide:0:256:shape:0",
+                                    "kind": "text",
+                                    "placeholder": "ctrTitle",
+                                    "text": "Cells",
+                                },
+                                {"id": "slide:0:256:shape:1", "kind": "picture"},
+                            ],
+                            "moreShapes": 3,
+                        }
+                    ],
+                    "total": 12,
+                    "nextStart": 1,
+                    "layouts": [
+                        {
+                            "id": "ppt/slideLayouts/slideLayout1.xml",
+                            "name": "Title Slide",
+                        },
+                        {"id": "ppt/slideLayouts/slideLayout2.xml", "name": "Blank"},
+                    ],
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slide": {
+                        "id": "slide:1:257",
+                        "number": 2,
+                        "layout": {
+                            "id": "ppt/slideLayouts/slideLayout2.xml",
+                            "name": "Blank",
+                        },
+                        "notes": "Greet the room.\nThen the demo.",
+                    },
+                    "slides": 12,
+                    "shapes": [
+                        {
+                            "id": "slide:1:257:shape:0",
+                            "kind": "text",
+                            "name": "Title 1",
+                            "placeholder": "title",
+                            "box": [36.0, 20.5, 888.0, 90.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:1",
+                            "kind": "table",
+                            "name": "Table 2",
+                            "box": [36.0, 120.0, 400.0, 200.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:2",
+                            "kind": "text",
+                            "name": "Equation",
+                            "equation": True,
+                            "box": [36.0, 400.0, 100.0, 30.0],
+                        },
+                    ],
+                    "paragraphs": [
+                        {
+                            "id": "para:story:slide:1:257:shape:0:0:0",
+                            "shape": "slide:1:257:shape:0",
+                            "text": "Cells",
+                        },
+                        {
+                            "id": "para:story:slide:1:257:shape:1:table:0:1:0",
+                            "shape": "slide:1:257:shape:1",
+                            "text": "Nucleus",
+                            "level": 1,
+                            "row": 0,
+                            "column": 1,
+                        },
+                    ],
+                    "total": 6,
+                    "nextStart": 5,
+                },
             },
         ]
     )
@@ -5249,8 +5402,152 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
         ]
     )
     assert sent[2]["office"] == {"start": 0, "count": 60}
-    shapes = (await inspect(start=0, count=60)).text()
-    assert "[s1] Slide 1, Title: Cells" in shapes and "styles" not in shapes
+    # A PPTX read lists slides with their layouts and shapes, the first page
+    # the deck's layouts; a slide read its shapes and paragraphs (Epo
+    # 2026-10-20). What the file names sits inside the fence.
+    deck = (await inspect(count=1)).text()
+    assert deck == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                "slide size 960 x 540 points; slides as N. [id] (layout), each shape as "
+                "[id] kind (placeholder): its first line of text (… when longer); read "
+                "one slide by its number for all its shapes and its paragraphs:"
+            ),
+            source_block(
+                "layouts as [id] name: [ppt/slideLayouts/slideLayout1.xml] Title Slide, "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "1. [slide:0:256] (Title Slide)\n"
+                "  [slide:0:256:shape:0] text (ctrTitle placeholder): Cells\n"
+                "  [slide:0:256:shape:1] picture\n"
+                "  … and 3 more shapes"
+            ),
+            "(next start = 1 of 12 slides)",
+        ]
+    )
+    slide = (await inspect(slide=2)).text()
+    assert sent[4]["office"] == {"slide": 2}
+    assert slide == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                'slide size 960 x 540 points; shapes as [id] kind "name" (marks) at x, y '
+                "size w x h points from the top left corner (shapes in a group show no "
+                "box), each followed by its paragraphs as [id] (level, table cell) text; "
+                "a page counts shapes and paragraphs:"
+            ),
+            source_block(
+                "slide 2 of 12 [slide:1:257], layout "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "speaker notes:\nGreet the room.\nThen the demo.\n"
+                '[slide:1:257:shape:0] text "Title 1" (title placeholder) at 36, 20.5 '
+                "size 888 x 90\n"
+                "  [para:story:slide:1:257:shape:0:0:0] Cells\n"
+                '[slide:1:257:shape:1] table "Table 2" at 36, 120 size 400 x 200\n'
+                "  [para:story:slide:1:257:shape:1:table:0:1:0] (level 1, row 1 column 2) "
+                "Nucleus\n"
+                '[slide:1:257:shape:2] text "Equation" (equation, not editable) at 36, '
+                "400 size 100 x 30"
+            ),
+            "(next start = 5 of 6 shapes and paragraphs)",
+        ]
+    )
+
+
+async def test_a_long_pptx_read_shows_the_slides_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A deck page over the tool output limit is cut between slides, its next
+    start the first slide not shown."""
+    slides = [
+        {
+            "id": f"slide:{i}:{256 + i}",
+            "number": i + 1,
+            "layout": "Title and Content",
+            "shapes": [
+                {
+                    "id": f"slide:{i}:{256 + i}:shape:{j}",
+                    "kind": "text",
+                    "text": "word " * 16,
+                }
+                for j in range(12)
+            ],
+        }
+        for i in range(60)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {"width": 720.0, "height": 540.0, "slides": slides, "total": 60},
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "count": 60, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    shown = re.findall(r"^(\d+)\. \[slide:", text, re.MULTILINE)
+    assert 0 < len(shown) < 60 and shown == [str(i + 1) for i in range(len(shown))]
+    assert text.endswith(
+        "</source>\n(page cut at the tool output limit; "
+        f"next start = {len(shown)} of 60 slides)"
+    )
+
+
+async def test_a_long_slide_read_shows_the_shapes_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A slide page over the tool output limit, its notes at the cap, is cut
+    between its shapes and paragraphs, its next start the first not shown; a
+    page that begins inside a shape names the shape its first paragraphs
+    continue (review M1)."""
+    shapes = [
+        {"id": f"s:{i}", "kind": "text", "name": "Box " * 10, "box": [0, 0, 72, 36]}
+        for i in range(1, 100)
+    ]
+    paragraphs = [{"id": "p:0:0", "shape": "s:0", "text": "word " * 400}] + [
+        {"id": f"p:{i}:0", "shape": f"s:{i}", "text": "word " * 400}
+        for i in range(1, 100)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {
+            "width": 720.0,
+            "height": 540.0,
+            # Notes at the cap and its marker (Epo 2026-10-22).
+            "slide": {
+                "id": "slide:0:256",
+                "number": 1,
+                "notes": "n" * 2_000 + "… [notes cut: 9 more characters]",
+            },
+            "slides": 1,
+            "shapes": shapes,
+            "paragraphs": paragraphs,
+            "total": 1201,
+            "nextStart": 600,
+        },
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "slide": 1, "start": 401, "count": 199, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    assert "slide 1 of 1 [slide:0:256]\nspeaker notes:\nnnn" in text
+    assert "… [notes cut: 9 more characters]\n[s:0] continued:\n  [p:0:0] word" in text
+    shown = len(re.findall(r"^\[s:\d+\] text|^  \[p:", text, re.MULTILINE))
+    assert 0 < shown < 199
+    assert text.endswith(
+        "</source>\n(slide cut at the tool output limit; "
+        f"next start = {401 + shown} of 1201 shapes and paragraphs)"
+    )
 
 
 async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on(
