@@ -1861,11 +1861,16 @@ than `commentFlavor`, or leaves a slide's speaker notes over 4,000 code points
 and longer than before (`notes_violation`, `MAX_SLIDE_NOTES_CHARS`; Epo
 2026-10-22). Notes are a string at a slide map's `notes` key, written whole,
 so that check reads only the update's own string entries over 4,000 bytes
-that it does not delete itself (bytes bound code points): each one's map and
-key come from the entry, or, as yrs integrates it, from its origin followed
-through the update to an item the room holds (a chain of overwrites is walked
-once), and a `notes` entry of a nested map (only slides have one) is held to
-the value that map has now, or to none for a slide the update creates. An
+that it does not delete itself (bytes bound code points), each placed where
+yrs places it (`slot_of`, notes-cap review H1): its left is its origin, or the
+last unit the room holds of its client when the room holds its first units
+already (yrs splits those off), and its right is its right origin; its map is
+the one it names, else its left's, else its right's, and its key is its
+left's, else its right's, else its own, so an entry naming another key or none
+still counts where it lands. The update's entries it refers to are placed
+first, each once, without recursion. A `notes` entry of a nested map (only
+slides have one) is held to the value that map has now, or to none for a slide
+the update creates. An
 entry that loses to a concurrent write is held too, since only a client past
 the notes panel's cap writes one. So typing elsewhere costs one content match
 per struct, an over-cap note from an upload may shrink or keep its length,

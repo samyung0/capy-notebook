@@ -7,7 +7,7 @@
 //! [MEASURE_GROWTH] bytes of estimated growth, with the update's apply
 //! work-limited (Epo 2026-10-19).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -242,38 +242,44 @@ pub fn office_update_violation<T: ReadTxn>(
 /// Refuses a PPTX update that leaves a slide's speaker notes longer than
 /// [MAX_SLIDE_NOTES_CHARS] and longer than before it (Epo 2026-10-22). Reads
 /// only the update's new entries over the cap in bytes that it does not delete
-/// itself: one at a nested map's `notes` key (only slides have one) is held to
-/// the value that map has now, or to none for a map the update creates. One
-/// that loses to a concurrent write is held too: only a client past the
-/// notes panel's cap writes one.
+/// itself, each placed as yrs places it ([slot_of]): one at a nested map's
+/// `notes` key (only slides have one) is held to the value that map has now,
+/// or to none for a map the update creates. One that loses to a concurrent
+/// write is held too: only a client past the notes panel's cap writes one.
 fn notes_violation<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<(), String> {
-    let state = txn.state_vector();
-    let mut maps = HashMap::new();
+    // Built for an update with a long string only; most carry none.
+    let mut state = None;
+    let mut slots = HashMap::new();
     for item in incoming.items() {
-        let ID { client, clock } = *item.id();
-        let end = clock + item.len();
         let Some(text) = entry_text(item.content()) else {
             continue;
         };
         // A string's bytes bound its code points.
-        if text.len() <= MAX_SLIDE_NOTES_CHARS
-            || end <= state.get(&client)
-            || incoming.deletes(&client, clock, end)
-        {
+        if text.len() <= MAX_SLIDE_NOTES_CHARS {
+            continue;
+        }
+        let state = state.get_or_insert_with(|| txn.state_vector());
+        let ID { client, clock } = *item.id();
+        let end = clock + item.len();
+        if end <= state.get(&client) || incoming.deletes(&client, clock, end) {
             continue;
         }
         let chars = text.chars().count();
         if chars <= MAX_SLIDE_NOTES_CHARS {
             continue;
         }
-        let before = match notes_map(txn, &state, incoming, item, &mut maps) {
-            NotesMap::Other => continue,
-            NotesMap::New => 0,
-            NotesMap::Held(map) => map
+        let slot = slot_of(txn, state, incoming, item, &mut slots);
+        if slot.key.as_deref() != Some(NOTES_KEY) {
+            continue;
+        }
+        let before = match slot.parent {
+            Parent::Held(map) if map.item().is_some() => map
                 .entry_item(NOTES_KEY)
                 .filter(|value| !value.is_deleted())
                 .and_then(|value| entry_text(value.content()).map(|text| text.chars().count()))
                 .unwrap_or(0),
+            Parent::New => 0,
+            _ => continue,
         };
         if chars > before {
             return Err(format!(
@@ -284,79 +290,108 @@ fn notes_violation<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<(), Strin
     Ok(())
 }
 
-/// The map whose `notes` a decoded entry writes.
-#[derive(Clone, Copy)]
-enum NotesMap {
-    /// A nested map the room holds.
-    Held(BranchPtr),
-    /// A map the update creates.
-    New,
-    /// Another key, or a root's.
-    Other,
+/// Where yrs places a decoded entry: the type it lands in and its key.
+#[derive(Clone)]
+struct Slot {
+    parent: Parent,
+    key: Option<Arc<str>>,
 }
 
-/// [NotesMap] of a decoded entry. An entry names its map and key only when it
-/// has no origin; else it takes its origin's (else its right origin's), as
-/// yrs integrates it, followed through the update to an item the room holds.
-/// `maps` keeps each walked entry's answer, so a chain of overwrites is walked
-/// once.
-fn notes_map<T: ReadTxn>(
+/// The type a decoded entry lands in.
+#[derive(Clone, Copy)]
+enum Parent {
+    /// One the room holds: a root or a nested map.
+    Held(BranchPtr),
+    /// One the update creates.
+    New,
+    /// A root the entry names.
+    Root,
+    /// None: yrs drops the entry.
+    Dropped,
+}
+
+/// [Slot] of a decoded entry as yrs integrates it. Its left is its origin,
+/// or the last unit the room holds of its client when the room holds its
+/// first units (`UpdateBlocks::exclude` splits those off), and its right is
+/// its right origin; a side reads as absent when the room collected it or yrs
+/// drops it. Its type is the one it names, else its left's, else its right's
+/// (`Update::repair`); its key is its left's, else its right's, else its own
+/// (`TransactionMut::integrate_item`). The update's entries it refers to are
+/// placed first, each once (`slots`), without recursion; a reference cycle (an
+/// unheld update, never checked) reads as absent.
+fn slot_of<T: ReadTxn>(
     txn: &T,
     state: &StateVector,
     incoming: &Incoming,
     start: &Item,
-    maps: &mut HashMap<ID, NotesMap>,
-) -> NotesMap {
+    slots: &mut HashMap<ID, Slot>,
+) -> Slot {
     let held = |id: &ID| id.clock < state.get(&id.client);
-    let notes = |key: Option<&Arc<str>>| key.is_some_and(|key| &**key == NOTES_KEY);
     let store = txn.store();
-    let mut chain = Vec::new();
-    let mut item = start;
-    let found = loop {
-        if let Some(found) = maps.get(item.id()) {
-            break *found;
-        }
-        // A reference cycle (an unheld update, never checked) stays Other.
-        maps.insert(*item.id(), NotesMap::Other);
-        chain.push(*item.id());
-        if item.parent_sub().is_some() {
-            if !notes(item.parent_sub()) {
-                break NotesMap::Other;
-            }
-            break match item.update_parent() {
-                UpdateParent::Item(holder) if held(holder) => {
-                    match store.get_item(holder).as_deref().map(Item::content) {
-                        Some(ItemContent::Type(map)) => {
-                            NotesMap::Held(BranchPtr::from(map.as_ref()))
-                        }
-                        _ => NotesMap::Other,
-                    }
-                }
-                UpdateParent::Item(_) => NotesMap::New,
-                _ => NotesMap::Other,
-            };
-        }
-        let Some(reference) = item.origin().or(item.right_origin()) else {
-            break NotesMap::Other;
+    let sides = |item: &Item| {
+        let ID { client, clock } = *item.id();
+        let first = state.get(&client);
+        let left = if clock < first {
+            Some(ID::new(client, first - 1))
+        } else {
+            item.origin().copied()
         };
-        if held(reference) {
-            break match store.get_item(reference) {
-                Some(entry) if notes(entry.parent_sub()) => match entry.parent_branch() {
-                    Some(map) if map.item().is_some() => NotesMap::Held(map),
-                    _ => NotesMap::Other,
-                },
-                _ => NotesMap::Other,
-            };
-        }
-        match incoming.item_at(reference) {
-            Some(earlier) => item = earlier,
-            None => break NotesMap::Other,
-        }
+        [left, item.right_origin().copied()]
     };
-    for id in chain {
-        maps.insert(id, found);
+    let mut visiting = HashSet::new();
+    let mut stack = vec![start];
+    while let Some(&item) = stack.last() {
+        if slots.contains_key(item.id()) {
+            stack.pop();
+            continue;
+        }
+        let refs = sides(item);
+        let waiting: Vec<&Item> = refs
+            .iter()
+            .flatten()
+            .filter(|side| !held(side))
+            .filter_map(|side| incoming.item_at(side))
+            .filter(|side| !slots.contains_key(side.id()) && !visiting.contains(side.id()))
+            .collect();
+        if visiting.insert(*item.id()) && !waiting.is_empty() {
+            stack.extend(waiting);
+            continue;
+        }
+        let [left, right] = refs.map(|side| {
+            let side = side?;
+            if held(&side) {
+                let entry = store.get_item(&side)?;
+                return Some(Slot {
+                    parent: entry.parent_branch().map_or(Parent::Dropped, Parent::Held),
+                    key: entry.parent_sub().cloned(),
+                });
+            }
+            let slot = slots.get(incoming.item_at(&side)?.id())?;
+            (!matches!(slot.parent, Parent::Dropped)).then(|| slot.clone())
+        });
+        let parent = match item.update_parent() {
+            UpdateParent::Root(_) => Parent::Root,
+            UpdateParent::Item(holder) if held(holder) => {
+                match store.get_item(holder).as_deref().map(Item::content) {
+                    Some(ItemContent::Type(map)) => Parent::Held(BranchPtr::from(map.as_ref())),
+                    _ => Parent::Dropped,
+                }
+            }
+            UpdateParent::Item(_) => Parent::New,
+            _ => left
+                .as_ref()
+                .or(right.as_ref())
+                .map_or(Parent::Dropped, |side| side.parent),
+        };
+        let key = [&left, &right]
+            .into_iter()
+            .flatten()
+            .find_map(|side| side.key.clone())
+            .or_else(|| item.parent_sub().cloned());
+        slots.insert(*item.id(), Slot { parent, key });
+        stack.pop();
     }
-    found
+    slots[start.id()].clone()
 }
 
 /// The string a map entry's content reads as (`ItemContent::get_last`),
@@ -662,8 +697,9 @@ mod tests {
             slide.insert(&mut c.transact_mut(), NOTES_KEY, n(4001));
         });
         assert_eq!(verdict(&room, pptx, &created), refused);
-        // Two writes in one update: only the value it keeps counts, through
-        // the second write's origin in the update.
+        // Two writes in one update: a long one it deletes itself does not
+        // count, and a long one it keeps is placed through its origin, the
+        // first write, in the update.
         let cut_back = case(11, &|c| {
             set(c, "s1", &n(4001));
             set(c, "s1", "back");
@@ -683,6 +719,134 @@ mod tests {
             slide.insert(&mut c.transact_mut(), "name", n(4001));
         });
         assert_eq!(verdict(&room, pptx, &named), Admission::Accept);
+    }
+
+    /// One client's string entries as Yjs v1 writes them, from `clock`, with
+    /// no deletions. Each is `(origin, right origin, holder, key, values)`: an
+    /// entry with neither origin names its map by the item holding it and, in
+    /// a map, its key.
+    #[allow(clippy::type_complexity)]
+    fn crafted(
+        client: u64,
+        clock: u32,
+        entries: &[(Option<ID>, Option<ID>, ID, Option<&str>, &[&str])],
+    ) -> Vec<u8> {
+        use yrs::block::{BLOCK_ITEM_ANY_REF_NUMBER, HAS_ORIGIN, HAS_PARENT_SUB, HAS_RIGHT_ORIGIN};
+        use yrs::encoding::write::Write;
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.write_var(1u32);
+        bytes.write_var(entries.len() as u32);
+        bytes.write_var(client);
+        bytes.write_var(clock);
+        for &(origin, right, holder, key, values) in entries {
+            let named = origin.is_none() && right.is_none();
+            let mut info = BLOCK_ITEM_ANY_REF_NUMBER;
+            info |= if origin.is_some() { HAS_ORIGIN } else { 0 };
+            info |= if right.is_some() { HAS_RIGHT_ORIGIN } else { 0 };
+            info |= if named && key.is_some() {
+                HAS_PARENT_SUB
+            } else {
+                0
+            };
+            bytes.write_u8(info);
+            for id in [origin, right].into_iter().flatten() {
+                bytes.write_var(id.client.get());
+                bytes.write_var(id.clock);
+            }
+            if named {
+                bytes.write_var(0u32);
+                bytes.write_var(holder.client.get());
+                bytes.write_var(holder.clock);
+                if let Some(key) = key {
+                    bytes.write_string(key);
+                }
+            }
+            bytes.write_var(values.len() as u32);
+            for value in values {
+                Any::from(*value).encode(&mut bytes);
+            }
+        }
+        bytes.write_var(0u32);
+        bytes
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review H1): a crafted
+    // entry is placed as yrs places it, so one that names another key, or no
+    // key, but lands at a slide's `notes` key is held to the cap too.
+    #[test]
+    fn a_crafted_entry_landing_at_a_slides_notes_is_held_to_the_cap() {
+        let room = Doc::with_client_id(1);
+        let slides = room.get_or_insert_map("pptx:slides");
+        for (id, notes) in [("s1", "short"), ("s2", "other")] {
+            let slide = slides.insert(&mut room.transact_mut(), id, MapPrelim::default());
+            slide.insert(&mut room.transact_mut(), NOTES_KEY, notes);
+        }
+        let map = |doc: &Doc, id: &str| {
+            let slides = doc.get_or_insert_map("pptx:slides");
+            let Some(yrs::Out::YMap(slide)) = slides.get(&doc.transact(), id) else {
+                panic!("slide");
+            };
+            slide
+        };
+        let holder = |id: &str| {
+            *BranchPtr::from(map(&room, id).as_ref())
+                .item()
+                .unwrap()
+                .id()
+        };
+        let notes_item = |id: &str| {
+            *BranchPtr::from(map(&room, id).as_ref())
+                .entry_item(NOTES_KEY)
+                .unwrap()
+                .id()
+        };
+        // What the room would store: the update applied to a copy.
+        let stored = |room: &Doc, update: &[u8]| {
+            let copy = Doc::with_client_id(99);
+            apply(&copy, &encode(room, &StateVector::default()));
+            apply(&copy, update);
+            let notes = map(&copy, "s1").get(&copy.transact(), NOTES_KEY);
+            match notes {
+                Some(yrs::Out::Any(Any::String(text))) => text.chars().count(),
+                other => panic!("notes {other:?}"),
+            }
+        };
+        let refused = Admission::Refuse(Refusal::OfficeUpdate(
+            "Office update grows a slide's speaker notes past 4000 characters".into(),
+        ));
+        let long = "n".repeat(4001);
+        let long = long.as_str();
+
+        // (a) After a keyless entry in slide 1's map and before slide 2's
+        // notes: yrs takes the map from the left and the key from the right.
+        let (h1, n2) = (holder("s1"), notes_item("s2"));
+        let left = ID::new(ClientID::new(50), 0);
+        let after_keyless = crafted(
+            50,
+            0,
+            &[
+                (None, None, h1, None, &["L"]),
+                (Some(left), Some(n2), h1, None, &[long]),
+            ],
+        );
+        assert_eq!(stored(&room, &after_keyless), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &after_keyless), refused);
+
+        // (b) Re-sent from a clock the room holds, naming another key: yrs
+        // places what the room lacks after the held unit, at its key.
+        let client = Doc::with_client_id(60);
+        apply(&client, &encode(&room, &StateVector::default()));
+        let short = delta(&client, || {
+            map(&client, "s1").insert(&mut client.transact_mut(), NOTES_KEY, "x");
+        });
+        assert_eq!(
+            verdict(&room, SourceFormat::Pptx, &short),
+            Admission::Accept
+        );
+        apply(&room, &short);
+        let resent = crafted(60, 0, &[(None, None, h1, Some("zzz"), &["x", long])]);
+        assert_eq!(stored(&room, &resent), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &resent), refused);
     }
 
     #[test]
