@@ -19,7 +19,10 @@ use std::sync::{Arc, Mutex};
 use yrs::block::ItemContent;
 use yrs::branch::BranchPtr;
 use yrs::undo::{Options, StackItem, UndoManager};
-use yrs::{Doc, ID, IdSet, Origin, Out, ReadTxn, Transact, TransactionMut, Update, WriteTxn};
+use yrs::{
+    Doc, ID, IdSet, Origin, Out, ReadTxn, StateVector, Transact, TransactionMut, Update,
+    UpdateBlock, WriteTxn,
+};
 
 use crate::CONTRIBUTORS_ROOT;
 
@@ -117,7 +120,7 @@ pub enum Applied {
 /// [Applied::Unheld] is left with pending content.
 pub fn apply_payload(doc: &Doc, update: Update) -> Result<Applied, yrs::error::UpdateError> {
     let carries = update.blocks().next().is_some();
-    if carries && !update.extends(&doc.transact().state_vector()) {
+    if carries && held(&update, &doc.transact().state_vector()) {
         return Ok(Applied::Before);
     }
     let own = update.insertions(true);
@@ -136,6 +139,21 @@ pub fn apply_payload(doc: &Doc, update: Update) -> Result<Applied, yrs::error::U
         return Ok(Applied::Nothing);
     }
     Ok(Applied::Changed(change))
+}
+
+/// Whether `doc`'s state vector covers every struct `update` carries: the
+/// payload was applied before. A struct past the state, or one that starts
+/// after a gap (another document's, a forged one), is not held.
+fn held(update: &Update, state: &StateVector) -> bool {
+    update.blocks().all(|block| {
+        let (client, clock, len) = match block {
+            UpdateBlock::Item(item) => (item.id().client, item.id().clock, item.len()),
+            UpdateBlock::Gc(range) | UpdateBlock::Skip(range) => {
+                (range.client, range.clock, range.len)
+            }
+        };
+        clock + len <= state.get(&client)
+    })
 }
 
 /// The map entries among `deleted` (what a payload's transaction deleted
@@ -615,6 +633,24 @@ mod tests {
         let room = crate::scratch_doc();
         room.get_or_insert_text("source")
             .insert(&mut room.transact_mut(), 0, "hello world");
+        assert!(matches!(sent_back(&room, &undo).1, Applied::Unheld));
+    }
+
+    /// Two notes seeded alike share their seed's ids, so another note's
+    /// payload finds its anchors here; it still names the other edit's own
+    /// items, which this note lacks, and is unheld, not taken for a payload
+    /// applied before. Fails if a gap in the payload's clocks reads as held.
+    #[test]
+    fn a_payload_of_a_note_seeded_alike_is_unheld() {
+        let seed = crate::scratch_doc();
+        seed.get_or_insert_text("source")
+            .insert(&mut seed.transact_mut(), 0, "hello world");
+        let (other, room) = (reloaded(&seed), reloaded(&seed));
+        let undo = edit_with_payload(&other, |txn| {
+            let text = txn.get_or_insert_text("source");
+            text.remove_range(txn, 0, 5);
+            text.insert(txn, 0, "howdy");
+        });
         assert!(matches!(sent_back(&room, &undo).1, Applied::Unheld));
     }
 

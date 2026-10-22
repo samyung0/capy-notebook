@@ -4022,9 +4022,10 @@ async fn a_source_undo_lands_while_a_person_keeps_typing() {
 /// (`sources::undo_cost`: three bytes per byte removed or inserted). A
 /// removal is a small update whose Undo brings the text back: here past a
 /// source room's admission headroom. An edit whose Undo fitted when it
-/// landed is refused once a person filled the room; one that does not fit
-/// when it lands gets no Undo ref and no payload. Fails if the estimate is
-/// not checked at the edit or the size at the Undo.
+/// landed is refused once a person filled the room past the payload's own
+/// size (the payload is checked as an edit is); one that does not fit when
+/// it lands gets no Undo ref and no payload. Fails if the estimate is not
+/// checked at the edit or the payload's size at the Undo.
 #[tokio::test]
 async fn an_undo_too_large_for_the_room_is_not_offered() {
     let Some(env) = env() else { return };
@@ -4066,8 +4067,9 @@ async fn an_undo_too_large_for_the_room_is_not_offered() {
         edit.as_str(),
         "{receipt}"
     );
-    // A person's 220 KiB fits the room and leaves about 380 KiB.
-    type_at_start(&mut client, &"p".repeat(220 * 1024)).await;
+    // A person's 480 KiB fits the room and leaves about 120 KiB, less than
+    // the 150 KB the Undo brings back.
+    type_at_start(&mut client, &"p".repeat(480 * 1024)).await;
     source_receipt(&mut client, "filled")
         .await
         .expect("the person's text stored");
