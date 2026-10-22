@@ -878,7 +878,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a mermaid block (a mindmap's or diagram's one block) as one ```mermaid fence, expecting the source inspect shows as its text. Any note block may be removed or replaced, media included; the only media an edit adds are library figures, and a block rewritten as one of its own type keeps its caption and width. PDFs cannot be edited. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a mermaid block (a mindmap's or diagram's one block) as one ```mermaid fence, expecting the source inspect shows as its text. Any note block may be removed or replaced, media included; the only media an edit adds are library figures. A block rewritten as one of its own type keeps its caption and width (a diagram its theme too); an image swapped for a different picture or figure takes the new one's caption. PDFs cannot be edited. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {

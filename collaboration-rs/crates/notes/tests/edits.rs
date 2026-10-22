@@ -511,54 +511,83 @@ fn an_edit_removes_or_replaces_media_and_the_last_block() {
     );
 }
 
-/// An agent edit never changes a block's caption and never compares it (Epo
-/// 2026-10-22): an image whose caption someone changed after the inspect is
-/// still replaced by a figure, and the figure keeps that caption and the
-/// image's width over the caption the agent wrote. Fails if a rewrite takes
-/// the agent's caption or loses the width.
-#[test]
-fn an_image_rewrite_keeps_the_caption_someone_changed_since_the_inspect() {
-    let doc = common::doc(
-        &slate_yjs::state_from_value(
-            &[json!({
-                "assetId": "ea_1", "caption": [{ "text": "Old" }], "children": [{ "text": "" }],
-                "id": "i1", "type": "img", "width": "40%",
-            })],
-            1,
-        ),
-        2,
-    );
+/// The agent's rewrite of image `i1` in a note holding `image` as one
+/// block: the note after it.
+fn rewrite_image(image: Value, retitle: Option<&str>, rewrite: Value) -> Vec<Value> {
+    let doc = common::doc(&slate_yjs::state_from_value(&[image], 1), 2);
     let inspected = edit::inspect_material(&doc.transact()).unwrap();
-    let image = {
-        let txn = doc.transact();
-        let root = plate::content_root(&txn).unwrap();
-        match &plate::insert_delta(&root).unwrap()[0].insert {
-            plate::Insert::Element(branch) => XmlTextRef::from(*branch),
-            plate::Insert::Text(_) => panic!("not a block"),
-        }
-    };
-    let retitled: Any = serde_json::from_value(json!([{ "text": "New" }])).unwrap();
-    image.insert_attribute(&mut doc.transact_mut(), "caption", retitled);
+    if let Some(caption) = retitle {
+        // Someone retitles the picture after the agent's inspect.
+        let element = {
+            let txn = doc.transact();
+            let root = plate::content_root(&txn).unwrap();
+            match &plate::insert_delta(&root).unwrap()[0].insert {
+                plate::Insert::Element(branch) => XmlTextRef::from(*branch),
+                plate::Insert::Text(_) => panic!("not a block"),
+            }
+        };
+        let retitled: Any = serde_json::from_value(json!([{ "text": caption }])).unwrap();
+        element.insert_attribute(&mut doc.transact_mut(), "caption", retitled);
+    }
     let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
-    let figure = json!({
-        "assetId": "figure:fig_1", "caption": [{ "text": "The agent's" }],
-        "children": [{ "text": "" }], "id": "i2", "type": "img",
-    });
     edit::apply_material_commands(
         &mut doc.transact_mut(),
         &root,
         &[DocumentCommand::ReplaceBlock {
             block_id: "i1".into(),
             expected_text: inspected[0].text.clone(),
-            blocks: vec![figure],
+            blocks: vec![rewrite],
         }],
     )
     .unwrap();
-    let value = plate::value(&doc.transact()).unwrap();
+    plate::value(&doc.transact()).unwrap()
+}
+
+fn image(id: &str, asset: &str, caption: Option<&str>) -> Value {
+    let mut image =
+        json!({ "assetId": asset, "children": [{ "text": "" }], "id": id, "type": "img" });
+    if let Some(caption) = caption {
+        image["caption"] = json!([{ "text": caption }]);
+    }
+    image
+}
+
+/// An agent edit never changes a block's caption and never compares it (Epo
+/// 2026-10-22): an image rewritten with its file kept keeps the caption
+/// someone changed after the inspect, and the width, over the caption the
+/// agent wrote. Fails if a rewrite takes the agent's caption or loses the
+/// width.
+#[test]
+fn an_image_rewrite_keeping_its_file_keeps_the_caption_someone_changed() {
+    let mut old = image("i1", "ea_1", Some("Old"));
+    old["width"] = json!("40%");
+    let value = rewrite_image(old, Some("New"), image("i2", "ea_1", Some("The agent's")));
     assert_eq!(value[0]["id"], "i2");
-    assert_eq!(value[0]["assetId"], "figure:fig_1");
     assert_eq!(value[0]["caption"], json!([{ "text": "New" }]));
     assert_eq!(value[0]["width"], "40%");
+}
+
+/// An image swapped for a different picture or library figure is a new
+/// block with its own caption and credit (Epo 2026-10-22, refining the
+/// caption rule): an uncaptioned image swapped for a figure gets the
+/// figure's credit, and figure A swapped for figure B shows B's credit, not
+/// A's. Fails if a swap keeps the old caption.
+#[test]
+fn a_swapped_picture_brings_its_own_caption_and_credit() {
+    let credited = "Mitosis (credit: OpenStax Biology, CC BY 4.0)";
+    let value = rewrite_image(
+        image("i1", "ea_upload", None),
+        None,
+        image("i2", "ea_fig_b", Some(credited)),
+    );
+    assert_eq!(value[0]["caption"], json!([{ "text": credited }]));
+    let value = rewrite_image(
+        image("i1", "ea_fig_a", Some("Cell cycle (credit: NASA)")),
+        None,
+        image("i2", "ea_fig_b", Some(credited)),
+    );
+    assert_eq!(value[0]["assetId"], "ea_fig_b");
+    assert_eq!(value[0]["caption"], json!([{ "text": credited }]));
 }
 
 #[test]

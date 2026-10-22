@@ -117,7 +117,9 @@ import (
 // expected_back, required with the side it replaces (Epo 2026-10-21); a
 // Mermaid block's inspected and expected text is its source, nested ones
 // included, and a replace_block keeps the replaced block's caption and width
-// on the replacement's first block of its type (Epo 2026-10-22).
+// (a Mermaid block's theme too) on the replacement's first block of its type,
+// unless that shows a different picture, which brings its own caption and
+// credit (Epo 2026-10-22).
 const ContractVersion = 37
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
@@ -1062,9 +1064,10 @@ func Definitions() []Definition {
 				"block with formatting or math, and a mermaid block (a mindmap's or diagram's " +
 				"one block) as one ```mermaid fence, expecting the source inspect shows as its text. " +
 				"Any note block may be removed or replaced, media included; the only media an edit " +
-				"adds are library figures, and a block rewritten as one of its own type keeps its " +
-				"caption and width. PDFs cannot be edited. Quiz questions are added and replaced " +
-				"with the question tools.",
+				"adds are library figures. A block rewritten as one of its own type keeps its " +
+				"caption and width (a diagram its theme too); an image swapped for a different " +
+				"picture or figure takes the new one's caption. PDFs cannot be edited. Quiz " +
+				"questions are added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{

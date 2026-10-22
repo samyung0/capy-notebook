@@ -3569,7 +3569,8 @@ limit per command kind), the rest returned unapplied. Version 37
 (2026-10-22) drops `set_mermaid` (a mindmap's or diagram's Mermaid block
 changes through `replace_block`, expecting its source), lets
 `edit_document` remove or replace any note block, media included, keeps a
-rewritten block's caption and width, and gives `replace_card`
+rewritten block's caption and width (a diagram's theme too; a swapped
+picture brings its own), and gives `replace_card`
 `expected_front` and `expected_back`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
@@ -4207,9 +4208,12 @@ audio's, video's or interactive block's caption is an attribute outside the
 text. In a `replace_block`, the replacement's first block of the replaced
 one's type is that block rewritten, whatever else the markdown adds beside
 it (review r2 M1): it takes the old block's caption (a Mermaid block's
-caption element, another's `caption`) and `width` as they read at the edit,
-over any the agent's markdown gave (`keep_caption`); the agent places a new
-captioned figure with `remove_block` and `insert_markdown`. Inspect prints a
+caption element, another's `caption`), `width` and a Mermaid block's `theme`
+as they read at the edit, over any the agent's markdown gave
+(`keep_caption`). A rewrite that shows a different picture, file or video
+(another `assetId`, or `provider`/`videoId`) is a new block instead and keeps
+its own caption, so a swapped-in library figure carries its printed credit
+(Epo 2026-10-22, refining the caption rule). Inspect prints a
 Mermaid source without showing its edge whitespace, so the pipeline maps an
 expectation matching a shown source, edge whitespace aside, to the stored one,
 from the inspection or a stale refusal (`_stored_expectation`, as for a quiz

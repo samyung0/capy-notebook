@@ -252,19 +252,26 @@ fn block_text(node: &Value) -> String {
 }
 
 /// A block replaced by blocks holding one of its own type is rewritten
-/// there: the rewrite keeps its caption (a Mermaid block's caption element, another
-/// block's `caption`) and width, which agent edits never change (Epo
-/// 2026-10-22).
+/// there: the rewrite keeps its caption (a Mermaid block's caption element,
+/// another block's `caption`), width and a Mermaid block's theme, which agent
+/// edits never change, unless it shows a different picture, file or video:
+/// that is a new block bringing its own caption and credit (Epo 2026-10-22).
 fn keep_caption(old: &Value, new: &mut Value) {
-    let caption = if js_string(old.get("type")) == "mermaid" {
-        "children"
+    if ["assetId", "provider", "videoId"]
+        .iter()
+        .any(|key| old.get(key) != new.get(key))
+    {
+        return;
+    }
+    let keys: &[&str] = if js_string(old.get("type")) == "mermaid" {
+        &["children", "width", "theme"]
     } else {
-        "caption"
+        &["caption", "width"]
     };
     let Some(new) = new.as_object_mut() else {
         return;
     };
-    for key in [caption, "width"] {
+    for &key in keys {
         match old.get(key) {
             Some(value) => new.insert(key.to_owned(), value.clone()),
             None => new.remove(key),

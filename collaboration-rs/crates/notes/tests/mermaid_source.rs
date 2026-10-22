@@ -329,11 +329,12 @@ fn a_replaced_mermaid_block_holds_its_source_as_a_text() {
     notes::material::assert_canonical(&plate::value(&room.transact()).unwrap(), "diagram").unwrap();
 }
 
-/// A captioned, resized diagram block.
+/// A captioned, resized, themed diagram block.
 fn captioned(caption: &str) -> Value {
     let mut block = mermaid(SOURCE);
     block["children"][0]["children"][0]["text"] = json!(caption);
     block["width"] = json!("60%");
+    block["theme"] = json!("handDrawn");
     block
 }
 
@@ -386,12 +387,12 @@ fn a_diagram_rewrite_is_stale_once_its_source_changed_since_the_inspect() {
     assert_eq!(projected_source(&room), typed);
 }
 
-/// A diagram rewrite keeps the block's caption and width (Epo 2026-10-22),
-/// the caption as someone changed it since the inspect, which the rewrite
-/// never compares. Fails if the rewrite drops either or compares the
-/// caption.
+/// A diagram rewrite keeps the block's caption, width and theme (Epo
+/// 2026-10-22), the caption as someone changed it since the inspect, which
+/// the rewrite never compares. Fails if the rewrite drops any of them or
+/// compares the caption.
 #[test]
-fn a_diagram_rewrite_keeps_the_caption_and_width() {
+fn a_diagram_rewrite_keeps_the_caption_width_and_theme() {
     let room = room(&[captioned("Cell cycle")]);
     let inspected = edit::inspect_material(&room.transact()).unwrap();
     let retitled = caption(&room, &[0]);
@@ -429,6 +430,7 @@ fn a_diagram_rewrite_keeps_the_caption_and_width() {
         "The Cell cycle"
     );
     assert_eq!(block["width"], "60%");
+    assert_eq!(block["theme"], "handDrawn");
     notes::material::assert_canonical(&value, "diagram").unwrap();
 }
 

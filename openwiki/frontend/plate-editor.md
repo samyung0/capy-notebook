@@ -726,7 +726,7 @@ one by its escaped bytes (no copy of the room per keystroke), and writes the
 source of a block an agent's `replace_block` puts in as a text too (Epo
 2026-10-21: `set_mermaid` is gone, so an agent replaces the whole block). The
 rewrite expects the source the agent inspected, so typing in it since makes
-the edit stale, and keeps the block's caption and width as they read (Epo
+the edit stale, and keeps the block's caption, width and theme as they read (Epo
 2026-10-22, `keep_caption` in `crates/notes/src/edit.rs`). Its admit lets a text in as `source`
 on a `mermaid` block only, with strings and nothing else inside
 (`collaboration-rs/crates/notes/src/limits.rs`): a text under another key or
