@@ -41,10 +41,16 @@ pub fn on_entry(txn: &mut TransactionMut, update: &Update, kind: &str) -> Vec<&'
     let mut stripped: Vec<(BranchPtr, Arc<str>)> = Vec::new();
     {
         let store = ReadTxn::store(txn);
+        let state = ReadTxn::state_vector(txn);
         for item in ydoc::Incoming::new(update).items() {
+            // Only an id the room holds is looked up.
+            let id = item.id();
+            if id.clock >= state.get(&id.client) {
+                continue;
+            }
             // As integrated: an entry written after another takes its key
             // and element from it.
-            let Some(held) = store.get_item(item.id()) else {
+            let Some(held) = store.get_item(id) else {
                 continue;
             };
             if held.is_deleted() {
