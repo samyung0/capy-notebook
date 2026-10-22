@@ -42,12 +42,13 @@ type bankProgressOutput struct {
 
 // bankSummaryQuestion is one current question on a topic's summary page.
 type bankSummaryQuestion struct {
-	ID          string   `json:"id"`
-	Position    int      `json:"position"`
-	Preview     string   `json:"preview"`
-	Marks       int      `json:"marks"`
-	AnswerTypes []string `json:"answerTypes" nullable:"false" doc:"The distinct answer types of the question's parts, in part order"`
-	Score       *float64 `json:"score" doc:"The latest answer's score for the current content, 0 to 1; null when not answered"`
+	ID          string     `json:"id"`
+	Position    int        `json:"position"`
+	Preview     string     `json:"preview"`
+	Marks       int        `json:"marks"`
+	AnswerTypes []string   `json:"answerTypes" nullable:"false" doc:"The distinct answer types of the question's parts, in part order"`
+	Score       *float64   `json:"score" doc:"The latest answer's score for the current content, 0 to 1; null when not answered"`
+	ReviewedAt  *time.Time `json:"reviewedAt" doc:"When an editor last marked the question reviewed; null when not reviewed"`
 }
 type bankSummaryOutput struct {
 	Body struct {
@@ -142,7 +143,7 @@ func (a *api) bankSummary(ctx context.Context, in *bankTopicInput) (*bankSummary
 	out := &bankSummaryOutput{}
 	out.Body.Questions = make([]bankSummaryQuestion, 0, len(rows))
 	for _, r := range rows {
-		q := bankSummaryQuestion{ID: r.ID, Position: r.Position, Preview: r.Preview, Marks: r.Marks, AnswerTypes: r.AnswerTypes}
+		q := bankSummaryQuestion{ID: r.ID, Position: r.Position, Preview: r.Preview, Marks: r.Marks, AnswerTypes: r.AnswerTypes, ReviewedAt: r.ReviewedAt}
 		if score, ok := marks[r.ID]; ok {
 			q.Score = &score
 		}

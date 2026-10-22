@@ -465,7 +465,7 @@ test.describe('study progress', () => {
       )
     );
     await expect(
-      ownerPage.getByText(m.review_left({ count: 5 }))
+      ownerPage.getByText(m.flashcards_card_position({ position: 1, total: 5 }))
     ).toBeVisible();
   });
 
@@ -564,7 +564,7 @@ test.describe('study progress', () => {
       )
     );
     await expect(
-      ownerPage.getByText(m.review_left({ count: 2 }))
+      ownerPage.getByText(m.flashcards_card_position({ position: 1, total: 2 }))
     ).toBeVisible();
 
     const ratings: Record<string, unknown>[] = [];
@@ -589,7 +589,7 @@ test.describe('study progress', () => {
 
     await expect(ownerPage.getByText(prompt)).toBeVisible();
     await expect(
-      ownerPage.getByText(m.review_left({ count: 1 }))
+      ownerPage.getByText(m.flashcards_card_position({ position: 2, total: 2 }))
     ).toBeVisible();
     // The question arrives answer-free; Check returns its key and rates it.
     await ownerPage

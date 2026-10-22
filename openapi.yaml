@@ -779,6 +779,11 @@ components:
           type: integer
         preview:
           type: string
+        reviewedAt:
+          description: When an editor last marked the question reviewed; null when not reviewed
+          format: date-time
+          nullable: true
+          type: string
         score:
           description: The latest answer's score for the current content, 0 to 1; null when not answered
           format: double
@@ -791,6 +796,7 @@ components:
         - marks
         - answerTypes
         - score
+        - reviewedAt
       type: object
     BillingCheckoutReq:
       additionalProperties: false
@@ -3699,20 +3705,12 @@ components:
           minItems: 1
           nullable: true
           type: array
-        grain:
-          format: double
-          maximum: 1
-          minimum: 0
-          type: number
         pattern:
           enum:
             - none
             - arc
             - mesh
             - glow
-            - painted
-            - waves
-            - contours
           type: string
         strength:
           format: double
@@ -3724,7 +3722,6 @@ components:
         - colours
         - dots
         - strength
-        - grain
       type: object
     PageFrameColor:
       additionalProperties: false

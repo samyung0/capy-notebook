@@ -11,7 +11,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { usePanelRef } from 'react-resizable-panels';
+import { type PanelSize, usePanelRef } from 'react-resizable-panels';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
@@ -91,15 +91,29 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 type PanelTab = 'study' | 'files' | 'chat';
 type LeftView = 'chats' | 'files' | 'study';
 
+const isPanelTab = (value: unknown): value is PanelTab =>
+  value === 'study' || value === 'files' || value === 'chat';
+const isLeftView = (value: unknown): value is LeftView =>
+  value === 'chats' || value === 'files' || value === 'study';
+
 // The rail is 32% of the group from 1380px up (~438px at a 1400px window).
 // Narrower, it takes three quarters of the lost width down to 400px, the
 // least a rich chat answer (cards, tables, charts) reads well in.
+/** The header's panel toggles while their panel is open: the icon's strip
+ * fills in the accent. */
+const PANEL_TOGGLE_OPEN = 'text-action-accent hover:text-action-accent';
 const RAIL_SHARE = 0.32;
 const RAIL_FULL_AT = 1380;
 const RAIL_MIN = 400;
 function railSize(groupWidth: number) {
   if (groupWidth >= RAIL_FULL_AT) return `${RAIL_SHARE * 100}%`;
   return `${Math.max(RAIL_MIN, RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth))}px`;
+}
+
+/** A collapsible panel was dragged under its least width. Reopening a
+ * collapsed panel also reports a zero size, which must not close it again. */
+function collapsedByDrag(size: PanelSize, previous: PanelSize | undefined) {
+  return size.inPixels === 0 && !!previous && previous.inPixels > 0;
 }
 
 /** The right rail. Closed, it collapses to nothing but stays mounted, so a
@@ -146,8 +160,8 @@ function RailPanel({
       id="rail"
       maxSize="50%"
       minSize={`${RAIL_MIN}px`}
-      onResize={(size) => {
-        if (open && size.inPixels === 0) onCollapse();
+      onResize={(size, _id, previous) => {
+        if (open && collapsedByDrag(size, previous)) onCollapse();
       }}
       panelRef={panelRef}
     >
@@ -181,7 +195,8 @@ export default function WorkspaceOpen() {
 
   // Breakpoints: one column below 1260px, side panels from there, the left
   // one only from xl up. The left starts open from 2xl, where there is room,
-  // the right starts closed (a chat row opens it); both toggles are remembered.
+  // the right starts closed (a chat row opens it); both toggles and both
+  // panels' views are remembered.
   const lg = useMediaQuery('(min-width: 1260px)');
   const xl = useMediaQuery('(min-width: 1280px)');
   const roomy = useMediaQuery('(min-width: 1536px)');
@@ -197,7 +212,11 @@ export default function WorkspaceOpen() {
   );
   const oneColumnLayout = !lg;
   const leftShown = xl && leftOpen;
-  const [leftView, setLeftView] = useState<LeftView>('chats');
+  const [leftView, setLeftView] = useLocalPref(
+    PREF_KEYS.leftView,
+    'chats',
+    isLeftView
+  );
   const [archivedOpen, setArchivedOpen] = useState(false);
   // The left panel's chat list drives the rail's chat, which reports back
   // the thread it shows.
@@ -205,7 +224,7 @@ export default function WorkspaceOpen() {
   const [activeChat, setActiveChat] = useState<string | null>(null);
 
   const searchedOpenItem = openItemFromSearch(search);
-  const [tab, setTab] = useState<PanelTab>('files');
+  const [tab, setTab] = useLocalPref(PREF_KEYS.rightView, 'files', isPanelTab);
   // One column: Files drops from the top, under the header it was opened from.
   const [filesOpen, setFilesOpen] = useState(false);
   // The Files dropdown hangs from the header, which lives in CenterContent.
@@ -472,7 +491,6 @@ export default function WorkspaceOpen() {
     );
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
-      {...addProps}
       beforeReplace={confirmViewerReplacement}
       generating={generating}
       header={picker}
@@ -609,6 +627,7 @@ export default function WorkspaceOpen() {
               {xl && (
                 <ToolbarButton
                   aria-pressed={leftOpen}
+                  className={cn(leftOpen && PANEL_TOGGLE_OPEN)}
                   label={
                     leftOpen
                       ? m.workspace_close_side_panel()
@@ -616,7 +635,7 @@ export default function WorkspaceOpen() {
                   }
                   onClick={() => setLeftOpen(!leftOpen)}
                 >
-                  <Icon name="panelLeft" />
+                  <Icon name={leftOpen ? 'panelLeftOpen' : 'panelLeft'} />
                 </ToolbarButton>
               )}
             </div>
@@ -645,6 +664,7 @@ export default function WorkspaceOpen() {
             lg && (
               <ToolbarButton
                 aria-pressed={rightOpen}
+                className={cn(rightOpen && PANEL_TOGGLE_OPEN)}
                 label={
                   rightOpen
                     ? m.workspace_close_right_panel()
@@ -652,7 +672,7 @@ export default function WorkspaceOpen() {
                 }
                 onClick={() => setRightOpen(!rightOpen)}
               >
-                <Icon name="panelRight" />
+                <Icon name={rightOpen ? 'panelRightOpen' : 'panelRight'} />
               </ToolbarButton>
             )
           }
@@ -673,7 +693,7 @@ export default function WorkspaceOpen() {
   );
   // The left panel: chats, the file tree or study, members at its foot.
   const leftPanel = (
-    <Panel className="w-full" sectionClassName="h-full gap-0">
+    <Panel className="w-full" frosted sectionClassName="h-full gap-0">
       <div className="flex h-full min-h-0 flex-col" data-workspace-left-panel>
         <div className="flex min-h-0 flex-1 flex-col">
           {leftView === 'files' ? (
@@ -740,10 +760,15 @@ export default function WorkspaceOpen() {
             <>
               <ResizablePanel
                 className="overflow-visible!"
+                collapsible
                 defaultSize="340px"
                 id="files"
                 maxSize="420px"
                 minSize="300px"
+                // Dragged under its least width, it closes like the toggle.
+                onResize={(size, _id, previous) => {
+                  if (collapsedByDrag(size, previous)) setLeftOpen(false);
+                }}
               >
                 {leftPanel}
               </ResizablePanel>

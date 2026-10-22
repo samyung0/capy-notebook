@@ -873,6 +873,7 @@ export const BankTopicSummaryResponse = zod.object({
   "marks": zod.int(),
   "position": zod.int(),
   "preview": zod.string(),
+  "reviewedAt": zod.iso.datetime({"offset":true}).nullable().describe('When an editor last marked the question reviewed; null when not reviewed'),
   "score": zod.number().nullable().describe('The latest answer\'s score for the current content, 0 to 1; null when not answered')
 })).describe('The topic\'s current questions in topic order, with the learner\'s latest results')
 })
@@ -3798,9 +3799,6 @@ export const getMeResponseCustomizationPageFrameDotsItemYMax = 1;
 
 export const getMeResponseCustomizationPageFrameDotsMax = 3;
 
-export const getMeResponseCustomizationPageFrameGrainMin = 0;
-export const getMeResponseCustomizationPageFrameGrainMax = 1;
-
 export const getMeResponseCustomizationPageFrameStrengthMin = 0;
 export const getMeResponseCustomizationPageFrameStrengthMax = 1;
 
@@ -3838,8 +3836,7 @@ export const GetMeResponse = zod.object({
   "x": zod.number().min(getMeResponseCustomizationPageFrameDotsItemXMin).max(getMeResponseCustomizationPageFrameDotsItemXMax),
   "y": zod.number().min(getMeResponseCustomizationPageFrameDotsItemYMin).max(getMeResponseCustomizationPageFrameDotsItemYMax)
 })).min(1).max(getMeResponseCustomizationPageFrameDotsMax).nullable(),
-  "grain": zod.number().min(getMeResponseCustomizationPageFrameGrainMin).max(getMeResponseCustomizationPageFrameGrainMax),
-  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow']),
   "strength": zod.number().min(getMeResponseCustomizationPageFrameStrengthMin).max(getMeResponseCustomizationPageFrameStrengthMax)
 }),
   "style": zod.enum(['classroom', 'notion']),
@@ -3893,9 +3890,6 @@ export const updateMeResponseCustomizationPageFrameDotsItemYMax = 1;
 
 export const updateMeResponseCustomizationPageFrameDotsMax = 3;
 
-export const updateMeResponseCustomizationPageFrameGrainMin = 0;
-export const updateMeResponseCustomizationPageFrameGrainMax = 1;
-
 export const updateMeResponseCustomizationPageFrameStrengthMin = 0;
 export const updateMeResponseCustomizationPageFrameStrengthMax = 1;
 
@@ -3933,8 +3927,7 @@ export const UpdateMeResponse = zod.object({
   "x": zod.number().min(updateMeResponseCustomizationPageFrameDotsItemXMin).max(updateMeResponseCustomizationPageFrameDotsItemXMax),
   "y": zod.number().min(updateMeResponseCustomizationPageFrameDotsItemYMin).max(updateMeResponseCustomizationPageFrameDotsItemYMax)
 })).min(1).max(updateMeResponseCustomizationPageFrameDotsMax).nullable(),
-  "grain": zod.number().min(updateMeResponseCustomizationPageFrameGrainMin).max(updateMeResponseCustomizationPageFrameGrainMax),
-  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow']),
   "strength": zod.number().min(updateMeResponseCustomizationPageFrameStrengthMin).max(updateMeResponseCustomizationPageFrameStrengthMax)
 }),
   "style": zod.enum(['classroom', 'notion']),
@@ -3989,9 +3982,6 @@ export const setCustomizationBodyPageFrameDotsItemYMax = 1;
 
 export const setCustomizationBodyPageFrameDotsMax = 3;
 
-export const setCustomizationBodyPageFrameGrainMin = 0;
-export const setCustomizationBodyPageFrameGrainMax = 1;
-
 export const setCustomizationBodyPageFrameStrengthMin = 0;
 export const setCustomizationBodyPageFrameStrengthMax = 1;
 
@@ -4004,8 +3994,7 @@ export const SetCustomizationBody = zod.object({
   "x": zod.number().min(setCustomizationBodyPageFrameDotsItemXMin).max(setCustomizationBodyPageFrameDotsItemXMax),
   "y": zod.number().min(setCustomizationBodyPageFrameDotsItemYMin).max(setCustomizationBodyPageFrameDotsItemYMax)
 })).min(1).max(setCustomizationBodyPageFrameDotsMax).nullable(),
-  "grain": zod.number().min(setCustomizationBodyPageFrameGrainMin).max(setCustomizationBodyPageFrameGrainMax),
-  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow', 'painted', 'waves', 'contours']),
+  "pattern": zod.enum(['none', 'arc', 'mesh', 'glow']),
   "strength": zod.number().min(setCustomizationBodyPageFrameStrengthMin).max(setCustomizationBodyPageFrameStrengthMax)
 }),
   "style": zod.enum(['classroom', 'notion']),

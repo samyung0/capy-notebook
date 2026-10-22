@@ -16,11 +16,6 @@ export interface PageFrame {
      * @nullable
      */
   dots: PageFrameColor[] | null;
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
-  grain: number;
   pattern: PageFramePattern;
   /**
      * @minimum 0

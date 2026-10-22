@@ -83,15 +83,9 @@ export function CardDialog({
   if (!card) return null;
   return (
     <SimpleDialog
-      // Live-saved: phones show the status and Undo where Save would be.
-      action={
-        phone && (
-          <div className="flex items-center gap-1">
-            <LiveStatus status={status} />
-            <UndoButtons manager={undo} />
-          </div>
-        )
-      }
+      // Live-saved: phones show the status by the title and Undo where Save
+      // would be.
+      action={phone && <UndoButtons manager={undo} />}
       footer={
         <>
           {!phone && (
@@ -114,6 +108,7 @@ export function CardDialog({
       }
       onClose={onClose}
       open
+      status={<LiveStatus status={status} />}
       title={
         <span className="flex items-baseline gap-2.5">
           {m.flashcards_edit_card()}

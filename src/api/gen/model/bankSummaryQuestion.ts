@@ -13,6 +13,11 @@ export interface BankSummaryQuestion {
   position: number;
   preview: string;
   /**
+     * When an editor last marked the question reviewed; null when not reviewed
+     * @nullable
+     */
+  reviewedAt: string | null;
+  /**
      * The latest answer's score for the current content, 0 to 1; null when not answered
      * @nullable
      */

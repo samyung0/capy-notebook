@@ -13,7 +13,4 @@ export const PageFramePattern = {
   arc: 'arc',
   mesh: 'mesh',
   glow: 'glow',
-  painted: 'painted',
-  waves: 'waves',
-  contours: 'contours',
 } as const;

@@ -578,7 +578,7 @@ export function MaterialContent({
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return (
       <div className="h-full min-h-0 overflow-auto">
-        <TabContent centered={centerQuiz}>
+        <TabContent fill>
           <QuizEditor
             action={<StudyLink kind="quiz" materialId={materialId} />}
             key={materialId}
@@ -675,7 +675,6 @@ export function MaterialContent({
           <div className="h-full min-h-0 overflow-auto">
             {material.kind === 'quiz' ? (
               <QuizPreview
-                centered={centerQuiz}
                 content={material.content}
                 provenance={material.provenance}
                 quizId={materialId}
@@ -804,14 +803,12 @@ function LiveNotePreview({
  * Material reads carry learner questions with no answer key; only the quiz
  * editor loads the key. */
 function QuizPreview({
-  centered,
   content,
   provenance,
   quizId,
   target,
   title,
 }: {
-  centered: boolean;
   content: MaterialDocument;
   provenance: Provenance | undefined;
   quizId: string;
@@ -837,7 +834,7 @@ function QuizPreview({
   // The stored questions paint first; the live room follows (live-items).
   const questions = useLiveQuizQuestions(quizId, stored);
   return (
-    <TabContent centered={centered}>
+    <TabContent fill>
       <div className="mb-7 flex items-baseline gap-4">
         <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
         <StudyLink kind="quiz" materialId={quizId} />
@@ -932,9 +929,9 @@ function EmptyCenter({
     <>
       <div
         className={cn(
-          'flex h-12 items-center gap-1 border-divider border-b sm:h-14 sm:gap-2',
+          'flex h-12 items-center gap-1 border-divider border-b sm:h-15 sm:gap-2',
           // Workspace buttons at the edges sit as far in as a file header's.
-          leading ? 'px-1 sm:px-2' : 'pr-1 pl-2 sm:px-4'
+          leading ? 'px-2' : 'px-2 sm:px-4'
         )}
         data-slot="center-header"
       >

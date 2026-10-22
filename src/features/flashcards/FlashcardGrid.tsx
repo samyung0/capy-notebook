@@ -5,7 +5,8 @@ import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
 import { CardGrid, CardSides, CardTile } from './CardView';
 
-/** A flashcard set read as a grid of fronts; a tile opens its preview.
+/** A flashcard set read as a grid of fronts; a tile opens its preview, which
+ * shows the back.
  * `action` sits right of the title. */
 export function FlashcardGrid({
   title,
@@ -36,8 +37,10 @@ export function FlashcardGrid({
           {cards.map((card, index) => (
             <CardTile
               card={card}
+              face="front"
               key={card.id}
               label={card.front}
+              n={index + 1}
               onOpen={() => setOpen(index)}
             />
           ))}

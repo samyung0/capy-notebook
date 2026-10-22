@@ -6,18 +6,19 @@ import {
   useUpdateConversation,
 } from '@/api/hooks';
 import type { Conversation } from '@/api/types';
-import { Button } from '@/components/ui/Button';
+import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
+import { Icon } from '@/components/ui/Icon';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { matchesSearch, PanelSearch } from '../PanelSearch';
 
 /**
- * A workspace's chats for the left panel and the Chat history dialog: New
- * chat, a title search, then Pinned and Older. Each row's ⋮ pins, renames,
+ * A workspace's chats for the left panel and the Chat history dialog: a
+ * title search, New chat, then Pinned and Older. Each row's ⋮ pins, renames,
  * archives or deletes it (after a confirm).
  */
 export function ConversationList({
@@ -123,20 +124,23 @@ export function ConversationList({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <PanelSearch label={m.chat_search()} onChange={setQuery} value={query} />
       {onNew && (
-        <div className="shrink-0 px-2.5 pt-1 pb-2">
-          <Button
-            className="w-full border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1/80"
-            iconLeft="newChat"
+        // A nav row like the app sidebar's: icon, label, a hover fill only.
+        <div className="shrink-0 px-2.5 pt-1">
+          <button
+            className={cn(
+              BASE_BUTTON_STYLE,
+              'flex h-fit w-full justify-start gap-3 px-2 py-1.5 font-medium text-fg leading-(--body-line-height) hover:bg-surface-hover-bg active:-rotate-1'
+            )}
             onClick={onNew}
             type="button"
-            variant="outline"
           >
-            {m.chat_new()}
-          </Button>
+            <Icon className="shrink-0" name="newChat" size={19} />
+            <span className="translate-y-px font-semibold">{m.chat_new()}</span>
+          </button>
         </div>
       )}
-      <PanelSearch label={m.chat_search()} onChange={setQuery} value={query} />
       <div
         className={cn(
           'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pt-2 pb-4 [--scroll-fade-bottom-padding:--spacing(4)]',

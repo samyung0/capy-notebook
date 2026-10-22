@@ -127,7 +127,7 @@ test('a card blanked while retyped keeps its place in a study session', async ({
   try {
     await openWorkspaceMaterial(ownerPage, workspaceId, setId);
     await editorPage.goto(`/flashcards/${setId}`);
-    const first = m.flashcards_card_of_total({ position: 1, total: 3 });
+    const first = m.flashcards_card_position({ position: 1, total: 3 });
     await expect(editorPage.getByText(first)).toBeVisible();
     await expect(
       editorPage.getByText('Osmosis', { exact: true })

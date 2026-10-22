@@ -94,7 +94,7 @@ export function StudyProgress({
 
   if (!(study && chapters && files && materials && attempts))
     return (
-      <TabContent>
+      <TabContent centered>
         <SkeletonList count={8} rowHeight={52} />
       </TabContent>
     );
@@ -174,7 +174,7 @@ export function StudyProgress({
     });
 
   return (
-    <TabContent>
+    <TabContent centered>
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <div className="min-w-0">
           <h2 className="t-card-title">{m.workspace_study_progress()}</h2>

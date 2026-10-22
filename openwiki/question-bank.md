@@ -4,50 +4,50 @@ The bank is a separate syllabus and question database. Signed-in learners read
 question content; granted bank editors can edit, mark reviewed, upload figures
 and send a comment. The bank page is at `/qb`, under Explore in the
 sidebar, inside the app shell: the main panel shows the chosen topic's
-questions, and a right column (`PanelHeader`, shared with the theme
-drawer) holds exams and topics (Exam switcher and
-covers, below), swapping to the topic's question list. Below `lg` that column
-becomes a bottom sheet opened from `PageFloatingBar`
-(`src/components/ui/PageFloatingBar.tsx`):
-Topics on every /qb page, Questions once a topic is open. Its labels stay
-visible, small under the icons on phones and beside them from `sm`. Editors switch between View mode and Edit mode; edit mode adds
+questions, and from `xl` a right column (`PanelHeader`, shared with the theme
+drawer) holds one tree of exams, subjects, topics and the open topic's
+questions (Exam tree and covers, below). Below `xl` a chooser button (the open
+topic's name, else the last attempted exam's) opens the same tree in a dialog,
+full screen on phones with close left of the title; phones put the chooser in
+the top row between the menu and the avatar and hide the breadcrumb (browser
+back covers it). Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. In View mode signed-in learners answer and
-check each question (Learner answering, below) and copy questions into their
-quizzes; production Jev grading remains in `todo-question-bank.md`.
+check each question (Learner answering, below) and copy a topic summary's
+missed questions into their quizzes; production Jev grading remains in `todo-question-bank.md`.
 
-## Exam switcher and covers
+## Exam tree and covers
 
-The topics view (`TopicTree` in `src/routes/QuestionBank.tsx`) opens on
-every exam as a cover strip (`ExamStrip` in
-`src/features/questions/ExamPicker.tsx`): the name, the exam's description
-wrapped to at most two lines and its topic count, over a dark fade from the
-bottom-left corner (a darker one on light covers). Picking one sets
-`/qb?exam=<id>` and shows that exam: `ExamPicker` draws it as a taller strip
-with subject and question counts and opens a list of every exam (the same
-strips) with a Find an exam search. A topic URL opens its own exam unless
-`exam` names another, and a back arrow returns to the list, also while a topic
-is open. Subjects start collapsed except the one holding the current topic; a
-collapsed subject shows its question count, and an open one indents its topics
-under a guide line. Levels with one entry are hidden (`soleSubject`,
+The tree (`TopicTree` in `src/routes/QuestionBank.tsx`) lists every exam as a
+44px cover strip (`ExamStrip` in `src/features/questions/ExamPicker.tsx`): the
+art starts at the left edge and fades out to the right, the name sits on it in
+the cover's text colour as on workspace cards (`paint.light` dark, else white
+over the strip shade; covers look the same in both themes), and the topic count
+and a chevron sit on the panel. A strip opens its subjects in place; several
+exams and subjects may stay open. The open topic's exam and subject, `?exam=`
+and the last attempted topic's exam and subject (`/api/bank/progress`, newest
+first) open on top of whatever the learner opened. A collapsed subject shows its
+question count, and an open one indents its topics under a guide line; a topic
+shows its question count, or "answered of total" once started, and edit mode's
+reviewed/total. The open topic lists its questions as numbered squares
+(`TopicSquares`, from the summary route): result colours in View mode (the
+quiz result squares), plain in Edit mode with a corner tick once reviewed, the
+current question ringed; a square scrolls the page to its question. Levels with one entry are hidden (`soleSubject`,
 `soleTopic` and `topicPath` in `src/features/questions/bank.ts`): an exam with
 one subject lists its topics without a subject header, and an exam with one
 subject and one topic (a single paper, like a driving test) has no tree:
-picking it opens `/qb/<topicId>` titled with the exam's name, its strip counts
-questions instead of topics, search lists only the exam, and its open topic's
-panel shows the exam list. Page trails, search hits and the landing's progress
+its strip opens `/qb/<topicId>` titled with the exam's name and counts
+questions instead of topics. Page trails, search hits and the landing's progress
 rows drop the hidden labels too. Above a topic's title the trail's segments
-link to the bank and to the exam (the subject opens its exam too), and the back
-arrow goes to the nearest one. The header search (`searchSyllabus` in
-`src/features/questions/bankSearch.ts`) lists hits in three sections, Exams,
-Subjects and Topics, each matched by its own name and ranked best first: the
-name exactly, at its start, at a later word's start, anywhere (an exam's full
-name or description counts from the word-start rank); ties keep syllabus order.
-Hidden levels are not hits. With an exam open, that exam is left out of Exams
-and its subjects and topics come first in their sections; a subject hit opens
-its exam with the subject expanded. Exam hits are plain rows, and so is the
-exam switcher's list (name and count, no description). It
-filters the syllabus already loaded, so it sends no request.
+link to the bank and to the exam (`?exam=`, which opens it in the tree; the
+subject opens its exam too), and the back arrow goes to the nearest one. The
+header search (`searchSyllabus` in `src/features/questions/bankSearch.ts`)
+lists hits in three sections, Exams, Subjects and Topics, each matched by its
+own name and ranked best first: the name exactly, at its start, at a later
+word's start, anywhere (an exam's full name or description counts from the
+word-start rank); ties keep syllabus order. Hidden levels are not hits. An exam
+hit opens it in the tree, a subject hit opens its exam and subject, a topic hit
+opens the topic. It filters the syllabus already loaded, so it sends no request.
 
 The syllabus gives each exam `fullLabel`, a 12 to 15 word `description` (bank
 migration 0006) and `cover`: a style (`symbols`,
@@ -644,7 +644,7 @@ storage.
 | --- | --- |
 | `POST /api/bank/questions/{id}/check` | `{answers}`, the learner's answers by part id. Grades them on the server (open parts with Jev), upserts the question's topic, hash, score (`correct / total`, 0 to 1) and time, and returns `{correct, total, question}`, that one question with its key and awards; 404 when unknown or retracted. |
 | `GET /api/bank/topics/{topicId}/marks` | `{marks: {questionId: score}}` for the topic list: the latest score of each answered current question. |
-| `GET /api/bank/topics/{topicId}/summary` | `{questions: [{id, position, preview, marks, answerTypes, score}]}`: every current question in topic order, unpaged, with the latest score for its current content (null when not answered); the summary page. |
+| `GET /api/bank/topics/{topicId}/summary` | `{questions: [{id, position, preview, marks, answerTypes, score, reviewedAt}]}`: every current question in topic order, unpaged, with the latest score for its current content (null when not answered) and when it was last marked reviewed (null when not); the summary page and the tree's squares. |
 | `GET /api/bank/progress` | `{topics}`: every topic with at least one answered current question, most recent answer first. Each carries exam, subject and topic ids and labels, `total` (current questions), `answered`, `correct` (score 1), `lastAnsweredAt`, `nextQuestionId`: the first unanswered question after the most recently answered one in topic order, wrapping to the start, or null when every question is answered, `questionIds` (the topic's current questions in order), `answeredPositions` (1-based places of the answered ones) and `lastAnsweredPosition` (the place of the most recent answer), which the landing's progress map draws and links. |
 | `POST /api/bank/copy` | `{questionIds (1–20), workspaceId, quizId \| quizName, chapterId? \| chapterName?}` returns `{workspaceId, quizId}`. Below. |
 
@@ -702,27 +702,16 @@ list shows the latest. Edit mode reads `GET /api/bank/questions/{id}/edit` and
 keeps the answer key, review bar and disabled runner. A failed check keeps the
 answers for another check.
 
-The topic list uses the shared `QuestionListRow`
-(`src/features/questions/QuestionListRow.tsx`): bold number, two-line stem,
-then a muted line with the marks, figure and table icons. In View mode a result
-mark leads each row from the latest score (`bankStatus`: a green check at full
-marks, an amber minus between, a red cross at zero, an empty circle when
-unanswered), and one line under the topic heading reads "N correct · M to
-retry" (M counts scores below 1), both from the marks route. Edit mode shows
-no marks; its rows keep the reviewed label on the muted line.
-
 With no topic open, View mode's main panel shows the progress route's topics
 (`BankLanding`). Continue: the most recently answered started topic (the route
 lists newest first) as a hand-drawn progress map (`TrailMap`), with its exam
 and subject above, then its name, "answered of total · correct" and an accent
 "Continue at question N" link (opens `nextQuestionId`); the other started
-topics follow as rows with a small trail (`MiniTrail`) and a Continue link.
-The small trail fills its box (150px at least) with more seeded waves rather
-than stretching: on phones it runs the row's full width under the name, wider
-it takes the space between the name and the count. Learning's Progress rows
-and the Study tab use the same trail.
-Finished: a divider list with the date of the last answer and a
-Summary link to the topic's summary page. The map leads with a finished topic
+topics follow as rows (`ProgressRow`, the whole row opens `nextQuestionId`, a
+hover fill hides the dividers beside it) with a purple progress bar (accent on
+its tint) and "answered of total"; phones put the bar and count on a second
+line. Everything sits at the page gutter. Finished: rows with the date of the
+last answer, each opening the topic's summary page. The map leads with a finished topic
 instead in two cases: the URL's `finished` (set by the finish toast's Go check,
 below) names it, or no topic is started (then the most recently answered
 finished one). It then heads "Topic finished", draws the finished map and links
@@ -804,23 +793,21 @@ scoped selector does not reach elements placed with `<use>`). Mocks:
 `artifacts/2026-10-09-bank-path-mocks.html`,
 `artifacts/2026-10-09-bank-map-gallery.html`.
 
-Every topic has the list pages' filter (`FilterPopover` from
-`src/components/app/ListToolbar.tsx`) beside Edit mode's All/Unreviewed
-buttons: Question type offers the answer types present in the topic's rows
-(the editor's labels), and View mode adds Status (Correct, Wrong, Partially
-wrong, Not done). `filterBankRows` keeps rows with any chosen type and any
-chosen status; the search text applies on top, and the main panel shows the
-same rows. Status is matched against the marks as they were when it was last
-toggled, so a question answered while filtered stays in view.
+A topic page has, under its title, the list pages' filter (`FilterPopover`
+from `src/components/app/ListToolbar.tsx`), a search icon that opens the
+question text search, and Edit mode's All/Unreviewed buttons: Question type
+offers the answer types present in the topic's rows (the editor's labels), and
+View mode adds Status (Correct, Wrong, Partially wrong, Not done). The server
+keeps rows with any chosen type and any chosen status, the search text applies
+on top, and the main panel shows those rows. Status is matched against the
+marks as they were when it was last toggled, so a question answered while
+filtered stays in view. Picking questions for Copy to quiz from the topic page
+is hidden for now (Epo 2026-10-22); the summary's Copy to quiz remains.
 
-Clone, right of the filter, turns the side panel's question list into a picker
-for Copy to quiz and gives way to Copy to quiz and ✕ (cancel). Each row then
-leads with a checkbox in place of its result mark; a click toggles the row and
-still scrolls to its question, and on phones the sheet stays open between picks.
-Picks survive filtering and cap at the route's 20. `/qb` is one route whose
+`/qb` is one route whose
 `$topicId` and `$topicId/$questionId` children have no component
-(`src/router.ts`), so moving between questions keeps the page, its filters and
-picks mounted. `CopyToQuizDialog`
+(`src/router.ts`), so moving between questions keeps the page and its filters
+mounted. `CopyToQuizDialog`
 (`src/features/questions/CopyToQuizDialog.tsx`) has Workspace (workspaces with
 `capabilities.canEdit`, each with its icon) dropdown, then a Quiz combobox
 (`QuizTargetSelect.tsx`) styled after TagSelect but single-valued: the picked

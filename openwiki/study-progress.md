@@ -344,7 +344,7 @@ cards) sit beside a bar per rating (Again, Hard, Good, Easy in
 `bg-solid-error/warning/info/success`, each with its count, labelled by the
 axis). Under a rule, Cards lists every card's back (`CardBackFace` tile:
 front and answer each capped in height and scrolling with no scrollbar, edges
-fading; no image) in a grid (`ResultCardGrid`, columns of 350px or more; the
+fading; no image) in a grid (`CardGrid`, the one every flashcard grid uses, columns of 350px or more; the
 page is `TabContent wide`, max-w-4xl) with its number in
 first-rated order and its ratings as tinted chips; the list pages' `SortMenu`
 orders them by Flashcard order, Hardest (first rating, then last) or
