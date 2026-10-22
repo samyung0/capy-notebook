@@ -402,8 +402,20 @@ func TestRemovedUnsentSourceCountsInItsBatch(t *testing.T) {
 	meta := pdfMeta()
 	meta["batchTotal"] = 2
 	batch := batchOf(meta)
+	// Its JSON body has a read deadline, as a ticket's: the recorder takes it.
 	remove := func(user string, body map[string]any) int {
-		return doReq(t, th.h, http.MethodPost, "/api/workspaces/"+ws+"/sources/batches/"+batch+"/removed", user, body).Code
+		raw, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+ws+"/sources/batches/"+batch+"/removed",
+			bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(auth.HeaderE2EUserID, user)
+		req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
+		rec := httptest.NewRecorder()
+		th.h.ServeHTTP(deadlineRecorder{rec}, req)
+		return rec.Code
 	}
 	submission := map[string]any{"source": "upload", "total": 2}
 	if status := remove("u_other", submission); status == http.StatusNoContent {
