@@ -656,7 +656,9 @@ test.describe('study progress', () => {
     await ownerPage
       .getByRole('button', { exact: true, name: m.action_back() })
       .click();
-    await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${ws.id}$`));
+    await expect(ownerPage).toHaveURL(
+      new RegExp(`/workspaces/${ws.id}[?]study=true$`)
+    );
 
     // The finished session is in Past reviews with one card and one question.
     const past = await ownerApi.get('/api/review/sessions');
