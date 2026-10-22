@@ -5,6 +5,8 @@ import { createPresenceStore } from '@/features/collaboration/presence';
 import { createEditorStatusStore, Header } from './CenterContentHeader';
 
 const HIDDEN = /\bhidden\b/;
+const SAVE_LABEL =
+  /<span class="([^"]*)" data-testid="editor-save-label">Saved<\/span>/;
 
 vi.mock('@/api/hooks', () => ({
   materialQuery: (id: string | null) => ({
@@ -27,7 +29,7 @@ vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   WorkspaceStatusButton: () => null,
 }));
 
-function render(menuShown: boolean) {
+function render(menuShown: boolean, kind: 'file' | 'material' = 'file') {
   const editorStatus = createEditorStatusStore();
   editorStatus.getState().report({ saveState: 'saved' });
   return renderToStaticMarkup(
@@ -37,7 +39,7 @@ function render(menuShown: boolean) {
         editorStatus={editorStatus}
         imageZoom={1}
         isFullscreen={false}
-        item={{ id: 'f1', kind: 'file' }}
+        item={{ id: 'f1', kind }}
         materialMode={null}
         menuBar={<span data-testid="menu-slot" />}
         menuShown={menuShown}
@@ -78,4 +80,16 @@ it('keeps one row until the file loads and the status beside the name', () => {
     const container = html.slice(html.lastIndexOf('<div', at), at);
     expect(HIDDEN.test(container)).toBe(!loaded);
   }
+});
+
+/** Notes and other non-Office files show the status label beside its icon
+ * from md up, and the icon alone below md with the label in the tooltip;
+ * Office files keep the icon (Epo 2026-10-22). */
+it('labels the save status from md up outside Office', () => {
+  const label = (html: string) => SAVE_LABEL.exec(html)?.[1];
+  const note = label(render(false, 'material'));
+  expect(note?.split(' ')).toEqual(
+    expect.arrayContaining(['sr-only', 'md:not-sr-only'])
+  );
+  expect(label(render(true))?.split(' ')).toEqual(['sr-only']);
 });

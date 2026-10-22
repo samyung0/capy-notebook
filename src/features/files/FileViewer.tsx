@@ -1,5 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 import { fileLinksQuery, useFileLinks, useWorkspace } from '@/api/hooks';
 import type {
@@ -10,11 +19,14 @@ import type {
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
+import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import { ImageViewer } from '@/features/files/ImageViewer';
+import { onPhone, tabHidden } from '@/features/notes/roomSwap';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import {
   FileEmpty,
@@ -23,14 +35,26 @@ import {
   StorageFullBanner,
 } from './FileStates';
 import {
+  EditorStatusContext,
+  FileActionsTarget,
+  FileHeaderTarget,
+  FileMenuShown,
+  FileMenuTarget,
+  PresenceContext,
+} from './fileModeContext';
+import {
   fileExt,
   IMAGE_MIN_ZOOM,
   isImageFile,
   officeFormatOf,
 } from './fileUtils';
-import type { OfficeCitation, OfficeFormat } from './officeProtocol';
+import type {
+  OfficeCitation,
+  OfficeFormat,
+  OfficePosition,
+} from './officeProtocol';
 import { SourceTextView } from './SourceTextView';
-import { officeRuntimeKey } from './useOfficeRuntime';
+import { type OfficeViewPosition, officeRuntimeKey } from './useOfficeRuntime';
 import { pdfAnnotationsQuery } from './usePdfAnnotations';
 
 const PdfView = lazy(() => import('./PdfView'));
@@ -246,22 +270,166 @@ function FileViewerContent({
   );
 }
 
-/** DOCX, XLSX and PPTX in the Office runtime, keyed by the file so a switch
- * leaves no session or frame of the previous one. */
-function OfficeFileView({
-  format,
-  ...props
-}: {
+interface OfficeFileProps {
   canEdit: boolean;
   citation?: OfficeCitation;
   file: SourceFile;
   format: OfficeFormat;
   onDirtyChange?: (dirty: boolean) => void;
+}
+
+/** DOCX, XLSX and PPTX in the Office runtime, keyed by the file so a switch
+ * leaves no session or frame of the previous one. */
+function OfficeFileView(props: OfficeFileProps) {
+  return lazyView(
+    <OfficeSwap
+      key={officeRuntimeKey(props.file, props.file.revision)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * A newer epoch while the editor is saved (a base handoff, a discard's epoch
+ * reset) swaps renderers instead of a reload banner (Epo 2026-10-22): the
+ * paused view stays on screen while a second view, with its own frame and
+ * session, opens the new epoch hidden beside it, and takes the screen once
+ * it is ready. A hidden tab swaps at once, and so does a phone, which holds
+ * one frame. Each view keeps its own slot: a frame moved in the DOM reloads.
+ */
+function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
+  // Views by generation: the one on screen and the one building beside it.
+  const [views, setViews] = useState<{ next: number | null; shown: number }>({
+    next: null,
+    shown: 0,
+  });
+  const viewsRef = useRef(views);
+  viewsRef.current = views;
+  // Each view's frame position calls; where the next view opens after an
+  // at-once swap, read before the replaced view went.
+  const positions = useRef(new Map<number, OfficeViewPosition>());
+  const carried = useRef<OfficePosition | null>(null);
+  const read = (generation: number) =>
+    positions.current.get(generation)?.read() ?? Promise.resolve(null);
+  const replaced = useCallback(async (generation: number) => {
+    const { next, shown } = viewsRef.current;
+    // The view building was itself replaced: the next one builds instead.
+    if (next === generation) {
+      setViews({ next: generation + 1, shown });
+      return;
+    }
+    if (shown !== generation || next !== null) return;
+    if (!(tabHidden() || onPhone())) {
+      setViews({ next: generation + 1, shown });
+      return;
+    }
+    carried.current = await read(generation);
+    if (viewsRef.current.shown === generation)
+      setViews({ next: null, shown: generation + 1 });
+  }, []);
+  const settled = useCallback(async (generation: number) => {
+    const { next, shown } = viewsRef.current;
+    if (next === generation) {
+      // The next view opens where the reader was, then takes the screen.
+      const position = await read(shown);
+      if (viewsRef.current.next !== generation) return;
+      if (position) positions.current.get(generation)?.show(position);
+      setViews({ next: null, shown: generation });
+    } else if (shown === generation && carried.current) {
+      positions.current.get(generation)?.show(carried.current);
+      carried.current = null;
+    }
+  }, []);
+  const building = views.next;
+  useEffect(() => {
+    if (building === null) return;
+    const hidden = () => {
+      if (tabHidden()) void settled(building);
+    };
+    document.addEventListener('visibilitychange', hidden);
+    return () => document.removeEventListener('visibilitychange', hidden);
+  }, [building, settled]);
+  const View =
+    format === 'xlsx' ? SheetView : format === 'docx' ? DocxView : PptxView;
+  const generations =
+    building === null ? [views.shown] : [views.shown, building];
+  return (
+    <div className="relative h-full">
+      {generations.map((generation) => {
+        const role =
+          generation === building
+            ? 'next'
+            : building === null
+              ? 'live'
+              : 'replaced';
+        return (
+          <OfficeSlot key={generation} role={role}>
+            <View
+              {...props}
+              onDirtyChange={role === 'next' ? undefined : onDirtyChange}
+              startEditing={generation > 0}
+              swap={{
+                onPosition: (position) => {
+                  if (position) positions.current.set(generation, position);
+                  else positions.current.delete(generation);
+                },
+                onReplaced: () => void replaced(generation),
+                onSettled: () => void settled(generation),
+              }}
+            />
+          </OfficeSlot>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * One Office view's slot. The view building hidden takes no input and keeps
+ * out of the header (status, mode control, menus); the replaced one leaves
+ * the avatar group and the floating bar's inset to it, so its unmount clears
+ * neither.
+ */
+function OfficeSlot({
+  children,
+  role,
+}: {
+  children: ReactNode;
+  role: 'live' | 'next' | 'replaced';
 }) {
-  const key = officeRuntimeKey(props.file, props.file.revision);
-  if (format === 'xlsx') return lazyView(<SheetView key={key} {...props} />);
-  if (format === 'docx') return lazyView(<DocxView key={key} {...props} />);
-  return lazyView(<PptxView key={key} {...props} />);
+  const next = role === 'next';
+  const leaving = role === 'replaced';
+  const status = useContext(EditorStatusContext);
+  const presence = useContext(PresenceContext);
+  const inset = useContext(OfficeInsetContext);
+  const header = useContext(FileHeaderTarget);
+  const menu = useContext(FileMenuTarget);
+  const actions = useContext(FileActionsTarget);
+  const menuShown = useContext(FileMenuShown);
+  return (
+    <div
+      aria-hidden={next || undefined}
+      className={cn('h-full', next && 'invisible absolute inset-0')}
+      data-office-view={role}
+      inert={next}
+    >
+      <EditorStatusContext.Provider value={next ? null : status}>
+        <PresenceContext.Provider value={leaving ? null : presence}>
+          <OfficeInsetContext.Provider value={leaving ? null : inset}>
+            <FileHeaderTarget.Provider value={next ? null : header}>
+              <FileMenuTarget.Provider value={next ? null : menu}>
+                <FileActionsTarget.Provider value={next ? null : actions}>
+                  <FileMenuShown.Provider value={next ? null : menuShown}>
+                    {children}
+                  </FileMenuShown.Provider>
+                </FileActionsTarget.Provider>
+              </FileMenuTarget.Provider>
+            </FileHeaderTarget.Provider>
+          </OfficeInsetContext.Provider>
+        </PresenceContext.Provider>
+      </EditorStatusContext.Provider>
+    </div>
+  );
 }
 
 function ResolvedFileView({

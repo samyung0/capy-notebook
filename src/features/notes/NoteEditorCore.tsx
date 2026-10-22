@@ -111,6 +111,7 @@ import {
   sendCheckpointRequest,
   socketOpen,
 } from './roomConnection';
+import { afterPaint, type NoteView, pauseEdits } from './roomSwap';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
@@ -447,6 +448,14 @@ const scrollSelectionIntoView: NonNullable<
   defaultScrollSelectionIntoView(editor as unknown as ReactEditor, domRange);
 };
 
+/**
+ * Where an editor stands in a room swap (Epo 2026-10-22, roomSwap.ts):
+ * `live` on screen; `standby` building beside or under the paused one, its
+ * header status Reconnecting; `paused` the one being replaced, read-only and
+ * out of its room, reporting nothing more.
+ */
+export type NoteEditorPhase = 'live' | 'standby' | 'paused';
+
 export function NoteEditorCore({
   material,
   allowExternalAssets,
@@ -455,6 +464,8 @@ export function NoteEditorCore({
   collaborationToken,
   draftKey,
   restored,
+  phase = 'live',
+  onPainted,
   onEditorStatusChange,
   onPresenceChange,
   onDocumentRejected,
@@ -464,6 +475,9 @@ export function NoteEditorCore({
   onSaveDelayed,
   onUnavailable,
 }: {
+  phase?: NoteEditorPhase;
+  /** Its content first painted (once). */
+  onPainted?: (view: NoteView) => void;
   material: Material;
   allowExternalAssets: boolean;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
@@ -569,7 +583,7 @@ export function NoteEditorCore({
   // names, and the header shows its avatar group.
   const [presence] = useState(createPresenceStore);
   const presenceChange = useRef(onPresenceChange);
-  presenceChange.current = onPresenceChange;
+  presenceChange.current = phase === 'paused' ? undefined : onPresenceChange;
   const reportPresence = useCallback(
     (connections: PresenceConnection[]) => {
       presence.getState().report(connections);
@@ -584,13 +598,20 @@ export function NoteEditorCore({
   // under the header's sync indicator (Epo 2026-10-20); a first open says so
   // under its loading pane.
   const reportedSlowed = useRef(false);
-  const report = useCallback(
-    (saveState: NoteEditorStatus['saveState']) =>
-      onEditorStatusChange?.(
-        reportedSlowed.current ? { saveState, slowed: true } : { saveState }
-      ),
-    [onEditorStatusChange]
-  );
+  const phaseNow = useRef(phase);
+  phaseNow.current = phase;
+  // A paused editor reports nothing; a standby one reads as Reconnecting,
+  // the paused note above it still on screen.
+  const statusChange = useRef(onEditorStatusChange);
+  statusChange.current = phase === 'paused' ? undefined : onEditorStatusChange;
+  const report = useCallback((saveState: NoteEditorStatus['saveState']) => {
+    const shown = phaseNow.current === 'standby' ? 'reconnecting' : saveState;
+    statusChange.current?.(
+      reportedSlowed.current
+        ? { saveState: shown, slowed: true }
+        : { saveState: shown }
+    );
+  }, []);
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
       setHandshaking(next === 'connecting');
@@ -603,7 +624,9 @@ export function NoteEditorCore({
   const markSlowed = useCallback(
     (next: boolean) => {
       setSlowed(next);
-      const shown = next && hasSynced.current;
+      // A standby editor's open is the paused note's reconnect.
+      const shown =
+        next && (hasSynced.current || phaseNow.current === 'standby');
       if (reportedSlowed.current === shown) return;
       reportedSlowed.current = shown;
       if (reportedStatus.current) report(reportedStatus.current);
@@ -620,10 +643,11 @@ export function NoteEditorCore({
     () => unsavedChanges.current || pendingCheckpoints.current.size > 0,
     []
   );
-  const connecting = useCallback(
-    () => setStatus(hasSynced.current ? 'reconnecting' : 'connecting'),
-    [setStatus]
-  );
+  const connecting = useCallback(() => {
+    // A stopped editor (refused build, paused) keeps what it shows.
+    if (stale.current) return;
+    setStatus(hasSynced.current ? 'reconnecting' : 'connecting');
+  }, [setStatus]);
 
   // Plugin options are captured before the editor exists, so the handlers they
   // fire are reached through refs instead of becoming plugin dependencies.
@@ -1154,21 +1178,54 @@ export function NoteEditorCore({
       unregisterHandOver();
       seat.attach(null);
       if (initialized) editor.getApi(YjsPlugin).yjs.destroy();
-      onEditorStatusChange?.(null);
+      // A standby editor dropped for a newer one leaves the status to it.
+      if (phaseNow.current === 'live') statusChange.current?.(null);
       presenceChange.current?.(null);
       // The next mount (a moved room, recovery, Reload) starts clean.
       reportOffline.current?.(null);
       reportSaveDelayed.current?.(false);
     };
-  }, [
-    collaborationToken.room,
-    editor,
-    material.id,
-    onEditorStatusChange,
-    qc,
-    seat,
-    setStatus,
-  ]);
+  }, [collaborationToken.room, editor, material.id, qc, seat, setStatus]);
+
+  // Out of standby: the header shows this editor's own status now.
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    if (
+      lastPhase.current === 'standby' &&
+      phase === 'live' &&
+      reportedStatus.current
+    )
+      report(reportedStatus.current);
+    lastPhase.current = phase;
+  }, [phase, report]);
+
+  // Being replaced (a compaction, a discard, a refused update): read-only
+  // from this render, out of the room, its unsaved edits written as a whole
+  // document before the next room's drafts are read (a child's effects run
+  // before NoteEditor's), and no reconnect.
+  useEffect(() => {
+    if (phase !== 'paused') return;
+    stale.current = true;
+    if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
+    reconnector.current?.dispose();
+    void recorder.current?.dispose();
+    roomProvider(editor)?.disconnect();
+  }, [editor, phase]);
+  useEffect(() => {
+    if (phase === 'paused' && scrollArea) return pauseEdits(scrollArea);
+  }, [phase, scrollArea]);
+
+  // The first paint of the content, for the swap.
+  const paintedChange = useRef(onPainted);
+  paintedChange.current = onPainted;
+  const paintReported = useRef(false);
+  useEffect(() => {
+    if (handshaking || !scrollArea || paintReported.current) return;
+    return afterPaint(() => {
+      paintReported.current = true;
+      paintedChange.current?.({ editor, scrollArea });
+    });
+  }, [editor, handshaking, scrollArea]);
 
   // Cursor awareness goes to every peer through the server: at most one per
   // 50 ms (withCursors installs sendCursorPosition when the editor is made).
@@ -1261,12 +1318,14 @@ export function NoteEditorCore({
   }, [editor]);
 
   useEffect(() => {
-    reportRejection.current = onDocumentRejected;
-    reportSaveDelayed.current = onSaveDelayed;
-    reportUnavailable.current = onUnavailable;
-    reportOffline.current = onOffline;
-    reportOutdated.current = onOutdated;
-    let reported = false;
+    // A paused editor is being replaced: the next one reports for the note.
+    const paused = phase === 'paused';
+    reportRejection.current = paused ? undefined : onDocumentRejected;
+    reportSaveDelayed.current = paused ? undefined : onSaveDelayed;
+    reportUnavailable.current = paused ? undefined : onUnavailable;
+    reportOffline.current = paused ? undefined : onOffline;
+    reportOutdated.current = paused ? undefined : onOutdated;
+    let reported = paused;
     readOnlyNow.current = (refusedConnect = false, code?: ReadOnlyCode) => {
       if (reported) return;
       reported = true;
@@ -1287,10 +1346,15 @@ export function NoteEditorCore({
     onReadOnly,
     onSaveDelayed,
     onUnavailable,
+    phase,
     resendPendingCheckpoints,
     saveImmediately,
   ]);
 
+  // Offline past the bound, refused as outdated, or paused for a swap:
+  // nothing may edit until reconnect, reload or the next editor. A paused
+  // editor's content stops edits without Slate's readOnly (pauseEdits).
+  const locked = offlineLimit || outdated || phase === 'paused';
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>
@@ -1301,15 +1365,15 @@ export function NoteEditorCore({
                 currentUserId={currentUserId}
                 discussions={discussions}
               >
-                {/* Offline past the bound, or refused as outdated: nothing may
-                 * edit until reconnect or reload. Held back: until sent. */}
-                <div className="contents" inert={offlineLimit || outdated}>
+                {/* Held back: until sent. */}
+                <div className="contents" data-note-toolbar="" inert={locked}>
                   <CollaborationHold className="contents">
                     <NoteToolbar />
                   </CollaborationHold>
                 </div>
                 <div
                   className="min-h-0 flex-1 overflow-auto"
+                  data-note-scroll=""
                   ref={setScrollArea}
                 >
                   <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
@@ -1352,8 +1416,10 @@ export function NoteEditorCore({
                     )}
                   </div>
                 </div>
-                {!(offlineLimit || outdated) && <EditorCommandPalette />}
-                {!(offlineLimit || outdated) &&
+                {/* Window-wide listeners: only the editor on screen. */}
+                {!locked && phase === 'live' && <EditorCommandPalette />}
+                {!locked &&
+                  phase === 'live' &&
                   editorAiEnabled(allowExternalAssets) && <AiMenu />}
               </CollaborationProvider>
             </Plate>

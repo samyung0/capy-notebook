@@ -385,11 +385,37 @@ checkpoint receipt and keeps the editor mounted. The workspace keeps the viewer
 under one parent at every breakpoint, since moving an iframe reloads it, so
 resizing never reopens the document. Ordinary metadata refetches do
 not recreate an active editor, and a publication leaves it alone (Deferred
-publication below). Only a maintenance handoff replaces its base: a saved
-editor keeps its current view read-only under a persistent banner that says a
-newer version is available and its changes were saved; the banner's Reload
-button reloads the page, which opens the new epoch with empty Undo/Redo. Starting Edit from a PDF citation creates the editor directly
-without warming the native Office viewer.
+publication below). Only a maintenance handoff (or a discard's epoch reset)
+replaces its base, and a saved editor then swaps renderers instead of showing
+a reload banner (Epo 2026-10-22, the [room swap](#room-swap) below); the new
+epoch opens with empty Undo/Redo. Starting Edit from a PDF citation creates
+the editor directly without warming the native Office viewer.
+
+### Room swap
+
+`OfficeSwap` (`FileViewer.tsx`) keys each view (`DocxView`, `SheetView`,
+`PptxView`, each with its own frame and source session) by generation. When
+the view on screen learns of a newer epoch while saved (`replaced` without the
+maintenance pause: a handoff's `source-epoch-changed` or a token naming
+another epoch), `useOfficeRuntime` reports it (`swap.onReplaced`), its header
+status turns Reconnecting and it stays as it is, paused (read-only and
+selectable, as any pause); a second view opens the new epoch in a slot beside
+it, `invisible absolute inset-0` and `inert`, out of the header
+(`OfficeSlot` gives it no status, mode control, menu or header-action
+targets; the replaced view leaves the avatar group and the floating bar's
+inset to it). Once the new frame has painted with its replica ready (or
+failed: an error, an unavailable file, recovery), the host asks the replaced
+frame where its reader is (`position-request`, answered by `position` within
+a second, else nothing) and gives it to the new one (`set-position`): DOCX
+the first paragraph starting on the page in view by `w14:paraId` (else that
+page) and the selection by paragraph id and offset, XLSX the sheet by id and
+the selected cells, PPTX the slide; Yrs positions are not used, since the new
+epoch has new ones. The new slot then loses its hidden classes (the frame is
+never moved, which would reload it) and the replaced view unmounts. A hidden
+tab or a phone (below sm, one frame) swaps at once: the position is read
+first and given to the new view once it has painted. Only the maintenance
+pause keeps the paused view under its banner (`SourceReplacedBanner`, Reload
+reloads the page); text sources keep the newer-version banner.
 
 The parent owns the room provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
@@ -2433,8 +2459,9 @@ group read-only for copying (see
 [error handling](error-handling.md#collaborative-source-failures)); its Reload
 removes only those exact rows and advances to the next retained group, then
 the current file. A client whose changes were all saved when it learns about a
-completed handoff (from the room or on reconnect) shows the newer-version
-banner instead; a client with unsaved changes enters recovery.
+completed handoff (from the room or on reconnect) swaps to the new epoch
+(Office, [room swap](#room-swap)) or shows the newer-version banner (text);
+a client with unsaved changes enters recovery.
 
 A text source edits its `source` Y.Text through a plain textarea
 (`bindSourceTextarea` in `src/features/files/sourceTextBinding.ts`). Typing,
@@ -2470,7 +2497,8 @@ gateway to move the file to its next editing epoch before the room opens
 again (`POST /internal/collaboration/files/{id}/epoch-reset`, an epoch that
 already moved on is left alone). A client that missed the discard then sees
 a new epoch and opens recovery instead of resyncing the thrown-away state;
-a fully saved one sees the newer-version banner. A refresh captured under the
+a fully saved one swaps to the new epoch (Office) or sees the newer-version
+banner (text). A refresh captured under the
 old epoch could never be claimed or published again, so the reset cancels it
 as superseded in the same transaction (`ResetSourceEpoch`, before the epoch
 moves): its job, candidate, provider session and reserved credits close, no
@@ -2582,7 +2610,7 @@ it authenticates shows one. Other authentication failures show at once. The
 current checkpoint can remain ahead of the indexed checkpoint, with later edits
 retained as pending effects. A concurrent save retries only the local rebase
 against the same parsed candidate. A connected editor that answered ready
-counts as saved and keeps its view under the newer-version banner; a disconnect
+counts as saved and swaps to the new epoch ([room swap](#room-swap)); a disconnect
 clears that, so an editor that loses its connection before the completion goes
 to recovery. The new epoch starts with empty Undo/Redo, as it does after a
 rebuild.
@@ -2857,8 +2885,9 @@ handoff, and a flushed room refuses updates from any writer that slipped
 through. Saves of rooms that were already open still land, so the flush and
 failed-store retries persist. After `resume`, the next writer's authentication
 clears a room's refusal at once. A client whose changes were all saved keeps its
-view read-only under the same banner as a completed handoff, saying editing is
-paused and its changes were saved; one with unsaved changes goes to recovery.
+view read-only under the paused banner (`SourceReplacedBanner`), saying editing
+is paused and its changes were saved (no swap: the pause opens no new epoch);
+one with unsaved changes goes to recovery.
 A client refused on reconnect (a token request answered 423, or the
 authentication reason) takes the same path; opening Edit during the pause shows
 the paused error. Viewing (`source-session?view=true`) and text sources are
@@ -2989,6 +3018,6 @@ text and stable positions, image hashes and references, and hashes of visual
 metadata and is derived from the base, never stored (while a rebuild is
 pending, from the published capture on the old base). A rebuild, or a
 maintenance handoff, stores the rebased saved state as its change over
-seed(export); only the handoff shows open editors the newer-version banner. The maintenance window's reset migration
+seed(export); only the handoff moves open editors (a swap to the new epoch). The maintenance window's reset migration
 (`0034_office_window_reset.sql`, from the template) drops every Office state
 of the old engine so rooms reseed on the new one.

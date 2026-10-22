@@ -3,7 +3,10 @@ import type {
   OfficeMenu,
   OfficeMenuEntry,
 } from '@/features/files/officeMenus';
-import type { OfficeRenderedPage } from '@/features/files/officeProtocol';
+import type {
+  OfficePosition,
+  OfficeRenderedPage,
+} from '@/features/files/officeProtocol';
 
 /**
  * What an editor or viewer puts in Capy's file header: its menus, header
@@ -36,6 +39,13 @@ export type OfficeRenderer = (
 export type OfficeThumbnailer = () => Promise<OfficeRenderedPage | null>;
 /** Called on each local edit: whether it may change the capture. */
 export type OfficeCaptureScope = () => boolean;
+
+/** Where an editor's reader is, and going back there in the next view of a
+ * room swap (Epo 2026-10-22). */
+export interface OfficePositioner {
+  read: () => OfficePosition | null;
+  show: (position: OfficePosition) => void;
+}
 
 /** The menu item an id names, if any. */
 function findItem(

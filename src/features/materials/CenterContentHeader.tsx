@@ -136,12 +136,16 @@ export const EditorStatusStoreContext = createContext<EditorStatusStore | null>(
 /** The open editor's save status. In the header, an icon beside the file's
  * name on the top row at every width (Epo 2026-10-20), its label in the
  * tooltip, held open with the slowed line while an open waits on the open
- * budget; `labelled` (a dialog's footer) writes the label beside the icon. */
+ * budget; `labelled` (a dialog's footer) writes the label beside the icon,
+ * and `labelFromMd` (notes and other non-Office files, Epo 2026-10-22) from
+ * md up. */
 export function EditorSaveStatus({
   labelled = false,
+  labelFromMd = false,
   store,
 }: {
   labelled?: boolean;
+  labelFromMd?: boolean;
   store: EditorStatusStore;
 }) {
   // Subscribed in an effect rather than with `useStore`: an external-store
@@ -196,7 +200,17 @@ export function EditorSaveStatus({
           className="size-4 sm:size-4.5"
           name={STATUS_ICON[editorStatus.saveState]}
         />
-        <span className="sr-only">{statusLabel}</span>
+        <span
+          className={cn(
+            'sr-only',
+            labelFromMd &&
+              'md:not-sr-only md:ml-1 md:whitespace-nowrap md:text-[0.8125rem]',
+            labelFromMd && !failed && 'md:text-fg-muted'
+          )}
+          data-testid="editor-save-label"
+        >
+          {statusLabel}
+        </span>
         {slowedLine && (
           <span className="sr-only">{m.editor_open_slowed()}</span>
         )}
@@ -530,11 +544,12 @@ export function Header({
     </div>
   );
   // The save status sits beside the name on the top row at every width (Epo
-  // 2026-10-20); the offline icon stands in for it while offline.
+  // 2026-10-20); the offline icon stands in for it while offline. Outside
+  // Office its label shows beside it from md up (Epo 2026-10-22).
   const status = (
     <>
       <OfflineStatus />
-      <EditorSaveStatus store={editorStatus} />
+      <EditorSaveStatus labelFromMd={!office} store={editorStatus} />
       {!compact && <WorkspaceStatusButton />}
     </>
   );

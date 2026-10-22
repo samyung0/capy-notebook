@@ -1,5 +1,5 @@
 import { yTextToSlateElement } from '@slate-yjs/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import type { Material } from '@/api/types';
 import { SaveBanner } from '@/components/banners/SaveBanner';
@@ -19,6 +19,7 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter, reportOnce } from '@/lib/editIncidents';
 import type { NoteEditorStatus } from './editorMode';
+import { afterPaint, type NoteView } from './roomSwap';
 import { toastDraftsLost } from './saveFailure';
 
 export interface NoteDrafts {
@@ -98,15 +99,29 @@ export function useNoteDrafts(
 export function NoteRecovery({
   material,
   onEditorStatusChange,
+  onPainted,
   onReload,
   recovery,
 }: {
   material: Material;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** Its content first painted, for a room swap (roomSwap.ts). */
+  onPainted?: (view: NoteView) => void;
   onReload: () => void;
   recovery: NonNullable<NoteDrafts['recovery']>;
 }) {
   const [reloading, setReloading] = useState(false);
+  const scrollArea = useRef<HTMLDivElement>(null);
+  const painted = useRef(onPainted);
+  painted.current = onPainted;
+  useEffect(
+    () =>
+      afterPaint(() => {
+        if (scrollArea.current)
+          painted.current?.({ editor: null, scrollArea: scrollArea.current });
+      }),
+    []
+  );
   const content = useMemo<MaterialDocument>(
     () => ({
       schemaVersion: 1,
@@ -131,7 +146,12 @@ export function NoteRecovery({
         reloading={reloading}
         state={recovery.refused ? 'refused' : 'changed'}
       />
-      <div className="min-h-0 flex-1 overflow-auto" data-testid="note-recovery">
+      <div
+        className="min-h-0 flex-1 overflow-auto"
+        data-note-scroll=""
+        data-testid="note-recovery"
+        ref={scrollArea}
+      >
         <MaterialPreview
           content={content}
           isStandalone={!material.workspaceId}

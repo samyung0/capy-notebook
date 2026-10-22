@@ -784,6 +784,18 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.options.onAuthenticationFailed?.(outdated);
   }
 
+  /** A room event the service sends this note's editors. */
+  announce(materialId: string, event: Record<string, unknown>) {
+    if (this.options.materialId !== materialId || !this.isConnected) return;
+    this.options.onStateless?.({
+      payload: JSON.stringify({
+        materialId,
+        room: this.options.name,
+        ...event,
+      }),
+    });
+  }
+
   announceReadOnly() {
     // The service refused this writer's pending update: nothing after the
     // last checkpoint reaches the durable room.
@@ -950,6 +962,13 @@ class MockSourceProvider implements SourceProvider {
     });
   }
 
+  announcePaused(fileId: string) {
+    if (this.room.target.id !== fileId) return;
+    this.config.onStateless?.({
+      payload: JSON.stringify({ fileId, type: 'source-editing-paused' }),
+    });
+  }
+
   announceEpoch(fileId: string, newEpoch: number) {
     if (this.room.target.id !== fileId) return;
     this.room.retired = true;
@@ -977,6 +996,24 @@ export function refuseThisBuild() {
     ...itemProviders,
   ])
     provider.announceOutdated();
+}
+/** The service compacted an open note's room (Epo 2026-10-22's room swap):
+ * the room moves to its next schema with its saved state, and the open
+ * editors hear it. */
+export function compactMockMaterialRoom(materialId: string) {
+  const providers = [...materialProviders];
+  moveMockMaterialRoom(materialId, true);
+  for (const provider of providers)
+    provider.announce(materialId, { type: 'compaction-complete' });
+}
+/** The room refuses an open note's update for good (over a limit): its
+ * editors keep their unsaved edits as a refused draft. */
+export function rejectMockNoteUpdate(materialId: string) {
+  for (const provider of [...materialProviders])
+    provider.announce(materialId, {
+      code: 'document_size_exceeded',
+      type: 'document-rejected',
+    });
 }
 /** The collaboration service's refusal once the account freezes: every open
  * room turns read-only for its writer. */
@@ -1007,6 +1044,11 @@ export function holdSourceSaveReceipts(hold: boolean) {
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);
+}
+/** The maintenance window paused Office editing: open editors keep their
+ * view read-only under the paused banner. */
+export function announceSourcePaused(fileId: string) {
+  for (const provider of [...sourceProviders]) provider.announcePaused(fileId);
 }
 export function resetScenarioRooms() {
   failedSourceSaves.clear();

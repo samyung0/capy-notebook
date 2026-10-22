@@ -17,6 +17,7 @@ import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeParagraphPoint,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { docxIcons } from './docxIcons';
@@ -31,6 +32,7 @@ import { type CursorChannel, mappedPeers } from './officePresence';
 import {
   canvasPage,
   type OfficeMenuReporter,
+  type OfficePositioner,
   type OfficeRenderer,
   type OfficeThumbnailer,
 } from './runtimeMenus';
@@ -97,6 +99,7 @@ export function DocxEditorHost({
   onFlusher,
   onError,
   onPendingChange,
+  onPositioner,
   onSave,
   onThumbnailer,
   onZoomChange,
@@ -121,6 +124,7 @@ export function DocxEditorHost({
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onError: (error: Error) => void;
   onPendingChange: (pending: boolean) => void;
+  onPositioner: (positioner: OfficePositioner | null) => void;
   onSave: () => void;
   onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
@@ -184,6 +188,58 @@ export function DocxEditorHost({
     });
     return () => onRenderer(null);
   }, [onRenderer]);
+  // A room swap (Epo 2026-10-22): the first paragraph of the page in view
+  // and the selection, by paragraph id, which the next epoch keeps.
+  useEffect(() => {
+    onPositioner({
+      read: () => {
+        const editor = editorRef.current;
+        const paged = editor?.getEditorRef();
+        if (!(editor && paged)) return null;
+        const point = (position: number): OfficeParagraphPoint | null => {
+          const loc = paged.displayPositionToYrsLoc(position);
+          return (
+            loc && { offset: loc.offset, paraId: loc.paraId, story: loc.story }
+          );
+        };
+        const page = editor.getCurrentPage();
+        // The first paragraph that starts on the page, not one carried over.
+        const first = paged
+          .getLayout()
+          ?.pages[page - 1]?.fragments.find(
+            (fragment) =>
+              fragment.pmStart !== undefined &&
+              !(fragment.kind === 'paragraph' && fragment.carriedFromPrev)
+          );
+        const range = paged.getSelectionRange();
+        const anchor = range && point(range.from);
+        const head = range && point(range.to);
+        return {
+          format: 'docx',
+          page,
+          selection: anchor && head ? { anchor, head } : null,
+          top: first?.pmStart === undefined ? null : point(first.pmStart),
+        };
+      },
+      show: (position) => {
+        const editor = editorRef.current;
+        const paged = editor?.getEditorRef();
+        if (!(editor && paged) || position.format !== 'docx') return;
+        const anchor =
+          position.selection &&
+          paged.yrsLocToDisplayPosition(position.selection.anchor);
+        const head =
+          position.selection &&
+          paged.yrsLocToDisplayPosition(position.selection.head);
+        if (typeof anchor === 'number' && typeof head === 'number')
+          paged.setSelection(anchor, head);
+        // After the selection, which may scroll to itself.
+        if (!(position.top && editor.scrollToParaId(position.top.paraId)))
+          editor.scrollToPage(position.page);
+      },
+    });
+    return () => onPositioner(null);
+  }, [onPositioner]);
   // Page 1 for the list cards; Capy asks after edits settle.
   useEffect(() => {
     onThumbnailer(async () => {

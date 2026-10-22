@@ -37,6 +37,33 @@ export interface OfficeCell {
   row: number;
 }
 
+/** A point in a DOCX story by Word paragraph id (`w14:paraId`), which a new
+ * epoch keeps where Yrs positions change. */
+export interface OfficeParagraphPoint {
+  offset: number;
+  paraId: string;
+  story: string;
+}
+
+/**
+ * Where a reader is in an editor, by content, so a room swap's next view
+ * opens there (Epo 2026-10-22): DOCX the first paragraph of the page in view
+ * (and that page) and the selection, XLSX the sheet (by id) and selected
+ * cells, PPTX the slide (1-based).
+ */
+export type OfficePosition =
+  | {
+      format: 'docx';
+      page: number;
+      top: OfficeParagraphPoint | null;
+      selection: {
+        anchor: OfficeParagraphPoint;
+        head: OfficeParagraphPoint;
+      } | null;
+    }
+  | { format: 'xlsx'; sheet: string; anchor: OfficeCell; head: OfficeCell }
+  | { format: 'pptx'; slide: number };
+
 /**
  * An editor's cursor as the room's awareness carries it (Epo 2026-10-20): a
  * DOCX selection as the editor's encoded positions in a story, an XLSX cell
@@ -202,6 +229,19 @@ export type OfficeHostMessage =
       type: 'render';
       id: string;
       kind: 'print' | 'png' | 'thumbnail';
+    }
+  /** Where the editor's reader is, for a room swap; answered by `position`.
+   * A runtime without it drops it, and the swap keeps the default view. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'position-request';
+      id: string;
+    }
+  /** Open at a position the replaced view reported (a room swap). */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'set-position';
+      position: OfficePosition;
     };
 
 /**
@@ -386,6 +426,14 @@ export type OfficeRuntimeMessage =
       /** The `popup: 'presenter'` command to run. */
       id: string;
       revision: number;
+    }
+  /** The answer to `position-request` (null: no editor to ask). */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'position';
+      id: string;
+      position: OfficePosition | null;
+      revision: number;
     };
 
 type WithoutVersion<T> = T extends unknown ? Omit<T, 'version'> : never;
@@ -440,6 +488,10 @@ export function isOfficeHostMessage(
         candidate.kind === 'png' ||
         candidate.kind === 'thumbnail')
     );
+  if (candidate.type === 'position-request')
+    return typeof candidate.id === 'string';
+  if (candidate.type === 'set-position')
+    return isOfficePosition(candidate.position);
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&
     ((candidate.type === 'load' &&
@@ -517,6 +569,11 @@ export function isOfficeRuntimeMessage(
     if (raw.type === 'presenting') return typeof raw.presenting === 'boolean';
     if (raw.type === 'bottom-inset') return isFiniteNumber(raw.inset);
     if (raw.type === 'open-presenter') return typeof raw.id === 'string';
+    if (raw.type === 'position')
+      return (
+        typeof raw.id === 'string' &&
+        (raw.position === null || isOfficePosition(raw.position))
+      );
     if (raw.type === 'exported')
       return typeof raw.id === 'string' && raw.bytes instanceof ArrayBuffer;
     if (
@@ -627,6 +684,37 @@ export function isOfficeCursor(value: unknown): value is OfficeCursor {
     isText(cursor.slideId) &&
     (cursor.shapeId === undefined || isText(cursor.shapeId))
   );
+}
+
+const isParagraphPoint = (value: unknown): value is OfficeParagraphPoint =>
+  !!value &&
+  typeof value === 'object' &&
+  isText((value as OfficeParagraphPoint).story) &&
+  isText((value as OfficeParagraphPoint).paraId) &&
+  isCount((value as OfficeParagraphPoint).offset);
+
+/** A position in one of the three formats' shapes, within the cursor bounds:
+ * a replaced frame's answer goes on to the next frame. */
+export function isOfficePosition(value: unknown): value is OfficePosition {
+  if (!value || typeof value !== 'object') return false;
+  const position = value as Record<string, unknown>;
+  if (position.format === 'docx') {
+    const selection = position.selection as Record<string, unknown> | null;
+    return (
+      isCount(position.page) &&
+      (position.top === null || isParagraphPoint(position.top)) &&
+      (selection === null ||
+        (!!selection &&
+          typeof selection === 'object' &&
+          isParagraphPoint(selection.anchor) &&
+          isParagraphPoint(selection.head)))
+    );
+  }
+  if (position.format === 'xlsx')
+    return (
+      isText(position.sheet) && isCell(position.anchor) && isCell(position.head)
+    );
+  return position.format === 'pptx' && isCount(position.slide);
 }
 
 function isOfficePeer(value: unknown): value is OfficePeer {

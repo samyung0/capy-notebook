@@ -137,16 +137,17 @@ The interactive path is:
 CenterContent
 └── NoteEditor
     └── EditorRuntimeProvider
-        └── NoteEditorCore
-            └── Plate + YjsPlugin
-                └── CollaborationProvider
-                    ├── NoteToolbar
-                    ├── scroll box
-                    │   └── PlateContainer (relative)
-                    │       ├── PlateContent + link actions
-                    │       └── FloatingToolbar (edit only)
-                    ├── EditorCommandPalette
-                    └── AiMenu (edit only)
+        └── DndProvider (one for every editor it mounts)
+            └── NoteEditorCore (per room and generation: two in a room swap)
+                └── Plate + YjsPlugin
+                    └── CollaborationProvider
+                        ├── NoteToolbar
+                        ├── scroll box
+                        │   └── PlateContainer (relative)
+                        │       ├── PlateContent + link actions
+                        │       └── FloatingToolbar (edit only)
+                        ├── EditorCommandPalette
+                        └── AiMenu (edit only)
 ```
 
 `FloatingToolbar` shares the editor's positioned `PlateContainer`, following
@@ -984,6 +985,10 @@ Collaboration unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
+Outside Office (notes, quizzes, flashcards, diagrams, text and other files on
+the one-row header) the label also shows beside the icon from md up (Epo
+2026-10-22; `EditorSaveStatus` `labelFromMd`: one span, screen-reader text
+below md and visible from md); Office's two-row header keeps the icon alone.
 Pending work preserves Connecting, Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 
@@ -1807,10 +1812,10 @@ else handled at save: a canonical repair, otherwise the room reset (Epo
 or structure rule, an update outside the document's shape) answers its writer
 alone with a `document-rejected` stateless message (a limit's code and metrics,
 else `invalid_document`, no eviction id), then closes that channel only: the
-socket stays, the client remounts on a fresh Y.Doc and a new channel on it
-(its old Y.Doc holds the refused structs, so no later edit of it could be
-placed) and keeps its unsaved edits as a refused draft, and co-editors and
-the room are untouched. Right after an admitted update goes in, the room
+socket stays, the client swaps to a new editor on a fresh Y.Doc and a new
+channel ([room swap](#room-swap); its old Y.Doc holds the refused structs, so
+no later edit of it could be placed) and keeps its unsaved edits as a refused
+draft, and co-editors and the room are untouched. Right after an admitted update goes in, the room
 repairs what a canonical form fixes cheaply, in one server transaction every
 editor gets in the same flush (`Model::repair_on_entry`,
 `notes::repair::on_entry`, `items::flashcards::repair`): an element's `text`
@@ -1841,12 +1846,14 @@ loaded would mean it never persists again. A structurally invalid snapshot no
 repair fixes is discarded the same way (`document-rejected` with code
 `invalid_document`), and an `authorization-revoked` eviction makes every editor
 drop its copy too. `NoteEditor` responds to a `document-rejected` (its writer's
-or the room's) by remounting `NoteEditorCore` under a new generation key, which
-reconnects onto the room's state (after a discard, the last durable state). Unsaved edits are kept as
-one refused draft first, so the remount shows them read-only for copying until
-Reload; a limit also shows the too-large toast, and only edits this device
-could not store end in the changes-undone toast. Invalidating the collaboration token alone is not enough, because
-an unchanged room string leaves the editor mounted on its forked document.
+or the room's) by swapping in a new `NoteEditorCore` under a new generation key
+([room swap](#room-swap)), which reconnects onto the room's state (after a
+discard, the last durable state). Unsaved edits are kept as one refused draft
+first, so what the swap brings in is the recovery view showing them read-only
+for copying until Reload; a limit also shows the too-large toast, and only
+edits this device could not store end in the changes-undone toast.
+Invalidating the collaboration token alone is not enough, because an unchanged
+room string leaves the editor mounted on its forked document.
 Failed-store retries use the same terminal path. If a queued snapshot later
 fails a document or quota limit, the server drops it, broadcasts the rejection
 when the room is still live, and discard-evicts the room back to durable Yjs
@@ -1869,6 +1876,52 @@ it syncs anything and opens copy-only recovery; item identities do not change,
 so comment anchors stay valid. A co-editor still connected
 during such a discard, with a few seconds of unsaved typing, lands in recovery
 too (Epo, 2026-10-04).
+
+### Room swap
+
+Developer Epo decided on 2026-10-22 that a room reload swaps renderers
+instead of remounting in place: a compaction or discard that moves the room
+to a new `room_schema` (the token names another room), a `document-rejected`
+(a new generation), and Reload from recovery. `NoteEditor` keys each renderer
+by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
+`NoteEditorCore` a phase:
+
+- **Paused**: the one on screen once the note wants another room or
+  generation. It stops edits without Slate's readOnly (`pauseEdits`: the
+  editable root turns `contenteditable=false`, and typing, paste, drops,
+  drags and clicks on controls are stopped in the capture phase), since
+  readOnly re-rendered every block and dropped the reader to the top. Its
+  toolbar is inert, the palette and AI menu unmount, it leaves its room
+  (no reconnect), writes its unsaved edits as one whole document (its child
+  effect runs before `useNoteDrafts` reads the next room's drafts, so another
+  lineage's edits still open in recovery, as before) and reports nothing
+  more: no status, presence, banners or refusals. Reading, scrolling,
+  selecting, copying and links still work.
+- **Standby**: the next renderer (an editor, or `NoteRecovery` when stored
+  edits must show for copying) once the next room's stored edits are read.
+  It mounts `invisible absolute inset-0` and `inert` beside the paused one,
+  so its layout is real, connects and syncs, and its header status reads
+  Reconnecting (with a slowed open's line); `NoteEditor` reports Reconnecting
+  itself until then.
+- **Live**: after the standby renderer's first paint (`onPainted`, two
+  animation frames after its content rendered, an error state included) its
+  slot loses the hidden classes (the DOM is never moved), the paused one
+  unmounts, and the reader's place comes back by block id
+  (`captureNotePosition`/`restoreNotePosition`): the first top-level block
+  under the scroll box's top edge at the same offset (else the old scroll
+  offset), and the selection by top-level block id plus path and offset,
+  focus too when the paused editor still held it. Yjs ids are never used:
+  a compaction gives the room new ones.
+
+A hidden tab swaps at once (no paused phase; a tab that hides meanwhile
+swaps then). A phone (below sm) holds one renderer: the paused view is
+copied as plain DOM (`copyPausedView`: nothing editable, no frames, Slate and
+block-id markers removed, its toolbar inert, scroll kept) over the editor
+remounting in place, which stays in standby under the copy until its first
+paint. The banners of the paused editor's room (offline, delayed) go with it.
+All renderers share one react-dnd `DndProvider` in `NoteEditor`: two
+providers, each with an HTML5 backend, throw. `room-swap.spec.ts` covers the
+compaction, a hidden tab, a phone and a refused update.
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from
