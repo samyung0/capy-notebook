@@ -20,8 +20,8 @@ test('bank jumps to an unloaded question and loads earlier ones in place', async
   await expect(question(11)).toHaveCount(0);
 
   await page
-    .getByRole('navigation', { name: m.question_ui_questions() })
-    .getByRole('button', { name: /^30\./ })
+    .getByRole('navigation', { name: m.question_ui_exams_and_topics() })
+    .getByRole('button', { name: m.quiz_question_unanswered({ number: 30 }) })
     .click();
   // Question 30's page and the next load in one request.
   await expect(question(30)).toContainText('width 31 cm');

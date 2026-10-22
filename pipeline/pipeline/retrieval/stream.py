@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .usage_extract import NormalizedUsage, extract_usage
+from .usage_extract import NormalizedUsage, extract_usage, response_usage
 
 
 @dataclass
@@ -73,9 +73,8 @@ class ChatCompletionsAssembler:
 
     def push(self, chunk: Any) -> list[StreamEvent]:
         events: list[StreamEvent] = []
-        usage = _get(chunk, "usage")
-        if usage is not None:
-            self.usage = extract_usage(usage, provider=self.provider)
+        if _get(chunk, "usage") is not None:
+            self.usage = response_usage(chunk, provider=self.provider)
             events.append(StreamEvent(kind="usage", usage=self.usage))
         choices = _get(chunk, "choices") or []
         if not choices:

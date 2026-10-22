@@ -33,16 +33,12 @@ export function PagePanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   return (
     <div className={cn('flex h-full min-h-0 w-full flex-col', className)}>
+      {/* The card clips, so the scrollbar follows its rounded corners. */}
       <Card
-        className="min-h-0 w-full flex-1 p-0 shadow-card sm:rounded-card-xl"
+        className="min-h-0 w-full flex-1 overflow-hidden p-0 shadow-card sm:rounded-card-xl"
         radius="button"
       >
-        <section
-          className={cn(
-            'relative h-full max-w-full overflow-hidden',
-            sectionClassName
-          )}
-        >
+        <section className={cn('relative h-full max-w-full', sectionClassName)}>
           {/* The scroller keeps the scrollbar's gutter, so content that grows
               past the panel does not narrow it (and reflow grids). */}
           <div
@@ -92,10 +88,13 @@ export function Panel({
   sectionClassName,
   scrollRef,
   as,
+  frosted,
 }: {
   children: ReactNode;
   className?: string;
   sectionClassName?: string;
+  /** Frosted over the page frame's paint, like the shell's sidebar. */
+  frosted?: boolean;
   /** The scrolling element, e.g. an IntersectionObserver root. */
   scrollRef?: React.Ref<HTMLDivElement>;
   scroll?: boolean;
@@ -106,6 +105,7 @@ export function Panel({
     <Card
       asChild
       className={cn('h-full overflow-hidden p-0 shadow-card', className)}
+      data-frosted={frosted || undefined}
       radius="card-xl"
     >
       <El>

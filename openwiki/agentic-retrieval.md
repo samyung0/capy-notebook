@@ -3260,7 +3260,7 @@ build, and the knowledge library is one more source while the switch is on.
   the attempt and result pages (the result page reads the quiz the attempt
   names, because the attempt snapshot carries no provenance), the study page,
   the standalone editors and the public share pages. Mini views that show part
-  of an item or mix items (the Study tab's Quick review, review sessions)
+  of an item or mix items (the Study page's Quick review, review sessions)
   show no credits; they link to the item's own page, which does. The space above it is the
   document's own bottom padding plus the footer's, so a block inserted at the
   end does not move it (Epo 2026-10-11); below it there is room above the

@@ -1,5 +1,16 @@
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { htmlEmbedNode, mermaidNode } from '@/features/materials/document';
 import { biologyQuizQuestions, surfaceAreaGraph } from '../biologyQuiz';
+import {
+  NEAR_LIMIT_CAPTION,
+  nearLimitCards,
+  nearLimitChart,
+  nearLimitFlowchart,
+  nearLimitGraph,
+  nearLimitHtml,
+  nearLimitPlot,
+  nearLimitQuestions,
+} from '../nearLimits';
 import {
   bullet,
   callout,
@@ -417,3 +428,51 @@ export const bioNotes: SeedNote[] = [
     workspaceName: 'Biology 101',
   },
 ];
+
+/* Every embed at its limits (mocks/nearLimits.ts), together and one per file.
+ * db.ts seeds these with the dedicated diagram, mindmap, quiz and set. */
+export const bioNearLimitNotes: Pick<SeedNote, 'id' | 'title' | 'value'>[] = [
+  nearLimitNote('mat_note_bio_near_limits', 'Near-limit embeds', [
+    heading(2, 'Mermaid diagram'),
+    mermaidNode(nearLimitFlowchart(), NEAR_LIMIT_CAPTION, 'mermaid_bio_near'),
+    heading(2, 'Chart'),
+    figure('chart_bio_near', nearLimitChart()),
+    heading(2, 'Plot'),
+    figure('plot_bio_near', nearLimitPlot()),
+    heading(2, 'Graph'),
+    figure('graph_bio_near', nearLimitGraph()),
+    heading(2, 'Interactive HTML embed'),
+    htmlEmbedNode(nearLimitHtml(), NEAR_LIMIT_CAPTION, 'html_bio_near'),
+    heading(2, 'Quiz block'),
+    embeddedQuiz('mat_note_bio_near_limits', 'mat_embed_bio_near_quiz', {
+      questions: nearLimitQuestions('near_note'),
+    }),
+    heading(2, 'Flashcards block'),
+    embeddedFlashcards(
+      'mat_note_bio_near_limits',
+      'mat_embed_bio_near_cards',
+      nearLimitCards('fc_near_note')
+    ),
+  ]),
+  nearLimitNote('mat_note_bio_near_chart', 'Near-limit chart', [
+    figure('chart_bio_near_file', nearLimitChart()),
+  ]),
+  nearLimitNote('mat_note_bio_near_plot', 'Near-limit plot', [
+    figure('plot_bio_near_file', nearLimitPlot()),
+  ]),
+  nearLimitNote('mat_note_bio_near_graph', 'Near-limit graph', [
+    figure('graph_bio_near_file', nearLimitGraph()),
+  ]),
+  // HTML_EMBED_MAX_COUNT blocks, each just under the byte cap.
+  nearLimitNote(
+    'mat_note_bio_near_html',
+    'Near-limit interactive blocks',
+    Array.from({ length: EMBED_CATALOG.limits.HTML_EMBED_MAX_COUNT }, (_, i) =>
+      htmlEmbedNode(nearLimitHtml(i), NEAR_LIMIT_CAPTION, `html_bio_near_${i}`)
+    )
+  ),
+];
+
+function nearLimitNote(id: string, title: string, value: SeedNote['value']) {
+  return { id, title, value: [heading(1, title), ...value] };
+}

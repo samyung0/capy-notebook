@@ -13,6 +13,7 @@ import {
 } from '@/features/quizzes/QuizPageHeader';
 import { attemptMinutes } from '@/features/study/attempts';
 import { StepNav } from '@/features/study/StepNav';
+import { StudyPosition } from '@/features/study/StudyPosition';
 import { currentStep, useSteps } from '@/features/study/steps';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -53,6 +54,7 @@ export function StudyBody({
   actions,
   byline,
   cards,
+  chapter,
   embedded,
   footer,
   frame,
@@ -68,6 +70,8 @@ export function StudyBody({
   /** Public pages: the owner under the title. */
   byline?: ReactNode;
   cards: FlashcardContent[];
+  /** The set's chapter, the cards' label. */
+  chapter?: string;
   /** Inside a note: no header, frame or page padding. */
   embedded?: boolean;
   footer?: ReactNode;
@@ -151,12 +155,7 @@ export function StudyBody({
 
   // The card's own place in the set, which stays put as it is skipped or
   // shown again.
-  const position =
-    card &&
-    m.flashcards_card_of_total({
-      position: ids.indexOf(card.id) + 1,
-      total: ids.length,
-    });
+  const position = card ? ids.indexOf(card.id) + 1 : 0;
   const total = ids.length;
   const header = !embedded && (
     <QuizPageHeader
@@ -214,11 +213,20 @@ export function StudyBody({
           {card ? (
             <>
               <div>
-                <p className="t-meta mb-1 text-center text-fg-muted">
-                  {position}
-                </p>
+                {embedded ? (
+                  <p className="t-meta mb-1 text-center text-fg-muted">
+                    {m.flashcards_card_of_total({ position, total })}
+                  </p>
+                ) : (
+                  <StudyPosition
+                    className="mb-5"
+                    position={position}
+                    total={total}
+                  />
+                )}
                 <CardStack
                   card={card}
+                  label={chapter}
                   onRate={rate}
                   rated={shown.record}
                   size={embedded ? 'compact' : 'large'}

@@ -170,7 +170,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     },
     204
   );
-  // Progress is on by default (users.study_progress, no workspace override).
+  // Progress shows by default (no workspace_study row hides it).
   assert.equal(
     object(await api(run.owner, `/api/workspaces/${workspaceId}/study`))
       .enabled,
@@ -223,8 +223,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   // Continue opens the first item that is not done: the quiz not yet taken.
   // The tab first paints the last visit's progress (the persisted query
   // cache) while it refetches, so wait for the row to name that quiz.
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await showPanelView(page, m.workspace_tab_study());
+  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
   const continueButton = page.getByRole('button', {
     exact: true,
     name: m.study_continue(),
@@ -236,15 +235,19 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
 
   // A review session from the Study tab over the card and the question.
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await showPanelView(page, m.workspace_tab_study());
+  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
   await page
     .getByRole('button', { exact: true, name: m.study_review_button() })
     .click();
   await expect(page).toHaveURL(
     new RegExp(`/learning/review/${workspaceId}\\?.*from=workspace`)
   );
-  await expect(page.getByText(m.review_left({ count: 2 }))).toBeVisible();
+  await expect(
+    page.getByRole('progressbar', {
+      exact: true,
+      name: m.flashcards_card_position({ position: 1, total: 2 }),
+    })
+  ).toBeVisible();
   const showAnswer = page.getByRole('button', {
     name: m.flashcards_show_answer(),
   });
@@ -252,8 +255,13 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     exact: true,
     name: m.review_check(),
   });
-  for (let left = 2; left > 0; left--) {
-    await expect(page.getByText(m.review_left({ count: left }))).toBeVisible();
+  for (let position = 1; position <= 2; position++) {
+    await expect(
+      page.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position, total: 2 }),
+      })
+    ).toBeVisible();
     await expect(showAnswer.or(check)).toBeVisible();
     if (await showAnswer.isVisible()) {
       await showAnswer.click();

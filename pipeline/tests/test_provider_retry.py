@@ -225,15 +225,13 @@ async def test_caption_raises_provider_busy(monkeypatch, sleeps, ingest_mode):
 async def test_agent_stream_retries_only_before_the_first_byte(monkeypatch, sleeps):
     attempts = 0
 
-    async def stream(
-        spec, messages, tools, temperature, on_event, on_provider_byte=None, **kw
-    ):
+    async def stream(spec, messages, tools, temperature, on_event, receipt, **kw):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
             raise _busy(retry_after=0.25)
         if attempts == 2:
-            on_provider_byte()
+            receipt.seen = True
             raise elitellm.ProviderError("stream dropped", status_code=502)
         return _assembled()
 
@@ -287,7 +285,7 @@ async def test_a_stop_during_the_retry_wait_starts_no_next_attempt(monkeypatch):
 async def test_interactive_completion_streams_and_assembles(monkeypatch):
     seen = {}
 
-    async def stream(spec, messages, tools, temperature, on_event, **kwargs):
+    async def stream(spec, messages, tools, temperature, on_event, receipt, **kwargs):
         seen.update(kwargs)
         return _assembled("assembled text")
 

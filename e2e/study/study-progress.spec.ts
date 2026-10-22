@@ -266,8 +266,7 @@ test.describe('study progress', () => {
     await setStudyItem(ownerApi, ws.id, { materialId: read.id }, 'done');
     await setStudyItem(ownerApi, ws.id, { materialId: skipped.id }, 'removed');
 
-    await ownerPage.goto(`/workspaces/${ws.id}`);
-    await showPanelView(ownerPage, m.workspace_tab_study());
+    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
     // Up next is the row holding Continue; the Files panel lists the same
     // titles, so match inside that row only.
     const continueButton = ownerPage.getByRole('button', {
@@ -284,12 +283,14 @@ test.describe('study progress', () => {
       ownerPage.getByRole('heading', { exact: true, name: next.title })
     ).toBeVisible();
 
-    // Reading it moves Continue on to the item after it.
+    // Reading it moves Continue on to the item after it, back on the Study
+    // page the open note took the centre from.
     await ownerPage.getByRole('button', { name: m.study_mark_read() }).click();
-    await expect(upNext.getByText(later.title, { exact: true })).toBeVisible();
     await expect(
       ownerPage.getByRole('button', { name: m.study_mark_unread() })
     ).toBeVisible();
+    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
+    await expect(upNext.getByText(later.title, { exact: true })).toBeVisible();
   });
 
   test('quizzes and flashcard sets go started and done, Continue skips the done ones, and Learning counts them', async ({
@@ -407,8 +408,7 @@ test.describe('study progress', () => {
     expect(study.reviewable).toBe(5);
 
     // Continue passes Week 1 and opens the quiz that was only started.
-    await ownerPage.goto(`/workspaces/${ws.id}`);
-    await showPanelView(ownerPage, m.workspace_tab_study());
+    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
     const continueButton = ownerPage.getByRole('button', {
       exact: true,
       name: m.study_continue(),
@@ -465,7 +465,10 @@ test.describe('study progress', () => {
       )
     );
     await expect(
-      ownerPage.getByText(m.review_left({ count: 5 }))
+      ownerPage.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position: 1, total: 5 }),
+      })
     ).toBeVisible();
   });
 
@@ -551,8 +554,7 @@ test.describe('study progress', () => {
     });
     expect(cardRating.status()).toBe(204);
 
-    await ownerPage.goto(`/workspaces/${ws.id}`);
-    await showPanelView(ownerPage, m.workspace_tab_study());
+    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
     await ownerPage
       .getByRole('button', { exact: true, name: m.study_review_button() })
       .click();
@@ -564,7 +566,10 @@ test.describe('study progress', () => {
       )
     );
     await expect(
-      ownerPage.getByText(m.review_left({ count: 2 }))
+      ownerPage.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position: 1, total: 2 }),
+      })
     ).toBeVisible();
 
     const ratings: Record<string, unknown>[] = [];
@@ -589,7 +594,10 @@ test.describe('study progress', () => {
 
     await expect(ownerPage.getByText(prompt)).toBeVisible();
     await expect(
-      ownerPage.getByText(m.review_left({ count: 1 }))
+      ownerPage.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position: 2, total: 2 }),
+      })
     ).toBeVisible();
     // The question arrives answer-free; Check returns its key and rates it.
     await ownerPage
@@ -648,7 +656,9 @@ test.describe('study progress', () => {
     await ownerPage
       .getByRole('button', { exact: true, name: m.action_back() })
       .click();
-    await expect(ownerPage).toHaveURL(new RegExp(`/workspaces/${ws.id}$`));
+    await expect(ownerPage).toHaveURL(
+      new RegExp(`/workspaces/${ws.id}[?]study=true$`)
+    );
 
     // The finished session is in Past reviews with one card and one question.
     const past = await ownerApi.get('/api/review/sessions');
@@ -664,13 +674,13 @@ test.describe('study progress', () => {
     });
   });
 
-  test('progress off: the page links to Track progress in settings, kept in the URL', async ({
+  test('hidden progress: the Study page keeps plain rows, Show brings it back, and settings stay in the URL', async ({
     ownerApi,
     ownerPage,
     workspaceFactory,
   }) => {
     const workspace = await workspaceFactory.create({
-      name: `Progress off ${randomUUID().slice(0, 8)}`,
+      name: `Progress hidden ${randomUUID().slice(0, 8)}`,
     });
     const off = await ownerApi.put(
       `/api/workspaces/${workspace.id}/study/enabled`,
@@ -680,27 +690,14 @@ test.describe('study progress', () => {
     const errors: string[] = [];
     ownerPage.on('pageerror', (error) => errors.push(error.message));
 
-    await ownerPage.goto(`/workspaces/${workspace.id}?progress=true`);
+    await ownerPage.goto(`/workspaces/${workspace.id}?study=true`);
     await expect(
-      ownerPage.getByText(m.progress_off_title(), { exact: true })
+      ownerPage.getByText(m.study_hidden_title(), { exact: true })
     ).toBeVisible();
     await ownerPage
-      .getByRole('button', { name: m.progress_off_turn_on() })
+      .getByRole('button', { exact: true, name: m.study_show() })
       .click();
-    const toggle = ownerPage.getByRole('switch', {
-      name: m.study_track_progress(),
-    });
-    await expect(toggle).toBeVisible();
-    await expect(ownerPage).toHaveURL(/settings=others/);
-
-    await toggle.click();
-    await expect(toggle).toBeChecked();
-    await ownerPage.keyboard.press('Escape');
-    await expect(ownerPage).not.toHaveURL(/settings=/);
-    // The page now lists the workspace, and the dialog left no history.
-    await expect(ownerPage.getByText(m.progress_off_title())).toHaveCount(0);
-    await ownerPage.goBack();
-    await expect(ownerPage).not.toHaveURL(/progress=true/);
+    await expect(ownerPage.getByText(m.study_hidden_title())).toHaveCount(0);
 
     // Back with settings open leaves in-app (a goto would leave the
     // document, so the router never runs) and closes the dialog once.

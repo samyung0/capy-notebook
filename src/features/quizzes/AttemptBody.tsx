@@ -76,6 +76,10 @@ function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
 const EmbeddedBody = ({ children }: { children: ReactNode }) => (
   <div>{children}</div>
 );
+/** A page's body, running to the wide gutter. */
+const WideBody = ({ children }: { children: ReactNode }) => (
+  <TabContent fill>{children}</TabContent>
+);
 /** An attempt graded on the server: its questions with their keys and each
  * part's award, and the marks over the quiz's total. */
 export type Graded = { questions: Question[]; awarded: number; max: number };
@@ -124,7 +128,7 @@ export function AttemptBody({
   trail: Crumb[];
 }) {
   const Shell = frame ?? NoFrame;
-  const Body = embedded ? EmbeddedBody : TabContent;
+  const Body = embedded ? EmbeddedBody : WideBody;
   const [answers, setAnswers] = useState<Answers>({});
   const [startedAt, setStartedAt] = useState(() => new Date().toISOString());
   const [graded, setGraded] = useState<Graded | null>(null);

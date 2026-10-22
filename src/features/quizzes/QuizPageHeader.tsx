@@ -34,6 +34,7 @@ export function QuizPageHeader({
   className,
   onBack,
   trail,
+  trailClassName,
   title,
   meta,
   metaClassName = 't-meta text-fg-muted',
@@ -47,6 +48,8 @@ export function QuizPageHeader({
   gutter?: 'normal' | 'wide';
   onBack?: () => void;
   trail: Crumb[];
+  /** The back arrow and breadcrumb row's classes, e.g. hidden on phones. */
+  trailClassName?: string;
   title: ReactNode;
   meta?: ReactNode;
   /** The meta line's type, muted meta text unless a page matches its own. */
@@ -74,7 +77,8 @@ export function QuizPageHeader({
               'flex min-h-9 items-center',
               // Pulled left past the icon's padding, and from sm a further
               // 8px so arrow and text balance; phones keep the edge margin.
-              onBack && '-ml-2 sm:-translate-x-2'
+              onBack && '-ml-2 sm:-translate-x-2',
+              trailClassName
             )}
           >
             {onBack && (
@@ -121,11 +125,11 @@ export function QuizPageHeader({
           </div>
         )}
         <div className="flow-root">
-          {/* Floated and one title line tall (the title's type sets 1lh): the
-              actions centre on the first line and the rest of the title wraps
-              under them at full width. */}
+          {/* Floated and at least one title line tall (the title's type sets
+              1lh): one row of actions centres on the first line and the rest
+              of the title wraps under them at full width. */}
           {actions && (
-            <div className="t-page-title float-right ml-2 flex h-[1lh] items-center gap-0.5 sm:ml-3 sm:gap-2">
+            <div className="t-page-title float-right ml-2 flex min-h-[1lh] items-center gap-0.5 sm:ml-3 sm:gap-2">
               {actions}
             </div>
           )}

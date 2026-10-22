@@ -28,6 +28,9 @@ class NormalizedUsage:
     cache_write_tokens: int = 0
     reasoning_tokens: int = 0
     anomaly: str = ""
+    # The provider OpenRouter routed the call to (its response `provider`),
+    # kept in usage_events.metadata as servedBy; empty elsewhere.
+    served_by: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -137,6 +140,15 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
             out.anomaly = "deepseek_cache_not_inclusive"
             return out
     out.cached_read_tokens = cached
+    return out
+
+
+def response_usage(resp: Any, *, provider: str) -> NormalizedUsage:
+    """Usage of a whole response, or of the stream chunk carrying it, with the
+    provider OpenRouter served it from (every OpenRouter chunk names it)."""
+    out = extract_usage(_attr(resp, "usage"), provider=provider)
+    if provider in ("zai", "openrouter"):
+        out.served_by = str(_attr(resp, "provider") or "")[:80]
     return out
 
 

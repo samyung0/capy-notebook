@@ -210,6 +210,61 @@ export const mockWorkspaceMembers: WorkspaceMember[] = [
     userId: 'u_mock_collaborator',
     workspaceId: 'ws_bio',
   },
+  // A fuller Biology 101 roster so the panel foot's avatar group overflows.
+  {
+    avatarUrl: '/icons/avataaars-04.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Priya Nair',
+    role: 'editor',
+    userId: 'u_mock_priya',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Tom Becker',
+    role: 'viewer',
+    userId: 'u_mock_tom',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-07.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Aiko Tanaka',
+    role: 'editor',
+    userId: 'u_mock_aiko',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-12.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Diego Alvarez',
+    role: 'viewer',
+    userId: 'u_mock_diego',
+    workspaceId: 'ws_bio',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Sara Okafor',
+    role: 'viewer',
+    userId: 'u_mock_sara',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-15.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Liam Walsh',
+    role: 'editor',
+    userId: 'u_mock_liam',
+    workspaceId: 'ws_bio',
+  },
+  {
+    avatarUrl: '/icons/avataaars-18.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Hana Kim',
+    role: 'viewer',
+    userId: 'u_mock_hana',
+    workspaceId: 'ws_bio',
+  },
 ];
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
@@ -828,12 +883,6 @@ export const handlers = [
       return HttpResponse.json({ detail: 'invalid sendKey' }, { status: 422 });
     if (steps) db.user.chatSteps = steps;
     if (sendKey) db.user.chatSendKey = sendKey;
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.patch('/api/me/study-progress', async ({ request }) => {
-    db.user.studyProgress = (
-      (await request.json()) as { enabled: boolean }
-    ).enabled;
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/models', async ({ request }) => {

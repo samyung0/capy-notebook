@@ -173,8 +173,9 @@ export function EditorSaveStatus({
         data-testid="editor-save-state"
         role="status"
       >
+        {/* Lifted 1px to Fustat's cap band, level with the label. */}
         <Icon
-          className="size-[15px]"
+          className="size-[15px] -translate-y-px"
           name={STATUS_ICON[editorStatus.saveState]}
         />
         {statusLabel}
@@ -184,7 +185,7 @@ export function EditorSaveStatus({
     <Tooltip onOpenChange={setHovered} open={hovered || slowedLine}>
       <TooltipTrigger
         className={cn(
-          'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-action',
+          'inline-flex size-(--toolbar-button) shrink-0 items-center justify-center rounded-button outline-none focus-visible:ring-2 focus-visible:ring-action',
           failed && 'text-solid-error'
         )}
         data-save-state={editorStatus.saveState}
@@ -193,7 +194,12 @@ export function EditorSaveStatus({
         tabIndex={0}
       >
         <Icon
-          className="size-4 sm:size-4.5"
+          className={cn(
+            'size-4 sm:size-4.5',
+            // The plain cloud is drawn a unit above the ⋮ dots' centre.
+            STATUS_ICON[editorStatus.saveState] === 'CloudIcon' &&
+              'translate-y-[calc(100%/24)]'
+          )}
           name={STATUS_ICON[editorStatus.saveState]}
         />
         <span className="sr-only">{statusLabel}</span>
@@ -538,6 +544,13 @@ export function Header({
       {!compact && <WorkspaceStatusButton />}
     </>
   );
+  // One row so the status icons keep the ⋮'s button spacing.
+  const statusRow = (
+    <div className="flex items-center">
+      {!compact && menu}
+      {status}
+    </div>
+  );
   // Office files: the top row carries the file, its ⋮ and its status, the
   // second the runtime's menu bar once it loaded (one row until then), both
   // 24px under a 4px gap; the mode toggle sits centred on both, or on the top
@@ -549,8 +562,8 @@ export function Header({
         className={cn(
           'grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-divider border-b pr-2',
           menuShown
-            ? 'h-14 grid-rows-[24px_24px] gap-y-0.5 pt-1'
-            : 'h-12 items-center sm:h-14',
+            ? 'h-15 grid-rows-[24px_24px] gap-y-1 pt-1.5'
+            : 'h-12 items-center sm:h-15',
           // Workspace buttons at the left edge (24px here, the right's are
           // full size) sit as far in as the right's.
           leading ? 'pl-3' : 'pl-4'
@@ -564,7 +577,7 @@ export function Header({
             'flex min-w-0 items-center gap-2',
             // The workspace chrome at the row's height; the workspace picker
             // (a dropdown trigger) as a slimmer pill.
-            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6',
+            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6 [&_[role=status]]:size-6',
             '[&_[data-slot=dropdown-menu-trigger]]:h-6 [&_[data-slot=dropdown-menu-trigger]]:gap-1.5 [&_[data-slot=dropdown-menu-trigger]]:px-2'
           )}
         >
@@ -577,8 +590,7 @@ export function Header({
             )}
           >
             {name}
-            {!compact && menu}
-            {status}
+            {statusRow}
           </div>
         </div>
         <div
@@ -604,9 +616,9 @@ export function Header({
   return (
     <div
       className={cn(
-        'flex h-12 items-center gap-1 border-divider border-b pr-1 sm:h-14 sm:gap-2 sm:pr-2',
+        'flex h-12 items-center gap-1 border-divider border-b pr-2 sm:h-15 sm:gap-2',
         // Workspace buttons at the left edge sit as far in as the right's.
-        leading ? 'pl-1 sm:pl-2' : 'pl-2 sm:pl-4'
+        leading ? 'pl-2' : 'pl-2 sm:pl-4'
       )}
       data-testid="content-header"
     >
@@ -626,8 +638,7 @@ export function Header({
             <h2 className={cn(nameClassName, 'flex-1')}>{title ?? '--'}</h2>
           </>
         )}
-        {!compact && menu}
-        {status}
+        {statusRow}
       </div>
       <div className="ml-auto flex items-center gap-0">
         {right}

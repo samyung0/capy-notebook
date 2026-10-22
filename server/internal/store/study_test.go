@@ -266,13 +266,16 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if err := f.s.SetWorkspaceStudy(ctx, f.user, f.ws.ID, false); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := f.s.CreateStudyPlan(ctx, f.user, f.ws.ID, "Plan"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.s.RequestAccountDeletion(ctx, f.user, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.s.PurgeUser(ctx, f.user); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log", "review_sessions"} {
+	for _, table := range []string{"study_progress", "workspace_study", "review_states", "review_log", "review_sessions", "study_plans"} {
 		if n := f.count(t, `SELECT count(*) FROM `+table+` WHERE user_id=$1`, f.user); n != 0 {
 			t.Fatalf("%s after account purge = %d", table, n)
 		}

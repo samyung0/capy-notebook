@@ -1,0 +1,1192 @@
+<title>Study Plan Mocks</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400..800&display=swap">
+<style>
+/* Layout: a proposal column with app-styled frames (classroom theme tokens) laid inside it. */
+:root {
+  --page: #f7f7f7; --card: #ffffff; --card-dark: #e6e9ea; --hover: #f7f8f8;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b; --link: #5b4aa8;
+  --border: #d6d6d6; --divider: #e6e6e6; --strong: #afafaf;
+  --primary: #222222; --primary-fg: #ffffff; --accent: #8c7bd9; --accent-fg: #ffffff;
+  --tint-accent: #ece6f6; --tint-accent-fg: #5b4aa8;
+  --tint-ok: #e7f6ee; --tint-ok-fg: #2f7d56; --tint-warn: #f7f0e5; --tint-warn-fg: #a9772a;
+  --ok: #7bd9ab; --info: #8ec9f9; --warn: #ffcc61; --err: #f35a71;
+  --ws-chem: #8c7bd9; --ws-stat: #3a5f9e; --ws-ielts: #b58f3c; --ws-hist: #269b7e;
+  --note-bg: #fffaf0; --note-border: #ecdcb8;
+  --sans: "Fustat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --r-btn: 12px; --r-card: 18px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0d1219; --card: #161d27; --card-dark: #222c3a; --hover: #1d2633;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --link: #b4befe;
+  --border: #323e52; --divider: rgba(255,255,255,.07); --strong: #3a4657;
+  --primary: #cdd4de; --primary-fg: #0d1219; --accent: #b5a1f8; --accent-fg: #0d1219;
+  --tint-accent: #31334b; --tint-accent-fg: #c8b8fa;
+  --tint-ok: #2e3f3c; --tint-ok-fg: #a6e3a1; --tint-warn: #423c2e; --tint-warn-fg: #f9e2af;
+  --ok: #a6e3a1; --info: #89b4fa; --warn: #f9e2af; --err: #f38ba8;
+  --ws-chem: #b5a1f8; --ws-stat: #89b4fa; --ws-ielts: #f9e2af; --ws-hist: #94e2d5;
+  --note-bg: #221f18; --note-border: #4a4030;
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --page: #0d1219; --card: #161d27; --card-dark: #222c3a; --hover: #1d2633;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --link: #b4befe;
+  --border: #323e52; --divider: rgba(255,255,255,.07); --strong: #3a4657;
+  --primary: #cdd4de; --primary-fg: #0d1219; --accent: #b5a1f8; --accent-fg: #0d1219;
+  --tint-accent: #31334b; --tint-accent-fg: #c8b8fa;
+  --tint-ok: #2e3f3c; --tint-ok-fg: #a6e3a1; --tint-warn: #423c2e; --tint-warn-fg: #f9e2af;
+  --ok: #a6e3a1; --info: #89b4fa; --warn: #f9e2af; --err: #f38ba8;
+  --ws-chem: #b5a1f8; --ws-stat: #89b4fa; --ws-ielts: #f9e2af; --ws-hist: #94e2d5;
+  --note-bg: #221f18; --note-border: #4a4030;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--fg); font-family: var(--sans); font-size: 15px; font-weight: 500; line-height: 1.45; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-block: 40px 96px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 56px; }
+h1 { font-size: 30px; font-weight: 800; letter-spacing: -.02rem; margin: 0; text-wrap: balance; }
+h2 { font-size: 22px; font-weight: 800; margin: 0; text-wrap: balance; }
+h3 { font-size: 16px; font-weight: 700; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--fg2); font-size: 16px; }
+.eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 18px; }
+.prose { display: flex; flex-direction: column; gap: 10px; }
+.prose ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; max-width: 72ch; }
+.rec { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; display: flex; flex-direction: column; gap: 8px; }
+.opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: start; }
+.label-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--tint-accent); color: var(--tint-accent-fg); }
+.tag.later { background: var(--card-dark); color: var(--fg2); }
+
+/* app frames */
+.frame { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden; min-width: 0; }
+.frame-cap { font-size: 13px; color: var(--muted); }
+.scroll-x { overflow-x: auto; }
+.app { display: flex; min-height: 560px; }
+.side { width: 220px; flex: none; border-right: 1px solid var(--divider); padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; background: var(--page); }
+.side .it { padding: 7px 10px; border-radius: 10px; color: var(--fg2); font-size: 14px; display: flex; gap: 10px; align-items: center; }
+.side .it.on { background: var(--card-dark); color: var(--fg); font-weight: 700; }
+.side .dot { width: 18px; height: 18px; border-radius: 6px; border: 1.6px solid currentColor; opacity: .7; }
+.main { flex: 1; min-width: 0; padding: 32px 40px 40px; display: flex; flex-direction: column; gap: 22px; }
+.ptitle { font-size: 26px; font-weight: 800; letter-spacing: -.02rem; }
+.tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--divider); font-size: 15px; overflow-x: auto; }
+.tabs span { padding: 0 0 10px; color: var(--muted); white-space: nowrap; }
+.tabs span.on { color: var(--fg); font-weight: 700; box-shadow: inset 0 -2px 0 var(--fg); }
+.toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dd { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--r-btn); padding: 7px 12px; font-weight: 600; background: var(--card); }
+.dd small { color: var(--muted); font-weight: 600; font-size: 13px; }
+.ibtn { width: 36px; height: 36px; display: inline-grid; place-items: center; border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--card); color: var(--fg); }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--r-btn); padding: 7px 14px; font-weight: 700; background: var(--card); white-space: nowrap; }
+.btn.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.spacer { flex: 1; }
+.lnk { color: var(--link); text-decoration: underline; text-underline-offset: 3px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.muted { color: var(--muted); }
+.meta { font-size: 13px; color: var(--muted); }
+svg.i { width: 18px; height: 18px; flex: none; }
+
+/* workspace icon */
+.ws { width: 32px; height: 32px; border-radius: 10px; flex: none; display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #fff; }
+.ws.s { width: 22px; height: 22px; border-radius: 7px; font-size: 11px; }
+.ws.chem { background: var(--ws-chem); } .ws.stat { background: var(--ws-stat); } .ws.ielts { background: var(--ws-ielts); color: #222; } .ws.hist { background: var(--ws-hist); }
+:root[data-theme="dark"] .ws, :root[data-theme="dark"] .ws.ielts { color: #0d1219; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ws { color: #0d1219; } }
+
+/* plan summary */
+.plan-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.plan-head .n { font-size: 20px; font-weight: 800; }
+.bar { height: 6px; border-radius: 99px; background: var(--card-dark); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--fg); border-radius: 99px; }
+
+/* step rows (A) */
+.steps { display: flex; flex-direction: column; }
+.step { display: grid; grid-template-columns: 28px 32px minmax(0,1fr) auto; gap: 14px; align-items: center; padding: 12px 8px; border-radius: 12px; position: relative; }
+.step + .step { border-top: 1px solid var(--divider); }
+.step .num { font-weight: 700; color: var(--muted); text-align: center; font-size: 14px; }
+.step .nm { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .sub { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step .end { display: flex; align-items: center; gap: 14px; }
+.step.done .nm { color: var(--fg2); }
+.step.now { background: var(--tint-accent); }
+.step.now + .step { border-top-color: transparent; }
+.step.lost .nm, .step.lost .sub { color: var(--muted); }
+.mark { width: 20px; height: 20px; flex: none; }
+.count { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.dots3 { color: var(--muted); }
+.drop { position: absolute; left: 8px; right: 8px; top: -2px; height: 2px; background: var(--accent); border-radius: 2px; }
+.dragging { opacity: .45; }
+
+/* line (B) */
+.line-wrap { overflow-x: auto; padding-bottom: 6px; }
+.line { position: relative; width: 980px; height: 210px; }
+.line svg { position: absolute; inset: 0; }
+.stn { position: absolute; width: 116px; transform: translateX(-50%); text-align: center; font-size: 12.5px; line-height: 1.3; }
+.stn b { display: block; font-size: 13px; }
+.stn.up { top: 8px; } .stn.down { top: 134px; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--fg2); }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.legend i { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
+
+/* weeks (C) */
+.week { display: flex; flex-direction: column; gap: 4px; }
+.week-h { display: flex; align-items: baseline; gap: 10px; padding: 0 8px; }
+.week-h b { font-size: 14px; }
+.chip { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.chip.ok { background: var(--tint-ok); color: var(--tint-ok-fg); }
+.chip.warn { background: var(--tint-warn); color: var(--tint-warn-fg); }
+
+/* study tab */
+.panel { width: 380px; max-width: 100%; padding: 22px 20px 26px; display: flex; flex-direction: column; gap: 22px; }
+.panel h4 { margin: 0; font-size: 16px; font-weight: 700; }
+.prow { display: flex; align-items: center; gap: 12px; }
+.prow .tx { flex: 1; min-width: 0; }
+.prow .tx b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini { display: flex; flex-direction: column; gap: 2px; padding-left: 2px; }
+.mini .r { display: flex; align-items: center; gap: 10px; font-size: 14px; padding: 5px 0; }
+.mini .r .k { width: 22px; color: var(--muted); font-weight: 700; font-size: 13px; }
+.mini .r.now b { color: var(--fg); }
+.mini .r.other { color: var(--muted); }
+.trail { display: flex; gap: 3px; align-items: center; }
+.trail i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--strong); }
+.trail i.f { background: var(--fg); border-color: var(--fg); }
+.trail i.o { border-color: var(--ws-chem); background: var(--ws-chem); }
+
+/* popover */
+.pop-stage { position: relative; }
+.pop { position: absolute; right: 40px; top: 118px; width: 340px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.14); padding: 14px; display: flex; flex-direction: column; gap: 10px; z-index: 2; }
+.pop .lbl { font-size: 13px; font-weight: 700; color: var(--fg2); }
+.pop .opt { display: flex; align-items: center; gap: 10px; padding: 6px 4px; font-size: 14px; }
+.cb { width: 18px; height: 18px; border-radius: 5px; border: 1.6px solid var(--strong); flex: none; display: grid; place-items: center; }
+.cb.on { background: var(--fg); border-color: var(--fg); color: var(--card); }
+.cb.dis { opacity: .5; background: var(--card-dark); }
+.pop .foot { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--divider); padding-top: 10px; }
+.menu { position: absolute; right: 18px; width: 200px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.14); padding: 6px; z-index: 2; font-size: 14px; }
+.menu div { padding: 7px 10px; border-radius: 8px; }
+.menu div:first-child { background: var(--hover); }
+.menu .danger { color: var(--err); }
+
+/* phone */
+.phones { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.phone { width: 360px; max-width: 100%; border: 1px solid var(--border); border-radius: 28px; background: var(--card); overflow: hidden; }
+.phone .main { padding: 18px 16px 24px; gap: 16px; }
+.phone .ptitle { font-size: 22px; }
+.phone .step { grid-template-columns: 22px 32px minmax(0,1fr) auto; gap: 10px; padding: 11px 4px; }
+.phone .step .count { display: none; }
+
+/* decisions */
+.qs { counter-reset: q; display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.qs li { counter-increment: q; display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 4px 10px; }
+.qs li::before { content: counter(q); font-weight: 800; color: var(--tint-accent-fg); background: var(--tint-accent); border-radius: 8px; width: 28px; height: 28px; display: grid; place-items: center; font-size: 14px; }
+.qs li > div { display: flex; flex-direction: column; gap: 3px; }
+.qs .pick { font-size: 14px; color: var(--fg2); }
+.qs .pick b { color: var(--fg); }
+table.schema { border-collapse: collapse; font-size: 14px; min-width: 640px; width: 100%; }
+.schema th, .schema td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+.schema th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05rem; }
+code { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 13px; background: var(--card-dark); padding: 1px 5px; border-radius: 5px; }
+
+@media (max-width: 760px) {
+  .side { display: none; }
+  .main { padding: 20px 16px 28px; }
+  .app { min-height: 0; }
+  .pop { position: static; width: auto; margin: 0 16px 16px; box-shadow: none; }
+  .menu { display: none; }
+}
+@media (max-width: 520px) {
+  .step { grid-template-columns: 22px 32px minmax(0,1fr) auto; gap: 10px; }
+  .step .count { display: none; }
+}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ck" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="var(--ok)"/><path d="M6 10.4l2.6 2.6L14.2 7.4" fill="none" stroke="#1f4d36" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="half" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--fg)" stroke-width="1.8"/><path d="M10 2a8 8 0 0 1 0 16z" fill="var(--fg)"/></symbol>
+  <symbol id="todo" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--strong)" stroke-width="1.8" stroke-dasharray="3 2.6"/></symbol>
+  <symbol id="lock" viewBox="0 0 20 20"><rect x="4" y="9" width="12" height="8" rx="2" fill="none" stroke="var(--muted)" stroke-width="1.6"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9" fill="none" stroke="var(--muted)" stroke-width="1.6"/></symbol>
+  <symbol id="fwd" viewBox="0 0 20 20"><path d="M4 10h11M11 5.5l4.5 4.5L11 14.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+  <symbol id="more" viewBox="0 0 20 20"><circle cx="10" cy="4.5" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="15.5" r="1.5" fill="currentColor"/></symbol>
+  <symbol id="down" viewBox="0 0 20 20"><path d="M5.5 8l4.5 4.5L14.5 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="cal" viewBox="0 0 20 20"><rect x="3" y="4.5" width="14" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 8.5h14M7 3v3M13 3v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="doc" viewBox="0 0 20 20"><path d="M5 2.5h6.5L15.5 6.5V17a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M11.5 2.5v4h4M7.5 10.5h5M7.5 13.5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol><symbol id="quiz" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.3M10 13.6v.1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol><symbol id="cards" viewBox="0 0 20 20"><rect x="3" y="5.5" width="11" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6.5 3h8.5a2 2 0 0 1 2 2v10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="route" viewBox="0 0 20 20"><circle cx="5" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="15" cy="15" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 5h5.5a2.5 2.5 0 0 1 0 5h-5a2.5 2.5 0 0 0 0 5H13" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+</svg>
+
+<div class="wrap">
+
+<header class="prose">
+  <span class="eyebrow">Learning · proposal · 22 Oct 2026</span>
+  <h1>Study plans</h1>
+  <p class="lede">A study plan is your own ordered list of what to study, picked from chapters, files and whole workspaces across every workspace you can read. Progress on each step comes from the read marks, attempts and ratings we already record, so a plan adds no new tracking. A workspace only shows the plan steps that fall inside it, plus a link to the step after.</p>
+  <div class="rec">
+    <h3>What I propose for the first version</h3>
+    <ul>
+      <li><b>Steps are chapters, single files or materials, or a whole workspace.</b> A step is done when every tracked item in it is done, the same count as the Study tab's "4 of 5". New items added later reopen the step.</li>
+      <li><b>The current step is the first step not done</b>, so steps can be finished out of order and Continue never gets stuck.</li>
+      <li><b>No calendar and no dates yet.</b> Order is the plan. The one date I'd consider later is an optional "Finish by" per plan with a pace line (option C), never a day-by-day schedule. ROADMAP already parks the calendar until the notebook loop has weekly users.</li>
+      <li><b>No AI in the first version.</b> A new plan starts from reading order and you drag rows to reorder. Later, workspace chat can read the steps inside its own workspace, and a planner on Learning could see titles and progress counts only, never content (see AI scope below).</li>
+      <li><b>Private to you</b>, like progress. Shared plans for studying with friends come after, and the data model leaves room for them.</li>
+    </ul>
+  </div>
+</header>
+
+<!-- ========== Round 5 ========== -->
+<section id="five">
+  <div class="prose">
+    <span class="eyebrow">Round 5 · 22 Oct · current</span>
+    <h2>Plans belong to a workspace; progress stays one shared set</h2>
+    <p>Rounds 3 and 4 are superseded where they differ. What holds now:</p>
+    <ul>
+      <li><b>Progress is shared, always.</b> No active plan and no Share switch. A read mark, attempt or rating is one fact about you and the item, counted the same in every plan and in the workspace. Attempts, ratings and review sessions keep their current tables: no <code>plan_id</code>.</li>
+      <li><b>Every plan has a parent workspace</b>, picked when you create it, usually the one you're in. It can still hold steps from any workspace you can read. Deleting the parent workspace deletes its plans.</li>
+      <li><b>The workspace's own order is the default plan.</b> Review, Quick review, suggested reviews and Learning's Review tab work on it exactly as today. Review sessions scoped to a plan wait.</li>
+      <li><b>The centre Study page shows the plans linked to the workspace</b>: plans whose parent it is, and plans elsewhere that have steps here ("Also in"). That's how you know which plans a workspace is in.</li>
+      <li><b>Continue on a plan opens its next item wherever it is.</b> It's a normal in-app link, so an item in another workspace just opens that workspace on the item.</li>
+      <li><b>Hide study progress</b> stays as one switch per user per workspace, in the Study page ⋮. It is today's per-workspace switch with a new label (<code>workspace_study.enabled</code>, no migration). The global "Track study progress" in Settings → Study goes.</li>
+      <li><b>The railway map stays per workspace</b> (see below).</li>
+    </ul>
+  </div>
+
+  <div class="label-row"><h3>W6 · Centre Study page with linked plans</h3></div>
+  <div class="frame scroll-x">
+    <div class="ws-frame">
+      <div class="lp">
+        <div class="t"><span class="ws s stat">S</span>Statistics 201</div>
+        <div class="f" style="background:var(--card-dark);color:var(--fg);font-weight:700">Study</div>
+        <div class="ch">1 · Descriptive statistics</div>
+        <div class="f">Summary measures.pdf</div><div class="f">Charts and spread</div>
+        <div class="ch">2 · Probability</div>
+        <div class="f">Sample spaces.pdf</div><div class="f">Counting rules</div><div class="f">Conditional probability.pdf</div><div class="f">Probability quiz</div>
+        <div class="ch">3 · Sampling distributions</div>
+        <div class="f">Central limit theorem.pdf</div>
+      </div>
+      <div class="cp">
+        <div class="toolbar"><div class="ptitle" style="font-size:24px">Study</div><span class="spacer"></span><span class="ibtn"><svg class="i"><use href="#more"/></svg></span></div>
+        <div style="position:relative;height:150px;border-radius:14px;overflow:hidden;background:repeating-linear-gradient(90deg, transparent 0 46px, var(--divider) 46px 47px)">
+          <svg viewBox="0 0 700 150" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">
+            <path d="M10 92 C 120 76, 230 108, 350 90 S 560 80, 690 94" fill="none" stroke="var(--ws-stat)" stroke-width="5" stroke-linecap="round"/>
+            <g stroke-width="2.5"><circle cx="90" cy="84" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="140" cy="86" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="260" cy="99" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="310" cy="95" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="360" cy="89" r="11" fill="none" stroke="var(--accent)"/><circle cx="360" cy="89" r="6" fill="var(--card)" stroke="var(--fg)"/><circle cx="410" cy="87" r="6" fill="var(--card)" stroke="var(--strong)"/><circle cx="560" cy="84" r="6" fill="var(--card)" stroke="var(--strong)"/><circle cx="610" cy="87" r="6" fill="var(--card)" stroke="var(--strong)"/></g>
+          </svg>
+          <span class="meta" style="position:absolute;left:14px;bottom:8px">Sketch: Learning's exact RailMap for this workspace</span>
+        </div>
+        <div class="cont"><div class="tx"><span class="meta" style="font-weight:700">Next</span><div class="big">Conditional probability.pdf</div></div><span class="lnk" style="font-size:16px">Continue<svg class="i"><use href="#fwd"/></svg></span></div>
+        <div class="prow"><span class="ws stat">S</span><div class="tx"><b>Whole workspace</b><span class="meta">14 items worth a look</span></div><span class="btn">Review</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="toolbar"><h4 style="margin:0;font-size:16px">Plans</h4><span class="spacer"></span><span class="btn" style="padding:5px 12px"><svg class="i"><use href="#plus"/></svg>New plan</span></div>
+          <div class="steps">
+            <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><svg class="i" style="width:32px;height:22px;color:var(--fg2)"><use href="#route"/></svg><div style="min-width:0"><div class="nm">Winter exams</div><div class="sub">8 steps in 4 workspaces · Next: Conditional probability</div></div><div class="end"><span class="count">2 of 8</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span><svg class="i dots3"><use href="#more"/></svg></div></div>
+            <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><svg class="i" style="width:32px;height:22px;color:var(--fg2)"><use href="#route"/></svg><div style="min-width:0"><div class="nm">Probability first</div><div class="sub">3 steps · Next: Bayes flashcards</div></div><div class="end"><span class="count">1 of 3</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span><svg class="i dots3"><use href="#more"/></svg></div></div>
+            <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Finals revision</div><div class="sub">Also in · from Organic Chemistry · steps 4, 5 are here</div></div><div class="end"><span class="count">0 of 6</span><span class="lnk">Open<svg class="i"><use href="#fwd"/></svg></span></div></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <div class="toolbar" style="padding-bottom:6px"><h4 style="margin:0;font-size:16px">Chapters</h4><span class="spacer"></span><span class="btn" style="padding:5px 12px">Filter</span><span class="dd" style="padding:5px 12px">All items<svg class="i"><use href="#down"/></svg></span></div>
+          <div class="grp">
+            <div class="grp-h"><span class="k">1</span><svg class="mark"><use href="#ck"/></svg><b>Descriptive statistics</b><span class="count">6 of 6</span><svg class="i muted"><use href="#down"/></svg></div>
+            <div class="grp-h"><span class="k">2</span><svg class="mark"><use href="#half"/></svg><b>Probability</b><span class="count">3 of 7</span><svg class="i muted"><use href="#down"/></svg></div>
+            <div class="grp-h"><span class="k">3</span><svg class="mark"><use href="#todo"/></svg><b>Sampling distributions</b><span class="count">0 of 5</span><svg class="i muted"><use href="#down"/></svg></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-cap">Top to bottom: today's railway map for this workspace, Continue (reading order), whole-workspace Review, Quick review (left out of this frame), Plans, then the chapter rows from today's Study progress page. The ⋮ holds Hide study progress and Reset progress. Plans lists the ones parented here first, then plans from other workspaces with steps here, marked "Also in" with their parent's icon.</p>
+
+  <div class="opts">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>W7 · A plan opened</h3></div>
+      <div class="frame">
+        <div class="cp" style="padding:20px 20px 24px;gap:14px">
+          <span class="lnk" style="font-weight:600"><svg class="i" style="transform:rotate(180deg)"><use href="#fwd"/></svg>Study</span>
+          <div class="toolbar"><div style="min-width:0"><div style="font-weight:800;font-size:19px">Winter exams</div><div class="meta">In Statistics 201 · 2 of 8 steps done</div></div><span class="spacer"></span><span class="ibtn"><svg class="i"><use href="#plus"/></svg></span><span class="ibtn"><svg class="i"><use href="#more"/></svg></span></div>
+          <span class="lnk">Continue: Conditional probability<svg class="i"><use href="#fwd"/></svg></span>
+          <div class="steps">
+            <div class="step done" style="grid-template-columns:22px 32px minmax(0,1fr) auto;gap:10px"><span class="num">1</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Descriptive statistics</div><div class="sub">Statistics 201</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg></div></div>
+            <div class="step done" style="grid-template-columns:22px 32px minmax(0,1fr) auto;gap:10px"><span class="num">2</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Bonding and structure</div><div class="sub">Organic Chemistry</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg></div></div>
+            <div class="step now" style="grid-template-columns:22px 32px minmax(0,1fr) auto;gap:10px"><span class="num">3</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Probability</div><div class="sub">Next: Conditional probability</div></div><div class="end"><svg class="mark"><use href="#half"/></svg></div></div>
+            <div class="step" style="grid-template-columns:22px 32px minmax(0,1fr) auto;gap:10px"><span class="num">4</span><span class="ws ielts">I</span><div style="min-width:0"><div class="nm">Task 1 band descriptors.pdf</div><div class="sub">IELTS Writing · one file</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-cap">The plan opens in the centre pane (<code>?plan=</code>), one Back from Study. It is round 1's list A: + adds steps from any workspace, rows drag to reorder, ⋮ per row; the plan ⋮ has Rename and Delete plan. Opening "Also in" plans goes to their parent workspace.</p>
+    </div>
+    <div class="prose" style="min-width:0">
+      <h3>Why the map stays per workspace</h3>
+      <p>A plan's steps cross workspaces and can be single files, but the map's stations carry one name of at most two 18-character lines, so "Organic Chemistry · Alkanes and cycloalkanes" won't fit, and its scenery is one workspace's line in one cover colour. Making it show workspace changes would mean changing the generator, which we're keeping as it is.</p>
+      <p>So the map heads the workspace's Study page (the same <code>RailMap</code> call as Learning's lead, moved into a shared component) and plans use the step list, where each row shows its workspace icon. A plan map can come later if we decide what a workspace change looks like on the line.</p>
+      <h3>Learning</h3>
+      <ul>
+        <li>Progress keeps today's lead map, Other workspaces and Finished. Workspaces get ⋮ Hide study progress and Show all at the right of the heading (round 3's L1).</li>
+        <li>A "Your plans" section lists every plan with its parent workspace's icon and Continue. Hiding a workspace doesn't hide plans parented to it.</li>
+        <li>Review tab unchanged.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="prose">
+    <h3>Data</h3>
+    <ul>
+      <li><code>study_plans (id, user_id, workspace_id, name, created_at, updated_at)</code>. <code>workspace_id</code> is the parent, required, cascade on delete. Private to the user. Cap 10 per workspace.</li>
+      <li><code>study_plan_steps (plan_id, position, workspace_id, chapter_id?, file_id?, material_id?)</code>, cap 50 per plan, cascading with whatever they point to. A step in a workspace you can no longer read shows locked with no title.</li>
+      <li>Step done counts come from <code>study_progress</code> exactly as the Study page counts chapters. No change to <code>attempts</code>, <code>review_states</code>, <code>review_log</code>, <code>review_sessions</code>.</li>
+      <li><code>users.study_progress</code> dropped; <code>StudyEnabled</code> falls back to on when a workspace has no row.</li>
+    </ul>
+    <h3>Code map</h3>
+  </div>
+  <div class="scroll-x">
+    <table class="map">
+      <thead><tr><th>Where</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td><code>server/migrations/01xx_study_plans.sql</code></td><td>Both plan tables; drop <code>users.study_progress</code>. Next free number.</td></tr>
+        <tr><td><code>store/study_plans.go</code> (new)</td><td>Create, rename, replace steps, delete; list for a workspace (parented here + steps here) and for Learning; step titles and done counts with per-workspace read checks.</td></tr>
+        <tr><td><code>store/study.go</code>, <code>store/users.go</code></td><td><code>StudyEnabled</code> without the user default; <code>SetStudyProgressDefault</code> and the users column read go.</td></tr>
+        <tr><td><code>httpapi/huma_study.go</code>, <code>openapi.yaml</code></td><td><code>GET/POST /api/workspaces/{id}/study/plans</code>, <code>GET/PATCH/DELETE /api/study/plans/{id}</code>, <code>GET /api/learning/plans</code>; drop <code>PATCH /api/me/study-progress</code>.</td></tr>
+        <tr><td><code>store/learning_progress.go</code></td><td><code>?all=true</code> returns progress-off workspaces marked hidden, for Show all.</td></tr>
+        <tr><td><code>src/routes/WorkspaceOpen.tsx</code></td><td>Remove <code>'study'</code> from <code>PanelTab</code> and <code>LeftView</code> and both <code>StudyPanel</code> mounts; Study row in the Files panel and header ⋮ open the centre page; <code>?progress</code> → <code>?study</code>, plus <code>?plan=</code>.</td></tr>
+        <tr><td><code>src/features/study/StudyPanel.tsx</code></td><td>Delete; Continue, <code>WorkspaceReview</code> and <code>QuickReview</code> move into the page.</td></tr>
+        <tr><td><code>src/features/study/StudyProgress.tsx</code> → <code>StudyPage.tsx</code></td><td>Map, quick actions, Plans section, chapter rows, ⋮ with Hide study progress and Reset.</td></tr>
+        <tr><td><code>src/features/study/plans/</code> (new)</td><td><code>PlanPage</code> (list A, drag, ⋮), <code>AddStepsPopover</code>, <code>PlanRow</code>.</td></tr>
+        <tr><td><code>src/routes/Learning.tsx</code></td><td><code>LeadWorkspace</code>'s map call moves to a shared <code>WorkspaceRailMap</code> used here and on the Study page; Your plans section; Hide and Show all.</td></tr>
+        <tr><td><code>CenterContent.tsx</code>, <code>WorkspaceSettingsDialog</code>, <code>StudyPreferencesSection</code></td><td><code>study</code>/<code>plan</code> props; Track progress and Reset leave settings for the Study page ⋮; the global switch goes.</td></tr>
+        <tr><td>Tests and docs</td><td><code>study_plans_test.go</code>, <code>learning_progress_test.go</code> (Show all), <code>StudyPanel.test.tsx</code> → <code>StudyPage.test.tsx</code>, <code>e2e/study/study-progress.spec.ts</code>, the UAT study journey; <code>openwiki/study-progress.md</code>, <code>human/study-progress.md</code>, <code>test-catalog.md</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <h3>Build order</h3>
+    <ul>
+      <li><b>Phase 1:</b> centre Study page (map, quick actions, chapter rows), side panel removed, Hide study progress in its ⋮, global setting removed, Hide and Show all on Learning.</li>
+      <li><b>Phase 2:</b> plans: tables and endpoints, Plans section with "Also in", plan page with add and drag, Your plans on Learning.</li>
+    </ul>
+    <h3>Questions</h3>
+    <ol class="qs">
+      <li><div><b>What a workspace opens on</b><span class="pick">The workspace opens on its Study tab today. With that tab gone, I'd open the centre Study page while no file is in the URL.</span></div></li>
+      <li><div><b>Who can make plans in a workspace</b><span class="pick">Plans are private, so any role that can read the workspace, viewers included, the way progress works today. OK?</span></div></li>
+      <li><div><b>Plans when Hide study progress is on</b><span class="pick">The Plans section stays, without counts or marks, the same as the chapter rows.</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ========== Round 4 ========== -->
+<section id="four">
+  <div class="prose">
+    <span class="eyebrow">Round 4 · 22 Oct · superseded by round 5</span>
+    <h2>The map for plans, Share progress, and results</h2>
+  </div>
+
+  <div class="label-row"><h3>M1 · Any plan on today's railway map</h3><span class="meta">The generator is not touched.</span></div>
+  <div class="frame">
+    <div class="main" style="padding:24px 28px;gap:16px">
+      <div class="toolbar"><h3 style="font-size:18px">Continue your study</h3><span class="spacer"></span><span class="lnk">Continue: Conditional probability<svg class="i"><use href="#fwd"/></svg></span></div>
+      <div class="line-wrap">
+        <div style="position:relative;width:980px;height:200px;border-radius:14px;background:repeating-linear-gradient(90deg, transparent 0 46px, var(--divider) 46px 47px)">
+          <svg viewBox="0 0 980 200" width="980" height="200" style="position:absolute;inset:0">
+            <path d="M20 120 C 160 100, 300 140, 440 118 S 760 104, 960 122" fill="none" stroke="var(--link)" stroke-width="5" stroke-linecap="round"/>
+            <path d="M440 118 S 760 104, 960 122" fill="none" stroke="var(--card)" stroke-width="3" stroke-dasharray="1 10" stroke-linecap="round"/>
+            <g fill="var(--fg)"><rect x="40" y="70" width="70" height="30" rx="3" fill="var(--card-dark)" stroke="var(--strong)"/><rect x="250" y="70" width="70" height="30" rx="3" fill="var(--card-dark)" stroke="var(--strong)"/><rect x="420" y="66" width="70" height="30" rx="3" fill="var(--card-dark)" stroke="var(--strong)"/><rect x="640" y="62" width="70" height="30" rx="3" fill="var(--card-dark)" stroke="var(--strong)"/><rect x="840" y="66" width="70" height="30" rx="3" fill="var(--card-dark)" stroke="var(--strong)"/></g>
+            <g font-size="10" font-weight="700" fill="var(--fg2)" font-family="Fustat, sans-serif" text-anchor="middle"><text x="75" y="89">Descriptive</text><text x="285" y="89">Bonding</text><text x="455" y="85">Probability</text><text x="675" y="81">Alkanes</text><text x="875" y="85">Modern History</text></g>
+            <g stroke-width="2.5"><circle cx="140" cy="111" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="190" cy="110" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="350" cy="124" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="395" cy="123" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="520" cy="114" r="6" fill="var(--fg)" stroke="var(--fg)"/><circle cx="565" cy="112" r="11" fill="none" stroke="var(--accent)"/><circle cx="565" cy="112" r="6" fill="var(--card)" stroke="var(--fg)"/><circle cx="610" cy="111" r="6" fill="var(--card)" stroke="var(--strong)"/><circle cx="740" cy="110" r="6" fill="var(--card)" stroke="var(--strong)"/><circle cx="785" cy="111" r="6" fill="var(--card)" stroke="var(--strong)"/><circle cx="935" cy="121" r="6" fill="var(--card)" stroke="var(--strong)"/></g>
+            <text x="565" y="148" text-anchor="middle" font-size="11" font-weight="700" fill="var(--fg)" font-family="Fustat, sans-serif">Next: Conditional probability</text>
+          </svg>
+          <span style="position:absolute;left:16px;bottom:10px" class="meta">Sketch only: the real map draws biomes, stations and the terminus exactly as today.</span>
+        </div>
+      </div>
+      <div class="toolbar"><svg class="i" style="width:32px;height:22px;color:var(--fg2)"><use href="#route"/></svg><div><div style="font-weight:800;font-size:17px">Winter exams</div><div class="meta">2 of 8 steps done</div></div><span class="spacer"></span><span class="dd">Steps<svg class="i"><use href="#down"/></svg></span></div>
+    </div>
+  </div>
+  <div class="prose">
+    <p>The lead plan on Learning's Progress tab keeps today's layout: heading with the accent Continue link, the map, then the plan's name and count. The step list (A) sits under it behind a "Steps" toggle. How a plan feeds the existing <code>RailMap</code>, call site only:</p>
+    <ul>
+      <li><code>workspaceId</code> → <code>plan:&lt;id&gt;</code> for your plans (it only seeds the scenery, so each plan gets its own stable map); the workspace's id for its own plan, so today's maps stay identical.</li>
+      <li><code>chapters</code> → one name per step (a chapter step's name, a file's title, the workspace name for a whole-workspace step). Every step opens with a station, because the map starts one wherever the station index changes.</li>
+      <li><code>items</code> → the plan's items in step order, <code>chapter</code> = the step's index, <code>state</code> from the progress the switch below picks.</li>
+      <li><code>color</code> → the workspace cover's ink for a workspace plan (as today); none for your plans, which falls back to the theme's link colour.</li>
+      <li><code>finishKey</code>: <code>finish.ts</code>'s kind gains <code>'plan'</code>. That is the only line outside the call site.</li>
+    </ul>
+    <p>No change to <code>railMap/map.ts</code>, <code>buildings.ts</code> or <code>RailMap.tsx</code>.</p>
+  </div>
+
+  <div class="opts">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>S3 · Study page ⋮ with both switches</h3></div>
+      <div class="dmenu" style="width:300px">
+        <div class="o"><div class="tx"><div>Hide study progress</div></div><span class="sw"></span></div>
+        <div class="o"><div class="tx"><div>Share progress between plans</div><div>On: what you do counts in every plan</div></div><span class="sw on"></span></div>
+        <div class="sep"></div>
+        <div class="o"><div class="tx"><div>Add this workspace to a plan…</div></div></div>
+        <div class="sep"></div>
+        <div class="o" style="color:var(--err)"><div class="tx"><div>Reset progress…</div></div></div>
+      </div>
+      <p class="frame-cap">Both per user, per workspace. Share is on by default. Flipping it changes what you see straight away and never rewrites anything, because every write is kept both ways (below).</p>
+    </div>
+    <div class="prose" style="min-width:0">
+      <h3>What Share progress changes</h3>
+      <ul>
+        <li><b>On:</b> read marks, done counts, Continue, the map and the Study page rows count everything you did in this workspace, under any plan.</li>
+        <li><b>Off:</b> they count only what you did while the active plan was active. Switching plans then shows that plan's own marks.</li>
+        <li><b>Review follows the same switch.</b> Recall (FSRS), the miss weighting from recent ratings and the suggested-review modes (Tricky, Fading, Just learned) read all ratings when on, and only the active plan's when off. That covers Quick review, Review on the Study page and this workspace's suggestions on Learning's Review tab.</li>
+        <li><b>All results never filters by plan.</b> Every quiz and flashcard attempt stays listed whatever the switches say.</li>
+        <li><b>Learning counts per workspace by its own switch.</b> A plan spanning two workspaces can count shared progress in one and plan-only progress in the other.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="prose">
+    <h3>How records link to plans</h3>
+    <ul>
+      <li><b>Logs carry a plan id.</b> <code>attempts</code>, <code>review_log</code>, <code>review_sessions</code> and <code>review_answers</code> each get <code>plan_id</code>, the active plan at write time (null = the workspace's own plan). Yes, the attempt row itself links to the plan. It is a plain column, not a foreign key, so deleting a plan leaves its results counted in shared progress and in All results, and never makes them look like the workspace plan's.</li>
+      <li><b>States are kept twice.</b> <code>study_progress</code> (read, started, not tracked) and <code>review_states</code> (FSRS) gain a <code>scope</code>: <code>shared</code>, <code>workspace</code>, or a plan id. Every write updates the shared row and the active plan's row in one transaction, so both are always current and the switch only picks which to read. Each row is updated from its own previous state (FSRS state per plan comes from that plan's ratings only).</li>
+      <li><b>Mark as unread</b> becomes a row with no state instead of a delete, so "latest write wins" holds per scope.</li>
+      <li><b>One read helper</b>, <code>progressScope(user, workspace)</code> → <code>shared</code> or the active plan's scope, used by every progress and review read: <code>StudySummary</code>, <code>quickReview</code>, <code>scoreItems</code>, the review overview, Learning progress, the chat agent's <code>read_study_progress</code>. <code>AllResults</code> and <code>GET /api/review/sessions</code> don't call it.</li>
+      <li><b>Deleting a plan</b> deletes its <code>scope</code> rows. Reset progress clears every scope in the workspace; attempts and the log stay, as today.</li>
+    </ul>
+    <h3>Code map changes from round 3</h3>
+    <ul>
+      <li>Migration: <code>workspace_study.share_progress boolean default true</code>; <code>plan_id</code> on the four log tables; <code>scope</code> on <code>study_progress</code> and <code>review_states</code> with their unique keys moving to (user, scope, item); today's rows become <code>shared</code> rows plus a <code>workspace</code> copy.</li>
+      <li><code>store/study.go</code>: <code>SetStudyItem</code>, <code>RateItem</code>, <code>recordCardTx</code> write two scopes; the set-done rule ("every current card has a state") reads the scope it is writing.</li>
+      <li><code>store/review_sessions.go</code>: the history query feeding <code>scoreItems</code> (last 8 ratings per item for <code>review.HistoryWeights</code>) filters <code>review_log</code> by <code>plan_id</code> when the scope isn't shared, and recall reads that scope's <code>review_states</code>.</li>
+      <li><code>store/queries.go</code> <code>CreateAttempt</code>: sets <code>plan_id</code>; its rating side effect goes through the same two-scope write.</li>
+      <li><code>src/routes/Learning.tsx</code>: <code>LeadWorkspace</code> generalises to a lead plan feeding <code>RailMap</code> as above; <code>finish.ts</code> kind gains <code>'plan'</code>.</li>
+      <li>Tests: <code>study_test.go</code> gains share on/off cases (marks, set done, recall), <code>review_sessions_test.go</code> the filtered weights, and an All results case that lists attempts from two plans.</li>
+    </ul>
+    <h3>Build order, revised</h3>
+    <ul>
+      <li><b>Phase 1:</b> Study page in the centre, Hide study progress (rename of today's switch), hide and Show all on Learning. No plans yet.</li>
+      <li><b>Phase 2:</b> your own plans, active plan, <code>plan_id</code> on logs, scope rows, Share progress, the map for plans.</li>
+      <li><b>Phase 3:</b> workspace chat reading its steps, Finish-by, shared plans with friends.</li>
+    </ul>
+    <h3>Questions</h3>
+    <ol class="qs">
+      <li><div><b>Study page rows when Share is off</b><span class="pick">"3 attempts · latest 7/10" counts only the active plan's attempts (matches the marks), while All results lists everything. <b>I'd do that.</b></span></div></li>
+      <li><div><b>Map on the Study page</b><span class="pick">The map stays on Learning only, or also heads the workspace's centre Study page for the active plan?</span></div></li>
+      <li><div><b>Still open from round 3</b><span class="pick">What a workspace opens on now that the Study tab is gone; what happens to the global setting in Settings → Study; whether Continue jumps to the plan's next workspace or links to it.</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ========== Round 3 ========== -->
+<style>
+.sw { width: 36px; height: 22px; border-radius: 99px; background: var(--strong); position: relative; flex: none; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--card); }
+.sw.on { background: var(--fg); }
+.sw.on::after { left: 17px; }
+.hiddenrow { opacity: .5; }
+.ws-frame { display: flex; min-height: 640px; }
+.lp { width: 250px; flex: none; border-right: 1px solid var(--divider); padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--page); font-size: 14px; }
+.lp .t { font-weight: 800; display: flex; align-items: center; gap: 6px; padding: 4px 6px 10px; }
+.lp .f { padding: 6px 8px; border-radius: 8px; color: var(--fg2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp .ch { padding: 10px 8px 2px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.cp { flex: 1; min-width: 0; padding: 28px 36px 36px; display: flex; flex-direction: column; gap: 22px; }
+.cont { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.cont .tx { flex: 1; min-width: 200px; }
+.cont .big { font-size: 19px; font-weight: 800; }
+.qcards { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.qc { flex: none; width: 200px; height: 118px; border: 1px solid var(--border); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; font-size: 14px; font-weight: 600; background: var(--card); }
+.qc small { color: var(--muted); font-weight: 600; font-size: 12px; }
+.grp { display: flex; flex-direction: column; }
+.grp-h { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-top: 1px solid var(--divider); }
+.grp-h .k { font-size: 12px; font-weight: 700; color: var(--muted); width: 52px; flex: none; }
+.grp-h b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.irow { display: grid; grid-template-columns: 52px 22px minmax(0,1fr) auto; gap: 12px; align-items: center; padding: 8px 4px; font-size: 14px; }
+.irow .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.irow .end { display: flex; gap: 12px; align-items: center; }
+.ficon { width: 20px; height: 22px; border-radius: 4px; border: 1.5px solid var(--strong); position: relative; }
+.ficon.q { border-color: var(--ws-chem); } .ficon.c { border-color: var(--ws-hist); border-radius: 6px; }
+.score { font-weight: 700; font-size: 14px; }
+.notice { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--tint-warn); color: var(--tint-warn-fg); font-size: 14px; font-weight: 600; }
+.dmenu { width: 320px; max-width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,.14); padding: 6px; font-size: 14px; }
+.dmenu .h { font-size: 12px; font-weight: 700; color: var(--muted); padding: 8px 10px 4px; }
+.dmenu .o { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; }
+.dmenu .o.sel { background: var(--hover); }
+.dmenu .o .tx { flex: 1; min-width: 0; }
+.dmenu .o .tx div:last-child { font-size: 12.5px; color: var(--muted); }
+.dmenu .sep { height: 1px; background: var(--divider); margin: 4px 6px; }
+table.map { border-collapse: collapse; font-size: 13.5px; min-width: 760px; width: 100%; }
+.map th, .map td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+.map th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05rem; }
+.map td:first-child { white-space: nowrap; }
+.phase { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.phase > div { border-top: 3px solid var(--fg); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.phase ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+@media (max-width: 760px) { .lp { display: none; } .cp { padding: 18px 16px 24px; } .irow { grid-template-columns: 22px minmax(0,1fr) auto; } .irow > span:first-child { display: none; } .grp-h .k { width: auto; } }
+</style>
+<section id="three">
+  <div class="prose">
+    <span class="eyebrow">Round 3 · 22 Oct · superseded by round 5 (L1 hide and Show all still hold)</span>
+    <h2>Active plans, Hide study progress, and one Study page</h2>
+    <p>Your answers, turned into rules:</p>
+    <ul>
+      <li><b>Each workspace has an active plan</b>, the workspace's own plan by default. You change it with the plan switch on the Study page. Pressing Continue on a plan in Learning also makes it active in that workspace, so "the plan you last worked on" and "the active plan" are the same thing.</li>
+      <li><b>Continue follows the active plan</b> and is labelled with it: "Continue your Winter exams plan". It stays inside the workspace (the plan's first unfinished item <i>here</i>); when the plan has moved on to another workspace, a line under it links there. With the workspace's own plan active it reads plain "Continue".</li>
+      <li><b>Recording never stops</b> <span class="tag">revised</span>. Every attempt, flashcard rating, review answer and read mark is written under the workspace's active plan. There is no tracking switch on plans.</li>
+      <li><b>Hide study progress is one switch per user per workspace</b> <span class="tag">revised</span>, in the Study page's ⋮. It does what Track progress off does today: marks, the read toggle, scores and Continue states disappear in that workspace, Learning's Review skips it and chat can't read its progress, while results keep being saved. Turning it back on shows everything.</li>
+      <li><b>The same switch is the Hide on Learning</b> <span class="tag">revised</span>. Today a workspace with progress off already drops off Learning, so instead of a second "hide" the Learning row's ⋮ flips this switch. "Show all" at the right of the Workspaces heading brings hidden ones back at half opacity. Workspace plans can't be deleted; your own plans can.</li>
+      <li><b>A new workspace plan starts with nothing done and every file tracked</b>, as today: no row means untouched, and untouched counts as tracked until you stop tracking an item.</li>
+      <li><b>The Study side panel goes away.</b> Its Continue, Review and Quick review move to the top of the centre Study page (today's Study progress page), which becomes the one place to study a workspace.</li>
+    </ul>
+    <div class="rec">
+      <h3>What "written to the active plan" means <span class="tag">decided in round 4: a Share progress switch</span></h3>
+      <p>It can mean the plan <b>owns</b> the progress (per plan), or the plan is a <b>label</b> on a shared record (shared). Concretely: you read Sample spaces.pdf while Winter exams is active, then switch Statistics 201 back to its own plan. Per plan, the file shows unread again. Shared, it shows read in both, and the record says it was read during Winter exams.</p>
+      <p><b>Shared (I'd pick this).</b> A read mark or a quiz result is a fact about you and the file, so it counts in every plan that has the file. Each record carries the plan it was made under, so a plan can list its own results, but done counts agree everywhere. A new plan over chapters you've already read starts with them done.</p>
+      <p><b>Per plan.</b> Each plan keeps its own read marks and done counts, so a "second pass before finals" plan starts empty. But the same file then shows read in one plan and unread in another, and the workspace row on Learning can say 0 of 18 while your Winter exams plan shows 9 of them done. That is the two-things confusion again. FSRS memory would stay per person in both cases, since what you remember doesn't depend on the plan.</p>
+      <p>If the second-pass case matters, I'd add a "Start this plan fresh" action later (it would mark its items unread) rather than splitting progress.</p>
+    </div>
+  </div>
+
+  <!-- R3-1 Learning rows -->
+  <div class="label-row"><h3>L1 · Learning Progress: hide, Show all, delete</h3></div>
+  <div class="frame">
+    <div class="main" style="padding:24px 28px;gap:18px">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <h3 style="font-size:18px">Your plans</h3>
+        <div class="steps" style="position:relative">
+          <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><svg class="i" style="width:32px;height:22px;color:var(--fg2)"><use href="#route"/></svg><div style="min-width:0"><div class="nm">IELTS by March</div><div class="sub">Studied 3 days ago · Next: Task 2 opinion essays</div></div><div class="end"><span class="count">1 of 5 steps</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><svg class="i" style="width:32px;height:22px;color:var(--fg2)"><use href="#route"/></svg><div style="min-width:0"><div class="nm">Revision pass</div><div class="sub">Studied last week · Next: Sample spaces.pdf</div></div><div class="end"><span class="count">0 of 2 steps</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span><svg class="i dots3" style="color:var(--fg)"><use href="#more"/></svg></div></div>
+          <div class="menu" style="top:104px;right:4px"><div>Rename</div><div class="danger">Delete plan</div></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:56px">
+        <div class="toolbar"><h3 style="font-size:18px">Workspaces</h3><span class="spacer"></span><span class="btn">Hide hidden <span class="muted">· 2</span></span></div>
+        <div class="steps" style="position:relative">
+          <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Statistics 201</div><div class="sub">Studied today · active: Winter exams</div></div><div class="end"><div class="trail"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></div><span class="count">9 of 18</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Organic Chemistry</div><div class="sub">Studied yesterday</div></div><div class="end"><div class="trail"><i class="f"></i><i></i><i></i><i></i><i></i></div><span class="count">5 of 27</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span><svg class="i dots3" style="color:var(--fg)"><use href="#more"/></svg></div></div>
+          <div class="menu" style="top:104px;right:4px"><div>Open workspace</div><div>Add to a plan…</div><div>Hide study progress</div></div>
+          <div class="step hiddenrow" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws hist">M</span><div style="min-width:0"><div class="nm">Modern History</div><div class="sub">Hidden · studied 3 weeks ago</div></div><div class="end"><span class="count">2 of 14</span><span class="btn" style="padding:5px 10px">Show</span><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step hiddenrow" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws ielts">P</span><div style="min-width:0"><div class="nm">Physics mock papers</div><div class="sub">Hidden · studied 2 months ago</div></div><div class="end"><span class="count">0 of 9</span><span class="btn" style="padding:5px 10px">Show</span><svg class="i dots3"><use href="#more"/></svg></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-cap">Drawn with Show all pressed (the button now reads "Hide hidden · 2"). A hidden workspace never leads the tab. Show on a hidden row turns study progress back on in that workspace too, since it is the same switch. Deleting your own plan asks first; its results stay, just without a plan.</p>
+
+  <!-- R3-2 centre Study page -->
+  <div class="label-row" style="margin-top:20px"><h3>W2 · The centre Study page, Winter exams active</h3><span class="meta">Replaces the Study side panel and today's Study progress page.</span></div>
+  <div class="frame scroll-x">
+    <div class="ws-frame">
+      <div class="lp">
+        <div class="t"><span class="ws s stat">S</span>Statistics 201</div>
+        <div class="f" style="background:var(--card-dark);color:var(--fg);font-weight:700">Study</div>
+        <div class="ch">1 · Descriptive statistics</div>
+        <div class="f">Summary measures.pdf</div><div class="f">Charts and spread</div>
+        <div class="ch">2 · Probability</div>
+        <div class="f">Sample spaces.pdf</div><div class="f">Counting rules</div><div class="f">Conditional probability.pdf</div><div class="f">Probability quiz</div>
+        <div class="ch">3 · Sampling distributions</div>
+        <div class="f">Central limit theorem.pdf</div>
+        <div class="ch">4 · Regression</div>
+        <div class="f">Least squares.pdf</div>
+      </div>
+      <div class="cp">
+        <div class="toolbar">
+          <div class="ptitle" style="font-size:24px">Study</div>
+          <span class="spacer"></span>
+          <span class="dd"><svg class="i" style="color:var(--fg2)"><use href="#route"/></svg>Winter exams<svg class="i"><use href="#down"/></svg></span>
+          <span class="ibtn"><svg class="i"><use href="#more"/></svg></span>
+        </div>
+        <div class="cont">
+          <div class="tx"><span class="meta" style="font-weight:700">Continue your Winter exams plan</span><div class="big">Conditional probability.pdf</div><span class="meta">Step 3 · Probability · 3 of 7 done</span></div>
+          <span class="lnk" style="font-size:16px">Continue<svg class="i"><use href="#fwd"/></svg></span>
+        </div>
+        <div class="prow"><span class="ws stat">S</span><div class="tx"><b>Whole workspace</b><span class="meta">14 items worth a look</span></div><span class="btn">Review</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <h4 style="margin:0;font-size:16px">Quick review</h4>
+          <div class="qcards">
+            <div class="qc">P(A | B) when A and B are independent?<small>Probability flashcards · Flip</small></div>
+            <div class="qc">Which is a discrete distribution? A) Normal B) Poisson…<small>Probability quiz · 1 question</small></div>
+            <div class="qc">Standard deviation vs variance<small>Spread flashcards · Flip</small></div>
+            <div class="qc">Median of 3, 7, 8, 12, 40<small>Descriptive quiz · 1 question</small></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <div class="toolbar" style="padding-bottom:6px"><h4 style="margin:0;font-size:16px">In Winter exams</h4><span class="meta">steps 1, 3, 6</span><span class="spacer"></span><span class="btn" style="padding:5px 12px">Filter</span><span class="dd" style="padding:5px 12px">All items<svg class="i"><use href="#down"/></svg></span></div>
+          <div class="grp">
+            <div class="grp-h"><span class="k">Step 1</span><svg class="mark"><use href="#ck"/></svg><b>Descriptive statistics</b><span class="count">6 of 6</span><svg class="i muted"><use href="#down"/></svg></div>
+            <div class="grp-h"><span class="k">Step 3</span><svg class="mark"><use href="#half"/></svg><b>Probability</b><span class="count">3 of 7</span><svg class="i muted" style="transform:rotate(180deg)"><use href="#down"/></svg></div>
+            <div class="irow"><span></span><svg class="i" style="color:var(--fg2)"><use href="#doc"/></svg><div style="min-width:0"><div class="nm">Sample spaces.pdf</div><div class="meta">Read 12 Oct</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg></div></div>
+            <div class="irow"><span></span><svg class="i" style="color:var(--fg2)"><use href="#doc"/></svg><div style="min-width:0"><div class="nm">Counting rules</div><div class="meta">Read 14 Oct</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg></div></div>
+            <div class="irow"><span></span><svg class="i" style="color:var(--ws-chem)"><use href="#quiz"/></svg><div style="min-width:0"><div class="nm">Probability quiz</div><div class="meta">2 attempts · 10 questions · last 18 Oct</div></div><div class="end"><span class="score">7 / 10</span><svg class="mark"><use href="#ck"/></svg></div></div>
+            <div class="irow" style="background:var(--tint-accent);border-radius:10px"><span></span><svg class="i" style="color:var(--fg2)"><use href="#doc"/></svg><div style="min-width:0"><div class="nm">Conditional probability.pdf</div><div class="meta">Not read · next</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+            <div class="irow"><span></span><svg class="i" style="color:var(--ws-hist)"><use href="#cards"/></svg><div style="min-width:0"><div class="nm">Probability flashcards</div><div class="meta">1 attempt · 12 cards</div></div><div class="end"><span class="score">9 / 12 good</span><svg class="mark"><use href="#half"/></svg></div></div>
+            <div class="grp-h"><span class="k">Step 6</span><svg class="mark"><use href="#todo"/></svg><b>Sampling distributions</b><span class="count">0 of 5</span><svg class="i muted"><use href="#down"/></svg></div>
+            <div class="grp-h" style="color:var(--muted)"><span class="k"></span><span style="width:20px"></span><b style="color:var(--muted)">Not in Winter exams</b><span class="count">Regression, Others · 8 items</span><svg class="i muted"><use href="#down"/></svg></div>
+          </div>
+          <span class="meta" style="padding-top:12px">Plan is at step 3 here. After this workspace: <span class="lnk" style="font-weight:600;white-space:normal;display:inline">Alkanes and cycloalkanes · Organic Chemistry<svg class="i"><use href="#fwd"/></svg></span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-cap">With the workspace's own plan active, the list heading reads "Chapters", steps are the chapters in Files order with no step numbers, and there is no "Not in" group. Rows are today's Study progress rows (score, history toggle, mark, ⋮). The Files panel's "Study" row on top replaces the Study view in the left panel's title menu and the rail's Study tab.</p>
+
+  <div class="opts">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>W3 · Plan switch open</h3></div>
+      <div class="dmenu">
+        <div class="h">This workspace</div>
+        <div class="o"><span class="ws s stat">S</span><div class="tx"><div>Statistics 201</div><div>All chapters</div></div></div>
+        <div class="sep"></div>
+        <div class="h">Your plans with steps here</div>
+        <div class="o sel"><svg class="i"><use href="#route"/></svg><div class="tx"><div><b>Winter exams</b></div><div>Steps 1, 3, 6</div></div><svg class="mark"><use href="#ck"/></svg></div>
+        <div class="o"><svg class="i"><use href="#route"/></svg><div class="tx"><div>Revision pass</div><div>Steps 2, 3</div></div></div>
+        <div class="sep"></div>
+        <div class="o"><svg class="i"><use href="#plus"/></svg><div class="tx"><div>Add this workspace to a plan…</div></div></div>
+      </div>
+      <p class="frame-cap">Only plans with a step in this workspace are listed. Switching changes Continue and the list at once, and every result from then on is written under the new plan.</p>
+      <div class="label-row" style="margin-top:8px"><h3>Study page ⋮</h3></div>
+      <div class="dmenu" style="width:260px">
+        <div class="o"><div class="tx"><div>Hide study progress</div></div><span class="sw"></span></div>
+        <div class="o"><div class="tx"><div>Add this workspace to a plan…</div></div></div>
+        <div class="sep"></div>
+        <div class="o" style="color:var(--err)"><div class="tx"><div>Reset progress…</div></div></div>
+      </div>
+      <p class="frame-cap">The switch sits in the menu rather than the header because it is rarely touched. Reset moves here from Workspace settings → Danger.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>W4 · Study progress hidden</h3><span class="tag">revised</span></div>
+      <div class="frame">
+        <div class="cp" style="padding:20px 20px 24px;gap:16px">
+          <div class="toolbar">
+            <span class="dd"><svg class="i" style="color:var(--fg2)"><use href="#route"/></svg>Winter exams<svg class="i"><use href="#down"/></svg></span>
+            <span class="ibtn"><svg class="i"><use href="#more"/></svg></span>
+          </div>
+          <div class="prow" style="align-items:flex-start"><div class="tx"><b style="white-space:normal">Study progress is hidden here</b><span class="meta">Your quiz and flashcard results are still saved to Winter exams.</span></div><span class="btn">Show</span></div>
+          <div class="grp">
+            <div class="grp-h"><span class="k">Step 1</span><b>Descriptive statistics</b><span class="count">6 items</span></div>
+            <div class="grp-h"><span class="k">Step 3</span><b>Probability</b><span class="count">7 items</span></div>
+            <div class="grp-h"><span class="k">Step 6</span><b>Sampling distributions</b><span class="count">5 items</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-cap">Today's progress-off behaviour, carried over: no marks, scores, Continue, Review or Quick review. The one difference from today's Study progress page, which lists nothing when off, is that the steps stay listed so you can still open items from here.</p>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>W5 · Phone</h3></div>
+      <div class="phone" style="border-radius:28px">
+        <div class="cp" style="padding:18px 16px 24px;gap:16px">
+          <div class="ptitle" style="font-size:22px">Study</div>
+          <div class="toolbar">
+            <span class="dd" style="flex:1;justify-content:space-between"><span style="display:flex;gap:8px;align-items:center"><svg class="i" style="color:var(--fg2)"><use href="#route"/></svg>Winter exams</span><svg class="i"><use href="#down"/></svg></span>
+            <span class="ibtn"><svg class="i"><use href="#more"/></svg></span>
+          </div>
+          <div class="cont"><div class="tx" style="min-width:0"><span class="meta" style="font-weight:700">Continue your Winter exams plan</span><div class="big" style="font-size:17px">Conditional probability.pdf</div><span class="meta">Step 3 · 3 of 7 done</span></div><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div class="prow"><span class="ws stat">S</span><div class="tx"><b>Whole workspace</b></div><span class="btn">Review</span></div>
+          <div class="qcards"><div class="qc" style="width:170px">P(A | B) when A and B are independent?<small>Flip</small></div><div class="qc" style="width:170px">Which is discrete?<small>1 question</small></div></div>
+          <div class="grp">
+            <div class="grp-h"><span class="k">Step 1</span><svg class="mark"><use href="#ck"/></svg><b>Descriptive statistics</b></div>
+            <div class="grp-h"><span class="k">Step 3</span><svg class="mark"><use href="#half"/></svg><b>Probability</b><span class="count">3 of 7</span></div>
+            <div class="grp-h"><span class="k">Step 6</span><svg class="mark"><use href="#todo"/></svg><b>Sampling distributions</b></div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-cap">The phone header's ⋮ keeps its Study item, which opens this page.</p>
+    </div>
+  </div>
+
+  <!-- R3 code map -->
+  <div class="prose" style="margin-top:12px">
+    <h3>Data, round 3</h3>
+    <ul>
+      <li><code>study_plans (id, user_id, name, created_at, updated_at)</code> holds only your own plans <span class="tag">revised</span>. A workspace's own plan has no row: its steps are its chapters and its settings live on <code>workspace_study</code>.</li>
+      <li><code>study_plan_steps (plan_id, position, workspace_id, chapter_id?, file_id?, material_id?)</code> as in section 6.</li>
+      <li><code>workspace_study (user_id, workspace_id, hidden, active_plan_id?)</code>: today's table with <code>enabled</code> turned into <code>hidden</code> (Hide study progress, also the Learning hide) and the active plan added (null = the workspace's own plan; set null if that plan is deleted or loses its last step here).</li>
+      <li><code>users.study_progress</code> becomes "hide study progress in new workspaces", or goes, your call.</li>
+      <li><code>attempts.plan_id</code>, <code>review_sessions.plan_id</code> and <code>study_progress.plan_id</code> record the active plan at write time (null = the workspace's own plan). Shared progress reads ignore it; per-plan progress would key on it.</li>
+      <li>No recording gate. The one new step on every write is reading <code>workspace_study.active_plan_id</code> to tag it.</li>
+    </ul>
+  </div>
+  <div class="scroll-x">
+    <table class="map">
+      <thead><tr><th>Where</th><th>Today</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td><code>server/migrations/01xx_study_plans.sql</code></td><td>-</td><td><code>study_plans</code>, <code>study_plan_steps</code>; <code>workspace_study.enabled</code> → <code>hidden</code> (inverted) plus <code>active_plan_id</code>; <code>plan_id</code> on <code>attempts</code>, <code>review_sessions</code>, <code>study_progress</code>. Next free number (0102-0105 are taken by open branches).</td></tr>
+        <tr><td><code>store/study_plans.go</code> (new)</td><td>-</td><td>Plan CRUD, derived workspace steps (chapters + reading order), step done counts, active plan.</td></tr>
+        <tr><td><code>store/study.go</code></td><td><code>StudyEnabled</code>, <code>SetWorkspaceStudy</code>, <code>StudySummary.enabled</code></td><td>Rename to <code>ProgressHidden</code> / <code>SetProgressHidden</code> / <code>summary.hidden</code> (same meaning, flipped); summary adds <code>activePlan</code> (id, name, steps here, the plan's next step elsewhere) and <code>plans</code> for the switch; <code>RateItem</code> and <code>SetStudyItem</code> tag the active plan.</td></tr>
+        <tr><td><code>store/queries.go</code> <code>CreateAttempt</code></td><td>Stores every non-embedded attempt</td><td>Unchanged apart from setting <code>plan_id</code>.</td></tr>
+        <tr><td><code>store/review_sessions.go</code></td><td>Overview skips progress-off workspaces</td><td>Same rule on <code>hidden</code>; session gets <code>plan_id</code>.</td></tr>
+        <tr><td><code>store/learning_progress.go</code></td><td>Workspaces (active, finished), lead; skips progress-off workspaces</td><td>Adds your plans; hidden workspaces come back with <code>?all=true</code> marked hidden; <code>lead</code> may be a plan.</td></tr>
+        <tr><td><code>httpapi/huma_study.go</code>, <code>openapi.yaml</code></td><td><code>PUT …/study/enabled</code></td><td>Becomes <code>PUT …/study/hidden</code>. Add <code>GET/POST /api/learning/plans</code>, <code>PATCH/DELETE /api/learning/plans/{id}</code> (name, steps), <code>PUT /api/workspaces/{id}/study/plan</code> (active).</td></tr>
+        <tr><td><code>httpapi/chat_stream.go</code>, <code>internal_study.go</code></td><td>Gate on <code>StudyEnabled</code></td><td>Same gate, renamed (refused while hidden).</td></tr>
+        <tr><td><code>src/routes/WorkspaceOpen.tsx</code></td><td><code>'study'</code> in <code>PanelTab</code> and <code>LeftView</code>, two <code>StudyPanel</code> mounts, <code>openProgress</code></td><td>Remove the Study panel views; a Study row in the Files panel and the header ⋮ open the centre page; <code>?progress</code> → <code>?study</code>. Decide what a workspace opens on (today: the Study tab).</td></tr>
+        <tr><td><code>src/features/study/StudyPanel.tsx</code> (520 lines)</td><td>Continue, Review, Quick review, Done, Recent quizzes, switch</td><td>Delete; <code>WorkspaceReview</code>, <code>QuickReview</code>, <code>QuickItems</code> move into the page. Done and Recent quizzes are covered by the rows.</td></tr>
+        <tr><td><code>src/features/study/StudyProgress.tsx</code></td><td>Centre Study progress page</td><td>Becomes <code>StudyPage.tsx</code>: header with <code>PlanSwitch</code> and the ⋮ (Hide study progress, Add to a plan, Reset), the quick actions, rows grouped by step, "Not in" group, hidden state.</td></tr>
+        <tr><td><code>src/features/materials/CenterContent.tsx</code></td><td><code>progress</code> prop, <code>onOpenTrackProgress</code></td><td><code>study</code> prop; the settings jump goes (the switch is on the page).</td></tr>
+        <tr><td><code>src/routes/Learning.tsx</code> + Progress tab</td><td>Continue, map, Other workspaces, Finished</td><td>Your plans rows with ⋮ Rename / Delete; Workspaces with ⋮ Hide study progress and Show all; Continue sets the active plan.</td></tr>
+        <tr><td>Marks: <code>StudyMark</code>, Files rows, header read toggle</td><td>Follow <code>summary.enabled</code></td><td>Follow <code>summary.hidden</code> (rename only).</td></tr>
+        <tr><td><code>WorkspaceSettingsDialog</code>, <code>StudyPreferencesSection</code></td><td>Track progress in Others, Reset in Danger; global default in Settings → Study</td><td>Both move to the Study page ⋮ (so the viewer-only settings dialog goes); reword or drop the global default.</td></tr>
+        <tr><td><code>src/mocks/study.ts</code>, tests, docs</td><td>-</td><td>MSW plans; <code>study_test.go</code>, <code>learning_progress_test.go</code>, new <code>study_plans_test.go</code>; <code>StudyPanel.test.tsx</code> → <code>StudyPage.test.tsx</code>; <code>e2e/study/study-progress.spec.ts</code> and the UAT study journey; <code>openwiki/study-progress.md</code>, <code>human/study-progress.md</code>, <code>test-catalog.md</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose"><h3>Build order</h3></div>
+  <div class="phase">
+    <div><b>1 · The Study page</b><ul><li><code>workspace_study.hidden</code> rename, Hide study progress in the page ⋮</li><li>Centre Study page with the quick actions, side panel removed</li><li>Hide and Show all on Learning</li></ul></div>
+    <div><b>2 · Your own plans</b><ul><li>Plan tables, <code>plan_id</code> on records, steps, add popover, drag order, delete</li><li>Active plan switch, "Continue your … plan", "Not in" group</li><li>Your plans on Learning, lead plan, results tagged with plans</li></ul></div>
+    <div><b>3 · Later</b><ul><li>Map view for any plan</li><li>Workspace chat reads its steps</li><li>Finish-by date, shared plans</li></ul></div>
+  </div>
+
+  <div class="prose"><h3>Round 3 questions</h3></div>
+  <ol class="qs">
+    <li><div><b>Shared or per-plan progress</b><span class="pick">See above. <b>I'd pick shared</b>, with every record tagged with the active plan.</span></div></li>
+    <li><div><b>One switch for both hides</b><span class="pick">Hide study progress in the workspace and Hide on Learning are the same switch (today's progress-off already drops the workspace from Learning). <b>I'd keep them as one.</b></span></div></li>
+    <li><div><b>What a workspace opens on</b><span class="pick">Today the Study tab opens first. With the panel gone: the centre Study page while nothing is open, or the landing as now with Study one click away?</span></div></li>
+    <li><div><b>Global default</b><span class="pick">Keep Settings → Study → Track study progress as "hide study progress in new workspaces", or drop it?</span></div></li>
+    <li><div><b>Continue inside a workspace</b><span class="pick">Stays in the workspace and links to the plan's next workspace (drawn above), or jumps straight there?</span></div></li>
+  </ol>
+</section>
+
+<!-- ========== Round 2: one concept ========== -->
+<section id="one">
+  <div class="prose">
+    <span class="eyebrow">Round 2 · 22 Oct · A picked</span>
+    <h2>One concept: every workspace is already a plan</h2>
+    <p>Today each workspace has an order (chapters, then their files, then Others), done marks, a Continue and a "4 of 5" per chapter. That is a plan in all but name. So instead of adding plans next to progress, split the two cleanly:</p>
+    <ul>
+      <li><b>Progress is the facts</b> per item: read, started, not tracked, attempts, ratings. One store, unchanged.</li>
+      <li><b>A plan is an order over those facts</b>: steps that expand to items. Every step count, Continue and map is computed the same way for any plan.</li>
+      <li><b>Each workspace has a built-in plan</b> made from its chapters, always in step with the Files order. It is never stored and can't be reordered on its own, because then the workspace would have two orders. Anyone who can read the workspace sees the same steps, with their own marks.</li>
+      <li><b>Your own plans are built from workspace plans.</b> A chapter step is one step of a workspace plan; a whole-workspace step is the workspace plan itself and stays live as chapters are added. The add popover is just "pick steps from workspace plans".</li>
+      <li><b>To study a workspace in another order</b>, make your own plan with its chapters. The built-in one keeps following Files.</li>
+    </ul>
+    <p>What this changes from round 1: <b>no separate Plan tab.</b> Learning's Progress tab already lists workspaces (in progress, finished), so your plans join that list and the lead plan is drawn as list A. The workspace Study tab's chapter list <b>is</b> the workspace plan, so it only needs one row saying which of your plans include it.</p>
+  </div>
+
+  <div class="label-row"><h3>P1 · Progress tab: plans and workspaces in one list</h3><span class="meta">Lead = the plan you studied most recently, yours or a workspace's.</span></div>
+  <div class="frame scroll-x">
+    <div class="app">
+      <nav class="side">
+        <div class="it"><span class="dot"></span>Home</div>
+        <div class="it"><span class="dot"></span>Workspaces</div>
+        <div class="it on"><span class="dot"></span>Learning</div>
+        <div class="it"><span class="dot"></span>Question bank</div>
+        <div class="it"><span class="dot"></span>Files</div>
+      </nav>
+      <div class="main">
+        <div class="ptitle">Learning</div>
+        <div class="tabs"><span class="on">Progress</span><span>Review</span><span>All results</span></div>
+        <div class="toolbar">
+          <h3 style="font-size:18px">Continue your study</h3>
+          <span class="spacer"></span>
+          <span class="lnk">Continue: Conditional probability<svg class="i"><use href="#fwd"/></svg></span>
+        </div>
+        <div class="toolbar">
+          <svg class="i" style="width:32px;height:22px;color:var(--fg2)"><use href="#route"/></svg>
+          <div style="min-width:0"><div style="font-weight:800;font-size:17px">Winter exams</div><div class="meta">Your plan · 4 workspaces · 2 of 8 steps done</div></div>
+          <span class="spacer"></span>
+          <span class="dd">View: List<svg class="i"><use href="#down"/></svg></span>
+          <span class="ibtn" title="Add steps"><svg class="i"><use href="#plus"/></svg></span>
+          <span class="ibtn"><svg class="i"><use href="#more"/></svg></span>
+        </div>
+        <div class="steps">
+          <div class="step done"><span class="num">1</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Descriptive statistics</div><div class="sub">Statistics 201 · Chapter 1</div></div><div class="end"><span class="count">6 of 6</span><svg class="mark"><use href="#ck"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step done"><span class="num">2</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Bonding and molecular structure</div><div class="sub">Organic Chemistry · Chapter 1</div></div><div class="end"><span class="count">5 of 5</span><svg class="mark"><use href="#ck"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step now"><span class="num">3</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Probability</div><div class="sub">Statistics 201 · Chapter 2 · Next: Conditional probability</div></div><div class="end"><span class="count">3 of 7</span><svg class="mark"><use href="#half"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="num">4</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Alkanes and cycloalkanes</div><div class="sub">Organic Chemistry · Chapter 2</div></div><div class="end"><span class="count">0 of 6</span><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="num">5</span><span class="ws hist">M</span><div style="min-width:0"><div class="nm">Modern History</div><div class="sub">Whole workspace · follows its chapters</div></div><div class="end"><span class="count">0 of 14</span><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <h3 style="font-size:18px">Your plans</h3>
+          <div class="steps">
+            <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><svg class="i" style="width:32px;height:22px;color:var(--fg2)"><use href="#route"/></svg><div style="min-width:0"><div class="nm">IELTS by March</div><div class="sub">Studied 3 days ago · Next: Task 2 opinion essays</div></div><div class="end"><span class="count">1 of 5 steps</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <h3 style="font-size:18px">Workspaces</h3>
+          <div class="steps">
+            <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Statistics 201</div><div class="sub">Studied today · in Winter exams</div></div><div class="end"><div class="trail"><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i></div><span class="count">9 of 18</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div></div>
+            <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Organic Chemistry</div><div class="sub">Studied yesterday · in Winter exams</div></div><div class="end"><div class="trail"><i class="f"></i><i></i><i></i><i></i><i></i></div><span class="count">5 of 27</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div></div>
+            <div class="step" style="grid-template-columns:32px minmax(0,1fr) auto"><span class="ws ielts">I</span><div style="min-width:0"><div class="nm">IELTS Writing</div><div class="sub">Studied 3 days ago · in IELTS by March, Winter exams</div></div><div class="end"><div class="trail"><i class="f"></i><i></i><i></i><i></i><i></i></div><span class="count">2 of 11</span><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div></div>
+          </div>
+        </div>
+        <span class="meta">Finished stays as today, below.</span>
+      </div>
+    </div>
+  </div>
+  <p class="frame-cap">A workspace row's Continue opens that workspace's own plan (today's behaviour). Clicking a row makes it the lead: a workspace leads with its chapters as steps, drawn the same way, and "View" switches between List and the railway map for any plan. Workspaces that are only inside a plan still get their own row, since each has its own order.</p>
+
+  <div class="opts">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>P2 · A workspace leading</h3></div>
+      <div class="frame">
+        <div class="main" style="padding:22px 22px 26px">
+          <div class="toolbar">
+            <span class="ws stat">S</span>
+            <div style="min-width:0"><div style="font-weight:800;font-size:17px">Statistics 201</div><div class="meta">Workspace plan · follows the chapter order in Files</div></div>
+            <span class="spacer"></span>
+            <span class="ibtn"><svg class="i"><use href="#more"/></svg></span>
+          </div>
+          <div class="steps">
+            <div class="step done" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="num">1</span><div style="min-width:0"><div class="nm">Descriptive statistics</div></div><div class="end"><span class="count">6 of 6</span><svg class="mark"><use href="#ck"/></svg></div></div>
+            <div class="step now" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="num">2</span><div style="min-width:0"><div class="nm">Probability</div><div class="sub">Next: Conditional probability</div></div><div class="end"><span class="count">3 of 7</span><svg class="mark"><use href="#half"/></svg></div></div>
+            <div class="step" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="num">3</span><div style="min-width:0"><div class="nm">Sampling distributions</div></div><div class="end"><span class="count">0 of 5</span><svg class="mark"><use href="#todo"/></svg></div></div>
+            <div class="step" style="grid-template-columns:22px minmax(0,1fr) auto"><span class="num"></span><div style="min-width:0"><div class="nm">Others</div><div class="sub">Unfiled items</div></div><div class="end"><span class="count">0 of 2</span><svg class="mark"><use href="#todo"/></svg></div></div>
+          </div>
+          <span class="meta">No drag and no +: reorder chapters in Files. The ⋮ has <b>Add to a plan</b> and <b>New plan from this workspace</b> (copies its chapters as steps you can reorder).</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>W1 · Study tab inside the workspace</h3></div>
+      <div class="frame">
+        <div class="panel">
+          <div class="prow"><div class="tx"><span class="meta">Next</span><b>Conditional probability.pdf</b></div><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div class="prow"><span class="ws stat">S</span><div class="tx"><b>Whole workspace</b></div><span class="lnk" style="color:var(--fg)">Review<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div class="prow"><svg class="i" style="width:32px;height:20px;color:var(--fg2)"><use href="#route"/></svg><div class="tx"><b>In Winter exams</b><span class="meta">Steps 1, 3, 6 · step 3 is now</span></div><span class="lnk" style="color:var(--fg)">Plan<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="prow"><h4 style="flex:1">Done</h4><span class="lnk" style="font-weight:600">All progress<svg class="i"><use href="#fwd"/></svg></span></div>
+            <div class="mini">
+              <div class="r"><svg class="mark"><use href="#ck"/></svg><span style="flex:1">Descriptive statistics</span><span class="meta">6 of 6</span></div>
+              <div class="r now"><svg class="mark"><use href="#half"/></svg><b style="flex:1">Probability</b><span class="meta">3 of 7</span></div>
+              <div class="r"><svg class="mark"><use href="#todo"/></svg><span style="flex:1">Sampling distributions</span><span class="meta">0 of 5</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="frame-cap">The Done list already is the workspace plan, so round 1's S1 block would repeat it. One row names the plans that use this workspace; with two plans it reads "In 2 plans" and opens a small menu.</p>
+    </div>
+  </div>
+
+  <div class="prose">
+    <h3>What it costs</h3>
+    <ul>
+      <li>Workspace plans need no table: they are today's <code>inReadingOrder</code> grouped by chapter. Only your own plans are stored (<code>study_plans</code>, <code>study_plan_steps</code> from section 6).</li>
+      <li><code>GET /api/learning/progress</code> gains <code>plans</code> next to the workspace rows, and <code>lead</code> can name a plan. Its "last studied" is the latest progress write on any of its items, so no new column.</li>
+      <li>The railway map takes steps instead of chapters (a station per step). For a workspace plan that's exactly today's map.</li>
+      <li>One renderer for steps on Progress, the Study progress page and the Study tab's Done list.</li>
+    </ul>
+    <h3>New questions</h3>
+    <ol class="qs">
+      <li><div><b>Two Continues in one workspace</b><span class="pick">Inside Statistics 201, Continue follows the workspace plan; on Learning, Winter exams' Continue follows yours. They agree unless your plan reorders that workspace's chapters. <b>I'd keep it that way</b>: the workspace never changes behaviour because of a plan you made elsewhere.</span></div></li>
+      <li><div><b>Workspaces only reached through a plan</b><span class="pick">Keep their own row under Workspaces (shown above), or hide them while a plan covers them. <b>I'd keep them</b>; hiding makes rows appear and vanish as plans change.</span></div></li>
+      <li><div><b>"New plan from this workspace"</b><span class="pick">Copies chapters as separate steps so you can reorder them; chapters added later don't join that copy. Fine, or skip the action and only offer Add to a plan?</span></div></li>
+      <li><div><b>Naming</b><span class="pick">Call the built-in one "Workspace plan" in the UI, or never say "plan" for it and only show the workspace name. <b>I'd show the name only</b> and keep "plan" for the ones you make.</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ========== 1. Plan view options ========== -->
+<section>
+  <div class="prose">
+    <span class="eyebrow">1 · Learning page</span>
+    <h2>Where the plan lives and how it reads</h2>
+    <p>A new <b>Plan</b> tab on Learning, between Progress and Review. Three ways to draw the same plan, "Winter exams", with 8 steps over 4 workspaces. Steps 1 and 2 are done, step 3 is under way.</p>
+  </div>
+
+  <div class="label-row"><h3>A · Step list</h3><span class="tag">Recommended</span><span class="meta">One row per step, drag to reorder, ⋮ per row. Repeats well and works at 360px.</span></div>
+  <div class="frame scroll-x">
+    <div class="app">
+      <nav class="side">
+        <div class="it"><span class="dot"></span>Home</div>
+        <div class="it"><span class="dot"></span>Workspaces</div>
+        <div class="it on"><span class="dot"></span>Learning</div>
+        <div class="it"><span class="dot"></span>Question bank</div>
+        <div class="it"><span class="dot"></span>Files</div>
+      </nav>
+      <div class="main">
+        <div class="ptitle">Learning</div>
+        <div class="tabs"><span>Progress</span><span class="on">Plan</span><span>Review</span><span>All results</span></div>
+        <div class="toolbar">
+          <span class="dd">Winter exams <small>2 of 8 done</small><svg class="i"><use href="#down"/></svg></span>
+          <span class="spacer"></span>
+          <span class="lnk">Continue: Conditional probability<svg class="i"><use href="#fwd"/></svg></span>
+          <span class="ibtn" title="Add steps"><svg class="i"><use href="#plus"/></svg></span>
+          <span class="ibtn"><svg class="i"><use href="#more"/></svg></span>
+        </div>
+        <div class="bar"><i style="width:31%"></i></div>
+        <div class="steps">
+          <div class="step done"><span class="num">1</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Descriptive statistics</div><div class="sub">Statistics 201 · Chapter 1</div></div><div class="end"><span class="count">6 of 6</span><svg class="mark"><use href="#ck"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step done"><span class="num">2</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Bonding and molecular structure</div><div class="sub">Organic Chemistry · Chapter 1</div></div><div class="end"><span class="count">5 of 5</span><svg class="mark"><use href="#ck"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step now"><span class="num">3</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Probability</div><div class="sub">Statistics 201 · Chapter 2 · Next: Conditional probability</div></div><div class="end"><span class="count">3 of 7</span><svg class="mark"><use href="#half"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="num">4</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Alkanes and cycloalkanes</div><div class="sub">Organic Chemistry · Chapter 2</div></div><div class="end"><span class="count">0 of 6</span><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="num">5</span><span class="ws ielts">I</span><div style="min-width:0"><div class="nm">Task 1 band descriptors.pdf</div><div class="sub">IELTS Writing · one file</div></div><div class="end"><span class="count">Not read</span><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="num">6</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Sampling distributions</div><div class="sub">Statistics 201 · Chapter 3</div></div><div class="end"><span class="count">0 of 5</span><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="num">7</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Stereochemistry</div><div class="sub">Organic Chemistry · Chapter 3</div></div><div class="end"><span class="count">0 of 8</span><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="num">8</span><span class="ws hist">M</span><div style="min-width:0"><div class="nm">Modern History</div><div class="sub">Whole workspace · 4 chapters</div></div><div class="end"><span class="count">0 of 14</span><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-cap">The current step is tinted and names its next item; a row click opens that item (or the chapter's first not-done item). Done steps stay in place so the numbering doesn't jump.</p>
+
+  <div class="label-row" style="margin-top:20px"><h3>B · Route line</h3><span class="meta">The plan as one line through every workspace, coloured by workspace cover. Pretty for a short plan, wraps badly past about 10 steps and on phones.</span></div>
+  <div class="frame">
+    <div class="main" style="padding:24px 28px">
+      <div class="toolbar">
+        <span class="dd">Winter exams <small>2 of 8 done</small><svg class="i"><use href="#down"/></svg></span>
+        <span class="spacer"></span>
+        <span class="lnk">Continue: Conditional probability<svg class="i"><use href="#fwd"/></svg></span>
+      </div>
+      <div class="line-wrap">
+        <div class="line">
+          <svg viewBox="0 0 980 210" width="980" height="210">
+            <path d="M60 105H180" stroke="var(--ws-stat)" stroke-width="6" stroke-linecap="round"/>
+            <path d="M180 105H300" stroke="var(--ws-chem)" stroke-width="6"/>
+            <path d="M300 105H420" stroke="var(--ws-stat)" stroke-width="6"/>
+            <path d="M420 105H540" stroke="var(--ws-chem)" stroke-width="6" stroke-dasharray="2 9" stroke-linecap="round"/>
+            <path d="M540 105H660" stroke="var(--ws-ielts)" stroke-width="6" stroke-dasharray="2 9" stroke-linecap="round"/>
+            <path d="M660 105H780" stroke="var(--ws-stat)" stroke-width="6" stroke-dasharray="2 9" stroke-linecap="round"/>
+            <path d="M780 105H900" stroke="var(--ws-chem)" stroke-width="6" stroke-dasharray="2 9" stroke-linecap="round"/>
+            <g stroke-width="3">
+              <circle cx="60" cy="105" r="10" fill="var(--fg)" stroke="var(--fg)"/>
+              <circle cx="180" cy="105" r="10" fill="var(--fg)" stroke="var(--fg)"/>
+              <circle cx="300" cy="105" r="16" fill="none" stroke="var(--accent)" stroke-width="3"/>
+              <circle cx="300" cy="105" r="10" fill="var(--card)" stroke="var(--fg)"/>
+              <path d="M300 95a10 10 0 0 1 0 20z" fill="var(--fg)" stroke="none"/>
+              <circle cx="420" cy="105" r="10" fill="var(--card)" stroke="var(--strong)"/>
+              <circle cx="540" cy="105" r="10" fill="var(--card)" stroke="var(--strong)"/>
+              <circle cx="660" cy="105" r="10" fill="var(--card)" stroke="var(--strong)"/>
+              <circle cx="780" cy="105" r="10" fill="var(--card)" stroke="var(--strong)"/>
+              <rect x="890" y="95" width="20" height="20" rx="4" fill="var(--card)" stroke="var(--ws-hist)"/>
+            </g>
+          </svg>
+          <div class="stn up" style="left:60px"><b>Descriptive statistics</b><span class="muted">Statistics 201</span></div>
+          <div class="stn down" style="left:180px"><b>Bonding and structure</b><span class="muted">Organic Chemistry</span></div>
+          <div class="stn up" style="left:300px"><b>Probability</b><span class="muted">3 of 7 · Next</span></div>
+          <div class="stn down" style="left:420px"><b>Alkanes</b><span class="muted">Organic Chemistry</span></div>
+          <div class="stn up" style="left:540px"><b>Task 1 band descriptors</b><span class="muted">IELTS Writing</span></div>
+          <div class="stn down" style="left:660px"><b>Sampling distributions</b><span class="muted">Statistics 201</span></div>
+          <div class="stn up" style="left:780px"><b>Stereochemistry</b><span class="muted">Organic Chemistry</span></div>
+          <div class="stn down" style="left:900px"><b>Modern History</b><span class="muted">Whole workspace</span></div>
+        </div>
+      </div>
+      <div class="legend"><span><i style="background:var(--ws-stat)"></i>Statistics 201</span><span><i style="background:var(--ws-chem)"></i>Organic Chemistry</span><span><i style="background:var(--ws-ielts)"></i>IELTS Writing</span><span><i style="background:var(--ws-hist)"></i>Modern History</span></div>
+    </div>
+  </div>
+  <p class="frame-cap">Editing still needs the list from A (drag on a line is fiddly), so B would be a view on top of A, not instead of it.</p>
+
+  <div class="label-row" style="margin-top:20px"><h3>C · Finish-by date</h3><span class="tag later">Later, if at all</span><span class="meta">The schedule-lite option: one optional date per plan, steps bucketed into weeks by pace. No calendar, no reminders.</span></div>
+  <div class="frame">
+    <div class="main" style="padding:24px 28px">
+      <div class="toolbar">
+        <span class="dd">Winter exams <small>2 of 8 done</small><svg class="i"><use href="#down"/></svg></span>
+        <span class="dd"><svg class="i"><use href="#cal"/></svg>Finish by 12 Dec</span>
+        <span class="spacer"></span>
+        <span class="lnk">Continue: Conditional probability<svg class="i"><use href="#fwd"/></svg></span>
+      </div>
+      <p class="meta" style="font-size:14px;color:var(--fg2)">6 steps left in 7 weeks, about one a week. <span class="chip ok">On track</span></p>
+      <div class="week">
+        <div class="week-h"><b>This week</b><span class="meta">20 – 26 Oct</span></div>
+        <div class="steps">
+          <div class="step now"><span class="num">3</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Probability</div><div class="sub">Statistics 201 · Next: Conditional probability</div></div><div class="end"><span class="count">3 of 7</span><svg class="mark"><use href="#half"/></svg></div></div>
+        </div>
+      </div>
+      <div class="week">
+        <div class="week-h"><b>Next week</b><span class="meta">27 Oct – 2 Nov</span></div>
+        <div class="steps">
+          <div class="step"><span class="num">4</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Alkanes and cycloalkanes</div><div class="sub">Organic Chemistry</div></div><div class="end"><span class="count">0 of 6</span><svg class="mark"><use href="#todo"/></svg></div></div>
+        </div>
+      </div>
+      <div class="week">
+        <div class="week-h"><b>3 – 23 Nov</b><span class="meta">3 steps</span></div>
+        <div class="steps">
+          <div class="step"><span class="num">5</span><span class="ws ielts">I</span><div style="min-width:0"><div class="nm">Task 1 band descriptors.pdf</div><div class="sub">IELTS Writing</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+          <div class="step"><span class="num">6</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Sampling distributions</div><div class="sub">Statistics 201</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+          <div class="step"><span class="num">7</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Stereochemistry</div><div class="sub">Organic Chemistry</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-cap">Pace = items left ÷ weeks left, and weeks are cut by item count, so a 14-item workspace takes more room than a single PDF. "Behind" would show in amber; nothing is ever sent to you about it.</p>
+</section>
+
+<!-- ========== 2. Editing ========== -->
+<section>
+  <div class="prose">
+    <span class="eyebrow">2 · Making a plan</span>
+    <h2>Adding and ordering steps</h2>
+    <p>The <b>+</b> button opens one popover: pick a workspace from a dropdown, then tick chapters, the whole workspace, or open "Single files" for one item. Rows reorder by whole-row drag with the accent drop line, as in the Files panel. The row ⋮ has Open, Move to top and Remove from plan.</p>
+  </div>
+  <div class="frame">
+    <div class="pop-stage">
+      <div class="main" style="padding:24px 28px">
+        <div class="toolbar">
+          <span class="dd">Winter exams <small>2 of 8 done</small><svg class="i"><use href="#down"/></svg></span>
+          <span class="spacer"></span>
+          <span class="ibtn" style="border-color:var(--fg)"><svg class="i"><use href="#plus"/></svg></span>
+          <span class="ibtn"><svg class="i"><use href="#more"/></svg></span>
+        </div>
+        <div class="steps">
+          <div class="step done"><span class="num">1</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Descriptive statistics</div><div class="sub">Statistics 201 · Chapter 1</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step done"><span class="num">2</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Bonding and molecular structure</div><div class="sub">Organic Chemistry · Chapter 1</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step now"><span class="num">3</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Probability</div><div class="sub">Statistics 201 · Chapter 2</div></div><div class="end"><svg class="mark"><use href="#half"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step"><span class="drop"></span><span class="num">4</span><span class="ws ielts">I</span><div style="min-width:0"><div class="nm">Task 1 band descriptors.pdf</div><div class="sub">IELTS Writing · one file</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step dragging"><span class="num">5</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Alkanes and cycloalkanes</div><div class="sub">Organic Chemistry · Chapter 2</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg><svg class="i dots3"><use href="#more"/></svg></div></div>
+          <div class="step lost"><span class="num">6</span><svg class="ws" viewBox="0 0 32 32" style="background:var(--card-dark)"><use href="#lock" x="6" y="6" width="20" height="20"/></svg><div style="min-width:0"><div class="nm">A workspace you can no longer open</div><div class="sub">Access was removed · Remove this step</div></div><div class="end"><svg class="i dots3"><use href="#more"/></svg></div></div>
+        </div>
+      </div>
+      <div class="pop">
+        <span class="lbl">Workspace</span>
+        <span class="dd" style="justify-content:space-between"><span style="display:flex;gap:8px;align-items:center"><span class="ws s chem">O</span>Organic Chemistry</span><svg class="i"><use href="#down"/></svg></span>
+        <div>
+          <div class="opt"><span class="cb"></span>Whole workspace <span class="meta">· 27 items</span></div>
+          <div class="opt"><span class="cb dis"></span><span class="muted">1 · Bonding and molecular structure · in plan</span></div>
+          <div class="opt"><span class="cb dis"></span><span class="muted">2 · Alkanes and cycloalkanes · in plan</span></div>
+          <div class="opt"><span class="cb on"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3 4.7-4.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>3 · Stereochemistry <span class="meta">· 8</span></div>
+          <div class="opt"><span class="cb on"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.2l2.3 2.3 4.7-4.9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span>4 · Reactions of alkenes <span class="meta">· 8</span></div>
+          <div class="opt"><span class="cb"></span>Others <span class="meta">· 3 unfiled</span></div>
+          <div class="opt"><span class="lnk" style="font-weight:600">Single files<svg class="i"><use href="#down"/></svg></span></div>
+        </div>
+        <div class="foot"><span class="btn">Cancel</span><span class="btn primary">Add 2 steps</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="frame-cap">Steps are appended to the end; a new plan starts with nothing and the popover is open. Dropping step 5 above step 4 shows the drop line; the dimmed row is the one being dragged. A step whose workspace you lost access to keeps no title.</p>
+  <div class="prose">
+    <h3>Plan dropdown</h3>
+    <p>The <b>Winter exams</b> dropdown lists every plan with its "done of total" and ends with <b>New plan</b>. The plan ⋮ holds Rename and Delete plan. I'd cap it at 10 plans and 50 steps per plan, like the workspace cap.</p>
+  </div>
+</section>
+
+<!-- ========== 3. Inside a workspace ========== -->
+<section>
+  <div class="prose">
+    <span class="eyebrow">3 · Inside a workspace</span>
+    <h2>Study tab: only this workspace's steps</h2>
+    <p>The workspace never draws the whole plan. It shows which plan it is in, its own steps, and one link out to the step after (which may be in another workspace). With no plan touching the workspace nothing changes.</p>
+  </div>
+  <div class="opts">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>S1 · Plan block</h3><span class="tag">Recommended</span></div>
+      <div class="frame">
+        <div class="panel">
+          <div class="prow"><div class="tx"><span class="meta">Next</span><b>Conditional probability.pdf</b></div><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div class="prow"><span class="ws stat">S</span><div class="tx"><b>Whole workspace</b></div><span class="lnk" style="color:var(--fg)">Review<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="prow"><h4 style="flex:1">In Winter exams</h4><span class="meta">step 3 of 8</span></div>
+            <div class="mini">
+              <div class="r"><span class="k">1</span><svg class="mark"><use href="#ck"/></svg><span>Descriptive statistics</span></div>
+              <div class="r now"><span class="k">3</span><svg class="mark"><use href="#half"/></svg><b>Probability</b><span class="meta">3 of 7</span></div>
+              <div class="r"><span class="k">6</span><svg class="mark"><use href="#todo"/></svg><span>Sampling distributions</span></div>
+            </div>
+            <span class="meta">After Probability: <span class="lnk" style="font-weight:600;white-space:normal;display:inline">Alkanes and cycloalkanes · Organic Chemistry<svg class="i"><use href="#fwd"/></svg></span></span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px"><h4>Done</h4><span class="meta">Chapter rows as today…</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>S2 · One row</h3><span class="meta">Smallest change</span></div>
+      <div class="frame">
+        <div class="panel">
+          <div class="prow"><div class="tx"><span class="meta">Next</span><b>Conditional probability.pdf</b></div><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div class="prow"><span class="ws stat">S</span><div class="tx"><b>Whole workspace</b></div><span class="lnk" style="color:var(--fg)">Review<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div class="prow"><svg class="i" style="width:32px;height:20px;color:var(--fg2)"><use href="#route"/></svg><div class="tx"><b>Winter exams</b><span class="meta">Step 3 of 8 · Probability</span></div><span class="lnk" style="color:var(--fg)">Plan<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div style="display:flex;flex-direction:column;gap:8px"><h4>Done</h4><span class="meta">Chapter rows as today…</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="label-row"><h3>When this workspace isn't up yet</h3></div>
+      <div class="frame">
+        <div class="panel">
+          <div class="prow"><div class="tx"><span class="meta">Next</span><b>Halides overview</b></div><span class="lnk">Continue<svg class="i"><use href="#fwd"/></svg></span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="prow"><h4 style="flex:1">In Winter exams</h4><span class="meta">steps 2, 4, 7</span></div>
+            <div class="mini">
+              <div class="r"><span class="k">2</span><svg class="mark"><use href="#ck"/></svg><span>Bonding and molecular structure</span></div>
+              <div class="r"><span class="k">4</span><svg class="mark"><use href="#todo"/></svg><span>Alkanes and cycloalkanes</span></div>
+              <div class="r"><span class="k">7</span><svg class="mark"><use href="#todo"/></svg><span>Stereochemistry</span></div>
+            </div>
+            <span class="meta">Now in the plan: <span class="lnk" style="font-weight:600;white-space:normal;display:inline">Probability · Statistics 201<svg class="i"><use href="#fwd"/></svg></span></span>
+          </div>
+        </div>
+      </div>
+      <p class="frame-cap">Continue here keeps today's rule (reading order inside the workspace). Only Learning's Continue follows the plan.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 4. Phone ========== -->
+<section>
+  <div class="prose">
+    <span class="eyebrow">4 · Phone</span>
+    <h2>A at 360px</h2>
+    <p>Counts drop out of the rows; the mark carries the state. The current step keeps its next item on the second line.</p>
+  </div>
+  <div class="phones">
+    <div class="phone">
+      <div class="main">
+        <div class="ptitle">Learning</div>
+        <div class="tabs"><span>Progress</span><span class="on">Plan</span><span>Review</span><span>All results</span></div>
+        <div class="toolbar">
+          <span class="dd" style="flex:1;justify-content:space-between">Winter exams <small>2 of 8</small><svg class="i"><use href="#down"/></svg></span>
+          <span class="ibtn"><svg class="i"><use href="#plus"/></svg></span>
+        </div>
+        <span class="lnk">Continue: Conditional probability<svg class="i"><use href="#fwd"/></svg></span>
+        <div class="steps">
+          <div class="step done"><span class="num">1</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Descriptive statistics</div><div class="sub">Statistics 201</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg></div></div>
+          <div class="step done"><span class="num">2</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Bonding and molecular structure</div><div class="sub">Organic Chemistry</div></div><div class="end"><svg class="mark"><use href="#ck"/></svg></div></div>
+          <div class="step now"><span class="num">3</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Probability</div><div class="sub">Next: Conditional probability</div></div><div class="end"><svg class="mark"><use href="#half"/></svg></div></div>
+          <div class="step"><span class="num">4</span><span class="ws chem">O</span><div style="min-width:0"><div class="nm">Alkanes and cycloalkanes</div><div class="sub">Organic Chemistry</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+          <div class="step"><span class="num">5</span><span class="ws ielts">I</span><div style="min-width:0"><div class="nm">Task 1 band descriptors.pdf</div><div class="sub">IELTS Writing</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+          <div class="step"><span class="num">6</span><span class="ws stat">S</span><div style="min-width:0"><div class="nm">Sampling distributions</div><div class="sub">Statistics 201</div></div><div class="end"><svg class="mark"><use href="#todo"/></svg></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="prose" style="flex:1;min-width:260px">
+      <h3>Progress tab with a plan</h3>
+      <p>The railway map stays as it is. With a plan, the "Continue: &lt;item&gt;" link beside the Continue heading follows the plan's current step and the map leads with that step's workspace. Without a plan, nothing changes.</p>
+      <h3 style="margin-top:8px">Empty Plan tab</h3>
+      <p>One line ("Put chapters from any workspace in the order you want to study them") and a <b>New plan</b> button that opens the add popover.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 5. AI scope ========== -->
+<section>
+  <div class="prose">
+    <span class="eyebrow">5 · AI</span>
+    <h2>What the AI may see</h2>
+    <p>The chat agent's tools are scoped to one workspace (<code>source.read</code> on that workspace). A plan spans workspaces, so it can't simply be handed to chat. Three levels, in the order I'd build them:</p>
+    <ul>
+      <li><b>v1, none.</b> A new plan starts empty; the popover adds chapters in reading order. No model call.</li>
+      <li><b>v2, workspace chat reads its own steps.</b> <code>read_study_progress</code> gains the plan steps inside that workspace and whether this workspace is the current step. It never sees titles from other workspaces, so "after this, Alkanes in Organic Chemistry" stays out of the model's context. Read only; chat can't change a plan.</li>
+      <li><b>Later, a planner on Learning.</b> Its own agent with one tool that lists workspaces you can read with chapter titles, item counts and progress counts, never content or search. Useful for "split these into 6 weeks". It needs its own permission check per workspace and its own metering, which is why it waits.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ========== 6. Data ========== -->
+<section>
+  <div class="prose">
+    <span class="eyebrow">6 · Data</span>
+    <h2>Two tables, no new progress</h2>
+  </div>
+  <div class="scroll-x">
+    <table class="schema">
+      <thead><tr><th>Table</th><th>Columns</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>study_plans</code></td><td>id, user_id, name, created_at, updated_at</td><td>Per user, private, not charged to storage. Cap 10 per user. A later <code>finish_by</code> column only if C is picked.</td></tr>
+        <tr><td><code>study_plan_steps</code></td><td>plan_id, position, workspace_id, chapter_id?, file_id?, material_id?</td><td>At most one of the three set; none = whole workspace. Cascades with its workspace, chapter, file or material. Cap 50 per plan. Unique per plan and target.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <ul>
+      <li><code>GET /api/learning/plans</code> returns plans with steps, each step's done and total (from <code>study_progress</code>, skipping trashed items) and the current step's next item. Steps in workspaces you can no longer read come back with no title.</li>
+      <li><code>PUT /api/learning/plans/{id}</code> replaces name and step order in one write; drag sends the whole order.</li>
+      <li><code>GET /api/workspaces/{id}/study</code> gains <code>plans</code>: plans with steps in this workspace, those steps, and the step after (title and workspace name, checked for read access).</li>
+      <li>Workspaces with progress off: steps stay, counts show "Progress off" and never count as done.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ========== 7. Decisions ========== -->
+<section>
+  <div class="prose">
+    <span class="eyebrow">7 · Your call</span>
+    <h2>Decisions</h2>
+  </div>
+  <ol class="qs">
+    <li><div><b>Plan view</b><span class="pick">A list, B route line on top of the list, or both. <b>I'd pick A.</b></span></div></li>
+    <li><div><b>Dates</b><span class="pick">None now, or the optional Finish by of C. <b>I'd ship without dates</b> and revisit once people use plans.</span></div></li>
+    <li><div><b>Where it lives</b><span class="pick">New Plan tab on Learning, or a section at the top of Progress. <b>I'd pick the tab</b>; Progress stays the map.</span></div></li>
+    <li><div><b>One plan or several</b><span class="pick">Several with a dropdown (cap 10), or one per user. <b>Several</b>: an exam plan and a language plan run side by side.</span></div></li>
+    <li><div><b>Step units</b><span class="pick">Chapter, single file or material, whole workspace. Also question-bank topics? <b>I'd leave bank topics out</b> of v1; the bank has its own map.</span></div></li>
+    <li><div><b>Study tab</b><span class="pick">S1 plan block or S2 one row. <b>I'd pick S1.</b></span></div></li>
+    <li><div><b>Continue</b><span class="pick">Learning's Continue follows the plan; the workspace's Continue keeps reading order. Or should the workspace's Continue also jump to its own current plan step?</span></div></li>
+    <li><div><b>Review inside a plan</b><span class="pick">No review steps; suggested reviews stay on the Review tab. Or add "Review chapter" steps that finish on a session?</span></div></li>
+    <li><div><b>AI</b><span class="pick">v1 none, v2 workspace chat reads its own steps, planner later. OK?</span></div></li>
+    <li><div><b>Sharing</b><span class="pick">Private now. Later a plan could be shared with friends, each seeing the others' step marks, with locked steps for workspaces they can't open.</span></div></li>
+  </ol>
+</section>
+
+</div>

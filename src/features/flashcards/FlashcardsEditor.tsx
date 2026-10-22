@@ -17,7 +17,7 @@ import { CardDialog } from './CardDialog';
 import { CardGrid, CardTile } from './CardView';
 import { addCard, isBlank, readCards, removeCard, useCards } from './liveSet';
 
-/** Edits a live flashcard set as a grid (Epo 2026-10-10): adding, editing
+/** Edits a live flashcard set as a grid of turned cards (Epo 2026-10-10): adding, editing
  * and removing a card change the set at once for everyone in it; there is
  * no Save, Reset or Done. A card added and left blank goes away when its
  * dialog closes, as the old save left blank cards out. */
@@ -97,53 +97,57 @@ export function FlashcardsEditor({
         </div>
       )}
       <CardGrid>
-        {cards.map((card) => (
+        {cards.map((card, index) => (
           <CardTile
+            aside={
+              <BlockToolbar className="rounded-md p-0.5 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100">
+                <ToolbarButton
+                  label={m.action_edit()}
+                  onClick={() => setEditing({ added: false, id: card.id })}
+                  tooltipSide="top"
+                >
+                  <Icon name="pencil" />
+                </ToolbarButton>
+                <ToolbarButton
+                  disabled={cards.length <= 1 && !onEmpty}
+                  label={m.editor_remove_card()}
+                  onClick={() => setRemoving(card.id)}
+                  tooltipSide="top"
+                  variant="danger-light"
+                >
+                  <Icon name="trash" />
+                </ToolbarButton>
+              </BlockToolbar>
+            }
             card={card}
             key={card.id}
             label={m.flashcards_edit_card()}
+            n={index + 1}
             onOpen={() => setEditing({ added: false, id: card.id })}
-          >
-            <BlockToolbar className="absolute top-2 right-2 z-10 rounded-md p-0.5 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100">
-              <ToolbarButton
-                label={m.action_edit()}
-                onClick={() => setEditing({ added: false, id: card.id })}
-                tooltipSide="top"
-              >
-                <Icon name="pencil" />
-              </ToolbarButton>
-              <ToolbarButton
-                disabled={cards.length <= 1 && !onEmpty}
-                label={m.editor_remove_card()}
-                onClick={() => setRemoving(card.id)}
-                tooltipSide="top"
-                variant="danger-light"
-              >
-                <Icon name="trash" />
-              </ToolbarButton>
-            </BlockToolbar>
-          </CardTile>
+          />
         ))}
-        <Card
-          border="dashed"
-          className="aspect-[4/3] cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
-          interactive
-          onClick={() => setEditing({ added: true, id: addCard(doc) })}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ')
-              setEditing({ added: true, id: addCard(doc) });
-          }}
-          radius="card-lg"
-          role="button"
-          tabIndex={0}
-        >
-          <span className="flex flex-col items-center gap-2 text-fg-muted">
-            <Icon name="plus" size={24} />
-            <span className="t-meta text-fg-muted">
-              {m.flashcards_add_card()}
+        <li className="flex">
+          <Card
+            border="dashed"
+            className="min-h-24 flex-1 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none sm:min-h-52"
+            interactive
+            onClick={() => setEditing({ added: true, id: addCard(doc) })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ')
+                setEditing({ added: true, id: addCard(doc) });
+            }}
+            radius="card-lg"
+            role="button"
+            tabIndex={0}
+          >
+            <span className="flex flex-col items-center gap-2 text-fg-muted">
+              <Icon name="plus" size={24} />
+              <span className="t-meta text-fg-muted">
+                {m.flashcards_add_card()}
+              </span>
             </span>
-          </span>
-        </Card>
+          </Card>
+        </li>
       </CardGrid>
 
       {editing && (
