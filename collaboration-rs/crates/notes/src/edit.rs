@@ -109,11 +109,20 @@ pub enum DocumentCommand {
         parent_type: String,
         node_id: String,
     },
-    SetProperty {
-        node_type: String,
-        property: String,
-        expected_value: String,
-        value: String,
+    /// A flashcard set's card (the items crate applies it): each side sent
+    /// replaces that side, which must still read as its expected text; a
+    /// side left out and the image stay as the live set holds them (Epo
+    /// 2026-10-21).
+    ReplaceCard {
+        card_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        front: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        back: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_front: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_back: Option<String>,
     },
 }
 
@@ -135,9 +144,10 @@ pub struct EditOutcome {
     pub relocated: Vec<Relocation>,
 }
 
-/// A media block an agent's edit cannot write: an uploaded file
-/// ([crate::material::MEDIA_TYPES]) or an embedded video (the catalog's
-/// elements that require or forbid `assetId`).
+/// A media block: an uploaded file ([crate::material::MEDIA_TYPES]) or an
+/// embedded video (the catalog's elements that require or forbid `assetId`).
+/// An agent's edit may remove or replace one (Epo 2026-10-21) but inserts
+/// none except a library figure ([inserts_media]).
 pub fn media_type(kind: &str) -> bool {
     kind == "video" || crate::material::MEDIA_TYPES.contains(&kind)
 }
@@ -178,45 +188,62 @@ fn has_media(node: &Value) -> bool {
             .is_some_and(|children| children.iter().any(has_media))
 }
 
+/// A span of a block's shown text that replace_text cannot reach: math, or
+/// a Mermaid block shown as its source. `text` counts the UTF-16 units of
+/// the block's own text it stands for (a Mermaid block's caption; math has
+/// none).
+struct Opaque {
+    start: usize,
+    end: usize,
+    text: usize,
+    mermaid: bool,
+}
+
 /// A block's text as inspect shows it, the text an expected text matches:
 /// its text with math written out, inline as `$tex$` and display as
-/// `$$tex$$` (`Node.string` leaves math out), and the UTF-16 [start, end)
-/// spans the math takes in it (`shownText`).
-fn shown_text(node: &Value) -> (String, Vec<(usize, usize)>) {
-    fn walk(node: &Value, text: &mut String, units: &mut usize, math: &mut Vec<(usize, usize)>) {
+/// `$$tex$$` (`Node.string` leaves math out), a Mermaid block, nested ones
+/// included, as its source, its caption the person's and never compared
+/// (Epo 2026-10-22), and the UTF-16 spans those take in it (`shownText`).
+fn shown_text(node: &Value) -> (String, Vec<Opaque>) {
+    fn leaves(node: &Value) -> usize {
+        if is_text(node) {
+            return len16(slate::text(node));
+        }
+        children(node).iter().map(leaves).sum()
+    }
+    fn walk(node: &Value, text: &mut String, units: &mut usize, spans: &mut Vec<Opaque>) {
         if is_text(node) {
             let leaf = slate::text(node);
             text.push_str(leaf);
             *units += len16(leaf);
             return;
         }
-        let delimiter = match node.get("type").and_then(Value::as_str) {
-            Some("inline_equation") => "$",
-            Some("equation") => "$$",
+        let kind = node.get("type").and_then(Value::as_str);
+        let tex = || js_string(node.get("texExpression"));
+        let shown = match kind {
+            Some("inline_equation") => format!("${}$", tex()),
+            Some("equation") => format!("$${}$$", tex()),
+            Some("mermaid") => js_string(node.get("source")),
             _ => {
-                for child in node
-                    .get("children")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                {
-                    walk(child, text, units, math);
+                for child in children(node) {
+                    walk(child, text, units, spans);
                 }
                 return;
             }
         };
-        let shown = format!(
-            "{delimiter}{}{delimiter}",
-            js_string(node.get("texExpression"))
-        );
         let start = *units;
         *units += len16(&shown);
-        math.push((start, *units));
+        spans.push(Opaque {
+            start,
+            end: *units,
+            text: leaves(node),
+            mermaid: kind == Some("mermaid"),
+        });
         text.push_str(&shown);
     }
-    let (mut text, mut units, mut math) = (String::new(), 0, Vec::new());
-    walk(node, &mut text, &mut units, &mut math);
-    (text, math)
+    let (mut text, mut units, mut spans) = (String::new(), 0, Vec::new());
+    walk(node, &mut text, &mut units, &mut spans);
+    (text, spans)
 }
 
 /// `blockText`.
@@ -224,11 +251,42 @@ fn block_text(node: &Value) -> String {
     shown_text(node).0
 }
 
-/// An offset in a block's shown text as an offset in its text without math.
-fn without_math(math: &[(usize, usize)], offset: usize) -> usize {
-    math.iter()
-        .filter(|(_, end)| *end <= offset)
-        .fold(offset, |flat, (start, end)| flat - (end - start))
+/// A block replaced by blocks holding one of its own type is rewritten
+/// there: the rewrite keeps its caption (a Mermaid block's caption element,
+/// another block's `caption`), width and a Mermaid block's theme, which agent
+/// edits never change, unless it shows a different picture, file or video:
+/// that is a new block bringing its own caption and credit (Epo 2026-10-22).
+fn keep_caption(old: &Value, new: &mut Value) {
+    if ["assetId", "provider", "videoId"]
+        .iter()
+        .any(|key| old.get(key) != new.get(key))
+    {
+        return;
+    }
+    let keys: &[&str] = if js_string(old.get("type")) == "mermaid" {
+        &["children", "width", "theme"]
+    } else {
+        &["caption", "width"]
+    };
+    let Some(new) = new.as_object_mut() else {
+        return;
+    };
+    for &key in keys {
+        match old.get(key) {
+            Some(value) => new.insert(key.to_owned(), value.clone()),
+            None => new.remove(key),
+        };
+    }
+}
+
+/// An offset in a block's shown text as an offset in its own text.
+fn in_text(spans: &[Opaque], offset: usize) -> usize {
+    spans
+        .iter()
+        .filter(|span| span.end <= offset)
+        .fold(offset, |flat, span| {
+            flat + span.text - (span.end - span.start)
+        })
 }
 
 /// How many blocks, and how much of each, a refusal for a gone id lists.
@@ -623,27 +681,36 @@ fn run_command(
             if has_media(&block) && node_string(&block)?.is_empty() {
                 return edit(UnsupportedOperation, "this block holds media, not text");
             }
-            // Expected text matches the block as inspect shows it, math
-            // included, but only plain text around the math can be replaced.
-            let (shown, math) = shown_text(&block);
+            // Its text is its caption, which an agent edit never changes.
+            if js_string(block.get("type")) == "mermaid" {
+                return edit(
+                    UnsupportedOperation,
+                    "a Mermaid block changes through replace_block with a ```mermaid fence; its caption stays",
+                );
+            }
+            // Expected text matches the block as inspect shows it, math and
+            // nested Mermaid sources included, but only plain text around
+            // them can be replaced.
+            let (shown, spans) = shown_text(&block);
             let (span_offset, span_length) = resolve_span(&shown, expected_text)
                 .map_err(|error| with_current(error, &block, &shown))?;
             let span_end = span_offset.saturating_add(span_length);
-            if math.iter().any(|&(from, to)| {
+            if let Some(span) = spans.iter().find(|span| {
                 if span_length > 0 {
-                    span_offset < to && span_end > from
+                    span_offset < span.end && span_end > span.start
                 } else {
-                    from < span_offset && span_offset < to
+                    span.start < span_offset && span_offset < span.end
                 }
             }) {
-                return edit_with(
-                    InvalidInput,
-                    "replace_text changes plain text and this span includes math; rewrite the block with replace_block",
-                    current_block(&block, shown),
-                );
+                let message = if span.mermaid {
+                    "replace_text changes plain text and this span includes a Mermaid block; rewrite the block with replace_block"
+                } else {
+                    "replace_text changes plain text and this span includes math; rewrite the block with replace_block"
+                };
+                return edit_with(InvalidInput, message, current_block(&block, shown));
             }
-            let start = point_at(editor, index, without_math(&math, span_offset), Edge::Start)?;
-            let end = point_at(editor, index, without_math(&math, span_end), Edge::End)?;
+            let start = point_at(editor, index, in_text(&spans, span_offset), Edge::Start)?;
+            let end = point_at(editor, index, in_text(&spans, span_end), Edge::End)?;
             if span_length > 0 {
                 editor.delete_range(start.clone(), end)?;
             }
@@ -703,18 +770,10 @@ fn run_command(
                     current_block(&block, text),
                 );
             }
-            if has_media(&block) {
-                return edit(
-                    UnsupportedOperation,
-                    "blocks holding media cannot be removed by an edit",
-                );
-            }
-            if editor.root.children.len() == 1 {
-                return edit(
-                    UnsupportedOperation,
-                    "a material must keep at least one block",
-                );
-            }
+            // Media included, and the last block too: the server gives an
+            // emptied note its empty paragraph in the edit's transaction (Epo
+            // 2026-10-21, `repair::emptied`), and the store refuses any other
+            // kind left without its block.
             let before: Vec<String> = editor.root.children[..index]
                 .iter()
                 .map(stable_id)
@@ -742,22 +801,25 @@ fn run_command(
                     current_block(&block, text),
                 );
             }
-            if has_media(&block) {
-                return edit(
-                    UnsupportedOperation,
-                    "blocks holding media cannot be replaced by an edit",
-                );
-            }
             let ids: Vec<String> = blocks.iter().map(stable_id).collect();
             if let Some(id) = ids.iter().find(|id| exists(editor, id)) {
                 return edit(StaleTarget, format!("block id {id} already exists"));
+            }
+            // The replacement's first block of the replaced one's type is its
+            // rewrite, whatever else the markdown adds beside it.
+            let mut blocks = blocks.clone();
+            if let Some(rewrite) = blocks
+                .iter_mut()
+                .find(|node| node.get("type") == block.get("type"))
+            {
+                keep_caption(&block, rewrite);
             }
             let mut before: Vec<String> = editor.root.children[..index]
                 .iter()
                 .map(stable_id)
                 .collect();
             editor.remove_node(vec![index])?;
-            editor.insert_nodes(vec![index], blocks.clone())?;
+            editor.insert_nodes(vec![index], blocks)?;
             // An insert after the replaced id later in this call follows the
             // replacement.
             before.extend(ids);
@@ -815,25 +877,8 @@ fn run_command(
             }
             editor.remove_node(vec![parent_index, at])?;
         }
-        DocumentCommand::SetProperty {
-            node_type,
-            property,
-            expected_value,
-            value,
-        } => {
-            let (node, index) = require_parent(editor, node_type)?;
-            let current = node.get(property).and_then(Value::as_str).unwrap_or("");
-            if current != expected_value {
-                // The value as it is now (a diagram's source), as a stale
-                // block carries its text.
-                return edit_with(
-                    StaleTarget,
-                    format!("{node_type}.{property} changed"),
-                    current_block(&node, current.to_owned()),
-                );
-            }
-            let props = Map::from_iter([(property.clone(), Value::String(value.clone()))]);
-            editor.set_nodes_at(vec![index], &props)?;
+        DocumentCommand::ReplaceCard { .. } => {
+            return edit(UnsupportedOperation, "replace_card edits a flashcard set");
         }
     }
     Ok(())
@@ -911,6 +956,13 @@ pub struct InspectedBlock {
     pub kind: String,
 }
 
+/// A card as inspect shows it and a stale `replace_card` carries it: its
+/// sides as JSON, `{"back":…,"front":…}`, the texts the expected sides
+/// match (Epo 2026-10-21; the sides ran together before).
+pub fn card_text(front: &str, back: &str) -> String {
+    json!({ "back": back, "front": front }).to_string()
+}
+
 /// `inspectMaterial`: top-level blocks with ids and flattened text. Object
 /// values (a quiz question, a chart block) print with sorted keys: the
 /// document keeps no key order for them.
@@ -933,15 +985,24 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                         .iter()
                         .map(|child| {
                             let child_kind = js_string(child.get("type"));
+                            let side = |side: &str| {
+                                children(child)
+                                    .iter()
+                                    .find(|node| js_string(node.get("type")) == side)
+                                    .map_or(Ok(String::new()), node_string)
+                            };
                             Ok(InspectedChild {
                                 id: stable_id(child),
-                                text: if child_kind == "quiz_question" {
-                                    child
+                                text: match child_kind.as_str() {
+                                    "quiz_question" => child
                                         .get("question")
                                         .map(crate::json::stringify)
-                                        .unwrap_or_default()
-                                } else {
-                                    node_string(child)?
+                                        .unwrap_or_default(),
+                                    "flashcard" => card_text(
+                                        &side("flashcard_front")?,
+                                        &side("flashcard_back")?,
+                                    ),
+                                    _ => node_string(child)?,
                                 },
                                 kind: child_kind,
                             })
@@ -965,10 +1026,12 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                     .unwrap_or_default();
                 out.properties = props(vec![("block", printed)]);
             }
-            if kind == "mermaid"
-                && let Some(source) = block.get("source").and_then(Value::as_str)
-            {
-                out.properties = props(vec![("source", source.to_owned())]);
+            // A Mermaid block's text is its source; its caption shows apart.
+            if kind == "mermaid" {
+                let caption = node_string(block)?;
+                if !caption.is_empty() {
+                    out.properties = props(vec![("caption", caption)]);
+                }
             }
             if kind == "html_embed"
                 && let Some(caption) = block.get("caption").and_then(Value::as_str)

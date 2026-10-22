@@ -55,7 +55,7 @@ Quizzes: add_questions writes multiple-choice, short-answer and open (written-an
 
 Flashcards: cards, a list of {{front, back}}.
 
-Mindmaps and diagrams: content is one ```mermaid fence.
+Mindmaps and diagrams: content is one ```mermaid fence; edit_document replace_block rewrites it whole, expecting the source inspect shows as its text; its caption, width and theme stay.
 
 When done, answer with the materials made, what each covers and its size, and the work still open."""
 

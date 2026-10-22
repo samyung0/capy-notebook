@@ -562,7 +562,7 @@ fn parse_card(node: &Value, what: &str) -> Result<Card, EditError> {
     }
 }
 
-/// The agent's card commands (`replace_child`, `insert_child`,
+/// The agent's card commands (`replace_card`, and `insert_child` and
 /// `remove_child` on the `flashcards` parent) on the set document.
 pub fn apply_commands(
     txn: &mut TransactionMut,
@@ -572,24 +572,45 @@ pub fn apply_commands(
     for command in commands {
         let ordered = cards(txn);
         match command {
-            DocumentCommand::ReplaceChild {
-                parent_type,
-                node_id,
-                node,
-            } if parent_type == "flashcards" => {
-                let Some(previous) = ordered.iter().find(|c| &c.id == node_id) else {
-                    return unavailable(format!("{node_id} no longer exists"));
+            // Read from the set as the live room holds it, so typing since
+            // the agent's inspection stays in a side it leaves out (Epo
+            // 2026-10-21); a side it replaces must still read as expected.
+            DocumentCommand::ReplaceCard {
+                card_id,
+                front,
+                back,
+                expected_front,
+                expected_back,
+            } => {
+                let (Some(current), Some(map)) = (
+                    ordered.iter().find(|c| &c.id == card_id),
+                    card_map(txn, &root, card_id),
+                ) else {
+                    return unavailable(format!("{card_id} no longer exists"));
                 };
-                let mut next = parse_card(node, "replace_child")?;
-                if next.id != *node_id {
-                    return invalid(
-                        EditErrorCode::InvalidInput,
-                        "replacement must keep the node id",
-                    );
+                // Each side is a target of its own (Epo 2026-10-22): only a
+                // side the command replaces is held to its expected text.
+                let stale = |side: &Option<String>, expected: &Option<String>, live: &str| {
+                    side.is_some() && expected.as_ref().is_some_and(|expected| expected != live)
+                };
+                if stale(front, expected_front, &current.front)
+                    || stale(back, expected_back, &current.back)
+                {
+                    return Err(EditError::Edit {
+                        code: EditErrorCode::StaleTarget,
+                        message: format!("card {card_id} changed"),
+                        details: Some(json!({ "block": {
+                            "id": card_id,
+                            "text": notes::edit::card_text(&current.front, &current.back),
+                            "type": "flashcard",
+                        } })),
+                    });
                 }
-                next.order = previous.order.clone();
-                if let Some(map) = card_map(txn, &root, node_id) {
-                    write_card(txn, &map, &next);
+                for (field, side) in [("front", front), ("back", back)] {
+                    if let Some(side) = side {
+                        let text = face(txn, &map, field);
+                        edit_text(txn, &text, side);
+                    }
                 }
             }
             DocumentCommand::InsertChild {

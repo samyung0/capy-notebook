@@ -111,7 +111,16 @@ import (
 // commands up to its per-call limits (its limits.json, which Marshal writes
 // into the description) and returns the rest unapplied by index (Epo
 // 2026-10-21, 2026-10-22).
-const ContractVersion = 36
+// v37: edit_document loses set_mermaid (a mindmap's or diagram's Mermaid
+// block changes through replace_block), may remove or replace any note
+// block, media included, and replace_card takes expected_front and
+// expected_back, required with the side it replaces (Epo 2026-10-21); a
+// Mermaid block's inspected and expected text is its source, nested ones
+// included, and a replace_block keeps the replaced block's caption and width
+// (a Mermaid block's theme too) on the replacement's first block of its type,
+// unless that shows a different picture, which brings its own caption and
+// credit (Epo 2026-10-22).
+const ContractVersion = 37
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -477,9 +486,11 @@ func editCommandSchema() map[string]any {
 				"expected_text": text("The block's current text as inspect_document shows it."),
 			}, "block_id", "expected_text"),
 			variant("replace_card", map[string]any{
-				"card_id": str("A side left out stays as it is."),
-				"front":   cardFront(),
-				"back":    cardBack(),
+				"card_id":        str("A side left out stays as it is."),
+				"front":          cardFront(),
+				"back":           cardBack(),
+				"expected_front": text("The card's front as inspect_document shows it; required with front."),
+				"expected_back":  text("The card's back as inspect_document shows it; required with back."),
 			}, "card_id"),
 			variant("add_card", map[string]any{
 				"front":         cardFront(),
@@ -488,10 +499,6 @@ func editCommandSchema() map[string]any {
 			}, "front", "back"),
 			variant("remove_card", map[string]any{"card_id": str("")}, "card_id"),
 			variant("remove_question", map[string]any{"question_id": str("")}, "question_id"),
-			variant("set_mermaid", map[string]any{
-				"expected_source": text("Current mermaid source."),
-				"source":          text("New mermaid source."),
-			}, "expected_source", "source"),
 		},
 	}
 }
@@ -1054,9 +1061,13 @@ func Definitions() []Definition {
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly; replace_block rewrites a note " +
-				"block with formatting or math. Uploaded media and PDFs cannot be edited; a library " +
-				"figure placed in a note is removed only by the learner. Quiz questions are " +
-				"added and replaced with the question tools.",
+				"block with formatting or math, and a mermaid block (a mindmap's or diagram's " +
+				"one block) as one ```mermaid fence, expecting the source inspect shows as its text. " +
+				"Any note block may be removed or replaced, media included; the only media an edit " +
+				"adds are library figures. A block rewritten as one of its own type keeps its " +
+				"caption and width (a diagram its theme too); an image swapped for a different " +
+				"picture or figure takes the new one's caption. PDFs cannot be edited. Quiz " +
+				"questions are added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{

@@ -1424,6 +1424,66 @@ def test_inspect_shows_a_notes_quiz_as_its_fence_and_edits_expect_it_back():
     assert tools._stored_expectation(command, shown)["expected_text"] == stored
 
 
+def test_inspect_prints_figures_and_captions_and_sums_up_a_large_figure():
+    """A chart, plot or graph shows its block as compact JSON without a graph's
+    SVG, summed up past FIGURE_JSON_CHARS; an interactive block shows its
+    caption (Epo 2026-10-21)."""
+    chart = {
+        "type": "chart",
+        "kind": "bar",
+        "title": "Rainfall",
+        "labels": ["Jan", "Feb"],
+        "series": [{"name": "Rain", "values": [3, 4]}],
+    }
+    graph = {"type": "graph", "elements": [], "image": {"svg": "<svg>" + "x" * 5000}}
+    labels = [f"Day {n}" for n in range(200)]
+    large = {
+        **chart,
+        "labels": labels,
+        "series": [{"name": "Rain", "values": [1] * 200}],
+    }
+    text = tools._render_inspection(
+        {
+            "title": "Note",
+            "format": "plate",
+            "supportedOperations": ["replace_block"],
+            "blocks": [
+                {
+                    "id": "c1",
+                    "type": "chart",
+                    "text": "",
+                    "properties": {"block": json.dumps(chart)},
+                },
+                {
+                    "id": "g1",
+                    "type": "graph",
+                    "text": "",
+                    "properties": {"block": json.dumps(graph)},
+                },
+                {
+                    "id": "c2",
+                    "type": "chart",
+                    "text": "",
+                    "properties": {"block": json.dumps(large)},
+                },
+                {
+                    "id": "h1",
+                    "type": "html_embed",
+                    "text": "",
+                    "properties": {"caption": "Drag the slider"},
+                },
+            ],
+        }
+    )
+    lines = text.splitlines()
+    assert "    block: " + json.dumps(chart, separators=(",", ":")) in lines
+    assert '    block: {"type":"graph","elements":[]}' in lines
+    summed = next(line for line in lines if '"Day 0"' in line)
+    assert '"series":["Rain"]' in summed and '"… 188 more"' in summed
+    assert len(summed) < tools.FIGURE_JSON_CHARS and "summed up from" in summed
+    assert "    caption: Drag the slider" in lines
+
+
 def test_the_final_notice_says_an_unwritten_deck_was_not_saved():
     from pipeline.retrieval import turn_context
 

@@ -537,8 +537,8 @@ def keep_images(state: dict[str, Any], images: dict[str, bytes]) -> dict[str, An
 OPERATIONS = {
     "quiz": ["remove_question"],
     "flashcards": ["replace_card", "add_card", "remove_card"],
-    "mindmap": ["set_mermaid"],
-    "diagram": ["set_mermaid"],
+    "mindmap": ["replace_block"],
+    "diagram": ["replace_block"],
 }
 NOTE_OPERATIONS = ["replace_text", "replace_block", "insert_markdown", "remove_block"]
 FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,})\s*([\w-]*)")
@@ -589,6 +589,22 @@ def block_type(markdown: str) -> str:
     return next((kind for pattern, kind in BLOCK_TYPES if pattern.match(head)), "paragraph")
 
 
+def block_text(markdown: str) -> str:
+    """A note block's text as inspect shows it: a Mermaid block's source (its
+    caption stays apart, Epo 2026-10-22), another block's markdown."""
+    fence = FENCE.fullmatch(markdown.strip())
+    return fence.group(2).strip() if fence and fence.group(1) == "mermaid" else markdown
+
+
+def expects(expected: str, markdown: str) -> bool:
+    """Whether an expected text still names a note block: a Mermaid source
+    exactly, as production compares it; another block's markdown only
+    approximates its text, so edge whitespace aside."""
+    if block_type(markdown) == "mermaid":
+        return expected == block_text(markdown)
+    return expected.strip() == markdown.strip()
+
+
 def fresh_id(record: dict[str, Any], prefix: str) -> str:
     """A block or card id never given before in this material, as the editor's
     ids stay put while others come and go."""
@@ -614,16 +630,24 @@ def inspected(record: dict[str, Any]) -> list[dict[str, Any]]:
         for card in record["cards"]:
             if "id" not in card:
                 card["id"] = fresh_id(record, "c")
+        # A card's sides as JSON, the texts expected_front and expected_back match.
         return [
-            {"id": c["id"], "type": "card", "text": f"{c['front']} | {c['back']}"}
+            {
+                "id": c["id"],
+                "type": "flashcard",
+                "text": json.dumps(
+                    {"back": c["back"], "front": c["front"]}, ensure_ascii=False, separators=(",", ":")
+                ),
+            }
             for c in record["cards"]
         ]
     if kind in ("mindmap", "diagram"):
-        return [{"id": "source", "type": kind, "text": "", "properties": {"source": record["content"]}}]
+        # The block's text is its source, which a rewrite expects (Epo 2026-10-22).
+        return [{"id": "source", "type": "mermaid", "text": record["content"]}]
     if "blocks" not in record:
         record["blocks"] = new_blocks(record, record["content"])
     return [
-        {"id": b["id"], "type": block_type(b["markdown"]), "text": b["markdown"]}
+        {"id": b["id"], "type": block_type(b["markdown"]), "text": block_text(b["markdown"])}
         for b in record["blocks"]
     ]
 
@@ -660,7 +684,7 @@ def inspect_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
         "nextStart": end if end < len(targets) else None,
     }
     return tools._result(
-        tools._render_inspection(body, ctx.shown_quizzes.setdefault(rid, {}))
+        tools._render_inspection(body, ctx.shown_views.setdefault(rid, {}))
     )
 
 
@@ -678,9 +702,10 @@ def read_locally(args: dict[str, Any], state: dict[str, Any]):
     end = min(start + min(12, int(args.get("count") or 4)), len(targets))
     if start >= end:
         return tools._result("No passages at that position.")
-    text = "\n\n".join(
-        t["text"] or t.get("properties", {}).get("source", "") for t in targets[start:end]
-    )
+    # A note's blocks read as their markdown, a Mermaid block's fence
+    # included, as its index text does; other kinds as inspected.
+    texts = [b["markdown"] for b in record["blocks"]] if "blocks" in record else [t["text"] for t in targets]
+    text = "\n\n".join(texts[start:end])
     return tools._result(text + (f"\n\n(next start = {end})" if end < len(targets) else ""))
 
 
@@ -707,10 +732,19 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
     offered = OPERATIONS.get(kind, NOTE_OPERATIONS)
     if op not in offered:
         return f"{where}: a {kind} takes {', '.join(offered)}"
-    if op == "set_mermaid":
-        if command["expected_source"].strip() != draft["content"].strip():
-            return f"{where}.expected_source: the source changed; inspect it again"
-        draft["content"] = command["source"]
+    if kind in ("mindmap", "diagram"):
+        # replace_block of the one mermaid block, from a ```mermaid fence.
+        if command.get("block_id") != "source":
+            return f"{where}.block_id: no {command.get('block_id')} in this {kind}"
+        # Exact, as production compares it (review r2 L3).
+        if command["expected_text"] != draft["content"]:
+            return f"{where}.expected_text: the source now reads: {draft['content'][:2000]}"
+        # The gateway refuses anything beside the one fence (review r1 M1).
+        markdown = command["markdown"].strip()
+        fence = FENCE.fullmatch(markdown)
+        if fence is None or fence.group(1) != "mermaid" or "```" in fence.group(2):
+            return f"{where}.markdown: replace_block on a {kind} takes one ```mermaid fence and nothing else"
+        draft["content"] = fence.group(2).strip()
         return ""
     items = draft["cards"] if kind == "flashcards" else draft["blocks"]
     ids = [item["id"] for item in items]
@@ -733,7 +767,13 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
         return f"{where}.{key}: no {target} in this {kind}"
     if op == "replace_text":
         expected = command["expected_text"]
-        hits = [b for b in items if target in (None, b["id"]) and expected in b["markdown"]]
+        if target is not None and block_type(items[ids.index(target)]["markdown"]) == "mermaid":
+            return f"{where}: a Mermaid block changes through replace_block with a ```mermaid fence; its caption stays"
+        hits = [
+            b
+            for b in items
+            if target in (None, b["id"]) and block_type(b["markdown"]) != "mermaid" and expected in b["markdown"]
+        ]
         count = sum(b["markdown"].count(expected) for b in hits)
         if count != 1:
             return f"{where}.expected_text: found {count} times; it must occur once"
@@ -741,11 +781,17 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
         return ""
     i = ids.index(target)
     if op == "replace_card":
+        for side in ("front", "back"):
+            expected = command.get(f"expected_{side}")
+            if side in command and expected is None:
+                return f"{where}: send expected_{side} with {side}"
+            if expected is not None and expected != items[i][side]:
+                return f"{where}.expected_{side}: card {target} now reads {inspected(draft)[i]['text']}"
         items[i] = {**items[i], **{k: command[k] for k in ("front", "back") if k in command}}
     elif op == "remove_card":
         del items[i]
-    elif command["expected_text"].strip() != items[i]["markdown"].strip():
-        return f"{where}.expected_text: {target} now reads: {items[i]['markdown'][:2000]}"
+    elif not expects(command["expected_text"], items[i]["markdown"]):
+        return f"{where}.expected_text: {target} now reads: {block_text(items[i]['markdown'])[:2000]}"
     else:
         items[i : i + 1] = [] if op == "remove_block" else new_blocks(draft, command["markdown"])
     return ""
@@ -775,7 +821,7 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
             code="unavailable_target",
         )
     commands = [
-        tools._stored_expectation(c, ctx.shown_quizzes.get(rid, {}))
+        tools._stored_expectation(c, ctx.shown_views.get(rid, {}))
         for c in args.get("commands") or []
     ]
     placing = [
@@ -2588,10 +2634,27 @@ def check_edits() -> None:
         )
         assert not cards.refused, cards.text()
         deck_ = {"kind": "material", "id": state["materials"][-1]["id"]}
-        assert "[c1] (card) a | b" in inspect_locally({"target": deck_}, ctx, state).text()
+        assert '[c1] (flashcard) {"back":"b","front":"a"}' in inspect_locally({"target": deck_}, ctx, state).text()
         add = [{"type": "add_card", "after_card_id": "c1", "front": "x", "back": "y"}]
         added = await edit_material_locally({"target": deck_, "commands": add}, ctx, state)
         assert not added.refused and [c["id"] for c in state["materials"][-1]["cards"]] == ["c1", "c2"]
+        # A note's Mermaid block inspects as its source, refuses replace_text
+        # and takes replace_block expecting that source, as in production.
+        diagram = await create_material_locally(
+            {"kind": "note", "title": "D", "content": "Flow.\n\n```mermaid\nflowchart LR\n  A --> B\n```", "_tool_call_id": "c3"},
+            ctx, state, "m1",
+        )
+        assert not diagram.refused, diagram.text()
+        noted = {"kind": "material", "id": state["materials"][-1]["id"]}
+        seen = inspect_locally({"target": noted}, ctx, state).text()
+        assert "[b2] (mermaid) flowchart LR\n  A --> B" in seen and "```" not in seen, seen
+        typed = [{"type": "replace_text", "target_id": "b2", "expected_text": "A --> B", "text": "A --> C"}]
+        refused = await edit_material_locally({"target": noted, "commands": typed}, ctx, state)
+        assert refused.refused and "replace_block" in refused.text(), refused.text()
+        fence = "```mermaid\nflowchart LR\n  A --> C\n```"
+        rewrite = [{"type": "replace_block", "block_id": "b2", "expected_text": "flowchart LR\n  A --> B", "markdown": fence}]
+        done = await edit_material_locally({"target": noted, "commands": rewrite}, ctx, state)
+        assert not done.refused and state["materials"][-1]["content"].endswith(fence), done.text()
 
     with TemporaryDirectory() as tmp:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
