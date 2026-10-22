@@ -404,8 +404,8 @@ status any more; a second view opens the new epoch in a slot beside it,
 (`OfficeSlot` gives it no mode control, menu or header-action targets; the
 replaced view leaves the avatar group and the floating bar's inset to it).
 The header shows the building view's status as a first join's (Epo
-2026-10-23): Reconnecting for its connecting state (`swap.building`), a
-slowed open's line, Offline. Any answer settles the build: painted with its
+2026-10-23): Reconnecting until it takes the screen (`swap.building`), with a
+slowed open's line; Offline and an error as they come. Any answer settles the build: painted with its
 replica ready, or the server's answer (refused, unavailable, outdated, an
 error, recovery), which then shows in place of the paused view. When nothing
 arrives it waits as a first join does: an unreachable service errors at the
