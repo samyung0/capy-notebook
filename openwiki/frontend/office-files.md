@@ -671,7 +671,9 @@ step. One edit writes its format items in key order (the attribute map's hash
 order differs per replica, so concurrent edits beside them integrated
 differently), and a transaction's update and events read its insert set
 instead of before and after state vectors, so applying a peer's keystroke
-costs the same however many clients wrote the document. The native viewer,
+costs the same however many clients wrote the document. Placing an edit
+(`find_position`) takes each item's length as its UTF-16 length instead of
+counting its string again (speed round 2026-10-22). The native viewer,
 Python bindings and fuzz workspaces use that same copy, including the native
 viewer's UTF-8 validation in both update decoders. WASM fingerprints include
 the vendored source so changes rebuild the engines.
