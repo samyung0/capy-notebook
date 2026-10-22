@@ -1030,11 +1030,17 @@ off, records `low`), locks the open
 session, and inserts an exact `provider_calls` authorization row (`open`) with
 that level. Calls after exhaustion must be the one `terminal` LLM call; this
 check and terminal-slot claim happen before provider spend. A failed open does
-not call the provider. Only a definitive failed provider response marks the row
-`abandoned` and releases a claimed terminal slot immediately. Cancellation,
-transport loss, timeouts, and partial streams are uncertain after a request may
-have been sent, so their calls stay open until an exact receipt settles or the
-deadline expires. Measured usage is then posted to the existing settle callback.
+not call the provider. A definitive failed provider response marks the row
+`abandoned` and releases a claimed terminal slot immediately. A streamed call
+that fails at any point (no first event, silence, an in-stream error event,
+transport loss, cancellation) closes at once too, since nothing can settle its
+call id later: the usage the stream already sent settles and is billed, and a
+stream that sent none is abandoned unbilled (`provider_<exception>`, or
+`client`/`cancelled` for a cancellation). Its capacity lease is freed with it.
+For a non-streamed call, cancellation, transport loss and timeouts are
+uncertain after a request may have been sent, so the call stays open until an
+exact receipt settles or the deadline expires. Measured usage is then posted to
+the existing settle callback.
 
 Settlement is atomic. One database transaction locks the reservation and
 actor counter, writes `usage_events`, applies the measured credits, and changes
@@ -1066,7 +1072,11 @@ gateway sends `spendSessionId`. `models.py` opens the pending call, then
 posts measured usage to the gateway before returning. The callback carries a
 stable call id, call purpose, normalized cache fields, and measured tokens.
 `usage_events` has one row per call, and
-`(reservation_id, provider_call_id)` rejects duplicate settlement.
+`(reservation_id, provider_call_id)` rejects duplicate settlement. An
+OpenRouter call (GLM, the ingest summary and captioning models) also records
+the provider OpenRouter routed it to, its response's `provider` field, as
+`metadata.servedBy`, streamed or not, so cache and failure numbers split by
+upstream provider.
 A retry with identical usage returns the prior decision. Settlement requires
 the exact pre-authorized session, kind, and purpose; it cannot create or
 overwrite a stub. Reusing the call id with different usage returns a conflict
@@ -1095,11 +1105,10 @@ the summary, standalone image caption and VLM page calls also retry a
 transient error (5xx, a connection reset) and an empty
 or cut-off answer (settled, so its tokens are billed), and end at once on a
 definitive client error (400, 401, 403, 404, 422; parts design Q7).
-Chat planning retries any pre-byte failure under that policy while leaving
-each earlier uncertain attempt open for its bounded receipt window. A failure
-after the first provider chunk — even if the browser has not received SSE yet
-— is final for that response and is not retried, but the call remains open
-unless the provider supplied a definitive failed HTTP response. Settlement retries retain the same call id and in-memory receipt
+Chat planning retries any pre-byte failure under that policy, each failed
+attempt closed at once as above. A failure after the first provider chunk —
+even if the browser has not received SSE yet — is final for that response and
+is not retried; its call settles the usage the stream sent, or is abandoned. Settlement retries retain the same call id and in-memory receipt
 across transient database or gateway failures until it applies or its stored
 deadline expires. A deterministic local identity/session rejection fails
 immediately and leaves the immutable call for the normal deadline policy. Once

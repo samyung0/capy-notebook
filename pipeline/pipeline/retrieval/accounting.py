@@ -513,6 +513,10 @@ def _abandon_call_sync(call_id: str, exc: BaseException | None) -> None:
     if response_status is not None:
         category = "provider"
         code = f"provider_http_{response_status}"
+    elif isinstance(exc, (asyncio.CancelledError, GeneratorExit)):
+        # A stream this side stopped reading, not a provider failure.
+        category = "client"
+        code = "cancelled"
     elif exc is not None:
         category = "provider"
         code = (
@@ -579,6 +583,8 @@ async def settle(
         "model": spec.model_slug,
         **usage.as_dict(),
     }
+    if usage.served_by:
+        payload["servedBy"] = usage.served_by
     if kind == KIND_RERANK:
         # The gateway labels a rerank with this catalog row; every other call
         # is labeled from the session's pins.
