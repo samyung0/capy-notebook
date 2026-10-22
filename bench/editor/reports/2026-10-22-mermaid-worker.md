@@ -74,3 +74,9 @@ the page about each one, so the long frames during the scroll are mostly
 MSW's message handlers. In a separate probe of the same scroll (its own
 frame count, not the budget's), the rate went from 34 to over 100 frames a
 second when the diagram had drawn before the scroll started.
+
+With the worker started and mermaid loaded at idle once a diagram mounts
+(`warmMermaid`, Epo 2026-10-23), the same budget scores 32.6-39.3 FPS over
+three runs (2026-10-23): what is left in the scroll is the diagram's own draw
+arriving, then its sanitize and insert. The budget is judged on the manual
+Performance workflow.

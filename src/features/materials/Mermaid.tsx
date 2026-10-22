@@ -173,43 +173,73 @@ function genericFaces() {
   return faces;
 }
 
+function stopWorker(stopped: Worker) {
+  stopped.terminate();
+  if (worker === stopped) worker = null;
+}
+
+/** The worker, started once (it loads mermaid as it starts); none where a
+ * module worker cannot start, and the page draws on a click. */
+function startWorker() {
+  if (worker) return worker;
+  let started: Worker;
+  try {
+    started = new Worker(new URL('./mermaid.worker.ts', import.meta.url), {
+      name: 'mermaid',
+      type: 'module',
+    });
+  } catch {
+    return null;
+  }
+  // A worker that cannot start (no 2D OffscreenCanvas before Safari 16.4)
+  // or broke, while warming or drawing: the page draws on a click.
+  started.onerror = (event) => {
+    event.preventDefault();
+    stopWorker(started);
+    pending?.(PAGE_ONLY);
+  };
+  worker = started;
+  return started;
+}
+
+/** Rejects the draw running in the worker (one at a time). */
+let pending: ((error: unknown) => void) | null = null;
+
+/** Starts the worker, which loads mermaid, and the page's sanitizer, at
+ * idle when a diagram mounts (Epo 2026-10-23): a diagram drawn when it
+ * comes near the screen then waits on neither. */
+export function warmMermaid() {
+  if (!startWorker()) return;
+  genericFaces();
+  import('dompurify').catch(() => undefined);
+}
+
 /** One draw in the worker, stopped (the worker with it) at the time limit. */
 function inWorker(request: Omit<DrawRequest, 'faces' | 'id'>): Promise<Drawn> {
   return new Promise((resolve, reject) => {
-    try {
-      worker ??= new Worker(new URL('./mermaid.worker.ts', import.meta.url), {
-        name: 'mermaid',
-        type: 'module',
-      });
-    } catch {
-      // No module workers here: the page draws on a click.
+    const current = startWorker();
+    if (!current) {
       reject(PAGE_ONLY);
       return;
     }
-    const current = worker;
     const id = ++jobs;
-    const stop = () => {
+    const settle = (finish: () => void) => {
       clearTimeout(timer);
-      current.terminate();
-      if (worker === current) worker = null;
+      pending = null;
+      finish();
     };
     const timer = setTimeout(() => {
-      stop();
-      reject(new MermaidLimitError('tooLarge'));
+      stopWorker(current);
+      settle(() => reject(new MermaidLimitError('tooLarge')));
     }, MERMAID_RENDER_LIMIT_MS);
+    pending = (error) => settle(() => reject(error));
     current.onmessage = ({ data }: MessageEvent<DrawReply>) => {
       if (data.id !== id) return;
-      clearTimeout(timer);
-      if ('page' in data) reject(PAGE_ONLY);
-      else if ('error' in data) reject(new Error(data.error));
-      else resolve(data);
-    };
-    // A worker that cannot start (no 2D OffscreenCanvas before Safari 16.4)
-    // or broke: the page draws on a click.
-    current.onerror = (event) => {
-      event.preventDefault();
-      stop();
-      reject(PAGE_ONLY);
+      settle(() => {
+        if ('page' in data) reject(PAGE_ONLY);
+        else if ('error' in data) reject(new Error(data.error));
+        else resolve(data);
+      });
     };
     current.postMessage({
       ...request,
@@ -363,6 +393,17 @@ export function Mermaid({
   onDrawnRef.current = onDrawn;
   // Whether a draw was asked for already: later changes wait for `delay`.
   const started = useRef(false);
+
+  // A diagram is on the page: the worker and mermaid load at idle, before
+  // it comes near the screen (Epo 2026-10-23).
+  useEffect(() => {
+    if (typeof requestIdleCallback === 'function') {
+      const handle = requestIdleCallback(warmMermaid);
+      return () => cancelIdleCallback(handle);
+    }
+    const handle = setTimeout(warmMermaid, 0);
+    return () => clearTimeout(handle);
+  }, []);
 
   useEffect(() => {
     if (!near) return;

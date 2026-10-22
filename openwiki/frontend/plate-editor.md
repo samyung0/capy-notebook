@@ -679,7 +679,10 @@ chart, which spans its box), 24 entries, shared by the block, the
 full-screen preview, View/Edit and exports, so opening full screen or
 switching mode does not draw again. A block draws once it comes within a
 screen of the viewport (`useNearScreen`), showing "Rendering diagram" until
-then. Only the types the geometry check holds the worker to draw there
+then; any mounted diagram starts the worker (which loads mermaid as it
+starts), the page's generic-face probe and DOMPurify at idle (`warmMermaid`,
+Epo 2026-10-23), so a diagram scrolled to later waits on neither. A worker
+that fails to start, warming or drawing, fails the draw it holds. Only the types the geometry check holds the worker to draw there
 (flowchart, sequence, class, state, ER, mindmap, timeline, pie, gantt:
 `WORKER_TYPES`); any other type, and every type in a browser whose worker
 cannot start (no module workers or no 2D OffscreenCanvas, as before Safari
