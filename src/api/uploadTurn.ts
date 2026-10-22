@@ -40,12 +40,15 @@ export async function uploadWithTicket<T>(
     willRetry?: boolean;
   } = {}
 ): Promise<T> {
-  let turn = await api.post<UploadTurn>(`${uploadPath}/tickets`, metadata, {
-    signal,
-  });
+  if (signal?.aborted) throw signal.reason;
+  // The ticket request is not aborted: a ticket the gateway issued is given
+  // back once it answers (below), so the caller always knows, by `onQueued`,
+  // whether the gateway holds one.
+  let turn = await api.post<UploadTurn>(`${uploadPath}/tickets`, metadata);
   const ticket = `/uploads/tickets/${encodeURIComponent(turn.ticketId)}`;
   try {
     onQueued?.(turn.position);
+    if (signal?.aborted) throw signal.reason;
     while (turn.position > 0) {
       turn = await api.get<UploadTurn>(`${ticket}?position=${turn.position}`, {
         signal,

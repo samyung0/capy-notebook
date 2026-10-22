@@ -404,18 +404,27 @@ overlapping old container issued). A source ticket whose turn passes counts at
 once as a failed file of its batch, so the batch's notification does not wait
 for the idle sweep (`SourceBatchIdle`, 1 h). The transfer panel shows a waiting file as "Waiting to upload (position
 N)"; an editor asset's placeholder waits without a place. Each panel row has
-a remove button (Epo 2026-10-22, `removeSourceTransfer`), labelled "Remove"
-while the file waits or uploads and "Hide" once it is finished or importing.
-A file not yet sent is never sent: it asks for no ticket and counts at once
-as removed in its batch with
-`POST /api/workspaces/{id}/sources/batches/{batchId}/removed`
-(`{source, total}`, an editor of the workspace only; it opens the batch when
-none of its files has reached the server, and a batch id held by another
-submission is a 409). A waiting one gives its ticket back as removed, and a
-running upload is aborted, which the gateway counts as failed. So the batch's
-notification no longer waits for the idle sweep, and it reports removed files
-as removed. An import the server already queued keeps going; only its row
-goes.
+a remove button that cancels its file (Epo 2026-10-22, `removeSourceTransfer`),
+labelled "Remove" while the file waits, uploads or imports and "Hide" once it
+is finished, failed or in the background.
+
+How a removed file counts in its batch is built but not yet decided (the
+upload-limits review's M2, awaiting Epo). A file not yet sent is never sent:
+it asks for no ticket and counts at once as removed in its batch with
+`POST /api/workspaces/{id}/sources/batches/{batchId}/removed` (`{source,
+total}`, upload rate class, an editor of the workspace only; it opens the
+batch when none of its files has reached the server, a batch id held by
+another submission is a 409, and a removal that would take the batch past its
+total is ignored). A ticket request is never aborted: a file removed while its
+ticket request is out gives the ticket back once it answers, and a waiting one
+gives its ticket back as removed (`?reason=removed`), so a removed file is
+counted once. A running upload is aborted, which the gateway counts as failed.
+An importing file's removal aborts its import request; it counts as removed
+when the server holds nothing of it (not yet requested, or waiting to retry
+after a 408, 429 or 5xx), and is otherwise left to the server, which counts
+the import (an import already queued keeps going). So the batch's notification
+no longer waits for the idle sweep, and it reports removed files as removed; a
+batch whose every file was removed closes without one.
 
 A drive import keeps its own completion (`internalCompleteSourceImport`): the
 import worker writes an `incoming/` object, and the gateway checks its size and

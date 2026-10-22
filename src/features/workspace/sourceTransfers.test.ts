@@ -5,6 +5,7 @@ import { uploadWithTicket } from '@/api/uploadTurn';
 import { m } from '@/i18n';
 import {
   type LocalTransferRequest,
+  type RemoteTransferRequest,
   removeSourceTransfer,
   resetSourceTransfers,
   type SourceTransfer,
@@ -120,8 +121,8 @@ describe('source transfers', () => {
 });
 
 describe('removing a row', () => {
-  // Epo 2026-10-22: each row's remove cancels its upload and gives up its
-  // place in the gateway's line; its batch counts it as removed at once.
+  // Each row's remove cancels its upload and gives up its place in the
+  // gateway's line (Epo 2026-10-22); its batch counts it as removed at once.
   it('gives back the ticket of a file waiting in line as removed', async () => {
     post.mockResolvedValueOnce({ position: 2, ticketId: 'utk_wait' });
     get.mockImplementation(
@@ -205,6 +206,106 @@ describe('removing a row', () => {
     expect(post).toHaveBeenCalledTimes(1);
     expect(uploadSource).toHaveBeenCalledTimes(SOURCE_UPLOAD_CONCURRENCY);
     expect(userToast).not.toHaveBeenCalled();
+  });
+
+  // Upload-limits review r2 L1: the ticket request is not aborted, so a file
+  // removed while it is out is counted once, by its ticket's give-back.
+  it('counts a removal during its ticket request once', async () => {
+    let answer = (_: unknown) => undefined as void;
+    post.mockImplementation(
+      (path: string, _body: unknown, options?: { signal?: AbortSignal }) =>
+        path.endsWith('/tickets')
+          ? new Promise((resolve, reject) => {
+              options?.signal?.addEventListener('abort', () =>
+                reject(options.signal?.reason)
+              );
+              answer = resolve;
+            })
+          : Promise.resolve(undefined)
+    );
+    del.mockResolvedValue(undefined);
+    startSourceTransfer({
+      importSources: vi.fn(),
+      local: [request('late.pdf')],
+      uploadSource: (({
+        onQueued,
+        signal,
+      }: {
+        onQueued: (position: number) => void;
+        signal: AbortSignal;
+      }) =>
+        uploadWithTicket('/workspaces/ws_1/sources/uploads', {}, vi.fn(), {
+          onQueued,
+          signal,
+        })) as never,
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    removeSourceTransfer('late.pdf');
+    answer({ position: 1, ticketId: 'utk_late' });
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().unsent).toBe(0)
+    );
+    expect(del).toHaveBeenCalledWith(
+      '/uploads/tickets/utk_late?reason=removed'
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  // Upload-limits review r2 L7: an importing row's remove aborts its import
+  // request, and counts the file only when the server holds nothing of it.
+  const remote = (name: string): RemoteTransferRequest => ({
+    chapterId: null,
+    chapterName: null,
+    fileId: `drive_${name}`,
+    key: name,
+    kind: 'pdf',
+    name,
+    parseMode: 'none',
+    provider: 'google',
+  });
+
+  it('counts an import removed while it waits to retry', async () => {
+    post.mockResolvedValue(undefined);
+    const importSources = vi.fn().mockRejectedValue(
+      new ApiError(429, 'Too Many Requests', undefined, {
+        retryAfterSeconds: 30,
+      })
+    );
+    startSourceTransfer({
+      importSources: importSources as never,
+      remote: [remote('paper.pdf')],
+      uploadSource: vi.fn(),
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() => expect(importSources).toHaveBeenCalledTimes(1));
+    const { batchId } = importSources.mock.calls[0][0] as { batchId: string };
+    removeSourceTransfer('paper.pdf');
+    await vi.waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        `/workspaces/ws_1/sources/batches/${batchId}/removed`,
+        { source: 'import', total: 1 }
+      )
+    );
+    expect(userToast).not.toHaveBeenCalled();
+  });
+
+  it('leaves an import removed during its request to the server', async () => {
+    const importSources = vi.fn(runUntilAborted);
+    startSourceTransfer({
+      importSources: importSources as never,
+      remote: [remote('paper.pdf')],
+      uploadSource: vi.fn(),
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() => expect(importSources).toHaveBeenCalledTimes(1));
+    removeSourceTransfer('paper.pdf');
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().unsent).toBe(0)
+    );
+    // The request may have reached the server, which then counts the import.
+    expect(post).not.toHaveBeenCalled();
+    expect(importSources.mock.calls[0][0].signal.aborted).toBe(true);
   });
 });
 

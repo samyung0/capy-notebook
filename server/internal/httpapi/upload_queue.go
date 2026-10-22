@@ -147,8 +147,13 @@ func editorAssetTarget(materialID string) string   { return "assets:" + material
 // take gives user a ticket for target: its turn at once when its file fits,
 // the user is under their share and no ticket blocks the line, else a place
 // in line, or uploadQueueFull when the line, or the user's share of it, is
-// full.
+// full. A file larger than the whole budget is refused (413).
 func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, error) {
+	// It would never fit, and once it had waited it would block every
+	// ticket behind it.
+	if claim.size > uploadBudget {
+		return uploadTurn{}, huma.Error413RequestEntityTooLarge("the upload is larger than the gateway's upload budget")
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim}

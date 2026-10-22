@@ -306,8 +306,9 @@ func expectBudgetFree(t *testing.T, th thumbnailHarness, ws, after string) {
 }
 
 // Every way an upload ends gives its declared bytes back to the budget (Epo
-// 2026-10-22): one that finishes, one refused after it started (its metadata
-// differs from its ticket's) and a ticket given back; a cut-off one is in
+// 2026-10-22): a source upload and an editor asset that finish, ones refused
+// after they started (metadata unlike the ticket's, a part of another type)
+// and a ticket given back; a cut-off one is in
 // TestUploadBodyIsCutOffAfterItsDeadline, a passed turn in the queue's own
 // tests (security regression: human backend-storage-quota 2026-10-22 upload
 // limits).
@@ -331,6 +332,16 @@ func TestUploadBudgetIsReleasedWhenAnUploadEnds(t *testing.T) {
 		formPart{name: "file", contentType: "application/pdf", body: []byte("%PDF-1.7")})
 	expectStatus(t, rec, http.StatusBadRequest, "the upload unlike its ticket")
 	expectBudgetFree(t, th, ws, "a refused upload")
+
+	assets := "/api/materials/" + uploadNote(t, th, ws) + "/editor-assets/uploads"
+	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, bytes.Repeat([]byte{7}, 100)...)
+	asset := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": len(png), "contentType": "image/png"}
+	expectStatus(t, postUpload(t, th.h, assets, "u_owner", asset, "image/png", png),
+		http.StatusCreated, "the finished editor asset")
+	expectBudgetFree(t, th, ws, "a finished editor asset")
+	expectStatus(t, postUpload(t, th.h, assets, "u_owner", asset, "image/gif", png),
+		http.StatusBadRequest, "an editor asset with a part of another type")
+	expectBudgetFree(t, th, ws, "a refused editor asset")
 
 	rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", pdfMeta())
 	expectStatus(t, rec, http.StatusCreated, "the ticket to give back")
@@ -392,10 +403,12 @@ func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 }
 
 // A file the user removes from the transfer panel before its upload starts
-// counts at once as removed in its batch (Epo 2026-10-22, upload-limits
-// review M2): the call opens the batch when no file of it has reached the
-// server, the batch notifies as soon as its other files settle and reports
-// the file as removed, and only an editor of the workspace can count into it.
+// counts at once as removed in its batch (upload-limits review M2): the call
+// opens the batch when no file of it has reached the server, the batch
+// notifies as soon as its other files settle and reports the file as
+// removed. Only an editor of the workspace can count into it, and only into
+// a batch of its own submission (security regression: upload-limits review
+// r2 L6).
 func TestRemovedUnsentSourceCountsInItsBatch(t *testing.T) {
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
@@ -403,12 +416,12 @@ func TestRemovedUnsentSourceCountsInItsBatch(t *testing.T) {
 	meta["batchTotal"] = 2
 	batch := batchOf(meta)
 	// Its JSON body has a read deadline, as a ticket's: the recorder takes it.
-	remove := func(user string, body map[string]any) int {
+	remove := func(user, workspace string, body map[string]any) int {
 		raw, err := json.Marshal(body)
 		if err != nil {
 			t.Fatal(err)
 		}
-		req := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+ws+"/sources/batches/"+batch+"/removed",
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace+"/sources/batches/"+batch+"/removed",
 			bytes.NewReader(raw))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set(auth.HeaderE2EUserID, user)
@@ -418,17 +431,30 @@ func TestRemovedUnsentSourceCountsInItsBatch(t *testing.T) {
 		return rec.Code
 	}
 	submission := map[string]any{"source": "upload", "total": 2}
-	if status := remove("u_other", submission); status == http.StatusNoContent {
-		t.Fatalf("another user's removal = %d", status)
+	refused := func(status int) bool { return status == http.StatusForbidden || status == http.StatusNotFound }
+	if status := remove("u_other", ws, submission); !refused(status) {
+		t.Fatalf("a stranger's removal = %d, want 403 or 404", status)
 	}
-	if status := remove("u_owner", map[string]any{"source": "drive", "total": 2}); status != http.StatusUnprocessableEntity {
+	// u_viewer views ws_e2e_private.
+	if status := remove("u_viewer", "ws_e2e_private", submission); !refused(status) {
+		t.Fatalf("a viewer's removal = %d, want 403 or 404", status)
+	}
+	if status := remove("u_owner", ws, map[string]any{"source": "drive", "total": 2}); status != http.StatusUnprocessableEntity {
 		t.Fatalf("a removal naming no source kind = %d, want 422", status)
 	}
-	if status := remove("u_owner", submission); status != http.StatusNoContent {
+	if status := remove("u_owner", ws, submission); status != http.StatusNoContent {
 		t.Fatalf("the owner's removal = %d", status)
 	}
 	if failed, removed := batchFailedRemoved(t, th, batch); failed != 0 || removed != 1 || batchNotified(t, th, batch) {
 		t.Fatalf("after the removal: failed=%d removed=%d", failed, removed)
+	}
+	// The batch belongs to its workspace: the same id from another one, even
+	// the same user's, is another submission's.
+	if status := remove("u_owner", userWorkspace(t, th, "u_owner"), submission); status != http.StatusConflict {
+		t.Fatalf("a removal into another workspace's batch = %d, want 409", status)
+	}
+	if _, removed := batchFailedRemoved(t, th, batch); removed != 1 {
+		t.Fatalf("the refused removals counted: removed=%d", removed)
 	}
 	// The submission's other file gives up its ticket: the batch notifies.
 	rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", meta)

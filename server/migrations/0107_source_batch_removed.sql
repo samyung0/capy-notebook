@@ -1,7 +1,8 @@
 -- A file the user removes from the transfer panel before its upload starts
 -- counts as removed in its batch, not failed, and the batch's notification
--- says so (Epo 2026-10-22, upload-limits review M2). A batch whose every file
--- was removed closes without a notification.
+-- says so (upload-limits review M2). A batch whose every file
+-- was removed closes without a notification. A removal that would take the
+-- batch past its total is ignored.
 ALTER TABLE source_batches ADD COLUMN removed integer NOT NULL DEFAULT 0;
 
 DROP FUNCTION source_batch_settle(text, integer, integer);
@@ -15,7 +16,9 @@ DECLARE
   nid text;
 BEGIN
   UPDATE source_batches
-  SET done=done+done_delta, failed=failed+failed_delta, removed=removed+removed_delta,
+  SET done=done+done_delta, failed=failed+failed_delta,
+    removed=removed + CASE WHEN done + failed + removed + removed_delta <= total
+      THEN removed_delta ELSE 0 END,
     updated_at=now()
   WHERE id=batch
   RETURNING * INTO b;

@@ -140,8 +140,9 @@ func TestIdleSourceBatchClosesWithUnsentFilesFailed(t *testing.T) {
 }
 
 // A file the user removed before its upload started counts at once as
-// removed, not failed (Epo 2026-10-22, upload-limits review M2); a batch
-// whose every file was removed closes without a notification.
+// removed, not failed (upload-limits review M2); a batch whose every file was
+// removed closes without a notification, and a removal past the total is
+// ignored (upload-limits review r2 L2).
 func TestSourceBatchCountsRemovedFiles(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -161,10 +162,15 @@ func TestSourceBatchCountsRemovedFiles(t *testing.T) {
 	if _, err := s.FinalizeUploadSession(ctx, owner, stored.ID, "etag", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{batch, gone, gone} {
+	// The third removal of the 2-file batch would pass its total: ignored.
+	for _, id := range []string{batch, gone, gone, gone} {
 		if err := s.RemoveSourceBatchFile(ctx, id); err != nil {
 			t.Fatal(err)
 		}
+	}
+	var counted int
+	if err := s.pool.QueryRow(ctx, `SELECT removed FROM source_batches WHERE id=$1`, gone).Scan(&counted); err != nil || counted != 2 {
+		t.Fatalf("removals past the total counted: removed=%d (%v)", counted, err)
 	}
 	got := takeBatchNotifications(t, s, ws.ID)
 	if len(got) != 1 {

@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -209,7 +211,7 @@ func TestUploadQueueRunsAtMost256(t *testing.T) {
 // (security regression: human backend-storage-quota 2026-10-22 upload limits).
 func TestUploadQueueReleasesTheBudgetOnEveryExit(t *testing.T) {
 	previous := uploadTurnTTL
-	uploadTurnTTL = time.Second
+	uploadTurnTTL = 300 * time.Millisecond
 	t.Cleanup(func() { uploadTurnTTL = previous })
 	q := newUploadQueue(nil)
 	ran := takeSized(t, q, "a", 300_000_000, 0)
@@ -228,16 +230,55 @@ func TestUploadQueueReleasesTheBudgetOnEveryExit(t *testing.T) {
 	if err := q.cancel(cancelled.TicketID, "a", ""); err != nil {
 		t.Fatal(err)
 	}
+	// Once the unused turn has passed, nothing is held: no more and no less.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
-		used, running := budgetUsed(q)
-		if used == 0 && running == 0 {
+		q.mu.Lock()
+		_, pending := q.tickets[passed.TicketID]
+		q.mu.Unlock()
+		if !pending {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("after every exit %d bytes and %d uploads are still held (passed turn %s)", used, running, passed.TicketID)
+			t.Fatal("the unused turn did not pass")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	used, running := budgetUsed(q)
+	q.mu.Lock()
+	users := len(q.active)
+	q.mu.Unlock()
+	if used != 0 || running != 0 || users != 0 {
+		t.Fatalf("after every exit %d bytes, %d uploads and %d users are held", used, running, users)
+	}
+}
+
+// A file larger than the whole budget is refused: it would never fit, and
+// once it had waited it would block every file behind it (security
+// regression: upload-limits review r2 L4).
+func TestUploadQueueRefusesAFileLargerThanTheBudget(t *testing.T) {
+	q := newUploadQueue(nil)
+	if _, err := q.take("a", "sources:ws", uploadClaim{size: uploadBudget + 1}); errorStatus(err) != 413 {
+		t.Fatalf("a ticket past the budget: %v", err)
+	}
+	takeSized(t, q, "a", uploadBudget, 0)
+}
+
+// Startup clears the body spools a crashed process left, and nothing else.
+func TestRemoveUploadSpoolsClearsOnlySpools(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"upload-1", "upload-abc", "keep.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	RemoveUploadSpools(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "keep.txt" {
+		t.Fatalf("left %v", entries)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -85,6 +86,25 @@ type uploadBody struct {
 	conn *http.ResponseController
 }
 
+// uploadSpoolPattern names an upload body's spool in the temp directory.
+const uploadSpoolPattern = "upload-*"
+
+// RemoveUploadSpools deletes the body spools in dir that a process left when
+// it died mid-upload; the API calls it at startup, before it serves, since a
+// restarted container keeps its temp directory.
+func RemoveUploadSpools(dir string) {
+	spools, err := filepath.Glob(filepath.Join(dir, uploadSpoolPattern))
+	if err != nil {
+		log.Printf("list upload spools: %v", err)
+		return
+	}
+	for _, spool := range spools {
+		if err := os.Remove(spool); err != nil {
+			log.Printf("remove upload spool %s: %v", spool, err)
+		}
+	}
+}
+
 // readUploadMetadata starts the body's clock (bodyDeadline of the declared
 // size its ticket names), decodes the metadata part into v and returns the
 // body positioned for the file part. The caller has capped r.Body.
@@ -123,7 +143,7 @@ func spoolUpload(body *uploadBody, size int64, contentType string) (*os.File, st
 	if err != nil || got != want {
 		return nil, "", huma.Error400BadRequest("uploaded content type does not match the upload's metadata")
 	}
-	spool, err := os.CreateTemp("", "upload-*")
+	spool, err := os.CreateTemp("", uploadSpoolPattern)
 	if err != nil {
 		return nil, "", err
 	}

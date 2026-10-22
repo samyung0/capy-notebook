@@ -82,7 +82,7 @@ func (s *Store) FailSourceBatchFile(ctx context.Context, id string) error {
 }
 
 // RemoveSourceBatchFile counts a file the user removed before its upload
-// started as removed (Epo 2026-10-22).
+// started as removed.
 func (s *Store) RemoveSourceBatchFile(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `SELECT source_batch_settle($1, 0, 0, 1)`, id)
 	return err

@@ -61,7 +61,7 @@ function systemCopy(notification: AppNotification) {
       const counts = {
         done: dataNumber(data, 'done'),
         failed: dataNumber(data, 'failed'),
-        // Files the user removed from the transfer panel (Epo 2026-10-22).
+        // Files the user removed from the transfer panel.
         removed: dataNumber(data, 'removed'),
         workspaceName: workspaceName(notification),
       };

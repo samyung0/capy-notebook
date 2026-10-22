@@ -62,7 +62,7 @@ const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
 ];
 
 // Files the user removed from the transfer panel are reported as removed,
-// never as failed (Epo 2026-10-22).
+// never as failed.
 it.each([
   [
     'upload',

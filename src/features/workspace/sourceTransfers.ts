@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { USE_MSW } from '@/api/auth';
-import { api, qk } from '@/api/client';
+import { api, isApiError, qk } from '@/api/client';
 import type { useImportSources, useUploadSource } from '@/api/hooks';
 import { ingestSlotsQuery } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
@@ -123,8 +123,8 @@ export function dismissSourceTransfers() {
   useSourceTransfers.setState({ transfers: [] });
 }
 
-/** Removes one row (Epo 2026-10-22): a file not yet sent is never sent and
- * counts as removed in its batch at once, one waiting in the gateway's line
+/** Removes one row, cancelling its upload (Epo 2026-10-22): a file not yet
+ * sent is never sent and counts as removed in its batch at once, one waiting in the gateway's line
  * gives its ticket back as removed, so its place goes to the next file, and
  * an upload in flight is aborted (the gateway counts it failed). An import
  * already queued on the server keeps going, and a finished row only hides. */
@@ -430,29 +430,50 @@ export function startSourceTransfer(start: StartTransfer) {
           patchTransfer(request.key, { stage: 'importing' });
           // One id per request, so the request retries below stay idempotent.
           const requestId = crypto.randomUUID();
+          // Whether the server may hold the item: an attempt was sent and not
+          // refused with a status the server leaves uncounted (408, 429,
+          // 5xx). A removal while it may be held is not counted here, since
+          // the server counts the import itself.
+          let held = false;
           let accepted: SourceImportAcceptedResponse;
           try {
             accepted = await withSourceImportRequestRetry(
-              async () =>
-                parseSourceImportAcceptedResponse(
-                  await start.importSources({
-                    batchId,
-                    batchTotal: requests.length,
-                    chapterId: request.chapterId,
-                    chapterName: request.chapterName,
-                    ...(request.driveId ? { driveIds: [request.driveId] } : {}),
-                    fileIds: [request.fileId],
-                    parseMode: request.parseMode,
-                    provider: request.provider,
-                    requestId,
-                    signal: cancel,
-                  }),
-                  request.fileId
-                ),
+              async () => {
+                held = true;
+                try {
+                  return parseSourceImportAcceptedResponse(
+                    await start.importSources({
+                      batchId,
+                      batchTotal: requests.length,
+                      chapterId: request.chapterId,
+                      chapterName: request.chapterName,
+                      ...(request.driveId
+                        ? { driveIds: [request.driveId] }
+                        : {}),
+                      fileIds: [request.fileId],
+                      parseMode: request.parseMode,
+                      provider: request.provider,
+                      requestId,
+                      signal: cancel,
+                    }),
+                    request.fileId
+                  );
+                } catch (error) {
+                  if (
+                    isApiError(error) &&
+                    (error.status === 408 ||
+                      error.status === 429 ||
+                      error.status >= 500)
+                  )
+                    held = false;
+                  throw error;
+                }
+              },
               undefined,
               cancel
             );
           } catch (error) {
+            if (!held) countRemoved(cancel);
             fail(request.key, request.name, error);
             return;
           } finally {

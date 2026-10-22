@@ -77,10 +77,10 @@ function TransferRow({
         <IconButton
           className="-my-1 shrink-0 text-fg-muted"
           icon="x"
-          // Remove cancels a file not yet sent or uploading; past that the
-          // button only hides its row.
+          // Remove cancels a file not yet sent, uploading or importing; past
+          // that the button only hides its row.
           label={
-            transfer.stage === 'waiting' || transfer.stage === 'uploading'
+            ['waiting', 'uploading', 'importing'].includes(transfer.stage)
               ? m.source_transfer_remove({ name: transfer.name })
               : m.source_transfer_hide({ name: transfer.name })
           }

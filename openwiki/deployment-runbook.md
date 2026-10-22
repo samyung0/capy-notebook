@@ -1564,8 +1564,11 @@ playbook revision.
    most 256 at once), behind a line of tickets the API keeps in its process:
    run one API instance, or move the line to Redis before scaling it out.
    Each upload's body spools to the API container's temp directory
-   (`os.CreateTemp`, `/tmp`) before its PUT, so the app host needs about 1 GB
-   of free temp disk for uploads
+   (`os.CreateTemp`, `/tmp`, on the Docker data disk) before its PUT. Keep
+   about 2 GB free there for upload spools: the 1 GB budget doubles while an
+   old and a new container overlap during a deploy, and a process that dies
+   mid-upload leaves its spools behind until the next start clears them
+   (`RemoveUploadSpools`)
    ([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
    A deploy whose old and new containers overlap briefly is the same as a
    restart: a ticket one container issued is a 410 on the other, which the
