@@ -735,12 +735,10 @@ def test_applied_ingest_provider_receipt_conflicting_replays_are_rejected(worksp
         field: NormalizedUsage(
             **{
                 **usage.__dict__,
-                field: "other_anomaly"
-                if field == "anomaly"
-                else getattr(usage, field) + 1,
+                field: f"other_{value}" if isinstance(value, str) else value + 1,
             }
         )
-        for field in usage.__dict__
+        for field, value in usage.__dict__.items()
     }
     conflicts = [
         {"session_id": other_reservation_id},
