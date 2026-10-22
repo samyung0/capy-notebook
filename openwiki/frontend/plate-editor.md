@@ -636,17 +636,78 @@ settings (General tab, below Display size), so all viewers see the same
 theme. Server-created diagrams (generate, agent tools) carry no `theme` and
 draw in Linear Light until someone picks one. The block
 stores its preset as optional `theme` on the `mermaid` node, and the diagram
-sits on the preset's background with no border. `renderMermaid` queues renders,
-because `mermaid.initialize` is global: each render sets its own preset, and
-mermaid scopes the output CSS to the SVG id, so blocks in one note keep their
-own themes. Frontmatter config would scope too, but mermaid's sanitizer blanks
-font stacks containing hyphens. Hand Drawn gets per-diagram roughen filters
-after rendering.
+sits on the preset's background with no border. Renders run one at a time,
+because `mermaid.initialize` is global: each render sets its own preset
+(`drawMermaid` in `mermaidDraw.ts`), and mermaid scopes the output CSS to the
+SVG id, unique on the page, so blocks in one note keep their own themes.
+Frontmatter config would scope too, but mermaid's sanitizer blanks font stacks
+containing hyphens. Hand Drawn gets per-diagram roughen filters after
+rendering. `drawMermaid` also sets mermaid's top-level `fontFamily` to the
+theme's (mermaid's default ends in `;`, so the page used to drop it and
+measure some ER, class and sequence labels in the app's body font) and
+`handDrawnSeed: 1` (the class and ER shapes mermaid draws with rough.js came
+out different each time).
 
-A diagram loads nothing from outside the page. Mermaid draws into a host that
-is already in the document (it measures labels as it draws), so anything that
-would fetch does so while it draws; `renderMermaid` therefore makes the source
-inert before `mermaid.render`, not after (`mermaidSafety.ts`). It locks the
+**Rendering in a worker** (Epo 2026-10-22). mermaid.js runs in one dedicated
+module worker (`mermaid.worker.ts`) on a DOM shim (`mermaidShim.ts`): linkedom
+for the tree, and the geometry mermaid reads (`getBBox`,
+`getBoundingClientRect`, `getComputedTextLength`, client sizes) computed from
+attributes and OffscreenCanvas text metrics. The shim has no layout engine: a
+small cascade (inline styles, the diagram's own stylesheet with `!important`
+and specificity, presentation attributes) gives each element its font and
+side padding; an HTML label is laid out as mermaid's `createText` styles it
+(nowrap up to its max-width, then wrapped at its width, line height 1.5,
+inline widths rounded up to 1/64 px as Chromium does), in its text element's
+font, with a padded span's line kept and a block inside it splitting the
+line; an SVG text box collapses white space, takes a tspan's `dy` over its
+text's, and spans the ink past the advance (`actualBoundingBoxRight`). A
+worker has no font settings, so its `sans-serif` is another face: the page
+finds the faces its generic families draw in (`genericFaces` in
+`Mermaid.tsx`) and sends them with each draw; theme fonts load into the
+worker's `self.fonts`. The page sends one draw at a time
+(`renderMermaid`): a queued draw no caller wants when its turn comes is
+skipped (a newer source superseded it), and one already running finishes
+into the cache. A draw still running after 30 s
+(`MERMAID_RENDER_LIMIT_MS`) stops, the worker with it, and the block says
+"This diagram is too large to draw on this device." The page sanitizes the
+worker's SVG again (`forPage`: DOMPurify with mermaid's foreignObject setup
+and our forbid lists, the SVG's own stylesheet kept, then `withSafeLinks`):
+DOMPurify finds no document implementation in linkedom, so inside the worker
+it passes labels through and the page's pass is the sanitizer. Drawn
+diagrams are cached in memory by theme and source (and width for a gantt
+chart, which spans its box), 24 entries, shared by the block, the
+full-screen preview, View/Edit and exports, so opening full screen or
+switching mode does not draw again. A block draws once it comes within a
+screen of the viewport (`useNearScreen`), showing "Rendering diagram" until
+then. Only the types the geometry check holds the worker to draw there
+(flowchart, sequence, class, state, ER, mindmap, timeline, pie, gantt:
+`WORKER_TYPES`); any other type, and every type in a browser whose worker
+cannot start (no module workers or no 2D OffscreenCanvas, as before Safari
+16.4), shows a "Draw
+diagram" button and draws on the page (`drawOnPage`, as before the worker)
+only when clicked, after which that box draws its later sources there too;
+an export draws such a diagram on the page, being asked for. The geometry
+check (`e2e/editor/mermaid-geometry.spec.ts`) draws each type in the worker
+and on the page and compares every element's numbers (positions, sizes, path
+points, transforms, the viewBox) within 1.5 px, in Linear Light, Hand Drawn
+and Kawaii, so a mermaid upgrade that changes either fails CI. On the
+near-limit fixtures the two drawings are identical; only the timeline's
+title (font-size `4ex`) is about 1 px off, since canvas exposes no x-height.
+
+**Scale.** A block never shows a diagram below half its natural size
+(`MIN_SCALE`, Epo 2026-10-22): the SVG keeps a minimum width and height of
+half its viewBox, and the box (at most `min(70vh, 48rem)` tall) scrolls both
+ways instead, centred while it fits (`justify-center-safe`). Large diagrams
+stay inline SVG. The full-screen viewer fits the diagram and zooms to at
+least its natural size (`maxScale` = max(8, natural / fitted width),
+`MermaidPreview`).
+
+A diagram loads nothing from outside the page. In the worker nothing can
+fetch (linkedom loads nothing and there is no document); a type drawn on the
+page draws into a host already in the document (mermaid measures labels as it
+draws), where anything that would fetch does so while it draws. So
+`drawMermaid` makes the source inert before `mermaid.render`, not after, in
+both places (`mermaidSafety.ts`). It locks the
 `strict` security level, HTML labels keep no fetching element or attribute (a
 `dompurifyConfig` forbidding `img`, `image`, `source` and the like), and front
 matter and `%%{init}%%` directives cannot turn `themeCSS`, a font stack or
@@ -668,12 +729,15 @@ href`, Epo 2026-10-15): after `mermaid.render`, every `<a>` in the SVG gets
 a new tab and cannot reach the Capy tab; mermaid's strict mode already leaves
 a `javascript:` target's anchor with no href. The one `renderMermaid` serves
 every surface — chat, note blocks, mindmap and diagram files, shared-page
-islands and the export rasteriser — so this covers them all. The app's
+islands and the export rasteriser — so this covers them all; a worker's SVG
+is sanitized again on the page before any of it is inserted. The app's
 report-only image policy (deployment-runbook §2.4) is a backstop, not the fix.
 Preset fonts (Excalifont, vendored Latin subset in
 `src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through
-`FontFace` before the render, since mermaid measures labels while drawing; a
-failed font load draws in the fallback font. In edit mode the hover toolbar has
+`FontFace` into the worker's (or the page's) font set before the render,
+since mermaid measures labels while drawing; a failed font load draws in the
+fallback font. Inter, first in the Linear stacks, is not shipped: both
+threads fall through to the next installed face. In edit mode the hover toolbar has
 theme, caption, edit, copy and delete. A resized diagram stretches
 past its natural width. The
 caption is typed in a field under the diagram (at most 300 characters, a
@@ -688,10 +752,16 @@ preview in the block's theme (Tab indents by two spaces; deleting lives on the
 toolbar) and edits the block live: there is no Save or Cancel, it closes with
 its X or Esc, and its footer holds Undo, Redo (CodeMirror's own history; the
 note's Undo does not cover the dialog's typing) and the note's save status.
-An edit (typing, paste, Undo) that would take the source past the HTML embed
-source's 64 KB (UTF-8) is refused with that bound's message ("The snippet is
-over 64 KB."; `byteBound`), while other peers' edits and shrinking edits always
-land; these bounds are the browser's only.
+A source is capped at `MERMAID_SOURCE_MAX`, 50,000 UTF-16 units (mermaid's own
+`maxTextSize`), one embed-catalog limit on every layer (Epo 2026-10-22): an edit
+(typing, paste, Undo) in the dialog or a diagram file's editor that would take
+the source past it is refused with "This diagram is over 50,000 characters."
+(`lengthBound`), while other peers' edits and shrinking edits always land;
+`renderMermaid` refuses a longer source before drawing it with the same
+message, and mermaid's 500-edge limit ("Edge limit exceeded") says "This
+diagram has more than 500 links."; the browser's document check, Go's
+`materialdoc` and the collaboration server's store and room admission refuse
+a longer source ([embeds](../embeds.md)).
 The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
 view and history only, ~78 KB gzipped, loaded with the dialog or the editor,
 ligatures off) with line numbers; the line mermaid blames gets a tinted
@@ -1900,9 +1970,12 @@ revoked user's update.
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.
 `MaterialBody` reads `sizeBytes` / `nodeCount` from the cached material list and
-shows `HeavyMaterialGate` when either passes `MATERIAL_RENDER_WARNING`, offering
-read-only (static `MaterialPreview`, no Yjs handshake and no editing plugins) or
-open-anyway. Absent list metadata always opens: the gate must never become a
+shows `HeavyMaterialGate` for a note when either passes
+`MATERIAL_RENDER_WARNING`, offering read-only (static `MaterialPreview`, no Yjs
+handshake and no editing plugins) or open-anyway. Notes only (Epo 2026-10-22,
+`heavyMaterial`): the gate spares a note's Plate editor, which a flashcard set
+or quiz has no copy of in View (a 1,400-card set is about 7,000 nodes), and a
+diagram draws in the Mermaid worker. Absent list metadata always opens: the gate must never become a
 door the reader cannot pass. Nothing downloads the document before the reader
 chooses: `GET /api/materials/{id}` carries the whole `content` envelope, so the
 viewer header takes the title and kind from the list entry and the capabilities

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
 
-test('note block captions stop silently at 300 characters, and a Mermaid source past 64 KB is refused', async ({
+test('note block captions stop silently at 300 characters, and a Mermaid source past 50,000 characters is refused', async ({
   page,
   context,
 }) => {
@@ -44,8 +44,9 @@ test('note block captions stop silently at 300 characters, and a Mermaid source 
   await expect(source).toHaveCount(0);
   await expect(page.getByText(kept, { exact: true })).toBeVisible();
 
-  // The Mermaid source refuses a paste that would take it past 64 KB, with
-  // the HTML embed source's message, and takes the next edit that fits.
+  // The Mermaid source refuses a paste that would take it past
+  // MERMAID_SOURCE_MAX (50,000 characters) with its message, and takes the
+  // next edit that fits.
   await diagram.hover();
   await diagram
     .getByRole('button', { exact: true, name: m.action_edit() })
@@ -58,10 +59,11 @@ test('note block captions stop silently at 300 characters, and a Mermaid source 
     navigator.clipboard.writeText(`\n%% ${'d'.repeat(70_000)}`)
   );
   await page.keyboard.press('ControlOrMeta+V');
-  await expect(dialog.getByText(m.html_embed_too_large())).toBeVisible();
+  const tooLong = dialog.getByText(m.mermaid_too_long({ max: '50,000' }));
+  await expect(tooLong).toBeVisible();
   await expect(code).not.toContainText('ddd');
   await expect(code).toContainText('ETC --> ATP');
   await page.keyboard.type('\n  ATP --> Done');
-  await expect(dialog.getByText(m.html_embed_too_large())).toHaveCount(0);
+  await expect(tooLong).toHaveCount(0);
   await expect(code).toContainText('ATP --> Done');
 });

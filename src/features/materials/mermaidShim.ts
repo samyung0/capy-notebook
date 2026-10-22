@@ -56,8 +56,6 @@ const num = (value: unknown, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-/** Advance width as the page lays text out: inline sizes are whole
- * LayoutUnits (1/64 px), rounded up; without it a mindmap's layout drifts. */
 /** The faces the page draws generic families in (`genericFaces` in
  * Mermaid.tsx): a worker has no font settings, so its `sans-serif` is
  * another face. */
@@ -77,6 +75,9 @@ function family(list: string) {
   return named;
 }
 
+/** Text metrics in `font`. The advance is rounded up as the page lays text
+ * out (inline sizes are whole LayoutUnits, 1/64 px); without it a mindmap's
+ * layout drifts. */
 function measure(text: string, font: Font) {
   ctx.font = `${font.weight} ${font.size}px ${family(font.family)}`;
   const metrics = ctx.measureText(text);
@@ -109,6 +110,9 @@ interface Rule {
   order: number;
   selector: string;
   specificity: number;
+  /** What the selector's last compound needs of an element, to skip most
+   * rules without matching them; none when it holds a pseudo-class. */
+  subject: { classes: string[]; id?: string; tag?: string } | null;
   value: string;
 }
 
@@ -116,6 +120,32 @@ const COMMENT = /\/\*[\s\S]*?\*\//g;
 const SPACES = /\s+/;
 const IMPORTANT = /\s*!important\s*$/i;
 const sheets = new Map<string, Map<Key, Rule[]>>();
+const bySvg = new WeakMap<Element, Map<Key, Rule[]>>();
+
+const COMBINATOR = /\s*[>+~]\s*|\s+/;
+const ID = /#([\w-]+)/;
+const TAG = /^[a-zA-Z][\w-]*/;
+
+function subjectOf(selector: string): Rule['subject'] {
+  const last = selector.trim().split(COMBINATOR).at(-1) ?? '';
+  if (last.includes(':') || last.includes('[')) return null;
+  return {
+    classes: [...last.matchAll(/\.([\w-]+)/g)].map((match) => match[1]!),
+    id: ID.exec(last)?.[1],
+    tag: TAG.exec(last)?.[0]?.toLowerCase(),
+  };
+}
+
+/** Whether `element` can match a rule whose last compound is `subject`. */
+function mayMatch(element: Element, subject: Rule['subject']) {
+  if (!subject) return true;
+  if (subject.tag && subject.tag !== element.localName.toLowerCase())
+    return false;
+  if (subject.id && subject.id !== element.getAttribute('id')) return false;
+  if (!subject.classes.length) return true;
+  const classes = (element.getAttribute('class') ?? '').split(SPACES);
+  return subject.classes.every((name) => classes.includes(name));
+}
 
 /** ids, then classes, attributes and pseudo-classes, then types. */
 function specificity(selector: string) {
@@ -160,6 +190,7 @@ function parseSheet(css: string) {
               order: order++,
               selector: selector.trim(),
               specificity: specificity(selector),
+              subject: subjectOf(selector),
               value: raw.replace(IMPORTANT, ''),
             });
         }
@@ -178,13 +209,17 @@ function parseSheet(css: string) {
  * drawing), by font property. */
 function sheetOf(element: Element) {
   const svg = element.closest('svg');
+  let rules = svg && bySvg.get(svg);
+  if (rules) return rules;
   const style = svg && [...svg.children].find((c) => c.localName === 'style');
   const css = style?.textContent ?? '';
-  let rules = sheets.get(css);
+  rules = sheets.get(css);
   if (!rules) {
     rules = parseSheet(css);
     sheets.set(css, rules);
   }
+  // Mermaid writes the stylesheet before it draws, so it holds for the SVG.
+  if (svg && style) bySvg.set(svg, rules);
   return rules;
 }
 
@@ -212,7 +247,8 @@ function own(element: Element, key: Key): string | undefined {
         : best.important)
     )
       continue;
-    if (matches(element, rule.selector)) best = rule;
+    if (mayMatch(element, rule.subject) && matches(element, rule.selector))
+      best = rule;
   }
   return best?.value ?? element.getAttribute(key) ?? undefined;
 }

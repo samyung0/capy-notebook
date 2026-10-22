@@ -256,6 +256,19 @@ run); run it by hand when MathLive is upgraded. It uses the editor e2e seed
 and writes each case's captures and the geometry JSON to the gitignored
 `bench/editor/.results/formula-parity/`. No workflow runs it.
 
+## Mermaid rendering (`node bench/editor/scripts/mermaid-probe.mjs`)
+
+Mermaid draws in a Web Worker (see
+[frontend/plate-editor.md](frontend/plate-editor.md)), so the page's main
+thread only sanitizes and inserts the SVG. With the app's dev server running,
+`node bench/editor/scripts/mermaid-probe.mjs` (`MERMAID_PROBE_URL`) draws the
+near-limit flowchart and mindmap (`src/mocks/nearLimits.ts`) on the page, as
+before the worker, and in the worker, at 1x and 4x CPU throttle, and prints the
+longest main-thread task and frame gap. CDP throttles the page's thread only:
+a device 4x slower also draws 4x slower in the worker, which puts the
+near-limit flowchart past the 30 s render limit there. No budget gates it.
+Numbers: [2026-10-22-mermaid-worker.md](../bench/editor/reports/2026-10-22-mermaid-worker.md).
+
 ## Collaboration stress (`pnpm bench:stress`)
 
 [`bench/collaboration/scripts/stress.ts`](../bench/collaboration/scripts/stress.ts)

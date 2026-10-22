@@ -176,10 +176,16 @@ function genericFaces() {
 /** One draw in the worker, stopped (the worker with it) at the time limit. */
 function inWorker(request: Omit<DrawRequest, 'faces' | 'id'>): Promise<Drawn> {
   return new Promise((resolve, reject) => {
-    worker ??= new Worker(new URL('./mermaid.worker.ts', import.meta.url), {
-      name: 'mermaid',
-      type: 'module',
-    });
+    try {
+      worker ??= new Worker(new URL('./mermaid.worker.ts', import.meta.url), {
+        name: 'mermaid',
+        type: 'module',
+      });
+    } catch {
+      // No module workers here: the page draws on a click.
+      reject(PAGE_ONLY);
+      return;
+    }
     const current = worker;
     const id = ++jobs;
     const stop = () => {
@@ -225,9 +231,9 @@ const DRAWN_SVG = {
   HTML_INTEGRATION_POINTS: { foreignobject: true },
 };
 
-/** A drawn diagram made safe for the page: sanitized again with the page's
- * own parser (the worker's DOMPurify parsed with linkedom), then its links
- * opened in a new tab. */
+/** A drawn diagram made safe for the page: sanitized with the page's own
+ * DOMPurify (mermaid's pass in the worker lets everything through, since
+ * DOMPurify needs a real DOM), then its links opened in a new tab. */
 async function forPage(drawn: Drawn): Promise<Drawn> {
   const { default: DOMPurify } = await import('dompurify');
   return {

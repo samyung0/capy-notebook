@@ -49,8 +49,12 @@ test('a shared note with formulas hydrates its islands under the script policy',
   expect(sources).not.toContain("'unsafe-eval'");
   // Formulas are the server's static markup.
   await expect(page.locator('.ML__latex').first()).toBeVisible();
-  // Islands: the diagram draws, the embedded quiz's formula runs MathLive and
-  // the interactive block's frame runs its snippet.
+  // Islands: the diagram draws (once near the screen), the embedded quiz's
+  // formula runs MathLive and the interactive block's frame runs its snippet.
+  await page
+    .locator('[data-island="mermaid"]')
+    .first()
+    .scrollIntoViewIfNeeded();
   await expect(page.locator('[data-island="mermaid"] svg').first()).toBeVisible(
     { timeout: 30_000 }
   );

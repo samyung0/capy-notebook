@@ -26,7 +26,7 @@ export type DrawReply = { id: number } & (
 
 /** The types the geometry check holds the shim to
  * (e2e/editor/mermaid-geometry.spec.ts), by mermaid's detected name. */
-export const WORKER_TYPES = new Set([
+const WORKER_TYPES = new Set([
   'class',
   'classDiagram',
   'er',
