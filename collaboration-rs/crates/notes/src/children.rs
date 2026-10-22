@@ -85,11 +85,19 @@ pub fn child_writes<T: ReadTxn>(txn: &T, update: &Update) -> Option<ChildWrites>
         })
         .collect();
     items.sort_by_key(|item| (std::cmp::Reverse(item.id().client.get()), item.id().clock));
+    let mut state = None;
     for decoded in items {
         if !matches!(decoded.content(), ItemContent::Any(_)) {
             continue;
         }
-        let Some(item) = store.get_item(decoded.id()) else {
+        // Only an id the room holds is looked up: a pass may read an update
+        // the room has not applied.
+        let id = decoded.id();
+        let held = state.get_or_insert_with(|| txn.state_vector());
+        if id.clock >= held.get(&id.client) {
+            continue;
+        }
+        let Some(item) = store.get_item(id) else {
             continue;
         };
         if item.is_deleted() {
