@@ -237,8 +237,8 @@ func (a *api) removeSourceBatchFile(ctx context.Context, batchID string) {
 
 // removeUnsentSource counts a file that the user removed from the transfer
 // panel before its upload or import request was sent as removed in its
-// batch, so the batch's notification neither waits for the idle
-// sweep nor calls the file failed. The batch opens here when none of its
+// batch (Epo 2026-10-22), so the batch's notification neither waits for the
+// idle sweep nor calls the file failed. The batch opens here when none of its
 // files has reached the server yet.
 func (a *api) removeUnsentSource(w http.ResponseWriter, r *http.Request) {
 	if err := a.countRemovedSource(w, r); err != nil {

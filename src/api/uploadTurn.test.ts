@@ -98,7 +98,7 @@ it('gives back a ticket that answers after the upload was removed', async () => 
   expect(get).not.toHaveBeenCalled();
 });
 
-// A file the user removed counts as removed in its batch.
+// A file the user removed counts as removed in its batch (Epo 2026-10-22).
 it('gives the ticket of a removed upload back as removed', async () => {
   const controller = new AbortController();
   post.mockResolvedValueOnce({ position: 3, ticketId: 'utk_4' });

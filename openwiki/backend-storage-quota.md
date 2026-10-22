@@ -408,8 +408,8 @@ a remove button that cancels its file (Epo 2026-10-22, `removeSourceTransfer`),
 labelled "Remove" while the file waits, uploads or imports and "Hide" once it
 is finished, failed or in the background.
 
-How a removed file counts in its batch is built but not yet decided (the
-upload-limits review's M2, awaiting Epo). A file not yet sent is never sent:
+A removed file counts as removed in its batch (Epo 2026-10-22). A file not
+yet sent is never sent:
 it asks for no ticket and counts at once as removed in its batch with
 `POST /api/workspaces/{id}/sources/batches/{batchId}/removed` (`{source,
 total}`, upload rate class, an editor of the workspace only; it opens the

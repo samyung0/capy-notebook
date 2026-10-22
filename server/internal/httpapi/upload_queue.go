@@ -44,7 +44,8 @@ const (
 // Tests shorten these.
 var (
 	// uploadBudget is the declared bytes running uploads and held turns share
-	// (Epo 2026-10-22: 1 GB). The app host keeps that much temp disk free.
+	// (Epo 2026-10-22: 1 GB, 10^9 bytes), the temp disk their bodies spool to
+	// (the runbook asks for about 2 GB free).
 	uploadBudget int64 = 1_000_000_000
 	// uploadBlockAfter is how long a ticket that does not fit is passed by
 	// before it blocks the tickets behind it.

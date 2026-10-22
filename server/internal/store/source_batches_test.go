@@ -140,7 +140,7 @@ func TestIdleSourceBatchClosesWithUnsentFilesFailed(t *testing.T) {
 }
 
 // A file the user removed before its upload started counts at once as
-// removed, not failed (upload-limits review M2); a batch whose every file was
+// removed, not failed (Epo 2026-10-22); a batch whose every file was
 // removed closes without a notification, and a removal past the total is
 // ignored (upload-limits review r2 L2).
 func TestSourceBatchCountsRemovedFiles(t *testing.T) {

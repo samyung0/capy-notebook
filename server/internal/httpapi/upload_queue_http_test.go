@@ -403,7 +403,7 @@ func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 }
 
 // A file the user removes from the transfer panel before its upload starts
-// counts at once as removed in its batch (upload-limits review M2): the call
+// counts at once as removed in its batch (Epo 2026-10-22): the call
 // opens the batch when no file of it has reached the server, the batch
 // notifies as soon as its other files settle and reports the file as
 // removed. Only an editor of the workspace can count into it, and only into

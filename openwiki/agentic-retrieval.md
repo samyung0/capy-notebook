@@ -1951,7 +1951,7 @@ errors, 408, 429 and 5xx for imports, where a request whose attempts run out
 is left to the idle sweep). A file the user removes from the transfer panel
 before the server hears of it, or while its ticket waits, counts removed
 (`source_batch_settle`'s removed count, migration 0107, never past the
-batch's total; built ahead of a decision, see backend-storage-quota.md). The settle that reaches `total` writes the
+batch's total; Epo 2026-10-22, see backend-storage-quota.md). The settle that reaches `total` writes the
 notification, which names failed and removed files only when there are any;
 a batch whose every file was removed closes without one. The
 API's `runSourceBatchWorker` polls every second: it closes batches idle for an

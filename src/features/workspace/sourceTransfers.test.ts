@@ -122,7 +122,8 @@ describe('source transfers', () => {
 
 describe('removing a row', () => {
   // Each row's remove cancels its upload and gives up its place in the
-  // gateway's line (Epo 2026-10-22); its batch counts it as removed at once.
+  // gateway's line, and its batch counts it as removed at once (Epo
+  // 2026-10-22).
   it('gives back the ticket of a file waiting in line as removed', async () => {
     post.mockResolvedValueOnce({ position: 2, ticketId: 'utk_wait' });
     get.mockImplementation(
