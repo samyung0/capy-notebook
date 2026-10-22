@@ -1,24 +1,31 @@
 //! Per-update admission of a writer's update to a source room, on the room
 //! task before the apply: the state byte cap by estimate (persistence.ts
 //! `updateFitsRoom`), the Office root rule (officeRoots.ts
-//! `officeUpdateViolation`) and the ordering rule (`inspectUpdate`'s unheld).
-//! O(update) except the exact measure near the cap, which runs at most once
-//! per [MEASURE_EVERY] updates or [MEASURE_GROWTH] bytes of estimated growth,
-//! with the update's apply work-limited (Epo 2026-10-19).
+//! `officeUpdateViolation`), the PPTX speaker notes cap and the ordering rule
+//! (`inspectUpdate`'s unheld). O(update) except the exact measure near the
+//! cap, which runs at most once per [MEASURE_EVERY] updates or
+//! [MEASURE_GROWTH] bytes of estimated growth, with the update's apply
+//! work-limited (Epo 2026-10-19).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::sync::Arc;
 
 use office_service::Format;
-use ydoc::Inspection;
-use yrs::block::{ItemContent, ItemPtr};
+use ydoc::{Incoming, Inspection};
+use yrs::block::{Item, ItemContent, ItemPtr, UpdateParent};
 use yrs::branch::{BranchID, BranchPtr};
 use yrs::updates::decoder::Decode;
-use yrs::{ClientID, Doc, ReadTxn, StateVector, Transact, Update};
+use yrs::{Any, ClientID, Doc, ID, ReadTxn, StateVector, Transact, Update};
 
 use crate::SourceFormat;
 
 const PPTX_META: &str = "pptx:meta";
+/// Speaker notes a person may write on a slide, in Unicode code points (Epo
+/// 2026-10-22); the PPTX editor's notes panel stops at the same count.
+pub const MAX_SLIDE_NOTES_CHARS: usize = 4000;
+/// A slide map's speaker notes: a string, written whole.
+const NOTES_KEY: &str = "notes";
 /// Updates between two exact measures of a room near its cap: one past the
 /// estimate meanwhile is refused by the estimate alone. A measure costs about
 /// 13 ms per MB of state in release (0.9 s at 64 MiB), so a writer at the
@@ -185,16 +192,18 @@ fn fits_room(doc: &Doc, update: &[u8], estimate: &mut Estimate, cap: u64) -> Res
 
 /// Why a client update may not enter an Office room (`Err`), else whether the
 /// room cannot integrate it yet (`Ok(unheld)`). Each new struct must sit under
-/// one of the engine's document roots, and in PPTX writes and deletions under
-/// pptx:meta must stay inside commentFlavor, as the engines require.
+/// one of the engine's document roots, in PPTX writes and deletions under
+/// pptx:meta must stay inside commentFlavor, as the engines require, and no
+/// slide's speaker notes may grow past [MAX_SLIDE_NOTES_CHARS].
 pub fn office_update_violation<T: ReadTxn>(
     txn: &T,
     update: &Update,
     format: Format,
 ) -> Result<bool, String> {
+    let incoming = Incoming::new(update);
     let Inspection {
         containers, unheld, ..
-    } = ydoc::inspect_update(txn, update).map_err(|error| error.to_string())?;
+    } = ydoc::inspect(txn, &incoming).map_err(|error| error.to_string())?;
     let roots = office_service::document_roots(format);
     for found in &containers {
         if !roots.contains(&&*found.root) {
@@ -211,6 +220,10 @@ pub fn office_update_violation<T: ReadTxn>(
             return Err("Office update writes pptx:meta beyond commentFlavor".into());
         }
     }
+    // An unheld update is dropped, and its references may not resolve yet.
+    if format == Format::Pptx && !unheld {
+        notes_violation(txn, &incoming)?;
+    }
     let deletes = deletions(update);
     if format != Format::Pptx || deletes.is_empty() {
         return Ok(unheld);
@@ -224,6 +237,178 @@ pub fn office_update_violation<T: ReadTxn>(
         }
     }
     Ok(unheld)
+}
+
+/// Refuses a PPTX update that leaves a slide's speaker notes longer than
+/// [MAX_SLIDE_NOTES_CHARS] and longer than before it (Epo 2026-10-22). Reads
+/// only the update's new entries over the cap in bytes that it does not delete
+/// itself, each placed as yrs places it ([slot_of]): one at a nested map's
+/// `notes` key (only slides have one) is held to the value that map has now,
+/// or to none for a map the update creates. One that loses to a concurrent
+/// write is held too: only a client past the notes panel's cap writes one.
+fn notes_violation<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<(), String> {
+    // Built for an update with a long string only; most carry none.
+    let mut state = None;
+    let mut slots = HashMap::new();
+    for item in incoming.items() {
+        let Some(text) = entry_text(item.content()) else {
+            continue;
+        };
+        // A string's bytes bound its code points.
+        if text.len() <= MAX_SLIDE_NOTES_CHARS {
+            continue;
+        }
+        let state = state.get_or_insert_with(|| txn.state_vector());
+        let ID { client, clock } = *item.id();
+        let end = clock + item.len();
+        if end <= state.get(&client) || incoming.deletes(&client, clock, end) {
+            continue;
+        }
+        let chars = text.chars().count();
+        if chars <= MAX_SLIDE_NOTES_CHARS {
+            continue;
+        }
+        let slot = slot_of(txn, state, incoming, item, &mut slots);
+        if slot.key.as_deref() != Some(NOTES_KEY) {
+            continue;
+        }
+        let before = match slot.parent {
+            Parent::Held(map) if map.item().is_some() => map
+                .entry_item(NOTES_KEY)
+                .filter(|value| !value.is_deleted())
+                .and_then(|value| entry_text(value.content()).map(|text| text.chars().count()))
+                .unwrap_or(0),
+            Parent::New => 0,
+            _ => continue,
+        };
+        if chars > before {
+            return Err(format!(
+                "Office update grows a slide's speaker notes past {MAX_SLIDE_NOTES_CHARS} characters"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Where yrs places a decoded entry: the type it lands in and its key.
+#[derive(Clone)]
+struct Slot {
+    parent: Parent,
+    key: Option<Arc<str>>,
+}
+
+/// The type a decoded entry lands in.
+#[derive(Clone, Copy)]
+enum Parent {
+    /// One the room holds: a root or a nested map.
+    Held(BranchPtr),
+    /// One the update creates.
+    New,
+    /// A root the entry names.
+    Root,
+    /// None: yrs drops the entry.
+    Dropped,
+}
+
+/// [Slot] of a decoded entry as yrs integrates it. Its left is its origin,
+/// or the last unit the room holds of its client when the room holds its
+/// first units (`BlockSet::exclude` splits those off), and its right is its
+/// right origin; a side reads as absent when the room collected it, or when it
+/// is an update entry with no type to land in (a type the update creates is
+/// taken as placed). Its type is the one it names, else its left's, else its
+/// right's (`Update::missing_dependency`); its key is its left's, else its
+/// right's, else its own (`TransactionMut::integrate_item`). The update's
+/// entries it refers to are placed first, each once (`slots`), without
+/// recursion; a reference cycle (an unheld update, never checked) reads as
+/// absent.
+fn slot_of<T: ReadTxn>(
+    txn: &T,
+    state: &StateVector,
+    incoming: &Incoming,
+    start: &Item,
+    slots: &mut HashMap<ID, Slot>,
+) -> Slot {
+    let held = |id: &ID| id.clock < state.get(&id.client);
+    let store = txn.store();
+    let sides = |item: &Item| {
+        let ID { client, clock } = *item.id();
+        let first = state.get(&client);
+        let left = if clock < first {
+            Some(ID::new(client, first - 1))
+        } else {
+            item.origin().copied()
+        };
+        [left, item.right_origin().copied()]
+    };
+    let mut visiting = HashSet::new();
+    let mut stack = vec![start];
+    while let Some(&item) = stack.last() {
+        if slots.contains_key(item.id()) {
+            stack.pop();
+            continue;
+        }
+        let refs = sides(item);
+        let waiting: Vec<&Item> = refs
+            .iter()
+            .flatten()
+            .filter(|side| !held(side))
+            .filter_map(|side| incoming.item_at(side))
+            .filter(|side| !slots.contains_key(side.id()) && !visiting.contains(side.id()))
+            .collect();
+        if visiting.insert(*item.id()) && !waiting.is_empty() {
+            stack.extend(waiting);
+            continue;
+        }
+        let [left, right] = refs.map(|side| {
+            let side = side?;
+            if held(&side) {
+                let entry = store.get_item(&side)?;
+                return Some(Slot {
+                    parent: entry.parent_branch().map_or(Parent::Dropped, Parent::Held),
+                    key: entry.parent_sub().cloned(),
+                });
+            }
+            let slot = slots.get(incoming.item_at(&side)?.id())?;
+            (!matches!(slot.parent, Parent::Dropped)).then(|| slot.clone())
+        });
+        let parent = match item.update_parent() {
+            UpdateParent::Root(_) => Parent::Root,
+            UpdateParent::Item(holder) if held(holder) => {
+                match store.get_item(holder).as_deref().map(Item::content) {
+                    Some(ItemContent::Type(map)) => Parent::Held(BranchPtr::from(map.as_ref())),
+                    _ => Parent::Dropped,
+                }
+            }
+            UpdateParent::Item(_) => Parent::New,
+            _ => left
+                .as_ref()
+                .or(right.as_ref())
+                .map_or(Parent::Dropped, |side| side.parent),
+        };
+        let key = [&left, &right]
+            .into_iter()
+            .flatten()
+            .find_map(|side| side.key.clone())
+            .or_else(|| item.parent_sub().cloned());
+        slots.insert(*item.id(), Slot { parent, key });
+        stack.pop();
+    }
+    slots[start.id()].clone()
+}
+
+/// The string a map entry's content reads as (`ItemContent::get_last`),
+/// without copying it.
+fn entry_text(content: &ItemContent) -> Option<&str> {
+    match content {
+        ItemContent::Any(values) => match values.last()? {
+            Any::String(text) => Some(text.as_ref()),
+            _ => None,
+        },
+        ItemContent::Embed(Any::String(text)) => Some(text.as_ref()),
+        ItemContent::JSON(values) => values.last().map(String::as_str),
+        ItemContent::String(text) => Some(text.as_str()),
+        _ => None,
+    }
 }
 
 fn deletions(update: &Update) -> HashMap<ClientID, Vec<Range<u32>>> {
@@ -436,6 +621,336 @@ mod tests {
             verdict(&room, pptx, b"\xff\xff"),
             Admission::Refuse(Refusal::Malformed(_))
         ));
+    }
+
+    // Security regression (Epo 2026-10-22): whatever client writes it, an
+    // update may not grow a slide's speaker notes past 4,000 code points,
+    // while an over-cap note may shrink and other slides stay editable.
+    #[test]
+    fn a_slides_speaker_notes_may_not_grow_past_the_cap() {
+        let room = Doc::with_client_id(1);
+        let slides = room.get_or_insert_map("pptx:slides");
+        for (id, notes) in [("s1", "short".to_string()), ("s2", "o".repeat(5000))] {
+            let slide = slides.insert(&mut room.transact_mut(), id, MapPrelim::default());
+            slide.insert(&mut room.transact_mut(), NOTES_KEY, notes);
+        }
+        let set = |client: &Doc, slide: &str, notes: &str| {
+            let slides = client.get_or_insert_map("pptx:slides");
+            let Some(yrs::Out::YMap(slide)) = slides.get(&client.transact(), slide) else {
+                panic!("slide");
+            };
+            slide.insert(&mut client.transact_mut(), NOTES_KEY, notes);
+        };
+        // Each case from a fresh client that keeps what it deletes, so an
+        // overwritten value rides along in the update as written.
+        let case = |client_id: u64, edit: &dyn Fn(&Doc)| {
+            let mut options = yrs::Options::with_client_id(ClientID::new(client_id));
+            options.skip_gc = true;
+            let client = Doc::with_options(options);
+            apply(&client, &encode(&room, &StateVector::default()));
+            delta(&client, || edit(&client))
+        };
+        let pptx = SourceFormat::Pptx;
+        let refused = Admission::Refuse(Refusal::OfficeUpdate(
+            "Office update grows a slide's speaker notes past 4000 characters".into(),
+        ));
+        let n = |count: usize| "n".repeat(count);
+
+        assert_eq!(
+            verdict(&room, pptx, &case(2, &|c| set(c, "s1", &n(4000)))),
+            Admission::Accept
+        );
+        assert_eq!(
+            verdict(&room, pptx, &case(3, &|c| set(c, "s1", &n(4001)))),
+            refused
+        );
+        // Code points, not bytes or UTF-16 units.
+        let faces = |count: usize| "😀".repeat(count);
+        assert_eq!(
+            verdict(&room, pptx, &case(4, &|c| set(c, "s1", &faces(4000)))),
+            Admission::Accept
+        );
+        assert_eq!(
+            verdict(&room, pptx, &case(5, &|c| set(c, "s1", &faces(4001)))),
+            refused
+        );
+        // An over-cap note may shrink or keep its length, not grow.
+        assert_eq!(
+            verdict(&room, pptx, &case(6, &|c| set(c, "s2", &n(4999)))),
+            Admission::Accept
+        );
+        assert_eq!(
+            verdict(&room, pptx, &case(7, &|c| set(c, "s2", &n(5000)))),
+            Admission::Accept
+        );
+        assert_eq!(
+            verdict(&room, pptx, &case(8, &|c| set(c, "s2", &n(5001)))),
+            refused
+        );
+        // Another slide stays editable beside it.
+        assert_eq!(
+            verdict(&room, pptx, &case(9, &|c| set(c, "s1", "edited"))),
+            Admission::Accept
+        );
+        // A slide the update creates starts from no notes.
+        let created = case(10, &|c| {
+            let slides = c.get_or_insert_map("pptx:slides");
+            let slide = slides.insert(&mut c.transact_mut(), "s3", MapPrelim::default());
+            slide.insert(&mut c.transact_mut(), NOTES_KEY, n(4001));
+        });
+        assert_eq!(verdict(&room, pptx, &created), refused);
+        // Two writes in one update: a long one it deletes itself does not
+        // count, and a long one it keeps is placed through its origin, the
+        // first write, in the update.
+        let cut_back = case(11, &|c| {
+            set(c, "s1", &n(4001));
+            set(c, "s1", "back");
+        });
+        assert_eq!(verdict(&room, pptx, &cut_back), Admission::Accept);
+        let grown = case(12, &|c| {
+            set(c, "s1", "first");
+            set(c, "s1", &n(4001));
+        });
+        assert_eq!(verdict(&room, pptx, &grown), refused);
+        // Other keys are not notes.
+        let named = case(13, &|c| {
+            let slides = c.get_or_insert_map("pptx:slides");
+            let Some(yrs::Out::YMap(slide)) = slides.get(&c.transact(), "s1") else {
+                panic!("slide");
+            };
+            slide.insert(&mut c.transact_mut(), "name", n(4001));
+        });
+        assert_eq!(verdict(&room, pptx, &named), Admission::Accept);
+    }
+
+    /// One client's string entries as Yjs v1 writes them, from `clock`, with
+    /// no deletions. Each is `(origin, right origin, holder, key, values)`: an
+    /// entry with neither origin names its map by the item holding it and, in
+    /// a map, its key.
+    #[allow(clippy::type_complexity)]
+    fn crafted(
+        client: u64,
+        clock: u32,
+        entries: &[(Option<ID>, Option<ID>, ID, Option<&str>, &[&str])],
+    ) -> Vec<u8> {
+        use yrs::block::{BLOCK_ITEM_ANY_REF_NUMBER, HAS_ORIGIN, HAS_PARENT_SUB, HAS_RIGHT_ORIGIN};
+        use yrs::encoding::write::Write;
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.write_var(1u32);
+        bytes.write_var(entries.len() as u32);
+        bytes.write_var(client);
+        bytes.write_var(clock);
+        for &(origin, right, holder, key, values) in entries {
+            let named = origin.is_none() && right.is_none();
+            let mut info = BLOCK_ITEM_ANY_REF_NUMBER;
+            info |= if origin.is_some() { HAS_ORIGIN } else { 0 };
+            info |= if right.is_some() { HAS_RIGHT_ORIGIN } else { 0 };
+            info |= if named && key.is_some() {
+                HAS_PARENT_SUB
+            } else {
+                0
+            };
+            bytes.write_u8(info);
+            for id in [origin, right].into_iter().flatten() {
+                bytes.write_var(id.client.get());
+                bytes.write_var(id.clock);
+            }
+            if named {
+                bytes.write_var(0u32);
+                bytes.write_var(holder.client.get());
+                bytes.write_var(holder.clock);
+                if let Some(key) = key {
+                    bytes.write_string(key);
+                }
+            }
+            bytes.write_var(values.len() as u32);
+            for value in values {
+                Any::from(*value).encode(&mut bytes);
+            }
+        }
+        bytes.write_var(0u32);
+        bytes
+    }
+
+    /// A room with slides s1 (notes "short") and s2 (notes "other").
+    fn two_slides() -> Doc {
+        let room = Doc::with_client_id(1);
+        let slides = room.get_or_insert_map("pptx:slides");
+        for (id, notes) in [("s1", "short"), ("s2", "other")] {
+            let slide = slides.insert(&mut room.transact_mut(), id, MapPrelim::default());
+            slide.insert(&mut room.transact_mut(), NOTES_KEY, notes);
+        }
+        room
+    }
+
+    fn slide(doc: &Doc, id: &str) -> yrs::MapRef {
+        let slides = doc.get_or_insert_map("pptx:slides");
+        let Some(yrs::Out::YMap(slide)) = slides.get(&doc.transact(), id) else {
+            panic!("slide");
+        };
+        slide
+    }
+
+    fn slide_holder(doc: &Doc, id: &str) -> ID {
+        *BranchPtr::from(slide(doc, id).as_ref())
+            .item()
+            .unwrap()
+            .id()
+    }
+
+    /// The item holding a slide's notes value.
+    fn notes_entry(doc: &Doc, id: &str) -> ID {
+        *BranchPtr::from(slide(doc, id).as_ref())
+            .entry_item(NOTES_KEY)
+            .unwrap()
+            .id()
+    }
+
+    /// The code points slide s1's notes would hold with `update` applied (to
+    /// a copy of the room).
+    fn s1_notes_after(room: &Doc, update: &[u8]) -> usize {
+        let copy = Doc::with_client_id(99);
+        apply(&copy, &encode(room, &StateVector::default()));
+        apply(&copy, update);
+        match slide(&copy, "s1").get(&copy.transact(), NOTES_KEY) {
+            Some(yrs::Out::Any(Any::String(text))) => text.chars().count(),
+            other => panic!("notes {other:?}"),
+        }
+    }
+
+    fn notes_refused() -> Admission {
+        Admission::Refuse(Refusal::OfficeUpdate(
+            "Office update grows a slide's speaker notes past 4000 characters".into(),
+        ))
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review H1 a): an entry
+    // after a keyless entry in slide 1's map and before slide 2's notes lands
+    // at slide 1's notes (yrs takes the map from the left, the key from the
+    // right), so it is held to the cap there.
+    #[test]
+    fn an_entry_after_a_keyless_one_is_held_to_its_right_origins_key() {
+        let room = two_slides();
+        let s1 = slide_holder(&room, "s1");
+        let s2_notes = *BranchPtr::from(slide(&room, "s2").as_ref())
+            .entry_item(NOTES_KEY)
+            .unwrap()
+            .id();
+        let long = "n".repeat(4001);
+        let keyless = ID::new(ClientID::new(50), 0);
+        let update = crafted(
+            50,
+            0,
+            &[
+                (None, None, s1, None, &["L"]),
+                (Some(keyless), Some(s2_notes), s1, None, &[long.as_str()]),
+            ],
+        );
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review H1 b): an entry
+    // re-sent from a clock the room holds, naming another key, lands after
+    // the held unit at its key, slide 1's notes, so it is held to the cap
+    // there.
+    #[test]
+    fn a_resent_entry_is_held_to_its_held_units_key() {
+        let room = two_slides();
+        let client = Doc::with_client_id(60);
+        apply(&client, &encode(&room, &StateVector::default()));
+        let short = delta(&client, || {
+            slide(&client, "s1").insert(&mut client.transact_mut(), NOTES_KEY, "x");
+        });
+        assert_eq!(
+            verdict(&room, SourceFormat::Pptx, &short),
+            Admission::Accept
+        );
+        apply(&room, &short);
+        let long = "n".repeat(4001);
+        let s1 = slide_holder(&room, "s1");
+        let update = crafted(
+            60,
+            0,
+            &[(None, None, s1, Some("zzz"), &["x", long.as_str()])],
+        );
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review r2 L1): with no
+    // left, or a left the room collected, an entry takes its map and key from
+    // its right origin. yrs places it before that map's value, so it never
+    // shows, but it is held to the cap there all the same.
+    #[test]
+    fn an_entry_with_no_left_takes_its_map_and_key_from_its_right_origin() {
+        let room = two_slides();
+        let slides = room.get_or_insert_map("pptx:slides");
+        let s3 = slides.insert(&mut room.transact_mut(), "s3", MapPrelim::default());
+        s3.insert(&mut room.transact_mut(), NOTES_KEY, "gone");
+        let collected = notes_entry(&room, "s3");
+        slides.remove(&mut room.transact_mut(), "s3");
+        assert!(room.transact().store().get_item(&collected).is_none());
+        let (s1, s1_notes) = (slide_holder(&room, "s1"), notes_entry(&room, "s1"));
+        let long = "n".repeat(4001);
+        for (client, left) in [(50, None), (51, Some(collected))] {
+            let update = crafted(
+                client,
+                0,
+                &[(left, Some(s1_notes), s1, None, &[long.as_str()])],
+            );
+            assert_eq!(s1_notes_after(&room, &update), "short".len());
+            assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+        }
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review r2 L1): an entry
+    // re-sent from a held unit in slide 2's notes, naming slide 1, lands in
+    // slide 1's map as its notes (yrs deletes slide 2's value), so it is held
+    // to slide 1's notes, not to slide 2's over-cap upload.
+    #[test]
+    fn an_entry_naming_its_map_is_held_there_not_at_its_lefts() {
+        let room = two_slides();
+        let client = Doc::with_client_id(60);
+        apply(&client, &encode(&room, &StateVector::default()));
+        let upload = delta(&client, || {
+            slide(&client, "s2").insert(&mut client.transact_mut(), NOTES_KEY, "o".repeat(5000));
+        });
+        apply(&room, &upload);
+        let long = "n".repeat(4001);
+        let s1 = slide_holder(&room, "s1");
+        let update = crafted(
+            60,
+            0,
+            &[(None, None, s1, Some("zzz"), &["o", long.as_str()])],
+        );
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review r2 L1): a chain
+    // of the update's own entries carries the key: a keyless entry in slide
+    // 1's map, one after it before slide 2's notes (slide 1's notes, as shape
+    // a), then the long one after that, which becomes slide 1's notes.
+    #[test]
+    fn a_chain_of_the_updates_entries_carries_the_key() {
+        let room = two_slides();
+        let s1 = slide_holder(&room, "s1");
+        let s2_notes = notes_entry(&room, "s2");
+        let keyless = ID::new(ClientID::new(50), 0);
+        let first = ID::new(ClientID::new(50), 1);
+        let long = "n".repeat(4001);
+        let update = crafted(
+            50,
+            0,
+            &[
+                (None, None, s1, None, &["L"]),
+                (Some(keyless), Some(s2_notes), s1, None, &["first"]),
+                (Some(first), None, s1, None, &[long.as_str()]),
+            ],
+        );
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
     }
 
     #[test]

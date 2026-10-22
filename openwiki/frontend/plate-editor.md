@@ -1424,6 +1424,15 @@ design, option d), and the nudge's release file on 2026-10-17.
   2026-10-20) raised `CLIENT_PROTOCOL` to 8 and `MIN_SOURCE` to 8;
   `MIN_MATERIAL` stays 7. Its deploy request names "client protocol 7 -> 8,
   source 7 -> 8".
+  The BetterOffice pins landed since then without a bump (Office DOCX
+  edbb81eea, PPTX b50fc6f4f, DOCX speed 9664f2ff9); the speaker notes cap
+  (pin ceecaec31) raised `CLIENT_PROTOCOL` to 9 and `MIN_SOURCE` to 9 for all of
+  them; `MIN_MATERIAL` stays 7. Its deploy request names "client protocol
+  8 -> 9, source 8 -> 9".
+  The yrs block lookup fix (pin 3fdc52f50: a lookup outside a client's blocks
+  finds nothing instead of panicking) raised `CLIENT_PROTOCOL` to 10 and
+  `MIN_SOURCE` to 10; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 9 -> 10, source 9 -> 10".
 
 #### When to bump
 
