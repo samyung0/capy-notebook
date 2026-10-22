@@ -143,9 +143,14 @@ const loadPreview = () =>
 const LazyMaterialPreview = lazy(() =>
   loadPreview().then((m) => ({ default: m.MaterialPreview }))
 );
-const StudyProgress = lazy(() =>
-  import('@/features/study/StudyProgress').then((mod) => ({
-    default: mod.StudyProgress,
+const StudyPage = lazy(() =>
+  import('@/features/study/StudyPage').then((mod) => ({
+    default: mod.StudyPage,
+  }))
+);
+const PlanPage = lazy(() =>
+  import('@/features/study/plans/PlanPage').then((mod) => ({
+    default: mod.PlanPage,
   }))
 );
 type PreviewComponent =
@@ -169,8 +174,8 @@ export function CenterContent({
   onOpenSettings,
   onOpenItem,
   onOpenProgress,
-  onOpenTrackProgress,
-  progress = false,
+  plan,
+  study = false,
   requestedMode = null,
   workspaceId,
   leading,
@@ -178,14 +183,14 @@ export function CenterContent({
   oneColumn,
   standalone = false,
 }: {
-  /** Opens an item from the Study progress page. */
+  /** Opens an item from the Study page or a plan. */
   onOpenItem?: (item: OpenItem) => void;
-  /** Opens the Study progress page; a quick action when no file is open. */
+  /** Opens the Study page; a quick action when no file is open. */
   onOpenProgress?: () => void;
-  /** Opens workspace settings at the Track progress switch. */
-  onOpenTrackProgress?: () => void;
-  /** Shows the Study progress page while no file is open. */
-  progress?: boolean;
+  /** Shows this plan while no file is open. */
+  plan?: string;
+  /** Shows the Study page while no file is open. */
+  study?: boolean;
   /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
   oneColumn?: OneColumnChrome;
   standalone?: boolean;
@@ -256,8 +261,8 @@ export function CenterContent({
         onOpenItem={onOpenItem}
         onOpenProgress={onOpenProgress}
         onOpenSettings={onOpenSettings}
-        onOpenTrackProgress={onOpenTrackProgress}
-        progress={progress}
+        plan={plan}
+        study={study}
         trailing={trailing}
         workspaceId={standalone ? '' : workspaceId}
       />
@@ -906,8 +911,8 @@ function EmptyCenter({
   onOpenItem,
   onOpenProgress,
   onOpenSettings,
-  onOpenTrackProgress,
-  progress,
+  plan,
+  study,
   workspaceId,
 }: {
   leading?: ReactNode;
@@ -917,8 +922,8 @@ function EmptyCenter({
   onOpenItem?: (item: OpenItem) => void;
   onOpenProgress?: () => void;
   onOpenSettings?: () => void;
-  onOpenTrackProgress?: () => void;
-  progress?: boolean;
+  plan?: string;
+  study?: boolean;
   workspaceId: string;
 }) {
   const sm = useMediaQuery('(min-width: 640px)');
@@ -972,14 +977,18 @@ function EmptyCenter({
           </div>
         )}
       </div>
-      {progress && workspaceId && onOpenItem && onOpenTrackProgress ? (
+      {(plan || study) && workspaceId && onOpenItem ? (
         <div className="min-h-0 flex-1 overflow-auto">
           <Suspense fallback={null}>
-            <StudyProgress
-              onOpenItem={onOpenItem}
-              onOpenTrackProgress={onOpenTrackProgress}
-              workspaceId={workspaceId}
-            />
+            {plan ? (
+              <PlanPage
+                onOpenItem={onOpenItem}
+                planId={plan}
+                workspaceId={workspaceId}
+              />
+            ) : (
+              <StudyPage onOpenItem={onOpenItem} workspaceId={workspaceId} />
+            )}
           </Suspense>
         </div>
       ) : (
@@ -1043,7 +1052,7 @@ function QuickActions({
         size="sm"
         variant="ghost-muted"
       >
-        {m.workspace_study_progress()}
+        {m.workspace_tab_study()}
       </Button>
     </div>
   );

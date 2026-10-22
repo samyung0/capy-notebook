@@ -190,7 +190,6 @@ export const user: Omit<User, 'account'> = {
   planTier: 'pro',
   streak: 0,
   studyPreferences: {},
-  studyProgress: true,
   subscriptionStatus: 'active',
 };
 

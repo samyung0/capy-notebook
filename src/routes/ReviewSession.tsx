@@ -240,7 +240,13 @@ function Session({
   function back() {
     if (search.from === 'review')
       navigate({ search: { tab: 'review' }, to: '/learning' });
-    else navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
+    // A workspace review starts on its Study page and returns there.
+    else
+      navigate({
+        params: { workspaceId },
+        search: { study: true },
+        to: '/workspaces/$workspaceId',
+      });
   }
   async function more() {
     // The next batch is chosen from every rating saved so far.
@@ -283,6 +289,7 @@ function Session({
                   label: ws?.name ?? '',
                   link: linkOptions({
                     params: { workspaceId },
+                    search: { study: true },
                     to: '/workspaces/$workspaceId',
                   }),
                 },

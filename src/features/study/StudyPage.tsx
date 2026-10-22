@@ -4,12 +4,17 @@ import {
   useChapters,
   useFiles,
   useMaterials,
+  useResetWorkspaceStudy,
+  useSetWorkspaceStudyEnabled,
+  useWorkspace,
   useWorkspaceAttempts,
   useWorkspaceStudy,
 } from '@/api/hooks';
 import type { Attempt, ItemAttempts, MaterialRef } from '@/api/types';
 import { FilterPopover, toggleValue } from '@/components/app/ListToolbar';
 import { TabContent } from '@/components/app/tabPanel';
+import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -34,8 +39,10 @@ import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { FILE_KINDS } from '@/lib/listSearch';
 import { attemptMinutes, resultLink, scoreText } from './attempts';
-import { PlaceholderRailMap } from './railMap/RailMap';
+import { PlansSection } from './plans/PlansSection';
+import { QuickReview, WorkspaceReview } from './quickActions';
 import { StudyMark, type StudyState, useStudyActions } from './studyItems';
+import { WorkspaceRailMap } from './WorkspaceRailMap';
 
 const MATERIAL_TYPES: MaterialRef['type'][] = [
   'note',
@@ -69,25 +76,30 @@ const shortDate = (iso: string) =>
     month: 'short',
   });
 
-/** A workspace's Study progress in the centre pane (human/study-progress.md,
- * 2026-10-19): every file and material by chapter in reading order, whether
- * it is read or tracked, and each quiz's and set's attempts. */
-export function StudyProgress({
+/** A workspace's Study page in the centre pane (human/study-progress.md
+ * 2026-10-19, 2026-10-22): the workspace's railway map, Continue, the whole
+ * workspace's review and Quick review, its plans, then every file and
+ * material by chapter in reading order with its read state and each quiz's
+ * and set's attempts. With study progress hidden only the plan and chapter
+ * rows stay, without counts or marks. */
+export function StudyPage({
   workspaceId,
   onOpenItem,
-  onOpenTrackProgress,
 }: {
   workspaceId: string;
   onOpenItem: (item: OpenItem) => void;
-  /** Opens workspace settings at the Track progress switch. */
-  onOpenTrackProgress: () => void;
 }) {
+  const { data: workspace } = useWorkspace(workspaceId);
   const { data: study } = useWorkspaceStudy(workspaceId);
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
   const { data: attempts } = useWorkspaceAttempts(workspaceId);
   const { menuItems } = useStudyActions(workspaceId);
+  const { isPending: savingShown, mutate: setShown } =
+    useSetWorkspaceStudyEnabled(workspaceId);
+  const { mutate: resetStudy } = useResetWorkspaceStudy(workspaceId);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [kinds, setKinds] = useState<string[]>([]);
   const [show, setShow] = useState<Show>('all');
   const [open, setOpen] = useState<Set<string>>(() => new Set());
@@ -99,28 +111,7 @@ export function StudyProgress({
       </TabContent>
     );
 
-  // Progress off: an empty railway saying so, and the way to turn it on.
-  if (!study.enabled)
-    return (
-      <TabContent fill>
-        <h2 className="t-card-title">{m.workspace_study_progress()}</h2>
-        {/* The railway runs to the pane's edges, as on Learning. */}
-        <div className="page-bleed-wide mt-6">
-          <PlaceholderRailMap
-            board={{
-              text: m.progress_off_text(),
-              title: m.progress_off_title(),
-            }}
-          />
-        </div>
-        <div className="mt-8 flex justify-center">
-          <UnderlineLink accent onClick={onOpenTrackProgress}>
-            {m.progress_off_turn_on()}
-          </UnderlineLink>
-        </div>
-      </TabContent>
-    );
-
+  const hidden = !study.enabled;
   const states = new Map(
     study.items.map((it) => [it.fileId ?? it.materialId, it.state])
   );
@@ -130,8 +121,8 @@ export function StudyProgress({
   const byMaterial = new Map(attempts.items.map((it) => [it.materialId, it]));
   const ordered = readingOrder(chapters, files, materials);
   const tracked = ordered.filter((it) => states.get(it.id) !== 'removed');
-  const done = tracked.filter((it) => states.get(it.id) === 'done');
   const next = tracked.find((it) => states.get(it.id) !== 'done');
+  const sortedChapters = [...chapters].sort((a, b) => a.order - b.order);
   // Kinds the workspace holds, files first in the Files page's order.
   const present = new Set(ordered.map(kindOf));
   const kindOptions = [
@@ -146,11 +137,9 @@ export function StudyProgress({
   ];
   const visible = (it: WorkspaceContentItem) =>
     (!kinds.length || kinds.includes(kindOf(it))) &&
-    shows(show, states.get(it.id));
+    (hidden || shows(show, states.get(it.id)));
   const sections = [
-    ...[...chapters]
-      .sort((a, b) => a.order - b.order)
-      .map((ch) => ({ id: ch.id, name: ch.name })),
+    ...sortedChapters.map((ch) => ({ id: ch.id, name: ch.name })),
     { id: null, name: m.study_others() },
   ]
     .map((ch) => {
@@ -175,27 +164,97 @@ export function StudyProgress({
 
   return (
     <TabContent centered>
-      <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <div className="min-w-0">
-          <h2 className="t-card-title">{m.workspace_study_progress()}</h2>
-          <p className="t-meta mt-1 text-fg-muted">
-            {m.progress_summary({
-              done: done.length,
-              total: tracked.length,
-              untracked: ordered.length - tracked.length,
-            })}
-          </p>
-        </div>
-        {next && (
-          <UnderlineLink
-            accent
-            onClick={() => onOpenItem({ id: next.id, kind: next.type })}
-          >
-            {m.learning_continue_item({ title: titleOf(next) })}
-          </UnderlineLink>
-        )}
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="t-card-title">{m.workspace_tab_study()}</h2>
+        <Menu
+          items={[
+            {
+              closeOnSelect: false,
+              disabled: savingShown,
+              icon: hidden ? 'view' : 'viewOff',
+              label: hidden ? m.study_show_progress() : m.study_hide_progress(),
+              onClick: () => setShown(hidden),
+            },
+            {
+              danger: true,
+              icon: 'refresh',
+              label: m.study_reset(),
+              onClick: () => setConfirmReset(true),
+              separated: true,
+            },
+          ]}
+        />
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      {hidden ? (
+        <div className="mt-4 flex items-start gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">{m.study_hidden_title()}</p>
+            <p className="t-meta text-fg-muted">{m.study_hidden_text()}</p>
+          </div>
+          <Button
+            disabled={savingShown}
+            onClick={() => setShown(true)}
+            rounded="large"
+            size="sm"
+            variant="outline"
+          >
+            {m.study_show()}
+          </Button>
+        </div>
+      ) : (
+        <>
+          {tracked.length > 0 && (
+            <div className="mt-2">
+              <WorkspaceRailMap
+                chapters={sortedChapters}
+                cover={workspace?.cover}
+                items={tracked.map((it) => ({
+                  chapterId: it.data.chapterId,
+                  id: it.id,
+                  state: states.get(it.id),
+                  title: titleOf(it),
+                }))}
+                onOpen={(id) => {
+                  const item = tracked.find((it) => it.id === id);
+                  if (item) onOpenItem({ id, kind: item.type });
+                }}
+                workspaceId={workspaceId}
+              />
+            </div>
+          )}
+          <div className="mt-4 flex flex-col gap-4">
+            {next && (
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="t-meta text-fg-muted">{m.study_next()}</p>
+                  <p className="line-clamp-1 font-semibold">{titleOf(next)}</p>
+                </div>
+                <UnderlineLink
+                  accent
+                  onClick={() => onOpenItem({ id: next.id, kind: next.type })}
+                >
+                  {m.study_continue()}
+                </UnderlineLink>
+              </div>
+            )}
+            <WorkspaceReview
+              iconId={workspace?.iconId}
+              reviewable={study.reviewable}
+              unfinished={study.unfinished}
+              workspaceId={workspaceId}
+            />
+            {/* Stays mounted through refreshes; hides itself. */}
+            <QuickReview items={study.quickReview} workspaceId={workspaceId} />
+          </div>
+        </>
+      )}
+      <PlansSection
+        hidden={hidden}
+        onOpenItem={onOpenItem}
+        workspaceId={workspaceId}
+      />
+      <div className="mt-8 flex flex-wrap items-center gap-2">
+        <h3 className="mr-auto font-bold">{m.study_chapters()}</h3>
         <FilterPopover
           filters={[
             {
@@ -208,22 +267,27 @@ export function StudyProgress({
           ]}
           onResetFilters={() => setKinds([])}
         />
-        <Select onValueChange={(value) => setShow(value as Show)} value={show}>
-          <SelectTrigger
-            aria-label={m.progress_show()}
-            className="w-auto"
-            variant="ghost-hover"
+        {!hidden && (
+          <Select
+            onValueChange={(value) => setShow(value as Show)}
+            value={show}
           >
-            <SelectValue>{showLabel[show]()}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {SHOWS.map((value) => (
-              <SelectItem key={value} value={value}>
-                {showLabel[value]()}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <SelectTrigger
+              aria-label={m.progress_show()}
+              className="w-auto"
+              variant="ghost-hover"
+            >
+              <SelectValue>{showLabel[show]()}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {SHOWS.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {showLabel[value]()}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
       {sections.length === 0 ? (
         <p className="py-8 text-center text-fg-muted">
@@ -231,10 +295,10 @@ export function StudyProgress({
         </p>
       ) : (
         sections.map((ch) => (
-          <section className="mt-6" key={ch.id ?? 'others'}>
+          <section className="mt-4" key={ch.id ?? 'others'}>
             <div className="flex items-baseline justify-between gap-3 pb-1.5">
-              <h3 className="font-bold">{ch.name}</h3>
-              {ch.total > 0 && (
+              <h4 className="font-semibold">{ch.name}</h4>
+              {!hidden && ch.total > 0 && (
                 <span className="t-meta text-fg-muted">
                   {m.learning_done_of({ done: ch.done, total: ch.total })}
                 </span>
@@ -242,7 +306,8 @@ export function StudyProgress({
             </div>
             {ch.items.map((it) => (
               <ProgressRow
-                attempts={byMaterial.get(it.id)}
+                attempts={hidden ? undefined : byMaterial.get(it.id)}
+                bare={hidden}
                 expanded={open.has(it.id)}
                 item={it}
                 key={it.id}
@@ -253,19 +318,28 @@ export function StudyProgress({
                 onOpen={() => onOpenItem({ id: it.id, kind: it.type })}
                 onToggle={() => toggle(it.id)}
                 readAt={changedAt.get(it.id)}
-                state={states.get(it.id)}
+                state={hidden ? undefined : states.get(it.id)}
                 workspaceId={workspaceId}
               />
             ))}
           </section>
         ))
       )}
+      <ConfirmDialog
+        body={m.study_reset_confirm_body()}
+        confirmLabel={m.study_reset()}
+        onClose={() => setConfirmReset(false)}
+        onConfirm={() => resetStudy()}
+        open={confirmReset}
+        title={m.study_reset_confirm_title()}
+      />
     </TabContent>
   );
 }
 
 function ProgressRow({
   item,
+  bare = false,
   readAt,
   state,
   attempts,
@@ -276,6 +350,8 @@ function ProgressRow({
   workspaceId,
 }: {
   item: WorkspaceContentItem;
+  /** Study progress hidden: the name only, opening the item. */
+  bare?: boolean;
   /** When the item's state last changed: when it was marked read. */
   readAt?: string;
   state: StudyState | undefined;
@@ -322,9 +398,11 @@ function ProgressRow({
               {name}
             </button>
           )}
-          <p className="t-meta text-fg-muted">
-            {rowMeta(item, state, readAt, attempts)}
-          </p>
+          {!bare && (
+            <p className="t-meta text-fg-muted">
+              {rowMeta(item, state, readAt, attempts)}
+            </p>
+          )}
         </div>
         {latest && (
           <span className="whitespace-nowrap text-fg-secondary text-sm">
@@ -343,9 +421,11 @@ function ProgressRow({
           </button>
         )}
         <StudyMark state={state} />
-        <div className="relative z-10 -my-2 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-          <Menu items={menuItems} />
-        </div>
+        {!bare && (
+          <div className="relative z-10 -my-2 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+            <Menu items={menuItems} />
+          </div>
+        )}
       </div>
       {expanded && attempts && (
         <Results

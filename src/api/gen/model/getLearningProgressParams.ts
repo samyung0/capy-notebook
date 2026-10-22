@@ -10,4 +10,8 @@ export type GetLearningProgressParams = {
  * A listed workspace whose map to return instead of the most recently studied one
  */
 lead?: string;
+/**
+ * Also list workspaces hiding study progress, marked hidden
+ */
+all?: boolean;
 };

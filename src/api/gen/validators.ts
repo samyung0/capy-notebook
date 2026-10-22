@@ -2769,10 +2769,71 @@ export const UpdateLabelResponse = zod.object({
 
 
 /**
+ * @summary Every study plan of the user
+ */
+export const listLearningPlansResponseWorkspacesItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const listLearningPlansResponseWorkspacesItemCoverLineMax = 40;
+
+export const listLearningPlansResponseWorkspacesItemCoverSeedMax = 16;
+
+
+export const listLearningPlansResponseWorkspacesItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
+
+
+export const ListLearningPlansResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "plans": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "name": zod.string(),
+  "steps": zod.array(zod.object({
+  "kind": zod.enum(['workspace', 'unfiled', 'chapter', 'file', 'material']),
+  "locked": zod.boolean(),
+  "targetId": zod.string().optional().describe('The chapter, file or material'),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string()
+})),
+  "workspaces": zod.array(zod.object({
+  "chapters": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "order": zod.int()
+})),
+  "cover": zod.object({
+  "color": zod.string().regex(listLearningPlansResponseWorkspacesItemCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(listLearningPlansResponseWorkspacesItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(listLearningPlansResponseWorkspacesItemCoverSeedMax).regex(listLearningPlansResponseWorkspacesItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional(),
+  "hidden": zod.boolean(),
+  "iconId": zod.string(),
+  "items": zod.array(zod.object({
+  "chapterId": zod.string().nullable(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "position": zod.int(),
+  "state": zod.enum(['started', 'done']).optional(),
+  "title": zod.string(),
+  "type": zod.enum(['file', 'material'])
+})),
+  "name": zod.string(),
+  "workspaceId": zod.string()
+}))
+})
+
+
+/**
  * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
  */
 export const GetLearningProgressQueryParams = zod.object({
-  "lead": zod.string().optional().describe('A listed workspace whose map to return instead of the most recently studied one')
+  "lead": zod.string().optional().describe('A listed workspace whose map to return instead of the most recently studied one'),
+  "all": zod.boolean().optional().describe('Also list workspaces hiding study progress, marked hidden')
 })
 
 export const getLearningProgressResponseActiveItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
@@ -2803,6 +2864,7 @@ export const GetLearningProgressResponse = zod.object({
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }).optional(),
   "done": zod.int(),
+  "hidden": zod.boolean().optional(),
   "iconId": zod.string(),
   "lastStudiedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
@@ -2819,6 +2881,7 @@ export const GetLearningProgressResponse = zod.object({
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }).optional(),
   "done": zod.int(),
+  "hidden": zod.boolean().optional(),
   "iconId": zod.string(),
   "lastStudiedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
@@ -3864,7 +3927,6 @@ export const GetMeResponse = zod.object({
   "visualAids": zod.enum(['fewer', 'more']).optional(),
   "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
 }),
-  "studyProgress": zod.boolean(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
 
@@ -3955,7 +4017,6 @@ export const UpdateMeResponse = zod.object({
   "visualAids": zod.enum(['fewer', 'more']).optional(),
   "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
 }),
-  "studyProgress": zod.boolean(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
 
@@ -4103,16 +4164,6 @@ export const SetStudyPreferencesBody = zod.object({
 })
 
 export const SetStudyPreferencesResponse = zod.void()
-
-
-/**
- * @summary Default study progress setting
- */
-export const SetStudyProgressDefaultBody = zod.object({
-  "enabled": zod.boolean()
-})
-
-export const SetStudyProgressDefaultResponse = zod.void()
 
 
 /**
@@ -5508,6 +5559,41 @@ export const GetSourceUploadPolicyResponse = zod.object({
 })),
   "vlmIngestPageCreditMicros": zod.int()
 })
+
+
+/**
+ * @summary Delete a study plan
+ */
+export const DeleteStudyPlanParams = zod.object({
+  "id": zod.uuid()
+})
+
+export const DeleteStudyPlanResponse = zod.void()
+
+
+/**
+ * @summary Rename a study plan or replace its steps
+ */
+export const UpdateStudyPlanParams = zod.object({
+  "id": zod.uuid()
+})
+
+export const updateStudyPlanBodyNameMax = 60;
+
+export const updateStudyPlanBodyStepsMax = 50;
+
+
+
+export const UpdateStudyPlanBody = zod.object({
+  "name": zod.string().min(1).max(updateStudyPlanBodyNameMax).optional(),
+  "steps": zod.array(zod.object({
+  "kind": zod.enum(['workspace', 'unfiled', 'chapter', 'file', 'material']),
+  "targetId": zod.string().optional().describe('The chapter, file or material; omitted for workspace and unfiled steps'),
+  "workspaceId": zod.string()
+})).max(updateStudyPlanBodyStepsMax).optional()
+})
+
+export const UpdateStudyPlanResponse = zod.void()
 
 
 /**
@@ -7455,7 +7541,7 @@ export const GetWorkspaceAttemptsResponse = zod.object({
 
 
 /**
- * @summary Turn study progress on or off in a workspace
+ * @summary Show or hide study progress in a workspace
  */
 export const SetWorkspaceStudyParams = zod.object({
   "id": zod.string()
@@ -7482,6 +7568,102 @@ export const SetStudyItemBody = zod.object({
 })
 
 export const SetStudyItemResponse = zod.void()
+
+
+/**
+ * @summary Plans kept in a workspace, then plans elsewhere with a step in it
+ */
+export const ListWorkspacePlansParams = zod.object({
+  "id": zod.string()
+})
+
+export const listWorkspacePlansResponseWorkspacesItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const listWorkspacePlansResponseWorkspacesItemCoverLineMax = 40;
+
+export const listWorkspacePlansResponseWorkspacesItemCoverSeedMax = 16;
+
+
+export const listWorkspacePlansResponseWorkspacesItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
+
+
+export const ListWorkspacePlansResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "plans": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "name": zod.string(),
+  "steps": zod.array(zod.object({
+  "kind": zod.enum(['workspace', 'unfiled', 'chapter', 'file', 'material']),
+  "locked": zod.boolean(),
+  "targetId": zod.string().optional().describe('The chapter, file or material'),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string()
+})),
+  "workspaces": zod.array(zod.object({
+  "chapters": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "order": zod.int()
+})),
+  "cover": zod.object({
+  "color": zod.string().regex(listWorkspacePlansResponseWorkspacesItemCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(listWorkspacePlansResponseWorkspacesItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(listWorkspacePlansResponseWorkspacesItemCoverSeedMax).regex(listWorkspacePlansResponseWorkspacesItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional(),
+  "hidden": zod.boolean(),
+  "iconId": zod.string(),
+  "items": zod.array(zod.object({
+  "chapterId": zod.string().nullable(),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "position": zod.int(),
+  "state": zod.enum(['started', 'done']).optional(),
+  "title": zod.string(),
+  "type": zod.enum(['file', 'material'])
+})),
+  "name": zod.string(),
+  "workspaceId": zod.string()
+}))
+})
+
+
+/**
+ * @summary Add an empty study plan to a workspace
+ */
+export const CreateStudyPlanParams = zod.object({
+  "id": zod.string()
+})
+
+export const createStudyPlanBodyNameMax = 60;
+
+
+
+export const CreateStudyPlanBody = zod.object({
+  "name": zod.string().min(1).max(createStudyPlanBodyNameMax)
+})
+
+export const CreateStudyPlanResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "id": zod.string(),
+  "name": zod.string(),
+  "steps": zod.array(zod.object({
+  "kind": zod.enum(['workspace', 'unfiled', 'chapter', 'file', 'material']),
+  "locked": zod.boolean(),
+  "targetId": zod.string().optional().describe('The chapter, file or material'),
+  "title": zod.string(),
+  "workspaceId": zod.string()
+})),
+  "updatedAt": zod.iso.datetime({"offset":true}),
+  "workspaceId": zod.string()
+})
 
 
 /**

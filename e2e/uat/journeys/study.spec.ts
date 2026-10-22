@@ -170,7 +170,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     },
     204
   );
-  // Progress is on by default (users.study_progress, no workspace override).
+  // Progress shows by default (no workspace_study row hides it).
   assert.equal(
     object(await api(run.owner, `/api/workspaces/${workspaceId}/study`))
       .enabled,
@@ -223,8 +223,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   // Continue opens the first item that is not done: the quiz not yet taken.
   // The tab first paints the last visit's progress (the persisted query
   // cache) while it refetches, so wait for the row to name that quiz.
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await showPanelView(page, m.workspace_tab_study());
+  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
   const continueButton = page.getByRole('button', {
     exact: true,
     name: m.study_continue(),
@@ -236,8 +235,7 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
 
   // A review session from the Study tab over the card and the question.
-  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
-  await showPanelView(page, m.workspace_tab_study());
+  await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}?study=true`);
   await page
     .getByRole('button', { exact: true, name: m.study_review_button() })
     .click();

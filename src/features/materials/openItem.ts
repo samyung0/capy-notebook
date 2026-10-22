@@ -33,8 +33,10 @@ export type WorkspaceOpenSearch = {
   item?: string;
   page?: number;
   mode?: MaterialMode;
-  /** The workspace's Study progress page, shown while nothing is open. */
-  progress?: true;
+  /** The workspace's Study page, shown while nothing is open. */
+  study?: true;
+  /** A study plan kept in this workspace, shown while nothing is open. */
+  plan?: string;
   /** Workspace settings open at this tab, over whatever the page shows. */
   settings?: SettingsTab;
 };
@@ -78,7 +80,8 @@ export function parseWorkspaceOpenSearch(
   // Invalid values are cleared explicitly: the router keeps raw keys the
   // parser leaves out.
   return {
-    progress: undefined,
+    plan: undefined,
+    study: undefined,
     ...parseOpenPage(search),
     settings: isSettingsTab(search.settings) ? search.settings : undefined,
   };
@@ -103,8 +106,10 @@ function parseOpenPage(search: Record<string, unknown>): WorkspaceOpenSearch {
       typeof search.item === 'string' && search.item ? search.item : undefined;
     return { material, ...(mode ? { mode } : {}), ...(item ? { item } : {}) };
   }
-  return search.progress === true || search.progress === 'true'
-    ? { progress: true }
+  if (typeof search.plan === 'string' && search.plan)
+    return { plan: search.plan };
+  return search.study === true || search.study === 'true'
+    ? { study: true }
     : {};
 }
 

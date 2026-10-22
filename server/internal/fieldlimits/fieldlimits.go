@@ -17,6 +17,7 @@ const (
 	WorkspaceName        = 80
 	WorkspaceDescription = 500
 	ChapterName          = 60
+	StudyPlanName        = 60
 	FileName             = 120
 	MaterialTitle        = FileName
 	// An agent-made material's or file's made-from line: at most
@@ -163,6 +164,7 @@ var Columns = map[string]int{
 	"workspaces.name":                  WorkspaceName,
 	"workspaces.description":           WorkspaceDescription,
 	"chapters.name":                    ChapterName,
+	"study_plans.name":                 StudyPlanName,
 	"files.name":                       FileName,
 	"materials.workspace_name":         WorkspaceName,
 	"materials.title":                  MaterialTitle,

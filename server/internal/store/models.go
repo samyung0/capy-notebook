@@ -23,8 +23,6 @@ type User struct {
 	ClassLabel   string `json:"classLabel,omitempty"`
 	Streak       int    `json:"streak"`
 	Locale       string `json:"locale"`
-	// StudyProgress is the default for workspaces without their own setting.
-	StudyProgress bool `json:"studyProgress"`
 	// StudyPreferences shape what the chat agent builds; empty fields take the
 	// pipeline's defaults.
 	StudyPreferences StudyPreferences `json:"studyPreferences"`

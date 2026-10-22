@@ -2,6 +2,7 @@ import { HttpResponse, http } from 'msw';
 import type {
   ItemAttempts,
   PastReview,
+  PlanStep,
   ProgressWorkspace,
   ReviewAnswer,
   ReviewItem,
@@ -314,7 +315,93 @@ const SHOWCASE: ProgressWorkspace[] = [
 
 /** As the server: `lead` (a listed workspace) leads the map, else the first
  * in progress, else the first finished; showcase rows have no items to map. */
-function learningProgress(leadId: string | null) {
+type MockPlanStep = {
+  kind: PlanStep['kind'];
+  workspaceId: string;
+  targetId?: string;
+};
+type MockPlan = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  steps: MockPlanStep[];
+};
+
+/** A seeded plan in Biology reaching into Chemistry, as a plan does. */
+const plans: MockPlan[] = [
+  {
+    createdAt: daysAgo(5),
+    id: 'plan_winter',
+    name: 'Winter exams',
+    steps: [
+      ...db.chapters
+        .filter((ch) => ch.workspaceId === 'ws_bio')
+        .sort((a, b) => a.order - b.order)
+        .slice(0, 2)
+        .map((ch) => ({
+          kind: 'chapter' as const,
+          targetId: ch.id,
+          workspaceId: 'ws_bio',
+        })),
+      { kind: 'workspace', workspaceId: 'ws_chem' },
+    ],
+    updatedAt: daysAgo(1),
+    workspaceId: 'ws_bio',
+  },
+];
+
+function stepTitle(step: MockPlanStep) {
+  if (step.kind === 'chapter')
+    return db.chapters.find((ch) => ch.id === step.targetId)?.name ?? '';
+  if (step.kind === 'file')
+    return db.files.find((f) => f.id === step.targetId)?.name ?? '';
+  if (step.kind === 'material')
+    return db.materials.find((mt) => mt.id === step.targetId)?.title ?? '';
+  return db.workspaces.find((w) => w.id === step.workspaceId)?.name ?? '';
+}
+
+/** The plans response: steps with titles, every named workspace once. */
+function studyPlans(list: MockPlan[]) {
+  const ids = [
+    ...new Set(
+      list.flatMap((p) => [
+        p.workspaceId,
+        ...p.steps.map((st) => st.workspaceId),
+      ])
+    ),
+  ];
+  return {
+    plans: list.map((p) => ({
+      ...p,
+      steps: p.steps.map((st) => ({
+        ...st,
+        locked: false,
+        title: stepTitle(st),
+      })),
+    })),
+    workspaces: ids.map((wsId) => {
+      const ws = db.workspaces.find((w) => w.id === wsId);
+      return {
+        chapters: db.chapters
+          .filter((ch) => ch.workspaceId === wsId)
+          .map((ch) => ({ id: ch.id, name: ch.name, order: ch.order })),
+        cover: ws?.cover,
+        hidden: !(enabled.get(wsId) ?? true),
+        iconId: ws?.iconId ?? '',
+        items: tracked(wsId).map(({ state, ...it }) => ({
+          ...it,
+          ...(state ? { state } : {}),
+        })),
+        name: ws?.name ?? wsId,
+        workspaceId: wsId,
+      };
+    }),
+  };
+}
+
+function learningProgress(leadId: string | null, all = false) {
   if (!historyFinished) {
     historyFinished = true;
     for (const it of tracked('ws_hist'))
@@ -327,7 +414,7 @@ function learningProgress(leadId: string | null) {
   const rows: ProgressWorkspace[] = [...progress.keys()]
     .filter(
       (wsId) =>
-        (enabled.get(wsId) ?? true) &&
+        (all || (enabled.get(wsId) ?? true)) &&
         [...items(wsId).values()].some((it) => it.state !== 'removed')
     )
     .map((wsId) => {
@@ -336,6 +423,7 @@ function learningProgress(leadId: string | null) {
       return {
         cover: ws?.cover,
         done: list.filter((it) => it.state === 'done').length,
+        hidden: !(enabled.get(wsId) ?? true),
         iconId: ws?.iconId ?? '',
         lastStudiedAt: new Date(studiedAt.get(wsId) ?? 0).toISOString(),
         name: ws?.name ?? wsId,
@@ -346,13 +434,16 @@ function learningProgress(leadId: string | null) {
     .filter((ws) => ws.total > 0);
   rows.push(
     ...SHOWCASE.filter(
-      (ws) => !rows.some((r) => r.workspaceId === ws.workspaceId)
-    )
+      (ws) =>
+        !rows.some((r) => r.workspaceId === ws.workspaceId) &&
+        (all || (enabled.get(ws.workspaceId) ?? true))
+    ).map((ws) => ({ ...ws, hidden: !(enabled.get(ws.workspaceId) ?? true) }))
   );
   rows.sort((a, b) => b.lastStudiedAt.localeCompare(a.lastStudiedAt));
   const active = rows.filter((ws) => ws.done < ws.total).slice(0, 10);
   const finished = rows.filter((ws) => ws.done >= ws.total).slice(0, 10);
   const mapped = [...active, ...finished]
+    .filter((ws) => !ws.hidden)
     .map((ws) => ws.workspaceId)
     .filter((id) => progress.has(id));
   const lead = mapped.find((id) => id === leadId) ?? mapped[0];
@@ -1017,9 +1108,68 @@ export const studyHandlers = [
       total: list.length,
     });
   }),
-  http.get('/api/learning/progress', ({ request }) =>
+  http.get('/api/learning/progress', ({ request }) => {
+    const search = new URL(request.url).searchParams;
+    return HttpResponse.json(
+      learningProgress(search.get('lead'), search.get('all') === 'true')
+    );
+  }),
+  http.get('/api/workspaces/:id/study/plans', ({ params }) => {
+    const wsId = String(params.id);
+    return HttpResponse.json(
+      studyPlans([
+        ...plans.filter((p) => p.workspaceId === wsId),
+        ...plans.filter(
+          (p) =>
+            p.workspaceId !== wsId &&
+            p.steps.some((st) => st.workspaceId === wsId)
+        ),
+      ])
+    );
+  }),
+  http.post('/api/workspaces/:id/study/plans', async ({ params, request }) => {
+    const wsId = String(params.id);
+    const { name } = (await request.json()) as { name: string };
+    if (plans.filter((p) => p.workspaceId === wsId).length >= 10)
+      return HttpResponse.json(
+        { detail: 'this workspace already has 10 plans' },
+        { status: 409 }
+      );
+    const now = new Date().toISOString();
+    const plan: MockPlan = {
+      createdAt: now,
+      id: `plan_${crypto.randomUUID()}`,
+      name,
+      steps: [],
+      updatedAt: now,
+      workspaceId: wsId,
+    };
+    plans.push(plan);
+    return HttpResponse.json({ ...plan, steps: [] }, { status: 201 });
+  }),
+  http.patch('/api/study/plans/:id', async ({ params, request }) => {
+    const plan = plans.find((p) => p.id === params.id);
+    if (!plan) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as {
+      name?: string;
+      steps?: MockPlanStep[];
+    };
+    if (body.name) plan.name = body.name;
+    if (body.steps) plan.steps = body.steps;
+    plan.updatedAt = new Date().toISOString();
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.delete('/api/study/plans/:id', ({ params }) => {
+    const at = plans.findIndex((p) => p.id === params.id);
+    if (at < 0) return new HttpResponse(null, { status: 404 });
+    plans.splice(at, 1);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/learning/plans', () =>
     HttpResponse.json(
-      learningProgress(new URL(request.url).searchParams.get('lead'))
+      studyPlans(
+        [...plans].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      )
     )
   ),
   http.get('/api/review/overview', () => HttpResponse.json(overview())),

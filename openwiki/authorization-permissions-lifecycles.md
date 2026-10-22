@@ -782,7 +782,13 @@ Details live in [study-progress.md](study-progress.md).
   role, and link or public visitors, viewers included. Ratings need read
   access to the rated material. Reads and writes never show another user's
   rows; the chat agent reads only the requester's, and only while their
-  progress is on.
+  study progress shows (Hide study progress is per user and workspace).
+- Study plans are private to their user too. Any reader of a workspace may
+  keep plans in it; a plan's steps may name any workspace the user can read
+  when adding them. A plan whose parent workspace the user can no longer read
+  is left out of every list, and a step in a workspace they can no longer
+  read is shown locked without its title. Plans go with their parent
+  workspace and at account purge.
 - Frozen accounts record progress, ratings, Reset and the progress switches
   like anyone else (`requireAccountMutate`), since the rows are their own and
   charge no storage. Suspended, deletion-pending and deleted accounts have no
