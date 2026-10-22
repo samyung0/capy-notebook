@@ -60,6 +60,11 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     ):
         assert command in office, command
     assert "a new Excel or Word file is a create command first" in office
+    # The agent sent bare seeded paraIds ("body:p9") in UAT (2026-10-22).
+    assert (
+        "The first page lists the paragraph styles by id and name. A command "
+        "copies an id whole, as the read shows it." in office
+    )
     ctx.library = True
     assert (
         "Practice from the library"

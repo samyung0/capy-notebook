@@ -2394,7 +2394,8 @@ def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
         "locked: why replace_text and format_text refuse it, and delete_paragraph unless "
         "it only follows a table) text; "
         "after the body, headers, footers and notes under == part == lines, which "
-        "take replace_text only:"
+        "take replace_text only; a command names a paragraph by its whole [id], "
+        "copied exactly:"
     )
     lines = []
     part = None

@@ -1758,6 +1758,36 @@ production the runtime is a separate origin inside Capy's page, so browsers
 keep that storage partitioned under Capy's site, and Safari may clear it after
 some days without a visit, after which the notes start hidden again.
 
+A person's speaker notes hold at most 4,000 characters a slide (Epo
+2026-10-22), counted in Unicode code points as the collaboration server
+counts them (an emoji is one, though it is two UTF-16 units). The notes panel
+(`NotesPanel` and `fitNotes` in pptx-react's `PptxEditor.tsx`,
+`MAX_NOTES_CHARS`) cuts what an input would insert past the cap, found as
+the text between what the notes and the input share at the start and the
+end: typing at the cap changes nothing and keeps the caret, and a paste, drop
+or autocorrect keeps what fits with the caret after it. The label's row then
+shows "Speaker notes hold at most 4,000 characters per slide." (`notes.tooLong`
+in pptx-i18n, English and Chinese; role `alert`, in the error colour of the
+XLSX refusal line) until an input fits again. From 3,600 code points (90% of
+the cap) the same row ends in an x/4,000 counter (`NOTES_COUNT_FROM`; Epo
+2026-10-22), copied from Capy's `CharCount` in `src/components/ui/Input.tsx`:
+muted, in the error colour at or over the cap (`data-full`). Both sit on the
+label's row, one fixed 16px line at 11px (notes-cap review r2 M1): the panel's
+height sets the slide's fit, so neither may grow it. The label and the
+counter never shrink and the limit line ends in an ellipsis where the row is
+too narrow (its full text stays in its title and the alert); a headless
+Chromium test at 360px checks the slide's box stays the same when a cut paste
+brings both. An
+IME composition that would pass the cap is shown but not sent until it ends,
+then cut the same way (cutting it while the IME holds it would break the
+composition); one that fits is sent as it goes. Notes already over the cap,
+from an uploaded deck (uploads get no special handling, Epo 2026-10-22), may
+shrink or be retyped to the same length, never grow, and an Undo that would
+bring such notes back is refused like any growth (the editor goes to
+recovery). The server refuses an update that
+grows a slide's notes past the cap (see the root rule below), so no client
+gets around the panel.
+
 Below lg the workspace's chat button sits at the frame's bottom right, 8px
 above its bottom chrome; the open chat field sits at the same 16px gap from
 the viewer's bottom as on every other file, over that chrome. The runtime reports that chrome's height
@@ -1888,8 +1918,28 @@ Strip thumbnails paint off screen and show only their latest paint.
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the fork's document roots, the contributor
 map included) or, in PPTX, writes or deletes anything in `pptx:meta` other
-than `commentFlavor`. The refusal is the unrecoverable
-`source-checkpoint-failed` message, like an oversized update. An update the
+than `commentFlavor`, or leaves a slide's speaker notes over 4,000 code points
+and longer than before (`notes_violation`, `MAX_SLIDE_NOTES_CHARS`; Epo
+2026-10-22). Notes are a string at a slide map's `notes` key, written whole,
+so that check reads only the update's own string entries over 4,000 bytes
+that it does not delete itself (bytes bound code points), each placed where
+yrs places it (`slot_of`, notes-cap review H1): its left is its origin, or the
+last unit the room holds of its client when the room holds its first units
+already (yrs splits those off), and its right is its right origin; its map is
+the one it names, else its left's, else its right's, and its key is its
+left's, else its right's, else its own, so an entry naming another key or none
+still counts where it lands. The update's entries it refers to are placed
+first, each once, without recursion. A `notes` entry of a nested map (only
+slides have one) is held to the value that map has now, or to none for a slide
+the update creates. An
+entry that loses to a concurrent write is held too, since only a client past
+the notes panel's cap writes one. So typing elsewhere costs one content match
+per struct, an over-cap note from an upload may shrink or keep its length,
+other slides stay editable beside it, and an Undo bringing back an upload's
+over-cap notes (of a cut, or of the slide's deletion) is refused like any
+growth. The refusal is
+the unrecoverable `source-checkpoint-failed` message, like an oversized
+update. An update the
 room cannot integrate yet is dropped instead, and that connection gets the
 room's sync step 1: its step 2 reply carries everything the room lacks, the
 dropped update included, with no disconnect (`crates/sources/src/admit.rs`,
