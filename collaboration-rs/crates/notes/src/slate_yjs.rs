@@ -15,8 +15,8 @@ use yrs::block::{EmbedPrelim, ItemContent, ItemPtr, Prelim};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::types::{Attrs, TypeRef};
 use yrs::{
-    Any, Array, ArrayPrelim, ArrayRef, GetString, Map, MapPrelim, MapRef, Out, ReadTxn, Text,
-    TextPrelim, TextRef, TransactionMut, Xml, XmlTextRef,
+    Any, Array, ArrayPrelim, ArrayRef, Map, MapPrelim, MapRef, Out, ReadTxn, Text, TextPrelim,
+    TransactionMut, Xml, XmlTextRef,
 };
 
 use crate::json::value_to_any;
@@ -410,35 +410,6 @@ fn nothing_follows(parent: BranchPtr, at: u32, last: Option<ItemPtr>) -> bool {
     true
 }
 
-/// Changes a source text to `next` with the fewest edits: the common head
-/// and tail stay (the slate-yjs patch's `editSharedText`), cut at character
-/// boundaries.
-pub fn edit_text(txn: &mut TransactionMut, text: &TextRef, next: &str) {
-    let current = text.get_string(txn);
-    if current == next {
-        return;
-    }
-    let (held, wanted): (Vec<char>, Vec<char>) =
-        (current.chars().collect(), next.chars().collect());
-    let head = held.iter().zip(&wanted).take_while(|(a, b)| a == b).count();
-    let tail = held[head..]
-        .iter()
-        .rev()
-        .zip(wanted[head..].iter().rev())
-        .take_while(|(a, b)| a == b)
-        .count();
-    let units = |chars: &[char]| chars.iter().map(|c| c.len_utf16() as u32).sum::<u32>();
-    let start = units(&held[..head]);
-    let removed = units(&held[head..held.len() - tail]);
-    if removed > 0 {
-        text.remove_range(txn, start, removed);
-    }
-    let inserted: String = wanted[head..wanted.len() - tail].iter().collect();
-    if !inserted.is_empty() {
-        text.insert(txn, start, &inserted);
-    }
-}
-
 /// Changes a figure's block map to `next` with the fewest writes, as the
 /// slate-yjs patch's `editSharedMap` does (Epo 2026-10-17): a changed entry
 /// is set whole and a gone one removed, so another writer's change to a
@@ -685,11 +656,6 @@ pub fn apply_op(
                     match (held, value_to_any(value)) {
                         _ if value.is_null() => {
                             element.remove_attribute(txn, key);
-                        }
-                        // A source text takes the change as a text diff, so
-                        // typing that reaches the room meanwhile stays.
-                        (Some(Out::YText(held)), Any::String(next)) => {
-                            edit_text(txn, &held, &next);
                         }
                         // A figure's block map takes it entry by entry, so a
                         // peer's change to another entry stays (Epo 2026-10-17).

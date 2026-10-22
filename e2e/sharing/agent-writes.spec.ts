@@ -736,7 +736,7 @@ test.describe('agent writes to notes', () => {
     }
   });
 
-  test('remove_block on embeds, a diagram and an interactive comes back whole on Undo; a figure stays', async ({
+  test('remove_block on embeds, a diagram, an interactive and a figure comes back whole on Undo', async ({
     anonymousApi,
     editorPage,
     ownerApi,
@@ -752,22 +752,11 @@ test.describe('agent writes to notes', () => {
     for (const page of pages)
       await expectRichBlocksShown(page, 'remove', before);
     const shown = await blocks(anonymousApi, id);
+    // A block holding media goes like any other (Epo 2026-10-21).
     const removed = shown.filter((block) =>
-      ['mermaid', 'html_embed', 'material_ref'].includes(block.type)
+      ['mermaid', 'html_embed', 'material_ref', 'img'].includes(block.type)
     );
-    expect(removed).toHaveLength(4);
-    // A block holding media is not the agent's to remove: the image stays.
-    const image = shown.find((block) => block.type === 'img')!;
-    const refused = await call(anonymousApi, '/api/internal/documents/edit', {
-      commands: [
-        { block_id: image.id, expected_text: image.text, type: 'remove_block' },
-      ],
-      target: { id, kind: 'material' },
-    });
-    expect(refused.status()).toBe(409);
-    expect(((await refused.json()) as { code: string }).code).toBe(
-      'unsupported_operation'
-    );
+    expect(removed).toHaveLength(5);
 
     const operation = await edit(
       anonymousApi,
@@ -790,6 +779,9 @@ test.describe('agent writes to notes', () => {
       await expect(page.locator('iframe[sandbox="allow-scripts"]')).toHaveCount(
         0
       );
+      await expect(
+        page.getByRole('figure', { name: 'remove marsh transect' })
+      ).toHaveCount(0);
     }
 
     await undo(ownerApi, operation);
@@ -920,6 +912,8 @@ test.describe('agent writes to notes', () => {
         {
           back: 'Coastal grassland flooded by tides',
           card_id: cards[0].id,
+          expected_back: 'Coastal grassland',
+          expected_front: 'Items salt marsh',
           front: 'Items salt marsh, rewritten',
           type: 'replace_card',
         },
@@ -1047,7 +1041,7 @@ test.describe('agent writes to notes', () => {
       ]);
   });
 
-  test('set_mermaid on a diagram reaches its open editors and Undo restores the source', async ({
+  test('replace_block on a diagram reaches its open editors and Undo restores the source', async ({
     anonymousApi,
     editorPage,
     ownerApi,
@@ -1072,11 +1066,70 @@ test.describe('agent writes to notes', () => {
       await expect(page.getByText('SeaWall').first()).toBeVisible();
     const before = await projection(ownerApi, id);
 
+    // set_mermaid is gone: the diagram's one block is replaced from a
+    // ```mermaid fence like any block (Epo 2026-10-21), with a new id.
+    const [diagram] = await blocks(anonymousApi, id);
+    // Its inspected text is its source, what the rewrite expects; a caption
+    // stays apart, never compared (Epo 2026-10-22).
+    expect(diagram.text).toBe(source);
+    // The rewrite is one ```mermaid fence and nothing else (review r1 M1): a
+    // paragraph or a second fence beside it, or a figure, is refused and the
+    // diagram stays as it was.
+    const fence = (body: string) => `\`\`\`mermaid\n${body}\n\`\`\``;
+    const oneFence =
+      'replace_block on a diagram takes one ```mermaid fence and nothing else';
+    const figure = await jpeg(ownerPage, '#c63');
+    for (const attempt of [
+      {
+        markdown: `${fence(source)}\n\nA paragraph the diagram would not show.`,
+        message: oneFence,
+      },
+      {
+        markdown: `${fence(source)}\n\n${fence('flowchart LR\n  Hidden --> Diagram')}`,
+        message: oneFence,
+      },
+      {
+        figures: [{ id: 'fig_diagram', image: figure }],
+        markdown: '![A marsh transect](figure:fig_diagram)',
+        message: 'only a note or a quiz shows figures',
+      },
+    ]) {
+      const refused = await call(anonymousApi, '/api/internal/documents/edit', {
+        commands: [
+          {
+            block_id: diagram.id,
+            expected_text: diagram.text,
+            markdown: attempt.markdown,
+            type: 'replace_block',
+          },
+        ],
+        figures: attempt.figures ?? [],
+        target: { id, kind: 'material' },
+      });
+      expect(refused.status(), attempt.markdown).not.toBe(200);
+      expect(await refused.json()).toMatchObject({
+        code: 'invalid_input',
+        message: attempt.message,
+      });
+    }
+    expect(await projection(ownerApi, id)).toEqual(before);
     const rewritten = 'flowchart LR\n  SeaWall --> Saltmarsh --> Estuary';
     const operation = await edit(anonymousApi, { id, kind: 'material' }, [
-      { expected_source: source, source: rewritten, type: 'set_mermaid' },
+      {
+        block_id: diagram.id,
+        expected_text: diagram.text,
+        markdown: `\`\`\`mermaid\n${rewritten}\n\`\`\``,
+        type: 'replace_block',
+      },
     ]);
-    await projectionIs(ownerApi, id, [{ ...before[0], source: rewritten }]);
+    await expect
+      .poll(
+        async () => (await projection(ownerApi, id)).map((node) => node.source),
+        {
+          timeout: 20_000,
+        }
+      )
+      .toEqual([rewritten]);
     for (const page of pages)
       await expect(page.getByText('Estuary').first()).toBeVisible({
         timeout: 20_000,

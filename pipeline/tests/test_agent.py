@@ -3012,8 +3012,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
                     {
                         "id": "m1",
                         "type": "mermaid",
-                        "text": "",
-                        "properties": {"source": "graph TD"},
+                        "text": "graph TD",
+                        "properties": {"caption": "Tide flow"},
                     },
                     {
                         "id": "r1",
@@ -3067,7 +3067,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
     text = material.text()
     assert "[b1] (p) hello" in text
     assert "    [qq1] (quiz_question) Why?" in text
-    assert "source: graph TD" in text
+    # A Mermaid block reads as its source, its caption apart (Epo 2026-10-22).
+    assert "[m1] (mermaid) graph TD\n    caption: Tide flow" in text
     assert "embedded quiz material id=mat_q: inspect it as kind material" in text
     assert "embedded flashcards reference, not yet created" in text
 
@@ -3237,6 +3238,60 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
     assert twice.text().endswith("Block b1 (p) now reads:\nalpha delta")
 
 
+async def test_a_mermaid_expectation_is_its_stored_source(monkeypatch):
+    """A Mermaid source's edge whitespace does not show where inspect or a
+    stale refusal prints it, so an edit expecting the source as shown expects
+    the stored one (review r2 L3: the model looped on stale_target)."""
+    ctx = _owner_ctx()
+    ctx.skills_read = {"editing"}
+    stored, typed = "flowchart LR\n  A --> B\n", "flowchart LR\n  A --> C \n"
+    sent: list[dict] = []
+    answers = iter(
+        [
+            _JsonResp(
+                {
+                    "format": "plate",
+                    "title": "Notes",
+                    "blocks": [{"id": "m1", "type": "mermaid", "text": stored}],
+                }
+            ),
+            _JsonResp(
+                {
+                    "code": "stale_target",
+                    "message": "block m1 changed",
+                    "details": {
+                        "block": {"id": "m1", "type": "mermaid", "text": typed}
+                    },
+                },
+                status=409,
+            ),
+            _JsonResp(_receipt("edited", "material", "mat_1")),
+        ]
+    )
+
+    def _post(url, **kwargs):
+        if "data" in kwargs:
+            sent.append(json.loads(kwargs["data"]))
+        return next(answers)
+
+    _gateway(monkeypatch, post=_post)
+    target = {"kind": "material", "id": "mat_1"}
+    await tools.run("inspect_document", {"target": target, "_tool_call_id": "c0"}, ctx)
+
+    def remove(n, expected):
+        command = {"type": "remove_block", "block_id": "m1", "expected_text": expected}
+        return tools.run(
+            "edit_document",
+            {"target": target, "commands": [command], "_tool_call_id": f"c{n}"},
+            ctx,
+        )
+
+    assert (await remove(1, stored.strip())).outcome != "succeeded"
+    assert (await remove(2, typed.strip())).outcome == "succeeded"
+    expected = [body["commands"][0]["expected_text"] for body in sent[-2:]]
+    assert expected == [stored, typed]
+
+
 async def test_a_write_naming_unread_excerpts_credits_them(monkeypatch):
     """Named excerpts are credited whether this turn read them or not (Epo
     2026-10-14): no refusal sends the model back to read them."""
@@ -3355,6 +3410,21 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
     assert tools.without_blanks(
         "create_material", {"kind": "note", "sources": [], "title": "null", "cards": {}}
     ) == {"kind": "note"}
+    # A blank expectation beside its side is one: a card's empty front
+    # (Epo 2026-10-21); without the side it means nothing and goes.
+    card = {"type": "replace_card", "card_id": "c1", "front": "F", "expected_front": ""}
+    assert tools.without_blanks(
+        "edit_document", {"target": edit["target"], "commands": [card]}
+    )["commands"] == [card]
+    assert tools.without_blanks(
+        "edit_document",
+        {
+            "target": edit["target"],
+            "commands": [{**card, "front": None, "back": "B", "expected_back": "b"}],
+        },
+    )["commands"] == [
+        {"type": "replace_card", "card_id": "c1", "back": "B", "expected_back": "b"}
+    ]
 
     # Dispatch hands the handler the cleaned arguments.
     seen = {}
