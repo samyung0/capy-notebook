@@ -1,3 +1,5 @@
+import { m } from '@/i18n';
+import { CopyError } from '@/lib/errors';
 import { fitImage } from '@/lib/fitImage';
 import { api } from './client';
 import { materialQuery } from './hooks';
@@ -41,28 +43,41 @@ export interface EditorAssetUploadOptions {
   signal?: AbortSignal;
 }
 
-/** The plan image cap of the account paying for the material's assets. The
- * editors already hold the material, so this reads the cache. */
-export async function editorImageMaxBytes(materialId: string) {
-  const { imageMaxBytes } = await queryClient.ensureQueryData(
+/** The plan cap, by purpose, of the account paying for the material's
+ * assets. The editors already hold the material, so this reads the cache. */
+async function editorAssetMaxBytes(
+  materialId: string,
+  purpose: EditorAssetPurpose
+) {
+  const { audioMaxBytes, imageMaxBytes } = await queryClient.ensureQueryData(
     materialQuery(materialId)
   );
-  return imageMaxBytes;
+  return purpose === 'image' ? imageMaxBytes : audioMaxBytes;
+}
+
+/** The plan image cap of the account paying for the material's assets. */
+export function editorImageMaxBytes(materialId: string) {
+  return editorAssetMaxBytes(materialId, 'image');
 }
 
 // Streams the file through the gateway once its ticket's turn comes, and the
-// gateway stores it and returns only stable metadata (Epo 2026-10-22). Plate documents should persist assetId,
-// never a resolved short-lived URL. An image over the plan cap is shrunk first.
+// gateway stores it and returns only stable metadata (Epo 2026-10-22). Plate
+// documents should persist assetId, never a resolved short-lived URL. An
+// image over the plan cap is shrunk first; a file still over it is refused
+// before anything is sent (Epo 2026-10-22), naming the limit. The gateway
+// checks the cap again.
 export async function uploadEditorAsset(
   materialId: string,
   picked: File,
   purpose: EditorAssetPurpose,
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
-  const file =
-    purpose === 'image'
-      ? await fitImage(picked, await editorImageMaxBytes(materialId))
-      : picked;
+  const maxBytes = await editorAssetMaxBytes(materialId, purpose);
+  const file = purpose === 'image' ? await fitImage(picked, maxBytes) : picked;
+  if (file.size > maxBytes)
+    throw new CopyError(
+      m.editor_import_too_large({ mb: Math.round(maxBytes / 1024 / 1024) })
+    );
   const metadata = {
     contentType: file.type,
     name: file.name,

@@ -174,7 +174,13 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeReloadOutcome: billing.ReloadOutcome,
 		streamByUser:        make(map[string]int),
 	}
-	a.uploads = newUploadQueue(func(batch string) { a.failSourceBatchFile(context.Background(), batch) })
+	a.uploads = newUploadQueue(func(batch string, removed bool) {
+		if removed {
+			a.removeSourceBatchFile(context.Background(), batch)
+		} else {
+			a.failSourceBatchFile(context.Background(), batch)
+		}
+	})
 	if rdb != nil {
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
 		go a.listenWorkspaceTree(context.Background())
@@ -270,6 +276,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/materials/{id}/editor-assets/uploads", a.uploadEditorAsset)
 	r.Get("/api/uploads/tickets/{ticketId}", a.waitUploadTicket)
 	r.Delete("/api/uploads/tickets/{ticketId}", a.cancelUploadTicket)
+	r.Post("/api/workspaces/{id}/sources/batches/{batchId}/removed", a.removeUnsentSource)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)

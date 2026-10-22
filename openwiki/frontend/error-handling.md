@@ -27,7 +27,9 @@ The gateway's upload line answers two typed 4xx codes the browser gives their
 own copy, as both title and description, so the transfer row (its title) and
 the note placeholder (`errorCopy`) show it inline:
 
-- `upload_timeout` (408): the upload's body took past 5 minutes. Its kind is
+- `upload_timeout` (408): the upload's body took past its deadline (30 s plus
+  its size at 100 KB/s, at most 5 minutes), shown as "The upload took too
+  long. Try again." Its kind is
   overridden to `network` (a coded 4xx otherwise reads as `unknown`, which
   `errorCopy` replaces with its fallback). A connection dropped before the
   answer is an ordinary network error.

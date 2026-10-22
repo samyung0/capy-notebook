@@ -27,7 +27,7 @@ describe('frontend error normalization', () => {
     expect(errorKind(error)).toBe(kind);
   });
 
-  it('names an upload the gateway cut off after 5 minutes', () => {
+  it('names an upload the gateway cut off past its deadline', () => {
     const error = new ApiError(408, 'Request Timeout', undefined, {
       code: 'upload_timeout',
     });

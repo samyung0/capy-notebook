@@ -63,6 +63,17 @@ type officeCommand struct {
 	Color     string          `json:"color"`
 	Highlight string          `json:"highlight"`
 	Alignment string          `json:"alignment"`
+	// PPTX
+	ShapeID     string          `json:"shape_id"`
+	Paragraphs  json.RawMessage `json:"paragraphs"`
+	SlideID     string          `json:"slide_id"`
+	AfterSlide  string          `json:"after_slide"`
+	BeforeSlide string          `json:"before_slide"`
+	Layout      string          `json:"layout"`
+	X           *float64        `json:"x"`
+	Y           *float64        `json:"y"`
+	W           *float64        `json:"w"`
+	H           *float64        `json:"h"`
 }
 
 // namedNumberFormats are format_cells' preset number formats, matched in any
@@ -79,10 +90,13 @@ var xlsxCommands = []string{
 }
 
 // paragraphCommands are the DOCX and PPTX commands.
-var paragraphCommands = []string{"replace_text", "insert_paragraph", "delete_paragraph"}
+var paragraphCommands = []string{"replace_text", "insert_paragraph", "delete_paragraph", "format_text", "set_alignment"}
 
 // docxCommands are the commands only DOCX files take.
-var docxCommands = []string{"set_list", "insert_table", "delete_table", "format_text", "set_alignment"}
+var docxCommands = []string{"set_list", "insert_table", "delete_table"}
+
+// pptxCommands are the commands only PPTX files take.
+var pptxCommands = []string{"set_shape_text", "add_slide", "delete_slide", "move_slide", "add_text_box"}
 
 // NormalizeOfficeCommands turns edit_office_document's commands into the
 // engine's: the type stays snake_case, the fields become camelCase, and
@@ -97,7 +111,7 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			return nil, refusal(agenttools.ErrInvalidInput, "invalid command: %v", err)
 		}
 		xlsx, docx := slices.Contains(xlsxCommands, c.Type), slices.Contains(docxCommands, c.Type)
-		paragraphs := slices.Contains(paragraphCommands, c.Type)
+		paragraphs, pptx := slices.Contains(paragraphCommands, c.Type), slices.Contains(pptxCommands, c.Type)
 		switch {
 		case c.Type == "create":
 			return nil, refusal(agenttools.ErrInvalidInput, "create must be the call's first command, without file_id")
@@ -105,9 +119,11 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to XLSX files, not %s", c.Type, strings.ToUpper(format))
 		case docx && format != "docx":
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to DOCX files, not %s", c.Type, strings.ToUpper(format))
+		case pptx && format != "pptx":
+			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to PPTX files, not %s", c.Type, strings.ToUpper(format))
 		case paragraphs && format == "xlsx":
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to DOCX and PPTX files; write cells with set_range", c.Type)
-		case !xlsx && !paragraphs && !docx:
+		case !xlsx && !paragraphs && !docx && !pptx:
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "unsupported command %q", c.Type)
 		}
 		var normalized map[string]any
@@ -211,6 +227,35 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			}
 		case "set_alignment":
 			normalized = map[string]any{"targetId": c.TargetID, "alignment": c.Alignment}
+		case "set_shape_text":
+			var texts []string
+			if err := json.Unmarshal(c.Paragraphs, &texts); err != nil || texts == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "set_shape_text needs paragraphs: the shape's new text, one string a paragraph")
+			}
+			normalized = map[string]any{"shapeId": c.ShapeID, "expectedText": c.ExpectedText, "paragraphs": texts}
+		case "add_slide", "move_slide":
+			// add_slide names a layout, move_slide its slide.
+			fields := map[string]string{"afterSlide": c.AfterSlide, "beforeSlide": c.BeforeSlide, "layout": c.Layout}
+			if c.Type == "move_slide" {
+				fields = map[string]string{"afterSlide": c.AfterSlide, "beforeSlide": c.BeforeSlide, "slideId": c.SlideID}
+			}
+			normalized = map[string]any{}
+			for key, value := range fields {
+				if value != "" {
+					normalized[key] = value
+				}
+			}
+		case "delete_slide":
+			normalized = map[string]any{"slideId": c.SlideID, "expectedText": c.ExpectedText}
+		case "add_text_box":
+			var texts []string
+			if err := json.Unmarshal(c.Paragraphs, &texts); err != nil || texts == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "add_text_box needs paragraphs: the box's text, one string a paragraph")
+			}
+			if c.X == nil || c.Y == nil || c.W == nil || c.H == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "add_text_box needs x, y, w and h in points")
+			}
+			normalized = map[string]any{"slideId": c.SlideID, "paragraphs": texts, "x": *c.X, "y": *c.Y, "w": *c.W, "h": *c.H}
 		}
 		normalized["type"] = c.Type
 		encoded, err := json.Marshal(normalized)

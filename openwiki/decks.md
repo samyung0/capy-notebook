@@ -141,7 +141,11 @@ with Cambria's metrics. `replace_text` works on agent-made decks (checked
 editable paragraphs; edit, export, reopen and Undo). Each SVG `<text>` line is
 its own shape, so a sentence wrapped over lines is several targets and a longer
 replacement does not reflow into the next line's box. An edit of the deck is a
-source-file edit: no `excerpt_ids`, and its provenance is unchanged.
+source-file edit: no `excerpt_ids`, and its provenance is unchanged. Once a
+deck exists the agent reads and edits it with `inspect_office_document` and
+`edit_office_document` ([agentic-retrieval.md](agentic-retrieval.md), Office
+tools); every slide sits on ppt-master's one blank layout, so `add_slide`
+gives an empty slide and `add_text_box` puts text on it.
 
 ## Output files preference
 
