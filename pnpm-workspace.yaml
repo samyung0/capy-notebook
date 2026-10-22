@@ -61,6 +61,7 @@ overrides:
   "xmlbuilder2>js-yaml": 3.15.2
   "argparse@<2": 2.0.1
   "katex@<0.18.2": 0.19.0
+  "dompurify@<3.4.17": 3.4.17
 
 # `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
 # here. Each entry says why it waits.

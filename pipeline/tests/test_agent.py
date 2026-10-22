@@ -5136,6 +5136,50 @@ async def test_reading_office_building_appends_the_office_tools(monkeypatch):
     assert events[-1]["toolEvidence"]["officeTools"] is True
 
 
+async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypatch):
+    """UAT 2026-10-22: the agent read office_building alone, inspected and
+    edited; the write was refused for the editing skill, as every write is.
+    office_building now says an edit needs editing too."""
+    _gateway(monkeypatch)
+    run = agent.tools.run
+
+    async def _run(name, args, ctx):
+        if name == "inspect_office_document":
+            return ToolResult(text_parts=["[body:paragraph:body:p0] Intro"])
+        return await run(name, args, ctx)
+
+    edit = json.dumps(
+        {
+            "file_id": "f_1",
+            "commands": [
+                {
+                    "type": "set_alignment",
+                    "target_id": "body:paragraph:body:p0",
+                    "alignment": "center",
+                }
+            ],
+        }
+    )
+    stream, _seen = _script_stream(
+        [
+            _assembled("", [_call("read_skill", '{"name": "office_building"}', "c1")]),
+            _assembled(
+                "", [_call("inspect_office_document", '{"file_id":"f_1"}', "c2")]
+            ),
+            _assembled("", [_call("edit_office_document", edit, "c3")]),
+            _assembled(_answer(("Not edited.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("Center the intro", _owner_ctx())
+    refused = next(e for e in events if e["type"] == "tool_end" and e["callId"] == "c3")
+    assert refused["error"]["message"] == skills.refusal([skills.EDITING], write=True)
+    assert "Editing or creating one also needs the editing skill" in skills.SKILLS[
+        skills.OFFICE_BUILDING
+    ].text(False)
+
+
 async def test_office_tools_need_the_office_building_skill(monkeypatch):
     ctx = _office_ctx(monkeypatch)
     ctx.skills_read = {skills.EDITING}
@@ -5384,7 +5428,8 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                 "content control, locked: why replace_text and format_text refuse "
                 "it, and delete_paragraph unless it only follows a table) text; after "
                 "the body, headers, footers and notes under == part == lines, which "
-                "take replace_text only:"
+                "take replace_text only; a command names a paragraph by its whole "
+                "[id], copied exactly:"
             ),
             source_block(
                 "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
@@ -5535,7 +5580,13 @@ async def test_a_long_slide_read_shows_the_shapes_that_fit_and_where_to_go_on(
     text = (
         await tools.run(
             "inspect_office_document",
-            {"file_id": "f_1", "slide": 1, "start": 401, "count": 199, "_tool_call_id": "c"},
+            {
+                "file_id": "f_1",
+                "slide": 1,
+                "start": 401,
+                "count": 199,
+                "_tool_call_id": "c",
+            },
             ctx,
         )
     ).text()

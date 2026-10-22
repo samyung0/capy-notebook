@@ -1523,6 +1523,11 @@ design, option d), and the nudge's release file on 2026-10-17.
   finds nothing instead of panicking) raised `CLIENT_PROTOCOL` to 10 and
   `MIN_SOURCE` to 10; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 9 -> 10, source 9 -> 10".
+  The Office agent DOCX id parser (pin 45d17fc72: every DOCX command reads
+  its id through one parser, refusing a bare paraId, table or cell id by
+  naming the read's id; UAT 2026-10-22) raised `CLIENT_PROTOCOL` to 11 and
+  `MIN_SOURCE` to 11; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 10 -> 11, source 10 -> 11".
 
 #### When to bump
 
