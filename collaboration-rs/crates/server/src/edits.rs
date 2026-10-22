@@ -5,20 +5,23 @@
 //! (the durable base and rows merged with this instance's live room) under
 //! the material lock, and commits its row with the receipt in one
 //! transaction; only the committed change then reaches the live room, whose
-//! durable cover takes it in (DESIGN.md 3.2). The room keeps the edit's own
-//! Yjs items while it stays loaded, and Undo and Redo revert them there
-//! (`ydoc::undo`, Epo 2026-10-20); an edit made with no room loaded has no
-//! Undo.
+//! durable cover takes it in (DESIGN.md 3.2). An edit made while its room was
+//! loaded returns its Undo payload (`ydoc::undo`, Epo 2026-10-21), which the
+//! chat keeps and sends back: the Undo (and Redo) is written exactly as an
+//! edit is, on the stored state merged with the live room when one is loaded.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use notes::edit::{DocumentCommand, EditError, EditOutcome};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::oneshot;
 use ydoc::undo::Captured;
 use yrs::updates::decoder::Decode;
-use yrs::{ReadTxn, Snapshot, StateVector, Transact};
+use yrs::{ReadTxn, Snapshot, StateVector, Transact, WriteTxn};
 
 use crate::access::{self, AccessError};
 use crate::app::Shared;
@@ -28,7 +31,7 @@ use crate::model::Model;
 use crate::note_store;
 use crate::observe;
 use crate::projection;
-use crate::room::{AgentUndo, Reverted, RoomCmd, ServiceEdit};
+use crate::room::{RoomCmd, ServiceEdit};
 /// How long a live room may take to hand over its state.
 const SNAPSHOT_WAIT: Duration = Duration::from_secs(10);
 
@@ -231,6 +234,8 @@ pub struct DocumentRequest {
     pub provenance: Option<Value>,
     pub room: Option<String>,
     pub target: Target,
+    /// `/internal/documents/undo`: the Undo (or Redo) payload sent back.
+    pub undo: Option<UndoPayload>,
 }
 
 #[derive(Clone, Debug, Deserialize, serde::Serialize)]
@@ -246,6 +251,82 @@ pub struct Operation {
     pub message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_id: Option<String>,
+}
+
+/// An Undo payload as this server builds it and takes it back (Epo
+/// 2026-10-21): per document the write changed ("content", a quiz's "keys",
+/// a source's "source"), the update that reverses it, base64, and the
+/// lineage it was made in (a material's room schema, a source's epoch).
+/// Never stored here: the gateway signs it and the chat keeps it for a day.
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
+pub struct UndoPayload {
+    pub epoch: i64,
+    pub updates: BTreeMap<String, String>,
+}
+
+/// A material document's name in a payload.
+fn doc_name(doc: note_store::Doc) -> &'static str {
+    match doc {
+        note_store::Doc::Content => "content",
+        note_store::Doc::Keys => "keys",
+    }
+}
+
+impl UndoPayload {
+    fn of(epoch: i64, updates: Vec<(note_store::Doc, Vec<u8>)>) -> Self {
+        UndoPayload {
+            epoch,
+            updates: updates
+                .into_iter()
+                .map(|(doc, update)| (doc_name(doc).to_owned(), BASE64.encode(update)))
+                .collect(),
+        }
+    }
+
+    /// The updates' bytes by document name; refused when one does not decode
+    /// or all together pass the 8 MiB update cap (what an Undo may send).
+    fn bytes(&self) -> Result<Vec<(&str, Vec<u8>)>, DocumentError> {
+        let mut out = Vec::new();
+        let mut total = 0usize;
+        for (name, update) in &self.updates {
+            let bytes = BASE64
+                .decode(update)
+                .map_err(|_| DocumentError::Invalid("invalid undo payload".into()))?;
+            total = total.saturating_add(bytes.len());
+            out.push((name.as_str(), bytes));
+        }
+        if total > ydoc::MAX_UPDATE_BYTES {
+            return Err(undo_unavailable("this edit is too large to undo"));
+        }
+        Ok(out)
+    }
+
+    /// A material's updates by document; a name it does not have is
+    /// invalid.
+    fn material(
+        &self,
+        docs: &[note_store::Doc],
+    ) -> Result<Vec<(note_store::Doc, Vec<u8>)>, DocumentError> {
+        let invalid = || DocumentError::Invalid("invalid undo payload".into());
+        let mut out = Vec::new();
+        for (name, bytes) in self.bytes()? {
+            let doc = docs
+                .iter()
+                .copied()
+                .find(|doc| doc_name(*doc) == name)
+                .ok_or_else(invalid)?;
+            out.push((doc, bytes));
+        }
+        if out.is_empty() {
+            return Err(invalid());
+        }
+        Ok(out)
+    }
+}
+
+/// The Undo ref an agent step's receipt carries.
+fn undo_ref(operation_id: &str) -> Value {
+    json!({ "operationId": operation_id, "status": "available" })
 }
 
 fn parse<T: serde::de::DeserializeOwned>(value: Value, what: &str) -> Result<T, DocumentError> {
@@ -420,20 +501,26 @@ async fn live_state(app: &Shared, room: &str) -> Option<Vec<u8>> {
     tokio::time::timeout(SNAPSHOT_WAIT, answer).await.ok()?.ok()
 }
 
-/// One document a server edit changed: its row, the cover it makes, what
-/// its live room lacks of it, and the edit's own items when that room was
-/// loaded (its Undo).
+/// One document a server edit changed: its row, the cover it makes and what
+/// its live room lacks of it.
 struct Write {
     doc: note_store::Doc,
     row: Vec<u8>,
     durable: ydoc::Durable,
     live_update: Option<Vec<u8>>,
-    captured: Option<Captured>,
+}
+
+/// What a server write of a material applies: the agent's commands, or an
+/// Undo payload sent back (Epo 2026-10-21), its update per document.
+enum Change {
+    Commands(Vec<DocumentCommand>),
+    Undo(Vec<(note_store::Doc, Vec<u8>)>),
 }
 
 /// What an edit computed on its isolated documents.
 struct Computed {
-    /// One per changed document (a quiz may change both).
+    /// One per changed document (a quiz may change both). None for an Undo
+    /// payload applied before.
     writes: Vec<Write>,
     value: Vec<Value>,
     /// A quiz: every editor asset its documents reference (REVIEW1 S4).
@@ -441,6 +528,9 @@ struct Computed {
     outcome: EditOutcome,
     /// What the edit's Undo may send ([undo_cost]).
     undo_cost: usize,
+    /// The payload that reverses this write, by document: an edit's Undo, an
+    /// Undo's Redo ([undo_payload]).
+    undo: Option<Vec<(note_store::Doc, Vec<u8>)>>,
 }
 
 /// What an edit's Undo may send (`sources::undo_cost`, Epo 2026-10-21): its
@@ -470,6 +560,36 @@ fn touched(documents: &[&[Value]], id: &str) -> usize {
         .flat_map(|nodes| nodes.iter())
         .map(|node| size(node, id))
         .sum()
+}
+
+/// The payload reversing a write: each changed document's revert, made on
+/// its working copy after its write was encoded (`ydoc::undo::payload`).
+/// None when nothing reverts, or past the 8 MiB update cap in all.
+fn undo_payload(
+    parts: Vec<(note_store::Doc, &yrs::Doc, Captured)>,
+) -> Option<Vec<(note_store::Doc, Vec<u8>)>> {
+    let updates: Vec<_> = parts
+        .into_iter()
+        .filter_map(|(name, doc, captured)| Some((name, ydoc::undo::payload(doc, captured)?)))
+        .collect();
+    let total: usize = updates.iter().map(|(_, update)| update.len()).sum();
+    (!updates.is_empty() && total <= ydoc::MAX_UPDATE_BYTES).then_some(updates)
+}
+
+/// A payload sent back, applied to `doc` (`ydoc::undo::apply_payload`): the
+/// change it made, or None when it was applied before. Refused when nothing
+/// of the edit is left or it names items this document does not hold.
+fn sent_back(doc: &yrs::Doc, update: &[u8]) -> Result<Option<Captured>, DocumentError> {
+    let update =
+        ydoc::decode(update).map_err(|_| DocumentError::Invalid("invalid undo payload".into()))?;
+    match ydoc::undo::apply_payload(doc, update).map_err(|_| undo_unavailable(UNDO_GONE))? {
+        ydoc::undo::Applied::Changed(change) => Ok(Some(change)),
+        ydoc::undo::Applied::Before => Ok(None),
+        ydoc::undo::Applied::Nothing => {
+            Err(undo_unavailable("nothing of this edit is left to undo"))
+        }
+        ydoc::undo::Applied::Unheld => Err(undo_unavailable(UNDO_GONE)),
+    }
 }
 
 /// A document for a server edit: the durable state, then the live room
@@ -527,8 +647,7 @@ impl Scratch {
     }
 
     /// The document's write, or none when the edit left it as it was.
-    /// `captured` is kept only when a live room took part.
-    fn write(&self, doc: note_store::Doc, captured: Option<Captured>) -> Option<Write> {
+    fn write(&self, doc: note_store::Doc) -> Option<Write> {
         if !self.changed() {
             return None;
         }
@@ -544,7 +663,6 @@ impl Scratch {
             row,
             durable,
             live_update,
-            captured: captured.filter(|_| self.live.is_some()),
         })
     }
 }
@@ -577,16 +695,17 @@ struct QuizInput {
     live_keys: Option<Vec<u8>>,
 }
 
-/// A server write of a quiz (an agent edit, the save API): `edit` runs on
-/// both documents; caps hold for each and the limits for both together
-/// (REVIEW1 S3); the projection is the complete questions.
+/// What a quiz write did to its two documents: the outcome and each
+/// document's change (an Undo payload applied before: none).
+type QuizChanged = (EditOutcome, Option<(Captured, Captured)>);
+
+/// A server write of a quiz (an agent edit, an Undo, the save API): `edit`
+/// runs on both documents; caps hold for each and the limits for both
+/// together (REVIEW1 S3); the projection is the complete questions.
 fn compute_quiz(
     content: &Scratch,
     keys: &Scratch,
-    edit: impl FnOnce(
-        &mut yrs::TransactionMut,
-        &mut yrs::TransactionMut,
-    ) -> Result<EditOutcome, DocumentError>,
+    edit: impl FnOnce(&yrs::Doc, &yrs::Doc) -> Result<QuizChanged, DocumentError>,
 ) -> Result<Computed, DocumentError> {
     let measure = || {
         let one = |kind: items::Kind, doc: &yrs::Doc| {
@@ -598,15 +717,16 @@ fn compute_quiz(
         )
     };
     let previous = measure();
-    let (outcome, content_items, keys_items) = {
-        let mut content_txn = content.doc.transact_mut();
-        let mut keys_txn = keys.doc.transact_mut();
-        let outcome = edit(&mut content_txn, &mut keys_txn)?;
-        (
+    let (outcome, changes) = edit(&content.doc, &keys.doc)?;
+    let Some((content_items, keys_items)) = changes else {
+        return Ok(Computed {
+            writes: Vec::new(),
+            value: Vec::new(),
+            asset_ids: None,
             outcome,
-            Captured::of(&mut content_txn),
-            Captured::of(&mut keys_txn),
-        )
+            undo_cost: 0,
+            undo: None,
+        });
     };
     for (kind, doc) in [
         (items::Kind::Quiz, &content.doc),
@@ -635,14 +755,23 @@ fn compute_quiz(
         &content.doc.transact(),
         &keys.doc.transact(),
     ));
-    let writes = [
-        content.write(note_store::Doc::Content, Some(content_items)),
-        keys.write(note_store::Doc::Keys, Some(keys_items)),
+    let writes: Vec<Write> = [
+        content.write(note_store::Doc::Content),
+        keys.write(note_store::Doc::Keys),
     ]
     .into_iter()
     .flatten()
     .collect();
+    let written = |doc| writes.iter().any(|write| write.doc == doc);
+    let parts = [
+        (note_store::Doc::Content, &content.doc, content_items),
+        (note_store::Doc::Keys, &keys.doc, keys_items),
+    ]
+    .into_iter()
+    .filter(|(doc, _, _)| written(*doc))
+    .collect();
     Ok(Computed {
+        undo: undo_payload(parts),
         writes,
         value,
         asset_ids,
@@ -651,14 +780,33 @@ fn compute_quiz(
     })
 }
 
+/// The quiz commands on both documents, keeping what they delete for the
+/// Undo payload.
+fn quiz_commands(
+    content: &yrs::Doc,
+    keys: &yrs::Doc,
+    commands: &[DocumentCommand],
+) -> Result<QuizChanged, DocumentError> {
+    let (_content, _keys) = (ydoc::undo::keep(content), ydoc::undo::keep(keys));
+    let mut content_txn = content.transact_mut_with(ydoc::undo::ORIGIN);
+    let mut keys_txn = keys.transact_mut_with(ydoc::undo::ORIGIN);
+    items::quiz::apply_commands(&mut content_txn, &mut keys_txn, commands)?;
+    Ok((
+        EditOutcome::default(),
+        Some((Captured::of(&mut content_txn), Captured::of(&mut keys_txn))),
+    ))
+}
+
 /// The edit itself, on a document of the durable state plus the live room
-/// (a quiz: on both its documents).
+/// (a quiz: on both its documents). An agent edit builds its Undo payload
+/// when its estimate fits the update cap; an Undo always builds its Redo
+/// payload.
 fn compute(
     base: Vec<u8>,
     rows: Vec<Vec<u8>>,
     live: Option<Vec<u8>>,
     kind: String,
-    commands: Vec<DocumentCommand>,
+    change: Change,
     quiz: Option<QuizInput>,
 ) -> Result<Computed, DocumentError> {
     let unknown = |error: String| DocumentError::Unknown(error);
@@ -666,105 +814,144 @@ fn compute(
     if let Some(quiz) = quiz {
         let keys =
             Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref()).map_err(unknown)?;
-        let cost = undo_cost(
-            &commands,
-            &[
-                &items::Kind::Quiz.document_value(&scratch.doc.transact()),
-                &items::Kind::QuizKeys.document_value(&keys.doc.transact()),
-            ],
-        );
-        let mut computed = compute_quiz(&scratch, &keys, |content, keys| {
-            items::quiz::apply_commands(content, keys, &commands)?;
-            Ok(EditOutcome::default())
-        })?;
-        computed.undo_cost = cost;
+        let computed = match change {
+            Change::Commands(commands) => {
+                let cost = undo_cost(
+                    &commands,
+                    &[
+                        &items::Kind::Quiz.document_value(&scratch.doc.transact()),
+                        &items::Kind::QuizKeys.document_value(&keys.doc.transact()),
+                    ],
+                );
+                let mut computed = compute_quiz(&scratch, &keys, |content, keys| {
+                    quiz_commands(content, keys, &commands)
+                })?;
+                computed.undo_cost = cost;
+                if cost > ydoc::MAX_UPDATE_BYTES {
+                    computed.undo = None;
+                }
+                computed
+            }
+            Change::Undo(updates) => compute_quiz(&scratch, &keys, |content, keys| {
+                let mut changes = (Captured::default(), Captured::default());
+                for (doc, update) in updates {
+                    let (target, slot) = match doc {
+                        note_store::Doc::Content => (content, &mut changes.0),
+                        note_store::Doc::Keys => (keys, &mut changes.1),
+                    };
+                    match sent_back(target, &update)? {
+                        Some(change) => *slot = change,
+                        None => return Ok((EditOutcome::default(), None)),
+                    }
+                }
+                Ok((EditOutcome::default(), Some(changes)))
+            })?,
+        };
         return Ok(computed);
     }
     let doc = &scratch.doc;
-    let (outcome, value, captured, cost) = if let Model::Item(item) = Model::of(&kind) {
-        item_edit(doc, item, &kind, &commands)?
-    } else {
-        let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
-        let mut txn = doc.transact_mut();
-        let before = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
-        let previous = notes::limits::measure_value(&before);
-        let cost = undo_cost(&commands, &[&before]);
-        let outcome = notes::edit::apply_material_commands(&mut txn, &root, &commands)?;
-        // A note the edit emptied gets its empty paragraph in the same
-        // transaction, so no editor sees it empty and its Undo takes the
-        // paragraph out again (Epo 2026-10-21). Other kinds require their
-        // block: the check below refuses one left without it.
-        notes::repair::emptied(&mut txn, &kind);
-        let value = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
-        // A whole note the check refuses (an 11th interactive block across
-        // it) is a refusal naming the rule, as for a live item; logged, since
-        // a command that built a wrong document refuses the same way.
-        notes::material::assert_canonical(&value, &kind).map_err(|error| {
-            observe::log(
-                observe::Level::Warn,
-                "agent edit refused by the material check",
-                json!({ "error": error.0, "kind": kind }),
-            );
-            DocumentError::edit("invalid_input", error.to_string())
-        })?;
-        let metrics = notes::limits::measure_value(&value);
-        if let Some(code) = notes::limits::limit_code(&metrics)
-            && !notes::limits::recovers(&metrics, Some(&previous))
-        {
-            return Err(DocumentError::Quota(code.as_str().into()));
-        }
-        (outcome, value, Captured::of(&mut txn), cost)
-    };
-    // An agent edit always writes (its markers at least), as before.
-    let hidden = markers::live_items(doc);
-    let txn = doc.transact();
-    let (row, durable) = ydoc::delta_update(&txn, &scratch.durable, &hidden);
-    let live_update = scratch
-        .live
-        .as_ref()
-        .map(|vector| txn.encode_state_as_update_v1(vector));
-    Ok(Computed {
-        writes: vec![Write {
-            doc: note_store::Doc::Content,
-            row,
-            durable,
-            live_update,
-            captured: scratch.live.is_some().then_some(captured),
-        }],
-        value,
-        asset_ids: None,
-        outcome,
-        undo_cost: cost,
-    })
-}
-
-/// An agent edit of a live item document: the items crate's commands, the
-/// caps, the shape of everything the document holds, and the limits (refused
-/// unless it shrank towards them).
-fn item_edit(
-    doc: &yrs::Doc,
-    item: items::Kind,
-    kind: &str,
-    commands: &[DocumentCommand],
-) -> Result<(EditOutcome, Vec<Value>, Captured, usize), DocumentError> {
-    let mut txn = doc.transact_mut();
-    let before = item.document_value(&txn);
+    let model = Model::of(&kind);
+    let before = model.document_value(&doc.transact()).map_err(unknown)?;
     let previous = notes::limits::measure_value(&before);
-    let cost = undo_cost(commands, &[&before]);
-    item.apply_commands(&mut txn, commands)?;
-    item.check_caps(&txn)
-        .map_err(|error| DocumentError::edit("invalid_input", &error))?;
-    let document = item.document_value(&txn);
-    notes::material::assert_canonical(&document, kind)
-        .map_err(|error| DocumentError::edit("invalid_input", &error.0))?;
+    // Every edit's Undo payload is built here, from its working copy, whether
+    // or not a room is loaded (Epo 2026-10-22), when its estimate fits the
+    // update cap; an Undo's Redo payload always.
+    let (outcome, captured, cost, offered) = match change {
+        Change::Commands(commands) => {
+            let cost = undo_cost(&commands, &[&before]);
+            let _keep = ydoc::undo::keep(doc);
+            let mut txn = doc.transact_mut_with(ydoc::undo::ORIGIN);
+            let outcome = match model {
+                Model::Item(item) => {
+                    item.apply_commands(&mut txn, &commands)?;
+                    EditOutcome::default()
+                }
+                Model::Note => {
+                    let root = txn.get_or_insert_text(notes::plate::CONTENT_ROOT);
+                    let outcome = notes::edit::apply_material_commands(&mut txn, &root, &commands)?;
+                    // A note the edit emptied gets its empty paragraph in the
+                    // same transaction, so no editor sees it empty and its
+                    // Undo takes the paragraph out again (Epo 2026-10-21).
+                    // Other kinds require their block: the check below
+                    // refuses one left without it.
+                    notes::repair::emptied(&mut txn, &kind);
+                    outcome
+                }
+            };
+            let offered = cost <= ydoc::MAX_UPDATE_BYTES;
+            (outcome, Some(Captured::of(&mut txn)), cost, offered)
+        }
+        Change::Undo(updates) => {
+            let mut captured = None;
+            for (_, update) in updates {
+                captured = sent_back(doc, &update)?;
+            }
+            if captured.is_none() {
+                return Ok(Computed {
+                    writes: Vec::new(),
+                    value: Vec::new(),
+                    asset_ids: None,
+                    outcome: EditOutcome::default(),
+                    undo_cost: 0,
+                    undo: None,
+                });
+            }
+            // An Undo or Redo that leaves a note with no block gets its empty
+            // paragraph, the repair every writer gets (Epo 2026-10-22), in a
+            // transaction of its own: the Redo payload holds only the revert,
+            // so a Redo neither fails nor takes the paragraph out.
+            if model == Model::Note {
+                notes::repair::emptied(&mut doc.transact_mut(), &kind);
+            }
+            (EditOutcome::default(), captured, 0, true)
+        }
+    };
+    if let Model::Item(item) = model {
+        item.check_caps(&doc.transact())
+            .map_err(|error| DocumentError::edit("invalid_input", &error))?;
+    }
+    let document = model.document_value(&doc.transact()).map_err(unknown)?;
+    // A whole document the check refuses (an 11th interactive block across a
+    // note) is a refusal naming the rule; logged, since a command that built
+    // a wrong document refuses the same way.
+    notes::material::assert_canonical(&document, &kind).map_err(|error| {
+        observe::log(
+            observe::Level::Warn,
+            "agent edit refused by the material check",
+            json!({ "error": error.0, "kind": kind }),
+        );
+        DocumentError::edit("invalid_input", error.to_string())
+    })?;
     let metrics = notes::limits::measure_value(&document);
     if let Some(code) = notes::limits::limit_code(&metrics)
         && !notes::limits::recovers(&metrics, Some(&previous))
     {
         return Err(DocumentError::Quota(code.as_str().into()));
     }
-    let value = item.value(&txn);
-    Ok((EditOutcome::default(), value, Captured::of(&mut txn), cost))
+    let value = model.value(&doc.transact()).map_err(unknown)?;
+    // An agent edit always writes (its markers at least), as before.
+    let hidden = markers::live_items(doc);
+    let (row, durable) = ydoc::delta_update(&doc.transact(), &scratch.durable, &hidden);
+    let live_update = scratch
+        .live
+        .as_ref()
+        .map(|vector| doc.transact().encode_state_as_update_v1(vector));
+    let undo = captured
+        .filter(|_| offered)
+        .and_then(|captured| undo_payload(vec![(note_store::Doc::Content, doc, captured)]));
+    Ok(Computed {
+        writes: vec![Write {
+            doc: note_store::Doc::Content,
+            row,
+            durable,
+            live_update,
+        }],
+        value,
+        asset_ids: None,
+        outcome,
+        undo_cost: cost,
+        undo,
+    })
 }
 
 /// `receiptFromRow`.
@@ -788,7 +975,10 @@ fn receipt_from_row(row: &tokio_postgres::Row) -> Value {
 }
 
 /// `applyMaterialEdit` plus its fan-out: the committed change reaches the
-/// live room, the children pass and the projection follow.
+/// live room, the children pass and the projection follow. With `undo` the
+/// write is an Undo (or Redo) payload sent back: checked and committed as an
+/// agent edit is, under the same locks and access, with no receipt (Go
+/// records it) and its Redo payload as the answer.
 pub async fn edit_material(
     app: &Shared,
     request: &DocumentRequest,
@@ -798,6 +988,12 @@ pub async fn edit_material(
         .operation
         .clone()
         .ok_or_else(|| DocumentError::edit("invalid_input", "operation identity is required"))?;
+    let undo = request.undo.as_ref();
+    if let Some(undo) = undo
+        && ydoc::undo::refused_across_compaction(undo.epoch, schema)
+    {
+        return Err(undo_unavailable(UNDO_GONE));
+    }
     if app.evictions.blocks(&room, false) {
         return Err(DocumentError::Unavailable(ROOM_RESET));
     }
@@ -807,8 +1003,15 @@ pub async fn edit_material(
     {
         return Err(DocumentError::Unavailable(ROOM_COMPACTING));
     }
-    let commands =
-        parse::<Vec<DocumentCommand>>(Value::Array(request.commands.clone()), "commands")?;
+    let change = match undo {
+        Some(undo) => {
+            Change::Undo(undo.material(&[note_store::Doc::Content, note_store::Doc::Keys])?)
+        }
+        None => Change::Commands(parse::<Vec<DocumentCommand>>(
+            Value::Array(request.commands.clone()),
+            "commands",
+        )?),
+    };
     let live = live_state(app, &room).await;
     let actor = request.actor_user_id.clone();
     let mut client = app
@@ -817,28 +1020,30 @@ pub async fn edit_material(
         .await
         .map_err(|error| DocumentError::Unknown(error.to_string()))?;
     let tx = client.transaction().await?;
-    tx.execute(
-        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-        &[&format!("agent-operation:{}", operation.id)],
-    )
-    .await?;
-    let replay = tx
-        .query(
-            "SELECT id, kind, tool_version, request_hash, workspace_id, call_id, outcome, effect
-             FROM agent_operations WHERE id=$1",
-            &[&operation.id],
+    if undo.is_none() {
+        tx.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            &[&format!("agent-operation:{}", operation.id)],
         )
         .await?;
-    if let Some(row) = replay.first() {
-        if row.get::<_, String>("request_hash") != operation.request_hash {
-            return Err(DocumentError::edit(
-                "invalid_input",
-                "operation id already used with a different request",
-            ));
+        let replay = tx
+            .query(
+                "SELECT id, kind, tool_version, request_hash, workspace_id, call_id, outcome, effect
+                 FROM agent_operations WHERE id=$1",
+                &[&operation.id],
+            )
+            .await?;
+        if let Some(row) = replay.first() {
+            if row.get::<_, String>("request_hash") != operation.request_hash {
+                return Err(DocumentError::edit(
+                    "invalid_input",
+                    "operation id already used with a different request",
+                ));
+            }
+            let receipt = receipt_from_row(row);
+            tx.commit().await?;
+            return Ok(receipt);
         }
-        let receipt = receipt_from_row(row);
-        tx.commit().await?;
-        return Ok(receipt);
     }
     access::lock_material(&tx, &material_id).await?;
     access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor)).await?;
@@ -858,6 +1063,9 @@ pub async fn edit_material(
         ));
     };
     let rebuilt = i64::from(current.get::<_, i32>("room_schema"));
+    if undo.is_some() && ydoc::undo::refused_across_compaction(schema, rebuilt) {
+        return Err(undo_unavailable(UNDO_GONE));
+    }
     if rebuilt != schema {
         // Its blocks as they are now, as a gone block's refusal lists them,
         // so the retry needs no inspect; read after the lock is let go. The
@@ -891,9 +1099,15 @@ pub async fn edit_material(
         None
     };
     let computed =
-        tokio::task::spawn_blocking(move || compute(base, rows, live, kind, commands, quiz))
+        tokio::task::spawn_blocking(move || compute(base, rows, live, kind, change, quiz))
             .await
             .map_err(|error| DocumentError::Unknown(error.to_string()))??;
+    // A payload applied before (a retry whose answer was lost): done, with
+    // no Redo, since what it removed is collected.
+    if computed.writes.is_empty() && undo.is_some() {
+        tx.commit().await?;
+        return Ok(json!({ "undo": null }));
+    }
     if over_update_cap(&computed.writes) {
         return Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()));
     }
@@ -904,6 +1118,83 @@ pub async fn edit_material(
         note_store::append_row(&tx, write.doc, &material_id, version, &write.row).await?;
         versions.push(version);
     }
+    let payload = computed
+        .undo
+        .map(|updates| UndoPayload::of(schema, updates));
+    let mut receipt = match undo {
+        Some(_) => json!({ "undo": payload }),
+        None => {
+            insert_receipt(
+                &tx,
+                request,
+                &operation,
+                &material_id,
+                &computed.outcome,
+                payload.is_some(),
+            )
+            .await?
+        }
+    };
+    tx.commit().await?;
+    drop(client);
+    if undo.is_none()
+        && let Some(payload) = payload
+    {
+        receipt["undoPayload"] = json!(payload);
+    }
+    // An AI edit or its Undo can bring back a quiz or image the note had
+    // trashed (restored) or one purged since (dropped).
+    if let Some(write) = computed
+        .writes
+        .iter()
+        .find(|write| write.doc == note_store::Doc::Content)
+    {
+        crate::children::queue(app, &room, &actor, write.row.clone());
+    }
+    // The committed changes go to the live rooms, whose durable covers take
+    // them.
+    send_writes(app, &room, &keys_room, computed.writes, &versions).await;
+    let content = json!({ "schemaVersion": 1, "value": computed.value });
+    match projection::project(app, &material_id, version, &content, computed.asset_ids).await {
+        Ok(()) => {
+            if undo.is_none() {
+                if let Ok(client) = app.db.get().await {
+                    let _ = client
+                        .execute(
+                            "UPDATE agent_operations SET effect = effect || '{\"projectionPending\": false}'::jsonb
+                             WHERE id=$1 AND effect IS NOT NULL",
+                            &[&operation.id],
+                        )
+                        .await;
+                }
+                receipt["effect"]["projectionPending"] = json!(false);
+            }
+            if let Some(handle) = app.rooms.get(&room) {
+                let _ = handle.tx.send(RoomCmd::Projected(version, Ok(()))).await;
+            }
+        }
+        // The change is durable; the pending scan catches the projection up
+        // and the receipt keeps reporting projectionPending until then.
+        Err(error) => observe::log(
+            observe::Level::Warn,
+            "service edit projection failed",
+            json!({ "error": error, "room": room }),
+        ),
+    }
+    Ok(receipt)
+}
+
+/// An agent edit's receipt, written with its row: `edited`, its block
+/// moves, and its Undo ref when it has a payload. The payload itself is
+/// never stored.
+async fn insert_receipt(
+    tx: &deadpool_postgres::Transaction<'_>,
+    request: &DocumentRequest,
+    operation: &Operation,
+    material_id: &str,
+    outcome: &EditOutcome,
+    undoable: bool,
+) -> Result<Value, DocumentError> {
     // The gateway merged this edit's books into the stored record; writing it
     // here keeps the credit and the content in one transaction.
     if let Some(provenance) = &request.provenance {
@@ -924,10 +1215,6 @@ pub async fn edit_material(
         Some(row) => (row.get("title"), row.get("kind"), row.get("workspace_id")),
         None => (String::new(), String::new(), None),
     };
-    // The edit's Undo lives in its rooms: every document it wrote had one
-    // (its ref goes on the receipt once they took it, below).
-    let undoable =
-        !computed.writes.is_empty() && computed.writes.iter().all(|write| write.captured.is_some());
     let mut effect = json!({
         "operation": "edited",
         "operationId": operation.id,
@@ -941,8 +1228,11 @@ pub async fn edit_material(
         },
     });
     // Inserts whose anchor block was gone say where they landed instead.
-    if !computed.outcome.relocated.is_empty() {
-        effect["relocated"] = json!(computed.outcome.relocated);
+    if !outcome.relocated.is_empty() {
+        effect["relocated"] = json!(outcome.relocated);
+    }
+    if undoable {
+        effect["undo"] = undo_ref(&operation.id);
     }
     let kind = "edit_document";
     let tool_version = operation.tool_version.unwrap_or(1);
@@ -957,7 +1247,7 @@ pub async fn edit_material(
             &kind,
             &(tool_version as i32),
             &operation.request_hash,
-            &actor,
+            &request.actor_user_id,
             &workspace_id,
             &operation.conversation_id.clone().unwrap_or_default(),
             &operation.message_id.clone().unwrap_or_default(),
@@ -966,8 +1256,6 @@ pub async fn edit_material(
         ],
     )
     .await?;
-    tx.commit().await?;
-    drop(client);
     let mut receipt = json!({
         "effect": effect,
         "kind": kind,
@@ -980,46 +1268,6 @@ pub async fn edit_material(
     }
     if let Some(workspace) = &workspace {
         receipt["workspaceId"] = json!(workspace);
-    }
-    // An AI edit can bring back a quiz or image the note had trashed
-    // (restored) or one purged since (dropped).
-    if let Some(write) = computed
-        .writes
-        .iter()
-        .find(|write| write.doc == note_store::Doc::Content)
-    {
-        crate::children::queue(app, &room, &actor, write.row.clone());
-    }
-    // The committed changes go to the live rooms, whose durable covers take
-    // them, with the edit's items for its Undo.
-    let step = undoable.then_some((operation.id.as_str(), computed.undo_cost));
-    if send_writes(app, &room, &keys_room, computed.writes, &versions, step).await {
-        offer_undo(app, &operation.id, &mut receipt).await;
-    }
-    let content = json!({ "schemaVersion": 1, "value": computed.value });
-    match projection::project(app, &material_id, version, &content, computed.asset_ids).await {
-        Ok(()) => {
-            if let Ok(client) = app.db.get().await {
-                let _ = client
-                    .execute(
-                        "UPDATE agent_operations SET effect = effect || '{\"projectionPending\": false}'::jsonb
-                         WHERE id=$1 AND effect IS NOT NULL",
-                        &[&operation.id],
-                    )
-                    .await;
-            }
-            receipt["effect"]["projectionPending"] = json!(false);
-            if let Some(handle) = app.rooms.get(&room) {
-                let _ = handle.tx.send(RoomCmd::Projected(version, Ok(()))).await;
-            }
-        }
-        // The change is durable; the pending scan catches the projection up
-        // and the receipt keeps reporting projectionPending until then.
-        Err(error) => observe::log(
-            observe::Level::Warn,
-            "service edit projection failed",
-            json!({ "error": error, "room": room }),
-        ),
     }
     Ok(receipt)
 }
@@ -1160,7 +1408,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     }
     tx.commit().await.map_err(|error| error.to_string())?;
     drop(client);
-    send_writes(app, &room, &keys_room, computed.writes, &versions, None).await;
+    send_writes(app, &room, &keys_room, computed.writes, &versions).await;
     let content = json!({ "schemaVersion": 1, "value": computed.value });
     projection::project(app, &material_id, version, &content, computed.asset_ids).await?;
     if let Some(handle) = app.rooms.get(&room) {
@@ -1170,19 +1418,14 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
 }
 
 /// Each write to its live room (the content room, or a quiz's keys room)
-/// with the version its row took, and under `step` the edit's own items
-/// that room keeps for the edit's Undo. Whether every written document's room
-/// took the step (none without a step).
+/// with the version its row took.
 async fn send_writes(
     app: &Shared,
     room: &str,
     keys_room: &str,
     writes: Vec<Write>,
     versions: &[i64],
-    step: Option<(&str, usize)>,
-) -> bool {
-    let mut answers = Vec::new();
-    let mut taken = step.is_some() && !writes.is_empty();
+) {
     for (write, version) in writes.into_iter().zip(versions) {
         let (name, other) = match write.doc {
             note_store::Doc::Content => (room, keys_room),
@@ -1190,50 +1433,32 @@ async fn send_writes(
         };
         match app.rooms.get(name) {
             Some(handle) => {
-                let step = step
-                    .zip(write.captured)
-                    .map(|((id, cost), items)| (id.to_owned(), items, cost));
-                let (reply, answer) = oneshot::channel();
-                if step.is_some() {
-                    answers.push(answer);
-                } else {
-                    taken = false;
-                }
                 let edit = ServiceEdit {
                     update: write.live_update.unwrap_or_else(|| write.row.clone()),
                     durable: write.durable,
                     version: *version as u64,
                     row_bytes: write.row.len(),
-                    step,
-                    taken: Some(reply),
                 };
                 let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
             }
             // A quiz document whose room is not loaded changed: the other
             // one's room reads it (its metrics; the keys' readers' lists).
             None => {
-                taken = false;
                 if let Some(handle) = app.rooms.get(other) {
                     let _ = handle.tx.send(RoomCmd::PeerReload).await;
                 }
             }
         }
     }
-    for answer in answers {
-        taken &= matches!(
-            tokio::time::timeout(SNAPSHOT_WAIT, answer).await,
-            Ok(Ok(true))
-        );
-    }
-    taken
 }
 
-/// The Undo ref of an agent edit every room it wrote took: stored on the
-/// receipt, then shown on it (a receipt whose ref did not store has none).
-async fn offer_undo(app: &Shared, operation_id: &str, receipt: &mut Value) {
-    let undo = json!({ "operationId": operation_id, "status": "available" });
+/// The Undo ref of a source edit with a payload, stored on Go's receipt (the
+/// checkpoint wrote it), then shown on it (a receipt whose ref did not store
+/// has none, and gets no payload).
+async fn offer_undo(app: &Shared, operation_id: &str, receipt: &mut Value) -> bool {
+    let undo = undo_ref(operation_id);
     let Ok(client) = app.db.get().await else {
-        return;
+        return false;
     };
     let stored = client
         .execute(
@@ -1242,9 +1467,11 @@ async fn offer_undo(app: &Shared, operation_id: &str, receipt: &mut Value) {
             &[&operation_id, &undo],
         )
         .await;
-    if matches!(stored, Ok(1)) {
+    let offered = matches!(stored, Ok(1));
+    if offered {
         receipt["effect"]["undo"] = undo;
     }
+    offered
 }
 
 /// The replace-block command on an isolated document (a quiz: both its
@@ -1262,9 +1489,14 @@ fn replace_on(
         let keys = Scratch::new(&quiz.keys.0, &quiz.keys.1, quiz.live_keys.as_deref())?;
         let questions = items::quiz::block_questions(&command.replacement_block)?;
         let computed = compute_quiz(&scratch, &keys, |content, keys| {
-            items::quiz::set_questions(content, keys, &questions)
+            let mut content_txn = content.transact_mut();
+            let mut keys_txn = keys.transact_mut();
+            items::quiz::set_questions(&mut content_txn, &mut keys_txn, &questions)
                 .map_err(|error| DocumentError::edit("invalid_input", error))?;
-            Ok(EditOutcome::default())
+            Ok((
+                EditOutcome::default(),
+                Some((Captured::default(), Captured::default())),
+            ))
         })
         .map_err(|error| error.message().to_owned())?;
         return Ok((!computed.writes.is_empty()).then_some(computed));
@@ -1302,18 +1534,20 @@ fn replace_on(
     }
     Ok(Some(Computed {
         writes: scratch
-            .write(note_store::Doc::Content, None)
+            .write(note_store::Doc::Content)
             .into_iter()
             .collect(),
         value,
         asset_ids: None,
         outcome: EditOutcome::default(),
         undo_cost: 0,
+        undo: None,
     }))
 }
 
 /// Inspect or edit of a source file (the sources crate), with the committed
-/// change fanned into the live room.
+/// change fanned into the live room. With `undo`, an Undo (or Redo) payload
+/// sent back, written as an edit is; its answer is the Redo payload.
 pub async fn source_request(
     app: &Shared,
     request: &DocumentRequest,
@@ -1336,11 +1570,28 @@ pub async fn source_request(
         .operation
         .clone()
         .ok_or_else(|| DocumentError::edit("invalid_input", "operation identity is required"))?;
+    let undo = match &request.undo {
+        Some(undo) => {
+            let mut bytes = undo.bytes()?;
+            let invalid = || DocumentError::Invalid("invalid undo payload".into());
+            let (name, update) = bytes.pop().ok_or_else(invalid)?;
+            if name != "source" || !bytes.is_empty() {
+                return Err(invalid());
+            }
+            Some(sources::edit::SentBack {
+                epoch: undo.epoch,
+                update,
+            })
+        }
+        None => None,
+    };
+    let undoing = undo.is_some();
     let input = sources::edit::EditInput {
         actor_user_id: request.actor_user_id.clone(),
         commands: request.commands.clone(),
         file_id: request.target.id.clone(),
         operation: serde_json::to_value(&operation).unwrap_or(Value::Null),
+        undo,
     };
     let rooms = app.clone();
     let result = app
@@ -1351,34 +1602,29 @@ pub async fn source_request(
             Box::pin(async move { live_state(&app, &room).await })
         })
         .await?;
-    let mut taken = false;
-    if let Some(handle) = app.rooms.get(&result.room) {
-        let step = result
-            .captured
-            .map(|items| (operation.id.clone(), items, result.undo_cost));
-        let offered = step.is_some();
-        let (reply, answer) = oneshot::channel();
+    if let (Some(handle), Some(update)) = (app.rooms.get(&result.room), result.update) {
         let edit = ServiceEdit {
-            update: result.update,
+            update,
             durable: result.durable,
             version: result.checkpoint,
             row_bytes: result.row_bytes,
-            step,
-            taken: Some(reply),
         };
-        let sent = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
-        taken = offered
-            && sent.is_ok()
-            && matches!(
-                tokio::time::timeout(SNAPSHOT_WAIT, answer).await,
-                Ok(Ok(true))
-            );
+        let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
+    }
+    let payload = result.undo.map(|update| UndoPayload {
+        epoch: result.epoch,
+        updates: BTreeMap::from([("source".to_owned(), BASE64.encode(update))]),
+    });
+    if undoing {
+        return Ok(json!({ "undo": payload }));
     }
     // Go passes the engine's note on the characters the agent's text lost
     // on to the tool result (Epo 2026-10-15).
     let mut receipt = result.receipt;
-    if taken {
-        offer_undo(app, &operation.id, &mut receipt).await;
+    if let Some(payload) = payload
+        && offer_undo(app, &operation.id, &mut receipt).await
+    {
+        receipt["undoPayload"] = json!(payload);
     }
     if let Some(notice) = result.notice {
         receipt["notice"] = json!(notice);
@@ -1386,181 +1632,11 @@ pub async fn source_request(
     Ok(receipt)
 }
 
-/// What an Undo or Redo asks of the rooms holding an agent edit's items:
-/// the step, the id its reverse is kept under, and the document it changes.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UndoRequest {
-    actor_user_id: String,
-    operation: Operation,
-    undo_of: String,
-    target: Target,
-}
-
-/// How long one room may take to revert and store an Undo; two rooms (a quiz)
-/// answer within the API's 20 s.
-const UNDO_WAIT: Duration = Duration::from_secs(8);
+/// The refusal of an Undo whose payload can no longer apply.
+const UNDO_GONE: &str = "this edit can no longer be undone";
 
 fn undo_unavailable(message: &str) -> DocumentError {
     DocumentError::edit("undo_unavailable", message)
-}
-
-/// Whether `room` holds a document of `target` (a note's or quiz's content
-/// or keys room, a source's room).
-fn room_of(target: &Target, room: &str) -> bool {
-    let prefixes: &[&str] = match target.kind.as_str() {
-        "material" => &["material:", "keys:"],
-        "source_file" => &["source:"],
-        _ => &[],
-    };
-    prefixes.iter().any(|prefix| {
-        room.strip_prefix(prefix)
-            .and_then(|rest| rest.strip_prefix(target.id.as_str()))
-            .is_some_and(|rest| rest.starts_with(':'))
-    })
-}
-
-/// One room's answer to an Undo, within [UNDO_WAIT].
-async fn ask_room(
-    handle: &crate::app::RoomHandle,
-    step: &str,
-    next: &str,
-    actor: &str,
-) -> Result<Reverted, DocumentError> {
-    let (reply, answer) = oneshot::channel();
-    let command = RoomCmd::AgentUndo(Box::new(AgentUndo {
-        step: step.to_owned(),
-        next: next.to_owned(),
-        actor: actor.to_owned(),
-        reply,
-    }));
-    if handle.tx.send(command).await.is_err() {
-        return Err(undo_unavailable("this edit can no longer be undone"));
-    }
-    match tokio::time::timeout(UNDO_WAIT, answer).await {
-        Ok(Ok(Ok(reverted))) => Ok(reverted),
-        Ok(Ok(Err(error))) => Err(DocumentError::Unknown(error)),
-        Ok(Err(_)) => Err(undo_unavailable("this edit can no longer be undone")),
-        Err(_) => Err(DocumentError::Unknown(
-            "the Undo was not stored in time".into(),
-        )),
-    }
-}
-
-/// An Undo (or Redo) of a step loaded rooms hold: each room holding a part of
-/// it (a quiz: content and keys) reverts it, stores it and keeps the step that
-/// reverses it under the request's operation id, or under the id of an
-/// earlier request whose answer was lost, which it answers with. When one
-/// room fails, the rooms asked before it (and the failing one, whose answer
-/// may still come) are put back, so the document is as it was and the step
-/// stays. Refused once no room holds it, or when nothing of it is left. Go
-/// records the receipt under the answered id, offering the step that
-/// reverses it only when every room that reverted keeps that step (one whose
-/// revert would be too large to send is not kept, Epo 2026-10-21).
-async fn undo(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
-    let request: UndoRequest = serde_json::from_slice(body)
-        .map_err(|_| DocumentError::Invalid("invalid undo request".into()))?;
-    let mut rooms = app.agent_steps.rooms(&request.undo_of);
-    if rooms.is_empty() {
-        // Reverted already: a request repeated after a lost answer gets the
-        // same answer from the rooms that reverted it.
-        rooms = app.agent_steps.reverted(&request.undo_of);
-    }
-    if rooms.iter().any(|room| !room_of(&request.target, room)) {
-        return Err(undo_unavailable("this edit can no longer be undone"));
-    }
-    // Every room holding a part must still be loaded before any reverts.
-    let handles: Option<Vec<_>> = rooms.iter().map(|room| app.rooms.get(room)).collect();
-    let Some(handles) = handles.filter(|handles| !handles.is_empty()) else {
-        app.agent_steps.forget(&request.undo_of);
-        return Err(undo_unavailable("this edit can no longer be undone"));
-    };
-    let (step, actor) = (&request.undo_of, &request.actor_user_id);
-    let mut kept: Option<String> = None;
-    let mut asked: Vec<(crate::app::RoomHandle, String)> = Vec::new();
-    let mut reverted: Vec<&String> = Vec::new();
-    for (room, handle) in rooms.iter().zip(handles) {
-        match ask_room(&handle, step, &request.operation.id, actor).await {
-            Ok(Reverted::Done(id)) => {
-                kept.get_or_insert_with(|| id.clone());
-                asked.push((handle, id));
-                reverted.push(room);
-            }
-            Ok(Reverted::Nothing) => {}
-            failure => {
-                if matches!(failure, Err(DocumentError::Unknown(_))) {
-                    asked.push((handle, request.operation.id.clone()));
-                }
-                put_back(asked, step, actor);
-                return Err(match failure {
-                    Ok(Reverted::Refused { code, message }) => DocumentError::edit(code, message),
-                    Err(error) => error,
-                    _ => undo_unavailable("this edit can no longer be undone"),
-                });
-            }
-        }
-    }
-    let Some(kept) = kept else {
-        return Err(undo_unavailable("nothing of this edit is left to undo"));
-    };
-    // The read model follows at once, as it did the edit (`edit_material`
-    // projects); otherwise a diagram or mindmap, which no read projects on
-    // demand, waits for its room's idle projection.
-    for room in rooms.iter().filter(|room| room.starts_with("material:")) {
-        if let Some(handle) = app.rooms.get(room) {
-            tokio::spawn(async move {
-                let (reply, answer) = oneshot::channel();
-                if handle.tx.send(RoomCmd::Project(reply)).await.is_ok() {
-                    let _ = answer.await;
-                }
-            });
-        }
-    }
-    let holding = app.agent_steps.rooms(&kept);
-    let reversible = reverted.iter().all(|room| holding.contains(room));
-    Ok(json!({ "operationId": kept, "reversible": reversible }))
-}
-
-/// Reverts each room's revert again (its step under `step` once more), in
-/// the background: a room answers in order, after the Undo it was asked.
-fn put_back(asked: Vec<(crate::app::RoomHandle, String)>, step: &str, actor: &str) {
-    for (handle, id) in asked {
-        let (step, actor) = (step.to_owned(), actor.to_owned());
-        tokio::spawn(async move {
-            // Anything but done leaves the room reverted while the chat says
-            // the Undo failed (review r3 L1): a reverse too large to keep is
-            // missing, so such an Undo is not put back.
-            let answer = ask_room(&handle, &id, &step, &actor).await;
-            if !matches!(answer, Ok(Reverted::Done(_))) {
-                observe::capture(
-                    &format!("agent Undo not put back: {answer:?}"),
-                    None,
-                    &[("stage", "agent_undo_put_back")],
-                );
-            }
-        });
-    }
-}
-
-/// `/internal/documents/undo-status`: which of the given steps a loaded room
-/// still holds, so a reopened conversation shows Undo only on those.
-fn undo_status(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Status {
-        operation_ids: Vec<String>,
-    }
-    let status: Status = serde_json::from_slice(body)
-        .map_err(|_| DocumentError::Invalid("invalid undo status request".into()))?;
-    let live: Vec<&String> = status
-        .operation_ids
-        .iter()
-        .filter(|id| {
-            let rooms = app.agent_steps.rooms(id);
-            !rooms.is_empty() && rooms.iter().all(|room| app.rooms.get(room).is_some())
-        })
-        .collect();
-    Ok(json!({ "live": live }))
 }
 
 /// `CreateRequest`: a new Office file for the agent's `create`.
@@ -1588,21 +1664,18 @@ pub async fn create(app: &Shared, body: &[u8]) -> Result<Value, DocumentError> {
     }))
 }
 
-/// `/internal/documents/{create,inspect,edit,undo,undo-status}` after the
-/// secret check.
+/// `/internal/documents/{create,inspect,edit,undo}` after the secret check.
+/// An Undo carries its payload (`undo`); an edit never does.
 pub async fn document(app: &Shared, path: &str, body: &[u8]) -> Result<Value, DocumentError> {
     if path.ends_with("/create") {
         return create(app, body).await;
     }
-    if path.ends_with("/undo") {
-        return undo(app, body).await;
-    }
-    if path.ends_with("/undo-status") {
-        return undo_status(app, body);
-    }
     let invalid = || DocumentError::Invalid("invalid document request".into());
     let request: DocumentRequest = serde_json::from_slice(body).map_err(|_| invalid())?;
     if request.target.kind != "material" && request.target.kind != "source_file" {
+        return Err(invalid());
+    }
+    if path.ends_with("/undo") != request.undo.is_some() {
         return Err(invalid());
     }
     let inspect = path.ends_with("/inspect");
@@ -1627,7 +1700,9 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{DocumentError, Model, Scratch, Write, compute, compute_quiz, over_update_cap};
+    use super::{
+        Change, DocumentError, Model, Scratch, Write, compute, compute_quiz, over_update_cap,
+    };
 
     /// An agent edit or content-API write whose update, stored or sent live,
     /// is over the cap is refused before it commits; one at the cap goes (Epo
@@ -1639,7 +1714,6 @@ mod tests {
             row: vec![0; row],
             durable: Default::default(),
             live_update: live.map(|bytes| vec![0; bytes]),
-            captured: None,
         };
         let cap = ydoc::MAX_UPDATE_BYTES;
         assert!(!over_update_cap(&[write(cap, Some(cap))]));
@@ -1688,7 +1762,7 @@ mod tests {
             Vec::new(),
             None,
             "note".into(),
-            vec![insert],
+            Change::Commands(vec![insert]),
             None,
         )
         .err();
@@ -1717,10 +1791,10 @@ mod tests {
                 Vec::new(),
                 None,
                 kind.into(),
-                vec![notes::edit::DocumentCommand::RemoveBlock {
+                Change::Commands(vec![notes::edit::DocumentCommand::RemoveBlock {
                     block_id: id,
                     expected_text: expected,
-                }],
+                }]),
                 None,
             )
         };
@@ -1768,7 +1842,10 @@ mod tests {
             let content = Scratch::new(&content, &[], None).unwrap();
             let keys = Scratch::new(&keys, &[], None).unwrap();
             compute_quiz(&content, &keys, |_, _| {
-                Ok(notes::edit::EditOutcome::default())
+                Ok((
+                    notes::edit::EditOutcome::default(),
+                    Some(Default::default()),
+                ))
             })
         };
         assert!(matches!(
@@ -1805,8 +1882,7 @@ mod tests {
             node_id: "q2".into(),
         };
         let computed = compute_quiz(&content, &keys, |content, keys| {
-            items::quiz::apply_commands(content, keys, &[remove])?;
-            Ok(notes::edit::EditOutcome::default())
+            super::quiz_commands(content, keys, &[remove])
         })
         .unwrap();
         let docs: Vec<_> = computed.writes.iter().map(|write| write.doc).collect();
@@ -1819,25 +1895,25 @@ mod tests {
         );
     }
 
-    /// What a computed write's Undo and Redo send at most in a room holding
-    /// `base` that took the write as a room takes it (`apply_kept`), measured
-    /// on copies of the room.
-    fn sent_by(base: &[u8], write: super::Write) -> usize {
+    /// The Redo payload's size of `undo`, a document's Undo payload, sent
+    /// back to `base` with the edit's write applied (the stored document).
+    fn redo_sent(base: &[u8], write: &Write, undo: &[u8]) -> usize {
         let room = ydoc::scratch_doc();
         ydoc::apply(&room, ydoc::decode(base).unwrap()).unwrap();
-        let update = write.live_update.unwrap();
-        ydoc::undo::apply_kept(&room, ydoc::decode(&update).unwrap()).unwrap();
-        let change = write.captured.unwrap().change(&room);
-        let undo = ydoc::undo::revert_len(&room, &change);
-        let redo = ydoc::undo::revert(&room, change)
-            .and_then(|reverted| reverted.next)
-            .map_or(0, |back| ydoc::undo::revert_len(&room, &back));
-        undo.max(redo)
+        let update = write.live_update.as_ref().unwrap();
+        ydoc::apply(&room, ydoc::decode(update).unwrap()).unwrap();
+        match ydoc::undo::apply_payload(&room, ydoc::decode(undo).unwrap()).unwrap() {
+            ydoc::undo::Applied::Changed(change) => {
+                ydoc::undo::payload(&room, change).map_or(0, |redo| redo.len())
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     /// `commands` computed as an agent edit of a loaded room (a quiz: with
-    /// its keys room): the edit's Undo cost and the most any of its rooms'
-    /// Undo or Redo sends; none when the commands are refused.
+    /// its keys room): the edit's Undo cost and the most any of its
+    /// documents' Undo or Redo payload sends; none when the commands are
+    /// refused.
     fn cost_and_sent(
         kind: &str,
         base: &[u8],
@@ -1849,15 +1925,31 @@ mod tests {
             live_keys: Some(keys.to_vec()),
         });
         let live = Some(base.to_vec());
-        let computed =
-            compute(base.to_vec(), Vec::new(), live, kind.into(), commands, quiz).ok()?;
+        let computed = compute(
+            base.to_vec(),
+            Vec::new(),
+            live,
+            kind.into(),
+            Change::Commands(commands),
+            quiz,
+        )
+        .ok()?;
         let cost = computed.undo_cost;
         let sent = computed
-            .writes
+            .undo
+            .expect("an accepted edit of a loaded room offers its payload")
             .into_iter()
-            .map(|write| match write.doc {
-                crate::note_store::Doc::Keys => sent_by(keys.unwrap(), write),
-                crate::note_store::Doc::Content => sent_by(base, write),
+            .map(|(doc, undo)| {
+                let base = match doc {
+                    crate::note_store::Doc::Keys => keys.unwrap(),
+                    crate::note_store::Doc::Content => base,
+                };
+                let write = computed
+                    .writes
+                    .iter()
+                    .find(|write| write.doc == doc)
+                    .unwrap();
+                undo.len().max(redo_sent(base, write, &undo))
             })
             .max()
             .unwrap_or(0);
@@ -1880,12 +1972,12 @@ mod tests {
     }
 
     /// Epo 2026-10-21: an agent edit's Undo is sized from its commands
-    /// (`sources::undo_cost`), never by reverting on a copy. On the notes
+    /// (`sources::undo_cost`) before its payload is built. On the notes
     /// corpus's seeded notes (paragraphs, lists, tables, math), a Mermaid
     /// block with a long caption rewritten as a small one (the kept caption
     /// rides its Redo), a card set and a quiz, every material command's cost
-    /// is at least what the edit's Undo and Redo send in each of its rooms
-    /// (measured on copies here). The lowest and highest ratio per command
+    /// is at least what the edit's Undo payload and its Redo payload send
+    /// for each of its documents. The lowest and highest ratio per command
     /// print (STATE.md keeps them).
     /// Fails if a rule under-estimates.
     #[test]

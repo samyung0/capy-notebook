@@ -15,7 +15,7 @@ import { openWorkspaceMaterial } from '../helpers/workspace';
  * checks that the write lands where it was meant, that untouched blocks keep
  * their content and ids, that one Undo restores the whole change, and that
  * editors already open (the owner's tab and a collaborator's) show it live.
- * The open editors keep the room loaded, which is what gives an edit its Undo.
+ * An edit's Undo sends back the payload its receipt carried, as the chat does.
  */
 
 const workspaceId = seed.agentWorkspace.id;
@@ -34,6 +34,7 @@ type Receipt = {
   error?: { code: string; message: string };
   operationId: string;
   outcome: string;
+  undoPayload?: object;
 };
 type Target = { id: string; kind: 'material' | 'source_file' };
 
@@ -101,8 +102,13 @@ async function edit(
   });
   expect(receipt.outcome, JSON.stringify(receipt)).toBe('succeeded');
   expect(receipt.effect?.undo?.status).toBe('available');
+  expect(receipt.undoPayload).toBeDefined();
+  payloads.set(receipt.effect!.undo!.operationId, receipt.undoPayload);
   return receipt.effect!.undo!.operationId;
 }
+
+/** Each step's Undo payload, which the chat keeps in the browser. */
+const payloads = new Map<string, object | undefined>();
 
 /** inspect_document's read, or inspect_office_document's with `office`. */
 async function inspect<T>(
@@ -177,7 +183,7 @@ async function entries(
 async function undo(ownerApi: APIRequestContext, operationId: string) {
   const response = await ownerApi.post(
     `/api/chat/edit-operations/${operationId}/undo`,
-    { data: { requestId: randomUUID() } }
+    { data: { payload: payloads.get(operationId), requestId: randomUUID() } }
   );
   expect(response.status(), await response.text()).toBe(200);
 }

@@ -2761,12 +2761,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    later steps on that file fold into its strip. After an edit's Undo the strip
    reads "Undid the edit to X", muted, with Redo (ghost-hover). The receipt's effect replaces the block's effect and the
    button reads Undo or Redo from the operation; a refused step shows an error
-   toast and disables its button for the session, while a refusal for a
-   moment (`office_editing_paused`, `unavailable_target`) only toasts. An
-   edit without an Undo ref (no loaded room took it, its Undo would be too
-   large to send, or a reload after its room unloaded) keeps its strip without
-   the button; a reopened conversation shows created files without Undo or
-   Redo (Epo 2026-10-20).
+   toast and drops its payload, while a refusal for a moment
+   (`office_editing_paused`, `unavailable_target`) only toasts. An edit whose
+   payload the browser does not hold (its Undo would be too large to send,
+   the payload was lost on the way or is over a day old, or the document
+   moved to a newer lineage) keeps its strip without the button; a reopened
+   conversation shows created files without Undo or Redo (Epo 2026-10-20).
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
@@ -3393,9 +3393,9 @@ build, and the knowledge library is one more source while the switch is on.
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
-| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
+| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref and payload when its Undo fits (see Undo chain). A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
 | `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX pages its paragraph entries as `inspect_document` paged them (its scoped read is phase 3), and a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX: `set_list`, `insert_table`, `delete_table`, `format_text`, `set_alignment`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX: `set_list`, `insert_table`, `delete_table`, `format_text`, `set_alignment`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref and payload when its Undo fits, and its result offers Undo only then |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3821,22 +3821,29 @@ commit landing in between conflicts and the edit retries from fresh state,
 3 attempts in all. There is no revision precondition: expected content compared under
 the lock catches target drift, the lock and the source checkpoint CAS serialize
 concurrent commits, and the server-resolved room incarnation fences trash,
-restore and rebase. An edit's Undo lives in the collaboration room that took
-it (Epo 2026-10-20, superseding the guarded Undo of 2026-09-09 and the
-server-kept Redo of 2026-10-15): when this replica has a loaded room for every
-document the edit writes (a quiz: its content and its keys room), the room
-applies the edit keeping the items it deleted from garbage collection
-(`ydoc::undo::apply_kept`) and holds the edit's own Yjs items, read from the
-edit's transaction (`ydoc::undo::Captured`), as an undo step under the edit's
-operation id (`Room.agent_changes`, indexed by `app.agent_steps`). The
-receipt commits without an Undo ref; once every room the edit wrote answers
-that it took the step (`ServiceEdit.taken`), the server stores
-`undo: {operationId, status: "available"}` on it and returns it so
-(`offer_undo` in `edits.rs`; a source's receipt is Go's checkpoint receipt,
-which never sets the ref). An edit of a file or material no room has loaded
-gets no Undo: nothing opens or holds a room for it, and its receipt shows
-none. A room that loaded after the edit committed already holds its items and
-takes no step either. An edit may remove or replace any note block, media
+restore and rebase. An edit's Undo is a payload the browser keeps (Epo
+2026-10-21, superseding the room-held step of 2026-10-20, the guarded Undo of
+2026-09-09 and the server-kept Redo of 2026-10-15). The edit is computed on
+its working document (`Scratch`: the stored state, its rows and this
+replica's live room, if one is loaded, under a fresh client), in a
+transaction under the origin `capy-agent-edit` that keeps what it deletes
+(`ydoc::undo::keep`); its own Yjs items, read off that transaction
+(`ydoc::undo::Captured`), are reverted on the same working document as the
+editor's undo reverts a step, and the revert's update is the payload
+(`ydoc::undo::payload`): a delete set of the edit's ids and copies of what
+it deleted, with their formatting, rooted at the tombstones. A quiz's
+payload holds an update for its content and its keys document. Building it
+never needs a room: an edit of a file or material no room has loaded gets
+one too (Epo 2026-10-22). The collaboration service answers the receipt with
+`undoPayload: {epoch, updates: {content|keys|source: base64}}` beside it and
+sets `undo: {operationId, status: "available"}` on the stored receipt
+(`insert_receipt` for materials, `offer_undo` for sources); Go signs the
+payload (HMAC-SHA256 over the step's id, the document's kind and id, the
+epoch and a digest of the updates, keyed from `COLLABORATION_SECRET`:
+`server/internal/store/undo_payload.go`), and the pipeline passes it on the
+tool's `tool_end` event to the browser. The payload is never stored on the
+server: not in the receipt, the chat row, the tool record, logs or traces;
+`agent_operations` holds the ref only. An edit may remove or replace any note block, media
 included (an image, a placed library figure, audio, a YouTube video; Epo
 2026-10-21): the next projection trashes an asset no block references, like a
 person's deletion, and the Undo's children pass and projection restore it. It
@@ -3847,7 +3854,7 @@ Undo takes the paragraph out again. An agent Undo or Redo that would leave a
 note with no block (a person deleted the rest meanwhile) gets the paragraph
 too, in a transaction of its own outside the step's reverse, so the chat Undo
 succeeds and a Redo neither fails nor takes the paragraph out (Epo 2026-10-22,
-`agent_undo` in `room.rs`). Only notes: a mindmap or diagram takes
+`compute` in `edits.rs`). Only notes: a mindmap or diagram takes
 `replace_block` alone, whose blocks are never empty, and the store's check
 refuses one left without its Mermaid block; items keep their own rules
 (`remove_card` keeps a set's last card, `remove_question` may empty a quiz).
@@ -3865,28 +3872,31 @@ refuse with `unsupported_format`. Undo is
 with current edit access, checked before the collaboration service
 (`server/internal/httpapi/huma_undo.go`).
 
-**Undo chain** (live, Epo 2026-10-20). An Undo reverts its step as the
-editor's undo does (yrs `UndoManager` over the room's roots but the
-contributor markers, tracked origin `capy-agent-edit`, in `ydoc::undo`): the
-edit's inserted items go and the items it deleted come back, so other
-people's later typing stays, in the edited block too. XLSX needs nothing
-more: Yjs holds cell inputs and every engine recalculates values from them.
-The revert goes out like a writer's update under the chat actor's
-contributor marker (the store rechecks the actor's access); the room stores
-at once and answers when the first store holding the revert ends, even if
-people typed on meanwhile and the room is dirty again (review r2 M2; each
-store's snapshot is counted, and an Undo arriving during a store waits for
-the next one). A store that fails and
-retries still answers done, the revert staying in the room; a store the room
-gives up on (a discard) answers the error. Once the rooms answer, a
-material's room projects at once (`RoomCmd::Project`), as the edit it reverts
-projected, so `materials.content` follows without the idle projection (a
-diagram or mindmap has no on-read projection). A note whose reverted state the
-store would refuse (`validate`) is put back at once and the Undo answers
-`invalid_input` or `quota_rejected`; a source counts the bytes toward its cap
-estimate. A room under a publication handoff or a forced unload refuses it
-(`unavailable_target`), keeping the step. The redo item the revert leaves is
-kept as the next step under the Undo's own operation id, so the same endpoint
+**Undo chain** (Epo 2026-10-20, durable since 2026-10-21). The browser
+keeps each payload in memory and in IndexedDB (`capy-local`, store
+`undoPayloads`: `src/lib/undoPayloads.ts`) for 24 hours from when it
+arrived; storage that is blocked or fails keeps it in memory only, and a
+payload over 12 MiB (or of the wrong shape) is not kept. The receipt shows
+Undo only while the browser holds its payload. Undo sends it back
+(`POST /api/chat/edit-operations/{id}/undo` with `payload`, at most 12 MiB);
+Go checks its signature against the step and the target (a changed id,
+another file's payload or a bad MAC answers `undo_unavailable`) and the
+collaboration service writes it as an edit by the chat actor: current edit
+role, frozen or over-quota account, the 8 MiB update cap, a source room's
+admission headroom, and the same structural checks as an edit (notes,
+quizzes, flashcards, Office: `office_update_violation`). It is applied on
+the working document (`ydoc::undo::apply_payload`): the edit's inserted
+items go and copies of what it deleted come back beside other people's later
+changes, so typing inside the agent's text stays. A map entry someone set
+after the edit (an XLSX cell, a mark) that a copy would overwrite is put back
+in the same commit, as the editor's undo leaves it. XLSX needs nothing more:
+Yjs holds cell inputs and every engine recalculates values from them. A
+payload naming items the document does not hold (another document, another
+lineage, a forged update) is refused (`undo_unavailable`) and nothing is
+written; one applied before changes nothing. The write goes to the live room
+like an edit, and a material's children pass and projection follow. The
+revert of the payload's change is the Redo payload, returned with the Undo's
+answer and signed under the Undo's own operation id, so the same endpoint
 called with that id is Redo, for any number of steps.
 
 An agent edit's Undo is sized from its commands (Epo 2026-10-21), never by
@@ -3942,54 +3952,48 @@ calibrated to over-estimate the real revert on the fixtures
 `sources/tests/live_undo_office.rs`,
 `every_material_command_costs_at_least_what_its_undo_and_redo_send` in the
 server's `edits.rs` tests, both measuring with `ydoc::undo::revert_len` on
-copies, which only tests use). The edit is broadcast to the editors first;
-the room then keeps the step with its estimate only when the estimate fits
-(within the 8 MiB update cap and, in a source room, its admission headroom by
-the running estimate). A step that does not fit is not kept: the edit's
-receipt gets no Undo ref, and an Undo's answer says `reversible: false`, so
-Go records its receipt without a Redo ref. A removal is the usual large
+copies, which only tests use). An edit gets a payload only when its
+estimate fits (within the 8 MiB update cap and, for a source, its room's
+admission headroom by the running estimate); one that does not fit gets no
+Undo ref and no payload. An Undo or Redo whose next payload would pass the
+cap answers without one, so Go records its receipt without a Redo ref. A removal is the usual large
 case: a small update whose Undo brings the removed content back. XLSX
 `delete_sheet` and `delete_rows` are not: they leave the cells in Yjs, and
 their Undo measures tens of bytes whatever the sheet holds (measured
 2026-10-21; 2026-10-22 on a sheet of 10,000 written cells and the large
-gradebook's 16,000-cell sheet: 32 to 57 bytes). The room checks the estimate again when an Undo is asked,
-against the room as it is then (a person may have filled a source room
-since), and refuses one that no longer fits with `undo_unavailable`,
-dropping the step. A timed-out Undo whose reverse was too large to keep is not
-put back (the room no longer holds it); every put-back answer other than done
-is captured (`agent_undo_put_back`, review r3 L1). Go names the step's
-document (`target`) and the room cross-checks that every room holding the
-step is that document's. Go records each Undo's receipt (`agent_operations`,
+gradebook's 16,000-cell sheet: 32 to 57 bytes). A source checks the
+payload's size again when it comes back, against the room as it is then (a
+person may have filled it since), and refuses one that no longer fits with
+`undo_unavailable`. Go records each Undo's receipt (`agent_operations`,
 kind `undo_edit`) with `undo_of` naming the step it reversed (unique, so a
 step is reversed once; migration 0106 dropped `agent_edit_inverses`). The
 effect alternates: an edit is `edited`, its Undo `edit_undone`, the Undo of
-that `edited` again, each carrying its next step's ref. A step ends with its
-room: any unload (the last editor leaving, an epoch change or publication
-handoff, a discard, lineage compaction's eviction), a restart or an Office
-reset, so trash, rebase and compaction need no invalidation of their own. A
-step no room holds, or one with nothing of the edit left, answers 409
-`undo_unavailable` ("this edit can no longer be undone"). The Office
-maintenance pause refuses an Office Undo (`office_editing_paused`), in Go and
-in the room. One collaboration server runs per environment, so the rooms
-holding steps are the only copy.
+that `edited` again, each carrying its next step's ref. A payload carries
+its document's lineage (`epoch`: a material's room schema, a source's
+epoch); compaction, a discard or a publication moves the lineage, and the
+server refuses a payload of another one with `undo_unavailable`
+(`ydoc::undo::refused_across_compaction`, Q122, Epo 2026-10-22). The browser
+drops a document's payloads once a collaboration token, a room join or a
+source session shows it in a newer lineage (`sawRoom`,
+`retireUndoPayloads`), so the button goes instead of failing. A step with
+nothing of the edit left answers 409 `undo_unavailable` ("this edit can no
+longer be undone"). The Office maintenance pause refuses an Office Undo
+(`office_editing_paused`) in Go before the payload is used, and the browser
+keeps it.
 
-A lost answer cannot strand a step (review H1). The room remembers each step
-it reverted (`Room.agent_reverted`; the server finds those rooms by
-`AgentSteps::reverted`) and answers a later request for it done again, with
-the id it kept the reverse under; Go records the receipt under that id. The API runs the requests for one step one at a time
+A lost answer cannot strand a step (review H1): a payload applied twice
+changes nothing. The API runs the requests for one step one at a time
 (`operationLocks`, in memory: one gateway process per environment) and, once
 one starts, runs it to its end whatever happens to the client
-(`context.WithoutCancel`); before asking the room it answers with the step's
-receipt when one exists (`UndoReceipt`, by `undo_of`), so a retry or a second
-click gets the first one's receipt. A quiz step reverts in its content room,
-then its keys room; when the second fails (or does not answer within 8 s), the
-first is put back (its revert reverted, the step under its old id), so both
-documents stay as they were and the step stays (review M2). In the chat a
-refused Undo (a 4xx) hides the button for the session, except a refusal for a
-moment that keeps the step (`office_editing_paused`, `unavailable_target`:
-the Office pause, a publication handoff or a room reset under way), which
-keeps it (review r2 L2); an unknown outcome (no answer, a 5xx) keeps it for a
-retry, and a second click while a request is out sends nothing.
+(`context.WithoutCancel`); before asking the collaboration service it
+answers with the step's receipt when one exists (`UndoReceipt`, by
+`undo_of`), so a retry or a second click gets the first one's receipt. A
+quiz's payload reverts its content and keys documents in one commit. In the
+chat a refused Undo (a 4xx) drops its payload and hides the button, except
+a refusal for a moment (`office_editing_paused`, `unavailable_target`),
+which keeps it (review r2 L2); an unknown outcome (no answer, a 5xx) keeps
+it for a retry, and a second click while a request is out sends nothing.
+Offline, Undo shows the offline toast and nothing queues.
 
 The Undo of an earlier edit after a later one (the agent's or a person's)
 rewrote the same span keeps both, as the editor's undo does: the earlier
@@ -4006,11 +4010,9 @@ gets its Redo ref only when the chat actor owns it.
 
 History (`ListMessages` → `refreshUndoStatuses`) follows each receipt's
 `undo_of` chain to its latest step (`LatestSteps`) and shows that step's
-effect. It keeps the ref only on an edit step a loaded room still holds
-(`/internal/documents/undo-status`), so a reopened conversation shows created
-files and edits whose room unloaded without Undo or Redo (Epo 2026-10-20 Q2);
-when the collaboration service cannot answer within 2 s (`undoStatusWait`),
-no ref stays, so a hung collaboration server cannot hold a conversation load. A retried Undo
+effect. An edit step keeps its ref, and the browser offers Undo while it
+holds that step's payload; a created file's step loses it, so a reopened
+conversation shows created files without Undo or Redo (Epo 2026-10-20 Q2). A retried Undo
 request answers with its receipt even after the step was used. Refusals keep
 their codes: `undo_unavailable`, `invalid_input`, `quota_rejected`,
 `lifecycle_rejected`, `office_editing_paused`. After a material edit

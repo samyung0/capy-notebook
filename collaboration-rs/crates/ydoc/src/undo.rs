@@ -1,8 +1,12 @@
-//! The live Undo of a server edit (human/agentic-retrieval.md, 2026-10-20):
-//! the edit's own Yjs items, read off its transaction where it was computed,
-//! are kept by the room that applies it and reverted there the way the
-//! editor's undo reverts a person's step, so other people's later changes
-//! stay. Nothing is stored: it lasts while the room holds the document.
+//! The Undo of a server edit (human/agentic-retrieval.md, 2026-10-20 and
+//! 2026-10-21): where the edit is computed, its own Yjs items are read off
+//! its transaction and reverted on that working document the way the
+//! editor's undo reverts a person's step. The revert's update is the edit's
+//! Undo payload: a delete set of the edit's own ids and copies of what it
+//! deleted, with their formatting, rooted at the tombstones. The chat keeps
+//! it for a day and sends it back; applied to the document then, it removes
+//! only the edit's items and brings the rest back beside other people's
+//! later changes, and applying it twice changes nothing.
 //!
 //! yrs keeps a deleted item's content from garbage collection only through
 //! an `UndoManager` (its hook marks what the transaction deleted before the
@@ -15,16 +19,40 @@ use std::sync::{Arc, Mutex};
 use yrs::block::ItemContent;
 use yrs::branch::BranchPtr;
 use yrs::undo::{Options, StackItem, UndoManager};
-use yrs::{Doc, IdSet, Origin, Out, ReadTxn, Transact, TransactionMut, Update, WriteTxn};
+use yrs::{Doc, ID, IdSet, Origin, Out, ReadTxn, Transact, TransactionMut, Update, WriteTxn};
 
 use crate::CONTRIBUTORS_ROOT;
 
-/// One revertible change in a room's document: what it inserted and what it
+/// One revertible change in a document: what it inserted and what it
 /// deleted. Reverting it yields the change that reverses it (Redo).
 pub type Change = StackItem<()>;
 
-/// The transaction origin a room applies and reverts server edits under.
-const ORIGIN: &str = "capy-agent-edit";
+/// The transaction origin server edits and their Undo run under, so what
+/// they delete is kept ([keep]).
+pub const ORIGIN: &str = "capy-agent-edit";
+
+/// While it lives, the transactions of its document under [ORIGIN] keep the
+/// content of what they delete, so the edit can be reverted afterwards.
+pub struct Keep {
+    _manager: UndoManager<()>,
+}
+
+/// Whether a payload made in lineage `made_in` is refused in lineage `now`
+/// (a material's room schema, a source's epoch): today's compaction rebuilds
+/// the document with new ids and the next room schema, so a payload cannot
+/// apply across it, and a discard or publication moves the lineage too
+/// (Q122, Epo 2026-10-22). The caller answers `undo_unavailable`.
+pub fn refused_across_compaction(made_in: i64, now: i64) -> bool {
+    made_in != now
+}
+
+/// Keeps what `doc`'s transactions under [ORIGIN] delete; open it before the
+/// transaction.
+pub fn keep(doc: &Doc) -> Keep {
+    Keep {
+        _manager: manager(doc, Vec::new()),
+    }
+}
 
 /// What an edit's transaction added and removed.
 #[derive(Clone, Debug, Default)]
@@ -43,22 +71,126 @@ impl Captured {
         }
     }
 
-    /// The change in the document `doc` (a room's) that holds these items.
+    /// The change in the document `doc` that holds these items.
     pub fn change(self, doc: &Doc) -> Change {
         StackItem::new(doc.guid(), self.deletions, self.insertions)
     }
 }
 
-/// Applies a server edit's update to a room's document, keeping the content
-/// of what it deletes for the edit's Undo; returns what changed (empty when
-/// nothing did), as [crate::apply] does.
-pub fn apply_kept(doc: &Doc, update: Update) -> Result<Vec<u8>, yrs::error::UpdateError> {
-    let manager = manager(doc, Vec::new());
+/// Applies `update` to `doc` in one transaction, keeping the content of what
+/// it deletes so the change can be reverted; returns the change.
+pub fn apply_kept(doc: &Doc, update: Update) -> Result<Captured, yrs::error::UpdateError> {
+    let _keep = keep(doc);
     let mut txn = doc.transact_mut_with(ORIGIN);
     txn.apply_update(update)?;
-    let applied = crate::committed_update(txn);
-    drop(manager);
-    Ok(applied)
+    Ok(Captured::of(&mut txn))
+}
+
+/// The Undo payload of `captured` in `doc` (the working document the change
+/// was made on, which kept what it deleted): the update [revert] makes. It
+/// reverts the change on `doc`, so it is the last use of `doc`. None when
+/// nothing of the change can be reverted.
+pub fn payload(doc: &Doc, captured: Captured) -> Option<Vec<u8>> {
+    revert(doc, captured.change(doc)).map(|reverted| reverted.update)
+}
+
+/// What sending an Undo payload back did to a document.
+#[derive(Debug)]
+pub enum Applied {
+    /// Every struct it carries was held already: it was applied before.
+    Before,
+    /// It changed the document; the change (for the next payload).
+    Changed(Captured),
+    /// Nothing of the edit was left to revert.
+    Nothing,
+    /// It names items the document does not hold (another lineage, a
+    /// tampered payload): they stay pending, so the document must be dropped.
+    Unheld,
+}
+
+/// Applies an Undo payload (an update [payload] built) to `doc`, keeping what
+/// it deletes. A map entry someone set after the reverted change (an XLSX
+/// cell, a mark, an attribute) that a copy in the payload overwrote is put
+/// back at once, in a transaction of its own, as the editor's undo leaves such
+/// an entry (Epo 2026-10-20: other people's later changes stay); the change
+/// returned leaves it out. Run on a working document: one that answers
+/// [Applied::Unheld] is left with pending content.
+pub fn apply_payload(doc: &Doc, update: Update) -> Result<Applied, yrs::error::UpdateError> {
+    let carries = update.blocks().next().is_some();
+    if carries && !update.extends(&doc.transact().state_vector()) {
+        return Ok(Applied::Before);
+    }
+    let own = update.insertions(true);
+    let named = update.delete_set().clone();
+    let mut change = apply_kept(doc, update)?;
+    if crate::has_pending(&doc.transact()) {
+        return Ok(Applied::Unheld);
+    }
+    let beyond = change.deletions.diff(&named).diff(&own);
+    let (entries, copies) = overwritten_entries(doc, &beyond, &own);
+    if !entries.is_empty() {
+        revert(doc, StackItem::new(doc.guid(), entries.clone(), copies));
+        change.deletions = change.deletions.diff(&entries);
+    }
+    if change.deletions.is_empty() && !any_live(doc, &change.insertions) {
+        return Ok(Applied::Nothing);
+    }
+    Ok(Applied::Changed(change))
+}
+
+/// The map entries among `deleted` (what a payload's transaction deleted
+/// beyond its own delete set) whose key a live copy in `own` now holds: a
+/// value someone set after the reverted change, overwritten by the payload;
+/// and those copies.
+fn overwritten_entries(doc: &Doc, deleted: &IdSet, own: &IdSet) -> (IdSet, IdSet) {
+    let txn = doc.transact();
+    let store = ReadTxn::store(&txn);
+    let (mut entries, mut copies) = (IdSet::new(), IdSet::new());
+    for (client, ranges) in deleted.iter() {
+        for range in ranges.iter() {
+            let mut clock = range.start;
+            while clock < range.end {
+                let Some((block, item)) = store.get_block_range(&ID::new(*client, clock)) else {
+                    break;
+                };
+                clock = block.clock + block.len;
+                let Some(item) = item else { continue };
+                let (Some(key), Some(parent)) = (item.parent_sub(), item.parent_branch()) else {
+                    continue;
+                };
+                if let Some(entry) = parent.entry_item(key)
+                    && !entry.is_deleted()
+                    && own.contains(entry.id())
+                {
+                    entries.insert(*item.id(), item.len());
+                    copies.insert(*entry.id(), entry.len());
+                }
+            }
+        }
+    }
+    (entries, copies)
+}
+
+/// Whether any unit of `set` is a live item of `doc` (not deleted, not
+/// collected).
+fn any_live(doc: &Doc, set: &IdSet) -> bool {
+    let txn = doc.transact();
+    let store = ReadTxn::store(&txn);
+    set.iter().any(|(client, ranges)| {
+        ranges.iter().any(|range| {
+            let mut clock = range.start;
+            while clock < range.end {
+                let Some((block, item)) = store.get_block_range(&ID::new(*client, clock)) else {
+                    return false;
+                };
+                if item.is_some_and(|item| !item.is_deleted()) {
+                    return true;
+                }
+                clock = block.clock + block.len;
+            }
+            false
+        })
+    })
 }
 
 /// A performed revert: the update that made it, and the change that
@@ -353,5 +485,149 @@ mod tests {
         room.get_or_insert_text("source")
             .remove_range(&mut room.transact_mut(), 0, 3);
         assert!(revert(&room, change).is_none());
+    }
+
+    /// An agent edit computed on a working copy of `room` as the server does
+    /// (what it deletes kept), its update applied to `room` as any update is
+    /// (collected), and its Undo payload.
+    fn edit_with_payload(room: &Doc, edit: impl FnOnce(&mut TransactionMut)) -> Vec<u8> {
+        let scratch = crate::scratch_doc();
+        sync(room, &scratch);
+        let before = room.transact().state_vector();
+        let captured = {
+            let _keep = keep(&scratch);
+            let mut txn = scratch.transact_mut_with(ORIGIN);
+            edit(&mut txn);
+            Captured::of(&mut txn)
+        };
+        let update = scratch.transact().encode_state_as_update_v1(&before);
+        crate::apply(room, Update::decode_v1(&update).unwrap()).unwrap();
+        payload(&scratch, captured).unwrap()
+    }
+
+    /// `doc` stored and loaded again, as a room unload and reload does:
+    /// deleted content is gone, the tombstones stay.
+    fn reloaded(doc: &Doc) -> Doc {
+        let loaded = crate::scratch_doc();
+        sync(doc, &loaded);
+        loaded
+    }
+
+    /// A working copy of `doc` with `payload` applied, and what that did.
+    fn sent_back(doc: &Doc, payload: &[u8]) -> (Doc, Applied) {
+        let scratch = crate::scratch_doc();
+        sync(doc, &scratch);
+        let applied = apply_payload(&scratch, Update::decode_v1(payload).unwrap()).unwrap();
+        (scratch, applied)
+    }
+
+    /// Epo 2026-10-21: the payload outlives the room. Built where the edit
+    /// ran, sent back to the document after it was stored and reloaded (the
+    /// deleted word's content gone, its tombstone kept) and after a person
+    /// typed inside the agent's text, it brings the word back and takes out
+    /// only the agent's characters. Applied a second time it changes
+    /// nothing; its Redo payload puts the agent's text back. Fails if the
+    /// payload needs the deleted content in the document (a room-held step).
+    #[test]
+    fn a_payload_undoes_after_a_reload_keeps_typing_and_applies_once() {
+        let room = crate::scratch_doc();
+        room.get_or_insert_text("source")
+            .insert(&mut room.transact_mut(), 0, "hello world");
+        let undo = edit_with_payload(&room, |txn| {
+            let source = txn.get_or_insert_text("source");
+            source.remove_range(txn, 6, 5);
+            source.insert(txn, 6, "there");
+        });
+        let room = reloaded(&room);
+        room.get_or_insert_text("source")
+            .insert(&mut room.transact_mut(), 8, "X");
+        assert_eq!(text(&room), "hello thXere");
+
+        let (undone, applied) = sent_back(&room, &undo);
+        let Applied::Changed(change) = applied else {
+            panic!("{applied:?}");
+        };
+        assert_eq!(text(&undone).replace('X', ""), "hello world");
+        assert!(text(&undone).contains('X'));
+        let undone = reloaded(&undone);
+        assert!(matches!(sent_back(&undone, &undo).1, Applied::Before));
+
+        // The Redo payload, built on the working copy that kept what the
+        // Undo deleted, works on the stored document too.
+        let (scratch, _) = sent_back(&room, &undo);
+        let redo = payload(&scratch, change).unwrap();
+        let (redone, applied) = sent_back(&undone, &redo);
+        assert!(matches!(applied, Applied::Changed(_)), "{applied:?}");
+        assert_eq!(text(&redone).replace('X', ""), "hello there");
+        assert!(text(&redone).contains('X'));
+    }
+
+    /// The editor's undo keeps a value someone set after the agent (Epo
+    /// 2026-10-20): the agent overwrote a cell, a person then set it again,
+    /// and the payload's copy of the old value, which may win the tie with
+    /// the person's, is put back; a cell nobody touched since reverts. Fails
+    /// if the payload is applied as it is.
+    #[test]
+    fn a_payload_keeps_a_value_set_after_the_agent() {
+        let cell = |doc: &Doc, key: &str| {
+            let txn = doc.transact();
+            txn.get_map("cells")
+                .unwrap()
+                .get(&txn, key)
+                .unwrap()
+                .to_string(&txn)
+        };
+        for attempt in 0..20 {
+            let room = crate::scratch_doc();
+            {
+                let cells = room.get_or_insert_map("cells");
+                let mut txn = room.transact_mut();
+                cells.insert(&mut txn, "A1", "1");
+                cells.insert(&mut txn, "B1", "1");
+            }
+            let undo = edit_with_payload(&room, |txn| {
+                let cells = txn.get_or_insert_map("cells");
+                cells.insert(txn, "A1", "2");
+                cells.insert(txn, "B1", "2");
+            });
+            let person = reloaded(&room);
+            person
+                .get_or_insert_map("cells")
+                .insert(&mut person.transact_mut(), "A1", "3");
+            let (undone, applied) = sent_back(&person, &undo);
+            assert!(matches!(applied, Applied::Changed(_)), "{applied:?}");
+            assert_eq!(cell(&undone, "A1"), "3", "attempt {attempt}");
+            assert_eq!(cell(&undone, "B1"), "1", "attempt {attempt}");
+        }
+    }
+
+    /// A payload of another document's edit names items this one lacks: it
+    /// is caught as unheld, not left to wait in a stored document.
+    #[test]
+    fn a_payload_of_another_document_is_unheld() {
+        let other = crate::scratch_doc();
+        other
+            .get_or_insert_text("source")
+            .insert(&mut other.transact_mut(), 0, "hello world");
+        let undo = edit_with_payload(&other, |txn| {
+            txn.get_or_insert_text("source").remove_range(txn, 0, 6);
+        });
+        let room = crate::scratch_doc();
+        room.get_or_insert_text("source")
+            .insert(&mut room.transact_mut(), 0, "hello world");
+        assert!(matches!(sent_back(&room, &undo).1, Applied::Unheld));
+    }
+
+    /// Once a person removed everything the agent wrote, its payload has
+    /// nothing left to do.
+    #[test]
+    fn a_payload_with_nothing_left_is_nothing() {
+        let room = crate::scratch_doc();
+        let undo = edit_with_payload(&room, |txn| {
+            txn.get_or_insert_text("source").insert(txn, 0, "abc");
+        });
+        room.get_or_insert_text("source")
+            .remove_range(&mut room.transact_mut(), 0, 3);
+        assert!(matches!(sent_back(&room, &undo).1, Applied::Nothing));
     }
 }

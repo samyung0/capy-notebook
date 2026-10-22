@@ -31,6 +31,9 @@ type AgentOperation struct {
 	Outcome        agenttools.Outcome         `json:"outcome"`
 	Effect         *agenttools.ResourceEffect `json:"effect,omitempty"`
 	Error          *agenttools.ToolError      `json:"error,omitempty"`
+	// UndoPayload travels with a fresh receipt only (an edit's Undo, an
+	// Undo's Redo) and is never stored with it.
+	UndoPayload *UndoPayload `json:"undoPayload,omitempty" doc:"The step's signed Undo payload, on a fresh receipt only; never stored"`
 }
 
 // ChatOperationID derives the operation identity of one chat tool call. The

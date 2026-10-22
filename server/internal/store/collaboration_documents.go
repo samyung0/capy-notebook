@@ -54,6 +54,8 @@ type documentRequest struct {
 	// Office is an inspect_office_document read's query; the engine answers
 	// it in the inspection's Scoped.
 	Office *OfficeQuery `json:"office,omitempty"`
+	// Undo is the payload an Undo (or Redo) sends back.
+	Undo *UndoPayload `json:"undo,omitempty"`
 }
 
 // OfficeQuery scopes an Office read: for XLSX no range lists the sheets, a
@@ -104,6 +106,10 @@ var limitMessages = map[string]string{
 	"update_size_exceeded": "this edit is too large to apply at once; make it as several smaller edits",
 }
 
+// collaborationAnswerLimit bounds what the collaboration service answers: a
+// receipt with an Undo payload of up to 8 MiB of updates in base64.
+const collaborationAnswerLimit = 12 << 20
+
 func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path string, body any, out any) error {
 	if baseURL == "" || secret == "" {
 		return ErrAuthorityUnavailable
@@ -124,7 +130,7 @@ func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path str
 		return fmt.Errorf("%w: %v", ErrAuthorityUnavailable, err)
 	}
 	defer response.Body.Close()
-	payload, _ := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	payload, _ := io.ReadAll(io.LimitReader(response.Body, collaborationAnswerLimit))
 	if response.StatusCode == http.StatusOK {
 		if out == nil {
 			return nil
@@ -223,7 +229,8 @@ type DocumentEdit struct {
 
 // EditDocument applies normalized commands through the authority, which
 // commits state, receipt and the merged provenance together and returns the
-// receipt; its Undo ref is set when a loaded room took the edit.
+// receipt; an edit made while its room was loaded carries its Undo ref and
+// its Undo payload, signed here for the chat (Epo 2026-10-21).
 func (s *Store) EditDocument(ctx context.Context, actorID string, target DocumentTarget, commands []json.RawMessage, provenance *Provenance, op DocumentOperation) (DocumentEdit, error) {
 	req := documentRequest{
 		Target: target, ActorUserID: actorID, Commands: commands,
@@ -240,6 +247,7 @@ func (s *Store) EditDocument(ctx context.Context, actorID string, target Documen
 	}
 	var out DocumentEdit
 	err := s.postDocumentAuthority(ctx, "/internal/documents/edit", req, &out)
+	out.UndoPayload = s.signUndoPayload(out.ID, target, out.UndoPayload)
 	return out, err
 }
 

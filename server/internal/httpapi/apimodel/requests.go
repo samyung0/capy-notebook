@@ -110,9 +110,12 @@ type TrashActionReq struct {
 	RequestID string `json:"requestId" minLength:"1" maxLength:"64" doc:"Client-generated idempotency key for this action"`
 }
 
-// UndoEditReq carries the browser's idempotency key for one Undo click.
+// UndoEditReq carries the browser's idempotency key for one Undo click and,
+// for an edit step, the Undo payload the browser kept (a created file's step
+// needs none).
 type UndoEditReq struct {
-	RequestID string `json:"requestId" minLength:"1" maxLength:"64" doc:"Client-generated idempotency key for this action"`
+	RequestID string             `json:"requestId" minLength:"1" maxLength:"64" doc:"Client-generated idempotency key for this action"`
+	Payload   *store.UndoPayload `json:"payload,omitempty" doc:"The step's Undo payload as the server sent it"`
 }
 
 // CreateMaterialReq is the body for POST /api/workspaces/{id}/materials.

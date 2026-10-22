@@ -14,7 +14,7 @@ import {
   fixtureResult,
   mockChatModel,
 } from './chatFixtures';
-import { rememberUndo } from './chatUndo';
+import { mockUndoPayload, rememberUndo } from './chatUndo';
 import { chatMessages, conversations, files, materials, uid } from './db';
 
 type MockTool = Extract<ActivityBlock, { kind: 'tool' }>;
@@ -165,6 +165,9 @@ export function mockChatStream(fixture?: ChatFixture) {
                 endedAt: tool.endedAt,
                 outcome: tool.outcome,
                 type: 'tool_end',
+                undoPayloads: (effects ?? []).flatMap(
+                  (effect) => mockUndoPayload(effect) ?? []
+                ),
               });
               return true;
             };

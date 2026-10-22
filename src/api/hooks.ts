@@ -22,6 +22,11 @@ import {
   trackItemCloned,
 } from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
+import {
+  forgetUndoPayload,
+  keepUndoPayloads,
+  sawRoom,
+} from '@/lib/undoPayloads';
 import { emitSyncedCustomization } from '@/theme/customizationEvents';
 import { USE_MSW } from './auth';
 import { api, isApiError, qk } from './client';
@@ -123,6 +128,7 @@ import type {
   TrashItem,
   TrashPage,
   UndoEditReq,
+  UndoPayload,
   UpdateChapterReq,
   UpdateCommentReq,
   UpdateConversationReq,
@@ -1314,13 +1320,29 @@ export function useDeleteOwnedFile() {
  * (the key is not reused across retries); the server answers every request
  * for a step it reversed already with that receipt, and refuses a step its
  * room no longer holds (live Undo, Epo 2026-10-20). */
+/** One chat Undo or Redo: an edit step sends the payload the browser kept;
+ * the answer's payload (the next step's) is kept and the used one dropped,
+ * whether or not the receipt is still on screen. Offline it fails at once;
+ * nothing waits to be sent. */
 export function useUndoEdit() {
   return useMutation({
     meta: { errorToast: false },
-    mutationFn: (operationId: string) =>
+    mutationFn: ({
+      operationId,
+      payload,
+    }: {
+      operationId: string;
+      payload?: UndoPayload;
+    }) =>
       api.post<OperationReceipt>(`/chat/edit-operations/${operationId}/undo`, {
+        payload,
         requestId: crypto.randomUUID(),
       } satisfies UndoEditReq),
+    networkMode: 'always',
+    onSuccess: (receipt, { operationId }) => {
+      forgetUndoPayload(operationId);
+      if (receipt.undoPayload) keepUndoPayloads([receipt.undoPayload]);
+    },
   });
 }
 
@@ -2268,10 +2290,16 @@ export const getMaterialCollaborationToken = (
   materialId: string,
   { access, document }: { access?: 'read'; document?: 'keys' } = {}
 ) =>
-  api.post<MaterialCollaborationToken>(
-    `/materials/${materialId}/collaboration-token`,
-    document || access ? { access, document } : undefined
-  );
+  api
+    .post<MaterialCollaborationToken>(
+      `/materials/${materialId}/collaboration-token`,
+      document || access ? { access, document } : undefined
+    )
+    .then((token) => {
+      // A newer room schema retires the material's agent Undo payloads (Q122).
+      sawRoom(token.room);
+      return token;
+    });
 
 export function useMaterialCollaborationToken(
   materialId: string,

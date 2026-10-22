@@ -38,8 +38,11 @@ pub fn router(app: Shared) -> Router {
         )
         .route("/internal/documents/inspect", post(document))
         .route("/internal/documents/edit", post(document))
-        .route("/internal/documents/undo", post(document))
-        .route("/internal/documents/undo-status", post(document))
+        // An Undo payload (8 MiB of updates, base64) is larger than commands.
+        .route(
+            "/internal/documents/undo",
+            post(document).layer(axum::extract::DefaultBodyLimit::max(MAX_UNDO_BODY + 1)),
+        )
         .route("/internal/documents/create", post(document))
         .route("/internal/commands", post(command))
         .route("/internal/markdown/convert", post(markdown))
@@ -218,6 +221,10 @@ fn authorized(app: &Shared, headers: &HeaderMap) -> bool {
 /// The largest internal command body (two documents and their envelope).
 pub const MAX_INTERNAL_BODY: usize = 2 * 2 * 1024 * 1024 + 1024 * 1024;
 
+/// The largest Undo body: a payload of at most `ydoc::MAX_UPDATE_BYTES` in
+/// base64 (4/3 of it) and its envelope.
+pub const MAX_UNDO_BODY: usize = 12 * 1024 * 1024;
+
 /// An internal route's JSON object body, or the 400 that answers it.
 fn json_object(body: &[u8], invalid: &str) -> Result<Value, Box<Response>> {
     let refused = || {
@@ -329,7 +336,7 @@ async fn publish_source_refresh(
     source_answer("source_publish", result)
 }
 
-/// `/internal/documents/{inspect,edit,undo,undo-status,create}`: direct AI
+/// `/internal/documents/{inspect,edit,undo,create}`: direct AI
 /// edits, their Undo and the agent's new Office files (`edits.rs`).
 async fn document(
     State(app): State<Shared>,
@@ -343,7 +350,12 @@ async fn document(
             json!({ "message": "invalid service secret" }),
         );
     }
-    if body.len() > MAX_INTERNAL_BODY {
+    let limit = if uri.path().ends_with("/undo") {
+        MAX_UNDO_BODY
+    } else {
+        MAX_INTERNAL_BODY
+    };
+    if body.len() > limit {
         return json_response(
             StatusCode::BAD_REQUEST,
             json!({ "code": "invalid_input", "message": "command body is too large" }),
@@ -659,7 +671,6 @@ pub(crate) mod tests {
             handoff: Default::default(),
             source_joins: Default::default(),
             markdown: None,
-            agent_steps: Default::default(),
         })
     }
 

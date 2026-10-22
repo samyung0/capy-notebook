@@ -1,5 +1,9 @@
 import { HttpResponse, http } from 'msw';
-import type { ResourceEffect, ResourceEffectOperation } from '@/api/types';
+import type {
+  ResourceEffect,
+  ResourceEffectOperation,
+  UndoPayload,
+} from '@/api/types';
 import { uid } from './db';
 
 /** What each operation's Undo turns it into; Redo is the Undo of an Undo. */
@@ -16,6 +20,21 @@ const NEXT: Record<ResourceEffectOperation, ResourceEffectOperation> = {
 const REFUSED_EDIT_STEP = 2;
 
 const steps = new Map<string, { effect: ResourceEffect; depth: number }>();
+
+/** The Undo payload the server sends with an edit's receipt (a created
+ * file's step needs none). */
+export function mockUndoPayload(effect: ResourceEffect): UndoPayload | null {
+  const edit =
+    effect.operation === 'edited' || effect.operation === 'edit_undone';
+  if (!edit || !effect.undo) return null;
+  return {
+    documentId: effect.resource.id,
+    epoch: 1,
+    mac: 'mock',
+    operationId: effect.undo.operationId,
+    updates: { content: 'bW9jaw==' },
+  };
+}
 
 /** Keep an undoable effect the mock stream sent, so its Undo can answer. */
 export function rememberUndo(effect: ResourceEffect) {
@@ -58,6 +77,7 @@ export const mockUndo = http.post(
       operationId,
       outcome: 'succeeded',
       toolVersion: 1,
+      undoPayload: mockUndoPayload(next) ?? undefined,
     });
   }
 );

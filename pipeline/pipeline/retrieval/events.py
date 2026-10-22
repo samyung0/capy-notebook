@@ -46,8 +46,11 @@ def tool_end(
     *,
     error: dict[str, str] | None = None,
     effects: list[dict[str, Any]] | None = None,
+    undo_payloads: list[dict[str, Any]] | None = None,
     ended_at: str,
 ) -> dict[str, Any]:
+    """``undo_payloads`` reach the browser on this event alone (Go forwards
+    them and saves nothing of them)."""
     event: dict[str, Any] = {
         "type": "tool_end",
         "callId": call_id,
@@ -58,6 +61,8 @@ def tool_end(
         event["error"] = error
     if effects:
         event["effects"] = effects
+    if undo_payloads:
+        event["undoPayloads"] = undo_payloads
     return event
 
 

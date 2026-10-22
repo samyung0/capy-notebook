@@ -96,7 +96,13 @@ func TestUndoEndpointWalksACreatedFilesChain(t *testing.T) {
 		ws.ID, other); err != nil {
 		t.Fatal(err)
 	}
-	undoAs(handler(other), edit, "x2", http.StatusNotFound)
+	// With the step's own signed payload, so only the role refuses it.
+	payload := signedUndoPayload(t, st, edit, created.Effect.Resource.ID)
+	rec := doReq(t, handler(other), http.MethodPost, "/api/chat/edit-operations/"+edit+"/undo", "",
+		map[string]any{"requestId": "x2", "payload": payload})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("a viewer's Undo of their edit: %d %s", rec.Code, rec.Body.String())
+	}
 
 	trashed := undo(created.ID, "r1", http.StatusOK)
 	if trashed.Effect == nil || trashed.Effect.Operation != "trashed" || trashed.Effect.Undo == nil {
@@ -116,11 +122,12 @@ func TestUndoEndpointWalksACreatedFilesChain(t *testing.T) {
 	}
 }
 
-// A chat Undo whose client goes away while the room reverts still records its
-// receipt (the work runs uncancelled), and a second request for the step under
-// another request id (a second click) answers with that receipt without asking
-// the room again (live-Undo review H1: fails if the endpoint drops the work
-// with the request or runs two at once).
+// A chat Undo whose client goes away while its payload is written still
+// records its receipt (the work runs uncancelled), and a second request for
+// the step under another request id (a second click) answers with that
+// receipt without asking the collaboration service again (live-Undo review
+// H1: fails if the endpoint drops the work with the request or runs two at
+// once).
 func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
@@ -154,20 +161,15 @@ func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 			created.Effect.Resource.ID, edit)); err != nil {
 		t.Fatal(err)
 	}
-	// The room: the Undo lands after the client left.
+	payload := signedUndoPayload(t, st, edit, created.Effect.Resource.ID)
+	// The collaboration service: the Undo lands after the client left.
 	started := make(chan struct{}, 1)
 	var undos atomic.Int32
-	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Operation struct {
-				ID string `json:"id"`
-			} `json:"operation"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&body)
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		undos.Add(1)
 		started <- struct{}{}
 		time.Sleep(300 * time.Millisecond)
-		_ = json.NewEncoder(w).Encode(map[string]string{"operationId": body.Operation.ID})
+		_ = json.NewEncoder(w).Encode(map[string]any{"undo": nil})
 	}))
 	t.Cleanup(authority.Close)
 	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
@@ -179,7 +181,7 @@ func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		raw, _ := json.Marshal(map[string]string{"requestId": "r1"})
+		raw, _ := json.Marshal(map[string]any{"requestId": "r1", "payload": payload})
 		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw)).WithContext(gone)
 		req.Header.Set("Content-Type", "application/json")
 		h.ServeHTTP(httptest.NewRecorder(), req)
@@ -187,7 +189,9 @@ func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 	<-started
 	// The second click arrives while the room is still reverting the first.
 	second := make(chan *httptest.ResponseRecorder, 1)
-	go func() { second <- doReq(t, h, http.MethodPost, path, "", map[string]string{"requestId": "r2"}) }()
+	go func() {
+		second <- doReq(t, h, http.MethodPost, path, "", map[string]any{"requestId": "r2", "payload": payload})
+	}()
 	leave()
 	<-done
 	rec := <-second
@@ -203,4 +207,25 @@ func TestUndoEndpointKeepsOneReceiptPerStep(t *testing.T) {
 	if again.ID != receipt.ID || undos.Load() != 1 {
 		t.Fatalf("second request answered %s (first %s) after %d room calls", again.ID, receipt.ID, undos.Load())
 	}
+}
+
+// signedUndoPayload asks the store to sign `step`'s payload the way an edit's
+// receipt gets it: through EditDocument, against an authority answering the
+// edit with that payload.
+func signedUndoPayload(t *testing.T, st *store.Store, step, materialID string) *store.UndoPayload {
+	t.Helper()
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"operationId": step, "outcome": "succeeded",
+			"undoPayload": map[string]any{"epoch": 1, "updates": map[string]string{"content": "dW5kbw=="}},
+		})
+	}))
+	defer authority.Close()
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+	receipt, err := st.EditDocument(context.Background(), "actor",
+		store.DocumentTarget{Kind: "material", ID: materialID}, nil, nil, store.DocumentOperation{ID: step})
+	if err != nil || receipt.UndoPayload == nil {
+		t.Fatalf("signing: %+v %v", receipt.UndoPayload, err)
+	}
+	return receipt.UndoPayload
 }

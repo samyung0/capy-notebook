@@ -8,6 +8,7 @@
 
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { keepUndoPayloads } from '@/lib/undoPayloads';
 import { authHeaders } from './auth';
 import { API_BASE, ApiError, parseErrorBody } from './client';
 import { consumeSSE } from './sse';
@@ -218,6 +219,7 @@ export async function streamChat(
       text?: string;
       tokenCount?: number;
       type: string;
+      undoPayloads?: unknown[];
       version?: number;
     };
     try {
@@ -272,6 +274,8 @@ export async function streamChat(
         }
         break;
       case 'tool_end':
+        // An edit's Undo payloads, kept for a day before its receipt shows.
+        if (Array.isArray(ev.undoPayloads)) keepUndoPayloads(ev.undoPayloads);
         if (ev.callId && TOOL_OUTCOMES.includes(ev.outcome as ToolOutcome)) {
           handlers.onToolEnd?.(ev.callId, {
             effects: Array.isArray(ev.effects) ? ev.effects : undefined,

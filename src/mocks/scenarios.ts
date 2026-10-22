@@ -409,6 +409,15 @@ export function getMockScenarioHandlers(
                         undo: { operationId: 'mock_edit', status: 'available' },
                       },
                     ],
+                    undoPayloads: [
+                      {
+                        documentId: 'f_2',
+                        epoch: 1,
+                        mac: 'mock',
+                        operationId: 'mock_edit',
+                        updates: { source: 'bW9jaw==' },
+                      },
+                    ],
                   }),
             },
             { status: 'complete', type: 'done' },

@@ -76,7 +76,7 @@ Storage is charged once per logical row owned by a user:
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
 | Trashed rows  | same as above              | until the 30-day purge        |
-| Chat Undo     | none                       | never: the loaded room holds it in memory (Epo 2026-10-20) |
+| Chat Undo     | none                       | never: the browser keeps its payload, the server stores only the receipt (Epo 2026-10-21) |
 
 **Uploader pays** (Sam 2026-10-18, Google Drive's My Drive model). The payer
 of a row is the account that uploaded, imported, cloned or created it, in any

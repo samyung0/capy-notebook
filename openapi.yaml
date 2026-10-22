@@ -199,6 +199,9 @@ components:
         toolVersion:
           format: int64
           type: integer
+        undoPayload:
+          $ref: "#/components/schemas/UndoPayload"
+          description: The step's signed Undo payload, on a fresh receipt only; never stored
         workspaceId:
           type: string
       required:
@@ -6398,6 +6401,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        payload:
+          $ref: "#/components/schemas/UndoPayload"
+          description: The step's Undo payload as the server sent it
         requestId:
           description: Client-generated idempotency key for this action
           maxLength: 64
@@ -6405,6 +6411,34 @@ components:
           type: string
       required:
         - requestId
+      type: object
+    UndoPayload:
+      additionalProperties: false
+      properties:
+        documentId:
+          description: The material or file the step changed
+          maxLength: 64
+          type: string
+        epoch:
+          description: The document lineage it was made in
+          format: int64
+          type: integer
+        mac:
+          description: The server's signature over the step, the document, the epoch and the updates
+          maxLength: 64
+          type: string
+        operationId:
+          description: The step this payload reverses
+          maxLength: 64
+          type: string
+        updates:
+          additionalProperties:
+            type: string
+          description: Per document, the base64 Yjs update that reverses the step
+          type: object
+      required:
+        - epoch
+        - updates
       type: object
     UndoRef:
       additionalProperties: false

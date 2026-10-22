@@ -6,17 +6,21 @@ export async function consumeSSE(
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // Where the next separator search starts: a large event (an Undo payload
+  // of megabytes) arrives in many reads, and each read scans only its own.
+  let scanned = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      let separator = buffer.indexOf('\n\n');
+      let separator = buffer.indexOf('\n\n', scanned);
       while (separator !== -1) {
         onEvent(buffer.slice(0, separator));
         buffer = buffer.slice(separator + 2);
         separator = buffer.indexOf('\n\n');
       }
+      scanned = Math.max(0, buffer.length - 1);
     }
     if (buffer.trim()) onEvent(buffer);
   } finally {

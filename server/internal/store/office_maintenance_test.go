@@ -83,7 +83,7 @@ func TestOfficeEditingPause(t *testing.T) {
 		t.Fatalf("agent edit: %v", err)
 	}
 	step := AgentOperation{ID: "op", Effect: &agenttools.ResourceEffect{Operation: agenttools.EffectEdited, Resource: agenttools.ResourceRef{Kind: agenttools.KindSourceFile, ID: open.ID}}}
-	_, err = s.UndoDocumentEdit(ctx, owner, step, DocumentOperation{ID: "undo"})
+	_, err = s.UndoDocumentEdit(ctx, owner, step, nil, DocumentOperation{ID: "undo"})
 	if !errors.As(err, &refusal) || refusal.Code != agenttools.ErrOfficeEditingPaused {
 		t.Fatalf("agent undo: %v", err)
 	}

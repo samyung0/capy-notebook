@@ -488,6 +488,7 @@ export type {
   ToolError,
   TrashActionReq,
   UndoEditReq,
+  UndoPayload,
   UndoRef,
 } from './gen/model';
 export type ToolOutcome = ActivityBlockOutcome;

@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { UndoPayload } from './undoPayload.ts';
 
 export interface UndoEditReq {
   /** A URL to the JSON Schema for this object. */
@@ -14,4 +15,6 @@ export interface UndoEditReq {
      * @maxLength 64
      */
   requestId: string;
+  /** The step's Undo payload as the server sent it */
+  payload?: UndoPayload;
 }

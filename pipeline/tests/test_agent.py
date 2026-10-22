@@ -5492,3 +5492,50 @@ async def test_office_edits_and_creates_reach_their_routes(monkeypatch):
         [write],
     )
     assert "Created file 'Grades.xlsx' (id f_new)." in created.text()
+
+
+async def test_undo_payloads_reach_tool_end_only(monkeypatch):
+    """Epo 2026-10-21 (Editor): an edit's signed Undo payload passes through
+    the pipeline in transit only. It rides the edit's tool_end event to the
+    browser and nothing else: not the model's context, not the activity or
+    evidence the turn saves. Fails if a payload reaches the model or a saved
+    record."""
+    marker = "UNDO-PAYLOAD-BYTES-" + "x" * 64
+    payload = {
+        "operationId": "op_edit",
+        "epoch": 1,
+        "updates": {"content": marker},
+        "mac": "f" * 64,
+    }
+    receipt = {
+        "operationId": "op_edit",
+        "outcome": "succeeded",
+        "effect": {
+            "operation": "edited",
+            "operationId": "op_edit",
+            "resource": {"kind": "material", "id": "mat_1", "title": "Study"},
+            "undo": {"operationId": "op_edit", "status": "available"},
+        },
+        "undoPayload": payload,
+    }
+    original_run = tools.run
+
+    async def run(name, args, ctx):
+        if name == "edit_document":
+            return tools._receipt_result(receipt)
+        return await original_run(name, args, ctx)
+
+    monkeypatch.setattr(tools, "run", run)
+    stream, seen = _script_stream(
+        [
+            _assembled(calls=[_call("edit_document", '{"target_id":"mat_1"}', "edit")]),
+            _assembled("Edited."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    events = await _collect("Fix the note", _build_ctx(), model=_build_model())
+    ends = [e for e in events if e["type"] == "tool_end" and e["callId"] == "edit"]
+    assert ends and ends[0]["undoPayloads"] == [payload]
+    elsewhere = [e for e in events if e is not ends[0]]
+    assert marker not in json.dumps(elsewhere)
+    assert marker not in json.dumps([call["messages"] for call in seen], default=str)

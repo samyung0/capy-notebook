@@ -80,6 +80,10 @@ class ToolResult:
     pending: str = ""
     # A search's documents with unindexed edits, by id: their passages say so.
     unindexed: dict[str, int] = field(default_factory=dict)
+    # An edit's signed Undo payloads (Epo 2026-10-21): opaque, for the
+    # tool_end event to the browser only, never in the model's context, the
+    # stored activity or the evidence.
+    undo_payloads: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def outcome(self) -> str:
@@ -1125,12 +1129,17 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             f"Created {resource.get('materialKind') or 'file'} '{title}' (id {rid}).{notice} "
             f"It is now in the workspace.{_block_ids(effect)}"
         )
-    return ToolResult(text_parts=[text], effects=[effect])
+    payload = body.get("undoPayload")
+    return ToolResult(
+        text_parts=[text],
+        effects=[effect],
+        undo_payloads=[payload] if isinstance(payload, dict) else [],
+    )
 
 
 def _undo_note(effect: dict[str, Any]) -> str:
-    """An edit has an Undo only when a room someone has open took it (Epo
-    2026-10-20)."""
+    """An edit has an Undo when the server sent its payload: one small
+    enough to send back (Epo 2026-10-21)."""
     return " The user can undo this from the chat result." if effect.get("undo") else ""
 
 

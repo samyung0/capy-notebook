@@ -18,15 +18,19 @@ type undoEditInput struct {
 }
 
 func (a *api) registerUndo(api huma.API) {
-	reg(api, http.MethodPost, "/api/chat/edit-operations/{operationId}/undo", "undoEditOperation", "Chat",
-		"Reverse one direct AI edit", http.StatusOK, a.undoEditOperation)
+	regWithMaxBody(api, http.MethodPost, "/api/chat/edit-operations/{operationId}/undo", "undoEditOperation", "Chat",
+		"Reverse one direct AI edit", http.StatusOK, undoBodyLimit, a.undoEditOperation)
 }
 
-// undoEditOperation reverses one chat step: a direct AI edit (in the
-// collaboration room that holds it, while it is live), a file the chat
-// created (trash), or an earlier Undo (which makes it Redo). Only the
-// original chat actor with current edit access may invoke it. The receipt's
-// effect carries the next step's ref.
+// undoBodyLimit admits an Undo payload of up to 8 MiB of updates in base64.
+const undoBodyLimit = 12 << 20
+
+// undoEditOperation reverses one chat step: a direct AI edit (its Undo
+// payload, kept by the browser and checked against this server's signature,
+// written as an edit is), a file the chat created (trash), or an earlier Undo
+// (which makes it Redo). Only the original chat actor with current edit
+// access may invoke it. The receipt's effect carries the next step's ref and
+// the receipt the next step's payload.
 //
 // The requests for one step run one at a time, and the work runs to its end
 // once started, so a reversed step always gets its receipt: a request whose
@@ -99,7 +103,7 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 			return nil, hErr(store.ErrNotFound)
 		}
 	}
-	receipt, err := a.s.UndoDocumentEdit(ctx, actor, step, store.DocumentOperation{
+	receipt, err := a.s.UndoDocumentEdit(ctx, actor, step, in.Body.Payload, store.DocumentOperation{
 		ID: opID, RequestHash: hash, ToolVersion: 1,
 		ConversationID: step.ConversationID, MessageID: step.MessageID,
 	})
