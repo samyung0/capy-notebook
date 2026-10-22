@@ -212,19 +212,29 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   const old = await page
     .locator('[data-office-view="live"] iframe')
     .elementHandle();
-  // The reader is on page 4.
+  // The reader is on page 4 (its canvas exists once the reader nears it).
   const pane = (view: string) =>
     page
       .frameLocator(`[data-office-view="${view}"] iframe`)
       .locator('.docx-editor__scroll-container');
-  await pane('live').evaluate((node) => {
-    const fourth = node.querySelector('canvas[data-page-index="3"]');
-    if (!fourth) throw new Error('Missing page 4');
-    node.scrollTop +=
-      fourth.getBoundingClientRect().top -
-      node.getBoundingClientRect().top +
-      40;
-  });
+  await expect
+    .poll(
+      () =>
+        pane('live').evaluate((node) => {
+          const fourth = node.querySelector('canvas[data-page-index="3"]');
+          if (!fourth) {
+            node.scrollTop += node.clientHeight;
+            return false;
+          }
+          node.scrollTop +=
+            fourth.getBoundingClientRect().top -
+            node.getBoundingClientRect().top +
+            40;
+          return true;
+        }),
+      { timeout: 60_000 }
+    )
+    .toBe(true);
 
   await page.evaluate(async (id) => {
     const collaboration = '/src/mocks/collaboration.ts';
