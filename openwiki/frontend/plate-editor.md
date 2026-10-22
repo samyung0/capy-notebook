@@ -698,12 +698,13 @@ registers, by detected id: architecture, block, c4, class and classDiagram
 flowchart-elk, gantt, gitGraph, info, ishikawa, journey, kanban, mindmap,
 packet, pie, quadrantChart, radar, railroad (plain, ABNF, EBNF and PEG),
 requirement, sankey, sequence, stateDiagram, swimlane, timeline, treemap,
-treeView, venn, wardley and xychart. Anything else is unsupported: an external
-add-on such as ZenUML, or a renderer-v1 id (`flowchart`, `state`) that a
-`defaultRenderer` directive picks. The worker refuses it before drawing (by
-`mermaid.detectType`) or after (by the drawn `diagramType`). There is no
-main-thread drawing path. An unsupported type says "This diagram type isn't
-supported." and a browser whose worker cannot start (no module workers or no
+treeView, venn, wardley and xychart. A type mermaid does not ship (an add-on
+such as ZenUML) or misspells fails mermaid's own detection: "This diagram could
+not be drawn". A registered id outside the list, the renderer-v1 `flowchart`
+that a `defaultRenderer` directive picks, is unsupported: the worker refuses
+it before drawing (by `mermaid.detectType`) or after (by the drawn
+`diagramType`). There is no main-thread drawing path. An unsupported type
+says "This diagram type isn't supported." and a browser whose worker cannot start (no module workers or no
 2D OffscreenCanvas, as before Safari 16.4) says "This browser can't draw
 diagrams."; both show in `MermaidError` as a source error does, everywhere
 (block, preview, chat), and an export fails such a diagram as it fails a
