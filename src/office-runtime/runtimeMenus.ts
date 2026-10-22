@@ -41,10 +41,10 @@ export type OfficeThumbnailer = () => Promise<OfficeRenderedPage | null>;
 export type OfficeCaptureScope = () => boolean;
 
 /** Where an editor's reader is, and going back there in the next view of a
- * room swap (Epo 2026-10-22). */
+ * room swap (Epo 2026-10-22); `show` settles once the editor is there. */
 export interface OfficePositioner {
   read: () => OfficePosition | null;
-  show: (position: OfficePosition) => void;
+  show: (position: OfficePosition) => Promise<void> | void;
 }
 
 /** The menu item an id names, if any. */

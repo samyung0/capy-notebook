@@ -47,15 +47,16 @@ export interface OfficeParagraphPoint {
 
 /**
  * Where a reader is in an editor, by content, so a room swap's next view
- * opens there (Epo 2026-10-22): DOCX the first paragraph of the page in view
- * (and that page) and the selection, XLSX the sheet (by id) and selected
- * cells, PPTX the slide (1-based).
+ * opens there (Epo 2026-10-22): DOCX the scroll offset, the first body
+ * paragraph showing at the top (its fragment by first line) and how far
+ * below the top edge it starts, and the selection; XLSX the sheet (by id)
+ * and selected cells; PPTX the slide (1-based).
  */
 export type OfficePosition =
   | {
       format: 'docx';
-      page: number;
-      top: OfficeParagraphPoint | null;
+      scrollTop: number;
+      top: { line: number | null; offset: number; paraId: string } | null;
       selection: {
         anchor: OfficeParagraphPoint;
         head: OfficeParagraphPoint;
@@ -237,10 +238,12 @@ export type OfficeHostMessage =
       type: 'position-request';
       id: string;
     }
-  /** Open at a position the replaced view reported (a room swap). */
+  /** Open at a position the replaced view reported (a room swap); answered
+   * by `position` once the editor is there. */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'set-position';
+      id: string;
       position: OfficePosition;
     };
 
@@ -427,7 +430,8 @@ export type OfficeRuntimeMessage =
       id: string;
       revision: number;
     }
-  /** The answer to `position-request` (null: no editor to ask). */
+  /** The answer to `position-request` and `set-position`: where the reader
+   * is (null: no editor to ask). */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'position';
@@ -491,7 +495,9 @@ export function isOfficeHostMessage(
   if (candidate.type === 'position-request')
     return typeof candidate.id === 'string';
   if (candidate.type === 'set-position')
-    return isOfficePosition(candidate.position);
+    return (
+      typeof candidate.id === 'string' && isOfficePosition(candidate.position)
+    );
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&
     ((candidate.type === 'load' &&
@@ -700,9 +706,15 @@ export function isOfficePosition(value: unknown): value is OfficePosition {
   const position = value as Record<string, unknown>;
   if (position.format === 'docx') {
     const selection = position.selection as Record<string, unknown> | null;
+    const top = position.top as Record<string, unknown> | null;
     return (
-      isCount(position.page) &&
-      (position.top === null || isParagraphPoint(position.top)) &&
+      isCount(position.scrollTop) &&
+      (top === null ||
+        (!!top &&
+          typeof top === 'object' &&
+          isText(top.paraId) &&
+          isFiniteNumber(top.offset) &&
+          (top.line === null || isCount(top.line)))) &&
       (selection === null ||
         (!!selection &&
           typeof selection === 'object' &&

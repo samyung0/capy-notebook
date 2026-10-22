@@ -69,12 +69,13 @@ export interface OfficeSwap {
   onSettled: () => void;
 }
 
+/** Both answer where the reader is once the frame says (null: no answer). */
 export interface OfficeViewPosition {
   read: () => Promise<OfficePosition | null>;
-  show: (position: OfficePosition) => void;
+  show: (position: OfficePosition) => Promise<OfficePosition | null>;
 }
 
-/** How long a replaced frame may take to say where its reader is. */
+/** How long a frame may take to say where its reader is. */
 const POSITION_WAIT_MS = 1000;
 
 interface OfficeRuntimeOptions {
@@ -1002,30 +1003,28 @@ export function useOfficeRuntime({
   }, [settled]);
   useEffect(() => {
     const requests = positionRequests.current;
-    swapRef.current?.onPosition({
-      read: () =>
-        new Promise((resolve) => {
-          const id = crypto.randomUUID();
-          const done = (position: OfficePosition | null) => {
-            clearTimeout(timer);
-            requests.delete(id);
-            resolve(position);
-          };
-          const timer = setTimeout(() => done(null), POSITION_WAIT_MS);
-          requests.set(id, done);
-          post({
-            id,
-            type: 'position-request',
-            version: OFFICE_PROTOCOL_VERSION,
-          });
-        }),
-      show: (position) =>
-        post({
-          position,
-          type: 'set-position',
-          version: OFFICE_PROTOCOL_VERSION,
-        }),
-    });
+    const ask = (position?: OfficePosition) =>
+      new Promise<OfficePosition | null>((resolve) => {
+        const id = crypto.randomUUID();
+        const done = (answer: OfficePosition | null) => {
+          clearTimeout(timer);
+          requests.delete(id);
+          resolve(answer);
+        };
+        const timer = setTimeout(() => done(null), POSITION_WAIT_MS);
+        requests.set(id, done);
+        post(
+          position
+            ? {
+                id,
+                position,
+                type: 'set-position',
+                version: OFFICE_PROTOCOL_VERSION,
+              }
+            : { id, type: 'position-request', version: OFFICE_PROTOCOL_VERSION }
+        );
+      });
+    swapRef.current?.onPosition({ read: () => ask(), show: ask });
     return () => swapRef.current?.onPosition(null);
   }, [post]);
 

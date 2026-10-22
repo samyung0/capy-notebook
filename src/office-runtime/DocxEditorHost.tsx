@@ -188,54 +188,58 @@ export function DocxEditorHost({
     });
     return () => onRenderer(null);
   }, [onRenderer]);
-  // A room swap (Epo 2026-10-22): the first paragraph of the page in view
-  // and the selection, by paragraph id, which the next epoch keeps.
+  // A room swap (Epo 2026-10-22): the reader's place by the body paragraph
+  // at the top, and the selection, by paragraph id, which the next epoch
+  // keeps.
   useEffect(() => {
     onPositioner({
       read: () => {
-        const editor = editorRef.current;
-        const paged = editor?.getEditorRef();
-        if (!(editor && paged)) return null;
+        const paged = editorRef.current?.getEditorRef();
+        const area = document.querySelector<HTMLElement>(SCROLL_BOX);
+        if (!(paged && area)) return null;
         const point = (position: number): OfficeParagraphPoint | null => {
           const loc = paged.displayPositionToYrsLoc(position);
           return (
             loc && { offset: loc.offset, paraId: loc.paraId, story: loc.story }
           );
         };
-        const page = editor.getCurrentPage();
-        // The first paragraph that starts on the page, not one carried over.
-        const first = paged
-          .getLayout()
-          ?.pages[page - 1]?.fragments.find(
-            (fragment) =>
-              fragment.pmStart !== undefined &&
-              !(fragment.kind === 'paragraph' && fragment.carriedFromPrev)
-          );
         const range = paged.getSelectionRange();
         const anchor = range && point(range.from);
         const head = range && point(range.to);
         return {
           format: 'docx',
-          page,
+          scrollTop: Math.round(area.scrollTop),
           selection: anchor && head ? { anchor, head } : null,
-          top: first?.pmStart === undefined ? null : point(first.pmStart),
+          top: topParagraph(area),
         };
       },
-      show: (position) => {
-        const editor = editorRef.current;
-        const paged = editor?.getEditorRef();
-        if (!(editor && paged) || position.format !== 'docx') return;
+      show: async (position) => {
+        const paged = editorRef.current?.getEditorRef();
+        const area = document.querySelector<HTMLElement>(SCROLL_BOX);
+        if (!(paged && area) || position.format !== 'docx') return;
+        const { selection, top } = position;
         const anchor =
-          position.selection &&
-          paged.yrsLocToDisplayPosition(position.selection.anchor);
-        const head =
-          position.selection &&
-          paged.yrsLocToDisplayPosition(position.selection.head);
-        if (typeof anchor === 'number' && typeof head === 'number')
+          selection && paged.yrsLocToDisplayPosition(selection.anchor);
+        const head = selection && paged.yrsLocToDisplayPosition(selection.head);
+        if (typeof anchor === 'number' && typeof head === 'number') {
           paged.setSelection(anchor, head);
-        // After the selection, which may scroll to itself.
-        if (!(position.top && editor.scrollToParaId(position.top.paraId)))
-          editor.scrollToPage(position.page);
+          // A moved caret scrolls itself into view; the reader's place wins.
+          await frames(2);
+        }
+        area.scrollTop = position.scrollTop;
+        if (!top) return;
+        // The pages now in view lay out their paragraphs; the top one goes
+        // back to its height (content above it may have changed).
+        await frames(1);
+        const line = top.line === null ? '' : `[data-from-line="${top.line}"]`;
+        const fragment = area.querySelector(
+          `${BODY_PARAGRAPH}[data-para-id="${CSS.escape(top.paraId)}"]${line}`
+        );
+        if (fragment)
+          area.scrollTop +=
+            fragment.getBoundingClientRect().top -
+            area.getBoundingClientRect().top -
+            top.offset;
       },
     });
     return () => onPositioner(null);
@@ -300,3 +304,35 @@ export function DocxEditorHost({
     </div>
   );
 }
+
+const SCROLL_BOX = '.docx-editor__scroll-container';
+/** Body paragraphs in the page mirrors (headers and footers repeat theirs on
+ * every page), split ones by fragment. */
+const BODY_PARAGRAPH = '.layout-page-content [data-para-id]';
+
+/** The first body paragraph fragment showing at the box's top, and how far
+ * below the top edge it starts; mirrors run in document order. */
+function topParagraph(area: HTMLElement) {
+  const edge = area.getBoundingClientRect().top;
+  for (const fragment of area.querySelectorAll<HTMLElement>(BODY_PARAGRAPH)) {
+    const rect = fragment.getBoundingClientRect();
+    const paraId = fragment.dataset.paraId;
+    if (rect.height > 0 && rect.bottom > edge && paraId)
+      return {
+        line:
+          fragment.dataset.fromLine === undefined
+            ? null
+            : Number(fragment.dataset.fromLine),
+        offset: rect.top - edge,
+        paraId,
+      };
+  }
+  return null;
+}
+
+const frames = (count: number) =>
+  new Promise<void>((resolve) => {
+    const next = (left: number) =>
+      left ? requestAnimationFrame(() => next(left - 1)) : resolve();
+    next(count);
+  });

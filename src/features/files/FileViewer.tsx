@@ -332,11 +332,11 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
     if (next === generation) {
       // The next view opens where the reader was, then takes the screen.
       const position = await read(shown);
+      if (position) await positions.current.get(generation)?.show(position);
       if (viewsRef.current.next !== generation) return;
-      if (position) positions.current.get(generation)?.show(position);
       setViews({ next: null, shown: generation });
     } else if (shown === generation && carried.current) {
-      positions.current.get(generation)?.show(carried.current);
+      void positions.current.get(generation)?.show(carried.current);
       carried.current = null;
     }
   }, []);

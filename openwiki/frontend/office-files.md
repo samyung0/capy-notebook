@@ -406,12 +406,19 @@ targets; the replaced view leaves the avatar group and the floating bar's
 inset to it). Once the new frame has painted with its replica ready (or
 failed: an error, an unavailable file, recovery), the host asks the replaced
 frame where its reader is (`position-request`, answered by `position` within
-a second, else nothing) and gives it to the new one (`set-position`): DOCX
-the first paragraph starting on the page in view by `w14:paraId` (else that
-page) and the selection by paragraph id and offset, XLSX the sheet by id and
-the selected cells, PPTX the slide; Yrs positions are not used, since the new
-epoch has new ones. The new slot then loses its hidden classes (the frame is
-never moved, which would reload it) and the replaced view unmounts. A hidden
+a second, else nothing) and gives it to the new one (`set-position`, answered
+by `position` once the editor is there, which the swap waits for): DOCX the
+scroll offset, the first body paragraph showing at the top by `w14:paraId`
+(its fragment by first line, from the page mirrors' `data-para-id`) with its
+distance below the top edge, and the selection by paragraph id and offset;
+XLSX the sheet by id and the selected cells; PPTX the slide. Yrs positions are
+not used, since the new epoch has new ones. A paused frame answers with where
+its reader was as the pause began (the runtime reads it before going
+read-only, since the DOCX editor going read-only scrolls to its caret). The
+DOCX editor sets the selection first, waits two frames for the caret's own
+scroll into view, then sets the scroll offset and, a frame later, puts that
+paragraph back at its height. The new slot then loses its hidden classes (the
+frame is never moved, which would reload it) and the replaced view unmounts. A hidden
 tab or a phone (below sm, one frame) swaps at once: the position is read
 first and given to the new view once it has painted. Only the maintenance
 pause keeps the paused view under its banner (`SourceReplacedBanner`, Reload
