@@ -52,15 +52,17 @@ patchedDependencies:
 #   no sprintf-js. Both packages load argparse only in their command-line tools
 #   (bin/mammoth, bin/js-yaml.js), which nothing here runs and which argparse 2
 #   no longer serves; their libraries never import it.
+# - KaTeX below 0.18.2 (settings prototype pollution, GHSA-238p-pmpm-9mq7)
+#   stays under mermaid 11 (^0.16.47; mermaid 12 moves to 0.18) and
+#   micromark-extension-math 3.1.0 (^0.16.0, its last release) via remark-math.
+#   Both call only katex.renderToString, which 0.19 keeps (Epo 2026-10-22).
 overrides:
   "geopattern>extend": 3.0.2
   "xmlbuilder2>js-yaml": 3.15.2
   "argparse@<2": 2.0.1
+  "katex@<0.18.2": 0.19.0
 
 # `pnpm audit --prod` (CI job audit_pnpm) fails on any advisory not listed
 # here. Each entry says why it waits.
 auditConfig:
-  ignoreGhsas:
-    # KaTeX: the trust bypass needs prototype pollution first, and `trust`
-    # stays off. 0.18.2 waits for the version wave (todo-security P4, KaTeX).
-    - GHSA-238p-pmpm-9mq7
+  ignoreGhsas: []

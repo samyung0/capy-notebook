@@ -9,6 +9,7 @@ overrides:
   geopattern>extend: 3.0.2
   xmlbuilder2>js-yaml: 3.15.2
   argparse@<2: 2.0.1
+  katex@<0.18.2: 0.19.0
 
 patchedDependencies:
   "@hocuspocus/provider@3.4.4": 81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5
@@ -129,9 +130,6 @@ importers:
       "@platejs/markdown":
         specifier: ^53.2.2
         version: 53.3.3(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(typescript@7.0.2)
-      "@platejs/math":
-        specifier: ^53.0.0
-        version: 53.0.0(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@platejs/media":
         specifier: ^53.1.4
         version: 53.1.4(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -3330,16 +3328,6 @@ packages:
       }
     peerDependencies:
       platejs: ">=53.3.3"
-      react: ">=18.0.0"
-      react-dom: ">=18.0.0"
-
-  "@platejs/math@53.0.0":
-    resolution:
-      {
-        integrity: sha512-rXfM7L2mJ4eyjUoQUXkApkjmCPfCSYX46i2d0+bVUzfNjQI6DhB19wAAa4eW4X9MLSqC+PakBAqPnkHr4pP1+w==,
-      }
-    peerDependencies:
-      platejs: ">=53.0.0"
       react: ">=18.0.0"
       react-dom: ">=18.0.0"
 
@@ -7204,13 +7192,6 @@ packages:
       }
     engines: { node: ">= 10" }
 
-  commander@8.3.0:
-    resolution:
-      {
-        integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==,
-      }
-    engines: { node: ">= 12" }
-
   comment-json@4.6.2:
     resolution:
       {
@@ -9352,20 +9333,6 @@ packages:
         integrity: sha512-4SBfZqKcc6DrIS+5b/WiGoWaZsdUPBH+e6SbRlNjJpaIRtfoBhYReAtobIEW6mcLeFFDXLBJMuZwkJLkBJjs2w==,
       }
     engines: { node: ">=18.17" }
-    hasBin: true
-
-  katex@0.16.22:
-    resolution:
-      {
-        integrity: sha512-XCHRdUw4lf3SKBaJe4EvgqIuWwkPSo9XoeO8GjQW94Bp7TWv9hNhzZjZ+OH9yf1UmLygb7DIT5GSFQiyt16zYg==,
-      }
-    hasBin: true
-
-  katex@0.16.47:
-    resolution:
-      {
-        integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==,
-      }
     hasBin: true
 
   katex@0.19.0:
@@ -14817,14 +14784,6 @@ snapshots:
       - supports-color
       - typescript
 
-  "@platejs/math@53.0.0(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)":
-    dependencies:
-      katex: 0.16.22
-      platejs: 53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
-      react: 19.2.8
-      react-compiler-runtime: 1.0.0(react@19.2.8)
-      react-dom: 19.2.8(react@19.2.8)
-
   "@platejs/media@53.1.4(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)":
     dependencies:
       platejs: 53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
@@ -17547,8 +17506,6 @@ snapshots:
 
   commander@7.2.0: {}
 
-  commander@8.3.0: {}
-
   comment-json@4.6.2:
     dependencies:
       array-timsort: 1.0.3
@@ -18862,14 +18819,6 @@ snapshots:
       slick: 1.12.2
       web-resource-inliner: 8.0.0
 
-  katex@0.16.22:
-    dependencies:
-      commander: 8.3.0
-
-  katex@0.16.47:
-    dependencies:
-      commander: 8.3.0
-
   katex@0.19.0:
     dependencies:
       commander: 15.0.0
@@ -19335,7 +19284,7 @@ snapshots:
       dayjs: 1.11.21
       dompurify: 3.4.16
       es-toolkit: 1.50.0
-      katex: 0.16.47
+      katex: 0.19.0
       khroma: 2.1.0
       marked: 16.4.2
       roughjs: 4.6.6
@@ -19426,7 +19375,7 @@ snapshots:
     dependencies:
       "@types/katex": 0.16.8
       devlop: 1.1.0
-      katex: 0.16.47
+      katex: 0.19.0
       micromark-factory-space: 2.0.1
       micromark-util-character: 2.1.1
       micromark-util-symbol: 2.0.1
