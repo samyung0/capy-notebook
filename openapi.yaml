@@ -779,6 +779,11 @@ components:
           type: integer
         preview:
           type: string
+        reviewedAt:
+          description: When an editor last marked the question reviewed; null when not reviewed
+          format: date-time
+          nullable: true
+          type: string
         score:
           description: The latest answer's score for the current content, 0 to 1; null when not answered
           format: double
@@ -791,6 +796,7 @@ components:
         - marks
         - answerTypes
         - score
+        - reviewedAt
       type: object
     BillingCheckoutReq:
       additionalProperties: false
@@ -1651,6 +1657,22 @@ components:
           type: array
         workspaceId:
           type: string
+      type: object
+    CreateStudyPlanReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateStudyPlanReq.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          maxLength: 60
+          minLength: 1
+          type: string
+      required:
+        - name
       type: object
     CreateWorkspaceInviteReq:
       additionalProperties: false
@@ -3658,20 +3680,12 @@ components:
           minItems: 1
           nullable: true
           type: array
-        grain:
-          format: double
-          maximum: 1
-          minimum: 0
-          type: number
         pattern:
           enum:
             - none
             - arc
             - mesh
             - glow
-            - painted
-            - waves
-            - contours
           type: string
         strength:
           format: double
@@ -3683,7 +3697,6 @@ components:
         - colours
         - dots
         - strength
-        - grain
       type: object
     PageFrameColor:
       additionalProperties: false
@@ -3816,11 +3829,86 @@ components:
         - sentAt
         - expiresAt
       type: object
+    PlanStep:
+      additionalProperties: false
+      properties:
+        kind:
+          enum:
+            - workspace
+            - unfiled
+            - chapter
+            - file
+            - material
+          type: string
+        locked:
+          type: boolean
+        targetId:
+          description: The chapter, file or material
+          type: string
+        title:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - kind
+        - workspaceId
+        - title
+        - locked
+      type: object
+    PlanStepInput:
+      additionalProperties: false
+      properties:
+        kind:
+          enum:
+            - workspace
+            - unfiled
+            - chapter
+            - file
+            - material
+          type: string
+        targetId:
+          description: The chapter, file or material; omitted for workspace and unfiled steps
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - kind
+        - workspaceId
+      type: object
     PlanTier:
       enum:
         - free
         - pro
       type: string
+    PlanWorkspace:
+      additionalProperties: false
+      properties:
+        chapters:
+          items:
+            $ref: "#/components/schemas/ProgressChapter"
+          type: array
+        cover:
+          $ref: "#/components/schemas/Cover"
+        hidden:
+          type: boolean
+        iconId:
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ProgressItem"
+          type: array
+        name:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - workspaceId
+        - name
+        - iconId
+        - hidden
+        - chapters
+        - items
+      type: object
     PreviousAttempt:
       additionalProperties: false
       properties:
@@ -3919,6 +4007,8 @@ components:
         done:
           format: int64
           type: integer
+        hidden:
+          type: boolean
         iconId:
           type: string
         lastStudiedAt:
@@ -5925,6 +6015,60 @@ components:
         - state
         - updatedAt
       type: object
+    StudyPlan:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyPlan.json
+          format: uri
+          readOnly: true
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        steps:
+          items:
+            $ref: "#/components/schemas/PlanStep"
+          type: array
+        updatedAt:
+          format: date-time
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - id
+        - workspaceId
+        - name
+        - createdAt
+        - updatedAt
+        - steps
+      type: object
+    StudyPlans:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/StudyPlans.json
+          format: uri
+          readOnly: true
+          type: string
+        plans:
+          items:
+            $ref: "#/components/schemas/StudyPlan"
+          type: array
+        workspaces:
+          items:
+            $ref: "#/components/schemas/PlanWorkspace"
+          type: array
+      required:
+        - plans
+        - workspaces
+      type: object
     StudyPreferences:
       additionalProperties: false
       properties:
@@ -6674,6 +6818,25 @@ components:
       required:
         - privacy
       type: object
+    UpdateStudyPlanReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateStudyPlanReq.json
+          format: uri
+          readOnly: true
+          type: string
+        name:
+          maxLength: 60
+          minLength: 1
+          type: string
+        steps:
+          items:
+            $ref: "#/components/schemas/PlanStepInput"
+          maxItems: 50
+          type: array
+      type: object
     UpdateTaskReq:
       additionalProperties: false
       properties:
@@ -6913,8 +7076,6 @@ components:
           type: integer
         studyPreferences:
           $ref: "#/components/schemas/StudyPreferences"
-        studyProgress:
-          type: boolean
         subscriptionStatus:
           $ref: "#/components/schemas/SubscriptionStatus"
       required:
@@ -6924,7 +7085,6 @@ components:
         - email
         - streak
         - locale
-        - studyProgress
         - studyPreferences
         - chatSteps
         - chatSendKey
@@ -9279,6 +9439,25 @@ paths:
       summary: Update a label
       tags:
         - Schedule
+  /api/learning/plans:
+    get:
+      operationId: listLearningPlans
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyPlans"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Every study plan of the user
+      tags:
+        - Study
   /api/learning/progress:
     get:
       operationId: getLearningProgress
@@ -9290,6 +9469,13 @@ paths:
           schema:
             description: A listed workspace whose map to return instead of the most recently studied one
             type: string
+        - description: Also list workspaces hiding study progress, marked hidden
+          explode: false
+          in: query
+          name: all
+          schema:
+            description: Also list workspaces hiding study progress, marked hidden
+            type: boolean
       responses:
         "200":
           content:
@@ -9929,27 +10115,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Save study preferences
-      tags:
-        - Study
-  /api/me/study-progress:
-    patch:
-      operationId: setStudyProgressDefault
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetStudyEnabledReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Default study progress setting
       tags:
         - Study
   /api/model-slots:
@@ -10954,6 +11119,55 @@ paths:
       summary: Get source upload policy
       tags:
         - Content
+  /api/study/plans/{id}:
+    delete:
+      operationId: deleteStudyPlan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a study plan
+      tags:
+        - Study
+    patch:
+      operationId: updateStudyPlan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: uuid
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateStudyPlanReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Rename a study plan or replace its steps
+      tags:
+        - Study
   /api/tags:
     get:
       operationId: listTags
@@ -12383,7 +12597,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Turn study progress on or off in a workspace
+      summary: Show or hide study progress in a workspace
       tags:
         - Study
   /api/workspaces/{id}/study/items:
@@ -12411,6 +12625,61 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Mark a file or material read, unread or removed
+      tags:
+        - Study
+  /api/workspaces/{id}/study/plans:
+    get:
+      operationId: listWorkspacePlans
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyPlans"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Plans kept in a workspace, then plans elsewhere with a step in it
+      tags:
+        - Study
+    post:
+      operationId: createStudyPlan
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStudyPlanReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudyPlan"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Add an empty study plan to a workspace
       tags:
         - Study
   /api/workspaces/{id}/study/reset:

@@ -509,10 +509,20 @@ type SetChatPrefsReq struct {
 	SendKey *string `json:"sendKey,omitempty" enum:"enter,shift_enter" doc:"The key that sends a message; the other adds a new line"`
 }
 
-// SetStudyEnabledReq turns study progress on or off, for one workspace or as
-// the account default.
+// SetStudyEnabledReq shows (true) or hides study progress in one workspace.
 type SetStudyEnabledReq struct {
 	Enabled bool `json:"enabled"`
+}
+
+// CreateStudyPlanReq names a new, empty plan.
+type CreateStudyPlanReq struct {
+	Name StudyPlanName `json:"name" minLength:"1"`
+}
+
+// UpdateStudyPlanReq renames the plan and/or replaces its steps in order.
+type UpdateStudyPlanReq struct {
+	Name  *StudyPlanName         `json:"name,omitempty" minLength:"1"`
+	Steps *[]store.PlanStepInput `json:"steps,omitempty" maxItems:"50"`
 }
 
 // SetStudyItemReq marks one file or material; an omitted state marks it unread.

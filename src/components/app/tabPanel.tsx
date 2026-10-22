@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 
 /** Body under a page's tabs, at the wide gutter (`page-px-wide`). It grows
  * with its content so the panel scrolls the header and tabs away with it.
- * Content keeps a reading width unless `fill` (Learning's map and lists run
+ * Content keeps a reading width unless `fill` (Learning and quiz pages run
  * to the gutter). */
 export function TabContent({
   children,

@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { useState } from 'react';
 import type { AttemptCard, PreviousAttempt } from '@/api/types';
 import { SortMenu, type SortOption } from '@/components/app/ListToolbar';
 import { Icon } from '@/components/ui/Icon';
@@ -6,7 +6,7 @@ import { RATING_LABEL } from '@/features/study/ratings';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
-import { CardBackFace } from './CardView';
+import { CardGrid, CardTile } from './CardView';
 
 /** A rating's result colour (bars) and tint (each card's rating chips). */
 const TONE: Record<SrsRating, { bar: string; chip: string }> = {
@@ -105,7 +105,7 @@ export function FlashcardResult({
           sorts={sorts}
         />
       </div>
-      <ResultCardGrid>
+      <CardGrid>
         {numbered.map(({ card, n }) => (
           <ResultCardTile
             card={card}
@@ -114,22 +114,13 @@ export function FlashcardResult({
             ratings={card.ratings}
           />
         ))}
-      </ResultCardGrid>
+      </CardGrid>
     </div>
   );
 }
 
-/** Result tiles in columns of 350px or more that share the width. */
-export function ResultCardGrid({ children }: { children: ReactNode }) {
-  return (
-    <ol className="grid grid-cols-1 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(350px,1fr))] sm:gap-3.5">
-      {children}
-    </ol>
-  );
-}
-
-/** A card's back as a result tile: its number in the order first rated and
- * its ratings, as Learning's review result also lists cards. */
+/** A card as a result tile: its number in the order first rated and its
+ * ratings, as Learning's review result also lists cards. */
 export function ResultCardTile({
   card,
   n,
@@ -140,29 +131,25 @@ export function ResultCardTile({
   ratings: number[];
 }) {
   return (
-    <li className="flex flex-col overflow-hidden rounded-card-lg border border-line bg-surface">
-      <CardBackFace card={card} className="flex-1" size="tile" />
-      <div className="flex items-center justify-between gap-2 px-3.5 pb-3">
-        <span className="font-bold text-[13px] text-fg-muted">{n}</span>
-        <span className="flex items-center gap-1 whitespace-nowrap">
-          {ratings.map((r, j) => (
-            <span className="contents" key={j}>
-              {j > 0 && (
-                <Icon className="text-fg-muted" name="arrowRight" size={12} />
-              )}
-              <span
-                className={cn(
-                  'rounded-input px-2 py-0.5 font-bold text-xs',
-                  TONE[ratingOf(r)].chip
-                )}
-              >
-                {RATING_LABEL[ratingOf(r)]()}
-              </span>
-            </span>
-          ))}
+    <CardTile
+      aside={ratings.map((r, j) => (
+        <span className="contents" key={j}>
+          {j > 0 && (
+            <Icon className="text-fg-muted" name="arrowRight" size={12} />
+          )}
+          <span
+            className={cn(
+              'rounded-input px-2 py-0.5 font-bold text-xs',
+              TONE[ratingOf(r)].chip
+            )}
+          >
+            {RATING_LABEL[ratingOf(r)]()}
+          </span>
         </span>
-      </div>
-    </li>
+      ))}
+      card={card}
+      n={n}
+    />
   );
 }
 

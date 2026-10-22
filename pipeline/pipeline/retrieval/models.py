@@ -34,7 +34,7 @@ from .stream import (
     ChatCompletionsAssembler,
     OpenAIResponsesAssembler,
 )
-from .usage_extract import NormalizedUsage, extract_usage
+from .usage_extract import NormalizedUsage, extract_usage, response_usage
 
 log = logging.getLogger("capy.models")
 
@@ -87,6 +87,15 @@ def classify_user_key_error(exc: BaseException) -> UserKeyError | None:
     return UserKeyError(KEY_FAILED, KEY_FAILED_MSG)
 
 
+class _StreamReceipt:
+    """What one provider stream has sent so far."""
+
+    def __init__(self) -> None:
+        self.seen = False
+        # The last usage block, None until the provider sends one.
+        self.usage: NormalizedUsage | None = None
+
+
 @asynccontextmanager
 async def _tracked_call(
     *,
@@ -97,7 +106,15 @@ async def _tracked_call(
     spec: ModelConfig | None = None,
     deadline: float | None = None,
     capacity: tuple[str, int] | None = None,
+    stream: _StreamReceipt | None = None,
 ):
+    """Open one provider call around its request; free its lease on the way out.
+
+    ``stream`` marks a streamed call. A stream that fails at any point (no
+    first event, silence, an error event, transport loss, cancellation) is
+    over, and nothing can settle its call id later, so it closes at once: the
+    usage it sent is billed, and with none it is abandoned unbilled.
+    """
     call_id = accounting.new_call_id()
     await accounting.open_call(
         call_id,
@@ -111,14 +128,28 @@ async def _tracked_call(
     )
     try:
         yield call_id
-    except asyncio.CancelledError:
-        # Cancellation stops this request locally but does not prove that the
-        # provider stopped before spending. Keep the exact call id open for a
-        # late receipt or the receipt-deadline sweeper.
+    except accounting.SettlementError:
+        # The receipt exists but could not apply; the deadline sweep closes it.
         raise
     except BaseException as exc:
-        if not isinstance(exc, accounting.SettlementError) and (
-            accounting.definitive_provider_failure(exc)
+        if stream is not None and stream.usage is not None and spec is not None:
+            try:
+                await accounting.settle(
+                    call_id=call_id,
+                    kind=kind,
+                    purpose=purpose,
+                    thinking=thinking,
+                    spec=spec,
+                    usage=stream.usage,
+                )
+            except Exception:
+                log.exception("failed stream %s could not settle its usage", call_id)
+        elif stream is not None or (
+            # Cancellation stops a request locally but does not prove that the
+            # provider stopped before spending, so a non-streamed call keeps
+            # its call id open for the receipt-deadline sweeper.
+            not isinstance(exc, asyncio.CancelledError)
+            and accounting.definitive_provider_failure(exc)
         ):
             await accounting.abandon_call(call_id, exc)
         raise
@@ -273,14 +304,6 @@ async def _call_with_retry(
                 ),
             )
     raise AssertionError("retry loop must return or raise")
-
-
-class _ByteFlag:
-    def __init__(self) -> None:
-        self.seen = False
-
-    def mark(self) -> None:
-        self.seen = True
 
 
 def _raise_user_key(exc: BaseException) -> None:
@@ -514,6 +537,7 @@ async def complete_response(
     streamed = _interactive()
 
     async def _one(deadline: float) -> Any:
+        receipt = _StreamReceipt() if streamed else None
         async with _tracked_call(
             kind=accounting.KIND_LLM,
             purpose=call_purpose,
@@ -521,15 +545,17 @@ async def complete_response(
             context=context,
             spec=spec,
             deadline=deadline,
+            stream=receipt,
         ) as call_id:
             try:
-                if streamed:
+                if receipt is not None:
                     assembled = await _stream_via_adapter(
                         spec,
                         submitted_messages,
                         tools,
                         temperature,
                         None,
+                        receipt=receipt,
                         max_tokens=max_tokens,
                         reasoning=reasoning,
                         response_format=response_format,
@@ -564,9 +590,7 @@ async def complete_response(
                         )
                         else None,
                     )
-                    usage = extract_usage(
-                        getattr(resp, "usage", None), provider=spec.provider_slug
-                    )
+                    usage = response_usage(resp, provider=spec.provider_slug)
             except Exception as exc:  # noqa: BLE001
                 _raise_user_key(exc)
             obs.record_normalized(
@@ -759,7 +783,7 @@ async def stream_agent_response(
     policy = retry_policy()
     deadline = time.monotonic() + policy.budget_s
     for attempt in range(policy.attempts):
-        received = _ByteFlag()
+        received = _StreamReceipt()
         try:
             async with _tracked_call(
                 kind=accounting.KIND_LLM,
@@ -768,6 +792,7 @@ async def stream_agent_response(
                 context=context,
                 spec=spec,
                 deadline=deadline,
+                stream=received,
             ) as call_id:
                 assembled = await _stream_via_adapter(
                     spec,
@@ -775,7 +800,7 @@ async def stream_agent_response(
                     tools,
                     temperature,
                     on_event,
-                    on_provider_byte=received.mark,
+                    receipt=received,
                     response_format=response_format,
                 )
                 obs.record_normalized(
@@ -829,8 +854,8 @@ async def _stream_via_adapter(
     tools: list[dict[str, Any]] | None,
     temperature: float | None,
     on_event: Any | None,
-    on_provider_byte: Any | None = None,
     *,
+    receipt: _StreamReceipt | None = None,
     max_tokens: int | None = None,
     reasoning: bool | None = None,
     response_format: dict[str, Any] | None = None,
@@ -854,9 +879,11 @@ async def _stream_via_adapter(
         response_format=response_format,
     )
     async for chunk in stream:
-        if on_provider_byte is not None:
-            on_provider_byte()
+        if receipt is not None:
+            receipt.seen = True
         for item in assembler.push(chunk):
+            if receipt is not None and item.usage is not None:
+                receipt.usage = item.usage
             if on_event is not None:
                 on_event(item)
     return assembler.finish()
@@ -882,7 +909,7 @@ async def stream_text(
     policy = retry_policy()
     deadline = time.monotonic() + policy.budget_s
     for attempt in range(policy.attempts):
-        received = _ByteFlag()
+        received = _StreamReceipt()
         try:
             async with _tracked_call(
                 kind=accounting.KIND_LLM,
@@ -891,6 +918,7 @@ async def stream_text(
                 context=context,
                 spec=spec,
                 deadline=deadline,
+                stream=received,
             ) as call_id:
                 usage = NormalizedUsage()
                 stream = elitellm.stream(
@@ -904,13 +932,13 @@ async def stream_text(
                     else None,
                 )
                 async for chunk in stream:
-                    received.mark()
+                    received.seen = True
                     obs.record_stream_chunk(
                         spec.provider_slug, _record_name(spec), chunk
                     )
-                    block = getattr(chunk, "usage", None)
-                    if block is not None:
-                        usage = extract_usage(block, provider=spec.provider_slug)
+                    if getattr(chunk, "usage", None) is not None:
+                        usage = response_usage(chunk, provider=spec.provider_slug)
+                        received.usage = usage
                     choices = getattr(chunk, "choices", None) or []
                     delta = ""
                     if choices:
@@ -1002,9 +1030,7 @@ async def read_page(
                 )
                 obs.record_completion(spec.provider_slug, _record_name(spec), resp)
                 read = _usable_text(resp)
-                usage = extract_usage(
-                    getattr(resp, "usage", None), provider=spec.provider_slug
-                )
+                usage = response_usage(resp, provider=spec.provider_slug)
             else:
                 read, usage = scripted, NormalizedUsage()
             await accounting.settle(
@@ -1073,9 +1099,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
                 purpose="image_caption",
                 thinking=caption_thinking,
                 spec=spec,
-                usage=extract_usage(
-                    getattr(resp, "usage", None), provider=spec.provider_slug
-                ),
+                usage=response_usage(resp, provider=spec.provider_slug),
             )
         caption = _usable_text(resp)
         # Raised after settling, so it counts as one of the attempts.

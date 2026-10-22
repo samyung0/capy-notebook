@@ -1,18 +1,10 @@
-import { Popover as PopoverPrimitive } from 'radix-ui';
-import {
-  type ComponentProps,
-  type KeyboardEvent,
-  type ReactNode,
-  useId,
-  useState,
-} from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { coverBackground, useCoverPaint } from '@/components/ui/CoverArt';
 import { Icon } from '@/components/ui/Icon';
-import { Input } from '@/components/ui/Input';
-import { Popover, PopoverContent } from '@/components/ui/Popover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { type BankExam, soleSubject, soleTopic } from './bank';
+import type { CoverPaint } from '@/lib/coverArt';
+import { type BankExam, soleTopic } from './bank';
 
 const questionCount = (exam: BankExam) => {
   const count = exam.subjects.reduce(
@@ -36,201 +28,174 @@ export const topicCount = (exam: BankExam) => {
     : m.question_ui_topic_count({ count });
 };
 
+/** A mask from full to clear along `ease` (1 → 0 over t 0 → 1), with `at(t)`
+ * placing each stop, in enough stops that no stop shows as an edge. */
+const fade = (
+  direction: string,
+  at: (t: number) => string,
+  ease: (t: number) => number
+) => {
+  const stops = Array.from({ length: 13 }, (_, i) => {
+    const t = i / 12;
+    return `rgb(0 0 0 / ${ease(t).toFixed(3)}) ${at(t)}`;
+  });
+  return `linear-gradient(${direction}, ${stops.join(', ')})`;
+};
+
+// The art's strongest, behind the strip's name: short of full, so the
+// cover's solid corner doesn't overpower the panel.
+const PEAK = 0.9;
+
+// The art fades out to the right so the panel's end of the strip stays plain.
+const FADE_RIGHT = fade(
+  'to right',
+  (t) => `${12 + 80 * t}%`,
+  (t) => PEAK * (1 - t * t * (3 - 2 * t))
+);
+
+// Down the art: full strength behind the strip, then a drop that starts flat
+// (so it has no edge), is near half 30px past the strip in a full 320px wash
+// so the rows stay readable, and tails off slowly to clear at the art's
+// bottom, spreading the colour over several rows. The
+// stops follow the art's height, so a closed exam (art only as tall as the
+// strip) shows no fade and a short open exam fades out within its rows.
+const STRIP = 44;
+const DROP = 7;
+const TAIL = 1 / (1 + DROP ** 2);
+const FADE_DOWN = fade(
+  'to bottom',
+  (t) => `calc(${STRIP}px + (100% - ${STRIP}px) * ${t.toFixed(4)})`,
+  (t) => (1 / (1 + (DROP * t) ** 2) - TAIL) / (1 - TAIL)
+);
+
 /**
- * An exam as a low strip with its cover art fading in from the right: name, a
- * description of at most two lines and the topic count in a pill over the art.
- * Used by the panel's exam list, its search and (with `detail` and `trailing`
- * swapped for counts and a chevron) the exam switcher's trigger.
+ * The exam's cover art, drawn once behind its strip and tree: anchored left
+ * where it stays visible, fading right and down, with its outer edges shaded
+ * (a bottom shade made the strip look bulged). Drawings keep the strip's
+ * scale and repeat downward, so the pattern fades out with the colour instead
+ * of growing. It is as tall as its section up to 320px, so opening the exam
+ * pours it down with the rows and the bottom corners ease square.
  */
-export function ExamStrip({
+function ExamArt({ paint, open }: { paint: CoverPaint; open: boolean }) {
+  const background = coverBackground({ ...paint, right: false });
+  return (
+    // The mask and the rounding sit on separate elements: Chrome leaves a
+    // hairline of a masked element's rounded corner where the mask is clear.
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[320px] max-h-full"
+      style={{
+        maskComposite: 'intersect',
+        maskImage: `${FADE_RIGHT}, ${FADE_DOWN}`,
+      }}
+    >
+      <span
+        className={cn(
+          'absolute inset-0 overflow-hidden rounded-2xl transition-[border-radius] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out)',
+          open && 'rounded-b-none'
+        )}
+      >
+        <span
+          className="absolute inset-0"
+          style={
+            paint.repeat
+              ? background
+              : {
+                  ...background,
+                  // As `cover` draws it in a 44px strip (344×76 art, wider
+                  // than tall there), centred on the strip.
+                  backgroundPosition: 'left calc(22px - 100cqw * 38 / 344)',
+                  backgroundRepeat: 'repeat-y',
+                  backgroundSize: '100% auto',
+                }
+          }
+        />
+        <span
+          className={cn(
+            'absolute inset-0 rounded-[inherit]',
+            paint.light
+              ? 'shadow-[inset_0_0_10px_rgb(0_0_0/0.14)]'
+              : 'shadow-[inset_0_0_14px_rgb(0_0_0/0.45)]'
+          )}
+        />
+      </span>
+    </span>
+  );
+}
+
+/**
+ * An exam as a 44px cover strip over its section's art. Covers look the same
+ * in every theme, so the name takes the cover's text colour as on workspace
+ * cards; the count and chevron sit on the panel. `open` turns the chevron up.
+ */
+function ExamStrip({
   exam,
-  detail,
-  trailing,
+  paint,
+  open,
   className,
   ...rest
 }: {
   exam: BankExam;
-  /** Replaces the description. */
-  detail?: ReactNode;
-  /** Replaces the topic count. */
-  trailing?: ReactNode;
+  paint: CoverPaint;
+  open: boolean;
 } & Omit<ComponentProps<'button'>, 'children'>) {
-  const paint = useCoverPaint(exam.id, exam.label, exam.cover);
   return (
     <button
       className={cn(
-        'group relative isolate flex w-full items-center gap-2.5 overflow-hidden rounded-button px-3 py-2.5 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
+        'relative flex h-11 w-full items-center gap-2 rounded-2xl pr-2.5 pl-3.5 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
         className
       )}
       type="button"
       {...rest}
     >
-      {/* Like a Discord nameplate: the art fills the right side and fades out
-          before the text, so the text keeps the theme's colours. Paper covers
-          are dimmed in dark mode so the cream does not glare. */}
       <span
-        aria-hidden
         className={cn(
-          'absolute inset-y-0 right-0 left-[30%] -z-10 [mask-image:linear-gradient(to_right,transparent,#000_75%)] dark:opacity-85',
-          paint.light && 'dark:brightness-55 dark:saturate-80'
+          'min-w-0 flex-1 truncate font-bold',
+          paint.light ? 'text-[#1d1d1f]' : 'text-white'
         )}
-        style={coverBackground(paint)}
-      />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-bold leading-snug">
-          {exam.label}
-        </span>
-        <span className="line-clamp-2 text-fg-muted text-xs leading-[1.3]">
-          {detail ?? exam.description}
-        </span>
+      >
+        {exam.label}
       </span>
-      <span className="flex shrink-0 items-center whitespace-nowrap rounded-md bg-surface/80 px-2 py-0.5 font-semibold text-xs backdrop-blur-sm">
-        {trailing ?? topicCount(exam)}
+      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap font-semibold text-fg-secondary text-xs">
+        {topicCount(exam)}
+        {/* A sole-topic exam opens its topic, so it has nothing to expand. */}
+        {!soleTopic(exam) && (
+          <Icon
+            className={cn(
+              'motion-accordion-chevron size-3.5',
+              open && '-scale-y-100'
+            )}
+            name="chevronDown"
+          />
+        )}
       </span>
     </button>
   );
 }
 
-/** Subjects, or topics when the subject level is hidden, then questions. */
-const examCounts = (exam: BankExam) =>
-  [
-    soleTopic(exam)
-      ? undefined
-      : soleSubject(exam)
-        ? topicCount(exam)
-        : m.question_ui_subject_count({ count: exam.subjects.length }),
-    questionCount(exam),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-
 /**
- * The picked exam as a cover strip; it opens a searchable list of every exam.
- * Covers are theme-independent art, so their text colours are fixed.
+ * The bank tree's exam: its strip, then (open) its subjects and topics, with
+ * the cover drawn once behind both so the strip runs down into the list.
+ * `data-cover-wash` makes the row tints inside see-through (tailwind.css), so
+ * a hover darkens the wash wherever it is instead of covering it.
  */
-export function ExamPicker({
-  exams,
+export function ExamSection({
   exam,
-  onPick,
+  open,
+  children,
+  ...rest
 }: {
-  exams: BankExam[];
   exam: BankExam;
-  onPick: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [active, setActive] = useState(0);
-  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
-  const listId = useId();
-  const needle = query.trim().toLocaleLowerCase();
-  const matches = exams.filter((item) =>
-    [item.label, item.fullLabel].some((label) =>
-      label.toLocaleLowerCase().includes(needle)
-    )
-  );
-  const activeIdx = Math.min(active, matches.length - 1);
-  function pick(id: string) {
-    setOpen(false);
-    if (id !== exam.id) onPick(id);
-  }
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      setActive(Math.min(activeIdx + 1, matches.length - 1));
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      setActive(Math.max(activeIdx - 1, 0));
-    } else if (event.key === 'Enter' && matches[activeIdx]) {
-      event.preventDefault();
-      pick(matches[activeIdx].id);
-    }
-  }
+  open: boolean;
+  children?: ReactNode;
+} & Omit<ComponentProps<'button'>, 'children'>) {
+  const paint = useCoverPaint(exam.id, exam.label, exam.cover);
   return (
-    <Popover
-      onOpenChange={(next) => {
-        setOpen(next);
-        setQuery('');
-        setActive(0);
-      }}
-      open={open}
-    >
-      <PopoverPrimitive.Trigger asChild>
-        <ExamStrip
-          aria-label={m.question_ui_switch_exam({ exam: exam.label })}
-          detail={examCounts(exam)}
-          exam={exam}
-          ref={setAnchor}
-          trailing={<Icon className="size-4" name="chevronDown" />}
-        />
-      </PopoverPrimitive.Trigger>
-      <PopoverContent
-        align="start"
-        alignWidthToTrigger
-        className="gap-2 rounded-card p-2"
-        // Inside the phone sheet the list must render in the sheet's layer.
-        container={anchor?.closest<HTMLElement>('[data-slot="drawer-content"]')}
-        sideOffset={6}
-      >
-        <Input
-          aria-activedescendant={
-            matches.length ? `${listId}-${activeIdx}` : undefined
-          }
-          aria-autocomplete="list"
-          aria-controls={listId}
-          aria-expanded
-          aria-label={m.question_ui_find_an_exam()}
-          autoComplete="off"
-          leftIcon="search"
-          leftIconClassName="-translate-y-px"
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={onKeyDown}
-          placeholder={m.question_ui_find_an_exam()}
-          role="combobox"
-          value={query}
-          variant="underline"
-          wrapperClassName="h-9 w-full gap-2.5 px-2 text-sm"
-        />
-        <div
-          className="flex max-h-96 flex-col overflow-auto"
-          id={listId}
-          role="listbox"
-        >
-          {matches.map((item, i) => (
-            <button
-              aria-selected={item.id === exam.id}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left outline-none hover:bg-surface-hover-bg',
-                i === activeIdx && 'bg-surface-hover-bg'
-              )}
-              id={`${listId}-${i}`}
-              key={item.id}
-              onClick={() => pick(item.id)}
-              onMouseEnter={() => setActive(i)}
-              role="option"
-              tabIndex={-1}
-              type="button"
-            >
-              <span className="min-w-0 flex-1 truncate font-medium">
-                {item.label}
-              </span>
-              <span className="shrink-0 text-fg-muted text-xs">
-                {topicCount(item)}
-              </span>
-              {item.id === exam.id && (
-                <Icon className="size-4 shrink-0" name="tick" />
-              )}
-            </button>
-          ))}
-        </div>
-        {!matches.length && (
-          <p className="px-2 py-1.5 text-fg-muted">
-            {m.question_ui_no_exams_match()}
-          </p>
-        )}
-      </PopoverContent>
-    </Popover>
+    // A size container, so the art's cqw is the strip's width.
+    <div className="@container relative isolate" data-cover-wash>
+      <ExamArt open={open} paint={paint} />
+      <ExamStrip exam={exam} open={open} paint={paint} {...rest} />
+      {children}
+    </div>
   );
 }

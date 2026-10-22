@@ -53,7 +53,7 @@ export function useFinishToasts() {
     ...bankProgressQuery(),
     meta: { errorBoundary: false },
   });
-  const { data: learning } = useLearningProgress(undefined, {
+  const { data: learning } = useLearningProgress(undefined, false, {
     errorBoundary: false,
   });
   useChange(bank, (prev, next) => {

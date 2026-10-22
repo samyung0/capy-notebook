@@ -89,7 +89,7 @@ export function OfflineStatus() {
   return (
     <Tooltip>
       <TooltipTrigger
-        className="ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-action"
+        className="inline-flex size-(--toolbar-button) shrink-0 items-center justify-center rounded-button outline-none focus-visible:ring-2 focus-visible:ring-action"
         data-connection-status="offline"
         render={<span role="status" />}
         tabIndex={0}
@@ -122,7 +122,7 @@ function StatusTriangle({
   return (
     <ToolbarButton
       className={cn(
-        'ml-0.5 lg:[&_svg]:size-5',
+        'lg:[&_svg]:size-5',
         near
           ? 'text-tint-warning-fg hover:bg-tint-warning/85 hover:text-tint-warning-fg'
           : 'text-tint-error-fg hover:bg-tint-error/85 hover:text-tint-error-fg'

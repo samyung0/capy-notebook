@@ -32,6 +32,5 @@ export interface User {
   planTier: PlanTier;
   streak: number;
   studyPreferences: StudyPreferences;
-  studyProgress: boolean;
   subscriptionStatus: SubscriptionStatus;
 }

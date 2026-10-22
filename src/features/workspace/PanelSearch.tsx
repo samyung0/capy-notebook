@@ -1,8 +1,8 @@
-import { Input } from '@/components/ui/Input';
+import { SearchInput } from '@/components/ui/SearchInput';
 import { m } from '@/i18n';
 
-/** The underline search at the top of a workspace panel (the question bank
- * panel's field): filters the list below as you type; the ✕ clears it. */
+/** The search at the top of a workspace panel: filters the list below as you
+ * type; the ✕ (shown while focused or filled) clears it. */
 export function PanelSearch({
   value,
   onChange,
@@ -13,21 +13,22 @@ export function PanelSearch({
   label: string;
 }) {
   return (
-    <div className="shrink-0 px-2.5 pb-1">
-      <Input
-        actionCallback={() => onChange('')}
-        actionClassName="p-1.5 text-fg-muted"
-        actionIcon={value ? 'x' : undefined}
+    <div className="shrink-0 px-2.5 pt-2.5 pb-1">
+      <SearchInput
+        // Clears and leaves the field, which hides the ✕ again.
+        actionCallback={() => {
+          onChange('');
+          (document.activeElement as HTMLElement | null)?.blur();
+        }}
+        // Shown while focused or filled.
+        actionClassName="hidden group-focus-within/search:inline-flex group-has-[input:not(:placeholder-shown)]/search:inline-flex"
+        actionIcon="x"
         actionLabel={m.action_clear_search()}
         aria-label={label}
-        leftIcon="search"
-        leftIconClassName="-translate-y-px"
         maxLength={120}
         onChange={(event) => onChange(event.target.value)}
         placeholder={label}
         value={value}
-        variant="underline"
-        wrapperClassName="h-9 w-full gap-2.5 px-2 text-sm"
       />
     </div>
   );

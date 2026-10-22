@@ -12,10 +12,10 @@ import { cn } from '@/lib/cn';
 
 export type MemberAvatar = { avatarUrl?: string; id: string; name: string };
 
-// 30px avatars overlapping by 8px, 8px apart after your own; at most 7
+// 32px avatars overlapping by 8px, 8px apart after your own; at most 7
 // avatars, fewer when the row is narrower, the rest in a +N chip.
-const SIZE = 30;
-const STEP = 22;
+const SIZE = 32;
+const STEP = 24;
 const OWN_GAP = 8;
 const MAX_SHOWN = 7;
 // The hovered avatar lifts 4px and grows 5%; each neighbour lifts 0.45 of
@@ -28,7 +28,7 @@ const EASE_OUT = 'cubic-bezier(0.34, 3.85, 0.64, 1)';
 
 /** One avatar of the row, lifted by the row's hover. */
 const AVATAR =
-  'relative size-7.5 shrink-0 rounded-full ring-2 ring-surface [transform:translateY(var(--lift,0))_scale(var(--lift-scale,1))] [transition:transform_320ms] motion-reduce:transform-none motion-reduce:transition-none';
+  'relative size-8 shrink-0 rounded-full ring-1 ring-surface [transform:translateY(var(--lift,0))_scale(var(--lift-scale,1))] [transition:transform_320ms] motion-reduce:transform-none motion-reduce:transition-none';
 
 /** How many avatars fit in `width` (you included), with a chip for `total`. */
 function fitCount(width: number, total: number) {
@@ -70,11 +70,11 @@ export function OwnAvatarButton({
       {...props}
     >
       {pending ? (
-        <Skeleton className="size-7.5 rounded-full" />
+        <Skeleton className="size-8 rounded-full" />
       ) : (
         <Avatar
           aria-hidden
-          className="size-7.5 text-[11px]"
+          className="size-8 text-[11px]"
           name={name}
           src={avatarUrl}
         />
@@ -144,7 +144,7 @@ export function MemberAvatars({
         >
           <Avatar
             aria-hidden
-            className="size-7.5 text-[11px]"
+            className="size-8 text-[11px]"
             name={member.name}
             src={member.avatarUrl}
           />

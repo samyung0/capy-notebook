@@ -959,7 +959,6 @@ function QuestionDialogSession({
   );
   const phoneAction = live ? (
     <>
-      <LiveStatus status={live.status} />
       {live.undo && <UndoButtons manager={live.undo} />}
       {editing?.kind === 'block' && stagedBlock(editing.block) && (
         <Button
@@ -1089,6 +1088,7 @@ function QuestionDialogSession({
         if (!pending) close();
       }}
       open={open}
+      status={live && <LiveStatus status={live.status} />}
       title={
         <div>
           <span>
