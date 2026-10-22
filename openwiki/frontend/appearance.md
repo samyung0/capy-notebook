@@ -13,52 +13,66 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   Search and Notifications under the app name. Its foot is your profile row,
   which opens the profile menu upwards: Settings, Billing & usage, Theme and
   Log out (`ProfileMenu trigger="row"`).
-- The 640–1023px rail and the phone drawer use the same rows. Phones keep the
-  avatar menu in the page's top row (`PhoneTopRow`).
+- The 640–1023px rail uses the same rows. The phone nav drawer's foot is a
+  link to Settings → Account (avatar and name) with a danger-light Log out
+  button on its right (`ProfileRow`), no menu. Phones keep the avatar menu in
+  the page's top row (`PhoneTopRow`).
+- Over a page frame the sidebar's rows hover with a translucent tint
+  (`--surface-page-hover` and `--surface-card-hover-bg` are redefined under
+  `[data-frosted]`), so the frost shows through. A row's hover ⋮
+  (`HoverActions`) drops its fill there and the row's label fades out under
+  it instead.
 - The opened workspace has no app sidebar. Its 1-2-3 panels sit straight on
   the shell, so the frame shows around and between them.
 
 ## Theme drawer
 
 Profile menu → Theme opens `ThemeDrawer` (`src/components/app/ThemeDrawer.tsx`).
-It slides in from the right, and on phones (below 640px) it is a bottom sheet,
-so the top of the page stays in view. It holds Style, Theme and the Page frame
-section (`PageFrameSection.tsx`). Every change applies at once and stays on
-this device (localStorage) until the user presses Sync.
+It slides in from the right. On phones (below 640px) it is a full-screen sheet
+laid out like a phone dialog: close on the left of the title, in the dialog's
+title style and padding. It scrolls with its scrollbar hidden. It holds Theme
+and the Page frame section (`PageFrameSection.tsx`); the Style choice is
+hidden until the Notion style is finished. Every change applies at once and
+stays on this device (localStorage) until the user presses Sync.
 
 ## Page frame
 
 `src/theme/pageFrame.ts` models the frame as `{ pattern, colours, dots,
-strength, grain }`:
+strength }`:
 
-- **Pattern:** None, Arc, Mesh, Glow, Painted, Waves or Contours.
+- **Pattern:** None, Arc, Mesh or Glow, all pure CSS gradients.
 - **Colours:** one of seven presets (Dusk, Sea, Meadow, Rose, Sunset, Wheat,
   Mist) or `custom`. Custom uses `dots`: 1–3 points on a field where x is hue
-  and y is saturation.
+  and y is saturation. Each preset keeps its own three colours, and also
+  carries the dots and Strength that come closest to them on the field
+  (fitted in Lab). Choosing a preset moves the dots and the Strength slider
+  there, and dragging a dot switches to custom from that spot.
 - **Strength:** mixes the colours toward white. It is capped at 0.92, so the
-  frosted sidebar's muted labels keep their contrast.
-- **Grain:** the opacity of a static noise tile, never animated.
+  frosted sidebar's muted labels keep their contrast. A preset draws as
+  approved when Strength sits at its fitted value, and slides from there.
+- **Shuffle** (right of Sync) moves every dot and Strength to random values,
+  as custom colours.
 
 How it is drawn:
 
-- Arc, Mesh and Glow are pure CSS gradients.
-- Painted, Waves and Contours blend one small grey texture
-  (`src/assets/paint/`, 3–14 KB) over a gradient of the three stops.
 - `pageFrameStyle()` turns the frame into `--page-frame-*` custom properties on
-  `<html>`, plus `data-page-frame`. The stylesheet's `.page-frame` rules paint
-  the shell (`AppShell`) and the shared pages (`PublicHeader`) with them.
+  `<html>`, plus `data-page-frame`: the three colours (`--page-frame-a/b/c`)
+  and the pattern's image, which reads them. The stylesheet's `.page-frame`
+  rules paint the shell (`AppShell`) and the shared pages (`PublicHeader`)
+  with them.
+- The three colours are registered (`@property … <color>`). While the Page
+  frame section is open (`data-page-frame-edit`) they ease into a preset or a
+  shuffle, and the dots and slider glide with them. While a dot or the slider
+  drags (`data-page-frame-live`), the drawer redraws itself on every move but
+  hands the page frame a sample every third frame (~20 a second), and the
+  colours glide linearly over 50 ms between samples, so the window repaints
+  from samples instead of from every pointer move. Outside the section,
+  page loads included, the colours apply at once.
 - Dark themes add an ink wash.
-- The shell's sidebar card (`[data-frosted]`) turns 60% white (55% ink in dark
+- The shell's sidebar card and the opened workspace's left panel
+  (`[data-frosted]`, `Panel frosted`) turn 60% white (55% ink in dark
   themes). With None, everything returns to the page colour and the opaque
-  sidebar.
-
-Measured against the landing page's live SVG filters (bench in the mocks,
-headless Chromium):
-
-- **24-card grid, hover and scroll:** filters took about 10× the raster work
-  of images.
-- **20 resizes of a full window:** images 95 ms, CSS blend 382 ms, SVG filters
-  3,459 ms.
+  cards.
 
 The frame is one background behind opaque panels, so it repaints only on
 resize.

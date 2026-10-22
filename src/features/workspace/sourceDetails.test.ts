@@ -21,15 +21,20 @@ describe('unified source details', () => {
       [new Uint8Array(sourceUploadPolicy.maxBytes + 1)],
       'large.pdf'
     );
+    const atCap = new File(
+      [new Uint8Array(sourceUploadPolicy.maxBytes)],
+      'full.pdf'
+    );
 
     const result = validateLocalSourceSelection(
-      [accepted, unsupported, oversized],
+      [accepted, unsupported, oversized, atCap],
       sourceUploadPolicy
     );
 
     expect(result.accepted.map((item) => item.file.name)).toEqual([
       'notes.pdf',
       'archive.exe',
+      'full.pdf',
     ]);
     expect(
       result.rejected.map((item) => [item.file.name, item.reason])

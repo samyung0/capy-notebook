@@ -20,8 +20,6 @@ import type {
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
-import { Menu } from '@/components/ui/Menu';
 import { FileListItem } from '@/features/files/FileListItem';
 import { fileIsIngesting } from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
@@ -36,8 +34,6 @@ import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
-import type { AddSourceMode } from './AddSourceDialog';
-import { addSourceMenuItems } from './addSourceMenuItems';
 import { matchesSearch, PanelSearch } from './PanelSearch';
 import type { TabAction } from './PanelTabRow';
 import {
@@ -82,8 +78,6 @@ export function FilesPanel({
   className,
   rowMenus = true,
   searchable = false,
-  onAddSource,
-  onAddChapter,
 }: {
   workspaceId: string;
   readOnly: boolean;
@@ -104,8 +98,6 @@ export function FilesPanel({
   rowMenus?: boolean;
   /** A search above the tree that filters it by name (the side panels). */
   searchable?: boolean;
-  onAddSource?: (mode: AddSourceMode) => void;
-  onAddChapter?: () => void;
 }) {
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
@@ -483,12 +475,7 @@ export function FilesPanel({
       )}
       <div
         {...dropZone('unfiled-files', null)}
-        className={cn(
-          'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pb-(--scroll-fade-bottom-padding) [--scroll-fade-bottom-padding:--spacing(2)]',
-          !readOnly &&
-            onAddSource &&
-            '[--scroll-fade-bottom-padding:--spacing(20)]'
-        )}
+        className="scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pb-(--scroll-fade-bottom-padding) [--scroll-fade-bottom-padding:--spacing(2)]"
         data-workspace-file-tree
       >
         {header}
@@ -655,26 +642,6 @@ export function FilesPanel({
         )}
       </div>
       {footer}
-      {!readOnly && onAddSource && (
-        <div
-          className="absolute right-4 bottom-4 z-10 flex"
-          data-workspace-add-menu
-        >
-          <Menu
-            items={addSourceMenuItems(onAddSource, onAddChapter)}
-            trigger={
-              <IconButton
-                className="size-11 rounded-full p-2.5 text-solid-accent-1 active:scale-100"
-                icon="plus"
-                label={m.action_add_file()}
-                strokeWidth={2.2}
-                variant="ghost-hover"
-              />
-            }
-            variant="morph"
-          />
-        </div>
-      )}
     </div>
   );
 }

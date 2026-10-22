@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/cover"
@@ -36,6 +35,8 @@ type ProgressWorkspace struct {
 	// LastStudiedAt is the latest change to the user's progress in the
 	// workspace: marking, attempts and ratings all write it.
 	LastStudiedAt time.Time `json:"lastStudiedAt"`
+	// Hidden is the user's Hide study progress, listed only for Show all.
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // ProgressMap is one workspace's tracked items with what the browser needs to
@@ -64,10 +65,11 @@ type ProgressItem struct {
 }
 
 // LearningProgress lists the workspaces the user tracks progress in and can
-// still read, with progress on, most recently studied first: up to
-// progressListCap in progress and as many finished. leadID asks for that
-// workspace's map (a finished one, after its finish toast).
-func (s *Store) LearningProgress(ctx context.Context, userID, leadID string) (LearningProgress, error) {
+// still read, most recently studied first: up to progressListCap in progress
+// and as many finished. Workspaces hiding study progress are left out unless
+// showHidden is set, and never lead. leadID asks for that workspace's map (a
+// finished one, after its finish toast).
+func (s *Store) LearningProgress(ctx context.Context, userID, leadID string, showHidden bool) (LearningProgress, error) {
 	out := LearningProgress{Active: []ProgressWorkspace{}, Finished: []ProgressWorkspace{}}
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.cover,
 			(SELECT count(*) FROM study_progress sp
@@ -113,19 +115,21 @@ func (s *Store) LearningProgress(ctx context.Context, userID, leadID string) (Le
 		if (finished && len(out.Finished) == progressListCap) || (!finished && len(out.Active) == progressListCap) {
 			continue
 		}
-		// Access can end after progress was recorded; progress can be off.
-		if _, err := s.WorkspaceEffectiveRole(ctx, userID, ws.WorkspaceID); err != nil {
-			if errors.Is(err, ErrNotFound) || errors.Is(err, ErrForbidden) {
-				continue
-			}
-			return out, err
-		}
-		if on, err := s.StudyEnabled(ctx, userID, ws.WorkspaceID); err != nil || !on {
+		// Access can end after progress was recorded; progress can be hidden.
+		if ok, err := s.canReadWorkspace(ctx, userID, ws.WorkspaceID); err != nil || !ok {
 			if err != nil {
 				return out, err
 			}
 			continue
 		}
+		on, err := s.StudyEnabled(ctx, userID, ws.WorkspaceID)
+		if err != nil {
+			return out, err
+		}
+		if !on && !showHidden {
+			continue
+		}
+		ws.Hidden = !on
 		if finished {
 			out.Finished = append(out.Finished, ws)
 		} else {
@@ -134,6 +138,9 @@ func (s *Store) LearningProgress(ctx context.Context, userID, leadID string) (Le
 	}
 	leadWS := ""
 	for _, ws := range append(append([]ProgressWorkspace{}, out.Active...), out.Finished...) {
+		if ws.Hidden {
+			continue
+		}
 		if leadWS == "" || ws.WorkspaceID == leadID {
 			leadWS = ws.WorkspaceID
 		}

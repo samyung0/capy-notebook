@@ -29,58 +29,6 @@ test.beforeEach(async ({ page }) => {
   await showPanelView(page, m.workspace_tab_files());
 });
 
-test('floating add menu shares the header actions and dismisses without click-through', async ({
-  page,
-}) => {
-  const tree = page.locator('[data-workspace-file-tree]');
-  const trigger = page
-    .locator('[data-workspace-add-menu]')
-    .getByRole('button', { name: m.action_add_file() });
-  const menu = page.getByRole('menu');
-  await tree
-    .locator('..')
-    .getByRole('button', { exact: true, name: m.action_add_file() })
-    .first()
-    .click();
-  const headerItems = await menu.getByRole('menuitem').allTextContents();
-  await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
-
-  const fileBox = await tree
-    .getByRole('link', { exact: true, name: 'Cell structure.pdf' })
-    .boundingBox();
-  if (!fileBox) throw new Error('File row must be visible');
-  const openItemUrl = page.url();
-  await trigger.click();
-  await expect(menu).toBeVisible();
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  expect(await menu.getByRole('menuitem').allTextContents()).toEqual(
-    headerItems
-  );
-  // A real outside click must dismiss without opening the file underneath.
-  await page.mouse.click(fileBox.x + 20, fileBox.y + fileBox.height / 2);
-  await expect(menu).toBeHidden();
-  await expect(page).toHaveURL(openItemUrl);
-  await expect(page.locator('[contenteditable="true"]').first()).toBeVisible();
-  await trigger.click();
-  await expect(menu).toBeVisible();
-  await menu
-    .getByRole('menuitem', { exact: true, name: m.action_add_chapter() })
-    .click();
-  await expect(
-    page.getByRole('dialog', { name: m.chapter_new() })
-  ).toBeVisible();
-  await page
-    .getByRole('button', { exact: true, name: m.action_cancel() })
-    .click();
-
-  await trigger.press('Enter');
-  await expect(menu).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(menu).toBeHidden();
-  await expect(trigger).toBeFocused();
-});
-
 test('files and materials move between chapters, reorder together, and unfile on the outer tree', async ({
   page,
 }) => {

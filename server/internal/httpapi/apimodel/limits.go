@@ -15,6 +15,7 @@ type (
 	WorkspaceName        string
 	WorkspaceDescription string
 	ChapterName          string
+	StudyPlanName        string
 	FileName             string
 	MaterialTitle        string
 	ConversationTitle    string
@@ -41,6 +42,9 @@ func (WorkspaceDescription) TransformSchema(_ huma.Registry, s *huma.Schema) *hu
 }
 func (ChapterName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.ChapterName)
+}
+func (StudyPlanName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
+	return withMax(s, fieldlimits.StudyPlanName)
 }
 func (FileName) TransformSchema(_ huma.Registry, s *huma.Schema) *huma.Schema {
 	return withMax(s, fieldlimits.FileName)

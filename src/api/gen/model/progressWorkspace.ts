@@ -9,6 +9,7 @@ import type { Cover } from './cover.ts';
 export interface ProgressWorkspace {
   cover?: Cover;
   done: number;
+  hidden?: boolean;
   iconId: string;
   lastStudiedAt: string;
   name: string;

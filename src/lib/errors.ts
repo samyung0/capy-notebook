@@ -236,7 +236,7 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_bank_unavailable_body(),
         title: m.error_bank_unavailable_title(),
       };
-    // The gateway cut off an upload whose body took past 5 minutes; a
+    // The gateway cut off an upload whose body took past its deadline; a
     // connection dropped first reads as a network error instead.
     case 'upload_timeout':
       return {

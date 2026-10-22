@@ -282,6 +282,119 @@ def test_model_capacity_changes_apply_to_each_admission(workspace):
             conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
 
 
+@pytest.mark.parametrize(
+    "parts",
+    [
+        # Headers, then nothing: the GLM first-event timeouts on UAT (2026-10-22).
+        [(5.0, b'data: {"choices": []}\n\n')],
+        # One reasoning chunk, then silence.
+        [
+            (
+                0.0,
+                b'data: {"choices": [{"index": 0, "delta": {"reasoning": "hm"}}]}\n\n',
+            ),
+            (5.0, b'data: {"choices": []}\n\n'),
+        ],
+    ],
+    ids=["no-first-event", "silent-after-start"],
+)
+async def test_a_failed_stream_leaves_no_open_call_or_lease(
+    workspace, monkeypatch, parts
+):
+    """Once a failed provider stream raises, its provider_calls rows are closed
+    and their capacity leases freed, instead of waiting for the receipt
+    deadline (15 minutes for chat)."""
+    import asyncio
+
+    import httpx
+    import psycopg
+
+    from pipeline.elitellm import client as transport
+    from pipeline.registry import ModelConfig, bind_request_llm
+    from pipeline.retrieval import accounting, models
+
+    class Chunks(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for delay, chunk in parts:
+                await asyncio.sleep(delay)
+                yield chunk
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _r: httpx.Response(200, stream=Chunks()))
+    )
+    monkeypatch.setattr(transport, "_client", lambda: client)
+    monkeypatch.setattr(cfg, "interactive_provider_timeout_s", 0.2)
+    monkeypatch.setattr(cfg, "interactive_stream_idle_s", 0.2)
+    monkeypatch.setattr(cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(cfg, "pipeline_secret", "secret")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    settled: list[dict] = []
+
+    async def post_settlement(payload, **_kwargs):
+        settled.append(payload)
+        return {}
+
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    bind_request_llm(paid_by="platform", thinking="high")
+    spec = ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM-5.3-Flash",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        platform_enabled=True,
+        byok_enabled=False,
+        thinking_levels=("low", "high", "max"),
+        default_thinking="high",
+        slots=("chat",),
+    )
+    session_id = f"cr_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            """
+            INSERT INTO provider_sessions
+              (id, actor_user_id, workspace_id, surface, reserved_micros, expires_at)
+            VALUES (%s, %s, %s, 'chat', 0, now() + interval '30 minutes')
+            """,
+            (session_id, workspace.user_id, workspace.id),
+        )
+        capacity_added = conn.execute(
+            "INSERT INTO model_capacities VALUES ('zai','glm-5.3-flash',4,0) "
+            "ON CONFLICT DO NOTHING RETURNING 1"
+        ).fetchone()
+    token = accounting.bind(session_id)
+    try:
+        with pytest.raises(TimeoutError):
+            await models.stream_agent_response(
+                [{"role": "user", "content": "hi"}], model=spec
+            )
+    finally:
+        accounting.reset(token)
+        await client.aclose()
+        with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+            calls = conn.execute(
+                "SELECT id, status, error_code FROM provider_calls "
+                "WHERE reservation_id=%s",
+                (session_id,),
+            ).fetchall()
+            leases = conn.execute(
+                "SELECT count(*) FROM provider_capacity_leases WHERE id = ANY(%s)",
+                ([call[0] for call in calls],),
+            ).fetchone()[0]
+            conn.execute("DELETE FROM provider_sessions WHERE id=%s", (session_id,))
+            if capacity_added:
+                conn.execute(
+                    "DELETE FROM model_capacities "
+                    "WHERE provider='zai' AND model='glm-5.3-flash'"
+                )
+    assert calls
+    assert {(status, code) for _id, status, code in calls} == {
+        ("abandoned", "provider_timeouterror")
+    }
+    assert leases == 0
+    assert settled == []
+
+
 def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
     import psycopg
 
@@ -622,12 +735,10 @@ def test_applied_ingest_provider_receipt_conflicting_replays_are_rejected(worksp
         field: NormalizedUsage(
             **{
                 **usage.__dict__,
-                field: "other_anomaly"
-                if field == "anomaly"
-                else getattr(usage, field) + 1,
+                field: f"other_{value}" if isinstance(value, str) else value + 1,
             }
         )
-        for field in usage.__dict__
+        for field, value in usage.__dict__.items()
     }
     conflicts = [
         {"session_id": other_reservation_id},

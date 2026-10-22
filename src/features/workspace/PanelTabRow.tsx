@@ -48,7 +48,9 @@ export function PanelTabRow({
       : []),
   ];
   return (
-    <div className="relative flex h-12 shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5 sm:pl-4.5">
+    // pt-2.5 in h-12.25 centres the row 29.5px down, level with the centre
+    // header (60px less its 1px border).
+    <div className="relative flex h-12.25 shrink-0 items-center gap-1 pt-2.5 pr-2 pl-1.5 sm:pl-4.5">
       {typeof title === 'string' ? (
         <h2 className="t-subtitle ml-1 min-w-0 flex-1 truncate">{title}</h2>
       ) : (
@@ -68,14 +70,16 @@ export function PanelTabRow({
           ))}
         </div>
         {addItems.length > 0 && (
-          <Menu
-            items={addItems}
-            trigger={
-              <ToolbarButton label={m.action_add_file()}>
-                <Icon name="plusCircle" />
-              </ToolbarButton>
-            }
-          />
+          <div className="flex" data-workspace-add-menu>
+            <Menu
+              items={addItems}
+              trigger={
+                <ToolbarButton label={m.action_add_file()}>
+                  <Icon name="plusCircle" />
+                </ToolbarButton>
+              }
+            />
+          </div>
         )}
         {onOpenSettings && (
           <ToolbarButton

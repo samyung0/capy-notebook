@@ -58,6 +58,9 @@ export function FileError({
       action={
         onRetry && <ErrorAction onClick={onRetry}>{retryLabel}</ErrorAction>
       }
+      // Up by half the file header (h-12, sm:h-14): centred in the pane,
+      // not just the body under the header.
+      className="-translate-y-6 sm:-translate-y-7"
       description={message}
       errorId={errorId}
       icon={icon}
@@ -110,6 +113,7 @@ export function FileEmpty({
 }) {
   return (
     <ErrorState
+      className="-translate-y-6 sm:-translate-y-7"
       description={message}
       icon="fileError"
       title={title}

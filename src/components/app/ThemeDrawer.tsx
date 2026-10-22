@@ -16,11 +16,9 @@ import {
   themeSwatch,
   useTheme,
 } from '@/theme/theme';
-import { ButtonCard } from '../ui/ButtonCard';
 import { Card } from '../ui/Card';
 import { IconButton } from '../ui/IconButton';
 import { InputTitle } from '../ui/Input';
-import { PanelHeader } from './layout';
 import { PageFrameSection } from './PageFrameSection';
 
 const ThemeChooser = ({
@@ -144,36 +142,6 @@ export const StyleIcon = ({
     />
   );
 
-const StyleComponents = ({
-  label,
-  value,
-  className,
-  ...rest
-}: React.ComponentProps<'button'> & { value: Style; label: string }) => {
-  switch (value) {
-    case 'classroom':
-      return (
-        <ButtonCard
-          className={cn('min-w-20', className)}
-          componentBeforeText={<StyleIcon style="classroom" />}
-          size="md"
-          {...rest}
-          buttonText={label}
-        />
-      );
-    case 'notion':
-      return (
-        <ButtonCard
-          className={cn('min-w-20', className)}
-          componentBeforeText={<StyleIcon style="notion" />}
-          size="md"
-          {...rest}
-          buttonText={label}
-        />
-      );
-  }
-};
-
 export function ThemeDrawer({
   className,
   trigger,
@@ -189,66 +157,66 @@ export function ThemeDrawer({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = openProp ?? uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
-  const { theme, style, setTheme, setStyle } = useTheme();
-  // Phones get a bottom sheet, so the page's top stays in view while the
-  // frame changes.
+  const { theme, style, setTheme } = useTheme();
+  // Phones get a full-screen sheet laid out like a phone dialog (close on the
+  // left of the title); wider screens slide it in from the right.
   const phone = useMediaQuery('(max-width: 639px)');
+  const close = (
+    <DrawerClose
+      render={
+        <IconButton
+          className={cn(phone && 'shrink-0 -translate-y-px')}
+          icon="x"
+          label={m.action_close()}
+          size="sm"
+          variant="ghost-hover"
+        />
+      }
+    />
+  );
 
   return (
     <Drawer
       modal={false}
       onOpenChange={setOpen}
       open={open}
-      showSwipeHandle
+      showSwipeHandle={!phone}
       swipeDirection={phone ? 'down' : 'right'}
     >
       {trigger != null && <DrawerTrigger render={trigger} />}
-      <DrawerContent className="shadow-2xl">
+      <DrawerContent className="shadow-2xl max-sm:m-0 max-sm:h-dvh max-sm:max-h-none max-sm:rounded-none">
         <Card
           asChild
           className={cn(
-            'relative flex h-full min-w-62 shrink-0 items-stretch gap-0 overflow-y-auto bg-surface px-2 py-5 shadow-none',
+            'relative flex min-h-0 min-w-62 flex-1 shrink-0 items-stretch gap-0 overflow-y-auto bg-surface px-2 py-5 shadow-none [scrollbar-width:none] max-sm:rounded-none max-sm:px-0 max-sm:pt-0 [&::-webkit-scrollbar]:hidden',
             className
           )}
           radius="card-xl"
           theme="surface-dark"
         >
           <aside>
-            <PanelHeader
-              actions={
-                <DrawerClose
-                  render={
-                    <IconButton
-                      icon="x"
-                      label={m.action_close()}
-                      size="sm"
-                      variant="ghost-hover"
-                    />
-                  }
-                />
-              }
-              title={m.settings_theme()}
-            />
-            <div className="mt-8 flex flex-col gap-6 px-4">
+            {phone ? (
+              // The phone dialog's header row (DialogTitle in ui/Dialog.tsx).
+              <div className="sticky top-0 z-20 flex min-h-14 shrink-0 items-start gap-1 bg-surface pt-3 pr-4 pb-1 pl-1.5">
+                {close}
+                <h2 className="t-large-card-title min-w-0 flex-1 py-2 text-lg leading-tight">
+                  {m.settings_theme()}
+                </h2>
+              </div>
+            ) : (
+              // The dialog title's style on wider screens (DialogTitle).
+              <div className="flex items-center gap-1 pr-2 pl-4">
+                <h2 className="t-large-card-title mr-auto min-w-0 truncate">
+                  {m.settings_theme()}
+                </h2>
+                {close}
+              </div>
+            )}
+            <div className="mt-8 flex flex-col gap-6 px-4 max-sm:mt-2">
               <div className="flex flex-col gap-8">
-                <div className="flex flex-col gap-3">
-                  <InputTitle>{m.common_style()}</InputTitle>
-                  <div className="grid w-full grid-cols-2 gap-3">
-                    {STYLES.map((o) => (
-                      <StyleComponents
-                        aria-pressed={style === o.value}
-                        key={o.value}
-                        label={
-                          o.value === 'classroom'
-                            ? m.theme_style_classroom()
-                            : m.theme_style_notion()
-                        }
-                        onClick={() => setStyle(o.value)}
-                        value={o.value}
-                      />
-                    ))}
-                  </div>
-                </div>
+                {/* TODO: bring back the Style choice (a ButtonCard with its
+                    StyleIcon per STYLES entry, setStyle) once the Notion style
+                    is finished. */}
                 <div className="flex flex-col gap-3">
                   <InputTitle>{m.settings_theme()}</InputTitle>
                   <div className="flex w-full">

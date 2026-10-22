@@ -198,6 +198,9 @@ type ProviderCallUsage struct {
 	// ModelVersion is the catalog version a rerank called; zero for every
 	// other kind, which is labeled from the session's pins.
 	ModelVersion int
+	// ServedBy is the provider OpenRouter routed the call to, kept in the
+	// usage event's metadata only.
+	ServedBy string
 }
 
 type ProviderCallSettlement struct {
@@ -641,7 +644,8 @@ func (s *Store) settleProviderCallAtomic(
 			       COALESCE((metadata->>'cacheWriteTokens')::bigint, 0),
 			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
 			       COALESCE(metadata->>'cacheAnomaly', ''),
-			       CASE WHEN kind = 'rerank' THEN model_version ELSE 0 END
+			       CASE WHEN kind = 'rerank' THEN model_version ELSE 0 END,
+			       COALESCE(metadata->>'servedBy', '')
 			FROM usage_events
 			WHERE reservation_id = $1 AND provider_call_id = $2`,
 			sessionID, call.CallID,
@@ -650,6 +654,7 @@ func (s *Store) settleProviderCallAtomic(
 			&recorded.InputTokens, &recorded.OutputTokens,
 			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
 			&recorded.ReasoningTokens, &recorded.CacheAnomaly, &recorded.ModelVersion,
+			&recorded.ServedBy,
 		); err != nil {
 			return settlement, err
 		}
@@ -753,6 +758,9 @@ func (s *Store) settleProviderCallAtomic(
 	}
 	if call.CacheAnomaly != "" {
 		meta["cacheAnomaly"] = call.CacheAnomaly
+	}
+	if call.ServedBy != "" {
+		meta["servedBy"] = call.ServedBy
 	}
 	if call.InputTokens == 0 && call.OutputTokens == 0 {
 		meta["usageMissing"] = true

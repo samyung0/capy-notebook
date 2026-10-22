@@ -237,6 +237,30 @@ const ListChevronsUpDownIcon = [
   ],
 ] as const satisfies IconSvgElement;
 
+// The panel icons with the panel's strip filled: the header toggles while open.
+const PanelLeftOpenIcon = [
+  ...PanelLeftIcon,
+  [
+    'path',
+    {
+      d: 'M9 3H11C7.22876 3 5.34315 3 4.17157 4.17157C3 5.34315 3 7.22876 3 11V13C3 16.7712 3 18.6569 4.17157 19.8284C5.34315 21 7.22876 21 11 21H9V3Z',
+      fill: 'currentColor',
+      key: '2',
+    },
+  ],
+] satisfies IconSvgElement;
+const PanelRightOpenIcon = [
+  ...PanelRightIcon,
+  [
+    'path',
+    {
+      d: 'M15 3H13C16.7712 3 18.6569 3 19.8284 4.17157C21 5.34315 21 7.22876 21 11V13C21 16.7712 21 18.6569 19.8284 19.8284C18.6569 21 16.7712 21 13 21H15V3Z',
+      fill: 'currentColor',
+      key: '2',
+    },
+  ],
+] satisfies IconSvgElement;
+
 const HugeIcons = {
   alert: Alert02Icon,
   alignCenter: TextAlignCenterIcon,
@@ -366,7 +390,9 @@ const HugeIcons = {
     'M14 8h.01',
   ],
   panelLeft: PanelLeftIcon,
+  panelLeftOpen: PanelLeftOpenIcon,
   panelRight: PanelRightIcon,
+  panelRightOpen: PanelRightOpenIcon,
   paragraph: ParagraphIcon,
   partyPopper: PartyPopperIcon,
   pencil: PencilEdit01Icon,

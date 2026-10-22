@@ -394,9 +394,12 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
       ],
     },
     server: {
-      // Quick tunnels (cloudflared tunnel --url) give phones an HTTPS origin,
-      // which MSW's service worker needs.
-      allowedHosts: serveLocalUat ? [devHost] : ['.trycloudflare.com'],
+      // Tunnels give phones an HTTPS origin, which MSW's service worker needs:
+      // quick tunnels (cloudflared tunnel --url) or a developer's named one
+      // (dev-<name>.capynotebook.com).
+      allowedHosts: serveLocalUat
+        ? [devHost]
+        : ['.trycloudflare.com', '.capynotebook.com'],
       // DEV_HMR=off stops pushed updates and reloads while files keep
       // changing (e.g. agents editing); a manual refresh still serves the
       // latest code. Vite has no CLI flag for this.

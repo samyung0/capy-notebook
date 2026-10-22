@@ -1,11 +1,5 @@
-import { cva, type VariantProps } from 'class-variance-authority';
-import {
-  type CSSProperties,
-  Fragment,
-  type ReactNode,
-  useCallback,
-  useState,
-} from 'react';
+import { cva } from 'class-variance-authority';
+import { Fragment, type ReactNode } from 'react';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
@@ -19,19 +13,6 @@ import {
 } from './DropdownMenu';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
-
-const menuVariants = cva('w-auto min-w-40 p-0', {
-  defaultVariants: {
-    variant: 'default',
-  },
-  variants: {
-    variant: {
-      default: '',
-      morph:
-        'min-w-56 overflow-visible rounded-[20px] border-0 bg-transparent shadow-none',
-    },
-  },
-});
 
 const menuItemVariants = cva(
   cn(
@@ -79,7 +60,7 @@ export interface MenuItem {
   warning?: boolean;
 }
 
-export interface MenuProps extends VariantProps<typeof menuVariants> {
+export interface MenuProps {
   align?: 'start' | 'center' | 'end';
   alignWidthToTrigger?: boolean;
   className?: string;
@@ -101,51 +82,13 @@ export function Menu({
   triggerIcon = 'moreVertical',
   align = 'end',
   side,
-  variant = 'default',
   iconContainerClassName,
   alignWidthToTrigger,
   className,
   itemClassName,
 }: MenuProps) {
-  const [morphOpen, setMorphOpen] = useState(false);
-  const [morphClosing, setMorphClosing] = useState(false);
-  const [morphSize, setMorphSize] = useState({ height: 44, width: 44 });
-  const measureMorphContent = useCallback((content: HTMLDivElement | null) => {
-    if (!content) return;
-    const measure = () =>
-      setMorphSize((previous) => {
-        const width = content.offsetWidth;
-        const height = content.offsetHeight;
-        return previous.width === width && previous.height === height
-          ? previous
-          : { height, width };
-      });
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(content);
-    return () => observer.disconnect();
-  }, []);
-
-  function changeMorphOpen(open: boolean) {
-    setMorphOpen(open);
-    setMorphClosing(!open);
-  }
-
   const menuTrigger = (
-    <DropdownMenuTrigger
-      asChild
-      onClick={
-        variant === 'morph' ? () => changeMorphOpen(!morphOpen) : undefined
-      }
-      onPointerDown={
-        variant === 'morph'
-          ? (event) => {
-              // The overlapping menu must open after the pointer is released.
-              if (event.button === 0 && !event.ctrlKey) event.preventDefault();
-            }
-          : undefined
-      }
-    >
+    <DropdownMenuTrigger asChild>
       {trigger ?? (
         <IconButton
           className={cn('p-2', iconContainerClassName)}
@@ -159,53 +102,20 @@ export function Menu({
   );
 
   return (
-    <DropdownMenu
-      modal={variant === 'morph'}
-      onOpenChange={variant === 'morph' ? changeMorphOpen : undefined}
-      open={variant === 'morph' ? morphOpen : undefined}
-    >
-      {variant === 'morph' ? (
-        <span className="relative inline-flex size-11 shrink-0">
-          <span
-            className="motion-menu-morph absolute right-0 bottom-0 overflow-hidden bg-overlay shadow-pop ring-1 ring-overlay-line"
-            data-closing={morphClosing || undefined}
-            data-open={morphOpen}
-            data-slot="menu-morph-surface"
-            onAnimationEnd={(event) => {
-              if (event.target === event.currentTarget) setMorphClosing(false);
-            }}
-            style={
-              {
-                '--menu-morph-height': `${morphSize.height}px`,
-                '--menu-morph-width': `${morphSize.width}px`,
-              } as CSSProperties
-            }
-          >
-            {menuTrigger}
-          </span>
-        </span>
-      ) : (
-        menuTrigger
-      )}
+    <DropdownMenu>
+      {menuTrigger}
       <DropdownMenuContent
         align={align}
-        animationClassName={
-          variant === 'morph' ? 'motion-menu-morph-content' : undefined
-        }
         className={cn(
-          menuVariants({ variant }),
-          'p-1 py-1.5',
+          'w-auto min-w-40 p-1 py-1.5',
           alignWidthToTrigger && 'w-(--radix-dropdown-menu-trigger-width)',
           className
         )}
         // A menu pushed off a screen edge stops short of it.
         collisionPadding={8}
         data-slot="menu"
-        data-variant={variant}
         onClick={(e) => e.stopPropagation()}
-        ref={variant === 'morph' ? measureMorphContent : undefined}
-        side={variant === 'morph' ? 'top' : side}
-        sideOffset={variant === 'morph' ? -44 : undefined}
+        side={side}
       >
         <div data-slot="menu-items">
           {items.map((it, i) => (

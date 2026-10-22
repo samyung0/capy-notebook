@@ -506,6 +506,8 @@ func main() {
 		cfg.MailRecorder = mailRecorder
 	}
 
+	// Upload spools a crashed run left behind count against nothing now.
+	httpapi.RemoveUploadSpools(os.TempDir())
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           httpapi.New(st, blobStore, pipe, rdb, parser, cfg),

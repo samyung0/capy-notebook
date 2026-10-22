@@ -19,6 +19,7 @@ import {
 } from 'react';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { ErrorState } from './ErrorState';
 import { Panel } from './layout';
@@ -28,6 +29,8 @@ import { Panel } from './layout';
 export const InShellMain = createContext(false);
 
 /** A fallback's frame: the page's main landmark, or a plain box in the shell. */
+/** The fallback's page panel. Inside the shell its main already pads the
+ * panel, so it sits level with the sidebar; alone it pads itself. */
 function FallbackFrame({
   children,
   className,
@@ -35,9 +38,12 @@ function FallbackFrame({
   children: ReactNode;
   className: string;
 }) {
-  const Frame = useContext(InShellMain) ? 'div' : 'main';
+  const inShell = useContext(InShellMain);
+  const Frame = inShell ? 'div' : 'main';
   return (
-    <Frame className={className}>
+    <Frame
+      className={cn('overflow-hidden', !inShell && 'p-1.5 sm:p-2.5', className)}
+    >
       <Panel
         className="h-full w-full"
         sectionClassName="h-full w-full min-h-full flex flex-row"
@@ -127,7 +133,7 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
     const description = describeError(this.state.error);
     const reload = description.action === 'reload';
     return (
-      <FallbackFrame className="h-dvh overflow-hidden p-1.5 sm:p-2.5">
+      <FallbackFrame className="h-dvh">
         <ErrorState
           action={
             <ErrorAction
@@ -190,7 +196,7 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
   );
 
   return (
-    <FallbackFrame className="h-full overflow-hidden p-1.5 sm:p-2.5">
+    <FallbackFrame className="h-full">
       <ErrorState
         action={
           <ErrorAction
@@ -211,7 +217,7 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
 
 export function RouteNotFoundComponent() {
   return (
-    <FallbackFrame className="h-full overflow-hidden p-1.5 sm:p-2.5">
+    <FallbackFrame className="h-full">
       <ErrorState
         action={
           <ErrorAction asChild back>

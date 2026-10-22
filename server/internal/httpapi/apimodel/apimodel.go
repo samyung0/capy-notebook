@@ -225,6 +225,9 @@ type Material struct {
 	// pays for the images added to it (Sam 2026-10-19). The browser shrinks
 	// larger images.
 	ImageMaxBytes int64 `json:"imageMaxBytes"`
+	// AudioMaxBytes caps one uploaded audio file the same way; the browser
+	// refuses a larger one before it sends anything (Epo 2026-10-22).
+	AudioMaxBytes int64 `json:"audioMaxBytes"`
 	// StorageFull: the material is view-only because its payer (its creator)
 	// is at its storage limit; "self" when that is the viewer. Editors only.
 	StorageFull store.StorageFullBy `json:"storageFull,omitempty"`

@@ -1932,7 +1932,7 @@ content is ready or it has taken the claim over itself.
 ### Upload and import notifications
 
 The actor gets one `system` notification per upload or import, never per file
-(`{"code":"source_batch","source":"upload"|"import","done","failed"}`, href
+(`{"code":"source_batch","source":"upload"|"import","done","failed","removed"}`, href
 `/workspaces/{id}`). A `source_batches` row (migration 0061) counts the batch:
 the browser sends `batchId` and `batchTotal` (files or picked items of one
 AddSourceDialog submission) with every upload reservation and every
@@ -1946,8 +1946,14 @@ and `failed` counts failed (`files.batch_id` is cleared, so a file counts
 once); an upload session expiring without a file (abandoned PUT, failed import)
 counts failed, as does an upload reservation or import request the handler
 refuses (other than the statuses the browser retries, 3 attempts in all: 429
-for uploads; network errors, 408, 429 and 5xx for imports; a request whose
-attempts run out is left to the idle sweep). The settle that reaches `total` writes the notification. The
+for uploads, whose last attempt gives its ticket back as failed; network
+errors, 408, 429 and 5xx for imports, where a request whose attempts run out
+is left to the idle sweep). A file the user removes from the transfer panel
+before the server hears of it, or while its ticket waits, counts removed
+(`source_batch_settle`'s removed count, migration 0107, never past the
+batch's total; Epo 2026-10-22, see backend-storage-quota.md). The settle that reaches `total` writes the
+notification, which names failed and removed files only when there are any;
+a batch whose every file was removed closes without one. The
 API's `runSourceBatchWorker` polls every second: it closes batches idle for an
 hour (unsent or unsettled files count failed), then deletes notified rows and
 publishes their notifications to `notif:{userId}`.
@@ -3256,7 +3262,7 @@ build, and the knowledge library is one more source while the switch is on.
   the attempt and result pages (the result page reads the quiz the attempt
   names, because the attempt snapshot carries no provenance), the study page,
   the standalone editors and the public share pages. Mini views that show part
-  of an item or mix items (the Study tab's Quick review, review sessions)
+  of an item or mix items (the Study page's Quick review, review sessions)
   show no credits; they link to the item's own page, which does. The space above it is the
   document's own bottom padding plus the footer's, so a block inserted at the
   end does not move it (Epo 2026-10-11); below it there is room above the
@@ -4264,8 +4270,17 @@ format, which `limits.rs` reads (`include_str!`) and Go's `cmd/openapi
 (`agenttools/office_limits.go`; `pnpm gen:openapi` passes the vendor path),
 so description and engine cannot drift. A DOCX call reads each story's
 paragraphs once into an index (`ParaIndex` in `docx/agent.rs`) that
-`touched`, apply and the targets' lookup share; it follows the call's own
-replacements and formats, and any other commit drops it (review r2 L9).
+`touched`, apply and the targets' lookup share (review r2 L9). Every
+command keeps it in step: a replacement moves the paragraphs after it, a
+format moves none, and the other commands read again only the paragraphs
+they changed, from the paragraph mark before them; a commit no command
+followed (an Undo) drops it. docx-edit keeps each story's segment index in
+step the same way for every edit, the agent's or a person's
+(`segments.rs`, `follow_commit`), so no command reads a whole story again
+(speed round 2026-10-22: a call of one command type, 50 commands or that
+type's per-call limit (20 replace_text, insert_paragraph or delete_paragraph,
+30 format_text), takes 0.9 to 1.6 s on 10,000 paragraphs and 0.2 to 0.35 s
+on 2,000).
 It holds 50 commands and, per
 format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
