@@ -78,6 +78,9 @@ function shapes(svg: string): Shape[] {
 }
 
 export interface GeometryReport {
+  /** The first element below the root off by more than 1 px, for a failure
+   * to name where the drawings part (the root's viewBox only sums it up). */
+  first: string;
   /** Largest difference of any number, in px. */
   maxDiff: number;
   /** Element sequence or text that differs, if any. */
@@ -94,6 +97,7 @@ function compare(page: string, worker: string): GeometryReport {
     a.length === b.length ? null : `${a.length} elements vs ${b.length}`;
   let maxDiff = 0;
   let worst = '';
+  let first = '';
   for (let i = 0; i < Math.min(a.length, b.length) && !structure; i++) {
     const [pa, pb] = [a[i]!, b[i]!];
     if (pa.path !== pb.path || pa.text !== pb.text) {
@@ -108,6 +112,8 @@ function compare(page: string, worker: string): GeometryReport {
       }
       values.forEach((value, k) => {
         const diff = Math.abs(value - other[k]!);
+        if (i > 0 && diff > 1 && !first)
+          first = `#${i} ${pa.path} "${pa.name}" "${pa.text.slice(0, 40)}" ${name}[${k}]: ${value} vs ${other[k]}`;
         if (diff > maxDiff) {
           maxDiff = diff;
           worst = `#${i} ${pa.path} "${pa.name}" ${name}[${k}]: ${value} vs ${other[k]}`;
@@ -116,6 +122,7 @@ function compare(page: string, worker: string): GeometryReport {
     }
   }
   return {
+    first,
     maxDiff,
     structure,
     viewBox: {

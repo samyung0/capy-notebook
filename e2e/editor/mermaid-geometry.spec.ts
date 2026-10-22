@@ -40,6 +40,7 @@ const CASES: [string, Kind[]][] = [
 ];
 
 interface Report {
+  first: string;
   maxDiff: number;
   structure: string | null;
   worst: string;
@@ -71,7 +72,10 @@ for (const [theme, kinds] of CASES)
       );
       expect.soft(report.structure, `${kind}: same elements`).toBeNull();
       expect
-        .soft(report.maxDiff, `${kind}: ${report.worst}`)
+        .soft(
+          report.maxDiff,
+          `${kind}: ${report.worst}; first: ${report.first}`
+        )
         .toBeLessThanOrEqual(TOLERANCE);
     }
   });
