@@ -91,10 +91,40 @@ function pointIn(editor: PlateEditor, point: BlockPoint) {
     : null;
 }
 
-/** Puts the same block at the same height, else the same scroll offset, and
- * the selection back where its blocks still exist. */
+/** Editors that keep a restored reading place: Slate does not scroll their
+ * selection into view until the reader acts in them (NoteEditorCore's
+ * `scrollSelectionIntoView`). */
+const keptPlaces = new WeakSet<object>();
+
+export const keepsReadingPlace = (editor: object) => keptPlaces.has(editor);
+
+/** What the reader does to act in a note, as opposed to reading it. */
+const ACTING = ['beforeinput', 'keydown', 'pointerdown'];
+
+function keepReadingPlace(editor: PlateEditor, scrollArea: HTMLElement) {
+  keptPlaces.add(editor);
+  const release = () => {
+    keptPlaces.delete(editor);
+    for (const type of ACTING)
+      scrollArea.removeEventListener(type, release, true);
+  };
+  for (const type of ACTING) scrollArea.addEventListener(type, release, true);
+}
+
+/** Puts the selection (and the focus) back where its blocks still exist,
+ * then the same block at the same height, else the same scroll offset: the
+ * reading place wins over the caret (review M2), as in a DOCX. */
 export function restoreNotePosition(view: NoteView, position: NotePosition) {
   const { editor, scrollArea } = view;
+  const anchor =
+    editor && position.selection && pointIn(editor, position.selection.anchor);
+  const focus =
+    editor && position.selection && pointIn(editor, position.selection.focus);
+  if (editor && anchor && focus) {
+    keepReadingPlace(editor, scrollArea);
+    editor.tf.select({ anchor, focus });
+    if (position.focused) editor.tf.focus();
+  }
   const block =
     position.block &&
     scrollArea.querySelector<HTMLElement>(
@@ -106,12 +136,6 @@ export function restoreNotePosition(view: NoteView, position: NotePosition) {
       scrollArea.getBoundingClientRect().top -
       position.offset;
   else scrollArea.scrollTop = position.scrollTop;
-  if (!(editor && position.selection)) return;
-  const anchor = pointIn(editor, position.selection.anchor);
-  const focus = pointIn(editor, position.selection.focus);
-  if (!(anchor && focus)) return;
-  editor.tf.select({ anchor, focus });
-  if (position.focused) editor.tf.focus();
 }
 
 /**
@@ -130,6 +154,8 @@ export function copyPausedView(root: HTMLElement, scrollTop: number) {
     node.removeAttribute('data-slate-editor');
   for (const node of copy.querySelectorAll('[data-block-id]'))
     node.removeAttribute('data-block-id');
+  // Canvases (charts, plots) and math fields' shadow content do not clone:
+  // they show blank in the copy until the swap (openwiki plate-editor).
   for (const frame of copy.querySelectorAll('iframe')) frame.remove();
   copy.querySelector('[data-note-toolbar]')?.setAttribute('inert', '');
   copy.removeAttribute('inert');
@@ -194,6 +220,8 @@ export function pauseEdits(content: HTMLElement) {
   const listeners: [string, (event: Event) => void][] = [
     ['beforeinput', stop],
     ['click', onControl],
+    // Block menus open on a right click and act from a portal.
+    ['contextmenu', stop],
     ['cut', stop],
     ['dragstart', stop],
     ['drop', stop],
@@ -208,6 +236,48 @@ export function pauseEdits(content: HTMLElement) {
       content.removeEventListener(type, listener, true);
     editable?.setAttribute('contenteditable', 'true');
   };
+}
+
+/**
+ * Drops every operation but a selection change while a note is paused: it
+ * still selects and copies, and no edit reaches its model by any path the
+ * DOM listeners miss (a portalled block menu, a column or figure resize, an
+ * IME composition the pause ends). Returns the undo.
+ */
+export function holdModel(editor: PlateEditor) {
+  type Apply = PlateEditor['tf']['apply'];
+  // Slate's transforms go through `editor.apply`, Plate's through `tf.apply`.
+  const slate = editor as unknown as { apply: Apply };
+  const { apply } = slate;
+  const { apply: tfApply } = editor.tf;
+  const selectOnly =
+    (run: Apply): Apply =>
+    (operation) => {
+      if (operation.type === 'set_selection') run(operation);
+    };
+  slate.apply = selectOnly(apply);
+  editor.tf.apply = selectOnly(tfApply);
+  return () => {
+    slate.apply = apply;
+    editor.tf.apply = tfApply;
+  };
+}
+
+/**
+ * An IME composition the pause ended leaves its text in the page only (the
+ * held model took none of it): the caret's text shows the model's again.
+ * One leaf only; a decorated text split in several keeps its page text
+ * until the swap.
+ */
+export function dropComposedText(editor: PlateEditor) {
+  const path = editor.selection?.anchor.path;
+  const node = path && editor.api.node(path)?.[0];
+  if (!(node && 'text' in node && typeof node.text === 'string')) return;
+  const leaves = editor.api
+    .toDOMNode(node)
+    ?.querySelectorAll('[data-slate-string]');
+  if (leaves?.length === 1 && leaves[0].textContent !== node.text)
+    leaves[0].textContent = node.text;
 }
 
 /** Runs once the next frame has been painted; returns the cancel. */

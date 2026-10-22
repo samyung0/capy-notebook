@@ -35,11 +35,16 @@ async function compact(page: Page, materialId: string) {
 
 const saveState = (page: Page) => page.getByTestId('editor-save-state');
 
+const INTRO = 'intentionally exercises every Plate feature';
+
 /** Opens the long matrix note, saved, with a heading half way down at the
- * top of its scroll box; returns that heading's block id and offset. */
-async function openScrolled(page: Page) {
+ * top of its scroll box (with `caret`, the caret first goes into the intro
+ * paragraph near the top); returns that heading's block id. */
+async function openScrolled(page: Page, caret = false) {
   await openEditorNote(page, MATRIX, 'Editor feature matrix');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  if (caret)
+    await page.locator('[data-note-mount="live"]').getByText(INTRO).click();
   const heading = page
     .locator('[data-note-mount="live"] h2')
     .filter({ hasText: 'Text marks & styles' });
@@ -179,7 +184,10 @@ test('a refused update keeps its edits for copying after the swap', async ({
   await expect(editor).toContainText(SCENARIO_SEED, { timeout: 30_000 });
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
   // Loaded first: the refusal has to land within the save's 1 s debounce.
-  await page.evaluate(() => import('/src/mocks/collaboration.ts'));
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    await import(path);
+  });
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
   await page.keyboard.type(' Kept for copying.');
@@ -200,6 +208,197 @@ test('a refused update keeps its edits for copying after the swap', async ({
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
 });
 
+// The reading place wins over a restored caret (review M2): the caret in the
+// intro near the top, the reader half way down.
+test('a restored caret leaves the reader at the block they were reading', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const block = await openScrolled(page, true);
+  if (!block) throw new Error('The heading has no block id');
+  const before = await offsetIn(page, 'live', block);
+  if (before === null) throw new Error('The heading is not on screen');
+  await compact(page, MATRIX);
+  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.locator('[data-note-mount]')).toHaveCount(1);
+  const after = await offsetIn(page, 'live', block);
+  expect(Math.abs((after ?? Number.NaN) - before)).toBeLessThan(2);
+  // The caret came back too, in the intro.
+  expect(
+    await page.evaluate(
+      () =>
+        document
+          .getSelection()
+          ?.anchorNode?.parentElement?.closest('[data-block-id]')?.textContent
+    )
+  ).toContain(INTRO);
+});
+
+// A paused note takes no edit by any path (review M1): its model takes only
+// selection changes, and typing, paste, drops and right clicks stop in the
+// DOM. Its widths and text stay as they were.
+test('a paused note takes no edit', async ({ page }) => {
+  test.setTimeout(180_000);
+  await openEditorNote(page, MATRIX, 'Editor feature matrix');
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  const live = page.locator('[data-note-mount="live"] [data-slate-editor]');
+  // The blocks the edits below aim at (embeds keep loading, so not the
+  // whole note).
+  const texts = (root: Element, intro: string) => {
+    const blocks = [...root.querySelectorAll('[data-block-id]')];
+    return [
+      blocks[0]?.textContent,
+      blocks.find((block) => block.textContent?.includes(intro))?.textContent,
+      root.querySelector('h2')?.textContent,
+      root.querySelector('table')?.textContent,
+    ];
+  };
+  const text = await live.evaluate(texts, INTRO);
+  // An IME composition open when the pause lands.
+  await live.getByText(INTRO).click();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.imeSetComposition', {
+    selectionEnd: 1,
+    selectionStart: 1,
+    text: 'か',
+  });
+  await holdRooms(page, true);
+  await compact(page, MATRIX);
+  const paused = page.locator('[data-note-mount="paused"]');
+  await expect(paused).toBeVisible();
+  const content = paused.locator('[data-slate-editor]');
+  const widths = () =>
+    content.evaluate((root) => ({
+      cells: [...root.querySelectorAll('table tr:first-child > *')].map(
+        (cell) => Math.round(cell.getBoundingClientRect().width)
+      ),
+      media: [
+        ...root.querySelectorAll('[data-media-resize-handle="right"]'),
+      ].map((handle) =>
+        Math.round(handle.parentElement?.getBoundingClientRect().width ?? 0)
+      ),
+    }));
+  const laidOut = await widths();
+  expect(laidOut.cells.length).toBeGreaterThan(1);
+  expect(laidOut.media.length).toBeGreaterThan(0);
+
+  // Typing, a paste and a drop.
+  await content.getByText(INTRO).click();
+  await page.keyboard.type('zz');
+  await content.evaluate((root) => {
+    const target = root.querySelector('[data-block-id]');
+    const data = new DataTransfer();
+    data.setData('text/plain', 'pasted');
+    target?.dispatchEvent(
+      new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: data,
+      })
+    );
+    target?.dispatchEvent(
+      new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: data,
+      })
+    );
+  });
+  // The block menu does not open.
+  await content.locator('h2').first().click({ button: 'right' });
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  // A table column and a figure resized by their handles.
+  const drag = async (selector: string, by: number) => {
+    const handle = content.locator(selector).first();
+    await handle.scrollIntoViewIfNeeded();
+    const box = await handle.boundingBox();
+    if (!box) throw new Error(`No ${selector} on screen`);
+    const x = box.x + box.width / 2;
+    const y = box.y + Math.min(box.height / 2, 12);
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + by, y, { steps: 6 });
+    await page.mouse.up();
+  };
+  await drag('table .cursor-col-resize', 80);
+  await drag('[data-media-resize-handle="right"]', -80);
+
+  await page.waitForTimeout(500);
+  expect(await content.evaluate(texts, INTRO)).toEqual(text);
+  expect(await widths()).toEqual(laidOut);
+  await holdRooms(page, false);
+  await expect(paused).toHaveCount(0, { timeout: 30_000 });
+});
+
+// The swap's path is decided once (review M3): a desktop build that crosses
+// to phone width still swaps when it paints.
+test('a breakpoint crossing during a build still swaps', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  await holdRooms(page, true);
+  await compact(page, EDITOR_NOTE.id);
+  await expect(page.locator('[data-note-mount="paused"]')).toBeVisible();
+  await expect(page.locator('[data-note-mount="standby"]')).toBeAttached();
+  await page.setViewportSize({ height: 740, width: 360 });
+  await holdRooms(page, false);
+  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(
+    page.locator('[data-note-mount="live"] [contenteditable="true"]')
+  ).toContainText(EDITOR_NOTE.secondParagraph);
+});
+
+// A second reload during a build drops the stale build for the newest room.
+test('a reload during a build swaps to the newest room', async ({ page }) => {
+  test.setTimeout(120_000);
+  await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  await holdRooms(page, true);
+  await compact(page, EDITOR_NOTE.id);
+  await expect(page.locator('[data-note-mount="standby"]')).toBeAttached();
+  await compact(page, EDITOR_NOTE.id);
+  await holdRooms(page, false);
+  await expect(page.locator('[data-note-mount="paused"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  await expect(page.locator('[data-note-mount]')).toHaveCount(1);
+  const editor = page.locator(
+    '[data-note-mount="live"] [contenteditable="true"]'
+  );
+  await expect(editor).toContainText(EDITOR_NOTE.secondParagraph);
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+});
+
+// Leaving a note while its next renderer builds leaves nothing behind.
+test('leaving a note during its build opens the next one cleanly', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openEditorNote(page, MATRIX, 'Editor feature matrix');
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  await holdRooms(page, true);
+  await compact(page, MATRIX);
+  await expect(page.locator('[data-note-mount="paused"]')).toBeVisible();
+  await page
+    .locator('[data-workspace-file-tree]')
+    .getByRole('link', { exact: true, name: EDITOR_NOTE.title })
+    .click();
+  await holdRooms(page, false);
+  // The other note opens in View; the building editor went with the first.
+  await expect(page.getByTestId('material-preview')).toContainText(
+    EDITOR_NOTE.firstParagraph,
+    { timeout: 30_000 }
+  );
+  await expect(page.locator('[data-note-mount]')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 const DOCX = 'bio-office-docx';
 
 /** The DOCX editor's scroll box in a view slot's frame. */
@@ -208,13 +407,31 @@ const docxPane = (page: Page, view: string) =>
     .frameLocator(`[data-office-view="${view}"] iframe`)
     .locator('.docx-editor__scroll-container');
 
+/** Whether a DOCX page (0-based) shows in a view slot's scroll box. */
+const pageInView = (page: Page, view: string, index: number) =>
+  docxPane(page, view).evaluate((node, at) => {
+    const box = node.getBoundingClientRect();
+    const canvas = node
+      .querySelector(`canvas[data-page-index="${at}"]`)
+      ?.getBoundingClientRect();
+    return !!canvas && canvas.bottom > box.top && canvas.top < box.bottom;
+  }, index);
+
 /** Opens the DOCX for editing, saved, with the reader on page 4 (its canvas
- * exists once the reader nears it) and the caret left on page 1. */
-async function openDocxOnPage4(page: Page) {
+ * exists once the reader nears it) and the caret left on page 1; with
+ * `typing`, the document input holds the focus. */
+async function openDocxOnPage4(page: Page, typing = false) {
   await page.goto(`/workspaces/ws_bio?file=${DOCX}&mode=edit`);
   await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'docx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  if (typing) {
+    const input = page
+      .frameLocator('[data-office-view="live"] iframe')
+      .getByLabel('Document input');
+    await input.focus();
+    await expect(input).toBeFocused();
+  }
   await expect
     .poll(
       () =>
@@ -264,15 +481,8 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   const old = await page
     .locator('[data-office-view="live"] iframe')
     .elementHandle();
-  const pane = (view: string) => docxPane(page, view);
 
-  await page.evaluate(async (id) => {
-    const collaboration = '/src/mocks/collaboration.ts';
-    const fixtures = '/src/mocks/scenarioFixtures.ts';
-    const { announceSourceEpoch } = await import(collaboration);
-    const { advanceScenarioSource } = await import(fixtures);
-    announceSourceEpoch(id, advanceScenarioSource(id));
-  }, DOCX);
+  await newEpoch(page, DOCX);
   // The paused view stays while the next one opens the new epoch hidden.
   await expect(page.locator('[data-office-view="replaced"]')).toBeVisible();
   const next = page.locator('[data-office-view="next"] iframe');
@@ -296,17 +506,7 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   expect(await old?.evaluate((node) => node.isConnected)).toBe(false);
   await expect(page.locator('iframe[src*="office-runtime"]')).toHaveCount(1);
   // At the same place: page 4 is on screen, by its first paragraph's id.
-  await expect
-    .poll(() =>
-      pane('live').evaluate((node) => {
-        const box = node.getBoundingClientRect();
-        const fourth = node
-          .querySelector('canvas[data-page-index="3"]')
-          ?.getBoundingClientRect();
-        return !!fourth && fourth.bottom > box.top && fourth.top < box.bottom;
-      })
-    )
-    .toBe(true);
+  await expect.poll(() => pageInView(page, 'live', 3)).toBe(true);
   await expect(page.getByText(m.source_edit_replaced())).toHaveCount(0);
   await expect(
     page.getByRole('button', { exact: true, name: m.error_action_reload() })
@@ -316,4 +516,132 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   await expect(
     page.getByRole('menuitem', { name: /^Save/ })
   ).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+/** A newer epoch for an open source file, as a base handoff announces it. */
+async function newEpoch(page: Page, fileId: string, holdJoins = false) {
+  await page.evaluate(
+    async ({ hold, id }) => {
+      const collaboration = '/src/mocks/collaboration.ts';
+      const fixtures = '/src/mocks/scenarioFixtures.ts';
+      const { announceSourceEpoch, holdSourceJoins } = await import(
+        collaboration
+      );
+      const { advanceScenarioSource } = await import(fixtures);
+      if (hold) holdSourceJoins(true);
+      announceSourceEpoch(id, advanceScenarioSource(id));
+    },
+    { hold: holdJoins, id: fileId }
+  );
+}
+
+// A tab hidden during the build swaps at once and still opens at the
+// reader's place once the next view settles (review L2).
+test('a tab hidden during a DOCX build swaps at once at the same page', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await openDocxOnPage4(page);
+  await newEpoch(page, DOCX);
+  await expect(page.locator('[data-office-view="next"] iframe')).toBeAttached();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect(page.locator('[data-office-view="replaced"]')).toHaveCount(0);
+  await expect(page.locator('iframe[src*="office-runtime"]')).toHaveCount(1);
+  await expect
+    .poll(() => pageInView(page, 'live', 3), { timeout: 120_000 })
+    .toBe(true);
+});
+
+// A reload whose next view never connects behaves as a first join (Epo
+// 2026-10-23): Reconnecting until the first join's timeout, then the failing
+// view takes the paused one's place with its error.
+test('a DOCX reload that cannot connect ends at the first join timeout', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await openDocxOnPage4(page);
+  await newEpoch(page, DOCX, true);
+  const replaced = page.locator('[data-office-view="replaced"]');
+  await expect(replaced).toBeVisible();
+  await expect(saveState(page)).toHaveAttribute(
+    'data-save-state',
+    'reconnecting'
+  );
+  // Well inside the 30 s a first join waits.
+  await page.waitForTimeout(15_000);
+  await expect(replaced).toBeVisible();
+  await expect(replaced).toHaveCount(0, { timeout: 60_000 });
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
+});
+
+// A reader's edit that keeps the caret still brings it into view (review
+// L1): forward Delete with the caret on page 1 and the reader on page 4.
+test('a DOCX edit that keeps the caret brings it back into view', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await openDocxOnPage4(page, true);
+  expect(await pageInView(page, 'live', 0)).toBe(false);
+  await page.keyboard.press('Delete');
+  await expect.poll(() => pageInView(page, 'live', 0)).toBe(true);
+});
+
+// XLSX and PPTX swap at the reader's place too: the sheet (by id) with its
+// selected cells, the slide.
+test('a newer XLSX epoch swaps the editor at the same sheet and cell', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const fileId = 'bio-office-xlsx';
+  await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
+  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 120_000 });
+  await saveOffice(page, 'xlsx');
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  const frame = page.frameLocator('[data-office-view="live"] iframe');
+  const nameBox = frame.getByRole('textbox', {
+    name: m.files_office_spreadsheet_name_box(),
+  });
+  await nameBox.fill("'summary'!c4");
+  await nameBox.press('Enter');
+  await expect(nameBox).toHaveValue('C4');
+  await newEpoch(page, fileId);
+  await expect(page.locator('[data-office-view="replaced"]')).toBeVisible();
+  await expect(page.locator('[data-office-view="replaced"]')).toHaveCount(0, {
+    timeout: 120_000,
+  });
+  await expect(frame.getByRole('tab', { name: 'Summary' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  await expect(nameBox).toHaveValue('C4');
+});
+
+test('a newer PPTX epoch swaps the editor at the same slide', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const fileId = 'bio-office-pptx';
+  await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
+  await expect(officeEditMenu(page, 'pptx')).toBeVisible({ timeout: 120_000 });
+  await saveOffice(page, 'pptx');
+  await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
+  const slide = (index: number) =>
+    page
+      .frameLocator('[data-office-view="live"] iframe')
+      .locator('aside button')
+      .nth(index);
+  await slide(2).click();
+  await expect(slide(2)).toHaveAttribute('aria-current', 'page');
+  await newEpoch(page, fileId);
+  await expect(page.locator('[data-office-view="replaced"]')).toBeVisible();
+  await expect(page.locator('[data-office-view="replaced"]')).toHaveCount(0, {
+    timeout: 120_000,
+  });
+  await expect(slide(2)).toHaveAttribute('aria-current', 'page');
 });

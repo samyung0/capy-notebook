@@ -877,7 +877,10 @@ class MockSourceProvider implements SourceProvider {
         String(Number(sessionStorage.getItem(SOURCE_JOINS) ?? 0) + 1)
       );
     sourceProviders.add(this);
-    queueMicrotask(() => config.onSynced?.({ state: true }));
+    // A held join never connects, as an unreachable service's: the socket
+    // reports it dropped and the room never syncs.
+    if (sourceJoinsHeld) queueMicrotask(() => config.onDisconnect?.());
+    else queueMicrotask(() => config.onSynced?.({ state: true }));
   }
 
   sendStateless(payload: string) {
@@ -1041,6 +1044,12 @@ export function holdSourceSaveReceipts(hold: boolean) {
   heldSaveReceipts = null;
   for (const send of held) send();
 }
+let sourceJoinsHeld = false;
+/** Office and text source joins from now on never connect (a first join's
+ * timeout, then its error); joins already in rooms are untouched. */
+export function holdSourceJoins(hold: boolean) {
+  sourceJoinsHeld = hold;
+}
 export function announceSourceEpoch(fileId: string, epoch: number) {
   for (const provider of [...sourceProviders])
     provider.announceEpoch(fileId, epoch);
@@ -1051,6 +1060,7 @@ export function announceSourcePaused(fileId: string) {
   for (const provider of [...sourceProviders]) provider.announcePaused(fileId);
 }
 export function resetScenarioRooms() {
+  sourceJoinsHeld = false;
   failedSourceSaves.clear();
   refusedSourceSaves.clear();
   holdSourceSaveReceipts(false);

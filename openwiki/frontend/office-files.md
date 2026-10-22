@@ -397,14 +397,22 @@ the editor directly without warming the native Office viewer.
 `PptxView`, each with its own frame and source session) by generation. When
 the view on screen learns of a newer epoch while saved (`replaced` without the
 maintenance pause: a handoff's `source-epoch-changed` or a token naming
-another epoch), `useOfficeRuntime` reports it (`swap.onReplaced`), its header
-status turns Reconnecting and it stays as it is, paused (read-only and
-selectable, as any pause); a second view opens the new epoch in a slot beside
-it, `invisible absolute inset-0` and `inert`, out of the header
-(`OfficeSlot` gives it no status, mode control, menu or header-action
-targets; the replaced view leaves the avatar group and the floating bar's
-inset to it). Once the new frame has painted with its replica ready (or
-failed: an error, an unavailable file, recovery), the host asks the replaced
+another epoch), `useOfficeRuntime` reports it (`swap.onReplaced`) and it
+stays as it is, paused (read-only and selectable, as any pause), reporting no
+status any more; a second view opens the new epoch in a slot beside it,
+`invisible absolute inset-0` and `inert`, out of the header but for its status
+(`OfficeSlot` gives it no mode control, menu or header-action targets; the
+replaced view leaves the avatar group and the floating bar's inset to it).
+The header shows the building view's status as a first join's (Epo
+2026-10-23): Reconnecting for its connecting state (`swap.building`), a
+slowed open's line, Offline. Any answer settles the build: painted with its
+replica ready, or the server's answer (refused, unavailable, outdated, an
+error, recovery), which then shows in place of the paused view. When nothing
+arrives it waits as a first join does: an unreachable service errors at the
+first join's 30 s timeout (`RECONNECT_GRACE_MS`, `roomReconnector`'s
+`onStuck`), which settles it and unmounts the paused view; offline, and an
+open waiting on the open budget, wait without a timeout, as a first join
+does. On settling, the host asks the replaced
 frame where its reader is (`position-request`, answered by `position` within
 a second, else nothing) and gives it to the new one (`set-position`, answered
 by `position` once the editor is there, which the swap waits for): DOCX the
@@ -417,12 +425,17 @@ a document's first frame never move the view (Epo 2026-10-22; fork
 `layoutPassOrigin`, `shouldScrollCaretIntoView`): a layout pass nobody
 scheduled is laid out as a peer's and a session's first caret pass never
 scrolls, so the paused view (the maintenance pause's too) stays where its
-reader is and answers from there. The DOCX editor sets the selection first, waits two frames for the caret's own
+reader is and answers from there. Reader actions keep the caret in view
+(Epo 2026-10-23): a header or footer save and the hidden-text toggle lay out
+as a local pass, and a resident edit's caret pass counts as local, so forward
+Delete or a collapsed Ctrl+B still brings an off-screen caret into view. The
+DOCX editor sets the selection first, waits two frames for the caret's own
 scroll into view, then sets the scroll offset and, a frame later, puts that
 paragraph back at its height. The new slot then loses its hidden classes (the
-frame is never moved, which would reload it) and the replaced view unmounts. A hidden
-tab or a phone (below sm, one frame) swaps at once: the position is read
-first and given to the new view once it has painted. Only the maintenance
+frame is never moved, which would reload it) and the replaced view unmounts. A
+hidden tab or a phone (below sm, one frame) swaps at once: the position is read
+first and given to the new view once it has painted; a tab hidden during the
+build does the same (review L2). Only the maintenance
 pause keeps the paused view under its banner (`SourceReplacedBanner`, Reload
 reloads the page); text sources keep the newer-version banner.
 

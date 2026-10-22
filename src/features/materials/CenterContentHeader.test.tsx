@@ -5,8 +5,6 @@ import { createPresenceStore } from '@/features/collaboration/presence';
 import { createEditorStatusStore, Header } from './CenterContentHeader';
 
 const HIDDEN = /\bhidden\b/;
-const SAVE_LABEL =
-  /<span class="([^"]*)" data-testid="editor-save-label">Saved<\/span>/;
 
 vi.mock('@/api/hooks', () => ({
   materialQuery: (id: string | null) => ({
@@ -29,7 +27,7 @@ vi.mock('@/features/workspace/WorkspaceHealth', () => ({
   WorkspaceStatusButton: () => null,
 }));
 
-function render(menuShown: boolean, kind: 'file' | 'material' = 'file') {
+function render(menuShown: boolean) {
   const editorStatus = createEditorStatusStore();
   editorStatus.getState().report({ saveState: 'saved' });
   return renderToStaticMarkup(
@@ -39,7 +37,7 @@ function render(menuShown: boolean, kind: 'file' | 'material' = 'file') {
         editorStatus={editorStatus}
         imageZoom={1}
         isFullscreen={false}
-        item={{ id: 'f1', kind }}
+        item={{ id: 'f1', kind: 'file' }}
         materialMode={null}
         menuBar={<span data-testid="menu-slot" />}
         menuShown={menuShown}
@@ -80,14 +78,4 @@ it('keeps one row until the file loads and the status beside the name', () => {
     const container = html.slice(html.lastIndexOf('<div', at), at);
     expect(HIDDEN.test(container)).toBe(!loaded);
   }
-});
-
-/** Every file's header shows the status label beside its icon from md up,
- * and the icon alone below md with the label in the tooltip (Epo
- * 2026-10-22): notes and Office files alike. */
-it('labels the save status from md up', () => {
-  for (const html of [render(false, 'material'), render(true)])
-    expect(SAVE_LABEL.exec(html)?.[1]?.split(' ')).toEqual(
-      expect.arrayContaining(['sr-only', 'md:not-sr-only'])
-    );
 });

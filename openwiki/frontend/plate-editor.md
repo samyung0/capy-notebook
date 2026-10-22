@@ -1891,10 +1891,13 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
 `NoteEditorCore` a phase:
 
 - **Paused**: the one on screen once the note wants another room or
-  generation. It stops edits without Slate's readOnly (`pauseEdits`: the
-  editable root turns `contenteditable=false`, and typing, paste, drops,
-  drags and clicks on controls are stopped in the capture phase), since
-  readOnly re-rendered every block and dropped the reader to the top. Its
+  generation. It stops edits without Slate's readOnly, since readOnly
+  re-rendered every block and dropped the reader to the top: its model takes
+  only selection changes (`holdModel` wraps `editor.apply` and `tf.apply`,
+  so a portalled block menu, a column or figure resize, or an IME
+  composition the pause ends changes nothing), and `pauseEdits` turns the
+  editable root `contenteditable=false` and stops typing, paste, drops,
+  drags, right clicks and clicks on controls in the capture phase. Its
   toolbar is inert, the palette and AI menu unmount, it leaves its room
   (no reconnect), writes its unsaved edits as one whole document (its child
   effect runs before `useNoteDrafts` reads the next room's drafts, so another
@@ -1911,18 +1914,24 @@ by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
   animation frames after its content rendered, an error state included) its
   slot loses the hidden classes (the DOM is never moved), the paused one
   unmounts, and the reader's place comes back by block id
-  (`captureNotePosition`/`restoreNotePosition`): the first top-level block
-  under the scroll box's top edge at the same offset (else the old scroll
-  offset), and the selection by top-level block id plus path and offset,
-  focus too when the paused editor still held it. Yjs ids are never used:
-  a compaction gives the room new ones.
+  (`captureNotePosition`/`restoreNotePosition`): first the selection by
+  top-level block id plus path and offset, focus too when the paused editor
+  still held it, then the first top-level block under the scroll box's top
+  edge at the same offset (else the old scroll offset). The reading place
+  wins over the caret: Slate does not scroll the restored selection into view
+  until the reader acts in the note (a key, a pointer, an input;
+  `keepsReadingPlace` in `NoteEditorCore`'s `scrollSelectionIntoView`). Yjs
+  ids are never used: a compaction gives the room new ones.
 
 A hidden tab swaps at once (no paused phase; a tab that hides meanwhile
 swaps then). A phone (below sm) holds one renderer: the paused view is
 copied as plain DOM (`copyPausedView`: nothing editable, no frames, Slate and
 block-id markers removed, its toolbar inert, scroll kept) over the editor
 remounting in place, which stays in standby under the copy until its first
-paint. The banners of the paused editor's room (offline, delayed) go with it.
+paint. The copy does not carry canvas bitmaps or shadow roots: charts and
+plots drawn to a canvas and math fields show blank in it until the swap. The
+path (beside, a phone's copy, or at once) is decided once per swap, when the
+next mount is ready, so a breakpoint crossing during the build keeps it. The banners of the paused editor's room (offline, delayed) go with it.
 All renderers share one react-dnd `DndProvider` in `NoteEditor`: two
 providers, each with an HTML5 backend, throw. `room-swap.spec.ts` covers the
 compaction, a hidden tab, a phone and a refused update.

@@ -713,7 +713,9 @@ export function isOfficePosition(value: unknown): value is OfficePosition {
         (!!top &&
           typeof top === 'object' &&
           isText(top.paraId) &&
-          isFiniteNumber(top.offset) &&
+          // Above the top edge when the paragraph began before it.
+          typeof top.offset === 'number' &&
+          Number.isFinite(top.offset) &&
           (top.line === null || isCount(top.line)))) &&
       (selection === null ||
         (!!selection &&

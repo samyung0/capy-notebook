@@ -334,6 +334,7 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
       const position = await read(shown);
       if (position) await positions.current.get(generation)?.show(position);
       if (viewsRef.current.next !== generation) return;
+      carried.current = null;
       setViews({ next: null, shown: generation });
     } else if (shown === generation && carried.current) {
       void positions.current.get(generation)?.show(carried.current);
@@ -341,14 +342,20 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
     }
   }, []);
   const building = views.next;
+  // A tab hidden during the build swaps at once: the reader's place goes
+  // with it and is shown once the next view settles (review L2).
   useEffect(() => {
     if (building === null) return;
-    const hidden = () => {
-      if (tabHidden()) void settled(building);
+    const hidden = async () => {
+      if (!tabHidden()) return;
+      const { shown } = viewsRef.current;
+      carried.current = await read(shown);
+      if (viewsRef.current.next === building)
+        setViews({ next: null, shown: building });
     };
     document.addEventListener('visibilitychange', hidden);
     return () => document.removeEventListener('visibilitychange', hidden);
-  }, [building, settled]);
+  }, [building]);
   const View =
     format === 'xlsx' ? SheetView : format === 'docx' ? DocxView : PptxView;
   const generations =
@@ -369,6 +376,7 @@ function OfficeSwap({ format, onDirtyChange, ...props }: OfficeFileProps) {
               onDirtyChange={role === 'next' ? undefined : onDirtyChange}
               startEditing={generation > 0}
               swap={{
+                building: role === 'next',
                 onPosition: (position) => {
                   if (position) positions.current.set(generation, position);
                   else positions.current.delete(generation);
@@ -399,6 +407,9 @@ function OfficeSlot({
 }) {
   const next = role === 'next';
   const leaving = role === 'replaced';
+  // The header's file status is the building view's (Reconnecting, a slowed
+  // open's line, Offline), as a first join's would be (Epo 2026-10-23); the
+  // replaced view reports nothing more.
   const status = useContext(EditorStatusContext);
   const presence = useContext(PresenceContext);
   const inset = useContext(OfficeInsetContext);
@@ -413,7 +424,7 @@ function OfficeSlot({
       data-office-view={role}
       inert={next}
     >
-      <EditorStatusContext.Provider value={next ? null : status}>
+      <EditorStatusContext.Provider value={leaving ? null : status}>
         <PresenceContext.Provider value={leaving ? null : presence}>
           <OfficeInsetContext.Provider value={leaving ? null : inset}>
             <FileHeaderTarget.Provider value={next ? null : header}>

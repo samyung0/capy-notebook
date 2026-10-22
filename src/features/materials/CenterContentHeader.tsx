@@ -549,8 +549,9 @@ export function Header({
     </div>
   );
   // The save status sits beside the name on the top row at every width (Epo
-  // 2026-10-20); the offline icon stands in for it while offline. Outside
-  // Office its label shows beside it from md up (Epo 2026-10-22).
+  // 2026-10-20); the offline icon stands in for it while offline. Its label
+  // shows beside it from md up for every file, Office included (Epo
+  // 2026-10-22).
   const status = (
     <>
       <OfflineStatus />

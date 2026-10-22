@@ -62,6 +62,9 @@ import {
  * when a newer epoch replaced its saved session, and when it has settled
  * (ready, or failed) so it can take the screen. */
 export interface OfficeSwap {
+  /** Building hidden beside the replaced view: its connecting state reads
+   * Reconnecting. */
+  building: boolean;
   /** Its frame's reader position calls (null once it goes): the replaced
    * view's is read and the next view opens there. */
   onPosition: (position: OfficeViewPosition | null) => void;
@@ -987,8 +990,12 @@ export function useOfficeRuntime({
   const ready = mode === 'view' ? !!analysis : replicaReady;
   // A swap takes the screen once the next frame has painted its document.
   const painted = ready && !!analysis;
+  // Any answer settles it, the server's included (refused, unavailable,
+  // outdated, an error, recovery); nothing arriving waits as a first join
+  // does, until its own timeout errors (Epo 2026-10-23).
   const settled =
     painted ||
+    source.status === 'error' ||
     !!(error ?? source.error) ||
     !!source.unavailable ||
     outdated ||
@@ -1081,7 +1088,10 @@ export function useOfficeRuntime({
     sizeLimited,
     slowed: mode === 'edit' && source.slowed,
     // The header says Reconnecting until the new view takes over.
-    status: swapping ? ('reconnecting' as const) : source.status,
+    status:
+      swap?.building && source.status === 'connecting'
+        ? ('reconnecting' as const)
+        : source.status,
     storageFull: source.session?.storageFull,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };

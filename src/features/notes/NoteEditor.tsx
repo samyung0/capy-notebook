@@ -499,14 +499,23 @@ function useRoomSwap(
   }, []);
 
   // A hidden tab or a phone swaps as soon as the next one can mount; else it
-  // builds beside the paused one and its first paint swaps (`painted`).
-  const atOnce = pending && !!ready && (tabHidden() || onPhone());
+  // builds beside the paused one and its first paint swaps (`painted`). The
+  // path is decided once per swap, when the next mount is ready, so a
+  // breakpoint crossing during the build keeps it (review M3).
   const readyKey = ready?.key;
+  const path = useRef<{ key: string; way: 'beside' | 'copy' | 'now' }>(null);
+  if (pending && readyKey && path.current?.key !== readyKey)
+    path.current = {
+      key: readyKey,
+      way: tabHidden() ? 'now' : onPhone() ? 'copy' : 'beside',
+    };
+  const way = pending && readyKey ? path.current?.way : undefined;
+  const atOnce = way === 'now' || way === 'copy';
   useLayoutEffect(() => {
     const mount = latest.current.ready;
-    if (!(pending && readyKey && mount)) return;
-    if (tabHidden() || onPhone()) {
-      swapTo(mount, !tabHidden());
+    if (!(pending && readyKey && mount && way)) return;
+    if (way !== 'beside') {
+      swapTo(mount, way === 'copy');
       return;
     }
     const hidden = () => {
@@ -515,7 +524,7 @@ function useRoomSwap(
     };
     document.addEventListener('visibilitychange', hidden);
     return () => document.removeEventListener('visibilitychange', hidden);
-  }, [pending, readyKey, swapTo]);
+  }, [pending, readyKey, swapTo, way]);
 
   // The paused note says Reconnecting; a standby editor keeps saying so
   // itself, with a slowed open's line.

@@ -185,3 +185,24 @@ test('the header lists co-editors as an avatar group', async ({ page }) => {
   });
   await expect(group).toHaveCount(0);
 });
+
+// The file status shows its label beside the icon from md up, every file's
+// header alike; below md the icon stands alone and the label is screen-reader
+// text, in the tooltip too (Epo 2026-10-22).
+test('the save status shows its label beside the icon from md up', async ({
+  page,
+}) => {
+  await page.setViewportSize({ height: 900, width: 768 });
+  await page.goto('/workspaces/ws_bio?material=mat_e2e_editor&mode=edit');
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved',
+    { timeout: 30_000 }
+  );
+  const label = page.getByTestId('editor-save-label');
+  await expect(label).toHaveText(m.editor_status_saved());
+  const width = async () => (await label.boundingBox())?.width ?? 0;
+  expect(await width()).toBeGreaterThan(10);
+  await page.setViewportSize({ height: 900, width: 767 });
+  await expect.poll(width).toBeLessThanOrEqual(1);
+});

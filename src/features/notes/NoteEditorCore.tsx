@@ -111,7 +111,14 @@ import {
   sendCheckpointRequest,
   socketOpen,
 } from './roomConnection';
-import { afterPaint, type NoteView, pauseEdits } from './roomSwap';
+import {
+  afterPaint,
+  dropComposedText,
+  holdModel,
+  keepsReadingPlace,
+  type NoteView,
+  pauseEdits,
+} from './roomSwap';
 import { NOTE_SAVE_DELAY_MS, SaveDelayClock } from './saveDelay';
 
 const CHECKPOINT_DEBOUNCE_MS = 1000;
@@ -439,6 +446,8 @@ const NoteEditorContent = memo(function NoteEditorContent({
 const scrollSelectionIntoView: NonNullable<
   React.ComponentProps<typeof PlateContent>['scrollSelectionIntoView']
 > = (editor, domRange) => {
+  // A swapped-in note keeps the reader's place until they act in it.
+  if (keepsReadingPlace(editor)) return;
   const block = domRange.startContainer.parentElement?.closest(
     '[data-slate-void="true"]'
   );
@@ -1202,7 +1211,8 @@ export function NoteEditorCore({
   // Being replaced (a compaction, a discard, a refused update): read-only
   // from this render, out of the room, its unsaved edits written as a whole
   // document before the next room's drafts are read (a child's effects run
-  // before NoteEditor's), and no reconnect.
+  // before NoteEditor's), and no reconnect. There is no way back: a paused
+  // editor never goes live again, the next mount does (review I4).
   useEffect(() => {
     if (phase !== 'paused') return;
     stale.current = true;
@@ -1211,9 +1221,21 @@ export function NoteEditorCore({
     void recorder.current?.dispose();
     roomProvider(editor)?.disconnect();
   }, [editor, phase]);
+  // Edits stop at the model first, so a composition the pause ends adds
+  // nothing; the DOM listeners stop the rest before Slate sees it.
   useEffect(() => {
-    if (phase === 'paused' && scrollArea) return pauseEdits(scrollArea);
-  }, [phase, scrollArea]);
+    if (phase !== 'paused') return;
+    const release = holdModel(editor);
+    // Slate's own handler inserts the composed text (dropped) first.
+    const composed = () => setTimeout(() => dropComposedText(editor));
+    scrollArea?.addEventListener('compositionend', composed);
+    const resume = scrollArea ? pauseEdits(scrollArea) : undefined;
+    return () => {
+      resume?.();
+      scrollArea?.removeEventListener('compositionend', composed);
+      release();
+    };
+  }, [editor, phase, scrollArea]);
 
   // The first paint of the content, for the swap.
   const paintedChange = useRef(onPainted);
