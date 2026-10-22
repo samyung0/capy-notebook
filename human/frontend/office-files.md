@@ -306,3 +306,5 @@
 - Developer Epo decided (2026-10-22) uploaded decks get no special handling under the 4,000-character speaker-notes cap: an Undo that would bring back notes over the cap is refused like any growth and the editor goes to recovery, existing UAT decks included.
 - Developer Epo left (2026-10-22) notes already over 4,000 characters to the least work: the panel keeps the rule as built, so they may shrink or keep their length but never grow, matching the server.
 - Developer Epo decided (2026-10-22) the speaker-notes panel shows an x/4,000 counter from 90% of the cap, as other capped inputs do.
+- Developer Epo decided (2026-10-22) Office file headers show the file status label from md up as notes do (the icon alone below md).
+- Developer Epo decided (2026-10-22) a DOCX swapped in after a room reload restores the reader's place: the scroll offset, the top body paragraph by paraId at its height, and the selection by paraId and offset.
