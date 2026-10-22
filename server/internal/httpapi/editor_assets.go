@@ -199,7 +199,7 @@ func (a *api) receiveEditorAsset(w http.ResponseWriter, r *http.Request, scope e
 		return store.EditorAsset{}, errors.New("blob store not configured")
 	}
 	var in reserveEditorAssetRequest
-	stream, err := readUploadMetadata(w, r, &in)
+	stream, err := readUploadMetadata(w, r, claim.size, &in)
 	if err != nil {
 		return store.EditorAsset{}, err
 	}

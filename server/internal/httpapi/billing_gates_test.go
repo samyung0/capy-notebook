@@ -15,6 +15,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -338,6 +339,47 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 	}{{"fast", 1400}, {"none", 5000}} {
 		if rec := reserve(ok.mode, ok.pages); rec.Code != http.StatusCreated {
 			t.Fatalf("%s %d pages: %d %s", ok.mode, ok.pages, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// The material response carries the editor caps of the material's payer, its
+// owner, whoever reads it (Epo 2026-10-22: the browser checks a note image or
+// audio against them before it uploads): a Free co-editor of a Pro owner's
+// note reads the Pro caps, and the other way round (security regression:
+// human backend-storage-quota 2026-10-22 browser size check).
+func TestMaterialCarriesItsPayersEditorCaps(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+	free, pro := mustPlanLimits(t, fx.store, store.PlanFree), mustPlanLimits(t, fx.store, store.PlanPro)
+	if free.EditorAssetBytes("audio") == pro.EditorAssetBytes("audio") ||
+		free.EditorAssetBytes("image") == pro.EditorAssetBytes("image") {
+		t.Fatal("the Free and Pro editor caps must differ for this test")
+	}
+	note, err := fx.store.CreateMaterial(ctx, store.Material{CreatedBy: fx.ownerID, WorkspaceID: fx.workspaceID,
+		Kind: "note", Title: "Caps", Content: noteTestContent(t, "")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, fx.store, note.ID)
+	for _, tc := range []struct {
+		owner, reader string
+		want          planlimits.Limits
+	}{{"pro", "free", pro}, {"free", "pro", free}} {
+		for user, tier := range map[string]string{fx.ownerID: tc.owner, fx.actorID: tc.reader} {
+			if _, err := fx.pool.Exec(ctx, `UPDATE users SET plan_tier=$2 WHERE id=$1`, user, tier); err != nil {
+				t.Fatal(err)
+			}
+		}
+		rec := doReq(t, fx.handler, http.MethodGet, "/api/materials/"+note.ID, fx.actorID, nil)
+		expectStatus(t, rec, http.StatusOK, "the co-editor's read")
+		var caps struct{ AudioMaxBytes, ImageMaxBytes int64 }
+		if err := json.Unmarshal(rec.Body.Bytes(), &caps); err != nil {
+			t.Fatal(err)
+		}
+		if caps.AudioMaxBytes != tc.want.EditorAssetBytes("audio") || caps.ImageMaxBytes != tc.want.EditorAssetBytes("image") {
+			t.Fatalf("a %s reader of a %s owner's note reads audio %d and image %d", tc.reader, tc.owner,
+				caps.AudioMaxBytes, caps.ImageMaxBytes)
 		}
 	}
 }

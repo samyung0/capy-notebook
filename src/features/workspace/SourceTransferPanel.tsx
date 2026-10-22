@@ -19,6 +19,7 @@ import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
 import {
   dismissSourceTransfers,
+  removeSourceTransfer,
   type SourceProvider,
   type SourceTransfer,
   useSourceTransfers,
@@ -73,6 +74,19 @@ function TransferRow({
             provider={transfer.provider}
           />
         )}
+        <IconButton
+          className="-my-1 shrink-0 text-fg-muted"
+          icon="x"
+          // Remove cancels a file not yet sent, uploading or importing; past
+          // that the button only hides its row.
+          label={
+            ['waiting', 'uploading', 'importing'].includes(transfer.stage)
+              ? m.source_transfer_remove({ name: transfer.name })
+              : m.source_transfer_hide({ name: transfer.name })
+          }
+          onClick={() => removeSourceTransfer(transfer.key)}
+          size="xs"
+        />
       </div>
       {/* One fixed-height line, so a row keeps its height when its progress
           bar turns into a status. */}
