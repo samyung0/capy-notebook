@@ -770,83 +770,102 @@ mod tests {
         bytes
     }
 
-    // Security regression (Epo 2026-10-22, notes-cap review H1): a crafted
-    // entry is placed as yrs places it, so one that names another key, or no
-    // key, but lands at a slide's `notes` key is held to the cap too.
-    #[test]
-    fn a_crafted_entry_landing_at_a_slides_notes_is_held_to_the_cap() {
+    /// A room with slides s1 (notes "short") and s2 (notes "other").
+    fn two_slides() -> Doc {
         let room = Doc::with_client_id(1);
         let slides = room.get_or_insert_map("pptx:slides");
         for (id, notes) in [("s1", "short"), ("s2", "other")] {
             let slide = slides.insert(&mut room.transact_mut(), id, MapPrelim::default());
             slide.insert(&mut room.transact_mut(), NOTES_KEY, notes);
         }
-        let map = |doc: &Doc, id: &str| {
-            let slides = doc.get_or_insert_map("pptx:slides");
-            let Some(yrs::Out::YMap(slide)) = slides.get(&doc.transact(), id) else {
-                panic!("slide");
-            };
-            slide
-        };
-        let holder = |id: &str| {
-            *BranchPtr::from(map(&room, id).as_ref())
-                .item()
-                .unwrap()
-                .id()
-        };
-        let notes_item = |id: &str| {
-            *BranchPtr::from(map(&room, id).as_ref())
-                .entry_item(NOTES_KEY)
-                .unwrap()
-                .id()
-        };
-        // What the room would store: the update applied to a copy.
-        let stored = |room: &Doc, update: &[u8]| {
-            let copy = Doc::with_client_id(99);
-            apply(&copy, &encode(room, &StateVector::default()));
-            apply(&copy, update);
-            let notes = map(&copy, "s1").get(&copy.transact(), NOTES_KEY);
-            match notes {
-                Some(yrs::Out::Any(Any::String(text))) => text.chars().count(),
-                other => panic!("notes {other:?}"),
-            }
-        };
-        let refused = Admission::Refuse(Refusal::OfficeUpdate(
-            "Office update grows a slide's speaker notes past 4000 characters".into(),
-        ));
-        let long = "n".repeat(4001);
-        let long = long.as_str();
+        room
+    }
 
-        // (a) After a keyless entry in slide 1's map and before slide 2's
-        // notes: yrs takes the map from the left and the key from the right.
-        let (h1, n2) = (holder("s1"), notes_item("s2"));
-        let left = ID::new(ClientID::new(50), 0);
-        let after_keyless = crafted(
+    fn slide(doc: &Doc, id: &str) -> yrs::MapRef {
+        let slides = doc.get_or_insert_map("pptx:slides");
+        let Some(yrs::Out::YMap(slide)) = slides.get(&doc.transact(), id) else {
+            panic!("slide");
+        };
+        slide
+    }
+
+    fn slide_holder(doc: &Doc, id: &str) -> ID {
+        *BranchPtr::from(slide(doc, id).as_ref())
+            .item()
+            .unwrap()
+            .id()
+    }
+
+    /// The code points slide s1's notes would hold with `update` applied (to
+    /// a copy of the room).
+    fn s1_notes_after(room: &Doc, update: &[u8]) -> usize {
+        let copy = Doc::with_client_id(99);
+        apply(&copy, &encode(room, &StateVector::default()));
+        apply(&copy, update);
+        match slide(&copy, "s1").get(&copy.transact(), NOTES_KEY) {
+            Some(yrs::Out::Any(Any::String(text))) => text.chars().count(),
+            other => panic!("notes {other:?}"),
+        }
+    }
+
+    fn notes_refused() -> Admission {
+        Admission::Refuse(Refusal::OfficeUpdate(
+            "Office update grows a slide's speaker notes past 4000 characters".into(),
+        ))
+    }
+
+    // Security regression (Epo 2026-10-22, notes-cap review H1 a): an entry
+    // after a keyless entry in slide 1's map and before slide 2's notes lands
+    // at slide 1's notes (yrs takes the map from the left, the key from the
+    // right), so it is held to the cap there.
+    #[test]
+    fn an_entry_after_a_keyless_one_is_held_to_its_right_origins_key() {
+        let room = two_slides();
+        let s1 = slide_holder(&room, "s1");
+        let s2_notes = *BranchPtr::from(slide(&room, "s2").as_ref())
+            .entry_item(NOTES_KEY)
+            .unwrap()
+            .id();
+        let long = "n".repeat(4001);
+        let keyless = ID::new(ClientID::new(50), 0);
+        let update = crafted(
             50,
             0,
             &[
-                (None, None, h1, None, &["L"]),
-                (Some(left), Some(n2), h1, None, &[long]),
+                (None, None, s1, None, &["L"]),
+                (Some(keyless), Some(s2_notes), s1, None, &[long.as_str()]),
             ],
         );
-        assert_eq!(stored(&room, &after_keyless), 4001);
-        assert_eq!(verdict(&room, SourceFormat::Pptx, &after_keyless), refused);
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
+    }
 
-        // (b) Re-sent from a clock the room holds, naming another key: yrs
-        // places what the room lacks after the held unit, at its key.
+    // Security regression (Epo 2026-10-22, notes-cap review H1 b): an entry
+    // re-sent from a clock the room holds, naming another key, lands after
+    // the held unit at its key, slide 1's notes, so it is held to the cap
+    // there.
+    #[test]
+    fn a_resent_entry_is_held_to_its_held_units_key() {
+        let room = two_slides();
         let client = Doc::with_client_id(60);
         apply(&client, &encode(&room, &StateVector::default()));
         let short = delta(&client, || {
-            map(&client, "s1").insert(&mut client.transact_mut(), NOTES_KEY, "x");
+            slide(&client, "s1").insert(&mut client.transact_mut(), NOTES_KEY, "x");
         });
         assert_eq!(
             verdict(&room, SourceFormat::Pptx, &short),
             Admission::Accept
         );
         apply(&room, &short);
-        let resent = crafted(60, 0, &[(None, None, h1, Some("zzz"), &["x", long])]);
-        assert_eq!(stored(&room, &resent), 4001);
-        assert_eq!(verdict(&room, SourceFormat::Pptx, &resent), refused);
+        let long = "n".repeat(4001);
+        let s1 = slide_holder(&room, "s1");
+        let update = crafted(
+            60,
+            0,
+            &[(None, None, s1, Some("zzz"), &["x", long.as_str()])],
+        );
+        assert_eq!(s1_notes_after(&room, &update), 4001);
+        assert_eq!(verdict(&room, SourceFormat::Pptx, &update), notes_refused());
     }
 
     #[test]
