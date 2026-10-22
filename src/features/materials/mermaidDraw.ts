@@ -7,14 +7,16 @@ import {
 import type { MermaidTheme } from './mermaidThemes';
 
 /* One diagram drawn by mermaid.js in a theme, wherever mermaid runs: the
-   Web Worker (mermaid.worker.ts, on the DOM shim) or the page (a type the
-   shim does not draw exactly yet, behind a "Draw diagram" click). No React,
+   app's Web Worker (mermaid.worker.ts, on the DOM shim), or the page in the
+   geometry check and the render probe, which compare the two. No React,
    i18n or page DOM here, so the worker bundle stays mermaid's own. */
 
 export interface Drawn {
   /** The theme's panel colour, behind the SVG. */
   background: string;
   svg: string;
+  /** The diagram type mermaid drew, by its detected id. */
+  type: string;
 }
 
 const SVG_OPEN = /<svg[^>]*>/;
@@ -65,13 +67,16 @@ export async function drawMermaid(
   mermaid.initialize({
     startOnLoad: false,
     ...preset.config,
+    // A Cynefin diagram's wavy boundaries are seeded by the SVG id otherwise.
+    cynefin: { ...preset.config.cynefin, seed: 1 },
     // mermaid's default carries a trailing ";", so the page dropped it and
     // measured some labels (ER, class, sequence) in the app's own font; a
     // worker has none. Labels measure in the theme's font they draw in.
     fontFamily: preset.config.themeVariables?.fontFamily,
     gantt: { ...preset.config.gantt, useWidth: width },
-    // Shapes mermaid draws with rough.js (class, ER) come out the same each
-    // time, so a source draws one SVG and the geometry check compares.
+    // Shapes mermaid draws with rough.js (class, ER) and Cynefin boundaries
+    // come out the same each time, so a source draws one SVG and the
+    // geometry check compares.
     handDrawnSeed: 1,
     ...MERMAID_SECURITY,
   });
@@ -80,11 +85,16 @@ export async function drawMermaid(
     mermaid,
     withoutImageFunctions(code.trim())
   );
-  let { svg } = await mermaid.render(id, source, container);
+  const drawn = await mermaid.render(id, source, container);
+  let { svg } = drawn;
   if (preset.roughen) {
     svg = svg
       .replaceAll('url(#roughen', `url(#${id}-roughen`)
       .replace(SVG_OPEN, (open) => open + roughenFilters(`${id}-`));
   }
-  return { background: String(preset.config.themeVariables?.background), svg };
+  return {
+    background: String(preset.config.themeVariables?.background),
+    svg,
+    type: drawn.diagramType,
+  };
 }

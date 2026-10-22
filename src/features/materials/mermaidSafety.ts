@@ -1,17 +1,19 @@
 import type { Mermaid, MermaidConfig } from 'mermaid';
 
 /*
- * A diagram loads nothing from outside the page. Mermaid draws into a host
- * that is already in the document (it measures labels as it draws), so
- * anything that fetches does so while it draws: the source is made inert
- * before `mermaid.render`, not cleaned afterwards. Every surface (chat, note
+ * A diagram loads nothing from outside the page. Every surface (chat, note
  * blocks, mindmap and diagram files, shared-page islands, exports) draws
- * through `renderMermaid`, which applies all of this.
+ * through `renderMermaid`: the source is made inert before `mermaid.render`
+ * in the worker (below), and the page sanitizes the drawn SVG before
+ * inserting it (`forPage` in Mermaid.tsx).
  */
 
-/** Settings `renderMermaid` applies last, over the theme preset. */
+/** Settings the worker's mermaid draws with, last over the theme preset. */
 export const MERMAID_SECURITY = {
-  // HTML labels (and icons) keep no element or attribute that loads a file.
+  // No element or attribute that loads a file. Mermaid's label pass with
+  // this config does nothing in the worker (DOMPurify needs a real DOM), so
+  // `forPage` applies these lists on the page, and forbids `style` everywhere
+  // but mermaid's root stylesheet (review H1, L3).
   dompurifyConfig: {
     FORBID_ATTR: ['background', 'poster', 'src', 'srcset'],
     FORBID_TAGS: [

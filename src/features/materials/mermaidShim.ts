@@ -35,8 +35,11 @@ const ROOT_FONT: Font = {
   size: 16,
   weight: '400',
 };
-/** What the cascade reads: fonts (inherited) and side padding (not). */
+/** What the cascade reads: fonts and text anchoring (inherited), side
+ * padding, a text's baseline and whether an element shows (not). */
 const KEYS = [
+  'display',
+  'dominant-baseline',
   'font-family',
   'font-size',
   'font-weight',
@@ -44,6 +47,7 @@ const KEYS = [
   'padding',
   'padding-left',
   'padding-right',
+  'text-anchor',
 ] as const;
 type Key = (typeof KEYS)[number];
 
@@ -449,27 +453,46 @@ function pathBox(d: string): Box | null {
   return { height: Math.max(...ys) - y, width: Math.max(...xs) - x, x, y };
 }
 
-const TRANSFORM = /(translate|scale)\(\s*([-\d.e]+)(?:[\s,]+([-\d.e]+))?\s*\)/g;
+const TRANSFORM =
+  /(translate|scale|rotate)\(\s*([-\d.e]+)(?:[\s,]+([-\d.e]+))?(?:[\s,]+([-\d.e]+))?\s*\)/g;
 
+/** A box through an SVG transform: the box around its moved corners, as the
+ * browser takes a transformed child's box into its group's. */
 function transformBox(box: Box, transform: string | null): Box {
   if (!transform) return box;
-  let { height, width, x, y } = box;
+  const right = box.x + box.width;
+  const bottom = box.y + box.height;
+  let corners: [number, number][] = [
+    [box.x, box.y],
+    [right, box.y],
+    [box.x, bottom],
+    [right, bottom],
+  ];
   // Applied right to left, as SVG composes them.
-  for (const match of [...transform.matchAll(TRANSFORM)].reverse()) {
-    const a = Number(match[2]);
-    const b = match[3] === undefined ? undefined : Number(match[3]);
-    if (match[1] === 'translate') {
-      x += a;
-      y += b ?? 0;
-    } else {
-      const sy = b ?? a;
-      x *= a;
-      width *= a;
-      y *= sy;
-      height *= sy;
-    }
+  for (const [, kind, first, second, third] of [
+    ...transform.matchAll(TRANSFORM),
+  ].reverse()) {
+    const a = Number(first);
+    const b = second === undefined ? undefined : Number(second);
+    corners = corners.map(([px, py]): [number, number] => {
+      if (kind === 'translate') return [px + a, py + (b ?? 0)];
+      if (kind === 'scale') return [px * a, py * (b ?? a)];
+      // rotate(degrees [cx cy])
+      const [cx, cy] = [b ?? 0, Number(third ?? 0)];
+      const [cos, sin] = [
+        Math.cos((a * Math.PI) / 180),
+        Math.sin((a * Math.PI) / 180),
+      ];
+      return [
+        cx + (px - cx) * cos - (py - cy) * sin,
+        cy + (px - cx) * sin + (py - cy) * cos,
+      ];
+    });
   }
-  return { height, width, x, y };
+  const xs = corners.map(([px]) => px);
+  const ys = corners.map(([, py]) => py);
+  const [x, y] = [Math.min(...xs), Math.min(...ys)];
+  return { height: Math.max(...ys) - y, width: Math.max(...xs) - x, x, y };
 }
 
 function union(boxes: Box[]): Box {
@@ -567,11 +590,11 @@ function baselineShift(
   font: Font,
   metrics: { ascent: number; descent: number }
 ) {
+  const parent = element.parentElement;
   const baseline =
-    styleOf(element)['dominant-baseline'] ??
-    element.getAttribute('dominant-baseline') ??
+    own(element, 'dominant-baseline') ??
     element.getAttribute('alignment-baseline') ??
-    element.parentElement?.getAttribute('dominant-baseline');
+    (parent ? own(parent, 'dominant-baseline') : undefined);
   switch (baseline) {
     case 'central':
       return (metrics.ascent - metrics.descent) / 2;
@@ -599,17 +622,14 @@ function textBox(element: Element): Box {
     (child) => child.localName === 'tspan'
   );
   const lines = spans.length ? spans : [element];
-  const anchor =
-    styleOf(element)['text-anchor'] ??
-    element.getAttribute('text-anchor') ??
-    element.parentElement?.getAttribute('text-anchor');
-  const own = fontOf(element);
+  const anchor = property(element, 'text-anchor');
+  const textFont = fontOf(element);
   let x = num(element.getAttribute('x'));
   let y = num(element.getAttribute('y'));
-  let dy = length(element.getAttribute('dy'), own);
+  let dy = length(element.getAttribute('dy'), textFont);
   const boxes: Box[] = [];
   for (const line of lines) {
-    const font = line === element ? own : fontOf(line);
+    const font = line === element ? textFont : fontOf(line);
     if (line !== element) {
       if (line.hasAttribute('x')) x = num(line.getAttribute('x'));
       if (line.hasAttribute('y')) y = num(line.getAttribute('y'));
@@ -643,7 +663,21 @@ function textBox(element: Element): Box {
   return union(boxes);
 }
 
-const SKIP = new Set(['style', 'defs', 'marker', 'title', 'desc']);
+/** Elements a box never counts: they draw nothing themselves (lower case). */
+const SKIP = new Set([
+  'clippath',
+  'defs',
+  'desc',
+  'filter',
+  'lineargradient',
+  'marker',
+  'mask',
+  'pattern',
+  'radialgradient',
+  'style',
+  'symbol',
+  'title',
+]);
 
 function bbox(element: Element): Box {
   const tag = element.localName.toLowerCase();
@@ -712,7 +746,7 @@ const SHAPES = new Set(['path', 'polygon', 'polyline', 'line']);
  * group with nothing counted inside. */
 function counted(element: Element): Box | null {
   const tag = element.localName.toLowerCase();
-  if (element.getAttribute('display') === 'none' || SKIP.has(tag)) return null;
+  if (SKIP.has(tag) || own(element, 'display') === 'none') return null;
   if (SIZED.has(tag) || tag === 'text') {
     const box = bbox(element);
     return box.width > 0 && box.height > 0 ? box : null;
@@ -785,7 +819,8 @@ export function installDom() {
   // Nothing loads here: an image in a label is complete at once (mermaid
   // waits for it). DOMPurify finds no document implementation in linkedom
   // and passes labels through; the page's own pass (forPage in Mermaid.tsx)
-  // is the sanitizer, as it removes what the page's mermaid would have.
+  // is the sanitizer: it removes what mermaid's label pass would have, a
+  // label's `<style>` included (review H1).
   Object.defineProperty(
     (view.HTMLImageElement as typeof HTMLImageElement).prototype,
     'complete',

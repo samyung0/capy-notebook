@@ -135,7 +135,11 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   Users edit chart and graph in notes and quizzes, plot in notes only (a
   quiz's question dialog shows one, Epo 2026-10-17), html_embed in notes, and
   mermaid, quiz and flashcards in notes and as their own materials
-  (`edit.user`).
+  (`edit.user`). Any Mermaid source within the cap is stored; the browser
+  draws only the diagram types its geometry check covers (`MERMAID_TYPES`,
+  every type mermaid 11.16.1 registers) and shows any other as an
+  unsupported-type error (Epo 2026-10-23,
+  [plate-editor](frontend/plate-editor.md)).
 
   A **value** is an attribute of its node, replaced whole. A **live map**
   keeps its value in a shared map (below, [Live figures](#live-figures)). A

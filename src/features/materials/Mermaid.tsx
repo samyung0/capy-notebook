@@ -2,10 +2,10 @@ import {
   type CSSProperties,
   type ReactNode,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
-import { Button } from '@/components/ui/Button';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -15,7 +15,7 @@ import type { Drawn } from './mermaidDraw';
 import {
   MERMAID_EDGES_MAX,
   type MermaidFailure,
-  MermaidLimitError,
+  MermaidReasonError,
   mermaidFailure,
 } from './mermaidError';
 import { MERMAID_SECURITY, withSafeLinks } from './mermaidSafety';
@@ -42,22 +42,20 @@ const MIN_SCALE = 0.5;
 /** A queued render whose diagram changed again before its turn. */
 export const SUPERSEDED = new Error('superseded mermaid render');
 
-/** A type the worker's shim does not draw exactly yet: the page draws it,
- * only on a "Draw diagram" click (Epo 2026-10-22). */
-export const PAGE_ONLY = new Error('mermaid type drawn on the page');
-
 // ------------------------------------------------------------------ cache
 
 interface Entry {
   promise: Promise<Drawn>;
   settled: boolean;
+  /** Characters it holds once settled: its SVG, or its source. */
+  size: number;
   /** Whether each caller waiting on it still wants it (none: always). */
   wants: ((() => boolean) | undefined)[];
 }
 
-// ponytail: an entry count, not bytes; a near-limit SVG is ~3 MB, so bound
-// by size if typing in huge diagrams shows up in memory.
-const CACHE_SIZE = 24;
+/** The cache keeps about this many characters of SVG (twice that in bytes):
+ * a near-limit diagram is about 3.3 million (review L2). */
+const CACHE_CHARS = 8_000_000;
 /** Drawn diagrams by theme and source (and width for a gantt chart), shared
  * by blocks, the full-screen preview, View/Edit and exports. */
 const cache = new Map<string, Entry>();
@@ -75,20 +73,39 @@ function cacheKey(code: string, theme: MermaidTheme, width: number) {
   return `${theme}|${GANTT.test(body) ? width : ''}|${code}`;
 }
 
-function remember(key: string, entry: Entry) {
+/** Failures the next caller should draw again: nobody wanted it, the worker
+ * ran out of time (it may have been loading, review M1), or could not start
+ * this time. */
+function retried(error: unknown) {
+  return (
+    error === SUPERSEDED ||
+    (error instanceof MermaidReasonError &&
+      (error.reason === 'tooLarge' || error.reason === 'noWorker'))
+  );
+}
+
+function remember(key: string, entry: Entry, code: string) {
   cache.set(key, entry);
-  const settle = () => {
+  const settle = (size: number) => {
     entry.settled = true;
+    entry.size = size;
+    let total = 0;
+    for (const held of cache.values()) total += held.size;
+    // Oldest first, never the newest.
     for (const [old, held] of cache) {
-      if (cache.size <= CACHE_SIZE) break;
-      if (held.settled) cache.delete(old);
+      if (total <= CACHE_CHARS || held === entry) break;
+      if (!held.settled) continue;
+      cache.delete(old);
+      total -= held.size;
     }
   };
-  entry.promise.then(settle, (error: unknown) => {
-    // Nobody wanted it: the next caller draws it again.
-    if (error === SUPERSEDED && cache.get(key) === entry) cache.delete(key);
-    settle();
-  });
+  entry.promise.then(
+    (drawn) => settle(drawn.svg.length),
+    (error: unknown) => {
+      if (retried(error) && cache.get(key) === entry) cache.delete(key);
+      settle(code.length);
+    }
+  );
   return entry.promise;
 }
 
@@ -173,13 +190,25 @@ function genericFaces() {
   return faces;
 }
 
+/** The worker ends after this long without a draw (review L2); the next
+ * diagram, or the next note's warm-up, starts it again. */
+const WORKER_IDLE_MS = 60_000;
+let idle: ReturnType<typeof setTimeout> | undefined;
+
 function stopWorker(stopped: Worker) {
   stopped.terminate();
   if (worker === stopped) worker = null;
 }
 
+function restAfterIdle() {
+  clearTimeout(idle);
+  idle = setTimeout(() => {
+    if (worker) stopWorker(worker);
+  }, WORKER_IDLE_MS);
+}
+
 /** The worker, started once (it loads mermaid as it starts); none where a
- * module worker cannot start, and the page draws on a click. */
+ * module worker cannot start. */
 function startWorker() {
   if (worker) return worker;
   let started: Worker;
@@ -192,13 +221,14 @@ function startWorker() {
     return null;
   }
   // A worker that cannot start (no 2D OffscreenCanvas before Safari 16.4)
-  // or broke, while warming or drawing: the page draws on a click.
+  // or broke, while warming or drawing.
   started.onerror = (event) => {
     event.preventDefault();
     stopWorker(started);
-    pending?.(PAGE_ONLY);
+    pending?.(new MermaidReasonError('noWorker'));
   };
   worker = started;
+  restAfterIdle();
   return started;
 }
 
@@ -214,29 +244,39 @@ export function warmMermaid() {
   import('dompurify').catch(() => undefined);
 }
 
-/** One draw in the worker, stopped (the worker with it) at the time limit. */
-function inWorker(request: Omit<DrawRequest, 'faces' | 'id'>): Promise<Drawn> {
+/** One draw in the worker. Its time limit runs from when the worker starts
+ * drawing, not while it loads (review M1); at the limit the worker stops. */
+function inWorker(
+  request: Omit<DrawRequest, 'faces' | 'id' | 'screenWidth'>
+): Promise<Drawn> {
   return new Promise((resolve, reject) => {
     const current = startWorker();
     if (!current) {
-      reject(PAGE_ONLY);
+      reject(new MermaidReasonError('noWorker'));
       return;
     }
+    clearTimeout(idle);
     const id = ++jobs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const settle = (finish: () => void) => {
       clearTimeout(timer);
       pending = null;
+      restAfterIdle();
       finish();
     };
-    const timer = setTimeout(() => {
-      stopWorker(current);
-      settle(() => reject(new MermaidLimitError('tooLarge')));
-    }, MERMAID_RENDER_LIMIT_MS);
     pending = (error) => settle(() => reject(error));
     current.onmessage = ({ data }: MessageEvent<DrawReply>) => {
       if (data.id !== id) return;
+      if ('started' in data) {
+        timer = setTimeout(() => {
+          stopWorker(current);
+          settle(() => reject(new MermaidReasonError('tooLarge')));
+        }, MERMAID_RENDER_LIMIT_MS);
+        return;
+      }
       settle(() => {
-        if ('page' in data) reject(PAGE_ONLY);
+        if ('unsupported' in data)
+          reject(new MermaidReasonError('unsupported'));
         else if ('error' in data) reject(new Error(data.error));
         else resolve(data);
       });
@@ -245,39 +285,53 @@ function inWorker(request: Omit<DrawRequest, 'faces' | 'id'>): Promise<Drawn> {
       ...request,
       faces: genericFaces(),
       id,
+      screenWidth: globalThis.screen?.availWidth ?? 0,
     } satisfies DrawRequest);
   });
 }
 
 /** mermaid's own sanitizer setup for a drawn diagram (foreignObject HTML
- * labels), with our forbid lists; the SVG keeps its own stylesheet. */
+ * labels), with our forbid lists and no form controls (review L6); the SVG
+ * keeps its own stylesheet. */
 const DRAWN_SVG = {
   ADD_ATTR: ['dominant-baseline'],
   ADD_TAGS: ['foreignobject'],
   FORBID_ATTR: MERMAID_SECURITY.dompurifyConfig.FORBID_ATTR,
-  FORBID_TAGS: MERMAID_SECURITY.dompurifyConfig.FORBID_TAGS.filter(
-    (tag) => tag !== 'style'
-  ),
+  FORBID_TAGS: [
+    ...MERMAID_SECURITY.dompurifyConfig.FORBID_TAGS.filter(
+      (tag) => tag !== 'style'
+    ),
+    'button',
+    'form',
+    'select',
+    'textarea',
+  ],
   HTML_INTEGRATION_POINTS: { foreignobject: true },
+  RETURN_DOM_FRAGMENT: true as const,
 };
 
 /** A drawn diagram made safe for the page: sanitized with the page's own
  * DOMPurify (mermaid's pass in the worker lets everything through, since
- * DOMPurify needs a real DOM), then its links opened in a new tab. */
-async function forPage(drawn: Drawn): Promise<Drawn> {
+ * DOMPurify needs a real DOM), every `<style>` but mermaid's own root sheet
+ * removed (one in a label or a nested `<svg>` would restyle the page or
+ * `@import` from outside, review H1), then its links opened in a new tab. */
+export async function forPage(drawn: Drawn): Promise<Drawn> {
   const { default: DOMPurify } = await import('dompurify');
-  return {
-    background: drawn.background,
-    svg: withSafeLinks(DOMPurify.sanitize(drawn.svg, DRAWN_SVG)),
-  };
+  const fragment = DOMPurify.sanitize(drawn.svg, DRAWN_SVG);
+  const root = fragment.firstElementChild;
+  for (const style of fragment.querySelectorAll('style'))
+    if (style.parentNode !== root) style.remove();
+  const holder = document.createElement('div');
+  holder.append(fragment);
+  return { ...drawn, svg: withSafeLinks(holder.innerHTML) };
 }
 
 /**
  * Draws one diagram in a theme in the worker, one at a time, or takes it
  * from the cache. A queued render that no caller wants when its turn comes
  * is skipped (rejects with SUPERSEDED): a newer source is queued behind it.
- * A running one finishes into the cache. `width` is the box a gantt chart
- * spans.
+ * A running one finishes into the cache (Epo 2026-10-23). `width` is the
+ * box a gantt chart spans.
  */
 export function renderMermaid(
   code: string,
@@ -290,61 +344,15 @@ export function renderMermaid(
   if (hit) return hit;
   const wants = [wanted];
   if (code.length > MERMAID_SOURCE_MAX) {
-    const promise = Promise.reject(new MermaidLimitError('tooLong'));
-    return remember(key, { promise, settled: false, wants });
+    const promise = Promise.reject(new MermaidReasonError('tooLong'));
+    return remember(key, { promise, settled: false, size: 0, wants }, code);
   }
   const promise = queue.then(async () => {
     if (!wants.some((want) => !want || want())) throw SUPERSEDED;
     return forPage(await inWorker({ code, theme: resolved, width }));
   });
   queue = promise.catch(() => undefined);
-  return remember(key, { promise, settled: false, wants });
-}
-
-let pageQueue: Promise<unknown> = Promise.resolve();
-let pageDraws = 0;
-
-/** Draws a diagram on the page, as mermaid did before the worker: for a type
- * the shim does not draw exactly yet, after a click, or for an export. The
- * result replaces the type's PAGE_ONLY in the cache. */
-export function drawOnPage(
-  code: string,
-  theme: MermaidTheme | undefined,
-  width: number
-): Promise<Drawn> {
-  const resolved = mermaidTheme(theme);
-  const promise = pageQueue.then(async () => {
-    const { drawMermaid } = await import('./mermaidDraw');
-    // Same text styles as the display box, so measured labels fit when shown.
-    const host = document.createElement('div');
-    host.className = MERMAID_TEXT_CLASS;
-    Object.assign(host.style, {
-      height: '0',
-      left: '0',
-      overflow: 'hidden',
-      position: 'fixed',
-      top: '0',
-      visibility: 'hidden',
-      width: `${width}px`,
-    });
-    document.body.append(host);
-    try {
-      return forPage(
-        await drawMermaid(code, resolved, host, {
-          id: `mmp-${++pageDraws}`,
-          width,
-        })
-      );
-    } finally {
-      host.remove();
-    }
-  });
-  pageQueue = promise.catch(() => undefined);
-  return remember(cacheKey(code, resolved, width), {
-    promise,
-    settled: false,
-    wants: [],
-  });
+  return remember(key, { promise, settled: false, size: 0, wants }, code);
 }
 
 /**
@@ -381,10 +389,9 @@ export function Mermaid({
 }) {
   const [result, setResult] = useState<Drawn | null>(null);
   const [error, setError] = useState<MermaidFailure | null>(null);
-  // The type draws on the page: a "Draw diagram" button until clicked, then
-  // drawn there for this box's later sources too.
-  const [pageOnly, setPageOnly] = useState(false);
-  const [pageAllowed, setPageAllowed] = useState(false);
+  // This copy's own ids: the cache hands one SVG to every box (review L1).
+  const [ids] = useState(() => `mmi-${++copies}`);
+  const svg = useMemo(() => result && ownIds(result.svg, ids), [result, ids]);
   const boxRef = useRef<HTMLDivElement>(null);
   const { near } = useNearScreen(boxRef);
   const onErrorRef = useRef(onError);
@@ -411,28 +418,15 @@ export function Mermaid({
     const draw = () => {
       const width = boxRef.current?.clientWidth || window.innerWidth;
       renderMermaid(code, theme, { wanted: () => !cancelled, width })
-        .catch((e: unknown) =>
-          e === PAGE_ONLY && pageAllowed
-            ? drawOnPage(code, theme, width)
-            : Promise.reject(e)
-        )
         .then((next) => {
           if (cancelled) return;
           setResult(next);
           setError(null);
-          setPageOnly(false);
           onErrorRef.current?.(null);
           onDrawnRef.current?.(true);
         })
         .catch((e: unknown) => {
           if (cancelled || e === SUPERSEDED) return;
-          if (e === PAGE_ONLY) {
-            setPageOnly(true);
-            setResult(null);
-            onDrawnRef.current?.(false);
-            return;
-          }
-          setPageOnly(false);
           const failure = mermaidFailure(e, code);
           setError(failure);
           onErrorRef.current?.(failure);
@@ -447,25 +441,13 @@ export function Mermaid({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [code, theme, delay, near, pageAllowed]);
+  }, [code, theme, delay, near]);
 
   let body: ReactNode;
   if (error != null && !onError) {
     body = <MermaidError code={code} failure={error} />;
-  } else if (pageOnly) {
-    body = (
-      <div className="grid h-40 place-items-center">
-        <Button
-          onClick={() => setPageAllowed(true)}
-          size="sm"
-          variant="outline"
-        >
-          {m.mermaid_draw()}
-        </Button>
-      </div>
-    );
-  } else if (result) {
-    const viewBox = VIEW_BOX.exec(result.svg);
+  } else if (result && svg) {
+    const viewBox = VIEW_BOX.exec(svg);
     const size = viewBox && [Number(viewBox[1]), Number(viewBox[2])];
     body = (
       <div
@@ -482,8 +464,8 @@ export function Mermaid({
           className,
           MERMAID_TEXT_CLASS
         )}
-        // eslint-disable-next-line react/no-danger -- sanitized again on this page (forPage)
-        dangerouslySetInnerHTML={{ __html: result.svg }}
+        // eslint-disable-next-line react/no-danger -- sanitized on this page (forPage)
+        dangerouslySetInnerHTML={{ __html: svg }}
         style={
           {
             '--svg-height':
@@ -510,6 +492,16 @@ export function Mermaid({
 }
 
 const MERMAID_TEXT_CLASS = 'font-normal leading-normal';
+
+let copies = 0;
+const ROOT_ID = /<svg[^>]*\sid="([\w-]+)"/;
+
+/** `svg` with its root id, the prefix of every id and reference inside it,
+ * replaced by `id` (`mmd-1` is not the start of `mmd-12`). */
+function ownIds(svg: string, id: string) {
+  const root = ROOT_ID.exec(svg)?.[1];
+  return root ? svg.replace(new RegExp(`${root}(?!\\d)`, 'g'), id) : svg;
+}
 
 /** A theme's panel with one node in its fill and border, for theme menus. */
 export function MermaidSwatch({
@@ -545,6 +537,10 @@ export function mermaidFailureMessage(failure: MermaidFailure) {
       return m.mermaid_too_many_edges({ max: MERMAID_EDGES_MAX });
     case 'tooLarge':
       return m.mermaid_too_large();
+    case 'unsupported':
+      return m.mermaid_unsupported();
+    case 'noWorker':
+      return m.mermaid_no_worker();
     default:
       return failure.line == null
         ? m.mermaid_failed()

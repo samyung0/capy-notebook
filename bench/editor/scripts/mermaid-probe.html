@@ -9,7 +9,8 @@
     <script type="module">
       // Results are collected by mermaid-probe.mjs.
       import "/src/styles/tailwind.css";
-      import { drawOnPage, renderMermaid } from "/src/features/materials/Mermaid.tsx";
+      import { forPage, renderMermaid } from "/src/features/materials/Mermaid.tsx";
+      import { drawMermaid } from "/src/features/materials/mermaidDraw.ts";
       import { nearLimitFlowchart, nearLimitMindmap } from "/src/mocks/nearLimits.ts";
 
       const sources = {
@@ -30,7 +31,18 @@
       requestAnimationFrame(tick);
 
       let runs = 0;
-      // "page" draws as mermaid did before the worker; "worker" is the app's path.
+      // "page" draws with mermaid on this page, as the app did before the
+      // worker; "worker" is the app's path.
+      const onPage = async (code) => {
+        const host = document.createElement("div");
+        host.style.cssText = "position:fixed;left:0;top:0;width:760px;height:0;overflow:hidden;visibility:hidden";
+        document.body.append(host);
+        try {
+          return await forPage(await drawMermaid(code, "linearLight", host, { id: `mmp-${runs}`, width: 760 }));
+        } finally {
+          host.remove();
+        }
+      };
       window.mermaidProbe = async (where, name) => {
         // A unique comment line, so no run is a cache hit.
         const code = `%% run ${++runs} ${Math.random()}\n${sources[name] ?? name}`;
@@ -40,7 +52,7 @@
         const start = performance.now();
         const drawn =
           where === "page"
-            ? await drawOnPage(code, "linearLight", 760)
+            ? await onPage(code)
             : await renderMermaid(code, "linearLight", { width: 760 });
         const drawnAt = performance.now();
         document.getElementById("out").innerHTML = drawn.svg;

@@ -666,36 +666,56 @@ finds the faces its generic families draw in (`genericFaces` in
 `Mermaid.tsx`) and sends them with each draw; theme fonts load into the
 worker's `self.fonts`. The page sends one draw at a time
 (`renderMermaid`): a queued draw no caller wants when its turn comes is
-skipped (a newer source superseded it), and one already running finishes
-into the cache. A draw still running after 30 s
-(`MERMAID_RENDER_LIMIT_MS`) stops, the worker with it, and the block says
-"This diagram is too large to draw on this device." The page sanitizes the
-worker's SVG again (`forPage`: DOMPurify with mermaid's foreignObject setup
-and our forbid lists, the SVG's own stylesheet kept, then `withSafeLinks`):
-DOMPurify finds no document implementation in linkedom, so inside the worker
-it passes labels through and the page's pass is the sanitizer. Drawn
-diagrams are cached in memory by theme and source (and width for a gantt
-chart, which spans its box), 24 entries, shared by the block, the
-full-screen preview, View/Edit and exports, so opening full screen or
-switching mode does not draw again. A block draws once it comes within a
+skipped (a newer source superseded it), and one already drawing finishes
+into the cache (Epo 2026-10-23). A draw still running 30 s after the worker
+starts drawing it (`MERMAID_RENDER_LIMIT_MS`; loading mermaid does not count)
+stops, the worker with it, and the block says "This diagram is too large to
+draw on this device."; that result is not cached, so the next draw starts a
+new worker. The page sanitizes the worker's SVG (`forPage`: DOMPurify with
+mermaid's foreignObject setup, our forbid lists and no form controls, then
+every `<style>` but mermaid's root stylesheet removed, then `withSafeLinks`):
+DOMPurify finds no document implementation in linkedom, so mermaid's label
+pass does nothing in the worker and the page's pass is the sanitizer (review
+H1 and L6, Epo 2026-10-23). Each inserted copy renames the SVG's ids to its
+own (`ownIds`), so a block and its full-screen preview never share marker or
+filter ids. Drawn diagrams are cached in memory by theme and source (and
+width for a gantt chart, which spans its box), up to about 8 million
+characters of SVG in all (`CACHE_CHARS`, oldest dropped first), shared by
+the block, the full-screen preview, View/Edit and exports, so opening full
+screen or switching mode does not draw again. The worker ends after 60 s
+without a draw (`WORKER_IDLE_MS`). A block draws once it comes within a
 screen of the viewport (`useNearScreen`), showing "Rendering diagram" until
 then; any mounted diagram starts the worker (which loads mermaid as it
 starts), the page's generic-face probe and DOMPurify at idle (`warmMermaid`,
 Epo 2026-10-23), so a diagram scrolled to later waits on neither. A worker
-that fails to start, warming or drawing, fails the draw it holds. Only the types the geometry check holds the worker to draw there
-(flowchart, sequence, class, state, ER, mindmap, timeline, pie, gantt:
-`WORKER_TYPES`); any other type, and every type in a browser whose worker
-cannot start (no module workers or no 2D OffscreenCanvas, as before Safari
-16.4), shows a "Draw
-diagram" button and draws on the page (`drawOnPage`, as before the worker)
-only when clicked, after which that box draws its later sources there too;
-an export draws such a diagram on the page, being asked for. The geometry
-check (`e2e/editor/mermaid-geometry.spec.ts`) draws each type in the worker
-and on the page and compares every element's numbers (positions, sizes, path
-points, transforms, the viewBox) within 1.5 px, in Linear Light, Hand Drawn
-and Kawaii, so a mermaid upgrade that changes either fails CI. On the
-near-limit fixtures the two drawings are identical; only the timeline's
-title (font-size `4ex`) is about 1 px off, since canvas exposes no x-height.
+that fails to start, warming or drawing, fails the draw it holds.
+
+The worker draws only the types the geometry check covers (`MERMAID_TYPES` in
+`mermaidTypes.ts`, one source each in `e2e/fixtures/mermaid-sources.ts`, a
+unit test keeping the two equal; Epo 2026-10-23): every type mermaid 11.16.1
+registers, by detected id: architecture, block, c4, class and classDiagram
+(the two class renderers), cynefin, er, eventmodeling, flowchart-v2 and
+flowchart-elk, gantt, gitGraph, info, ishikawa, journey, kanban, mindmap,
+packet, pie, quadrantChart, radar, railroad (plain, ABNF, EBNF and PEG),
+requirement, sankey, sequence, stateDiagram, swimlane, timeline, treemap,
+treeView, venn, wardley and xychart. Anything else is unsupported: an external
+add-on such as ZenUML, or a renderer-v1 id (`flowchart`, `state`) that a
+`defaultRenderer` directive picks. The worker refuses it before drawing (by
+`mermaid.detectType`) or after (by the drawn `diagramType`). There is no
+main-thread drawing path. An unsupported type says "This diagram type isn't
+supported." and a browser whose worker cannot start (no module workers or no
+2D OffscreenCanvas, as before Safari 16.4) says "This browser can't draw
+diagrams."; both show in `MermaidError` as a source error does, everywhere
+(block, preview, chat), and an export fails such a diagram as it fails a
+syntax error. The geometry check (`e2e/editor/mermaid-geometry.spec.ts`) draws
+each type in the worker and on the page (`drawMermaid`, then the same
+`forPage`) and compares the detected type and every element's numbers
+(positions, sizes, path points, transforms, the viewBox) within 1.5 px, in all
+five themes, so a mermaid upgrade or a shim change that moves anything fails
+CI. It runs in Chromium, where Windows and Linux both match. WebKit and
+Firefox differ on some types and are not in CI (waiting on Epo, Q194). Only
+the timeline's title (font-size `4ex`) is about 1 px off, since canvas
+exposes no x-height.
 
 **Scale.** A block never shows a diagram below half its natural size
 (`MIN_SCALE`, Epo 2026-10-22): the SVG keeps a minimum width and height of
@@ -706,13 +726,11 @@ least its natural size (`maxScale` = max(8, natural / fitted width),
 `MermaidPreview`).
 
 A diagram loads nothing from outside the page. In the worker nothing can
-fetch (linkedom loads nothing and there is no document); a type drawn on the
-page draws into a host already in the document (mermaid measures labels as it
-draws), where anything that would fetch does so while it draws. So
-`drawMermaid` makes the source inert before `mermaid.render`, not after, in
-both places (`mermaidSafety.ts`). It locks the
-`strict` security level, HTML labels keep no fetching element or attribute (a
-`dompurifyConfig` forbidding `img`, `image`, `source` and the like), and front
+fetch (linkedom loads nothing and there is no document), and `drawMermaid`
+makes the source inert before `mermaid.render` (`mermaidSafety.ts`). It locks the
+`strict` security level, keeps a `dompurifyConfig` forbidding `img`, `image`,
+`source`, `style` and the like (a no-op in the worker; `forPage` applies the
+same lists on the page), and front
 matter and `%%{init}%%` directives cannot turn `themeCSS`, a font stack or
 those keys back on (mermaid's own `secure` list, extended). Over that, the
 source drops what config cannot reach: a line naming a CSS image function
@@ -721,9 +739,7 @@ entities, and across mermaid's directive cuts) is blanked keeping its line
 number. That is any line containing `url(` or `image-set(`, so a label whose
 text writes `url(` loses its line too ("the URL (a link)", with a space, is
 kept). This filter, not the sanitiser, is what stops an inline `style` in a
-label from fetching: labels keep their inline styles, since mermaid sanitises
-its own icon SVGs (architecture icons) and math-label wrappers with the same
-config. An image node's `img` or a sequence actor's icon is removed when
+label from fetching: labels keep their inline styles. An image node's `img` or a sequence actor's icon is removed when
 mermaid's own parse says the diagram draws an image. A diagram that needed a
 removed part still draws, minus that part; one that still names or draws an
 image across lines after the pass is refused. Links stay clickable (`click …
@@ -733,7 +749,7 @@ a new tab and cannot reach the Capy tab; mermaid's strict mode already leaves
 a `javascript:` target's anchor with no href. The one `renderMermaid` serves
 every surface — chat, note blocks, mindmap and diagram files, shared-page
 islands and the export rasteriser — so this covers them all; a worker's SVG
-is sanitized again on the page before any of it is inserted. The app's
+is sanitized on the page before any of it is inserted. The app's
 report-only image policy (deployment-runbook §2.4) is a backstop, not the fix.
 Preset fonts (Excalifont, vendored Latin subset in
 `src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through

@@ -1,12 +1,15 @@
-import { drawOnPage, renderMermaid } from '@/features/materials/Mermaid';
+import mermaid from 'mermaid';
+import { forPage, renderMermaid } from '@/features/materials/Mermaid';
+import { drawMermaid } from '@/features/materials/mermaidDraw';
 import type { MermaidTheme } from '@/features/materials/mermaidThemes';
 import '@/styles/tailwind.css';
 
 /*
  * The worker's drawing of a diagram against the page's own (the same
- * mermaid.js measuring in the browser), for the per-type geometry check
- * (mermaid-geometry.spec.ts): every element in document order, its numbers
- * (positions, sizes, path points, transforms, the viewBox) and its text.
+ * mermaid.js measuring in the browser, which the app no longer does), for
+ * the per-type geometry check (mermaid-geometry.spec.ts): every element in
+ * document order, its numbers (positions, sizes, path points, transforms,
+ * the viewBox) and its text.
  */
 
 /** Attributes that place or size an element. */
@@ -85,12 +88,14 @@ export interface GeometryReport {
   maxDiff: number;
   /** Element sequence or text that differs, if any. */
   structure: string | null;
+  /** The type mermaid detects in the source. */
+  type: string;
   viewBox: { page: number[]; worker: number[] };
   /** Where it was: element index, tag, attribute, page and worker value. */
   worst: string;
 }
 
-function compare(page: string, worker: string): GeometryReport {
+function compare(page: string, worker: string): Omit<GeometryReport, 'type'> {
   const a = shapes(page);
   const b = shapes(worker);
   let structure: string | null =
@@ -143,10 +148,40 @@ declare global {
   }
 }
 
+let draws = 0;
+
+/** Mermaid on this page, in a host styled as the app's diagram box. */
+async function drawHere(code: string, theme: MermaidTheme, width: number) {
+  const host = document.createElement('div');
+  host.className = 'font-normal leading-normal';
+  Object.assign(host.style, {
+    height: '0',
+    left: '0',
+    overflow: 'hidden',
+    position: 'fixed',
+    top: '0',
+    visibility: 'hidden',
+    width: `${width}px`,
+  });
+  document.body.append(host);
+  try {
+    return await drawMermaid(code, theme, host, {
+      id: `mmp-${++draws}`,
+      width,
+    });
+  } finally {
+    host.remove();
+  }
+}
+
 window.mermaidGeometry = async (code, theme, width) => {
-  // The worker first: the page's drawing then replaces it in the cache.
   const worker = await renderMermaid(code, theme, { width });
-  const page = await drawOnPage(code, theme, width);
-  return compare(page.svg, worker.svg);
+  // Through the same page pass as the worker's drawing, which drops what the
+  // app never shows (a C4 person's icon is an image).
+  const page = await forPage(await drawHere(code, theme, width));
+  return {
+    ...compare(page.svg, worker.svg),
+    type: mermaid.detectType(code.trim()),
+  };
 };
 document.body.dataset.ready = 'true';

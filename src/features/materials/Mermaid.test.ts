@@ -1,3 +1,4 @@
+import { parseHTML } from 'linkedom';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MERMAID_SOURCE_MAX } from './document';
 import {
@@ -7,7 +8,46 @@ import {
   warmMermaid,
 } from './Mermaid';
 
-afterEach(() => {
+// These tests run without a browser DOM: the page pass (forPage) gets
+// linkedom's document and a sanitizer that only parses, since what they check
+// is the worker's life, not sanitizing (mermaid-safety.spec.ts covers that).
+const { document } = parseHTML('<!doctype html><html><body></body></html>');
+vi.mock('dompurify', () => ({
+  default: {
+    sanitize(svg: string) {
+      const template = document.createElement('template');
+      template.innerHTML = svg;
+      return template.content;
+    },
+  },
+}));
+
+/** A stand-in for the Mermaid worker: keeps what it is sent and answers the
+ * latest request when the test says so. */
+class FakeWorker {
+  static started: FakeWorker[] = [];
+  onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  requests: { id: number }[] = [];
+  stopped = false;
+  constructor() {
+    FakeWorker.started.push(this);
+  }
+  postMessage(request: { id: number }) {
+    this.requests.push(request);
+  }
+  terminate() {
+    this.stopped = true;
+  }
+  answer(data: object) {
+    this.onmessage?.({ data: { id: this.requests.at(-1)?.id, ...data } });
+  }
+}
+
+afterEach(async () => {
+  // The idle timer ends the worker, so the next test starts its own.
+  if (vi.isFakeTimers()) await vi.runOnlyPendingTimersAsync();
+  FakeWorker.started = [];
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -32,62 +72,61 @@ it('refuses a source over MERMAID_SOURCE_MAX without drawing it', async () => {
   ).rejects.toMatchObject({ reason: 'tooLong' });
 });
 
-// Epo 2026-10-22: a render still running after 30 s stops, the worker with
-// it, and says the diagram is too large to draw on this device.
-it('stops a render still running at the time limit', async () => {
+// Epo 2026-10-22: a render still running 30 s after the worker starts
+// drawing it stops, the worker with it, and says the diagram is too large to
+// draw on this device. The clock waits while the worker loads mermaid
+// (review M1); the refusal is not cached and the next render starts a new
+// worker (review L5).
+it('stops a render 30 s after the worker starts drawing it', async () => {
   vi.useFakeTimers();
-  const stopped: unknown[] = [];
-  vi.stubGlobal(
-    'Worker',
-    class {
-      onerror = null;
-      onmessage = null;
-      postMessage() {
-        // Never answers: mermaid is still laying the diagram out.
-      }
-      terminate() {
-        stopped.push(this);
-      }
-    }
-  );
-  const render = renderMermaid('graph TD\n  slow --> layout');
-  const refused = expect(render).rejects.toMatchObject({ reason: 'tooLarge' });
+  vi.stubGlobal('Worker', FakeWorker);
+  vi.stubGlobal('document', document);
+  const code = 'graph TD\n  slow --> layout';
+  const refused = expect(renderMermaid(code)).rejects.toMatchObject({
+    reason: 'tooLarge',
+  });
+  // Still loading mermaid: no clock yet.
+  await vi.advanceTimersByTimeAsync(MERMAID_RENDER_LIMIT_MS);
+  const [first] = FakeWorker.started;
+  first?.answer({ started: true });
   await vi.advanceTimersByTimeAsync(MERMAID_RENDER_LIMIT_MS - 1);
-  expect(stopped).toHaveLength(0);
+  expect(first?.stopped).toBe(false);
   await vi.advanceTimersByTimeAsync(1);
   await refused;
-  expect(stopped).toHaveLength(1);
+  expect(first?.stopped).toBe(true);
+
+  const again = renderMermaid(code);
+  await vi.advanceTimersByTimeAsync(0);
+  const second = FakeWorker.started[1];
+  expect(second).toBeDefined();
+  second?.answer({ started: true });
+  second?.answer({
+    background: '#fff',
+    svg: '<svg></svg>',
+    type: 'flowchart-v2',
+  });
+  await expect(again).resolves.toMatchObject({ type: 'flowchart-v2' });
 });
 
 // Epo 2026-10-23: a diagram on the page starts the worker at idle; the
 // first draw then goes to that worker instead of starting another.
 it('draws in the worker the warm-up started', async () => {
   vi.useFakeTimers();
-  const started: { posted: number }[] = [];
-  vi.stubGlobal(
-    'Worker',
-    class {
-      onerror = null;
-      onmessage = null;
-      posted = 0;
-      constructor() {
-        started.push(this);
-      }
-      postMessage() {
-        this.posted++;
-      }
-      terminate() {
-        // The time limit below ends the draw.
-      }
-    }
-  );
+  vi.stubGlobal('Worker', FakeWorker);
+  vi.stubGlobal('document', document);
   warmMermaid();
   warmMermaid();
-  expect(started).toHaveLength(1);
-  const render = renderMermaid('graph TD\n  warm --> start');
-  const refused = expect(render).rejects.toMatchObject({ reason: 'tooLarge' });
-  await vi.advanceTimersByTimeAsync(MERMAID_RENDER_LIMIT_MS);
-  await refused;
-  expect(started).toHaveLength(1);
-  expect(started[0]?.posted).toBe(1);
+  expect(FakeWorker.started).toHaveLength(1);
+  const drawn = renderMermaid('graph TD\n  warm --> start');
+  await vi.advanceTimersByTimeAsync(0);
+  const [warm] = FakeWorker.started;
+  warm?.answer({ started: true });
+  warm?.answer({
+    background: '#fff',
+    svg: '<svg></svg>',
+    type: 'flowchart-v2',
+  });
+  await drawn;
+  expect(FakeWorker.started).toHaveLength(1);
+  expect(warm?.requests).toHaveLength(1);
 });

@@ -54,6 +54,10 @@ test('diagrams that reference an outside resource load nothing from it', async (
   await page.waitForTimeout(500);
 
   expect(requested.filter((path) => path !== '/control.png')).toEqual([]);
+  // Security regression: a label's `<style>` styles nothing (review H1).
+  expect(
+    await page.evaluate(() => getComputedStyle(document.body).outlineStyle)
+  ).toBe('none');
 
   // Ordinary diagrams still draw their text.
   await expect(page.locator('[data-case="flowchart"] svg')).toContainText(
@@ -101,7 +105,8 @@ test('diagrams that reference an outside resource load nothing from it', async (
 // a worker answering scripts, handlers, images and a script link gets none
 // of them into the page, and its links still open in a new tab.
 // Security regression: fails with forPage's DOMPurify pass (Mermaid.tsx)
-// removed.
+// removed, with its removal of label stylesheets removed (review H1), or
+// with form controls allowed (review L6).
 test("the page sanitizes the worker's SVG before inserting it", async ({
   page,
   context,
@@ -121,6 +126,8 @@ test("the page sanitizes the worker's SVG before inserting it", async ({
   await expect(box.locator('svg')).toContainText('hostile');
   await page.waitForTimeout(500);
   const found = await box.evaluate((element) => ({
+    controls: element.querySelectorAll('form, input, textarea, select, button')
+      .length,
     handlers: [...element.querySelectorAll('*')].flatMap((node) =>
       [...node.attributes]
         .map((attribute) => attribute.name)
@@ -132,11 +139,16 @@ test("the page sanitizes the worker's SVG before inserting it", async ({
       target: a.getAttribute('target'),
     })),
     loaders: element.querySelectorAll('script, img, image').length,
+    outline: getComputedStyle(document.body).outlineStyle,
     pwned: 'pwned' in window,
+    styles: element.querySelectorAll('style').length,
   }));
   expect(found.handlers).toEqual([]);
   expect(found.loaders).toBe(0);
   expect(found.pwned).toBe(false);
+  expect(found.styles).toBe(0);
+  expect(found.outline).toBe('none');
+  expect(found.controls).toBe(0);
   expect(requested).toEqual([]);
   for (const link of found.links) {
     expect(link.href).not.toMatch(/javascript:/i);

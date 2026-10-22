@@ -1,22 +1,30 @@
 /** Why a diagram could not be drawn: the source line mermaid blamed, or none
  * when the failure names no line (an unknown diagram type, a render error);
- * a limit it ran into has its own message. */
+ * a limit it ran into, or a type or browser it cannot draw in, has its own
+ * message. */
 export interface MermaidFailure {
   line: number | null;
-  reason?: MermaidLimit;
+  reason?: MermaidReason;
 }
 
-/** A source over `MERMAID_SOURCE_MAX`, more links than mermaid draws, or a
- * render still running at the time limit. */
-export type MermaidLimit = 'edges' | 'tooLarge' | 'tooLong';
+/** More links than mermaid draws, a browser whose worker cannot start, a
+ * render still running at the time limit, a source over
+ * `MERMAID_SOURCE_MAX`, or a type the worker does not draw (Epo
+ * 2026-10-23). */
+export type MermaidReason =
+  | 'edges'
+  | 'noWorker'
+  | 'tooLarge'
+  | 'tooLong'
+  | 'unsupported';
 
 /** mermaid's own `maxEdges`, past which it refuses ("Edge limit exceeded"). */
 export const MERMAID_EDGES_MAX = 500;
 
 /** A render refused before it ran, or stopped while it ran. */
-export class MermaidLimitError extends Error {
-  readonly reason: MermaidLimit;
-  constructor(reason: MermaidLimit) {
+export class MermaidReasonError extends Error {
+  readonly reason: MermaidReason;
+  constructor(reason: MermaidReason) {
     super(`mermaid ${reason}`);
     this.reason = reason;
   }
@@ -32,7 +40,7 @@ const EDGE_LIMIT = /Edge limit exceeded/i;
  * points one past the last line, so the line is clamped into the source.
  */
 export function mermaidFailure(error: unknown, code: string): MermaidFailure {
-  if (error instanceof MermaidLimitError)
+  if (error instanceof MermaidReasonError)
     return { line: null, reason: error.reason };
   const message = error instanceof Error ? error.message : String(error ?? '');
   if (EDGE_LIMIT.test(message)) return { line: null, reason: 'edges' };
