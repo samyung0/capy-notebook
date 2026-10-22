@@ -4,8 +4,8 @@ The read_skill description lists each skill with when to read it; the skill's
 text arrives as that tool's result, and later turns replay it from history
 (evidence.history_turns). A write that needs a skill is refused until the
 skill's text is in the request, which also catches a turn note or checkpoint
-that folded it away; the refusal carries the missing skills' text, so the
-resent write needs no read_skill.
+that folded it away; the refusal names the missing skills without their text
+(Epo 2026-10-20), so a write takes a read_skill first.
 """
 
 from __future__ import annotations
