@@ -4067,9 +4067,9 @@ async fn an_undo_too_large_for_the_room_is_not_offered() {
         edit.as_str(),
         "{receipt}"
     );
-    // A person's 480 KiB fits the room and leaves about 120 KiB, less than
-    // the 150 KB the Undo brings back.
-    type_at_start(&mut client, &"p".repeat(480 * 1024)).await;
+    // The removal freed its 150 KB; a person's 680 KiB fits the room after
+    // it and leaves about 66 KiB, less than the 150 KB the Undo brings back.
+    type_at_start(&mut client, &"p".repeat(680 * 1024)).await;
     source_receipt(&mut client, "filled")
         .await
         .expect("the person's text stored");
