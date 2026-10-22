@@ -153,6 +153,26 @@ pub fn office(command: &Command, touched: Touched) -> usize {
         // around the gap joins.
         Command::DeleteParagraph { .. } | Command::DeleteTable { .. } => (0, 1, 0),
         Command::DeleteSheet { .. } => (0, 0, 0),
+        // A shape's new text: each paragraph's run and mark; `touched` adds
+        // the story it wrote, formats included (read after it applied).
+        Command::SetShapeText { paragraphs, .. } => (
+            paragraphs.iter().map(|p| p.len() + 1).sum(),
+            2 * paragraphs.len() + 2,
+            0,
+        ),
+        // A new box: its shape entry (a few maps) and its text, as above.
+        Command::AddTextBox { paragraphs, .. } => (
+            paragraphs.iter().map(|p| p.len() + 1).sum(),
+            2 * paragraphs.len(),
+            12,
+        ),
+        // The slide itself is in `touched` (the engine reads it after the
+        // add: its layout's placeholders are not in the command); this is
+        // its id in the slide order.
+        Command::AddSlide { layout, .. } => (layout.as_ref().map_or(0, String::len), 1, 0),
+        // The slide's id moved in the slide order.
+        Command::MoveSlide { slide_id, .. } => (slide_id.len(), 2, 0),
+        Command::DeleteSlide { .. } => (0, 1, 0),
     };
     let size = |value: u64| usize::try_from(value).unwrap_or(usize::MAX);
     size(touched.content)
