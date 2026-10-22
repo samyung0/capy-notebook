@@ -11,6 +11,7 @@ import {
   startSourceTransfer,
   useSourceTransfers,
 } from './sourceTransfers';
+import { SOURCE_UPLOAD_CONCURRENCY } from './sourceUpload';
 import { transferStatus } from './transferStatus';
 
 const { del, get, post } = vi.hoisted(() => ({
@@ -44,7 +45,14 @@ const request = (name: string): LocalTransferRequest => ({
 afterEach(() => {
   resetSourceTransfers();
   userToast.mockReset();
+  vi.resetAllMocks();
 });
+
+/** An upload that runs until its signal aborts. */
+const runUntilAborted = ({ signal }: { signal: AbortSignal }) =>
+  new Promise<SourceFile>((_, reject) =>
+    signal.addEventListener('abort', () => reject(signal.reason))
+  );
 
 describe('source transfers', () => {
   it('sends every file after one fails and merges failures into one toast', async () => {
@@ -113,14 +121,14 @@ describe('source transfers', () => {
 
 describe('removing a row', () => {
   // Epo 2026-10-22: each row's remove cancels its upload and gives up its
-  // place in the gateway's line.
-  it('gives back the ticket of a file waiting in line', async () => {
+  // place in the gateway's line; its batch counts it as removed at once.
+  it('gives back the ticket of a file waiting in line as removed', async () => {
     post.mockResolvedValueOnce({ position: 2, ticketId: 'utk_wait' });
     get.mockImplementation(
       (_path: string, options: { signal: AbortSignal }) =>
         new Promise((_, reject) =>
           options.signal.addEventListener('abort', () =>
-            reject(new DOMException('aborted', 'AbortError'))
+            reject(options.signal.reason)
           )
         )
     );
@@ -147,12 +155,79 @@ describe('removing a row', () => {
     );
     removeSourceTransfer('waiting.pdf');
     await vi.waitFor(() =>
-      expect(del).toHaveBeenCalledWith('/uploads/tickets/utk_wait')
+      expect(del).toHaveBeenCalledWith(
+        '/uploads/tickets/utk_wait?reason=removed'
+      )
     );
     expect(useSourceTransfers.getState().transfers).toEqual([]);
     expect(send).not.toHaveBeenCalled();
+    // The ticket's give-back counts it; nothing else does.
+    expect(post).toHaveBeenCalledTimes(1);
     expect(userToast).not.toHaveBeenCalled();
   });
+
+  it('counts a file removed before it was sent as removed in its batch', async () => {
+    post.mockResolvedValue(undefined);
+    // Each started upload holds a ticket, whose give-back counts it.
+    const uploadSource = vi.fn(
+      (upload: {
+        onQueued: (position: number) => void;
+        signal: AbortSignal;
+      }) => {
+        upload.onQueued(1);
+        return runUntilAborted(upload);
+      }
+    );
+    const names = ['a.pdf', 'b.pdf', 'c.pdf', 'later.pdf'];
+    expect(names.length).toBe(SOURCE_UPLOAD_CONCURRENCY + 1);
+    startSourceTransfer({
+      importSources: vi.fn(),
+      local: names.map(request),
+      uploadSource: uploadSource as never,
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() =>
+      expect(uploadSource).toHaveBeenCalledTimes(SOURCE_UPLOAD_CONCURRENCY)
+    );
+    const { batchId } = uploadSource.mock.calls[0][0] as unknown as {
+      batchId: string;
+    };
+    // later.pdf waits for a.pdf's slot, so it starts, removed, only after
+    // a.pdf's give-up has run.
+    removeSourceTransfer('later.pdf');
+    removeSourceTransfer('a.pdf');
+    await vi.waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        `/workspaces/ws_1/sources/batches/${batchId}/removed`,
+        { source: 'upload', total: 4 }
+      )
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(uploadSource).toHaveBeenCalledTimes(SOURCE_UPLOAD_CONCURRENCY);
+    expect(userToast).not.toHaveBeenCalled();
+  });
+});
+
+// Safari before 17.4 has no AbortSignal.any; uploads must not need it.
+it('sends without AbortSignal.any', async () => {
+  const any = Object.getOwnPropertyDescriptor(AbortSignal, 'any');
+  Object.defineProperty(AbortSignal, 'any', {
+    configurable: true,
+    value: undefined,
+  });
+  try {
+    startSourceTransfer({
+      importSources: vi.fn(),
+      local: [request('old-safari.pdf')],
+      uploadSource: (async () => ({ id: 'f_1' }) as SourceFile) as never,
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().transfers[0]?.stage).toBe('added')
+    );
+  } finally {
+    if (any) Object.defineProperty(AbortSignal, 'any', any);
+  }
 });
 
 describe('transfer status', () => {

@@ -11,7 +11,7 @@ vi.mock('./client', async (load) => ({
   api: { del, get, post },
 }));
 
-import { uploadWithTicket } from './uploadTurn';
+import { uploadRemoved, uploadWithTicket } from './uploadTurn';
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -63,14 +63,37 @@ it('gives its ticket back when the upload is cancelled while it waits', async ()
   expect(del).toHaveBeenCalledWith('/uploads/tickets/utk_2');
 });
 
-it('gives its ticket back before a refused upload is retried', async () => {
-  post.mockResolvedValueOnce({ position: 0, ticketId: 'utk_3' });
-  const limited = new ApiError(429, 'Too Many Requests');
-  const send = vi.fn().mockRejectedValueOnce(limited);
+// Epo 2026-10-22: a file the user removed counts as removed in its batch.
+it('gives the ticket of a removed upload back as removed', async () => {
+  const controller = new AbortController();
+  post.mockResolvedValueOnce({ position: 3, ticketId: 'utk_4' });
+  get.mockImplementationOnce(() => {
+    controller.abort(uploadRemoved);
+    return Promise.reject(uploadRemoved);
+  });
   await expect(
-    uploadWithTicket('/workspaces/ws_1/sources/uploads', {}, send)
+    uploadWithTicket('/workspaces/ws_1/sources/uploads', {}, vi.fn(), {
+      signal: controller.signal,
+    })
+  ).rejects.toBe(uploadRemoved);
+  expect(del).toHaveBeenCalledWith('/uploads/tickets/utk_4?reason=removed');
+});
+
+it('gives its ticket back before a refused upload is retried', async () => {
+  post.mockResolvedValue({ position: 0, ticketId: 'utk_3' });
+  const limited = new ApiError(429, 'Too Many Requests');
+  const send = vi.fn().mockRejectedValue(limited);
+  await expect(
+    uploadWithTicket('/workspaces/ws_1/sources/uploads', {}, send, {
+      willRetry: true,
+    })
   ).rejects.toBe(limited);
   // Given back before the caller sees the refusal, so its retry's new
   // ticket never races the old one; the retry counts the file in its batch.
-  expect(del).toHaveBeenCalledWith('/uploads/tickets/utk_3?retry=1');
+  expect(del).toHaveBeenLastCalledWith('/uploads/tickets/utk_3?reason=retry');
+  // The last attempt's 429 is not retried: the file counts as failed.
+  await expect(
+    uploadWithTicket('/workspaces/ws_1/sources/uploads', {}, send)
+  ).rejects.toBe(limited);
+  expect(del).toHaveBeenLastCalledWith('/uploads/tickets/utk_3');
 });

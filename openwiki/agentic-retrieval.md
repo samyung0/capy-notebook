@@ -1932,7 +1932,7 @@ content is ready or it has taken the claim over itself.
 ### Upload and import notifications
 
 The actor gets one `system` notification per upload or import, never per file
-(`{"code":"source_batch","source":"upload"|"import","done","failed"}`, href
+(`{"code":"source_batch","source":"upload"|"import","done","failed","removed"}`, href
 `/workspaces/{id}`). A `source_batches` row (migration 0061) counts the batch:
 the browser sends `batchId` and `batchTotal` (files or picked items of one
 AddSourceDialog submission) with every upload reservation and every
@@ -1946,8 +1946,14 @@ and `failed` counts failed (`files.batch_id` is cleared, so a file counts
 once); an upload session expiring without a file (abandoned PUT, failed import)
 counts failed, as does an upload reservation or import request the handler
 refuses (other than the statuses the browser retries, 3 attempts in all: 429
-for uploads; network errors, 408, 429 and 5xx for imports; a request whose
-attempts run out is left to the idle sweep). The settle that reaches `total` writes the notification. The
+for uploads, whose last attempt gives its ticket back as failed; network
+errors, 408, 429 and 5xx for imports, where a request whose attempts run out
+is left to the idle sweep). A file the user removes from the transfer panel
+before the server hears of it, or while its ticket waits, counts removed
+(`source_batch_settle`'s removed count, migration 0107; see
+backend-storage-quota.md). The settle that reaches `total` writes the
+notification, which names failed and removed files only when there are any;
+a batch whose every file was removed closes without one. The
 API's `runSourceBatchWorker` polls every second: it closes batches idle for an
 hour (unsent or unsettled files count failed), then deletes notified rows and
 publishes their notifications to `notif:{userId}`.

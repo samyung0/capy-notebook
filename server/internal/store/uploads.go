@@ -81,6 +81,13 @@ func (s *Store) FailSourceBatchFile(ctx context.Context, id string) error {
 	return err
 }
 
+// RemoveSourceBatchFile counts a file the user removed before its upload
+// started as removed (Epo 2026-10-22).
+func (s *Store) RemoveSourceBatchFile(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `SELECT source_batch_settle($1, 0, 0, 1)`, id)
+	return err
+}
+
 // SourceBatchIdle closes batches idle this long, counting their unsettled files
 // as failed (tab closed, file never sent).
 const SourceBatchIdle = time.Hour
@@ -89,8 +96,8 @@ const SourceBatchIdle = time.Hour
 // notified: their rows are deleted and their notifications returned for the
 // live push. A late file of a deleted batch settles nothing.
 func (s *Store) SettleSourceBatches(ctx context.Context) ([]Notification, error) {
-	if _, err := s.pool.Exec(ctx, `SELECT source_batch_settle(id, 0, total-done-failed)
-		FROM (SELECT id, total, done, failed FROM source_batches
+	if _, err := s.pool.Exec(ctx, `SELECT source_batch_settle(id, 0, total-done-failed-removed)
+		FROM (SELECT id, total, done, failed, removed FROM source_batches
 			WHERE notified_at IS NULL AND updated_at < now() - make_interval(secs => $1)
 			ORDER BY updated_at LIMIT 100) idle`, SourceBatchIdle.Seconds()); err != nil {
 		return nil, err

@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
@@ -226,6 +227,49 @@ func (a *api) failSourceBatchFile(ctx context.Context, batchID string) {
 	if err := a.s.FailSourceBatchFile(context.WithoutCancel(ctx), batchID); err != nil {
 		log.Printf("count refused source in batch %s: %v", batchID, err)
 	}
+}
+
+func (a *api) removeSourceBatchFile(ctx context.Context, batchID string) {
+	if err := a.s.RemoveSourceBatchFile(context.WithoutCancel(ctx), batchID); err != nil {
+		log.Printf("count removed source in batch %s: %v", batchID, err)
+	}
+}
+
+// removeUnsentSource counts a file that the user removed from the transfer
+// panel before its upload or import request was sent as removed in its batch
+// (Epo 2026-10-22), so the batch's notification neither waits for the idle
+// sweep nor calls the file failed. The batch opens here when none of its
+// files has reached the server yet.
+func (a *api) removeUnsentSource(w http.ResponseWriter, r *http.Request) {
+	if err := a.countRemovedSource(w, r); err != nil {
+		answerError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *api) countRemovedSource(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	wsID := id(r)
+	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+		return err
+	}
+	var body struct {
+		Source string `json:"source"`
+		Total  int    `json:"total"`
+	}
+	if err := readTicketMetadata(w, r, &body); err != nil {
+		return err
+	}
+	batch := chi.URLParam(r, "batchId")
+	if !batchIDPattern.MatchString(batch) || (body.Source != "upload" && body.Source != "import") ||
+		body.Total < 1 || body.Total > 10000 {
+		return huma.Error422UnprocessableEntity("validation failed")
+	}
+	if err := a.openSourceBatch(ctx, wsID, body.Source, batch, body.Total); err != nil {
+		return err
+	}
+	return a.s.RemoveSourceBatchFile(ctx, batch)
 }
 
 func errorStatus(err error) int {

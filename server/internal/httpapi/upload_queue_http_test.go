@@ -60,6 +60,16 @@ func batchNotified(t *testing.T, th thumbnailHarness, batch string) bool {
 	return notified
 }
 
+// batchFailedRemoved reads a batch's failed and removed counts.
+func batchFailedRemoved(t *testing.T, th thumbnailHarness, batch string) (failed, removed int) {
+	t.Helper()
+	if err := th.st.Pool().QueryRow(context.Background(),
+		`SELECT failed, removed FROM source_batches WHERE id=$1`, batch).Scan(&failed, &removed); err != nil {
+		t.Fatal(err)
+	}
+	return failed, removed
+}
+
 // pollTicket long-polls a ticket from the place last seen.
 func pollTicket(t *testing.T, th thumbnailHarness, id string, position int) *httptest.ResponseRecorder {
 	return doReq(t, th.h, http.MethodGet, fmt.Sprintf("/api/uploads/tickets/%s?position=%d", id, position), "u_owner", nil)
@@ -86,7 +96,7 @@ func uploadPDF(t *testing.T, th thumbnailHarness, ws, ticket string, meta map[st
 // A user runs at most 4 uploads at once (Epo 2026-10-22): their 5th waits in
 // line while another user's upload gets a free slot at once; its upload is
 // refused unread until its turn, and its poll answers as soon as one of the
-// user's uploads finishes.
+// user's uploads finishes (security regression: human backend-storage-quota 2026-10-22 upload limits).
 func TestUploadQueueHoldsAUsersFifthUploadWhileOthersRun(t *testing.T) {
 	httpapi.SetUploadQueueTimings(t, 30*time.Second, 30*time.Second, 10*time.Second)
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
@@ -212,10 +222,13 @@ func TestUploadsRefuseABadTicketUnread(t *testing.T) {
 
 // A small upload whose body is still trickling in past its deadline (30 s
 // plus its size at 100 KB/s, Epo 2026-10-22; the 30 s shortened here, the
-// 5-minute cap kept) is cut off with 408 upload_timeout and its reservation
-// released; this runs on a real server, whose connection takes the deadline.
+// 5-minute cap kept) is cut off with 408 upload_timeout, its reservation
+// released and its declared bytes back in the budget; this runs on a real
+// server, whose connection takes the deadline (security regression: human
+// backend-storage-quota 2026-10-22 upload limits).
 func TestUploadBodyIsCutOffAfterItsDeadline(t *testing.T) {
 	httpapi.SetUploadQueueTimings(t, 30*time.Second, 300*time.Millisecond, 25*time.Second)
+	httpapi.SetUploadBudget(t, 64<<10)
 	bucket := blob.NewMemory()
 	th := openThumbnailHarnessWith(t, bucket)
 	ws := uploadWorkspace(t, th)
@@ -267,11 +280,69 @@ func TestUploadBodyIsCutOffAfterItsDeadline(t *testing.T) {
 	if held, keys := leftovers(t, th, bucket, ws); held != 0 || len(keys) != 0 {
 		t.Fatalf("the cut-off upload left %d held sessions and objects %q", held, keys)
 	}
+	expectBudgetFree(t, th, ws, "the cut-off upload")
 }
 
-// A cancelled ticket gives up its place in line, or its turn's slot, to the
-// next ticket at once and counts as a failed file of its batch, unless it was
-// given back for a retry (?retry=1), which counts the file; only its owner can
+// expectBudgetFree checks that every declared byte of the budget is free: a
+// ticket for the whole budget gets its turn (the test shrinks the budget to
+// 64 KiB). The handler gives its bytes back as it returns, which may follow
+// its answer by a moment.
+func expectBudgetFree(t *testing.T, th thumbnailHarness, ws, after string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("full.pdf", "application/pdf", 64<<10))
+		expectStatus(t, rec, http.StatusCreated, "a ticket for the whole budget")
+		expectStatus(t, doReq(t, th.h, http.MethodDelete, "/api/uploads/tickets/"+turn.TicketID, "u_owner", nil),
+			http.StatusNoContent, "its give-back")
+		if turn.Position == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after %s the budget is not free: a whole-budget ticket waits at %d", after, turn.Position)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// Every way an upload ends gives its declared bytes back to the budget (Epo
+// 2026-10-22): one that finishes, one refused after it started (its metadata
+// differs from its ticket's) and a ticket given back; a cut-off one is in
+// TestUploadBodyIsCutOffAfterItsDeadline, a passed turn in the queue's own
+// tests (security regression: human backend-storage-quota 2026-10-22 upload
+// limits).
+func TestUploadBudgetIsReleasedWhenAnUploadEnds(t *testing.T) {
+	httpapi.SetUploadBudget(t, 64<<10)
+	th := openThumbnailHarnessWith(t, blob.NewMemory())
+	ws := uploadWorkspace(t, th)
+
+	meta := pdfMeta()
+	finished := ticketed(t, th.h, sourceUploads(ws), "u_owner", meta)
+	rec, _ := postForm(t, th.h, finished, "u_owner", metadataPart(t, meta),
+		formPart{name: "file", contentType: "application/pdf", body: []byte("%PDF-1.7")})
+	expectStatus(t, rec, http.StatusCreated, "the finished upload")
+	expectBudgetFree(t, th, ws, "a finished upload")
+
+	meta = pdfMeta()
+	refused := ticketed(t, th.h, sourceUploads(ws), "u_owner", meta)
+	other := maps.Clone(meta)
+	other["name"] = "other.pdf"
+	rec, _ = postForm(t, th.h, refused, "u_owner", metadataPart(t, other),
+		formPart{name: "file", contentType: "application/pdf", body: []byte("%PDF-1.7")})
+	expectStatus(t, rec, http.StatusBadRequest, "the upload unlike its ticket")
+	expectBudgetFree(t, th, ws, "a refused upload")
+
+	rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", pdfMeta())
+	expectStatus(t, rec, http.StatusCreated, "the ticket to give back")
+	expectStatus(t, doReq(t, th.h, http.MethodDelete, "/api/uploads/tickets/"+turn.TicketID, "u_owner", nil),
+		http.StatusNoContent, "its give-back")
+	expectBudgetFree(t, th, ws, "a given-back ticket")
+}
+
+// A cancelled ticket gives up its place in line, or its turn's share, to the
+// next ticket at once and counts as a failed file of its batch, or a removed
+// one (?reason=removed), unless it was given back for a retry
+// (?reason=retry), which counts the file; only its owner can
 // cancel or poll it (Epo 2026-10-22; security regression:
 // human backend-storage-quota 2026-10-22 upload queue).
 func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
@@ -279,7 +350,7 @@ func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 	ws := uploadWorkspace(t, th)
 	running, metas := fillUserSlots(t, th, ws)
 	first, firstMeta := waitingTicket(t, th, ws, 1)
-	second, _ := waitingTicket(t, th, ws, 2)
+	second, secondMeta := waitingTicket(t, th, ws, 2)
 	cancel := func(user, ticket string) int {
 		return doReq(t, th.h, http.MethodDelete, "/api/uploads/tickets/"+ticket, user, nil).Code
 	}
@@ -289,8 +360,11 @@ func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 	if poll := doReq(t, th.h, http.MethodGet, "/api/uploads/tickets/"+first, "u_other", nil); poll.Code != http.StatusGone {
 		t.Fatalf("another user's poll = %d, want 410", poll.Code)
 	}
+	if status := cancel("u_owner", first+"?reason=later"); status != http.StatusBadRequest {
+		t.Fatalf("a cancel with an unknown reason = %d, want 400", status)
+	}
 	// Given back for a retry (a 429), the file is left to the retry's ticket.
-	if status := cancel("u_owner", first+"?retry=1"); status != http.StatusNoContent || batchNotified(t, th, batchOf(firstMeta)) {
+	if status := cancel("u_owner", first+"?reason=retry"); status != http.StatusNoContent || batchNotified(t, th, batchOf(firstMeta)) {
 		t.Fatalf("cancel of a waiting ticket for a retry = %d (its batch must wait for the retry)", status)
 	}
 	if turn := polledTurn(t, pollTicket(t, th, second, -1)); turn.Position != 1 {
@@ -304,9 +378,59 @@ func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 	if turn := polledTurn(t, pollTicket(t, th, second, -1)); turn.Position != 0 {
 		t.Fatalf("after the cancelled turn the next ticket waits at %d", turn.Position)
 	}
+	// Removed by the user, the file counts as removed, not failed.
+	if status := cancel("u_owner", second+"?reason=removed"); status != http.StatusNoContent {
+		t.Fatalf("cancel of a removed file = %d", status)
+	}
+	if failed, removed := batchFailedRemoved(t, th, batchOf(secondMeta)); failed != 0 || removed != 1 {
+		t.Fatalf("a removed file's batch: failed=%d removed=%d, want 0 and 1", failed, removed)
+	}
 	rec, read := uploadPDF(t, th, ws, running[0], metas[0])
 	if rec.Code != http.StatusGone || read.read != 0 {
 		t.Fatalf("an upload with a cancelled ticket: %d, read %d bytes", rec.Code, read.read)
+	}
+}
+
+// A file the user removes from the transfer panel before its upload starts
+// counts at once as removed in its batch (Epo 2026-10-22, upload-limits
+// review M2): the call opens the batch when no file of it has reached the
+// server, the batch notifies as soon as its other files settle and reports
+// the file as removed, and only an editor of the workspace can count into it.
+func TestRemovedUnsentSourceCountsInItsBatch(t *testing.T) {
+	th := openThumbnailHarnessWith(t, blob.NewMemory())
+	ws := uploadWorkspace(t, th)
+	meta := pdfMeta()
+	meta["batchTotal"] = 2
+	batch := batchOf(meta)
+	remove := func(user string, body map[string]any) int {
+		return doReq(t, th.h, http.MethodPost, "/api/workspaces/"+ws+"/sources/batches/"+batch+"/removed", user, body).Code
+	}
+	submission := map[string]any{"source": "upload", "total": 2}
+	if status := remove("u_other", submission); status == http.StatusNoContent {
+		t.Fatalf("another user's removal = %d", status)
+	}
+	if status := remove("u_owner", map[string]any{"source": "drive", "total": 2}); status != http.StatusUnprocessableEntity {
+		t.Fatalf("a removal naming no source kind = %d, want 422", status)
+	}
+	if status := remove("u_owner", submission); status != http.StatusNoContent {
+		t.Fatalf("the owner's removal = %d", status)
+	}
+	if failed, removed := batchFailedRemoved(t, th, batch); failed != 0 || removed != 1 || batchNotified(t, th, batch) {
+		t.Fatalf("after the removal: failed=%d removed=%d", failed, removed)
+	}
+	// The submission's other file gives up its ticket: the batch notifies.
+	rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", meta)
+	expectStatus(t, rec, http.StatusCreated, "the other file's ticket")
+	expectStatus(t, doReq(t, th.h, http.MethodDelete, "/api/uploads/tickets/"+turn.TicketID, "u_owner", nil),
+		http.StatusNoContent, "its give-up")
+	var data struct{ Done, Failed, Removed int }
+	var raw []byte
+	if err := th.st.Pool().QueryRow(context.Background(), `SELECT n.data FROM notifications n
+		JOIN source_batches b ON b.notification_id=n.id WHERE b.id=$1`, batch).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &data); err != nil || data != (struct{ Done, Failed, Removed int }{0, 1, 1}) {
+		t.Fatalf("the notification = %s", raw)
 	}
 }
 

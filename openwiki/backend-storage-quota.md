@@ -354,33 +354,41 @@ gates in a rolled-back transaction (`AssertSourceUploadRoom`: the uploader's
 account and storage and the workspace's file cap; `AssertEditorAssetRoom`:
 the scope's locks and the payer's storage), so an upload that would be
 refused never waits. The reservation itself still happens when the upload
-starts, and gates again; a ticket holds none. At most 32 uploads run at once,
-and at most 4 of one user's, counting their held turns (Epo 2026-10-22): a
-ticket that finds a free slot with its user under 4 answers
+starts, and gates again; a ticket holds none. Running uploads share a
+budget of 1 GB of declared size, the temp disk their bodies spool to; at most
+256 run at once, a sanity bound on connections, and at most 4 of one user's
+(Epo 2026-10-22). Held turns count as running. A ticket whose file fits the
+budget, whose user is under 4 and that no blocking ticket holds back answers
 `{ticketId, position: 0}` (its turn), else it waits with its place (1 is
-next). A freed slot goes to the oldest waiting ticket whose user is under 4,
-so one user's fifth file waits while other users' files run. The line holds 128 waiting tickets
+next). Freed bytes go to the line oldest first: a ticket whose user is at 4
+is passed by, so one user's fifth file waits while other users' files run,
+and a file that does not fit is passed by smaller ones that do until it has
+waited 30 s; from then on it blocks every file behind it until it fits, so
+small files cannot starve a big one. There is no minimum send rate: the
+size-scaled body deadline and the 4 per user bound a slow upload. The line holds 128 waiting tickets
 and 20 of one user's; past either the ticket is refused with a typed 503,
 `upload_queue_full` (busy, try again). The browser long-polls
 `GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
 turn comes, when the ticket's place differs from N but no sooner than 2 s
 after the ask (so a fast line costs a browser one poll per 2 s, inside the
 per-user rate limit), and otherwise after 25 s, under Cloudflare's 100 s. A
-turn holds its slot for 30 s; an upload that has not started by then passes
-the slot to the next ticket, and its own upload is refused. When waiting or
+turn holds its bytes for 30 s; an upload that has not started by then passes
+them to the line, and its own upload is refused. When waiting or
 the upload fails in the browser (a cancel, the row's remove button, a closed
 editor or dialog, or a 429 the browser retries with a new ticket), it gives
 the ticket back with `DELETE /api/uploads/tickets/{id}` (its owner only),
-which hands the ticket's place, or its turn's slot, to the next ticket at
+which hands the ticket's place, or its turn's bytes, to the line at
 once. A source ticket given back counts at once as a failed file of its
-batch, except a retry's (`?retry=1`), which settles nothing: the retry counts
-the file. Giving back a ticket the upload already spent is a
+batch, or as a removed one when the user removed its row (`?reason=removed`);
+a retry's (`?reason=retry`, sent only when the browser will retry the 429,
+not after its last attempt) settles nothing: the retry counts the file. Any
+other reason is a 400. Giving back a ticket the upload already spent is a
 harmless 410. An abandoned tab sends nothing, and its ticket waits for its
 turn to pass. The upload carries
 `?ticket=` and is refused before its body is read when the ticket is missing,
 unknown, another user's or another route's, spent, given back or passed
 (410 `upload_ticket_gone`, which the browser shows as "Your turn to upload
-passed. Try again."), or still waiting (409). Its slot frees when the upload request ends. The upload has
+passed. Try again."), or still waiting (409). Its bytes go back to the budget when the upload request ends, however it ends (finished, cut off or refused). The upload has
 30 s plus its declared size at 100 KB/s, at most 5 minutes, from the
 gateway's first read of its body to send it (`bodyDeadline`, Epo 2026-10-22:
 a 1 MB file 40 s, a 30 MiB file the full 5 minutes; the connection's read
@@ -396,10 +404,18 @@ overlapping old container issued). A source ticket whose turn passes counts at
 once as a failed file of its batch, so the batch's notification does not wait
 for the idle sweep (`SourceBatchIdle`, 1 h). The transfer panel shows a waiting file as "Waiting to upload (position
 N)"; an editor asset's placeholder waits without a place. Each panel row has
-a remove button (Epo 2026-10-22, `removeSourceTransfer`): a file not yet
-sent is never sent (it asks for no ticket, and its batch waits for the idle
-sweep), a waiting one gives its ticket back and a running upload is aborted.
-An import the server already queued keeps going; only its row goes.
+a remove button (Epo 2026-10-22, `removeSourceTransfer`), labelled "Remove"
+while the file waits or uploads and "Hide" once it is finished or importing.
+A file not yet sent is never sent: it asks for no ticket and counts at once
+as removed in its batch with
+`POST /api/workspaces/{id}/sources/batches/{batchId}/removed`
+(`{source, total}`, an editor of the workspace only; it opens the batch when
+none of its files has reached the server, and a batch id held by another
+submission is a 409). A waiting one gives its ticket back as removed, and a
+running upload is aborted, which the gateway counts as failed. So the batch's
+notification no longer waits for the idle sweep, and it reports removed files
+as removed. An import the server already queued keeps going; only its row
+goes.
 
 A drive import keeps its own completion (`internalCompleteSourceImport`): the
 import worker writes an `incoming/` object, and the gateway checks its size and

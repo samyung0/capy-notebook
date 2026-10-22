@@ -9,6 +9,7 @@ import type {
   SourceFile,
   SourceImportAcceptedResponse,
 } from '@/api/types';
+import { uploadRemoved } from '@/api/uploadTurn';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
@@ -122,12 +123,13 @@ export function dismissSourceTransfers() {
   useSourceTransfers.setState({ transfers: [] });
 }
 
-/** Removes one row (Epo 2026-10-22): a file not yet sent is never sent, an
- * upload in flight is aborted, and one waiting in the gateway's line gives
- * its ticket back, so its place goes to the next file. An import already
- * queued on the server keeps going; only the row goes. */
+/** Removes one row (Epo 2026-10-22): a file not yet sent is never sent and
+ * counts as removed in its batch at once, one waiting in the gateway's line
+ * gives its ticket back as removed, so its place goes to the next file, and
+ * an upload in flight is aborted (the gateway counts it failed). An import
+ * already queued on the server keeps going, and a finished row only hides. */
 export function removeSourceTransfer(key: string) {
-  rowAborts.get(key)?.abort();
+  rowAborts.get(key)?.abort(uploadRemoved);
   useSourceTransfers.setState((state) => ({
     transfers: state.transfers.filter((transfer) => transfer.key !== key),
   }));
@@ -250,12 +252,17 @@ export function startSourceTransfer(start: StartTransfer) {
   const controller = new AbortController();
   const { signal } = controller;
   running.add(controller);
-  for (const request of requests)
-    rowAborts.set(request.key, new AbortController());
-  /** A row's transfer stops with the whole transfer or its own remove. */
+  // A row's transfer stops with the whole transfer or its own remove (a
+  // listener rather than AbortSignal.any, which Safari has only from 17.4).
+  for (const request of requests) {
+    const row = new AbortController();
+    signal.addEventListener('abort', () => row.abort(signal.reason), {
+      once: true,
+    });
+    rowAborts.set(request.key, row);
+  }
   function rowSignal(key: string) {
-    const row = rowAborts.get(key);
-    return row ? AbortSignal.any([signal, row.signal]) : signal;
+    return rowAborts.get(key)?.signal ?? signal;
   }
   const toastFailure = failureToast(
     `source-transfer-failed-${crypto.randomUUID()}`
@@ -280,6 +287,17 @@ export function startSourceTransfer(start: StartTransfer) {
 
   // One notification batch for the whole submission.
   const batchId = crypto.randomUUID();
+  /** Counts a file the user removed before the server heard of it as removed
+   * in the batch, so its notification does not wait for the idle sweep. */
+  function countRemoved(cancel: AbortSignal) {
+    if (cancel.reason !== uploadRemoved) return;
+    api
+      .post(`/workspaces/${workspaceId}/sources/batches/${batchId}/removed`, {
+        source: start.local ? 'upload' : 'import',
+        total: requests.length,
+      })
+      .catch(() => undefined);
+  }
   let unsent = requests.length;
   function sent() {
     unsent -= 1;
@@ -311,12 +329,18 @@ export function startSourceTransfer(start: StartTransfer) {
         SOURCE_UPLOAD_CONCURRENCY,
         async (request) => {
           const cancel = rowSignal(request.key);
+          // Whether the server holds a ticket for the current attempt, whose
+          // give-back then counts a removed file.
+          let ticketed = false;
           try {
-            // Removed before its turn to send: nothing to cancel.
-            if (cancel.aborted) return;
+            if (cancel.aborted) {
+              countRemoved(cancel);
+              return;
+            }
             patchTransfer(request.key, { stage: 'uploading' });
-            const file = await withUploadRetry(() =>
-              start.uploadSource({
+            const file = await withUploadRetry((willRetry) => {
+              ticketed = false;
+              return start.uploadSource({
                 batchId,
                 batchTotal: requests.length,
                 chapterId: request.chapterId,
@@ -324,15 +348,18 @@ export function startSourceTransfer(start: StartTransfer) {
                 estimatedCreditMicros: request.estimatedCreditMicros,
                 file: request.file,
                 kind: request.kind,
-                onQueued: (queuePosition) =>
-                  patchTransfer(request.key, { queuePosition }),
+                onQueued: (queuePosition) => {
+                  ticketed = true;
+                  patchTransfer(request.key, { queuePosition });
+                },
                 onUploadProgress: (uploadPct) =>
                   patchTransfer(request.key, { uploadPct }),
                 pageCount: request.pageCount,
                 parseMode: request.parseMode,
                 signal: cancel,
-              })
-            );
+                willRetry,
+              });
+            });
             patchTransfer(request.key, {
               fileId: file.id,
               stage: 'added',
@@ -342,6 +369,7 @@ export function startSourceTransfer(start: StartTransfer) {
               waits.push(waitForFileTerminal(workspaceId, file.id, signal));
             }
           } catch (error) {
+            if (!ticketed) countRemoved(cancel);
             fail(request.key, request.name, error);
           } finally {
             sent();
@@ -395,6 +423,7 @@ export function startSourceTransfer(start: StartTransfer) {
         async (request) => {
           const cancel = rowSignal(request.key);
           if (cancel.aborted) {
+            countRemoved(cancel);
             sent();
             return;
           }
