@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import type { SourceFile } from '@/api/types';
+import { uploadWithTicket } from '@/api/uploadTurn';
 import { m } from '@/i18n';
 import {
   type LocalTransferRequest,
+  removeSourceTransfer,
   resetSourceTransfers,
   type SourceTransfer,
   startSourceTransfer,
@@ -11,6 +13,15 @@ import {
 } from './sourceTransfers';
 import { transferStatus } from './transferStatus';
 
+const { del, get, post } = vi.hoisted(() => ({
+  del: vi.fn(),
+  get: vi.fn(),
+  post: vi.fn(),
+}));
+vi.mock('@/api/client', async (load) => {
+  const client = await load<typeof import('@/api/client')>();
+  return { ...client, api: { ...client.api, del, get, post } };
+});
 vi.mock('@/api/auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/auth')>()),
   USE_MSW: true,
@@ -97,6 +108,50 @@ describe('source transfers', () => {
       ].join('\n'),
       title: m.source_transfer_failed_many({ count: 2 }),
     });
+  });
+});
+
+describe('removing a row', () => {
+  // Epo 2026-10-22: each row's remove cancels its upload and gives up its
+  // place in the gateway's line.
+  it('gives back the ticket of a file waiting in line', async () => {
+    post.mockResolvedValueOnce({ position: 2, ticketId: 'utk_wait' });
+    get.mockImplementation(
+      (_path: string, options: { signal: AbortSignal }) =>
+        new Promise((_, reject) =>
+          options.signal.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          )
+        )
+    );
+    del.mockResolvedValue(undefined);
+    const send = vi.fn();
+    startSourceTransfer({
+      importSources: vi.fn(),
+      local: [request('waiting.pdf')],
+      uploadSource: (({
+        onQueued,
+        signal,
+      }: {
+        onQueued: (position: number) => void;
+        signal: AbortSignal;
+      }) =>
+        uploadWithTicket('/workspaces/ws_1/sources/uploads', {}, send, {
+          onQueued,
+          signal,
+        })) as never,
+      workspaceId: 'ws_1',
+    });
+    await vi.waitFor(() =>
+      expect(useSourceTransfers.getState().transfers[0]?.queuePosition).toBe(2)
+    );
+    removeSourceTransfer('waiting.pdf');
+    await vi.waitFor(() =>
+      expect(del).toHaveBeenCalledWith('/uploads/tickets/utk_wait')
+    );
+    expect(useSourceTransfers.getState().transfers).toEqual([]);
+    expect(send).not.toHaveBeenCalled();
+    expect(userToast).not.toHaveBeenCalled();
   });
 });
 

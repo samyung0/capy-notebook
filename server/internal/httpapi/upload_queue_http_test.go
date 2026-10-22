@@ -20,12 +20,12 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 )
 
-// fillUploadSlots takes the 32 tickets the gateway runs at once (Epo
-// 2026-10-22); each turn holds its slot until it is used or passes. It
-// returns the tickets and the metadata each was issued for.
-func fillUploadSlots(t *testing.T, th thumbnailHarness, ws string) (tickets []string, metas []map[string]any) {
+// fillUserSlots takes the 4 tickets one user runs at once (Epo 2026-10-22);
+// each turn holds its slot until it is used or passes. It returns the
+// tickets and the metadata each was issued for.
+func fillUserSlots(t *testing.T, th thumbnailHarness, ws string) (tickets []string, metas []map[string]any) {
 	t.Helper()
-	for range 32 {
+	for range 4 {
 		ticket, meta := waitingTicket(t, th, ws, 0)
 		tickets, metas = append(tickets, ticket), append(metas, meta)
 	}
@@ -83,18 +83,24 @@ func uploadPDF(t *testing.T, th thumbnailHarness, ws, ticket string, meta map[st
 		metadataPart(t, meta), formPart{name: "file", contentType: "application/pdf", body: body})
 }
 
-// Past 32 uploads at once, the next ticket waits in line; its upload is
-// refused unread until its turn, and its poll answers as soon as a finished
-// upload frees a slot (Epo 2026-10-22).
-func TestUploadQueueRunsThirtyTwoAndQueuesTheRest(t *testing.T) {
-	httpapi.SetUploadQueueTimings(t, 30*time.Second, 5*time.Minute, 10*time.Second)
+// A user runs at most 4 uploads at once (Epo 2026-10-22): their 5th waits in
+// line while another user's upload gets a free slot at once; its upload is
+// refused unread until its turn, and its poll answers as soon as one of the
+// user's uploads finishes.
+func TestUploadQueueHoldsAUsersFifthUploadWhileOthersRun(t *testing.T) {
+	httpapi.SetUploadQueueTimings(t, 30*time.Second, 30*time.Second, 10*time.Second)
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
-	running, metas := fillUploadSlots(t, th, ws)
+	running, metas := fillUserSlots(t, th, ws)
 	waitingMeta := pdfMeta()
 	rec, waiting := takeTicket(t, th.h, sourceUploads(ws), "u_owner", waitingMeta)
 	if rec.Code != http.StatusCreated || waiting.Position != 1 {
-		t.Fatalf("33rd ticket: %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("the 5th ticket: %d %s", rec.Code, rec.Body.String())
+	}
+	others := userWorkspace(t, th, "u_other")
+	if rec, turn := takeTicket(t, th.h, sourceUploads(others), "u_other", pdfMeta()); rec.Code != http.StatusCreated ||
+		turn.Position != 0 {
+		t.Fatalf("another user's ticket beside the 5th: %d %s", rec.Code, rec.Body.String())
 	}
 	early, read := uploadPDF(t, th, ws, waiting.TicketID, waitingMeta)
 	if early.Code != http.StatusConflict || read.read != 0 {
@@ -109,7 +115,7 @@ func TestUploadQueueRunsThirtyTwoAndQueuesTheRest(t *testing.T) {
 		t.Fatalf("the poll answered %+v after %v", turn, time.Since(asked))
 	}
 	next, _ := uploadPDF(t, th, ws, waiting.TicketID, waitingMeta)
-	expectStatus(t, next, http.StatusCreated, "the 33rd upload")
+	expectStatus(t, next, http.StatusCreated, "the 5th upload")
 }
 
 // A full line refuses the ticket as busy: a user holds at most 20 waiting
@@ -117,7 +123,7 @@ func TestUploadQueueRunsThirtyTwoAndQueuesTheRest(t *testing.T) {
 func TestUploadQueueRefusesAFullLine(t *testing.T) {
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
-	_, _ = fillUploadSlots(t, th, ws)
+	_, _ = fillUserSlots(t, th, ws)
 	for i := 1; i <= 20; i++ {
 		rec, turn := takeTicket(t, th.h, sourceUploads(ws), "u_owner", sourceMeta("notes.pdf", "application/pdf", 8))
 		if rec.Code != http.StatusCreated || turn.Position != i {
@@ -134,15 +140,15 @@ func TestUploadQueueRefusesAFullLine(t *testing.T) {
 // passed ticket's batch settles it as failed at once, and its upload is
 // refused unread (Epo 2026-10-22).
 func TestUploadTurnPassesOnWhenUnused(t *testing.T) {
-	// Long enough for the 33 tickets to be taken before the first turn passes.
-	httpapi.SetUploadQueueTimings(t, 2*time.Second, 5*time.Minute, 5*time.Second)
+	// Long enough for the 5 tickets to be taken before the first turn passes.
+	httpapi.SetUploadQueueTimings(t, 2*time.Second, 30*time.Second, 5*time.Second)
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
-	unused, metas := fillUploadSlots(t, th, ws)
+	unused, metas := fillUserSlots(t, th, ws)
 	waitingMeta := pdfMeta()
 	_, waiting := takeTicket(t, th.h, sourceUploads(ws), "u_owner", waitingMeta)
 	if waiting.Position != 1 {
-		t.Fatalf("33rd ticket waits at %d", waiting.Position)
+		t.Fatalf("the 5th ticket waits at %d", waiting.Position)
 	}
 	if turn := polledTurn(t, pollTicket(t, th, waiting.TicketID, 1)); turn.Position != 0 {
 		t.Fatalf("the waiting ticket is at %d after the turns passed", turn.Position)
@@ -204,9 +210,10 @@ func TestUploadsRefuseABadTicketUnread(t *testing.T) {
 	}
 }
 
-// An upload whose body is still arriving past its deadline (5 minutes, Epo
-// 2026-10-22) is cut off with 408 and its reservation released; this runs on
-// a real server, whose connection takes the deadline.
+// A small upload whose body is still trickling in past its deadline (30 s
+// plus its size at 100 KB/s, Epo 2026-10-22; the 30 s shortened here, the
+// 5-minute cap kept) is cut off with 408 upload_timeout and its reservation
+// released; this runs on a real server, whose connection takes the deadline.
 func TestUploadBodyIsCutOffAfterItsDeadline(t *testing.T) {
 	httpapi.SetUploadQueueTimings(t, 30*time.Second, 300*time.Millisecond, 25*time.Second)
 	bucket := blob.NewMemory()
@@ -214,7 +221,8 @@ func TestUploadBodyIsCutOffAfterItsDeadline(t *testing.T) {
 	ws := uploadWorkspace(t, th)
 	server := httptest.NewServer(th.h)
 	t.Cleanup(server.Close)
-	meta := sourceMeta("slow.pdf", "application/pdf", 1<<20)
+	// 8 KiB at 100 KB/s adds 82 ms to the shortened 300 ms.
+	meta := sourceMeta("slow.pdf", "application/pdf", 8<<10)
 	route := ticketed(t, th.h, sourceUploads(ws), "u_owner", meta)
 
 	body, sending := io.Pipe()
@@ -229,7 +237,7 @@ func TestUploadBodyIsCutOffAfterItsDeadline(t *testing.T) {
 			"Content-Type":        {"application/pdf"},
 		})
 		// A first slice of the file, then nothing: the browser stalls.
-		_, _ = part.Write(bytes.Repeat([]byte{'a'}, 4096))
+		_, _ = part.Write(bytes.Repeat([]byte{'a'}, 1024))
 	}()
 	req, err := http.NewRequest(http.MethodPost, server.URL+route, body)
 	if err != nil {
@@ -262,13 +270,14 @@ func TestUploadBodyIsCutOffAfterItsDeadline(t *testing.T) {
 }
 
 // A cancelled ticket gives up its place in line, or its turn's slot, to the
-// next ticket at once, and leaves its batch to the retry that cancelled it;
-// only its owner can cancel or poll it (Epo 2026-10-22; security regression:
+// next ticket at once and counts as a failed file of its batch, unless it was
+// given back for a retry (?retry=1), which counts the file; only its owner can
+// cancel or poll it (Epo 2026-10-22; security regression:
 // human backend-storage-quota 2026-10-22 upload queue).
 func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 	th := openThumbnailHarnessWith(t, blob.NewMemory())
 	ws := uploadWorkspace(t, th)
-	running, metas := fillUploadSlots(t, th, ws)
+	running, metas := fillUserSlots(t, th, ws)
 	first, firstMeta := waitingTicket(t, th, ws, 1)
 	second, _ := waitingTicket(t, th, ws, 2)
 	cancel := func(user, ticket string) int {
@@ -280,14 +289,17 @@ func TestUploadTicketCancelGivesUpItsPlace(t *testing.T) {
 	if poll := doReq(t, th.h, http.MethodGet, "/api/uploads/tickets/"+first, "u_other", nil); poll.Code != http.StatusGone {
 		t.Fatalf("another user's poll = %d, want 410", poll.Code)
 	}
-	if status := cancel("u_owner", first); status != http.StatusNoContent || batchNotified(t, th, batchOf(firstMeta)) {
-		t.Fatalf("cancel of a waiting ticket = %d (its batch must wait for the retry)", status)
+	// Given back for a retry (a 429), the file is left to the retry's ticket.
+	if status := cancel("u_owner", first+"?retry=1"); status != http.StatusNoContent || batchNotified(t, th, batchOf(firstMeta)) {
+		t.Fatalf("cancel of a waiting ticket for a retry = %d (its batch must wait for the retry)", status)
 	}
 	if turn := polledTurn(t, pollTicket(t, th, second, -1)); turn.Position != 1 {
 		t.Fatalf("after the cancel the next ticket waits at %d", turn.Position)
 	}
-	if status := cancel("u_owner", running[0]); status != http.StatusNoContent || batchNotified(t, th, batchOf(metas[0])) {
-		t.Fatalf("cancel of a turn = %d", status)
+	// Given up (the row removed, the upload cancelled), the file counts as
+	// failed at once (Epo 2026-10-22).
+	if status := cancel("u_owner", running[0]); status != http.StatusNoContent || !batchNotified(t, th, batchOf(metas[0])) {
+		t.Fatalf("cancel of a turn = %d (its batch must settle)", status)
 	}
 	if turn := polledTurn(t, pollTicket(t, th, second, -1)); turn.Position != 0 {
 		t.Fatalf("after the cancelled turn the next ticket waits at %d", turn.Position)

@@ -2866,6 +2866,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        audioMaxBytes:
+          format: int64
+          type: integer
         capabilities:
           $ref: "#/components/schemas/AccessCapabilities"
         chapterId:
@@ -2957,6 +2960,7 @@ components:
         - isOwner
         - capabilities
         - imageMaxBytes
+        - audioMaxBytes
       type: object
     MaterialAuthor:
       additionalProperties: false

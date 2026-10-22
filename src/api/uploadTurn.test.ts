@@ -71,6 +71,6 @@ it('gives its ticket back before a refused upload is retried', async () => {
     uploadWithTicket('/workspaces/ws_1/sources/uploads', {}, send)
   ).rejects.toBe(limited);
   // Given back before the caller sees the refusal, so its retry's new
-  // ticket never races the old one.
-  expect(del).toHaveBeenCalledWith('/uploads/tickets/utk_3');
+  // ticket never races the old one; the retry counts the file in its batch.
+  expect(del).toHaveBeenCalledWith('/uploads/tickets/utk_3?retry=1');
 });

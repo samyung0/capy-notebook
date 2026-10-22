@@ -12,27 +12,35 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// The gateway runs at most uploadSlots uploads at once (Epo 2026-10-22). An
-// upload first takes a ticket: a ticket that finds every slot taken waits in
+// The gateway runs at most uploadSlots uploads at once, and one user at most
+// uploadUserSlots of them (Epo 2026-10-22). An upload first takes a ticket: a
+// ticket that finds every slot taken, or its user at their share, waits in
 // line, and its browser long-polls its place until its turn comes. A turn
 // holds a slot for uploadTurnTTL; an upload that has not started by then
 // passes the slot to the next ticket. The line lives in this process, since
 // the API runs as one instance; a scaled-out API would need it in Redis. A
 // ticket holds what it was issued for (uploadClaim), and its upload must
-// match it. A source ticket whose turn passes settles as a failed file of its
-// batch at once; a cancelled one does not, since the browser cancels a ticket
-// it retries with a new one.
+// match it. A source ticket whose turn passes, or that the browser gives up,
+// settles as a failed file of its batch at once; one the browser retries with
+// a new ticket does not.
 const (
-	uploadSlots        = 32
+	uploadSlots = 32
+	// uploadUserSlots counts a user's running uploads and held turns.
+	uploadUserSlots    = 4
 	uploadQueueMax     = 128
 	uploadQueuePerUser = 20
+	// uploadBodyRate is the slowest an upload's body may arrive on average:
+	// 100 KB a second.
+	uploadBodyRate = 100_000
 )
 
 // Tests shorten these.
 var (
 	uploadTurnTTL = 30 * time.Second
-	// uploadBodyDeadline is how long an upload has to send its body, from
-	// the gateway's first read of it.
+	// An upload has uploadBodyBase plus its declared size at uploadBodyRate
+	// to send its body, from the gateway's first read of it, and never more
+	// than uploadBodyDeadline (bodyDeadline).
+	uploadBodyBase     = 30 * time.Second
 	uploadBodyDeadline = 5 * time.Minute
 	// uploadPollWait bounds a long poll well under Cloudflare's 100 s.
 	uploadPollWait = 25 * time.Second
@@ -101,6 +109,7 @@ type uploadTicket struct {
 type uploadQueue struct {
 	mu      sync.Mutex
 	free    int                      // slots neither uploading nor held by a turn
+	active  map[string]int           // each user's running uploads and held turns
 	line    []*uploadTicket          // waiting tickets, oldest first
 	tickets map[string]*uploadTicket // waiting and turn-holding tickets
 	moved   chan struct{}            // closed and replaced when the line moves
@@ -111,22 +120,24 @@ type uploadQueue struct {
 
 func newUploadQueue(settle func(batch string)) *uploadQueue {
 	return &uploadQueue{
-		free: uploadSlots, tickets: map[string]*uploadTicket{}, moved: make(chan struct{}), settle: settle,
+		free: uploadSlots, active: map[string]int{}, tickets: map[string]*uploadTicket{},
+		moved: make(chan struct{}), settle: settle,
 	}
 }
 
 func sourceUploadTarget(workspaceID string) string { return "sources:" + workspaceID }
 func editorAssetTarget(materialID string) string   { return "assets:" + materialID }
 
-// take gives user a ticket for target: its turn at once when a slot is free,
-// else a place in line, or uploadQueueFull when the line, or the user's
-// share of it, is full.
+// take gives user a ticket for target: its turn at once when a slot is free
+// and the user is under their share, else a place in line, or
+// uploadQueueFull when the line, or the user's share of it, is full.
 func (q *uploadQueue) take(user, target string, claim uploadClaim) (uploadTurn, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	t := &uploadTicket{id: randID("utk"), user: user, target: target, claim: claim}
-	// A free slot means nobody waits: every move grants the line first.
-	if q.free > 0 {
+	// Every move grants the line first, so whoever still waits beside a free
+	// slot is at their share: this ticket jumps nobody it could pass.
+	if q.free > 0 && q.active[user] < uploadUserSlots {
 		q.tickets[t.id] = t
 		q.grantLocked(t)
 		return uploadTurn{TicketID: t.id}, nil
@@ -151,6 +162,7 @@ func (q *uploadQueue) waitingLocked(user string) int {
 
 func (q *uploadQueue) grantLocked(t *uploadTicket) {
 	q.free--
+	q.active[t.user]++
 	t.turn = time.AfterFunc(uploadTurnTTL, func() { q.pass(t) })
 }
 
@@ -167,11 +179,12 @@ func (q *uploadQueue) pass(t *uploadTicket) {
 	}
 }
 
-// cancel drops the user's ticket whose upload the browser cancelled, or
+// cancel drops the user's ticket whose upload the browser gave up, or
 // retries with a new ticket, before it started: its place in line, or its
-// turn's slot, goes to the next ticket. Its batch is not settled: the retry
-// counts the file.
-func (q *uploadQueue) cancel(id, user string) error {
+// turn's slot, goes to the next ticket. A given-up source upload counts as a
+// failed file of its batch; a retried one does not, since its retry counts
+// it.
+func (q *uploadQueue) cancel(id, user string, retry bool) error {
 	q.mu.Lock()
 	t, ok := q.tickets[id]
 	if ok && t.user == user {
@@ -180,6 +193,9 @@ func (q *uploadQueue) cancel(id, user string) error {
 	q.mu.Unlock()
 	if !ok || t.user != user {
 		return uploadTicketGone()
+	}
+	if !retry && t.claim.batch != "" {
+		q.settle(t.claim.batch)
 	}
 	return nil
 }
@@ -190,23 +206,35 @@ func (q *uploadQueue) dropLocked(t *uploadTicket) {
 	delete(q.tickets, t.id)
 	if t.turn != nil {
 		t.turn.Stop()
-		q.free++
+		q.freeLocked(t.user)
 	} else {
 		q.line = slices.DeleteFunc(q.line, func(waiting *uploadTicket) bool { return waiting == t })
 	}
 	q.advanceLocked()
 }
 
-// advanceLocked grants free slots to the line, oldest first, and wakes the
-// polls.
+// advanceLocked grants free slots to the line, oldest first, passing over
+// tickets whose user is at their share, and wakes the polls.
 func (q *uploadQueue) advanceLocked() {
-	for q.free > 0 && len(q.line) > 0 {
-		next := q.line[0]
-		q.line = q.line[1:]
+	for i := 0; q.free > 0 && i < len(q.line); {
+		next := q.line[i]
+		if q.active[next.user] >= uploadUserSlots {
+			i++
+			continue
+		}
+		q.line = slices.Delete(q.line, i, i+1)
 		q.grantLocked(next)
 	}
 	close(q.moved)
 	q.moved = make(chan struct{})
+}
+
+// freeLocked gives back a slot user held, by a turn or an upload.
+func (q *uploadQueue) freeLocked(user string) {
+	q.free++
+	if q.active[user]--; q.active[user] == 0 {
+		delete(q.active, user)
+	}
 }
 
 // start spends a ticket whose turn has come on its upload, before the
@@ -226,14 +254,21 @@ func (q *uploadQueue) start(id, user, target string) (claim uploadClaim, release
 	t.turn.Stop()
 	delete(q.tickets, id)
 	var once sync.Once
-	return t.claim, func() { once.Do(q.release) }, nil
+	return t.claim, func() { once.Do(func() { q.release(user) }) }, nil
 }
 
-func (q *uploadQueue) release() {
+func (q *uploadQueue) release(user string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.free++
+	q.freeLocked(user)
 	q.advanceLocked()
+}
+
+// bodyDeadline is how long an upload of size bytes has to send its body (Epo
+// 2026-10-22): uploadBodyBase plus the size at uploadBodyRate, at most
+// uploadBodyDeadline, so a slow trickle cannot hold a slot for long.
+func bodyDeadline(size int64) time.Duration {
+	return min(uploadBodyBase+time.Duration(size)*time.Second/uploadBodyRate, uploadBodyDeadline)
 }
 
 // wait answers a ticket's poll once its place differs from known (no sooner
@@ -308,9 +343,11 @@ func (a *api) waitUploadTicket(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, turn)
 }
 
-// cancelUploadTicket gives up the caller's ticket whose upload was cancelled.
+// cancelUploadTicket gives up the caller's ticket whose upload was cancelled;
+// ?retry=1 says the browser retries the file with a new ticket.
 func (a *api) cancelUploadTicket(w http.ResponseWriter, r *http.Request) {
-	if err := a.uploads.cancel(chi.URLParam(r, "ticketId"), uid(r)); err != nil {
+	retry := r.URL.Query().Get("retry") == "1"
+	if err := a.uploads.cancel(chi.URLParam(r, "ticketId"), uid(r), retry); err != nil {
 		answerError(w, r, err)
 		return
 	}

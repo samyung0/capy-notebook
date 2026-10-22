@@ -63,7 +63,7 @@ var keyExtensionPattern = regexp.MustCompile(`^\.[a-z0-9]{1,11}$`)
 // "file", is its bytes. The gateway reserves the payer's storage, spools and
 // hashes the bytes, writes them to their final key in one bounded PUT and
 // finalizes the row, all in that request. The request carries a ticket whose
-// turn has come (upload_queue.go) and has uploadBodyDeadline to send its body.
+// turn has come (upload_queue.go) and has bodyDeadline to send its body.
 
 // uploadMetadataMaxBytes bounds the metadata part and the multipart framing
 // around the file part.
@@ -85,12 +85,12 @@ type uploadBody struct {
 	conn *http.ResponseController
 }
 
-// readUploadMetadata starts the body's clock, decodes the metadata part into
-// v and returns the body positioned for the file part. The caller has capped
-// r.Body.
-func readUploadMetadata(w http.ResponseWriter, r *http.Request, v any) (*uploadBody, error) {
+// readUploadMetadata starts the body's clock (bodyDeadline of the declared
+// size its ticket names), decodes the metadata part into v and returns the
+// body positioned for the file part. The caller has capped r.Body.
+func readUploadMetadata(w http.ResponseWriter, r *http.Request, size int64, v any) (*uploadBody, error) {
 	conn := http.NewResponseController(w)
-	if err := conn.SetReadDeadline(time.Now().Add(uploadBodyDeadline)); err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(bodyDeadline(size))); err != nil {
 		return nil, err
 	}
 	form, err := r.MultipartReader()
@@ -201,7 +201,7 @@ func bodyError(err error, msg string) error {
 		return &huma.ErrorModel{
 			Status: http.StatusRequestTimeout,
 			Title:  http.StatusText(http.StatusRequestTimeout),
-			Detail: "the upload took longer than 5 minutes to send",
+			Detail: "the upload took too long to send",
 			Errors: []*huma.ErrorDetail{{Message: "upload_timeout"}},
 		}
 	}

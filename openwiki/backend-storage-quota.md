@@ -131,7 +131,10 @@ uploaded as a source takes the source cap, not the image cap. They follow the
 **uploader's** plan, create-only (no retroactive invalidation): **10 MiB**
 free, **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy` returns the caller's own cap, which
-the dialog enforces. Uploads stream through the API host, which Cloudflare
+the dialog enforces before it asks for a ticket. The material response
+carries its payer's editor caps as `imageMaxBytes` and `audioMaxBytes`, which
+`uploadEditorAsset` checks the same way (Epo 2026-10-22); the server keeps
+its own checks. Uploads stream through the API host, which Cloudflare
 proxies with a 100 MB request body limit; the 30 MiB largest per-file cap stays
 well under it.
 
@@ -351,9 +354,12 @@ gates in a rolled-back transaction (`AssertSourceUploadRoom`: the uploader's
 account and storage and the workspace's file cap; `AssertEditorAssetRoom`:
 the scope's locks and the payer's storage), so an upload that would be
 refused never waits. The reservation itself still happens when the upload
-starts, and gates again; a ticket holds none. At most 32 uploads run at once:
-a ticket that finds a free slot answers `{ticketId, position: 0}` (its turn),
-else it waits with its place (1 is next). The line holds 128 waiting tickets
+starts, and gates again; a ticket holds none. At most 32 uploads run at once,
+and at most 4 of one user's, counting their held turns (Epo 2026-10-22): a
+ticket that finds a free slot with its user under 4 answers
+`{ticketId, position: 0}` (its turn), else it waits with its place (1 is
+next). A freed slot goes to the oldest waiting ticket whose user is under 4,
+so one user's fifth file waits while other users' files run. The line holds 128 waiting tickets
 and 20 of one user's; past either the ticket is refused with a typed 503,
 `upload_queue_full` (busy, try again). The browser long-polls
 `GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
@@ -362,21 +368,25 @@ after the ask (so a fast line costs a browser one poll per 2 s, inside the
 per-user rate limit), and otherwise after 25 s, under Cloudflare's 100 s. A
 turn holds its slot for 30 s; an upload that has not started by then passes
 the slot to the next ticket, and its own upload is refused. When waiting or
-the upload fails in the browser (a cancel, a closed editor or dialog, or a
-429 the browser retries with a new ticket), it gives the ticket back with
-`DELETE /api/uploads/tickets/{id}` (its owner only), which hands the ticket's
-place, or its turn's slot, to the next ticket at once and settles nothing:
-the retry counts the file. Giving back a ticket the upload already spent is a
+the upload fails in the browser (a cancel, the row's remove button, a closed
+editor or dialog, or a 429 the browser retries with a new ticket), it gives
+the ticket back with `DELETE /api/uploads/tickets/{id}` (its owner only),
+which hands the ticket's place, or its turn's slot, to the next ticket at
+once. A source ticket given back counts at once as a failed file of its
+batch, except a retry's (`?retry=1`), which settles nothing: the retry counts
+the file. Giving back a ticket the upload already spent is a
 harmless 410. An abandoned tab sends nothing, and its ticket waits for its
 turn to pass. The upload carries
 `?ticket=` and is refused before its body is read when the ticket is missing,
 unknown, another user's or another route's, spent, given back or passed
 (410 `upload_ticket_gone`, which the browser shows as "Your turn to upload
 passed. Try again."), or still waiting (409). Its slot frees when the upload request ends. The upload has
-5 minutes from the gateway's first read of its body to send it (the
-connection's read deadline, lifted once the body is read so it never cuts the
-PUT); past that it answers 408 `upload_timeout`, which the browser shows as
-"The upload took longer than 5 minutes. Try again." (a connection dropped
+30 s plus its declared size at 100 KB/s, at most 5 minutes, from the
+gateway's first read of its body to send it (`bodyDeadline`, Epo 2026-10-22:
+a 1 MB file 40 s, a 30 MiB file the full 5 minutes; the connection's read
+deadline, lifted once the body is read so it never cuts the PUT); past that
+it answers 408 `upload_timeout`, which the browser shows as
+"The upload took too long. Try again." (a connection dropped
 before the answer reads as a network error), and releases its reservation
 like any failure.
 The line lives in the API process, which runs as one instance; a scaled-out
@@ -385,7 +395,11 @@ poll is refused 410 and the user tries again (so is a ticket that a deploy's
 overlapping old container issued). A source ticket whose turn passes counts at
 once as a failed file of its batch, so the batch's notification does not wait
 for the idle sweep (`SourceBatchIdle`, 1 h). The transfer panel shows a waiting file as "Waiting to upload (position
-N)"; an editor asset's placeholder waits without a place.
+N)"; an editor asset's placeholder waits without a place. Each panel row has
+a remove button (Epo 2026-10-22, `removeSourceTransfer`): a file not yet
+sent is never sent (it asks for no ticket, and its batch waits for the idle
+sweep), a waiting one gives its ticket back and a running upload is aborted.
+An import the server already queued keeps going; only its row goes.
 
 A drive import keeps its own completion (`internalCompleteSourceImport`): the
 import worker writes an `incoming/` object, and the gateway checks its size and
@@ -505,8 +519,10 @@ watermarks take the same path. The check is the browser's only: the
 collaboration server does not read image sizes (a server check is queued for
 later).
 A note's audio is capped by the payer's per-file cap (10 MiB Free, 30 MiB
-Pro) at the reservation; the browser does not check it first, and the
-server's refusal names the limit in the placeholder. Notes hold no other
+Pro) at the reservation. The browser checks it first against the material's
+`audioMaxBytes` (Epo 2026-10-22): a file over it asks for no ticket and its
+placeholder shows "The selected file is larger than N MB."; an image still
+over `imageMaxBytes` after shrinking is refused the same way. Notes hold no other
 asset: the purposes are `image` and `audio` (Epo 2026-10-15; the table's
 `purpose` check still lists the old `pdf` and `file`, unused).
 Quizzes and flashcard sets edit live (Epo

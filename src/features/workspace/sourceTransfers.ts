@@ -100,6 +100,8 @@ export const useSourceTransfers = create<TransferState>(() => ({
 }));
 
 const running = new Set<AbortController>();
+/** Each row's own cancel while its transfer runs (removeSourceTransfer). */
+const rowAborts = new Map<string, AbortController>();
 
 function patchTransfer(key: string, patch: Partial<SourceTransfer>) {
   useSourceTransfers.setState((state) => ({
@@ -118,6 +120,17 @@ function releaseUnsent(count: number) {
 /** Hides the panel. Running transfers keep going; their rows are gone. */
 export function dismissSourceTransfers() {
   useSourceTransfers.setState({ transfers: [] });
+}
+
+/** Removes one row (Epo 2026-10-22): a file not yet sent is never sent, an
+ * upload in flight is aborted, and one waiting in the gateway's line gives
+ * its ticket back, so its place goes to the next file. An import already
+ * queued on the server keeps going; only the row goes. */
+export function removeSourceTransfer(key: string) {
+  rowAborts.get(key)?.abort();
+  useSourceTransfers.setState((state) => ({
+    transfers: state.transfers.filter((transfer) => transfer.key !== key),
+  }));
 }
 
 /** Stops every transfer, for the mock scenario reset. */
@@ -237,6 +250,13 @@ export function startSourceTransfer(start: StartTransfer) {
   const controller = new AbortController();
   const { signal } = controller;
   running.add(controller);
+  for (const request of requests)
+    rowAborts.set(request.key, new AbortController());
+  /** A row's transfer stops with the whole transfer or its own remove. */
+  function rowSignal(key: string) {
+    const row = rowAborts.get(key);
+    return row ? AbortSignal.any([signal, row.signal]) : signal;
+  }
   const toastFailure = failureToast(
     `source-transfer-failed-${crypto.randomUUID()}`
   );
@@ -267,7 +287,7 @@ export function startSourceTransfer(start: StartTransfer) {
   }
 
   function fail(key: string, name: string, error: unknown) {
-    if (signal.aborted) return;
+    if (signal.aborted || rowAborts.get(key)?.signal.aborted) return;
     trackQuotaBlocked(error, 'upload');
     const reason = transferFailureReason(error);
     patchTransfer(key, { error: reason, stage: 'failed' });
@@ -290,8 +310,11 @@ export function startSourceTransfer(start: StartTransfer) {
         wave,
         SOURCE_UPLOAD_CONCURRENCY,
         async (request) => {
-          patchTransfer(request.key, { stage: 'uploading' });
+          const cancel = rowSignal(request.key);
           try {
+            // Removed before its turn to send: nothing to cancel.
+            if (cancel.aborted) return;
+            patchTransfer(request.key, { stage: 'uploading' });
             const file = await withUploadRetry(() =>
               start.uploadSource({
                 batchId,
@@ -307,7 +330,7 @@ export function startSourceTransfer(start: StartTransfer) {
                   patchTransfer(request.key, { uploadPct }),
                 pageCount: request.pageCount,
                 parseMode: request.parseMode,
-                signal,
+                signal: cancel,
               })
             );
             patchTransfer(request.key, {
@@ -339,7 +362,9 @@ export function startSourceTransfer(start: StartTransfer) {
       jobId,
       // Mock imports give up sooner, so a pending scenario reaches the
       // background state.
-      USE_MSW ? { maxWaitMilliseconds: 12_000, signal } : { signal }
+      USE_MSW
+        ? { maxWaitMilliseconds: 12_000, signal: rowSignal(key) }
+        : { signal: rowSignal(key) }
     ).then(
       (fileId) => {
         patchTransfer(key, { fileId, stage: 'added' });
@@ -368,6 +393,11 @@ export function startSourceTransfer(start: StartTransfer) {
         wave,
         SOURCE_UPLOAD_CONCURRENCY,
         async (request) => {
+          const cancel = rowSignal(request.key);
+          if (cancel.aborted) {
+            sent();
+            return;
+          }
           patchTransfer(request.key, { stage: 'importing' });
           // One id per request, so the request retries below stay idempotent.
           const requestId = crypto.randomUUID();
@@ -386,12 +416,12 @@ export function startSourceTransfer(start: StartTransfer) {
                     parseMode: request.parseMode,
                     provider: request.provider,
                     requestId,
-                    signal,
+                    signal: cancel,
                   }),
                   request.fileId
                 ),
               undefined,
-              signal
+              cancel
             );
           } catch (error) {
             fail(request.key, request.name, error);
@@ -459,6 +489,7 @@ export function startSourceTransfer(start: StartTransfer) {
     })
     .finally(() => {
       running.delete(controller);
+      for (const request of requests) rowAborts.delete(request.key);
       if (unsent > 0) releaseUnsent(unsent);
     });
 }

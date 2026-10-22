@@ -2923,6 +2923,7 @@ export const CreateStandaloneMaterialBody = zod.object({
 
 export const CreateStandaloneMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "audioMaxBytes": zod.int(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
@@ -3078,6 +3079,7 @@ export const GetMaterialParams = zod.object({
 
 export const GetMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "audioMaxBytes": zod.int(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),

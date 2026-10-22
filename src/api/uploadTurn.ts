@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, isApiError } from './client';
 
 /** A gateway upload ticket's answer: its place in line, 0 once its turn has
  * come. */
@@ -43,8 +43,11 @@ export async function uploadWithTicket<T>(
     );
   } catch (error) {
     // A ticket left behind would hold its place, or its turn, until the turn
-    // passed; a failed give-back only leaves it to that.
-    await api.del(ticket).catch(() => undefined);
+    // passed; a failed give-back only leaves it to that. The caller retries
+    // a 429 (withUploadRetry) with a new ticket, which counts the file in its
+    // batch; any other give-up counts it as failed at once.
+    const retry = isApiError(error) && error.status === 429;
+    await api.del(retry ? `${ticket}?retry=1` : ticket).catch(() => undefined);
     throw error;
   }
 }

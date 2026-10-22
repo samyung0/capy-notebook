@@ -261,7 +261,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 		return store.File{}, err
 	}
 	var body apimodel.CreateSourceUploadReq
-	stream, err := readUploadMetadata(w, r, &body)
+	stream, err := readUploadMetadata(w, r, claim.size, &body)
 	if err != nil {
 		return store.File{}, err
 	}

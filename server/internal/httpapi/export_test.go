@@ -21,11 +21,12 @@ func SetUploadTicketReadBound(t *testing.T, bound time.Duration) {
 }
 
 // SetUploadQueueTimings shortens the upload line's clocks for one test: a
-// turn's hold, an upload's body deadline and a poll's longest wait.
-func SetUploadQueueTimings(t *testing.T, turn, body, poll time.Duration) {
-	previous := []time.Duration{uploadTurnTTL, uploadBodyDeadline, uploadPollWait}
-	uploadTurnTTL, uploadBodyDeadline, uploadPollWait = turn, body, poll
+// turn's hold, the base of an upload's body deadline and a poll's longest
+// wait. The deadline's 5-minute cap stays.
+func SetUploadQueueTimings(t *testing.T, turn, bodyBase, poll time.Duration) {
+	previous := []time.Duration{uploadTurnTTL, uploadBodyBase, uploadPollWait}
+	uploadTurnTTL, uploadBodyBase, uploadPollWait = turn, bodyBase, poll
 	t.Cleanup(func() {
-		uploadTurnTTL, uploadBodyDeadline, uploadPollWait = previous[0], previous[1], previous[2]
+		uploadTurnTTL, uploadBodyBase, uploadPollWait = previous[0], previous[1], previous[2]
 	})
 }
