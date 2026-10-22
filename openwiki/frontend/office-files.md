@@ -1721,8 +1721,13 @@ in pptx-i18n, English and Chinese; role `alert`, in the error colour of the
 XLSX refusal line) until an input fits again. From 3,600 code points (90% of
 the cap) the same row ends in an x/4,000 counter (`NOTES_COUNT_FROM`; Epo
 2026-10-22), copied from Capy's `CharCount` in `src/components/ui/Input.tsx`:
-muted, in the error colour at or over the cap. Both sit on the label's row, so
-the slide keeps its size. An
+muted, in the error colour at or over the cap (`data-full`). Both sit on the
+label's row, one fixed 16px line at 11px (notes-cap review r2 M1): the panel's
+height sets the slide's fit, so neither may grow it. The label and the
+counter never shrink and the limit line ends in an ellipsis where the row is
+too narrow (its full text stays in its title and the alert); a headless
+Chromium test at 360px checks the slide's box stays the same when a cut paste
+brings both. An
 IME composition that would pass the cap is shown but not sent until it ends,
 then cut the same way (cutting it while the IME holds it would break the
 composition); one that fits is sent as it goes. Notes already over the cap,
