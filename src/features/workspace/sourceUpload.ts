@@ -193,14 +193,16 @@ export function retryAfterMs(error: unknown): number | null {
   return Math.min(30_000, Math.ceil(seconds) * 1000);
 }
 
+/** Runs an upload, retrying a 429 up to UPLOAD_ATTEMPTS in all; `fn` hears
+ * whether a 429 of its attempt will be retried. */
 export async function withUploadRetry<T>(
-  fn: () => Promise<T>,
+  fn: (willRetry: boolean) => Promise<T>,
   wait: (ms: number) => Promise<void> = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms))
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await fn();
+      return await fn(attempt + 1 < UPLOAD_ATTEMPTS);
     } catch (error) {
       const delay = retryAfterMs(error);
       if (delay == null || attempt + 1 >= UPLOAD_ATTEMPTS) throw error;

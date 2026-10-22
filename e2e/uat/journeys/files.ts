@@ -344,14 +344,19 @@ export async function upload(
     .getByRole('button', { exact: true, name: m.action_upload() })
     .click();
   const [uploaded] = await Promise.all([upload, clicked]);
-  assert.equal(uploaded.status(), 201, await uploaded.text());
-  const body = object(await uploaded.json());
-  const id = string(body.id);
-  await run.record('file', id, { workspaceId });
+  // The body is read only on a failure: after a large request body Chromium
+  // evicts the response from its inspector cache, so the file comes from its
+  // upload session instead.
+  if (uploaded.status() !== 201)
+    assert.fail(
+      `upload answered ${uploaded.status()}: ${await uploaded.text()}`
+    );
   const uploadRows = await run.query(
-    'SELECT id FROM upload_sessions WHERE file_id=%s',
-    [id]
+    'SELECT id,file_id FROM upload_sessions WHERE workspace_id=%s AND name=%s AND file_id IS NOT NULL ORDER BY created_at DESC LIMIT 1',
+    [workspaceId, name]
   );
+  const id = string(uploadRows[0]?.file_id);
+  await run.record('file', id, { workspaceId });
   const uploadId = string(uploadRows[0]?.id);
   await run.record('upload', uploadId, { workspaceId });
   const row = await fileRow(run, id);

@@ -52,6 +52,8 @@ var uploadSuffixes = []string{
 	"/sources/import-inspect",
 	"/sources/import-content",
 	"/editor-assets/uploads/tickets",
+	// A file removed before it was sent, counted into its batch.
+	"/removed",
 }
 
 // exemptPrefixes must never be limited.

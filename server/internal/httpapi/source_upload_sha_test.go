@@ -23,8 +23,14 @@ import (
 // lands, removed with its files after the test.
 func uploadWorkspace(t *testing.T, th thumbnailHarness) string {
 	t.Helper()
+	return userWorkspace(t, th, "u_owner")
+}
+
+// userWorkspace is uploadWorkspace for user.
+func userWorkspace(t *testing.T, th thumbnailHarness, user string) string {
+	t.Helper()
 	ctx := context.Background()
-	ws, err := th.st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Upload SHA", Tags: []store.TagRef{}})
+	ws, err := th.st.CreateWorkspace(ctx, user, store.WorkspaceCreate{Name: "Upload SHA", Tags: []store.TagRef{}})
 	if err != nil {
 		t.Fatal(err)
 	}
