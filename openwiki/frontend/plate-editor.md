@@ -521,10 +521,14 @@ change) jumped the page back to its top.
 
 Quizzes and flashcard sets never render through Plate. Opened as a file (in a
 workspace or standalone) the center pane shows the quiz page's question list or
-the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: fronts as
-tiles, a preview dialog with the front over the back and Previous/Next), each
-under the material title, and flashcard edit mode is the live card grid
-described under authoring below (`src/features/materials/CenterContent.tsx`).
+the flashcard grid (`src/features/flashcards/FlashcardGrid.tsx`: numbered
+fronts as `CardTile`s, a preview dialog with the front over the back and
+Previous/Next), each under the material title, and flashcard edit mode is the
+live card grid described under authoring below, its tiles turned like the
+result pages' (front header over the back, the image small in the header,
+Edit/Remove beside the number) (`src/features/materials/CenterContent.tsx`).
+Every flashcard grid (View, edit, flashcard and review results) is
+`CardGrid` and `CardTile` in `src/features/flashcards/CardView.tsx`.
 
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
 material metadata. Their stored Plate documents contain the custom block but no

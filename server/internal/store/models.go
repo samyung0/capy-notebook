@@ -23,8 +23,6 @@ type User struct {
 	ClassLabel   string `json:"classLabel,omitempty"`
 	Streak       int    `json:"streak"`
 	Locale       string `json:"locale"`
-	// StudyProgress is the default for workspaces without their own setting.
-	StudyProgress bool `json:"studyProgress"`
 	// StudyPreferences shape what the chat agent builds; empty fields take the
 	// pipeline's defaults.
 	StudyPreferences StudyPreferences `json:"studyPreferences"`
@@ -56,11 +54,10 @@ type Customization struct {
 // preset or in up to three custom colours, each a point on the hue (x) and
 // saturation (y) field.
 type PageFrame struct {
-	Pattern  string           `json:"pattern" enum:"none,arc,mesh,glow,painted,waves,contours"`
+	Pattern  string           `json:"pattern" enum:"none,arc,mesh,glow"`
 	Colours  string           `json:"colours" enum:"dusk,sea,meadow,rose,sunset,wheat,mist,custom"`
 	Dots     []PageFrameColor `json:"dots" minItems:"1" maxItems:"3"`
 	Strength float64          `json:"strength" minimum:"0" maximum:"1"`
-	Grain    float64          `json:"grain" minimum:"0" maximum:"1"`
 }
 
 // PageFrameColor is one custom colour as a point on the colour field.

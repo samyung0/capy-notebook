@@ -371,6 +371,9 @@ export type {
   Cover as CoverConfig,
   LearningProgress,
   PastReview,
+  PlanStep,
+  PlanStepInput,
+  PlanWorkspace,
   ProgressItem,
   ProgressMap,
   ProgressWorkspace,
@@ -385,6 +388,8 @@ export type {
   SetStudyEnabledReq,
   SetStudyItemReq,
   StudyItem,
+  StudyPlan,
+  StudyPlans,
   TopicProgress as BankTopicProgress,
   UnfinishedSession,
 } from './gen/model';

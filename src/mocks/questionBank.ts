@@ -641,6 +641,7 @@ export const questionBankHandlers = [
           marks: row.marks,
           position: row.position,
           preview: row.preview,
+          reviewedAt: row.reviewedAt,
           score: answersById.get(row.id)?.score ?? null,
         })),
     };

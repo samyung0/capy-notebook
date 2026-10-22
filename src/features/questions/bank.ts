@@ -16,6 +16,7 @@ import type {
   GradedQuestion,
   Provenance,
 } from '@/api/types';
+import { m } from '@/i18n';
 import { BANK_IMAGE_MAX_BYTES, fitImage } from '@/lib/fitImage';
 import type { LearnerQuestion, Question } from './types';
 
@@ -270,6 +271,14 @@ export const BANK_STATUSES = [
   'notDone',
 ] as const;
 export type BankStatus = (typeof BANK_STATUSES)[number];
+
+/** The Status filter's option labels. */
+export const statusLabels: Record<BankStatus, () => string> = {
+  correct: m.question_ui_status_correct,
+  notDone: m.question_ui_status_not_done,
+  partial: m.question_ui_status_partial,
+  wrong: m.question_ui_status_wrong,
+};
 
 /** Full marks is correct, none is wrong, anything between is partially wrong. */
 export function bankStatus(score: number | undefined): BankStatus {

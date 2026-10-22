@@ -9,7 +9,7 @@
   --motion-duration-very-slow: 500ms;
   --motion-duration-error: 280ms;
   --motion-ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
-  /* The menu morph's opening overshoot. */
+  /* A springy opening overshoot (flashcards, the chat dock). */
   --motion-ease-spring: cubic-bezier(0.34, 1.25, 0.64, 1);
   /* Hover-out return that springs past rest (Avatar group hover). */
   --motion-ease-bounce-strong: cubic-bezier(0.34, 3.85, 0.64, 1);
@@ -97,122 +97,6 @@
 
 @utility motion-anchored-popup {
   @apply motion-popup motion-blur-in data-[side=bottom]:slide-in-from-top-4 data-[side=left]:slide-in-from-right-4 data-[side=right]:slide-in-from-left-4 data-[side=top]:slide-in-from-bottom-4;
-}
-
-/* transitions.dev/dropdown-menu-morph: one persistent surface, a springy
-   size transition, plus/menu cross-fade, and the 700ms closing anticipation. */
-@keyframes menu-morph-close-anticipation {
-  0%,
-  100% {
-    translate: 0 0;
-  }
-  35% {
-    translate: 5px 5px;
-  }
-}
-
-/* The content's half of the nudge: Radix keeps a modal menu's scroll lock until
-   this exit animation ends, so it stops at the peak once the content is clipped
-   away; the surface plays the full settle. */
-@keyframes menu-morph-content-close {
-  to {
-    translate: 5px 5px;
-  }
-}
-
-@utility motion-menu-morph {
-  width: 44px;
-  height: 44px;
-  border-radius: 44px;
-  transition:
-    width 250ms cubic-bezier(0.22, 1, 0.36, 1),
-    height 250ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 250ms cubic-bezier(0.22, 1, 0.36, 1);
-
-  &[data-open="true"] {
-    width: var(--menu-morph-width);
-    height: var(--menu-morph-height);
-    border-radius: 20px;
-    transition-timing-function: cubic-bezier(0.34, 1.25, 0.64, 1);
-    transition-duration: 350ms;
-  }
-
-  &[data-closing] {
-    animation: menu-morph-close-anticipation 700ms
-      cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  & > [data-slot="dropdown-menu-anchor"] {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 44px;
-    height: 44px;
-  }
-
-  & [data-slot="dropdown-menu-trigger"] {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateX(0);
-    transition:
-      opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 350ms cubic-bezier(0.22, 1, 0.36, 1),
-      filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  & [data-slot="dropdown-menu-trigger"] > svg {
-    transform: scale(1) rotate(0deg);
-    transition: transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  &[data-open="true"] [data-slot="dropdown-menu-trigger"] {
-    pointer-events: none;
-    opacity: 0;
-    filter: blur(2px);
-    transform: translateX(-40px);
-  }
-
-  &[data-open="true"] [data-slot="dropdown-menu-trigger"] > svg {
-    transform: scale(0.97) rotate(45deg);
-  }
-}
-
-@utility motion-menu-morph-content {
-  clip-path: inset(0 round 20px);
-  transition: clip-path 350ms cubic-bezier(0.34, 1.25, 0.64, 1);
-
-  & > [data-slot="menu-items"] {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateX(0) scale(1);
-    transition:
-      opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 350ms cubic-bezier(0.22, 1, 0.36, 1),
-      filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  &[data-state="closed"] {
-    clip-path: inset(calc(100% - 44px) 0 0 calc(100% - 44px) round 44px);
-    transition: clip-path 250ms cubic-bezier(0.22, 1, 0.36, 1);
-    animation: menu-morph-content-close 245ms cubic-bezier(0.22, 1, 0.36, 1);
-
-    & > [data-slot="menu-items"] {
-      opacity: 0;
-      filter: blur(2px);
-      transform: translateX(40px) scale(0.97);
-    }
-  }
-
-  @starting-style {
-    &[data-state="open"] {
-      clip-path: inset(calc(100% - 44px) 0 0 calc(100% - 44px) round 44px);
-      & > [data-slot="menu-items"] {
-        opacity: 0;
-        filter: blur(2px);
-        transform: translateX(40px) scale(0.97);
-      }
-    }
-  }
 }
 
 @utility motion-tooltip {
@@ -391,9 +275,9 @@
   animation: motion-indeterminate 1.2s var(--motion-ease-smooth-out) infinite;
 }
 
-/* Flashcards, after the menu morph: the top card is flicked off to the top
+/* Flashcards: the top card is flicked off to the top
    left (fast start, blur and a fade shorter than the travel) over the next
-   one, which settles into place with the morph's spring; Previous brings a
+   one, which settles into place with a spring; Previous brings a
    card back the same way it left. */
 @keyframes motion-card-throw {
   to {
@@ -526,8 +410,7 @@
     var(--motion-ease-smooth-out) var(--motion-duration-very-slow);
 }
 
-/* The workspace chat dock below lg morphs like the Files panel's floating
-   plus (motion-menu-morph): one surface anchored bottom right springs from
+/* The workspace chat dock below lg morphs: one surface anchored bottom right springs from
    the 52px button to the row's width and the field's height, the chat icon
    blurs and slides out, and the field slides in. Folded, that same surface
    is the dark purple button (lit from the top left by ::before); its colour
@@ -606,4 +489,35 @@
 ::view-transition-group(chat-dock) {
   animation-duration: var(--motion-duration-medium);
   animation-timing-function: var(--motion-ease-smooth-out);
+}
+
+/* transitions.dev accordion: the panel grows from 0fr (no height measuring)
+   while its one child, which clips, unblurs and fades in. Open it with
+   data-open="true"; pad inside the child, since padding can't collapse. */
+@utility motion-accordion {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--motion-duration-fast)
+    var(--motion-ease-smooth-out);
+  & > * {
+    min-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    filter: blur(var(--motion-blur-small));
+    transition-timing-function: var(--motion-ease-smooth-out);
+    transition-duration: var(--motion-duration-fast);
+    transition-property: opacity, filter;
+  }
+  &[data-open="true"] {
+    grid-template-rows: 1fr;
+    & > * {
+      opacity: 1;
+      filter: none;
+    }
+  }
+}
+/* The accordion's chevron turning (the exam strip's flips with scale-y). */
+@utility motion-accordion-chevron {
+  transition: transform var(--motion-duration-fast)
+    var(--motion-ease-smooth-out);
 }

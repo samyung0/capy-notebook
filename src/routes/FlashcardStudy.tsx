@@ -23,6 +23,7 @@ import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { blockHomeCrumb } from '@/features/quizzes/crumbs';
+import { useChapterNames } from '@/features/study/useChapterNames';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -62,6 +63,7 @@ function Study({ setId }: { setId: string }) {
   const { data: workspace } = useWorkspace(set?.workspaceId ?? '', {
     errorBoundary: false,
   });
+  const chapter = useChapterNames(set?.workspaceId)(setId);
   const frozen = useAccountFrozen();
   const navigate = useNavigate();
   const router = useRouter();
@@ -121,6 +123,7 @@ function Study({ setId }: { setId: string }) {
         )
       }
       cards={liveCards}
+      chapter={chapter}
       frame={PagePanel}
       name={set.name}
       onBack={() =>

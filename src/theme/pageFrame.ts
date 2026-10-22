@@ -4,17 +4,12 @@ import type {
   PageFrameColours,
   PageFramePattern,
 } from '@/api/types';
-import brush from '@/assets/paint/brush.webp';
-import contours from '@/assets/paint/contours.webp';
-import grain from '@/assets/paint/grain.webp';
-import waves from '@/assets/paint/waves.webp';
 
 /**
  * The painted page frame behind the page panel (openwiki/frontend/appearance.md):
- * a pattern drawn in a colour preset or in up to three custom colours, each a
- * point on the hue (x) and saturation (y) field. It is drawn with CSS
- * gradients and, for the textured patterns, one small grey texture blended
- * over them, as custom properties the stylesheet's `.page-frame` reads.
+ * a CSS gradient pattern drawn in a colour preset or in up to three custom
+ * colours, each a point on the hue (x) and saturation (y) field, as custom
+ * properties the stylesheet's `.page-frame` reads.
  */
 
 export const FRAME_PATTERNS: PageFramePattern[] = [
@@ -22,24 +17,85 @@ export const FRAME_PATTERNS: PageFramePattern[] = [
   'arc',
   'mesh',
   'glow',
-  'painted',
-  'waves',
-  'contours',
 ];
 
 type Preset = Exclude<PageFrameColours, 'custom'>;
 
-/** Sky, horizon and ground of each preset. */
-export const FRAME_PRESETS: Record<Preset, [string, string, string]> = {
-  dusk: ['#4b3f9a', '#c9a0d4', '#f6cfa6'],
-  meadow: ['#6f80d8', '#f2c9b4', '#4f9a5c'],
-  mist: ['#5d6a86', '#c4c6d8', '#64786a'],
-  rose: ['#7a4fa8', '#f0a3a8', '#c9606a'],
-  sea: ['#4f8fd0', '#b5e0dc', '#2f7f72'],
-  sunset: ['#6a5bc8', '#f6b48a', '#c8693a'],
-  wheat: ['#7f9fd8', '#f2dcc0', '#b98a2a'],
+/** Sky, horizon and ground of each preset, and the dots and Strength that
+ * come closest to them as custom colours (fitted in Lab), which choosing the
+ * preset moves the field and slider to. */
+export const FRAME_PRESETS: Record<
+  Preset,
+  { stops: [string, string, string]; dots: PageFrameColor[]; strength: number }
+> = {
+  dusk: {
+    dots: [
+      { x: 0.67, y: 0.15 },
+      { x: 0.8, y: 0.75 },
+      { x: 0.09, y: 0.475 },
+    ],
+    stops: ['#4b3f9a', '#c9a0d4', '#f6cfa6'],
+    strength: 0.36,
+  },
+  meadow: {
+    dots: [
+      { x: 0.64, y: 0.475 },
+      { x: 0.08, y: 0.825 },
+      { x: 0.34, y: 0.775 },
+    ],
+    stops: ['#6f80d8', '#f2c9b4', '#4f9a5c'],
+    strength: 0.59,
+  },
+  mist: {
+    dots: [
+      { x: 0.61, y: 1 },
+      { x: 0.54, y: 1 },
+      { x: 0.45, y: 1 },
+    ],
+    stops: ['#5d6a86', '#c4c6d8', '#64786a'],
+    strength: 0.92,
+  },
+  rose: {
+    dots: [
+      { x: 0.73, y: 0.65 },
+      { x: 0.99, y: 0.85 },
+      { x: 0.98, y: 0.575 },
+    ],
+    stops: ['#7a4fa8', '#f0a3a8', '#c9606a'],
+    strength: 0.73,
+  },
+  sea: {
+    dots: [
+      { x: 0.58, y: 0.475 },
+      { x: 0.5, y: 0.875 },
+      { x: 0.45, y: 0.925 },
+    ],
+    stops: ['#4f8fd0', '#b5e0dc', '#2f7f72'],
+    strength: 0.83,
+  },
+  sunset: {
+    dots: [
+      { x: 0.69, y: 0.575 },
+      { x: 0.08, y: 0.6 },
+      { x: 0.05, y: 0.35 },
+    ],
+    stops: ['#6a5bc8', '#f6b48a', '#c8693a'],
+    strength: 0.76,
+  },
+  wheat: {
+    dots: [
+      { x: 0.61, y: 0.55 },
+      { x: 0.12, y: 0.875 },
+      { x: 0.1, y: 0.05 },
+    ],
+    stops: ['#7f9fd8', '#f2dcc0', '#b98a2a'],
+    strength: 0.5,
+  },
 };
 export const FRAME_PRESET_NAMES = Object.keys(FRAME_PRESETS) as Preset[];
+/** The Strength the presets were approved at; a preset looks as approved
+ * when the slider sits at its own fitted value. */
+const PRESET_STRENGTH = 0.75;
 
 /** Above this the frosted sidebar's muted labels lose their contrast. */
 export const STRENGTH_MAX = 0.92;
@@ -47,16 +103,10 @@ export const MAX_FRAME_COLORS = 3;
 
 export const DEFAULT_PAGE_FRAME: PageFrame = {
   colours: 'dusk',
-  dots: [
-    { x: 0.9, y: 0.25 },
-    { x: 0.5, y: 0.3 },
-    { x: 0.13, y: 0.32 },
-  ],
-  grain: 0.35,
+  dots: FRAME_PRESETS.dusk.dots,
   pattern: 'none',
-  strength: 0.75,
+  strength: FRAME_PRESETS.dusk.strength,
 };
-
 const unit = (v: unknown): v is number =>
   typeof v === 'number' && v >= 0 && v <= 1;
 
@@ -76,7 +126,6 @@ export function sanitizePageFrame(raw: unknown): PageFrame {
         ? (f.colours as PageFrameColours)
         : DEFAULT_PAGE_FRAME.colours,
     dots: dots.length ? dots : DEFAULT_PAGE_FRAME.dots,
-    grain: unit(f.grain) ? f.grain : DEFAULT_PAGE_FRAME.grain,
     pattern: FRAME_PATTERNS.includes(f.pattern as PageFramePattern)
       ? (f.pattern as PageFramePattern)
       : DEFAULT_PAGE_FRAME.pattern,
@@ -116,78 +165,75 @@ export function dotColor({ x, y }: PageFrameColor) {
   return hex([f(0), f(8), f(4)]);
 }
 
-/** The frame's three stops, before strength. */
-export function frameStops(frame: PageFrame): [string, string, string] {
-  if (frame.colours !== 'custom') return FRAME_PRESETS[frame.colours];
+/** The frame's three colours as drawn at `strength` (the frame's own by
+ * default): a preset slides from its approved look, custom colours mix
+ * toward white as Strength drops. */
+export function frameColors(
+  frame: PageFrame,
+  strength = frame.strength
+): string[] {
+  if (frame.colours !== 'custom') {
+    const preset = FRAME_PRESETS[frame.colours];
+    return strengthen(
+      preset.stops,
+      Math.min(1, Math.max(0, PRESET_STRENGTH + strength - preset.strength))
+    );
+  }
   const c = frame.dots.map(dotColor);
-  if (c.length === 1)
-    return [
-      mixColor(c[0], '#000000', 0.2),
-      mixColor(c[0], '#ffffff', 0.45),
-      c[0],
-    ];
-  if (c.length === 2)
-    return [c[0], mixColor(mixColor(c[0], c[1], 0.5), '#ffffff', 0.3), c[1]];
-  return [c[0], c[1], c[2]];
+  const stops =
+    c.length === 1
+      ? [mixColor(c[0], '#000000', 0.2), mixColor(c[0], '#ffffff', 0.45), c[0]]
+      : c.length === 2
+        ? [c[0], mixColor(mixColor(c[0], c[1], 0.5), '#ffffff', 0.3), c[1]]
+        : c;
+  return strengthen(stops, strength);
 }
 
 /** Strength 1 is the stops as picked; lower mixes them toward white. */
-export const strengthen = (stops: string[], strength: number) =>
+const strengthen = (stops: string[], strength: number) =>
   stops.map((s) => mixColor(s, '#ffffff', (1 - strength) * 0.75));
 
-type Layers = { image: string; blend: string; size: string };
+/** A random frame in the same pattern and number of colours. */
+export function shuffleFrame(frame: PageFrame): PageFrame {
+  return {
+    ...frame,
+    colours: 'custom',
+    dots: frame.dots.map(() => ({ x: Math.random(), y: Math.random() })),
+    strength: Math.random() * STRENGTH_MAX,
+  };
+}
 
-/** One pattern's background layers in three stops. */
-export function patternLayers(
+/** One pattern's background in three colours. */
+export function patternImage(
   pattern: Exclude<PageFramePattern, 'none'>,
   [a, b, c]: string[]
-): Layers {
-  const plain = (image: string): Layers => ({
-    blend: 'normal',
-    image,
-    size: 'cover',
-  });
-  const textured = (url: string, angle: number, blend: string): Layers => ({
-    blend: `${blend}, normal`,
-    image: `url("${url}"), linear-gradient(${angle}deg, ${a}, ${b} 52%, ${c})`,
-    size: 'cover, 100% 100%',
-  });
+): string {
   switch (pattern) {
     case 'arc':
-      return plain(
-        `radial-gradient(120% 90% at 0% 0%, rgb(255 255 255 / 0.28), transparent 60%), linear-gradient(135deg, ${a}, ${b} 52%, ${c})`
-      );
+      return `radial-gradient(120% 90% at 0% 0%, rgb(255 255 255 / 0.28), transparent 60%), linear-gradient(135deg, ${a}, ${b} 52%, ${c})`;
     case 'mesh':
-      return plain(
-        `radial-gradient(55% 60% at 12% 18%, ${a}, transparent 70%), radial-gradient(50% 55% at 88% 22%, ${b}, transparent 70%), radial-gradient(60% 60% at 70% 92%, ${c}, transparent 70%), radial-gradient(60% 60% at 18% 88%, ${b}, transparent 70%), linear-gradient(${a}, ${c})`
-      );
+      return `radial-gradient(55% 60% at 12% 18%, ${a}, transparent 70%), radial-gradient(50% 55% at 88% 22%, ${b}, transparent 70%), radial-gradient(60% 60% at 70% 92%, ${c}, transparent 70%), radial-gradient(60% 60% at 18% 88%, ${b}, transparent 70%), linear-gradient(${a}, ${c})`;
     case 'glow':
-      return plain(
-        `radial-gradient(130% 100% at 50% 115%, ${c}, ${b} 42%, ${a} 88%)`
-      );
-    case 'painted':
-      return textured(brush, 180, 'overlay');
-    case 'waves':
-      return textured(waves, 165, 'overlay');
-    case 'contours':
-      return textured(contours, 135, 'soft-light');
+      return `radial-gradient(130% 100% at 50% 115%, ${c}, ${b} 42%, ${a} 88%)`;
   }
 }
 
-/** The custom properties `.page-frame` draws, or null for no frame. */
+/** The custom properties `.page-frame` draws, or null for no frame. The
+ * colours are their own registered properties, so the stylesheet
+ * transitions between them instead of jumping. */
 export function pageFrameStyle(
   frame: PageFrame
 ): Record<string, string> | null {
   if (frame.pattern === 'none') return null;
-  const layers = patternLayers(
-    frame.pattern,
-    strengthen(frameStops(frame), frame.strength)
-  );
+  const [a, b, c] = frameColors(frame);
   return {
-    '--page-frame-blend': layers.blend,
-    '--page-frame-grain': String(frame.grain),
-    '--page-frame-grain-image': `url("${grain}")`,
-    '--page-frame-image': layers.image,
-    '--page-frame-size': layers.size,
+    '--page-frame-a': a,
+    '--page-frame-b': b,
+    '--page-frame-c': c,
+    '--page-frame-image': patternImage(frame.pattern, [
+      'var(--page-frame-a)',
+      'var(--page-frame-b)',
+      'var(--page-frame-c)',
+    ]),
   };
 }

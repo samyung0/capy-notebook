@@ -102,15 +102,18 @@ describe('document mode cache', () => {
     expect(() => saveDocumentMode(item, 'edit')).not.toThrow();
   });
 
-  it('opens settings at a tab and the progress page from the URL, ignoring other values', () => {
+  it('opens settings at a tab, the Study page and a plan from the URL, ignoring other values', () => {
     expect(
-      parseWorkspaceOpenSearch({ progress: true, settings: 'others' })
-    ).toMatchObject({ progress: true, settings: 'others' });
+      parseWorkspaceOpenSearch({ settings: 'others', study: true })
+    ).toMatchObject({ settings: 'others', study: true });
+    expect(parseWorkspaceOpenSearch({ plan: 'p1' })).toMatchObject({
+      plan: 'p1',
+    });
     expect(
       parseWorkspaceOpenSearch({ file: 'f1', settings: 'danger' })
     ).toMatchObject({ file: 'f1', settings: 'danger' });
     expect(
-      parseWorkspaceOpenSearch({ progress: 'yes', settings: 'bogus' })
-    ).toEqual({ progress: undefined, settings: undefined });
+      parseWorkspaceOpenSearch({ settings: 'bogus', study: 'yes' })
+    ).toEqual({ plan: undefined, settings: undefined, study: undefined });
   });
 });

@@ -32,7 +32,7 @@ export const OUTCOME_FILL: Record<Outcome, string> = {
   wrong: 'bg-solid-error',
 };
 
-const squareLabel = (outcome: Outcome, number: number) =>
+export const squareLabel = (outcome: Outcome, number: number) =>
   ({
     full: m.quiz_question_right,
     none: m.quiz_question_unanswered,

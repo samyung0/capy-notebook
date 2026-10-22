@@ -17,13 +17,14 @@ import { m } from '@/i18n';
 /* One question of a review session: answered the quiz page's way, then shown
    checked, read only. */
 
-/** A checked question: its result with the key, read only. */
+/** A checked question: its result with the key, read only. `title` names
+ * its quiz where nothing else on screen does (Quick review). */
 export function CheckedQuestion({
   title,
   answers,
   question,
 }: {
-  title: string;
+  title?: string;
   answers: Answers;
   question?: Question;
 }) {
@@ -32,7 +33,9 @@ export function CheckedQuestion({
       {question && (
         <QuestionRunner answers={answers} disabled question={question} review />
       )}
-      <span className="t-meta text-fg-muted">{m.review_from({ title })}</span>
+      {title && (
+        <span className="t-meta text-fg-muted">{m.review_from({ title })}</span>
+      )}
     </>
   );
 }
@@ -44,10 +47,13 @@ export function QuestionItem({
   item,
   onChecked,
   session,
+  source = true,
 }: {
   item: ReviewItem;
   onChecked: (graded: GradedQuestion, answers: Answers) => void;
   session?: ReviewSessionRef;
+  /** Names its quiz beside Check; off where the page header already does. */
+  source?: boolean;
 }) {
   const [answers, setAnswers] = useState<Answers>({});
   const { isPending: grading, mutate: check } = useMutation({
@@ -79,9 +85,13 @@ export function QuestionItem({
         question={item.question!}
       />
       <div className="flex items-center justify-between gap-3">
-        <span className="t-meta text-fg-muted">
-          {m.review_from({ title: item.materialTitle })}
-        </span>
+        {source ? (
+          <span className="t-meta text-fg-muted">
+            {m.review_from({ title: item.materialTitle })}
+          </span>
+        ) : (
+          <span />
+        )}
         <Button disabled={grading} onClick={() => check()} rounded="large">
           {m.review_check()}
         </Button>

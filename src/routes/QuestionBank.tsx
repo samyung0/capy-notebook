@@ -8,6 +8,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import {
+  Link,
   linkOptions,
   useMatchRoute,
   useNavigate,
@@ -29,7 +30,6 @@ import { z } from 'zod';
 import { api, isApiError } from '@/api/client';
 import {
   bankQuestionsQueryQMax,
-  copyBankQuestionsBodyQuestionIdsMax as COPY_MAX,
   commentBankQuestionBodyTextMax,
 } from '@/api/gen/validators';
 import type { BankTopicProgress } from '@/api/types';
@@ -49,21 +49,15 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { PhoneTopRow } from '@/components/app/Sidebar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { Input, InputError } from '@/components/ui/Input';
-import {
-  PageFloatingBar,
-  PageFloatingBarButton,
-} from '@/components/ui/PageFloatingBar';
-import { Tabs } from '@/components/ui/Tabs';
+import { InputError } from '@/components/ui/Input';
+import { SearchInput } from '@/components/ui/SearchInput';
 import { Textarea } from '@/components/ui/TextArea';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { relativeTime } from '@/features/materials/MaterialListCard';
 import {
   BANK_STATUSES,
   type BankDetail,
@@ -84,26 +78,17 @@ import {
   checkBankQuestion,
   soleSubject,
   soleTopic,
+  statusLabels,
   storeBankEdit,
   topicPath,
   uploadBankAsset,
 } from '@/features/questions/bank';
 import { searchSyllabus } from '@/features/questions/bankSearch';
-import { CopyToQuizDialog } from '@/features/questions/CopyToQuizDialog';
-import {
-  ExamPicker,
-  ExamStrip,
-  topicCount,
-} from '@/features/questions/ExamPicker';
+import { ExamSection, topicCount } from '@/features/questions/ExamPicker';
 import { answerLabels } from '@/features/questions/editorFields';
-import {
-  QuestionListRow,
-  statusLabels,
-} from '@/features/questions/QuestionListRow';
 import { TopicSummary } from '@/features/questions/TopicSummary';
 import { finishKey } from '@/features/questions/trailMap/finish';
 import {
-  MiniTrail,
   PlaceholderTrailMap,
   TrailMap,
 } from '@/features/questions/trailMap/TrailMap';
@@ -115,6 +100,12 @@ import {
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
+import {
+  OUTCOME_FILL,
+  outcomeOf,
+  squareLabel,
+} from '@/features/quizzes/ResultSummary';
+import { PanelSearch } from '@/features/workspace/PanelSearch';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError, unexpectedErrorId } from '@/lib/errors';
@@ -133,13 +124,16 @@ const QuestionDialog = lazy(() =>
 const commentSchema = z.object({
   text: z.string().trim().min(1).max(commentBankQuestionBodyTextMax),
 });
+/** Search buttons centred where the search field's ✕ sits, with room around
+ * the icon, the usual light hover and no tooltip (the icon is the label). */
+const SEARCH_BUTTON = 'mr-0.5 size-8 rounded-md';
 /** Questions per load; the window grows by this many as the reader nears its end. */
 const PAGE = 10;
 
 /**
- * Question bank: every question of the chosen topic in the main panel; exams,
- * topics and the topic's question list in the right column (a floating bar
- * and bottom sheet on phones), where Clone picks questions for Copy to quiz.
+ * Question bank: every question of the chosen topic in the main panel; one
+ * tree of exams, subjects, topics and the open topic's question squares in
+ * the right column from xl, and in a dialog behind a chooser button below it.
  */
 export default function QuestionBank() {
   const { topicId = '', questionId = '' } = useParams({ strict: false }) as {
@@ -152,13 +146,11 @@ export default function QuestionBank() {
   const matchRoute = useMatchRoute();
   // A finished topic's Summary opens /qb/$topicId/summary in the same page.
   const summary = Boolean(matchRoute({ to: '/qb/$topicId/summary' }));
-  const [showTopics, setShowTopics] = useState(!topicId);
-  const [navOpen, setNavOpen] = useState(false);
-  // From xl the side panel shows the same nav, so a sheet left open while
-  // the window widens closes instead of covering the page.
+  // Below xl the tree opens in a dialog from the chooser button.
+  const [chooserOpen, setChooserOpen] = useState(false);
   const xl = useMediaQuery('(min-width: 1280px)');
   useEffect(() => {
-    if (xl) setNavOpen(false);
+    if (xl) setChooserOpen(false);
   }, [xl]);
   const [topicFilter, setTopicFilter] = useState('');
   const [filter, setFilter] = useState('');
@@ -168,24 +160,15 @@ export default function QuestionBank() {
   // The list opens on the page holding this question: the URL's question when
   // the topic or a filter changes, or one the loaded pages do not hold.
   const [anchor, setAnchor] = useState(questionId);
-  // Clone turns the panel's question list into a picker for Copy to quiz;
-  // picks keep their rows so they survive filtering and copy in list order.
-  const [selecting, setSelecting] = useState(false);
-  const [picked, setPicked] = useState<BankRow[]>([]);
-  const selected = picked.map((row) => row.id);
-  const [copying, setCopying] = useState(false);
-  // The panel's back arrow lists every exam even while a topic is open.
-  const [allExams, setAllExams] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [shownTopic, setShownTopic] = useState(topicId);
   if (shownTopic !== topicId) {
     setShownTopic(topicId);
-    setAllExams(false);
     setFilter('');
+    setSearching(false);
     setTypes([]);
     setStatuses([]);
     setAnchor(questionId);
-    setSelecting(false);
-    setPicked([]);
   }
   const [editing, setEditing] = useState<BankDetail | null>(null);
   const [conflict, setConflict] = useState(false);
@@ -204,11 +187,9 @@ export default function QuestionBank() {
     ...bankSummaryQuery(topicId),
     enabled: summary,
   });
-  // The summary's finished date and next topic come from the landing's list.
-  const { data: progress } = useQuery({
-    ...bankProgressQuery(),
-    enabled: summary,
-  });
+  // The summary's finished date and next topic, and the tree's last
+  // attempted topic, come from the landing's list.
+  const { data: progress } = useQuery(bankProgressQuery());
   const searchText = useDebounced(filter);
   // The server filters with the learner's results at request time; loaded
   // pages keep a question answered while filtered until a filter changes.
@@ -227,7 +208,6 @@ export default function QuestionBank() {
     hasNextPage,
     hasPreviousPage,
     isFetchingNextPage,
-    isFetchingPreviousPage,
     fetchNextPage,
     fetchPreviousPage,
   } = useInfiniteQuery({
@@ -269,16 +249,6 @@ export default function QuestionBank() {
       })),
       selected: statuses,
     });
-  function toggleQuestion(row: BankRow) {
-    if (selected.includes(row.id))
-      setPicked(picked.filter((item) => item.id !== row.id));
-    else if (selected.length < COPY_MAX) setPicked([...picked, row]);
-    else
-      userToast({
-        title: m.question_ui_copy_limit({ count: COPY_MAX }),
-        variant: 'warning',
-      });
-  }
   const { mutateAsync: saveQuestion } = useMutation({
     mutationFn: ({
       snapshot,
@@ -329,8 +299,7 @@ export default function QuestionBank() {
     else void navigate({ ...options, to: '/qb' });
   }
   function topic(id: string) {
-    setShowTopics(false);
-    setNavOpen(false);
+    setChooserOpen(false);
     void navigate({
       params: { topicId: id },
       search: modeSearch,
@@ -339,7 +308,6 @@ export default function QuestionBank() {
   }
   /** From the landing: Continue opens the next question, Summary the topic's summary. */
   function openProgress(id: string, next: string | null) {
-    setShowTopics(false);
     if (next)
       void navigate({
         params: { questionId: next, topicId: id },
@@ -356,8 +324,7 @@ export default function QuestionBank() {
     }
   }
   function select(id: string) {
-    // Picking questions keeps the phone sheet open between picks.
-    if (!selecting) setNavOpen(false);
+    setChooserOpen(false);
     // The URL does not change for the current question, so scroll directly.
     if (id === questionId) scrollToQuestion(id);
     void navigate({
@@ -436,104 +403,125 @@ export default function QuestionBank() {
       : null;
   })();
 
-  /**
-   * Opens an exam in the side panel, or the exam list, on the current page.
-   * A single-topic exam opens straight on its questions.
-   */
-  function openExam(exam: string | undefined) {
-    const picked = syllabus?.exams.find((item) => item.id === exam);
-    const only = picked && soleTopic(picked);
-    setAllExams(!exam);
-    if (only) topic(only.id);
-    else void navigate({ search: { ...modeSearch, exam }, to: '.' });
-  }
-
-  const topicsShown = showTopics || !topicId;
-  // The bottom sheet swaps the panel title for Topics / Questions tabs, so the
-  // other list is one tap away without closing the sheet.
-  const navTabs = (
-    <Tabs
-      className="inset-shadow-none min-w-0 flex-1"
-      onChange={(value) => setShowTopics(value === 'topics')}
-      tabs={[
-        { label: m.question_ui_exams(), value: 'topics' },
-        ...(topicId
-          ? [{ label: m.question_ui_questions(), value: 'questions' }]
-          : []),
-      ]}
-      value={topicsShown ? 'topics' : 'questions'}
-    />
-  );
-  const nav = (tabs?: ReactNode) =>
+  // Exams and subjects the tree opens: the open topic's, `?exam=`, and the
+  // last attempted topic's.
+  const last = progress?.topics[0];
+  const opened = [
+    place?.exam.id,
+    place?.subject.id,
+    search.exam,
+    last?.examId,
+    last?.subjectId,
+  ].filter((id): id is string => Boolean(id));
+  const tree = (dialog?: boolean) =>
     syllabus ? (
-      topicsShown ? (
-        <TopicTree
-          edit={mode === 'edit'}
-          // A single-topic exam has no tree of its own, so its topic shows
-          // the exam list.
-          examId={
-            allExams
-              ? undefined
-              : (search.exam ??
-                (place && !soleTopic(place.exam) ? place.exam.id : undefined))
-          }
-          filter={topicFilter}
-          onAllExams={() => openExam(undefined)}
-          onExam={openExam}
-          onFilter={setTopicFilter}
-          onTopic={topic}
-          syllabus={syllabus}
-          tabs={tabs}
-          topicId={topicId}
-        />
-      ) : (
-        <TopicQuestions
-          edit={mode === 'edit'}
-          filter={filter}
-          filters={filters}
-          // A failed page shows the list error with Try again; the panel's
-          // ends stop loading until then.
-          hasEarlier={hasPreviousPage && !listError}
-          hasMore={hasNextPage && !listError}
-          label={path?.at(-1) ?? ''}
-          loadingEarlier={isFetchingPreviousPage}
-          loadingMore={isFetchingNextPage}
-          onBack={() => setShowTopics(true)}
-          onCancelSelect={() => {
-            setSelecting(false);
-            setPicked([]);
-          }}
-          onCopy={() => {
-            setNavOpen(false);
-            setCopying(true);
-          }}
-          onEarlier={() => void fetchPreviousPage(joinFetch)}
-          onFilter={refilter(setFilter)}
-          onMore={() => void fetchNextPage(joinFetch)}
-          onQuestion={(row) => {
-            if (selecting) toggleQuestion(row);
-            select(row.id);
-          }}
-          onResetFilters={() => {
-            setTypes([]);
-            setStatuses([]);
-            setAnchor(questionId);
-          }}
-          onSelect={() => setSelecting(true)}
-          onUnreviewed={refilter(setUnreviewed)}
-          questionId={questionId}
-          results={mode === 'view' && !resultsError ? (marks ?? {}) : undefined}
-          reviewedCount={place?.item.reviewed ?? 0}
-          rows={rows}
-          selected={selecting ? selected : undefined}
-          tabs={tabs}
-          total={place?.item.total ?? 0}
-          unreviewed={unreviewed}
-        />
-      )
+      <TopicTree
+        dialog={dialog}
+        edit={mode === 'edit'}
+        filter={topicFilter}
+        onFilter={setTopicFilter}
+        onQuestion={select}
+        onTopic={topic}
+        opened={opened}
+        progress={progressById}
+        questionId={questionId}
+        syllabus={syllabus}
+        topicId={topicId}
+      />
     ) : (
       <SkeletonList count={8} rowHeight={28} />
     );
+  // Below xl: named after the open topic's exam, else Choose exam. Long
+  // names truncate at 160px on phones, 240px from sm.
+  const chooserLabel = place?.exam.label ?? m.question_ui_choose_exam();
+  const chooser = syllabus && (
+    <button
+      aria-haspopup="dialog"
+      className="flex h-10 min-w-0 max-w-40 items-center gap-1.5 rounded-button border border-line px-3.5 font-semibold text-base leading-normal tracking-normal hover:bg-surface-hover-bg sm:max-w-60"
+      onClick={() => setChooserOpen(true)}
+      type="button"
+    >
+      <span className="min-w-0 truncate">{chooserLabel}</span>
+      <Icon className="size-3.5 shrink-0 text-fg-muted" name="chevronDown" />
+    </button>
+  );
+  // Below xl it sits at the right of the page's title row, or of the
+  // landing's Continue title.
+  const tabletChooser = chooser && (
+    <span className="flex xl:hidden">{chooser}</span>
+  );
+  // The landing shows Continue in View mode once a topic is started.
+  const continuing = mode === 'view' && Boolean(progress?.topics.length);
+  // Under a topic's title: edit mode's All/Unreviewed on the left, Filter and
+  // question search on the right.
+  const tools = place && !summary && (
+    <div className="page-px flex min-h-9 flex-wrap items-center gap-x-1 pt-3">
+      {searching ? (
+        <div className="ml-auto w-full max-w-sm">
+          <SearchInput
+            actionCallback={() => {
+              refilter(setFilter)('');
+              setSearching(false);
+            }}
+            actionIcon="x"
+            actionLabel={m.question_ui_close_search()}
+            aria-label={m.question_ui_find_a_question()}
+            autoFocus
+            maxLength={bankQuestionsQueryQMax}
+            onChange={(event) => refilter(setFilter)(event.target.value)}
+            placeholder={m.question_ui_find_a_question()}
+            value={filter}
+          />
+        </div>
+      ) : (
+        <>
+          {mode === 'edit' && (
+            <>
+              <Button
+                aria-pressed={!unreviewed}
+                className="-ml-2"
+                onClick={() => refilter(setUnreviewed)(false)}
+                rounded="large"
+                size="sm"
+                variant={unreviewed ? 'ghost-hover' : 'gray'}
+              >
+                {m.action_all()} {place.item.total}
+              </Button>
+              <Button
+                aria-pressed={unreviewed}
+                onClick={() => refilter(setUnreviewed)(true)}
+                rounded="large"
+                size="sm"
+                variant={unreviewed ? 'gray' : 'ghost-hover'}
+              >
+                {m.question_ui_unreviewed()}{' '}
+                {place.item.total - place.item.reviewed}
+              </Button>
+            </>
+          )}
+          <div className="ml-auto flex items-center gap-x-1">
+            <FilterPopover
+              filters={filters}
+              onResetFilters={() => {
+                setTypes([]);
+                setStatuses([]);
+                setAnchor(questionId);
+              }}
+            />
+            <ToolbarButton
+              // The icon, not the button, on the page's right edge.
+              className={cn(SEARCH_BUTTON, '-mr-2')}
+              label={m.question_ui_find_a_question()}
+              onClick={() => setSearching(true)}
+              tooltip={false}
+            >
+              <Icon name="search" />
+            </ToolbarButton>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   let body: ReactNode;
   if (waitsForConnection(fetchStatus, syllabus)) body = <QueryPausedState />;
@@ -546,6 +534,7 @@ export default function QuestionBank() {
   else if (!topicId)
     body = (
       <BankLanding
+        aside={tabletChooser}
         exams={syllabus.exams}
         finishedTopic={search.finished}
         onOpen={openProgress}
@@ -620,7 +609,7 @@ export default function QuestionBank() {
           className="min-h-0 flex-1"
           sectionClassName="scroll-fade-y h-full px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
         >
-          {nav()}
+          {tree()}
         </Panel>
       </div>
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -634,29 +623,33 @@ export default function QuestionBank() {
             <>
               <QuizPageHeader
                 actions={
-                  summary ? (
-                    <UnderlineLink accent onClick={() => topic(topicId)}>
-                      {m.question_ui_go_through_again()}
-                    </UnderlineLink>
-                  ) : (
-                    syllabus?.editor && (
-                      <Button
-                        iconLeft={mode === 'edit' ? 'view' : 'pencil'}
-                        onClick={() =>
-                          setMode(mode === 'edit' ? 'view' : 'edit')
-                        }
-                        rounded="large"
-                        size="sm"
-                      >
-                        {mode === 'edit'
-                          ? m.question_ui_view_mode()
-                          : m.question_ui_edit()}
-                      </Button>
-                    )
-                  )
+                  // Phones stack the exam picker over Edit, leaving the title
+                  // its width.
+                  <div className="flex flex-col-reverse items-end gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                    {summary ? (
+                      <UnderlineLink accent onClick={() => topic(topicId)}>
+                        {m.question_ui_go_through_again()}
+                      </UnderlineLink>
+                    ) : (
+                      syllabus?.editor && (
+                        <Button
+                          iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                          onClick={() =>
+                            setMode(mode === 'edit' ? 'view' : 'edit')
+                          }
+                          rounded="large"
+                          size="sm"
+                        >
+                          {mode === 'edit'
+                            ? m.question_ui_view_mode()
+                            : m.question_ui_edit()}
+                        </Button>
+                      )
+                    )}
+                    {tabletChooser}
+                  </div>
                 }
-                // The bank's normal gutter, as on its main page; the
-                // questions below sit inset at the wide one.
+                // The bank's normal gutter, as on its main page.
                 gutter="normal"
                 meta={
                   place &&
@@ -692,83 +685,50 @@ export default function QuestionBank() {
                     : (path?.at(-1) ?? m.question_ui_question_bank())
                 }
                 trail={trail}
+                // Phones find their way with the chooser and the browser's back.
+                trailClassName="max-sm:hidden"
               />
-              {/* Inset to the wide gutter, as the main page's topic lists. */}
-              <PageBody className="pt-8 pb-28 sm:pt-8 xl:pb-10">
-                <div className="wide-inset">
-                  <div className="max-w-3xl">{body}</div>
-                </div>
-              </PageBody>
+              {tools}
+              <PageBody className="pt-6 pb-10 sm:pt-6">{body}</PageBody>
             </>
           ) : (
             <>
               <PageHeader
                 actions={
-                  syllabus?.editor && (
-                    <Button
-                      iconLeft={mode === 'edit' ? 'view' : 'pencil'}
-                      onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-                      rounded="large"
-                      size="sm"
-                    >
-                      {mode === 'edit'
-                        ? m.question_ui_view_mode()
-                        : m.question_ui_edit()}
-                    </Button>
-                  )
+                  <>
+                    {syllabus?.editor && (
+                      <Button
+                        iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                        onClick={() =>
+                          setMode(mode === 'edit' ? 'view' : 'edit')
+                        }
+                        rounded="large"
+                        size="sm"
+                      >
+                        {mode === 'edit'
+                          ? m.question_ui_view_mode()
+                          : m.question_ui_edit()}
+                      </Button>
+                    )}
+                    {!continuing && tabletChooser}
+                  </>
                 }
                 className="justify-between md:flex-1"
                 subtitle={m.question_ui_bank_hint()}
                 title={m.question_ui_question_bank()}
               />
-              <PageBody className="pb-28 sm:pt-8 xl:pb-10">{body}</PageBody>
+              <PageBody className="pb-10 sm:pt-8">{body}</PageBody>
             </>
           )}
         </Panel>
-        {/* Without the side panel (below xl) it becomes a floating bar and a
-            bottom sheet, as in WorkspaceOpen's single-column layout. */}
-        {syllabus && (
-          <PageFloatingBar
-            aria-label={m.question_ui_bank_navigation()}
-            className="xl:hidden"
-            open={!navOpen}
-          >
-            <PageFloatingBarButton
-              icon="book"
-              label={m.question_ui_exams()}
-              onClick={() => {
-                setShowTopics(true);
-                setNavOpen(true);
-              }}
-            />
-            {topicId && (
-              <PageFloatingBarButton
-                icon="list"
-                label={m.question_ui_questions()}
-                onClick={() => {
-                  setShowTopics(false);
-                  setNavOpen(true);
-                }}
-              />
-            )}
-          </PageFloatingBar>
-        )}
       </div>
-      <Drawer
-        onOpenChange={setNavOpen}
-        open={navOpen}
-        showSwipeHandle
-        swipeDirection="down"
+      <SimpleDialog
+        onClose={() => setChooserOpen(false)}
+        open={chooserOpen}
+        title={m.question_ui_exams_and_topics()}
       >
-        <DrawerContent
-          style={{ '--drawer-height': '70dvh' } as React.CSSProperties}
-        >
-          <DrawerTitle className="sr-only">
-            {m.question_ui_bank_navigation()}
-          </DrawerTitle>
-          <div className="min-h-0 overflow-auto px-3 pb-6">{nav(navTabs)}</div>
-        </DrawerContent>
-      </Drawer>
+        {tree(true)}
+      </SimpleDialog>
       {editing && (
         <Suspense fallback={null}>
           <QuestionDialog
@@ -819,20 +779,6 @@ export default function QuestionBank() {
       )}
       {commentFor && (
         <BankComment id={commentFor} onClose={() => setCommentFor('')} />
-      )}
-      {copying && (
-        <CopyToQuizDialog
-          onClose={() => setCopying(false)}
-          onCopied={() => {
-            setCopying(false);
-            setSelecting(false);
-            setPicked([]);
-          }}
-          questionIds={[...picked]
-            .sort((a, b) => a.position - b.position)
-            .map((row) => row.id)}
-          topicLabel={place?.item.label ?? ''}
-        />
       )}
     </div>
   );
@@ -1180,16 +1126,11 @@ function jump(range: { start: number; end: number }, index: number) {
 /** Title with a search icon that expands into a full-width field. */
 function PanelHeading({
   title,
-  tabs,
-  leading,
   filter,
   onFilter,
   searchLabel,
 }: {
   title: string;
-  /** Shown in place of the title, as in the bottom sheet. */
-  tabs?: ReactNode;
-  leading?: ReactNode;
   filter: string;
   onFilter: (value: string) => void;
   searchLabel: string;
@@ -1197,48 +1138,36 @@ function PanelHeading({
   const [searching, setSearching] = useState(filter !== '');
   const searchButton = (
     <ToolbarButton
-      className="mr-0.5 size-7"
+      className={SEARCH_BUTTON}
       label={searchLabel}
       onClick={() => setSearching(true)}
+      tooltip={false}
     >
       <Icon name="search" />
     </ToolbarButton>
   );
   // Both states share one height, so opening the search moves nothing.
   return (
-    <div className={cn('grid items-center', tabs ? 'h-10' : 'h-9')}>
+    <div className="grid h-9 items-center">
       {searching ? (
         <div>
-          <Input
+          <SearchInput
             actionCallback={() => {
               onFilter('');
               setSearching(false);
             }}
-            actionClassName="p-1.5 text-fg-muted"
             actionIcon="x"
             actionLabel={m.question_ui_close_search()}
             aria-label={searchLabel}
             autoFocus
-            leftIcon="search"
-            leftIconClassName="-translate-y-px"
             maxLength={bankQuestionsQueryQMax}
             onChange={(event) => onFilter(event.target.value)}
             placeholder={searchLabel}
             value={filter}
-            variant="underline"
-            wrapperClassName="h-9 w-full gap-2.5 px-2 text-sm"
           />
         </div>
-      ) : tabs ? (
-        // The divider runs under the search button too, as in the workspace
-        // panels' tab row.
-        <div className="inset-shadow-[0_-1px_var(--color-divider)] flex h-full items-center gap-1">
-          {leading}
-          {tabs}
-          {searchButton}
-        </div>
       ) : (
-        <PanelHeader actions={searchButton} leading={leading} title={title} />
+        <PanelHeader actions={searchButton} title={title} />
       )}
     </div>
   );
@@ -1258,94 +1187,105 @@ function Highlight({ text, needle }: { text: string; needle: string }) {
 }
 
 /**
- * Every exam as a cover strip until one is open (the URL's `exam`, or the
- * open topic's exam), then that exam's switcher and its subjects with indented
- * topics; subjects start collapsed except the current topic's. A search lists
- * exams and topics from every exam together (searchSyllabus); with an exam
- * open, its topics come first and the rest go under "In other exams".
+ * Every exam as a cover strip that opens in place (several may stay open),
+ * then its subjects and topics; the open topic lists its questions as squares.
+ * `opened` exams and subjects open on top of what the learner has opened, so
+ * a new topic or `?exam=` reveals itself without closing anything. A search
+ * lists exams, subjects and topics from every exam together (searchSyllabus).
  */
 function TopicTree({
   syllabus,
-  examId,
   topicId,
+  questionId,
   edit,
   filter,
   onFilter,
-  onExam,
-  onAllExams,
   onTopic,
-  tabs,
+  onQuestion,
+  opened,
+  progress,
+  dialog,
 }: {
   syllabus: BankSyllabus;
-  examId?: string;
   topicId: string;
+  questionId: string;
   edit: boolean;
   filter: string;
   onFilter: (value: string) => void;
-  onExam: (id: string) => void;
-  /** Back to the exam list. */
-  onAllExams: () => void;
   onTopic: (id: string) => void;
-  tabs?: ReactNode;
+  onQuestion: (id: string) => void;
+  opened: string[];
+  /** Started topics by id, whose rows count answered of total. */
+  progress: Map<string, BankTopicProgress>;
+  /** In the chooser dialog, whose title heads it: the search field shows
+   * at the top instead of the panel's heading. */
+  dialog?: boolean;
 }) {
-  const current = syllabus.exams
-    .flatMap((exam) => exam.subjects.map((subject) => ({ exam, subject })))
-    .find(({ subject }) => subject.topics.some((item) => item.id === topicId));
-  const [open, setOpen] = useState(
-    () => new Set(current ? [current.subject.id] : [])
-  );
-  const exam = syllabus.exams.find((item) => item.id === examId);
+  const [open, setOpen] = useState(() => new Set(opened));
+  const [seen, setSeen] = useState(opened.join());
+  if (seen !== opened.join()) {
+    setSeen(opened.join());
+    setOpen((prev) => new Set([...prev, ...opened]));
+  }
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  const reveal = (...ids: string[]) =>
+    setOpen((prev) => new Set([...prev, ...ids]));
   const needle = filter.trim().toLocaleLowerCase();
-  const count = (item: BankTopic) => (
-    <span className="shrink-0 font-semibold text-fg-muted text-xs">
-      {edit ? `${item.reviewed}/${item.total}` : item.total}
-    </span>
-  );
-  // The open exam's subjects and topics come first in their sections.
-  const mineFirst = <T extends { exam: BankExam }>(list: T[]) =>
-    exam
-      ? [
-          ...list.filter((hit) => hit.exam.id === exam.id),
-          ...list.filter((hit) => hit.exam.id !== exam.id),
-        ]
-      : list;
+  const count = (item: BankTopic) => {
+    const answered = progress.get(item.id)?.answered;
+    return (
+      <span className="shrink-0 font-semibold text-fg-muted text-xs">
+        {edit
+          ? `${item.reviewed}/${item.total}`
+          : answered
+            ? m.study_of({ done: answered, total: item.total })
+            : item.total}
+      </span>
+    );
+  };
   const found = needle ? searchSyllabus(syllabus.exams, needle) : undefined;
+  const hitClass =
+    'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg';
   const sections = found && [
     {
       key: 'exams',
       label: m.question_ui_exams(),
-      rows: found.exams
-        .filter((hit) => hit.exam.id !== exam?.id)
-        .map((hit) => (
-          <button
-            className="flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
-            key={hit.exam.id}
-            onClick={() => {
-              onFilter('');
-              onExam(hit.exam.id);
-            }}
-            type="button"
-          >
-            <span className="min-w-0 flex-1 translate-y-px truncate">
-              <Highlight needle={needle} text={hit.exam.label} />
-            </span>
-            <span className="shrink-0 text-fg-muted text-xs">
-              {topicCount(hit.exam)}
-            </span>
-          </button>
-        )),
+      rows: found.exams.map((hit) => (
+        <button
+          className={hitClass}
+          key={hit.exam.id}
+          onClick={() => {
+            onFilter('');
+            const only = soleTopic(hit.exam);
+            if (only) onTopic(only.id);
+            else reveal(hit.exam.id);
+          }}
+          type="button"
+        >
+          <span className="min-w-0 flex-1 translate-y-px truncate">
+            <Highlight needle={needle} text={hit.exam.label} />
+          </span>
+          <span className="shrink-0 text-fg-muted text-xs">
+            {topicCount(hit.exam)}
+          </span>
+        </button>
+      )),
     },
     {
       key: 'subjects',
       label: m.question_ui_subjects(),
-      rows: mineFirst(found.subjects).map((hit) => (
+      rows: found.subjects.map((hit) => (
         <button
-          className="flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+          className={hitClass}
           key={hit.subject.id}
           onClick={() => {
             onFilter('');
-            setOpen((prev) => new Set(prev).add(hit.subject.id));
-            onExam(hit.exam.id);
+            reveal(hit.exam.id, hit.subject.id);
           }}
           type="button"
         >
@@ -1353,11 +1293,9 @@ function TopicTree({
             <span className="block truncate">
               <Highlight needle={needle} text={hit.subject.label} />
             </span>
-            {hit.exam.id !== exam?.id && (
-              <span className="t-meta block truncate text-fg-muted">
-                {hit.exam.label}
-              </span>
-            )}
+            <span className="t-meta block truncate text-fg-muted">
+              {hit.exam.label}
+            </span>
           </span>
           <span className="shrink-0 font-semibold text-fg-muted text-xs">
             {hit.subject.topics.reduce((sum, item) => sum + item.total, 0)}
@@ -1368,11 +1306,10 @@ function TopicTree({
     {
       key: 'topics',
       label: m.question_ui_topics(),
-      rows: mineFirst(found.topics).map((hit) => {
-        // The topic's exam (unless it is the open one) and subject, unless
-        // the exam hides its one subject.
+      rows: found.topics.map((hit) => {
+        // The topic's exam and subject, unless the exam hides its one subject.
         const trail = [
-          hit.exam.id !== exam?.id && hit.exam.label,
+          hit.exam.label,
           !soleSubject(hit.exam) && hit.subject.label,
         ]
           .filter(Boolean)
@@ -1381,12 +1318,13 @@ function TopicTree({
           <button
             aria-current={hit.item.id === topicId ? 'page' : undefined}
             className={cn(
-              'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+              hitClass,
               hit.item.id === topicId && 'bg-surface-hover-bg'
             )}
             key={hit.item.id}
             onClick={() => {
-              setOpen((prev) => new Set(prev).add(hit.subject.id));
+              onFilter('');
+              reveal(hit.exam.id, hit.subject.id);
               onTopic(hit.item.id);
             }}
             type="button"
@@ -1395,11 +1333,9 @@ function TopicTree({
               <span className="block truncate">
                 <Highlight needle={needle} text={hit.item.label} />
               </span>
-              {trail && (
-                <span className="t-meta block truncate text-fg-muted">
-                  {trail}
-                </span>
-              )}
+              <span className="t-meta block truncate text-fg-muted">
+                {trail}
+              </span>
             </span>
             {count(hit.item)}
           </button>
@@ -1423,42 +1359,96 @@ function TopicTree({
         </span>
         {count(item)}
       </button>
+      {item.id === topicId && (
+        <TopicSquares
+          edit={edit}
+          onQuestion={onQuestion}
+          questionId={questionId}
+          topicId={topicId}
+        />
+      )}
     </li>
   );
+  const subjects = (exam: BankExam) =>
+    soleSubject(exam) ? (
+      <ul className="flex flex-col gap-0.5">
+        {exam.subjects[0].topics.map(topicRow)}
+      </ul>
+    ) : (
+      exam.subjects.map((subject) => {
+        const expanded = open.has(subject.id);
+        return (
+          <div key={subject.id}>
+            <button
+              aria-expanded={expanded}
+              className="flex w-full items-center gap-1.5 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+              onClick={() => toggle(subject.id)}
+              type="button"
+            >
+              <Icon
+                className={cn(
+                  'motion-accordion-chevron shrink-0 text-fg-muted',
+                  !expanded && '-rotate-90'
+                )}
+                name="chevronDown"
+                size={13}
+              />
+              <span className="min-w-0 flex-1 translate-y-px truncate font-semibold">
+                {subject.label}
+              </span>
+              {!expanded && (
+                <span className="shrink-0 font-semibold text-fg-muted text-xs">
+                  {subject.topics.reduce((sum, item) => sum + item.total, 0)}
+                </span>
+              )}
+            </button>
+            <div
+              className="motion-accordion"
+              data-open={expanded}
+              inert={!expanded}
+            >
+              <div>
+                {/* A guide line under the subject's chevron; topics sit right
+                    of it, indented past the subject's name. */}
+                <ul className="ml-3.5 flex flex-col border-line border-l pl-3">
+                  {subject.topics.map(topicRow)}
+                </ul>
+              </div>
+            </div>
+          </div>
+        );
+      })
+    );
   return (
     <nav
       aria-label={m.question_ui_exams_and_topics()}
-      className={cn('flex flex-col gap-3', !tabs && '-mt-1')}
+      className="-mt-1 flex flex-col gap-3"
     >
-      <PanelHeading
-        filter={filter}
-        leading={
-          exam && (
-            <ToolbarButton
-              label={m.question_ui_all_exams()}
-              onClick={onAllExams}
-            >
-              <Icon className="-translate-y-px" name="navigationBack" />
-            </ToolbarButton>
-          )
-        }
-        onFilter={onFilter}
-        searchLabel={m.question_ui_find_a_topic()}
-        tabs={tabs}
-        title={m.question_ui_exams_and_topics()}
-      />
-      {exam && (
-        <div className={cn(!tabs && 'mx-3')}>
-          <ExamPicker exam={exam} exams={syllabus.exams} onPick={onExam} />
+      {dialog ? (
+        // PanelSearch pads itself for a panel; here the field lines up with
+        // the dialog's title and the strips.
+        <div className="-mx-2.5">
+          <PanelSearch
+            label={m.question_ui_find_a_topic()}
+            onChange={onFilter}
+            value={filter}
+          />
         </div>
+      ) : (
+        <PanelHeading
+          filter={filter}
+          onFilter={onFilter}
+          searchLabel={m.question_ui_find_a_topic()}
+          title={m.question_ui_exams_and_topics()}
+        />
       )}
       {sections ? (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 pt-2">
           {sections.map(
             (section) =>
               section.rows.length > 0 && (
                 <section className="flex flex-col gap-0.5" key={section.key}>
-                  <h4 className="t-label px-2 pb-1 text-fg-muted uppercase">
+                  <h4 className="px-2 pb-1 font-bold text-fg-muted text-sm">
                     {section.label}
                   </h4>
                   {section.rows}
@@ -1466,68 +1456,36 @@ function TopicTree({
               )
           )}
         </div>
-      ) : exam && soleSubject(exam) ? (
-        <ul className="flex flex-col gap-0.5">
-          {exam.subjects[0].topics.map(topicRow)}
-        </ul>
-      ) : exam ? (
-        <div className="flex flex-col gap-0.5">
-          {exam.subjects.map((subject) => {
-            const expanded = open.has(subject.id);
+      ) : (
+        <div className="flex flex-col gap-2">
+          {syllabus.exams.map((exam) => {
+            const only = soleTopic(exam);
+            const expanded = !only && open.has(exam.id);
             return (
-              <div key={subject.id}>
-                <button
-                  aria-expanded={expanded}
-                  className="flex w-full items-center gap-1.5 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
-                  onClick={() =>
-                    setOpen((prev) => {
-                      const next = new Set(prev);
-                      if (!next.delete(subject.id)) next.add(subject.id);
-                      return next;
-                    })
-                  }
-                  type="button"
-                >
-                  <Icon
-                    className={cn(
-                      'shrink-0 text-fg-muted transition-transform',
-                      !expanded && '-rotate-90'
-                    )}
-                    name="chevronDown"
-                    size={13}
-                  />
-                  <span className="min-w-0 flex-1 translate-y-px truncate font-semibold">
-                    {subject.label}
-                  </span>
-                  {!expanded && (
-                    <span className="shrink-0 font-semibold text-fg-muted text-xs">
-                      {subject.topics.reduce(
-                        (sum, item) => sum + item.total,
-                        0
-                      )}
-                    </span>
-                  )}
-                </button>
-                {expanded && (
-                  // A guide line under the subject's chevron; topics sit
-                  // right of it, indented past the subject's name.
-                  <ul className="ml-3.5 flex flex-col border-line border-l pl-3">
-                    {subject.topics.map(topicRow)}
-                  </ul>
+              <ExamSection
+                aria-current={only?.id === topicId ? 'page' : undefined}
+                aria-expanded={only ? undefined : expanded}
+                exam={exam}
+                key={exam.id}
+                onClick={() => (only ? onTopic(only.id) : toggle(exam.id))}
+                open={expanded}
+              >
+                {!only && (
+                  <div
+                    className="motion-accordion"
+                    data-open={expanded}
+                    inert={!expanded}
+                  >
+                    <div>
+                      <div className="flex flex-col gap-0.5 pt-0.5 pb-2">
+                        {subjects(exam)}
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </div>
+              </ExamSection>
             );
           })}
-        </div>
-      ) : (
-        <div className={cn('flex flex-col gap-3', !tabs && 'mx-3')}>
-          {syllabus.exams.map((item) => (
-            <ExamStrip
-              exam={item}
-              key={item.id}
-              onClick={() => onExam(item.id)}
-            />
-          ))}
         </div>
       )}
       {(sections
@@ -1543,211 +1501,83 @@ function TopicTree({
   );
 }
 
-/** The chosen topic's question list; a row scrolls the page to its question. */
-function TopicQuestions({
-  label,
-  total,
-  reviewedCount,
-  rows,
-  hasMore,
-  hasEarlier,
-  loadingMore,
-  loadingEarlier,
+/**
+ * The open topic's questions as numbered squares that jump to the question:
+ * result colours in view mode; in edit mode plain, with a corner tick once
+ * reviewed. The current question is ringed.
+ */
+function TopicSquares({
+  topicId,
   questionId,
   edit,
-  filter,
-  filters,
-  unreviewed,
-  results,
-  selected,
-  onBack,
-  onCancelSelect,
-  onCopy,
-  onEarlier,
-  onFilter,
-  onMore,
-  onResetFilters,
-  onSelect,
-  onUnreviewed,
   onQuestion,
-  tabs,
 }: {
-  label: string;
-  /** The topic's question and reviewed counts, unfiltered. */
-  total: number;
-  reviewedCount: number;
-  /** The loaded pages' rows; more load at the end as it scrolls into view. */
-  rows: BankRow[];
-  hasMore: boolean;
-  hasEarlier: boolean;
-  loadingMore: boolean;
-  loadingEarlier: boolean;
+  topicId: string;
   questionId: string;
   edit: boolean;
-  filter: string;
-  filters: FilterSection[];
-  unreviewed: boolean;
-  /** View mode: answered questions' latest scores by id. */
-  results?: Record<string, number>;
-  /** While picking for Copy to quiz: the picked question ids. */
-  selected?: string[];
-  onBack: () => void;
-  onCancelSelect: () => void;
-  onCopy: () => void;
-  onEarlier: () => void;
-  onFilter: (value: string) => void;
-  onMore: () => void;
-  onResetFilters: () => void;
-  onSelect: () => void;
-  /** Replace the title and the back button, as in the bottom sheet. */
-  tabs?: ReactNode;
-  onUnreviewed: (value: boolean) => void;
-  onQuestion: (row: BankRow) => void;
+  onQuestion: (id: string) => void;
 }) {
-  // The viewport root also sees the ends inside the panel's or sheet's
-  // scroller, which clips them, so they count once in view.
-  const endRef = useRef<HTMLDivElement>(null);
-  const nearEnd = useNear(endRef, '0px 0px 400px 0px');
-  useEffect(() => {
-    if (nearEnd && hasMore && !loadingMore) onMore();
-  }, [nearEnd, hasMore, loadingMore, onMore]);
-
-  // Rows loaded above the shown ones wait for scrolling to settle, then go in
-  // with the visible rows held still (src/lib/scrollAnchor.ts).
-  const listRef = useRef<HTMLOListElement>(null);
-  const [firstId, setFirstId] = useState(rows[0]?.id);
-  if (rows.length && !rows.some((row) => row.id === firstId))
-    setFirstId(rows[0]?.id);
-  const from = Math.max(
-    0,
-    rows.findIndex((row) => row.id === firstId)
-  );
-  const topId = rows[0]?.id;
-  const hold = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    if (!from) return;
-    let live = true;
-    void scrollSettled().then(() => {
-      const element = listRef.current?.firstElementChild;
-      if (!(live && element)) return;
-      hold.current = holdPosition(element);
-      setFirstId(topId);
-    });
-    return () => {
-      live = false;
-    };
-  }, [from, topId]);
-  useLayoutEffect(() => {
-    hold.current?.();
-    hold.current = null;
+  const { data, error, refetch } = useQuery({
+    ...bankSummaryQuery(topicId),
+    meta: { errorBoundary: false },
   });
-  // The previous page loads at the top once the rows waiting have gone in.
-  const startRef = useRef<HTMLDivElement>(null);
-  const nearStart = useNear(startRef, '400px 0px 0px 0px', undefined, firstId);
-  useEffect(() => {
-    if (nearStart && !from && hasEarlier && !loadingEarlier) onEarlier();
-  }, [nearStart, from, hasEarlier, loadingEarlier, onEarlier]);
-  return (
-    <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-2">
-      <PanelHeading
-        filter={filter}
-        leading={
-          !tabs && (
-            <ToolbarButton
-              label={m.question_ui_back_to_topics()}
-              onClick={onBack}
-            >
-              <Icon className="-translate-y-px" name="navigationBack" />
-            </ToolbarButton>
-          )
-        }
-        onFilter={onFilter}
-        searchLabel={m.question_ui_find_a_question()}
-        tabs={tabs}
-        title={label}
+  if (error)
+    return (
+      <InlineErrorState
+        className="py-2 pl-2"
+        errorId={unexpectedErrorId(error)}
+        message={describeError(error).title}
+        onRetry={() => void refetch()}
       />
-      <div className="flex flex-wrap items-center gap-x-1 px-3">
-        {edit && (
-          <>
-            <Button
-              aria-pressed={!unreviewed}
-              onClick={() => onUnreviewed(false)}
-              rounded="large"
-              size="sm"
-              variant={unreviewed ? 'ghost-hover' : 'gray'}
-            >
-              {m.action_all()} {total}
-            </Button>
-            <Button
-              aria-pressed={unreviewed}
-              onClick={() => onUnreviewed(true)}
-              rounded="large"
-              size="sm"
-              variant={unreviewed ? 'gray' : 'ghost-hover'}
-            >
-              {m.question_ui_unreviewed()} {total - reviewedCount}
-            </Button>
-          </>
-        )}
-        <FilterPopover filters={filters} onResetFilters={onResetFilters} />
-        {selected ? (
-          <>
-            <ToolbarButton
-              className="-mx-1 h-7 w-auto gap-2 px-2"
-              disabled={!selected.length}
-              label={m.question_ui_copy_to_quiz()}
-              onClick={onCopy}
-            >
-              <Icon name="copy" />
-              <span className="whitespace-nowrap">
-                {m.question_ui_copy_to_quiz()}
-              </span>
-            </ToolbarButton>
-            <ToolbarButton
-              className="size-7"
-              label={m.question_ui_clear_selection()}
-              onClick={onCancelSelect}
-            >
-              <Icon name="x" />
-            </ToolbarButton>
-          </>
-        ) : (
-          <ToolbarButton
-            className="-mx-1 h-7 w-auto gap-2 px-2"
-            label={m.action_clone()}
-            onClick={onSelect}
-          >
-            <Icon name="clone" />
-            <span>{m.action_clone()}</span>
-          </ToolbarButton>
-        )}
-      </div>
-      <div aria-hidden className="-mb-2" ref={startRef} />
-      {(hasEarlier || from > 0) && <SkeletonList count={3} rowHeight={28} />}
-      <ol className="grid gap-0.5" ref={listRef}>
-        {rows.slice(from).map((row) => (
-          <li key={row.id}>
-            <QuestionListRow
-              current={row.id === questionId}
-              meta={
-                edit &&
-                row.reviewedAt && (
-                  <span className="font-semibold text-tint-success-fg">
-                    {m.question_ui_reviewed()} · {relativeTime(row.reviewedAt)}
-                  </span>
-                )
+    );
+  if (!data) return <Skeleton className="mx-2 my-2 h-14" />;
+  return (
+    <ol
+      aria-label={m.question_ui_questions()}
+      className="grid grid-cols-[repeat(auto-fill,minmax(1.75rem,1fr))] gap-1.5 px-2 pt-2 pb-3"
+    >
+      {data.questions.map((q, i) => {
+        const outcome = edit
+          ? 'none'
+          : outcomeOf({
+              awarded: q.score === null ? null : q.score * q.marks,
+              id: q.id,
+              marks: q.marks,
+              number: i + 1,
+            });
+        const reviewed = edit && q.reviewedAt !== null;
+        return (
+          <li key={q.id}>
+            <button
+              aria-current={q.id === questionId ? 'true' : undefined}
+              aria-label={
+                reviewed
+                  ? `${squareLabel(outcome, i + 1)}, ${m.question_ui_reviewed()}`
+                  : squareLabel(outcome, i + 1)
               }
-              onClick={() => onQuestion(row)}
-              result={results && (results[row.id] ?? null)}
-              row={row}
-              selected={selected?.includes(row.id)}
-            />
+              className={cn(
+                'relative grid h-7 w-full place-items-center rounded-md font-bold text-[#1d2330] text-[0.72rem] hover:brightness-95',
+                OUTCOME_FILL[outcome],
+                outcome === 'none' &&
+                  'text-fg-secondary hover:bg-surface-dark-hover-bg hover:brightness-100',
+                q.id === questionId &&
+                  'ring-2 ring-action-accent ring-offset-2 ring-offset-surface'
+              )}
+              onClick={() => onQuestion(q.id)}
+              type="button"
+            >
+              {i + 1}
+              {reviewed && (
+                <Icon
+                  className="absolute -top-1 -right-1 size-3.5 rounded-full bg-surface text-tint-success-fg"
+                  name="check"
+                />
+              )}
+            </button>
           </li>
-        ))}
-      </ol>
-      {loadingMore && <SkeletonList count={3} rowHeight={28} />}
-      <div aria-hidden ref={endRef} />
-    </nav>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -1839,12 +1669,15 @@ function ReviewBar({
  * topic in Edit mode); phones pick topics in the page.
  */
 function BankLanding({
+  aside,
   exams,
   finishedTopic,
   view,
   onOpen,
   onStart,
 }: {
+  /** At the right of the Continue title. */
+  aside?: ReactNode;
   exams: BankExam[];
   finishedTopic?: string;
   view: boolean;
@@ -1870,21 +1703,21 @@ function BankLanding({
     progress = (
       <div className="flex flex-col gap-12">
         <ContinueSection
+          aside={aside}
           exams={exams}
           lead={lead}
           onOpen={onOpen}
           others={going.filter((topic) => topic !== lead)}
         />
         {listed.length > 0 && (
-          // Inset and columned like the Other topics list, heading included, so
-          // the date and Summary line up with its count and Continue.
-          <section className="wide-inset">
+          <section>
             <h2 className="t-card-title mb-3">{m.question_ui_finished()}</h2>
-            <div>
+            <div className="flex flex-col">
               {listed.map((topic) => (
-                <div
-                  className="grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)] items-center gap-x-4 border-divider border-t py-3 last:border-b sm:grid-cols-[minmax(0,1fr)_4.5rem_minmax(4.5rem,auto)]"
+                <ProgressRow
+                  className="grid-cols-[minmax(0,1fr)_auto]"
                   key={topic.topicId}
+                  onClick={() => onOpen(topic.topicId, null)}
                 >
                   <TopicName exams={exams} topic={topic} />
                   <time
@@ -1899,14 +1732,7 @@ function BankLanding({
                       }
                     )}
                   </time>
-                  <UnderlineLink
-                    className="justify-self-end"
-                    iconRight={undefined}
-                    onClick={() => onOpen(topic.topicId, null)}
-                  >
-                    {m.question_ui_summary()}
-                  </UnderlineLink>
-                </div>
+                </ProgressRow>
               ))}
             </div>
           </section>
@@ -2002,11 +1828,13 @@ function progressPath(exams: BankExam[], topic: BankTopicProgress) {
 /** The landing's map: the lead topic with Continue (or Summary once it is
  * finished, with its finish animation), then the other started topics. */
 function ContinueSection({
+  aside,
   exams,
   lead: latest,
   others,
   onOpen,
 }: {
+  aside?: ReactNode;
   exams: BankExam[];
   lead: BankTopicProgress;
   others: StartedTopic[];
@@ -2014,16 +1842,32 @@ function ContinueSection({
 }) {
   const latestPath = progressPath(exams, latest);
   const next = latest.nextQuestionId;
+  // The title and the topic's name open what the accent link opens.
+  const link = next
+    ? linkOptions({
+        params: { questionId: next, topicId: latest.topicId },
+        to: '/qb/$topicId/$questionId',
+      })
+    : linkOptions({
+        params: { topicId: latest.topicId },
+        to: '/qb/$topicId/summary',
+      });
+  const linkClass = 'underline-offset-4 hover:underline';
   return (
     <section>
-      {/* Text sits at the wide gutter; the trail map stays edge to edge. */}
-      <div className="wide-inset">
-        <h2 className="t-large-card-title">
-          {next ? m.question_ui_continue() : m.question_ui_topic_finished()}
-        </h2>
-        <p className="t-meta mb-1 text-fg-muted">
-          {latestPath.slice(0, -1).join(' · ')}
-        </p>
+      {/* The trail map stays edge to edge. */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h2 className="t-large-card-title">
+            <Link {...link} className={linkClass}>
+              {next ? m.question_ui_continue() : m.question_ui_topic_finished()}
+            </Link>
+          </h2>
+          <p className="t-meta mb-1 text-fg-muted">
+            {latestPath.slice(0, -1).join(' · ')}
+          </p>
+        </div>
+        {aside}
       </div>
       <TrailMap
         answeredPositions={latest.answeredPositions}
@@ -2035,9 +1879,13 @@ function ContinueSection({
         questionIds={latest.questionIds}
         topicId={latest.topicId}
       />
-      <div className="wide-inset mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
-          <h3 className="t-large-card-title">{latestPath.at(-1)}</h3>
+          <h3 className="t-large-card-title">
+            <Link {...link} className={linkClass}>
+              {latestPath.at(-1)}
+            </Link>
+          </h3>
           <p className="mt-1 text-fg-muted text-sm">
             {m.question_ui_progress_line({
               answered: latest.answered,
@@ -2056,41 +1904,60 @@ function ContinueSection({
       </div>
       {others.length > 0 && (
         // Rows lay out by the list's width: the side panel narrows it on wide
-        // screens. The trail shares the row's spare width with the name (3:2)
-        // so it shrinks to its 150px floor before the row wraps.
-        // The list sits inset at the wide gutter.
-        <div className="@container wide-inset mt-8">
+        // screens. Phones put the bar and count on a second line.
+        <div className="@container mt-8 flex flex-col">
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
             {m.question_ui_other_topics()}
           </h3>
           {others.map((topic) => (
-            <div
-              className="grid @lg:grid-cols-[minmax(0,3fr)_minmax(150px,2fr)_4.5rem_minmax(4.5rem,auto)] @sm:grid-cols-[minmax(0,3fr)_minmax(150px,2fr)_minmax(4.5rem,auto)] grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3"
+            <ProgressRow
+              className="@sm:grid-cols-[minmax(0,3fr)_minmax(150px,2fr)_4.5rem] grid-cols-[minmax(0,1fr)_auto]"
               key={topic.topicId}
+              onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
             >
               <TopicName exams={exams} topic={topic} />
-              <div className="@sm:col-span-1 col-span-2 @sm:row-start-auto row-start-2 w-full max-w-[240px] @sm:justify-self-end">
-                <MiniTrail
-                  answered={topic.answered}
-                  topicId={topic.topicId}
-                  total={topic.total}
+              <div
+                aria-hidden
+                className="@sm:row-start-auto row-start-2 h-2 overflow-hidden rounded-full bg-tint-accent-1"
+              >
+                <div
+                  className="h-full rounded-full bg-action-accent"
+                  style={{ width: `${(topic.answered / topic.total) * 100}%` }}
                 />
               </div>
-              <div className="@lg:block hidden text-right text-fg-secondary text-sm">
+              <div className="@sm:row-start-auto row-start-2 text-right text-fg-secondary text-sm">
                 {m.study_of({ done: topic.answered, total: topic.total })}
               </div>
-              <UnderlineLink
-                className="@sm:col-start-auto col-start-2 @sm:row-start-auto row-start-1 justify-self-end"
-                iconRight={undefined}
-                onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
-              >
-                {m.question_ui_continue()}
-              </UnderlineLink>
-            </div>
+            </ProgressRow>
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+/** A whole-row link on the landing, its divider hidden around the hover. */
+function ProgressRow({
+  className,
+  onClick,
+  children,
+}: {
+  className: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      className={cn(
+        'relative -mx-3 grid w-[calc(100%+1.5rem)] items-center gap-x-4 gap-y-1.5 rounded-button px-3 py-3 text-left hover:bg-surface-hover-bg',
+        'before:absolute before:inset-x-3 before:top-0 before:border-divider before:border-t first-of-type:before:hidden hover:before:hidden [&:hover+button]:before:hidden',
+        className
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
   );
 }
 

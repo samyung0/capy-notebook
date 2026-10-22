@@ -461,10 +461,10 @@
       background-color: transparent;
     }
   }
-  ::selection {
+  /*::selection {
     color: var(--text-primary);
     background: var(--selection-bg);
-  }
+  }*/
   button {
     cursor: pointer;
   }
@@ -749,36 +749,80 @@ math-field {
    the --page-frame-* properties and data-page-frame on <html>; the shell and
    the shared pages paint their margin with them, dark themes under an ink
    wash, and the shell's sidebar card frosts over the paint. Unlayered, so it
-   overrides the cards' background utilities. */
+   overrides the cards' background utilities.
+   The three colours are registered so that, while the Theme drawer's Page
+   frame section is open (data-page-frame-edit), a new frame (a preset, a
+   shuffle) eases into place; while a dot or slider drags, it commits a
+   sample every few frames (data-page-frame-live) and the colours glide
+   linearly between samples. Elsewhere, page loads included, they apply at
+   once. */
+@property --page-frame-a {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --page-frame-b {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --page-frame-c {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
 :root {
   --page-frame-wash: transparent;
+}
+:root[data-page-frame-edit] {
+  transition-property: --page-frame-a, --page-frame-b, --page-frame-c;
+  transition-duration: var(--motion-duration-slow);
+  transition-timing-function: var(--motion-ease-smooth-out);
+}
+:root[data-page-frame-live] {
+  transition-duration: 50ms;
+  transition-timing-function: linear;
 }
 .dark {
   --page-frame-wash: rgb(17 17 27 / 0.45);
 }
 html[data-page-frame] .page-frame {
-  isolation: isolate;
   background-image:
     linear-gradient(var(--page-frame-wash), var(--page-frame-wash)),
     var(--page-frame-image);
-  background-blend-mode: normal, var(--page-frame-blend);
-  background-size: 100% 100%, var(--page-frame-size);
+  background-size: 100% 100%;
   background-position: center;
 }
-/* Grain: a static noise tile, never animated. */
-html[data-page-frame] .page-frame::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background: var(--page-frame-grain-image) 0 0 / 96px 96px;
-  opacity: var(--page-frame-grain);
-  mix-blend-mode: soft-light;
-}
+/* Frosted cards: the shell's sidebar and the workspace's left panel.
+   Translucent hovers, so a row darkens the frost instead of covering it. */
 html[data-page-frame] .page-frame [data-frosted] {
+  --surface-page-hover: rgb(0 0 0 / 0.06);
+  --surface-card-hover-bg: rgb(0 0 0 / 0.06);
   background-color: rgb(255 255 255 / 0.6);
 }
 html.dark[data-page-frame] .page-frame [data-frosted] {
+  --surface-page-hover: rgb(255 255 255 / 0.08);
+  --surface-card-hover-bg: rgb(255 255 255 / 0.08);
   background-color: rgb(17 17 27 / 0.55);
+}
+/* An open exam's tree (ExamSection) runs over its cover's wash: translucent
+   row tints, so a hover or the current topic darkens the wash instead of
+   covering it. Frosted cards already have translucent ones. */
+[data-cover-wash]:not([data-frosted] *) {
+  --surface-card-hover-bg: rgb(0 0 0 / 0.03);
+}
+.dark [data-cover-wash]:not([data-frosted] *) {
+  --surface-card-hover-bg: rgb(255 255 255 / 0.05);
+}
+/* A row's hover ⋮ cannot cover the label with a see-through fill: it drops
+   its fill and the label fades out under it instead. */
+html[data-page-frame] .page-frame [data-frosted] [data-slot="hover-actions"] {
+  background-color: transparent;
+}
+html[data-page-frame]
+  .page-frame
+  [data-frosted]
+  .group:is(:hover, :has(> [data-slot="hover-actions"] [data-state="open"]))
+  > :not([data-slot="hover-actions"]) {
+  mask-image: linear-gradient(to left, transparent 2.25rem, #000 3.25rem);
 }

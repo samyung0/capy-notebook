@@ -202,11 +202,6 @@ func (s *Store) inTx(ctx context.Context, fn func(pgx.Tx) error) error {
 
 /* ------------------------------------------------------------- settings */
 
-func (s *Store) SetStudyProgressDefault(ctx context.Context, userID string, enabled bool) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET study_progress=$2, updated_at=now() WHERE id=$1`, userID, enabled)
-	return err
-}
-
 func (s *Store) SetStudyPreferences(ctx context.Context, userID string, prefs StudyPreferences) error {
 	_, err := s.pool.Exec(ctx, `UPDATE users SET study_preferences=$2, updated_at=now() WHERE id=$1`, userID, prefs)
 	return err
@@ -226,12 +221,12 @@ func (s *Store) SetWorkspaceStudy(ctx context.Context, userID, wsID string, enab
 
 /* ------------------------------------------------------------- progress */
 
-// StudyEnabled is the workspace's own switch, else the user's default.
+// StudyEnabled is false while the user hides study progress in the
+// workspace; a workspace without its own row shows it.
 func (s *Store) StudyEnabled(ctx context.Context, userID, wsID string) (bool, error) {
 	var on bool
 	err := s.pool.QueryRow(ctx, `SELECT COALESCE(
-		(SELECT enabled FROM workspace_study WHERE user_id=$1 AND workspace_id=$2),
-		(SELECT study_progress FROM users WHERE id=$1))`, userID, wsID).Scan(&on)
+		(SELECT enabled FROM workspace_study WHERE user_id=$1 AND workspace_id=$2), true)`, userID, wsID).Scan(&on)
 	return on, err
 }
 
