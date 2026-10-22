@@ -4131,7 +4131,8 @@ gives the paragraphs it rewrites hex paraIds, which a reopened file keeps. In
 UAT (2026-10-22) the agent sent the bare paraId (`body:p9`, and `body:t0` for
 a table) after reading; every command now refuses an id that is not one as
 `unavailable_target`, naming the read's id when it is a paragraph's bare
-paraId and telling the agent to copy ids whole from a read (`DocxSession::split`
+paraId (a table's slot `body:t0`: the table's id; a story id such as a cell's
+`body:t0:r0c0`: its first paragraph's) and telling the agent to copy ids whole from a read (`DocxSession::split`
 in `docx/agent.rs`), and an insert's anchor gets that refusal before the
 body-only one.
 
