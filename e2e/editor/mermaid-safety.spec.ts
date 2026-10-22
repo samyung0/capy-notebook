@@ -30,10 +30,16 @@ test('diagrams that reference an outside resource load nothing from it', async (
   });
 
   await page.goto('/e2e/fixtures/mermaid-safety.html');
+  // Diagrams draw as they come near the screen: scroll down the gallery.
   await expect
-    .poll(() => page.evaluate(() => document.body.dataset.mermaidDone), {
-      timeout: 60_000,
-    })
+    .poll(
+      () =>
+        page.evaluate(() => {
+          window.scrollBy(0, 500);
+          return document.body.dataset.mermaidDone;
+        }),
+      { timeout: 60_000 }
+    )
     .toBe('true');
 
   // Positive control: an off-origin image added now does reach the route, so
@@ -88,4 +94,58 @@ test('diagrams that reference an outside resource load nothing from it', async (
     );
     expect(link.href).not.toMatch(/javascript:/i);
   }
+});
+
+// The worker's DOMPurify parses with linkedom, so the page sanitizes its SVG
+// again with the browser's parser before inserting it (Epo 2026-10-22):
+// a worker answering scripts, handlers, images and a script link gets none
+// of them into the page, and its links still open in a new tab.
+// Security regression: fails with forPage's DOMPurify pass (Mermaid.tsx)
+// removed.
+test("the page sanitizes the worker's SVG before inserting it", async ({
+  page,
+  context,
+}) => {
+  const requested: string[] = [];
+  await context.route(`${REMOTE}/**`, (route) => {
+    requested.push(new URL(route.request().url()).pathname);
+    return route.abort();
+  });
+  await page.goto('/e2e/fixtures/mermaid-safety.html?worker=hostile');
+  await expect
+    .poll(() => page.evaluate(() => document.body.dataset.mermaidDone), {
+      timeout: 60_000,
+    })
+    .toBe('true');
+  const box = page.locator('[data-case="hostile"]');
+  await expect(box.locator('svg')).toContainText('hostile');
+  await page.waitForTimeout(500);
+  const found = await box.evaluate((element) => ({
+    handlers: [...element.querySelectorAll('*')].flatMap((node) =>
+      [...node.attributes]
+        .map((attribute) => attribute.name)
+        .filter((name) => name.startsWith('on'))
+    ),
+    links: [...element.querySelectorAll('a')].map((a) => ({
+      href: a.getAttribute('href') ?? '',
+      rel: a.getAttribute('rel') ?? '',
+      target: a.getAttribute('target'),
+    })),
+    loaders: element.querySelectorAll('script, img, image').length,
+    pwned: 'pwned' in window,
+  }));
+  expect(found.handlers).toEqual([]);
+  expect(found.loaders).toBe(0);
+  expect(found.pwned).toBe(false);
+  expect(requested).toEqual([]);
+  for (const link of found.links) {
+    expect(link.href).not.toMatch(/javascript:/i);
+    expect(link.target).toBe('_blank');
+    expect(link.rel.split(/\s+/)).toEqual(
+      expect.arrayContaining(['noopener', 'noreferrer'])
+    );
+  }
+  expect(found.links).toContainEqual(
+    expect.objectContaining({ href: 'https://offsite.test/hostile' })
+  );
 });

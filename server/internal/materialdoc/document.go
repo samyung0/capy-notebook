@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
@@ -972,8 +973,17 @@ func validateDiagram(node map[string]any) error {
 	if err := requireID(node); err != nil {
 		return err
 	}
-	if _, ok := node["source"].(string); !ok {
+	source, ok := node["source"].(string)
+	if !ok {
 		return errors.New("source must be a string")
+	}
+	// UTF-16 units, as the browser counts it (Epo 2026-10-22).
+	units := 0
+	for _, r := range source {
+		units += utf16.RuneLen(r)
+	}
+	if units > embeds.MermaidSourceMax {
+		return fmt.Errorf("diagram source is over %d characters", embeds.MermaidSourceMax)
 	}
 	children := node["children"].([]any)
 	if len(children) != 1 || children[0].(map[string]any)["type"] != "mermaid_caption" {

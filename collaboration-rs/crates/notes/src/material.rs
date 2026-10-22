@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 
 use crate::catalog::{
     self, BLOCK_CAPTION_MAX, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES,
-    HTML_EMBED_MAX_COUNT, LIST_INDENT_MAX, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
+    HTML_EMBED_MAX_COUNT, LIST_INDENT_MAX, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN, MERMAID_SOURCE_MAX,
 };
 use crate::questions::{self, Policy, js_trim};
 
@@ -248,8 +248,14 @@ fn validate_media(node: &Node, kind: &str) -> Check {
 fn validate_diagram(node: &Node) -> Check {
     reject_opaque(node)?;
     require_id(node)?;
-    if !node.get("source").is_some_and(Value::is_string) {
+    let Some(source) = node.get("source").and_then(Value::as_str) else {
         return fail("source must be a string");
+    };
+    // UTF-16 units, as the browser counts it (Epo 2026-10-22).
+    if crate::plate::utf16_len(source) as usize > MERMAID_SOURCE_MAX {
+        return fail(format!(
+            "diagram source is over {MERMAID_SOURCE_MAX} characters"
+        ));
     }
     validate_width(node)?;
     let list = children(node);

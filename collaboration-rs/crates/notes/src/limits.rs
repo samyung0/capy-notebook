@@ -276,6 +276,10 @@ struct Shape {
     /// Elements whose children the room copy decides, after the key rules
     /// ([Structure::finish], [holds_children]).
     structure: HashSet<BranchID>,
+    /// Mermaid source texts the update may take past `MERMAID_SOURCE_MAX`:
+    /// their held length plus what it types into them is over it, so the
+    /// copy measures them ([sources_fit]).
+    sources: HashSet<BranchID>,
 }
 
 /// An entry the update writes under a key: its id and last unit, the entry it
@@ -403,7 +407,9 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         // A figure's block only as its live map (Epo 2026-10-18), checked
         // whole on the copy; never as one plain value.
         (kind, key, value) if plate::holds_map(kind, key) => matches!(value, Any::Buffer(_)),
-        (kind, key, value) if plate::holds_text(kind, key) => matches!(value, Any::String(_)),
+        (kind, key, value) if plate::holds_text(kind, key) => {
+            matches!(value, Any::String(source) if plate::utf16_len(source) as usize <= catalog::MERMAID_SOURCE_MAX)
+        }
         (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
             matches!(value, Any::String(width) if crate::material::valid_width(width))
         }
@@ -558,6 +564,8 @@ fn plain_content<T: ReadTxn>(
     // Figures whose live block the update writes into (Epo 2026-10-17): read
     // and checked whole on the copy ([on_candidate]).
     let mut figures: HashSet<BranchID> = HashSet::new();
+    // The UTF-16 units the update types into each Mermaid source.
+    let mut typed_into: HashMap<BranchID, u64> = HashMap::new();
     let mut structure = Structure::default();
     for (item, at) in located {
         let id = item.id();
@@ -591,7 +599,13 @@ fn plain_content<T: ReadTxn>(
             (Place::Entry(_, parent), _) if is_source(parent) => {
                 Some("an attribute on a Mermaid source")
             }
-            (Place::Sequence(parent), ItemContent::String(_)) if is_source(parent) => None,
+            (Place::Sequence(parent @ Some(source)), ItemContent::String(text))
+                if is_source(parent) =>
+            {
+                *typed_into.entry(source.clone()).or_default() +=
+                    text.len(yrs::OffsetKind::Utf16) as u64;
+                None
+            }
             (Place::Sequence(parent), _) if is_source(parent) => {
                 Some("content other than text in a Mermaid source")
             }
@@ -796,8 +810,37 @@ fn plain_content<T: ReadTxn>(
     // make a deletion grow the value (a capped series moving up).
     shape.exact = !figures.is_empty();
     media.extend(figures);
+    // A source whose held length plus what the update types stays within
+    // the cap needs no copy (deletions only shorten it): one length read.
+    shape.sources = typed_into
+        .into_iter()
+        .filter(|(source, typed)| {
+            let held = held_branch(txn, source).map_or(0, |branch| branch.content_len());
+            u64::from(held) + typed > catalog::MERMAID_SOURCE_MAX as u64
+        })
+        .map(|(source, _)| source)
+        .collect();
     shape.structure = structure.finish(txn, incoming, &shape.created, material)?;
     Ok(media)
+}
+
+/// [Refusal::Content] for a Mermaid source past `MERMAID_SOURCE_MAX`.
+pub const LONG_SOURCE: &str = "a Mermaid source over its length cap";
+
+/// The Mermaid sources [plain_content] named, measured in `candidate` (the
+/// room with the update applied) in UTF-16 units, the doc's offset kind.
+fn sources_fit(candidate: &yrs::Doc, sources: &HashSet<BranchID>) -> Result<(), Refusal> {
+    use yrs::Transact;
+    let txn = candidate.transact();
+    for id in sources {
+        if id.get_branch(&txn).is_some_and(|branch| {
+            !branch.item().is_some_and(|item| item.is_deleted())
+                && branch.content_len() as usize > catalog::MERMAID_SOURCE_MAX
+        }) {
+            return Err(Refusal::Content(LONG_SOURCE));
+        }
+    }
+    Ok(())
 }
 
 /// The `type` a held element has, if the room holds it.
@@ -1796,9 +1839,10 @@ impl Validator {
         let mut shape = Shape::default();
         if keeps_roots {
             let media = plain_content(&txn, &incoming, &mut shape, &self.material)?;
-            if !media.is_empty() {
-                // An image inserted, a file named, a figure written: the room
-                // is copied only when inspect did not already.
+            if !media.is_empty() || !shape.sources.is_empty() {
+                // An image inserted, a file named, a figure written, a source
+                // typed near its cap: the room is copied only when inspect did
+                // not already.
                 let candidate = match trial.take() {
                     Some(trial) => trial,
                     None => {
@@ -1807,6 +1851,7 @@ impl Validator {
                     }
                 };
                 on_candidate(&candidate, &media)?;
+                sources_fit(&candidate, &shape.sources)?;
                 trial = Some(candidate);
             }
         }

@@ -115,6 +115,9 @@ export const BLOCK_CAPTION_MAX = EMBED_CATALOG.limits.BLOCK_CAPTION_MAX;
 /** Any block's indent (lists, indented paragraphs): the editor stops at it
  * and every validator refuses more (Epo 2026-10-18). */
 export const LIST_INDENT_MAX = EMBED_CATALOG.limits.LIST_INDENT_MAX;
+/** A Mermaid source in UTF-16 units (a string's length), mermaid's own
+ * maxTextSize; every layer refuses more (Epo 2026-10-22). */
+export const MERMAID_SOURCE_MAX = EMBED_CATALOG.limits.MERMAID_SOURCE_MAX;
 
 export function htmlBytes(html: string): number {
   return new TextEncoder().encode(html).length;
@@ -349,6 +352,7 @@ function validateCustomElement(
       return (
         hasId(element) &&
         typeof element.source === 'string' &&
+        element.source.length <= MERMAID_SOURCE_MAX &&
         element.children.length === 1 &&
         isElementNode(element.children[0]) &&
         element.children[0].type === 'mermaid_caption'

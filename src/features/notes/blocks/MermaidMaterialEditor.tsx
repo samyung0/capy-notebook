@@ -31,6 +31,7 @@ import { FileLoading } from '@/features/files/FileStates';
 import {
   BLOCK_CAPTION_MAX,
   type MaterialDocument,
+  MERMAID_SOURCE_MAX,
 } from '@/features/materials/document';
 import {
   blockSource,
@@ -212,6 +213,8 @@ function LiveDiagram({
   const [showPreview, setShowPreview] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [failure, setFailure] = useState<MermaidFailure | null>(null);
+  // An edit past the source cap (MERMAID_SOURCE_MAX) was refused.
+  const [tooLong, setTooLong] = useState(false);
   const [previewCode, setPreviewCode] = useState(code);
   // The full-screen view shows the last source that drew; none drew yet
   // (a broken diagram opened in Edit), nothing opens.
@@ -223,6 +226,11 @@ function LiveDiagram({
     );
     return () => clearTimeout(timer);
   }, [code]);
+  const shown: MermaidFailure | null = tooLong
+    ? { line: null, reason: 'tooLong' }
+    : failure;
+  const message =
+    shown && shown.line == null ? mermaidFailureMessage(shown) : null;
   const setTheme = (next: MermaidTheme) =>
     live.block.doc?.transact(
       () => live.block.setAttribute('theme', next),
@@ -247,9 +255,9 @@ function LiveDiagram({
         </ToolbarButton>
         <div className="ml-auto flex min-w-0 items-center gap-2">
           {/* A blamed line is marked in the source instead. */}
-          {failure && failure.line == null && (
+          {message && (
             <p className="min-w-0 truncate font-semibold text-sm text-solid-error">
-              {mermaidFailureMessage(failure)}
+              {message}
             </p>
           )}
           <UndoButtons manager={history} />
@@ -264,7 +272,9 @@ function LiveDiagram({
           errorLine={failure?.line ?? null}
           history={history}
           label={m.editor_mermaid_source()}
-          onChange={() => undefined}
+          maxLength={MERMAID_SOURCE_MAX}
+          onChange={() => setTooLong(false)}
+          onRefused={() => setTooLong(true)}
           origin={LOCAL_EDIT}
           text={text}
           value={code}
