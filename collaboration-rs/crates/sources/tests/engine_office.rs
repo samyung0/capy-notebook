@@ -91,11 +91,28 @@ async fn office_calls_through_the_pool_equal_the_crate_in_process() {
             .await
             .unwrap();
         let direct = office_service::apply_commands(&base, checkpoint(&seed), &[edit]).unwrap();
-        assert_eq!(
-            (applied.inverse, applied.targets, applied.notice),
-            (direct.inverse, direct.targets, direct.notice),
-            "{path}"
-        );
+        assert_eq!(applied.notice, direct.notice, "{path}");
+        if format != Format::Xlsx {
+            // What the engine measured for the Undo cost crosses the pool
+            // (review r2 L5): a replacement taking out text measures it.
+            let entry = entries.iter().find(|entry| entry.value.len() > 3).unwrap();
+            let cut = Command::ReplaceText {
+                target_id: entry.id.clone(),
+                expected_text: entry.value.clone(),
+                text: "x".into(),
+            };
+            let through = pool
+                .apply_commands(on, &seed, std::slice::from_ref(&cut))
+                .await
+                .unwrap();
+            let direct = office_service::apply_commands(&base, checkpoint(&seed), &[cut]).unwrap();
+            assert_eq!(through.touched, direct.touched, "{path}");
+            assert!(
+                through.touched[0].items > 0,
+                "{path}: {:?}",
+                through.touched
+            );
+        }
         let edited = applied.state;
         let effects = match format {
             Format::Xlsx => {
@@ -315,9 +332,9 @@ async fn the_seed_check_seeds_each_base_once_and_reports_every_changed_seed() {
     );
 }
 
-/// The agent's scoped XLSX read and `create` answer through the pool as the
-/// crate does in process; a refused read and a create of a format without a
-/// starter stay edit refusals with their sentence (Epo 2026-10-20).
+/// The agent's scoped XLSX and DOCX reads and `create` answer through the
+/// pool as the crate does in process; a refused read and a create of a format
+/// without a starter stay edit refusals with their sentence (Epo 2026-10-20).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn scoped_reads_and_creates_go_through_the_pool() {
     use office_service::InspectQuery;
@@ -351,12 +368,14 @@ async fn scoped_reads_and_creates_go_through_the_pool() {
     let range = InspectQuery {
         sheet: Some(first.clone()),
         range: Some("A1:C3".into()),
+        ..InspectQuery::default()
     };
     let cells = pool.inspect_scoped(on, &seed, &range).await.unwrap();
     assert!(!cells["cells"].as_array().unwrap().is_empty());
     let too_big = InspectQuery {
         sheet: Some(first),
         range: Some("A1:Z1000".into()),
+        ..InspectQuery::default()
     };
     match pool.inspect_scoped(on, &seed, &too_big).await {
         Err(EngineError::Refused(failure)) => {
@@ -397,18 +416,65 @@ async fn scoped_reads_and_creates_go_through_the_pool() {
     .unwrap();
     assert_eq!((bytes, notice), (direct.bytes, direct.notice));
 
-    // DOCX has no starter yet: a create is refused, not retried as a fault.
+    // A Word file from its starter, read a page of paragraphs at a time.
+    let commands = vec![Command::InsertParagraph {
+        after_id: None,
+        before_id: None,
+        text: "Method".into(),
+        style: Some("Heading1".into()),
+        list: None,
+    }];
+    let (bytes, _) = pool
+        .create(
+            Format::Docx,
+            &commands,
+            &seed_hex,
+            "2000-01-01T00:00:00.000Z",
+        )
+        .await
+        .unwrap();
+    let sha = office_service::sha256_hex(&bytes);
+    let on = On {
+        format: Format::Docx,
+        base: &bytes,
+        base_sha256: &sha,
+        room: None,
+    };
+    let seed = pool.seed(on).await.unwrap();
+    let page = InspectQuery {
+        count: Some(10),
+        ..InspectQuery::default()
+    };
+    let read = pool.inspect_scoped(on, &seed, &page).await.unwrap();
+    assert_eq!(read["paragraphs"][0]["text"], "Method");
+    assert_eq!(read["paragraphs"][0]["style"], "Heading1");
+    assert_eq!(
+        read,
+        office_service::inspect_scoped(
+            &bytes,
+            Checkpoint {
+                format: Format::Docx,
+                schema_version: 1,
+                base_sha256: &sha,
+                state: &seed,
+            },
+            &page
+        )
+        .unwrap()
+    );
+
+    // PPTX has no starter: a create is refused, not retried as a fault.
     match pool
-        .create(Format::Docx, &[], &seed_hex, "2000-01-01T00:00:00.000Z")
+        .create(Format::Pptx, &[], &seed_hex, "2000-01-01T00:00:00.000Z")
         .await
     {
         Err(EngineError::Refused(failure)) => {
             assert_eq!(failure.kind, FailureKind::Edit);
             assert_eq!(
                 failure.message,
-                "unsupported_operation: docx files cannot be created yet"
+                "unsupported_operation: pptx files cannot be created yet"
             );
         }
-        other => panic!("a DOCX create: {other:?}"),
+        other => panic!("a PPTX create: {other:?}"),
     }
 }

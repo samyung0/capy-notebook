@@ -51,6 +51,29 @@ type officeCommand struct {
 	TargetID     string `json:"target_id"`
 	ExpectedText string `json:"expected_text"`
 	Text         string `json:"text"`
+	// DOCX, PPTX
+	AfterID   string          `json:"after_id"`
+	BeforeID  string          `json:"before_id"`
+	Style     string          `json:"style"`
+	List      string          `json:"list"`
+	IDs       []string        `json:"ids"`
+	ID        string          `json:"id"`
+	Rows      json.RawMessage `json:"rows"`
+	Underline *bool           `json:"underline"`
+	Color     string          `json:"color"`
+	Highlight string          `json:"highlight"`
+	Alignment string          `json:"alignment"`
+	// PPTX
+	ShapeID     string          `json:"shape_id"`
+	Paragraphs  json.RawMessage `json:"paragraphs"`
+	SlideID     string          `json:"slide_id"`
+	AfterSlide  string          `json:"after_slide"`
+	BeforeSlide string          `json:"before_slide"`
+	Layout      string          `json:"layout"`
+	X           *float64        `json:"x"`
+	Y           *float64        `json:"y"`
+	W           *float64        `json:"w"`
+	H           *float64        `json:"h"`
 }
 
 // namedNumberFormats are format_cells' preset number formats, matched in any
@@ -66,6 +89,15 @@ var xlsxCommands = []string{
 	"insert_columns", "delete_columns", "delete_sheet",
 }
 
+// paragraphCommands are the DOCX and PPTX commands.
+var paragraphCommands = []string{"replace_text", "insert_paragraph", "delete_paragraph", "format_text", "set_alignment"}
+
+// docxCommands are the commands only DOCX files take.
+var docxCommands = []string{"set_list", "insert_table", "delete_table"}
+
+// pptxCommands are the commands only PPTX files take.
+var pptxCommands = []string{"set_shape_text", "add_slide", "delete_slide", "move_slide", "add_text_box"}
+
 // NormalizeOfficeCommands turns edit_office_document's commands into the
 // engine's: the type stays snake_case, the fields become camelCase, and
 // format_cells' flat style fields become its style object. Every field name
@@ -78,15 +110,20 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 		if err := json.Unmarshal(item, &c); err != nil {
 			return nil, refusal(agenttools.ErrInvalidInput, "invalid command: %v", err)
 		}
-		xlsx := slices.Contains(xlsxCommands, c.Type)
+		xlsx, docx := slices.Contains(xlsxCommands, c.Type), slices.Contains(docxCommands, c.Type)
+		paragraphs, pptx := slices.Contains(paragraphCommands, c.Type), slices.Contains(pptxCommands, c.Type)
 		switch {
 		case c.Type == "create":
 			return nil, refusal(agenttools.ErrInvalidInput, "create must be the call's first command, without file_id")
 		case xlsx && format != "xlsx":
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to XLSX files, not %s", c.Type, strings.ToUpper(format))
-		case c.Type == "replace_text" && format == "xlsx":
-			return nil, refusal(agenttools.ErrUnsupportedOperation, "replace_text applies to DOCX and PPTX files; write cells with set_range")
-		case !xlsx && c.Type != "replace_text":
+		case docx && format != "docx":
+			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to DOCX files, not %s", c.Type, strings.ToUpper(format))
+		case pptx && format != "pptx":
+			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to PPTX files, not %s", c.Type, strings.ToUpper(format))
+		case paragraphs && format == "xlsx":
+			return nil, refusal(agenttools.ErrUnsupportedOperation, "%s applies to DOCX and PPTX files; write cells with set_range", c.Type)
+		case !xlsx && !paragraphs && !docx && !pptx:
 			return nil, refusal(agenttools.ErrUnsupportedOperation, "unsupported command %q", c.Type)
 		}
 		var normalized map[string]any
@@ -147,6 +184,78 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 				return nil, refusal(agenttools.ErrInvalidInput, "replace_text on %s needs target_id", strings.ToUpper(format))
 			}
 			normalized = map[string]any{"targetId": c.TargetID, "expectedText": c.ExpectedText, "text": c.Text}
+		case "insert_paragraph":
+			normalized = map[string]any{"text": c.Text}
+			for key, value := range map[string]string{"afterId": c.AfterID, "beforeId": c.BeforeID, "style": c.Style, "list": c.List} {
+				if value != "" {
+					normalized[key] = value
+				}
+			}
+		case "delete_paragraph":
+			normalized = map[string]any{"targetId": c.TargetID, "expectedText": c.ExpectedText}
+		case "set_list":
+			normalized = map[string]any{"ids": c.IDs, "list": c.List}
+		case "insert_table":
+			var rows [][]string
+			if err := json.Unmarshal(c.Rows, &rows); err != nil || rows == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "insert_table needs rows: the cells' text as a grid of rows")
+			}
+			normalized = map[string]any{"rows": rows}
+			if c.AfterID != "" {
+				normalized["afterId"] = c.AfterID
+			}
+		case "delete_table":
+			var cells [][]string
+			if err := json.Unmarshal(c.Expected, &cells); err != nil || cells == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "delete_table needs expected: the table's cells' text as a grid of rows")
+			}
+			normalized = map[string]any{"id": c.ID, "expected": cells}
+		case "format_text":
+			normalized = map[string]any{"targetId": c.TargetID, "expectedText": c.ExpectedText}
+			for key, set := range map[string]*bool{"bold": c.Bold, "italic": c.Italic, "underline": c.Underline, "strikethrough": c.Strikethrough} {
+				if set != nil {
+					normalized[key] = *set
+				}
+			}
+			if c.FontSize != nil {
+				normalized["fontSize"] = *c.FontSize
+			}
+			for key, value := range map[string]string{"color": c.Color, "highlight": c.Highlight, "fontFamily": c.FontFamily} {
+				if value != "" {
+					normalized[key] = value
+				}
+			}
+		case "set_alignment":
+			normalized = map[string]any{"targetId": c.TargetID, "alignment": c.Alignment}
+		case "set_shape_text":
+			var texts []string
+			if err := json.Unmarshal(c.Paragraphs, &texts); err != nil || texts == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "set_shape_text needs paragraphs: the shape's new text, one string a paragraph")
+			}
+			normalized = map[string]any{"shapeId": c.ShapeID, "expectedText": c.ExpectedText, "paragraphs": texts}
+		case "add_slide", "move_slide":
+			// add_slide names a layout, move_slide its slide.
+			fields := map[string]string{"afterSlide": c.AfterSlide, "beforeSlide": c.BeforeSlide, "layout": c.Layout}
+			if c.Type == "move_slide" {
+				fields = map[string]string{"afterSlide": c.AfterSlide, "beforeSlide": c.BeforeSlide, "slideId": c.SlideID}
+			}
+			normalized = map[string]any{}
+			for key, value := range fields {
+				if value != "" {
+					normalized[key] = value
+				}
+			}
+		case "delete_slide":
+			normalized = map[string]any{"slideId": c.SlideID, "expectedText": c.ExpectedText}
+		case "add_text_box":
+			var texts []string
+			if err := json.Unmarshal(c.Paragraphs, &texts); err != nil || texts == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "add_text_box needs paragraphs: the box's text, one string a paragraph")
+			}
+			if c.X == nil || c.Y == nil || c.W == nil || c.H == nil {
+				return nil, refusal(agenttools.ErrInvalidInput, "add_text_box needs x, y, w and h in points")
+			}
+			normalized = map[string]any{"slideId": c.SlideID, "paragraphs": texts, "x": *c.X, "y": *c.Y, "w": *c.W, "h": *c.H}
 		}
 		normalized["type"] = c.Type
 		encoded, err := json.Marshal(normalized)
@@ -195,9 +304,9 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 		})
 		return
 	}
-	if req.Format != "xlsx" {
+	if req.Format != "xlsx" && req.Format != "docx" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code": "invalid_input", "message": "create makes an xlsx file; a deck is made with create_deck",
+			"code": "invalid_input", "message": "create makes an xlsx or docx file; a deck is made with create_deck",
 		})
 		return
 	}

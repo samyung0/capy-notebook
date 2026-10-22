@@ -726,9 +726,12 @@ it by the block's path, top-level or nested (`mermaidSourceText`). A source a ro
 string (written before shape A) becomes a text when an editor first binds it,
 outside every Undo. The Rust server bootstraps sources as texts, reads them as
 their strings in the projection and the metrics, bounds a string typed into
-one by its escaped bytes (no copy of the room per keystroke), and writes an
-agent's `set_mermaid` (`set_property` of `source`) as a text diff, so typing
-that reaches the room meanwhile stays. Its admit lets a text in as `source`
+one by its escaped bytes (no copy of the room per keystroke), and writes the
+source of a block an agent's `replace_block` puts in as a text too (Epo
+2026-10-21: `set_mermaid` is gone, so an agent replaces the whole block). The
+rewrite expects the source the agent inspected, so typing in it since makes
+the edit stale, and keeps the block's caption, width and theme as they read (Epo
+2026-10-22, `keep_caption` in `crates/notes/src/edit.rs`). Its admit lets a text in as `source`
 on a `mermaid` block only, with strings and nothing else inside
 (`collaboration-rs/crates/notes/src/limits.rs`): a text under another key or
 on another element, a block retyped while it holds one, and a format, embed,
@@ -1417,6 +1420,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   and both minimums to 7: an older client would keep reading names from
   awareness. Its deploy request names "client protocol 6 -> 7, material
   6 -> 7, source 6 -> 7".
+  The DOCX engine round (every DOCX seed changes, Word rooms reset; Epo
+  2026-10-20) raised `CLIENT_PROTOCOL` to 8 and `MIN_SOURCE` to 8;
+  `MIN_MATERIAL` stays 7. Its deploy request names "client protocol 7 -> 8,
+  source 7 -> 8".
 
 #### When to bump
 
@@ -1813,7 +1820,11 @@ editor gets in the same flush (`Model::repair_on_entry`,
 `notes::repair::on_entry`, `items::flashcards::repair`): an element's `text`
 and `suggestion` keys are removed, a note left with no block gets an empty
 paragraph with an id of its own (two writers each deleting one of the last
-two blocks leave it so), and a set left with no card, after an update that
+two blocks leave it so; an agent edit removing the last block gets it in its
+own transaction instead, Epo 2026-10-21, so no editor sees the note empty,
+and an agent Undo or Redo emptying the note gets it right after its revert,
+Epo 2026-10-22),
+and a set left with no card, after an update that
 deletes, a blank card under a fresh id (a card id is a global key). A key
 held at null is absent to the store as to the catalog and admission (Rust
 `material.rs` and Go `document.go`), so a key set to null and a retype that
@@ -1859,7 +1870,7 @@ clean), and a clean room's retry never moves it.
 Tokens, outbox events and commands already resolve the current schema, and
 `load`/`store` refuse a stale one, so a stale client sees another room before
 it syncs anything and opens copy-only recovery; item identities do not change,
-so comment anchors and AI Undo guards stay valid. A co-editor still connected
+so comment anchors stay valid. A co-editor still connected
 during such a discard, with a few seconds of unsaved typing, lands in recovery
 too (Epo, 2026-10-04).
 
@@ -2178,8 +2189,8 @@ holds (a removed option, a changed set of ordering items) is dropped (D9).
 Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
 content write is gone). Agent question commands write what differs in the
 questions that differ, texts as the fewest changes and lists by position, so
-an editor typing in the same question keeps their characters, with inverses
-and question guards.
+an editor typing in the same question keeps their characters; their Undo is
+the live Undo of every agent edit.
 
 Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo
@@ -2276,8 +2287,23 @@ removes the thread.
 
 Comment highlighting is local decoration state. It is never applied with
 `editor.tf.setNodes`, so opening or hovering a comment cannot create a Yjs
-update. If an anchor no longer resolves, the thread remains available at its
-stable block and quoted fallback instead of being deleted.
+update. An anchor resolves through `liveSlateRange` (`liveRange.ts`): an end
+inside a block that left the document gives no highlight, where slate-yjs
+alone would place it at the start of the last block. A thread whose anchor no
+longer resolves keeps its block and quoted fallback instead of being deleted.
+
+Document comments (Epo 2026-10-21): a thread with no `blockId`, and a thread
+whose block is not a top-level block of the document now (deleted by anyone,
+or replaced by the agent's `replace_block`, which mints new ids), list in one
+document-level place instead of rendering nowhere. `documentThreads` in
+`Collaboration.tsx` decides this at render from the live top-level ids, with
+no data moved, so Undo bringing a block back (same id) returns its threads to
+it. The note toolbar's pinned end shows a comment icon with their count while
+there are any (`toolbar/ToolbarDocumentComments.tsx`); it opens the block
+threads' popover (`DiscussionThreadsContent`) under a "Document comments"
+heading, each thread with its quote, reply, edit and delete as on a block.
+The API and table already allow a null `blockId`; the UI creates only block
+comments. Threads have no resolved state (migration 0040).
 
 Comment mutations publish `capy:collaboration:comments` through Redis.
 The collaboration server sends a stateless `comments-invalidated` room event and clients
@@ -2405,15 +2431,16 @@ Chat `edit_document` never touches the browser editor. The collaboration
 service loads the durable material state into an isolated Y.Doc, merges the
 open live room's state so in-flight typing counts, applies the normalized
 commands through a headless Slate editor
-(`collaboration-rs/crates/notes/src/edit.rs`), stores the
-inverse and item-run guards of the edited nodes, then fans the committed delta
-into the live room as a `service-edit` update; the projection runs on the same
-commit. A refused edit names its reason and, where the agent can retry, the
+(`collaboration-rs/crates/notes/src/edit.rs`), then fans the committed delta
+into the live room as a `service-edit` update, which keeps the edit's own Yjs
+items for its Undo while the room is loaded (see
+[agentic-retrieval](../agentic-retrieval.md), Undo chain); the projection runs
+on the same commit. A refused edit names its reason and, where the agent can retry, the
 target as it reads now (see [agentic-retrieval](../agentic-retrieval.md#tools),
 Tools).
 A removed flashcard's review state stays in `review_states`, ignored until an
 Undo brings the card back. The chat result card shows the effect with an Undo
-button (`available`, `undone`, `unavailable`) fed by the receipt's `undo` ref.
+button (`available`, `unavailable`) fed by the receipt's `undo` ref.
 
 ## AI previews
 
@@ -2425,9 +2452,45 @@ AI output is local until accepted:
 - proposed text/nodes live in a local weak store, not Slate or Yjs.
 
 `AiMenu` displays removed and proposed text. Reject clears local state without a
-Yjs transaction. Accept re-resolves every target; if concurrent changes make a
-target invalid, the UI requires retry. A valid accept assigns missing element
-IDs and flushes one Yjs transaction.
+Yjs transaction. Accept (`applyAiPreview`) writes the suggestion over its
+target as the target reads now, whatever someone changed there since the
+preview (Epo 2026-10-21, no stale check):
+
+- the proposed Markdown, and each table cell's, goes through the editor's
+  markdown import (`importMarkdownDocument`, as a pasted file: URL images
+  upload, quiz and flashcards fences become rows first), so it lands as
+  formatted nodes;
+- an edit whose answer keeps the range's block count in plain paragraphs
+  (Improve, Grammar and the like) replaces each covered block's text in
+  place, so every block keeps its type, list, alignment, id and Yjs text (a
+  peer's concurrent typing elsewhere in the block and comment highlights in
+  it survive; the adapter sends no marker for indent lists or h4-h6, so the
+  model answers those in plain text);
+- any other edit deletes the range, its void blocks (images, embeds,
+  dividers) whole, and inserts the nodes there as a paste (Plate's table and
+  code-block `insertFragment` ignore `at`); when the range covered a whole
+  block, a plain first paragraph takes that block's type, properties and id,
+  and any other first block keeps the model's shape with the block's id;
+- an insert goes after its block; a table update replaces the cell's
+  children, keeping the cell, and a cell the model emptied is written empty;
+- the operations are local, and slate-yjs sends them in one transaction with
+  its local origin, so they apply once and `Y.UndoManager` records one step
+  (capture stopped before and after). The old code wrapped the flush in a
+  transaction of its own origin, which slate-yjs read as remote and applied a
+  second time, and Undo never saw.
+
+When the text a suggestion was for was removed entirely (the edit range's
+block left the document or all of its text is gone, the insert's block is
+gone, every updated table cell is gone), Accept drops the suggestion and
+closes the menu with no message, since the removal is already visible (Epo
+2026-10-21); a table cell removed alone is skipped and the others are written.
+The targets are checked before the conversion as well as after it, so a
+dropped Accept creates no fence rows. An answer that converts to no nodes (a
+lone fence whose row could not be created) writes nothing and shows "The
+suggestion could not be added to the note". Reject is disabled while Accept converts, and a preview
+replaced meanwhile (a new command) is not written. The command's range is
+unhung first (`commandRange` in `aiMenuState.ts`), so a Shift+Down selection
+neither inserts below nor edits the next block.
 
 Copilot ghost text remains plugin-local and continues in the note's language.
 Generate/comment replies follow the account locale injected by the gateway; edits
@@ -2444,7 +2507,8 @@ way chat does, including BYOK. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
 The command menu always sends `ctx.toolName`. Missing or unknown values are
 `400`. There is no server classify step. Free-form text in the menu input
 sends `generate`, so a rewrite-style sentence still inserts new Markdown
-instead of replacing the selection. Canned Improve / Grammar / Shorter /
+below the selection's last block instead of replacing the selection (a
+generate previews as an insert whatever Plate's mode, `aiPlugins.ts`). Canned Improve / Grammar / Shorter /
 Longer / Simplify send `edit`. `comment` is implemented and kept for a future
 Comment action; the current menu never sends it. Retry resends the last
 `toolName`.

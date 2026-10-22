@@ -71,7 +71,10 @@ proxy) and shows it, small and copyable, only where the error stays on
 screen: boundary screens, a page or pane that failed with Retry, and form
 errors (`FormAlert`), for an unexpected failure (`unexpectedErrorId` in
 `src/lib/errors.ts`). Toasts and status banners show none (see
-`frontend/error-handling.md`).
+`frontend/error-handling.md`). A failed row in the workspace Indexing tab
+shows the trace of its failed ingest attempt instead, stored with the failure
+(`source_documents.refresh_trace_id`, `materials.index_trace_id`,
+`files.failure_trace_id`, migration 0105).
 
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as
@@ -969,9 +972,9 @@ timeout's message names the bound that fired: no first event, silence after
 the start, or the backstop. Comment-only keep-alives do not count as events,
 so a request parked in a provider queue times out like a silent one. The
 stream backstop bounds the whole stream. Non-streaming interactive calls such
-as query embeddings get the 15 seconds as a whole-call bound; a search rerank
-gets 5 seconds for admission and the request, busy retry included, and settles
-in the background. Ingest calls keep
+as query embeddings get the 15 seconds as a whole-call bound, a search rerank
+included; the search itself waits at most 5 seconds for the scores (admission
+and busy retry included) while the request runs on to its receipt. Ingest calls keep
 their 120-second bound. Only the awaits on the provider are timed, so a slow
 consumer between chunks never counts as provider silence. The transport keeps
 one keep-alive `httpx` client per process (one per event loop) and parses
@@ -1140,9 +1143,13 @@ soon as they arrive and the settlement finishes in a background task
 The lease is released when the provider answers; the call row stays open until
 the background settlement applies it, and a failed one is logged and swept at
 the receipt deadline like any other unsettled call. A background rerank reply
-never overwrites the session's exhaustion flags. A timeout leaves the call
-open for its receipt window like any other uncertain call; any failure keeps
-fused order instead of failing the search.
+never overwrites the session's exhaustion flags. The search's 5-second wait
+does not cut the request off: one answering later still settles its measured
+usage, where a cut-off at 5 seconds left it open until `receipt_timeout`,
+never metered. Only a
+request past its own 15-second bound stays open for its receipt window like
+any other uncertain call; any failure keeps fused order instead of failing the
+search.
 
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the
@@ -1454,7 +1461,8 @@ compaction, embedding, and cumulative input counts are telemetry. AI routes
 a 15/minute short-window guard so a scripted loop trips immediately. Cheap
 editor routes (`/ai/copilot`) have their own 120/minute
 class so typing in the note does not consume the chat allowance. Upload
-routes carry a tighter budget on top of the general one, and so do the
+routes (a gateway upload's ticket, which the upload itself needs, and the
+import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
@@ -1736,7 +1744,7 @@ Worth knowing before trusting a dashboard:
   LISTEN is detached, workspace streams are refused with 503 and `workspace
   tree listener stopped` is logged) — so the remaining ceiling is the
   container's open-file limit. Access is re-checked at the 25 s ping, not the
-  LLM streams' 5 s live context. A refusal logs `event stream refused at
+  generate and editor-AI streams' 5 s live context (chat turns run none). A refusal logs `event stream refused at
   capacity`; the browser shows the reconnecting banner and retries with
   backoff, with no polling fallback, so nothing else surfaces it.
 - **Reindexing a workspace into a different embedding model.** Not implemented,
@@ -1757,7 +1765,7 @@ Worth knowing before trusting a dashboard:
 Ingest enqueue used to be listed here as two fail-open billing holes and now
 fails closed instead, which is worth knowing because the failure is visible to
 users. `ingestJobPayload` returns an error — and `CreateAgentFileOperation` /
-`completeSourceUpload` roll back their transaction — when there is no
+`uploadSource` roll back their transaction — when there is no
 `actorUserId`, no registry, or no resolvable ingest/vision default. The worker
 does the same at claim time: `_account_allows_ingest` refuses a job with no
 actor, and a job whose pins do not resolve is failed with

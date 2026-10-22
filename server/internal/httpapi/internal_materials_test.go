@@ -163,6 +163,9 @@ type receiptBody struct {
 			Title        string `json:"title"`
 			MaterialKind string `json:"materialKind"`
 		} `json:"resource"`
+		Undo *struct {
+			OperationID string `json:"operationId"`
+		} `json:"undo"`
 	} `json:"effect"`
 }
 
@@ -639,6 +642,22 @@ func TestInternalMaterialStoresProvenanceAndShareAlikeLicense(t *testing.T) {
 	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("web provenance from a model call: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// A chat write whose actor may no longer edit the turn's workspace (a viewer
+// now, or no longer a member) is refused as permission_denied, which tells the
+// agent to stop editing (Epo 2026-10-21).
+func TestInternalMaterialRefusesAnActorWhoLostEditing(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	for _, user := range []string{"u_viewer", "u_other"} {
+		msgID := seedAssistantMessage(t, st, user, "ws_e2e_private")
+		body := noteBody(msgID, "call_lost_"+user, "Lost", "# Lost")
+		body["userId"] = user
+		rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+		if rec.Code != http.StatusForbidden || errorCode(t, rec) != "permission_denied" {
+			t.Fatalf("%s: %d %s", user, rec.Code, rec.Body.String())
+		}
 	}
 }
 

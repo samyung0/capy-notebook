@@ -1,5 +1,5 @@
 {
-  "version": 33,
+  "version": 38,
   "operations": [
     "source.read",
     "material.read",
@@ -195,7 +195,7 @@
       "requiredOperations": [
         "source.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "search_knowledge",
@@ -873,12 +873,12 @@
         "source.read",
         "material.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner's Undo. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a mermaid block (a mindmap's or diagram's one block) as one ```mermaid fence, expecting the source inspect shows as its text. Any note block may be removed or replaced, media included; the only media an edit adds are library figures. A block rewritten as one of its own type keeps its caption and width (a diagram its theme too); an image swapped for a different picture or figure takes the new one's caption. PDFs cannot be edited. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1003,6 +1003,16 @@
                       "minLength": 1,
                       "type": "string"
                     },
+                    "expected_back": {
+                      "description": "The card's back as inspect_document shows it; required with back.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
+                    "expected_front": {
+                      "description": "The card's front as inspect_document shows it; required with front.",
+                      "maxLength": 200000,
+                      "type": "string"
+                    },
                     "front": {
                       "maxLength": 200,
                       "type": "string"
@@ -1076,30 +1086,6 @@
                   "required": [
                     "type",
                     "question_id"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "expected_source": {
-                      "description": "Current mermaid source.",
-                      "maxLength": 200000,
-                      "type": "string"
-                    },
-                    "source": {
-                      "description": "New mermaid source.",
-                      "maxLength": 200000,
-                      "type": "string"
-                    },
-                    "type": {
-                      "const": "set_mermaid"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "expected_source",
-                    "source"
                   ],
                   "type": "object"
                 }
@@ -1222,7 +1208,7 @@
       "requiredOperations": [
         "trash.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "restore_file",
@@ -1273,13 +1259,13 @@
     {
       "name": "inspect_office_document",
       "version": 1,
-      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: paragraphs with their target ids and text, count from start. PPTX: without slide, shapes with their target ids and text, count from start; with slide, that slide's shapes.",
+      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, first line), the first page also listing the deck's layouts; with slide, count of that slide's shapes and paragraphs from start, each shape followed by its paragraphs with their target ids, the first page also giving the slide's speaker notes.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "count": {
             "default": 60,
-            "description": "DOCX, PPTX: targets to read.",
+            "description": "DOCX: paragraphs to read; PPTX: slides, or with slide shapes and paragraphs.",
             "maximum": 200,
             "minimum": 1,
             "type": "integer"
@@ -1299,13 +1285,13 @@
             "type": "string"
           },
           "slide": {
-            "description": "PPTX: one slide's number.",
+            "description": "PPTX: one slide's number, from 1.",
             "minimum": 1,
             "type": "integer"
           },
           "start": {
             "default": 0,
-            "description": "DOCX, PPTX: first target index.",
+            "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first shape or paragraph; counting from 0.",
             "minimum": 0,
             "type": "integer"
           }
@@ -1324,12 +1310,12 @@
       "requiredOperations": [
         "source.read"
       ],
-      "retention": "full"
+      "retention": "none"
     },
     {
       "name": "edit_office_document",
       "version": 1,
-      "description": "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat. A call's commands are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
+      "description": "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands of its format as the office_building skill describes. Each command names what it expects as inspect_office_document shows it, and one stale expectation refuses the whole call. Edits save directly. A call's commands are at most 256 KB; a larger call is refused. A call applies at most 50 commands and, per format, DOCX: 20 text replacements, 20 inserted paragraphs, 20 deleted paragraphs, 400 table cells inserted, 5 tables deleted, 30 formatted spans and 200 paragraphs given a list or an alignment; PPTX: 20 text replacements, 20 inserted paragraphs, 20 deleted paragraphs, 30 formatted spans, 200 paragraphs given an alignment, 500 paragraphs of shape and text box text, 50,000 characters of shape and text box text, 20 slides added, 20 slides deleted, 50 slides moved and 20 text boxes added; XLSX: 10,000 cells written, 1,000 inserted rows and columns and 5 sheets added, renamed or deleted. Commands apply in order up to the first that would pass a limit; the rest come back unapplied, by index, to send in another call.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1347,7 +1333,8 @@
                     },
                     "format": {
                       "enum": [
-                        "xlsx"
+                        "xlsx",
+                        "docx"
                       ],
                       "type": "string"
                     },
@@ -1749,10 +1736,439 @@
                     "text"
                   ],
                   "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX, PPTX: insert one paragraph right after after_id or right before before_id (at most one); DOCX paragraphs go in the document body, at its end with neither.",
+                  "properties": {
+                    "after_id": {
+                      "description": "The paragraph it follows, a target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "before_id": {
+                      "description": "The paragraph it precedes; the first paragraph's id inserts at the start.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "list": {
+                      "description": "DOCX: start or end a list; omit to continue the paragraph before it.",
+                      "enum": [
+                        "bullet",
+                        "numbered",
+                        "none"
+                      ],
+                      "type": "string"
+                    },
+                    "style": {
+                      "description": "DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "text": {
+                      "description": "One paragraph's plain text, up to 5,000 characters, without line breaks.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "insert_paragraph"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX, PPTX: delete one paragraph, never its story's or shape's last.",
+                  "properties": {
+                    "expected_text": {
+                      "description": "The paragraph's whole text as inspect_office_document shows it.",
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "description": "The paragraph's target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_paragraph"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target_id",
+                    "expected_text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX: make paragraphs bulleted or numbered, or end their list.",
+                  "properties": {
+                    "ids": {
+                      "description": "Paragraph target ids.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "list": {
+                      "enum": [
+                        "bullet",
+                        "numbered",
+                        "none"
+                      ],
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "set_list"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "ids",
+                    "list"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX: add a table of text to the document body, followed by an empty paragraph.",
+                  "properties": {
+                    "after_id": {
+                      "description": "The body paragraph it follows; several inserts after one paragraph keep their order. Omit to add it at the end of the document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "rows": {
+                      "description": "The cells' text, one array per row, every row the same length; at most 20 rows of 10 cells.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
+                    },
+                    "type": {
+                      "const": "insert_table"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "rows"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX: delete a table.",
+                  "properties": {
+                    "expected": {
+                      "description": "The table's cells' text as inspect_office_document shows them, one array per row; a cell's paragraphs joined by line breaks.",
+                      "items": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
+                    },
+                    "id": {
+                      "description": "The table's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_table"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id",
+                    "expected"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX, PPTX: format text inside one paragraph; fields left out stay as they are.",
+                  "properties": {
+                    "bold": {
+                      "type": "boolean"
+                    },
+                    "color": {
+                      "description": "A hex colour, like \"#1F4E79\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "expected_text": {
+                      "description": "The exact text to format as inspect_office_document shows it; must occur once in the paragraph.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "font_family": {
+                      "description": "A font name, like \"Arial\".",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "font_size": {
+                      "description": "Points.",
+                      "maximum": 1638,
+                      "minimum": 1,
+                      "type": "number"
+                    },
+                    "highlight": {
+                      "description": "DOCX only.",
+                      "enum": [
+                        "none",
+                        "yellow",
+                        "green",
+                        "cyan",
+                        "magenta",
+                        "blue",
+                        "red",
+                        "darkBlue",
+                        "darkCyan",
+                        "darkGreen",
+                        "darkMagenta",
+                        "darkRed",
+                        "darkYellow",
+                        "darkGray",
+                        "lightGray",
+                        "black",
+                        "white"
+                      ],
+                      "type": "string"
+                    },
+                    "italic": {
+                      "type": "boolean"
+                    },
+                    "strikethrough": {
+                      "type": "boolean"
+                    },
+                    "target_id": {
+                      "description": "A paragraph's target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "format_text"
+                    },
+                    "underline": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target_id",
+                    "expected_text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "DOCX, PPTX: align one paragraph.",
+                  "properties": {
+                    "alignment": {
+                      "enum": [
+                        "left",
+                        "center",
+                        "right",
+                        "justify"
+                      ],
+                      "type": "string"
+                    },
+                    "target_id": {
+                      "description": "A paragraph's target id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "set_alignment"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target_id",
+                    "alignment"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: replace a shape's whole text; its paragraphs keep their level and bullet, added ones continue the last.",
+                  "properties": {
+                    "expected_text": {
+                      "description": "The shape's whole text as the slide read shows it, its paragraphs joined by line breaks.",
+                      "type": "string"
+                    },
+                    "paragraphs": {
+                      "description": "The new text, one string a paragraph without line breaks; [\"\"] empties the shape. At most 50 paragraphs and 5,000 characters together.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "shape_id": {
+                      "description": "The shape's id from inspect_office_document's slide read.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "set_shape_text"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "shape_id",
+                    "expected_text",
+                    "paragraphs"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: add a slide with its layout's title and text placeholders, empty, right after after_slide or right before before_slide (at most one), last with neither.",
+                  "properties": {
+                    "after_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "before_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "layout": {
+                      "description": "A layout id the deck read lists; omit for the layout of the slide it follows (the first slide's when it goes first).",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "add_slide"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: delete a slide, never the deck's only one.",
+                  "properties": {
+                    "expected_text": {
+                      "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order, then its speaker notes as the read shows them (cut marker included); blank lines and the spaces around a line are not compared.",
+                      "type": "string"
+                    },
+                    "slide_id": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "delete_slide"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "slide_id",
+                    "expected_text"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: move a slide right after after_slide or right before before_slide (exactly one).",
+                  "properties": {
+                    "after_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "before_slide": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "slide_id": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "move_slide"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "slide_id"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "PPTX: add a text box to a slide, its box in points from the slide's top left corner, inside the slide.",
+                  "properties": {
+                    "h": {
+                      "description": "Height in points.",
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "paragraphs": {
+                      "description": "The text, one string a paragraph without line breaks. At most 50 paragraphs and 5,000 characters together.",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 50,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "slide_id": {
+                      "description": "A slide's id from inspect_office_document.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "add_text_box"
+                    },
+                    "w": {
+                      "description": "Width in points.",
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "x": {
+                      "description": "Points from the slide's left or top edge.",
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "y": {
+                      "description": "Points from the slide's left or top edge.",
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "slide_id",
+                    "paragraphs",
+                    "x",
+                    "y",
+                    "w",
+                    "h"
+                  ],
+                  "type": "object"
                 }
               ]
             },
-            "maxItems": 50,
             "minItems": 1,
             "type": "array"
           },
@@ -1990,5 +2406,9 @@
       ],
       "type": "object"
     }
+  },
+  "officeShapeText": {
+    "paragraphs": 50,
+    "characters": 5000
   }
 }

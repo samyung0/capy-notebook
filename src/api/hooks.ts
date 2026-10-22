@@ -152,6 +152,7 @@ import type {
   WorkspaceRecent,
   WorkspaceStats,
 } from './types';
+import { uploadWithTicket } from './uploadTurn';
 
 export interface QueryUiOptions {
   errorBoundary?: false | 'unlessMissing';
@@ -1313,8 +1314,9 @@ export function useDeleteOwnedFile() {
 }
 
 /** Reverse one direct AI edit shown in chat. Each click is its own request
- * (the key is not reused across retries, so it never replays); the server
- * validates the edit's guards and refuses when the targets changed since. */
+ * (the key is not reused across retries); the server answers every request
+ * for a step it reversed already with that receipt, and refuses a step its
+ * room no longer holds (live Undo, Epo 2026-10-20). */
 export function useUndoEdit() {
   return useMutation({
     meta: { errorToast: false },
@@ -1580,8 +1582,8 @@ async function simulateMswUploadProgress(
   }
 }
 
-/** Reserve a B2 object, upload it directly, then ask the gateway to verify and
- * enqueue it. File bytes never traverse the Go gateway. */
+/** Stream the file through the gateway, which stores it, records its SHA-256
+ * and queues its processing in the same request (Epo 2026-10-22). */
 export function useUploadSource(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1596,8 +1598,10 @@ export function useUploadSource(wsId: string) {
       pageCount,
       batchId,
       batchTotal,
+      onQueued,
       onUploadProgress,
       signal,
+      willRetry,
     }: {
       file: File;
       kind: SourceFile['kind'];
@@ -1618,43 +1622,42 @@ export function useUploadSource(wsId: string) {
       /** The analysed page count of a fast-parse document; the gateway
        * refuses one past the policy's maxPages. */
       pageCount?: number;
+      /** The upload's place in the gateway's line while it waits, 0 once
+       * its turn comes (uploadWithTicket). */
+      onQueued?: (position: number) => void;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
+      /** A 429 is retried with a new ticket (withUploadRetry). */
+      willRetry?: boolean;
     }) => {
-      if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
-      return api
-        .post<{
-          uploadId: string;
-          url: string;
-          method: 'PUT';
-          headers: Record<string, string>;
-          expiresAt: string;
-        }>(`/workspaces/${wsId}/sources/uploads`, {
-          batchId,
-          batchTotal,
-          chapterId: chapterId ?? null,
-          chapterName: chapterName ?? null,
-          contentType: file.type || 'application/octet-stream',
-          estimatedCreditMicros: estimatedCreditMicros || undefined,
-          kind,
-          name: file.name,
-          pageCount: pageCount || undefined,
-          parseMode,
-          sizeBytes: file.size,
-        })
-        .then(async (reservation) => {
-          await api.putFile(
-            reservation.url,
-            file,
-            reservation.headers,
-            onUploadProgress,
-            signal
-          );
-          onUploadProgress?.(100);
-          return api.post<SourceFile>(
-            `/workspaces/${wsId}/sources/uploads/${reservation.uploadId}/complete`
-          );
-        });
+      const metadata = {
+        batchId,
+        batchTotal,
+        chapterId: chapterId ?? null,
+        chapterName: chapterName ?? null,
+        contentType: file.type || 'application/octet-stream',
+        estimatedCreditMicros: estimatedCreditMicros || undefined,
+        kind,
+        name: file.name,
+        pageCount: pageCount || undefined,
+        parseMode,
+        sizeBytes: file.size,
+      };
+      return uploadWithTicket(
+        `/workspaces/${wsId}/sources/uploads`,
+        metadata,
+        async (path) => {
+          if (USE_MSW)
+            await simulateMswUploadProgress(onUploadProgress, signal);
+          // The metadata part comes first: the gateway reserves storage from
+          // it before it reads the file part.
+          const form = new FormData();
+          form.append('metadata', JSON.stringify(metadata));
+          form.append('file', file);
+          return api.upload<SourceFile>(path, form, onUploadProgress, signal);
+        },
+        { onQueued, signal, willRetry }
+      );
     },
     onSuccess: (file, vars) => {
       track('source_uploaded', {
@@ -1755,6 +1758,24 @@ export function useUpdateConversation(
     mutationFn: ({ id, ...body }: UpdateConversationReq & { id: string }) =>
       api.patch<Conversation>(`/conversations/${id}`, body),
     onSettled: () => qc.invalidateQueries({ queryKey: qk.conversations(wsId) }),
+  });
+}
+
+/** Stop a running turn: the server saves it as it stands and starts nothing
+ * further; a failure toasts and the turn goes on. */
+export function useStopChatTurn(options?: MutationUiOptions) {
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: ({
+      conversationId,
+      messageId,
+    }: {
+      conversationId: string;
+      messageId: string;
+    }) =>
+      api.post<void>(
+        `/conversations/${conversationId}/messages/${messageId}/stop`
+      ),
   });
 }
 

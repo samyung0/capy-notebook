@@ -767,6 +767,7 @@ export async function runJourney(
     case 'upload-failed':
     case 'upload-file-cap':
     case 'upload-batch-cap':
+    case 'upload-queue-full':
     case 'ingest-slots':
     case 'storage-quota':
     case 'account-locked':

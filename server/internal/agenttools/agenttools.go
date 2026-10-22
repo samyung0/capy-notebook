@@ -12,6 +12,7 @@ package agenttools
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
@@ -96,7 +97,37 @@ import (
 // v33: create_material, add_questions (a new quiz) and create_deck take
 // sources, a made-from line of plain strings, instead of an id scope;
 // search_workspace's file_ids take any workspace item (Epo 2026-10-21).
-const ContractVersion = 33
+// v34: the live Undo (Epo 2026-10-20): an edit receipt carries effect.undo
+// only when a loaded room holds the edit's Undo, and edit_document and
+// edit_office_document no longer promise one.
+// v35: edit_office_document inserts and deletes DOCX and PPTX paragraphs
+// (insert_paragraph, delete_paragraph), and a DOCX read names each
+// paragraph's style and lists the file's paragraph styles (Epo 2026-10-21).
+// v36: edit_office_document creates Word files; insert_paragraph's anchor is
+// optional (the body's end) and it takes a list; set_list, insert_table,
+// delete_table, format_text and set_alignment edit Word files; a DOCX read
+// marks lists, table cells, content controls and locked paragraphs and reads
+// headers, footers and notes after the body; the engine applies a call's
+// commands up to its per-call limits (its limits.json, which Marshal writes
+// into the description) and returns the rest unapplied by index (Epo
+// 2026-10-21, 2026-10-22).
+// v37: edit_document loses set_mermaid (a mindmap's or diagram's Mermaid
+// block changes through replace_block), may remove or replace any note
+// block, media included, and replace_card takes expected_front and
+// expected_back, required with the side it replaces (Epo 2026-10-21); a
+// Mermaid block's inspected and expected text is its source, nested ones
+// included, and a replace_block keeps the replaced block's caption and width
+// (a Mermaid block's theme too) on the replacement's first block of its type,
+// unless that shows a different picture, which brings its own caption and
+// credit (Epo 2026-10-22).
+// v38: inspect_office_document reads a PPTX by slide (its slides with their
+// layouts and shapes, the deck's layouts; a slide's shapes and paragraphs);
+// edit_office_document's set_shape_text, add_slide, delete_slide,
+// move_slide and add_text_box edit PowerPoint files, and format_text and
+// set_alignment take PPTX paragraphs too (Epo 2026-10-20); the slide read
+// pages shapes with paragraphs and gives the slide's speaker notes, which
+// delete_slide names (Epo 2026-10-22).
+const ContractVersion = 38
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -160,7 +191,8 @@ type Definition struct {
 	Concurrency        string         `json:"concurrency" enum:"search,read,mutate"`
 	AllowedSlots       []Slot         `json:"allowedSlots"`
 	RequiredOperations []Operation    `json:"requiredOperations"`
-	// Retention applies after the answer completes; live tool results stay exact.
+	// Retention applies between user messages; until a turn's answer is
+	// finished every result stays whole (Epo 2026-10-21).
 	Retention ResultRetention `json:"retention" enum:"full,cited_passages,used_excerpts,none"`
 }
 
@@ -228,22 +260,20 @@ type ToolError struct {
 	Message string    `json:"message"`
 }
 
-// UndoStatus is the advisory availability of an edit's Undo action.
+// UndoStatus is the availability of a step's Undo: the server sends
+// available; the chat marks a refused step unavailable for the session.
 type UndoStatus string
 
 const (
 	UndoAvailable   UndoStatus = "available"
-	UndoUndone      UndoStatus = "undone"
 	UndoUnavailable UndoStatus = "unavailable"
-	UndoPending     UndoStatus = "pending"
 )
 
-// UndoRef points at the durable edit operation whose inverse the server holds.
-// The inverse payload itself never leaves the server.
+// UndoRef names the step a chat Undo or Redo reverses; a loaded collaboration
+// room holds its Yjs items while the step is live (Epo 2026-10-20).
 type UndoRef struct {
 	OperationID string     `json:"operationId"`
-	Status      UndoStatus `json:"status" enum:"available,undone,unavailable,pending"`
-	Reason      string     `json:"reason,omitempty"`
+	Status      UndoStatus `json:"status" enum:"available,unavailable"`
 }
 
 // EffectOperation names what a mutation did to a resource.
@@ -259,7 +289,7 @@ const (
 
 // ResourceEffect is one durable mutation receipt as shown in chat and stored
 // on the assistant message. It carries identity and status only, never the
-// document content or an inverse payload.
+// document content.
 type ResourceEffect struct {
 	Operation   EffectOperation `json:"operation" enum:"created,edited,edit_undone,trashed,restored"`
 	Resource    ResourceRef     `json:"resource"`
@@ -300,6 +330,9 @@ type Contract struct {
 	// MediaBlocks are the JSON Schemas add_question_media checks its media
 	// against; the model is not shown them.
 	MediaBlocks map[string]any `json:"mediaBlocks"`
+	// OfficeShapeText is the engine's per-shape text bound, which Marshal
+	// adds for the office_building skill.
+	OfficeShapeText *ShapeText `json:"officeShapeText,omitempty"`
 }
 
 func Export() Contract {
@@ -325,9 +358,24 @@ func Export() Contract {
 	}
 }
 
-// Marshal renders the contract deterministically for the generated file.
-func Marshal() ([]byte, error) {
-	out, err := json.MarshalIndent(Export(), "", "  ")
+// Marshal renders the contract deterministically for the generated file,
+// edit_office_document's description ending with the Office engine's
+// per-call limits from officeLimits (the file at OfficeLimitsPath).
+func Marshal(officeLimits []byte) ([]byte, error) {
+	limits, err := parseOfficeLimits(officeLimits)
+	if err != nil {
+		return nil, err
+	}
+	contract := Export()
+	contract.OfficeShapeText = &limits.ShapeText
+	for i := range contract.Tools {
+		if contract.Tools[i].Name == "edit_office_document" {
+			contract.Tools[i].Description = strings.Replace(contract.Tools[i].Description,
+				"(Marshal adds the engine's per-call limits.)", officeLimitsSentence(limits), 1)
+			withShapeText(contract.Tools[i].InputSchema, limits.ShapeText)
+		}
+	}
+	out, err := json.MarshalIndent(contract, "", "  ")
 	if err != nil {
 		return nil, err
 	}
@@ -450,9 +498,11 @@ func editCommandSchema() map[string]any {
 				"expected_text": text("The block's current text as inspect_document shows it."),
 			}, "block_id", "expected_text"),
 			variant("replace_card", map[string]any{
-				"card_id": str("A side left out stays as it is."),
-				"front":   cardFront(),
-				"back":    cardBack(),
+				"card_id":        str("A side left out stays as it is."),
+				"front":          cardFront(),
+				"back":           cardBack(),
+				"expected_front": text("The card's front as inspect_document shows it; required with front."),
+				"expected_back":  text("The card's back as inspect_document shows it; required with back."),
 			}, "card_id"),
 			variant("add_card", map[string]any{
 				"front":         cardFront(),
@@ -461,10 +511,6 @@ func editCommandSchema() map[string]any {
 			}, "front", "back"),
 			variant("remove_card", map[string]any{"card_id": str("")}, "card_id"),
 			variant("remove_question", map[string]any{"question_id": str("")}, "question_id"),
-			variant("set_mermaid", map[string]any{
-				"expected_source": text("Current mermaid source."),
-				"source":          text("New mermaid source."),
-			}, "expected_source", "source"),
 		},
 	}
 }
@@ -501,10 +547,22 @@ func officeCommandSchema() map[string]any {
 			"items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		}
 	}
+	paragraph := str("A paragraph's target id from inspect_office_document.")
+	after := str("The body paragraph it follows; several inserts after one paragraph keep their order. Omit to add it at the end of the document.")
+	flag := map[string]any{"type": "boolean"}
+	slideID := str("A slide's id from inspect_office_document.")
+	// A shape's text, bounded by the engine's limits.json (Marshal).
+	shapeText := func(desc string) map[string]any {
+		return map[string]any{
+			"type": "array", "minItems": 1, shapeTextKey: true, "items": map[string]any{"type": "string"},
+			"description": desc + " At most " + shapeParagraphs + " paragraphs and " + shapeCharacters + " characters together.",
+		}
+	}
+	points := map[string]any{"type": "number", "minimum": 0, "description": "Points from the slide's left or top edge."}
 	return map[string]any{
 		"oneOf": []any{
 			variant("create", "First command only, without file_id: makes a new file; the call's other commands then apply to it.", map[string]any{
-				"format":     map[string]any{"type": "string", "enum": []string{"xlsx"}},
+				"format":     map[string]any{"type": "string", "enum": []string{"xlsx", "docx"}},
 				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle, "description": "The file's name, without its extension."},
 				"chapter_id": str("The chapter to file it in; omit to leave it unfiled."),
 			}, "format", "title"),
@@ -566,6 +624,74 @@ func officeCommandSchema() map[string]any {
 				"expected_text": map[string]any{"type": "string", "description": "Exact text to replace as inspect_office_document shows it; must occur once in the target."},
 				"text":          map[string]any{"type": "string", "description": "Plain replacement text; empty deletes the expected text."},
 			}, "target_id", "expected_text", "text"),
+			variant("insert_paragraph", "DOCX, PPTX: insert one paragraph right after after_id or right before before_id (at most one); DOCX paragraphs go in the document body, at its end with neither.", map[string]any{
+				"after_id":  str("The paragraph it follows, a target id from inspect_office_document."),
+				"before_id": str("The paragraph it precedes; the first paragraph's id inserts at the start."),
+				"text":      str("One paragraph's plain text, up to 5,000 characters, without line breaks."),
+				"style":     str("DOCX: a paragraph style id inspect_office_document lists; omit to continue the paragraph before it as Enter does."),
+				"list":      map[string]any{"type": "string", "enum": []string{"bullet", "numbered", "none"}, "description": "DOCX: start or end a list; omit to continue the paragraph before it."},
+			}, "text"),
+			variant("delete_paragraph", "DOCX, PPTX: delete one paragraph, never its story's or shape's last.", map[string]any{
+				"target_id":     str("The paragraph's target id from inspect_office_document."),
+				"expected_text": map[string]any{"type": "string", "description": "The paragraph's whole text as inspect_office_document shows it."},
+			}, "target_id", "expected_text"),
+			variant("set_list", "DOCX: make paragraphs bulleted or numbered, or end their list.", map[string]any{
+				"ids":  map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string"}, "description": "Paragraph target ids."},
+				"list": map[string]any{"type": "string", "enum": []string{"bullet", "numbered", "none"}},
+			}, "ids", "list"),
+			variant("insert_table", "DOCX: add a table of text to the document body, followed by an empty paragraph.", map[string]any{
+				"after_id": after,
+				"rows":     band("The cells' text, one array per row, every row the same length; at most 20 rows of 10 cells."),
+			}, "rows"),
+			variant("delete_table", "DOCX: delete a table.", map[string]any{
+				"id":       str("The table's id from inspect_office_document."),
+				"expected": band("The table's cells' text as inspect_office_document shows them, one array per row; a cell's paragraphs joined by line breaks."),
+			}, "id", "expected"),
+			variant("format_text", "DOCX, PPTX: format text inside one paragraph; fields left out stay as they are.", map[string]any{
+				"target_id":     paragraph,
+				"expected_text": str("The exact text to format as inspect_office_document shows it; must occur once in the paragraph."),
+				"bold":          flag,
+				"italic":        flag,
+				"underline":     flag,
+				"strikethrough": flag,
+				"color":         str(`A hex colour, like "#1F4E79".`),
+				"highlight": map[string]any{"type": "string", "description": "DOCX only.", "enum": []string{
+					"none", "yellow", "green", "cyan", "magenta", "blue", "red", "darkBlue", "darkCyan",
+					"darkGreen", "darkMagenta", "darkRed", "darkYellow", "darkGray", "lightGray", "black", "white",
+				}},
+				"font_size":   map[string]any{"type": "number", "minimum": 1, "maximum": 1638, "description": "Points."},
+				"font_family": str(`A font name, like "Arial".`),
+			}, "target_id", "expected_text"),
+			variant("set_alignment", "DOCX, PPTX: align one paragraph.", map[string]any{
+				"target_id": paragraph,
+				"alignment": map[string]any{"type": "string", "enum": []string{"left", "center", "right", "justify"}},
+			}, "target_id", "alignment"),
+			variant("set_shape_text", "PPTX: replace a shape's whole text; its paragraphs keep their level and bullet, added ones continue the last.", map[string]any{
+				"shape_id":      str("The shape's id from inspect_office_document's slide read."),
+				"expected_text": map[string]any{"type": "string", "description": "The shape's whole text as the slide read shows it, its paragraphs joined by line breaks."},
+				"paragraphs":    shapeText(`The new text, one string a paragraph without line breaks; [""] empties the shape.`),
+			}, "shape_id", "expected_text", "paragraphs"),
+			variant("add_slide", "PPTX: add a slide with its layout's title and text placeholders, empty, right after after_slide or right before before_slide (at most one), last with neither.", map[string]any{
+				"after_slide":  slideID,
+				"before_slide": slideID,
+				"layout":       str("A layout id the deck read lists; omit for the layout of the slide it follows (the first slide's when it goes first)."),
+			}),
+			variant("delete_slide", "PPTX: delete a slide, never the deck's only one.", map[string]any{
+				"slide_id":      slideID,
+				"expected_text": map[string]any{"type": "string", "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order, then its speaker notes as the read shows them (cut marker included); blank lines and the spaces around a line are not compared."},
+			}, "slide_id", "expected_text"),
+			variant("move_slide", "PPTX: move a slide right after after_slide or right before before_slide (exactly one).", map[string]any{
+				"slide_id":     slideID,
+				"after_slide":  slideID,
+				"before_slide": slideID,
+			}, "slide_id"),
+			variant("add_text_box", "PPTX: add a text box to a slide, its box in points from the slide's top left corner, inside the slide.", map[string]any{
+				"slide_id":   slideID,
+				"paragraphs": shapeText("The text, one string a paragraph without line breaks."),
+				"x":          points, "y": points,
+				"w": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Width in points."},
+				"h": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Height in points."},
+			}, "slide_id", "paragraphs", "x", "y", "w", "h"),
 		},
 	}
 }
@@ -752,7 +878,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "read_study_progress",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read the learner's study progress in this workspace: files and " +
 				"materials done or started, recent quiz results, and the chapters they retain least.",
 			InputSchema:        obj(map[string]any{}),
@@ -964,7 +1090,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "inspect_document",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read a document's current content as editable targets with stable " +
 				"ids. Inspect before editing; never take edit positions from search results. A quiz's " +
 				"answers, solutions and marking schemes appear only when the user may edit it.",
@@ -981,10 +1107,14 @@ func Definitions() []Definition {
 			Retention: RetainFull,
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
-				"the whole call. Edits save directly, each with an Undo; replace_block rewrites a note " +
-				"block with formatting or math. Uploaded media and PDFs cannot be edited; a library " +
-				"figure placed in a note is removed only by the learner's Undo. Quiz questions are " +
-				"added and replaced with the question tools.",
+				"the whole call. Edits save directly; replace_block rewrites a note " +
+				"block with formatting or math, and a mermaid block (a mindmap's or diagram's " +
+				"one block) as one ```mermaid fence, expecting the source inspect shows as its text. " +
+				"Any note block may be removed or replaced, media included; the only media an edit " +
+				"adds are library figures. A block rewritten as one of its own type keeps its " +
+				"caption and width (a diagram its theme too); an image swapped for a different " +
+				"picture or figure takes the new one's caption. PDFs cannot be edited. Quiz " +
+				"questions are added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{
@@ -1014,7 +1144,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "list_trashed_files",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "List the trashed source files and study materials of this " +
 				"workspace with their ids, names and expiry. Use it before restore_file " +
 				"so you never guess an id.",
@@ -1040,20 +1170,24 @@ func Definitions() []Definition {
 		// of the request's prefix.
 		chatTool(Definition{
 			Name:      "inspect_office_document",
-			Retention: RetainFull,
+			Retention: RetainNone,
 			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
-				"cells a read. DOCX: paragraphs with their target ids and text, count from start. " +
-				"PPTX: without slide, shapes with their target ids and text, count from start; " +
-				"with slide, that slide's shapes.",
+				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
+				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
+				"only; the first page also lists the file's paragraph styles. " +
+				"PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, " +
+				"first line), the first page also listing the deck's layouts; with slide, count of that " +
+				"slide's shapes and paragraphs from start, each shape followed by its paragraphs with their " +
+				"target ids, the first page also giving the slide's speaker notes.",
 			InputSchema: obj(map[string]any{
 				"file_id": str(""),
 				"sheet":   str("XLSX: the sheet's id or name."),
 				"range":   str(`XLSX: an A1 range on that sheet, like "A1:H40".`),
-				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX, PPTX: first target index."},
-				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX, PPTX: targets to read."},
-				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number."},
+				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first shape or paragraph; counting from 0."},
+				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX: paragraphs to read; PPTX: slides, or with slide shapes and paragraphs."},
+				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number, from 1."},
 			}, "file_id"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead},
@@ -1061,17 +1195,16 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "edit_office_document",
 			Retention: RetainFull,
-			Description: "Edit one Word, Excel or PowerPoint file, or create an Excel file, with the commands " +
+			Description: "Edit one Word, Excel or PowerPoint file, or create a Word or Excel file, with the commands " +
 				"of its format as the office_building skill describes. Each command names what it " +
 				"expects as inspect_office_document shows it, and one stale expectation refuses the " +
-				"whole call. Edits save directly; most can be undone from the chat. A call's commands " +
-				"are at most 256 KB and write at most 10,000 cells; split larger edits into several calls.",
+				"whole call. Edits save directly. A call's commands are at most 256 KB; a larger call is " +
+				"refused. (Marshal adds the engine's per-call limits.)",
 			InputSchema: obj(map[string]any{
 				"file_id": str("The file to edit; omit when the first command is create."),
 				"commands": map[string]any{
 					"type":     "array",
 					"minItems": 1,
-					"maxItems": 50,
 					"items":    officeCommandSchema(),
 				},
 			}, "commands"),

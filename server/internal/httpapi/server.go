@@ -122,6 +122,11 @@ type api struct {
 	streamMu            sync.Mutex
 	streamByUser        map[string]int
 	streamTotal         int
+	// uploads admits the gateway uploads (upload_queue.go).
+	uploads *uploadQueue
+	// undos run the requests for one chat Undo step one at a time
+	// (huma_undo.go).
+	undos operationLocks
 	// broker fans the ingest and notification channels out from one Redis
 	// subscription, and the workspace tree channel from one Postgres LISTEN
 	// (treeLive says whether that LISTEN is attached); see fanout.go.
@@ -130,6 +135,9 @@ type api struct {
 	// operations hold an agent edit's or create's retry until its first
 	// attempt ends (internal_documents.go).
 	operations operationLocks
+	// turns are the chat turns this process relays, by assistant message id,
+	// so a stop request reaches its relay (chat_stop.go).
+	turns sync.Map
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and, in
@@ -166,6 +174,13 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeReloadOutcome: billing.ReloadOutcome,
 		streamByUser:        make(map[string]int),
 	}
+	a.uploads = newUploadQueue(func(batch string, removed bool) {
+		if removed {
+			a.removeSourceBatchFile(context.Background(), batch)
+		} else {
+			a.failSourceBatchFile(context.Background(), batch)
+		}
+	})
 	if rdb != nil {
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
 		go a.listenWorkspaceTree(context.Background())
@@ -255,8 +270,13 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	if cfg.E2EAuth && a.mailRecorder != nil {
 		r.Get("/api/e2e/emails", a.e2eEmails)
 	}
-	r.Post("/api/materials/{id}/editor-assets/uploads", a.reserveEditorAsset)
-	r.Post("/api/materials/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
+	r.Post("/api/workspaces/{id}/sources/uploads/tickets", a.sourceUploadTicket)
+	r.Post("/api/workspaces/{id}/sources/uploads", a.uploadSource)
+	r.Post("/api/materials/{id}/editor-assets/uploads/tickets", a.editorAssetUploadTicket)
+	r.Post("/api/materials/{id}/editor-assets/uploads", a.uploadEditorAsset)
+	r.Get("/api/uploads/tickets/{ticketId}", a.waitUploadTicket)
+	r.Delete("/api/uploads/tickets/{ticketId}", a.cancelUploadTicket)
+	r.Post("/api/workspaces/{id}/sources/batches/{batchId}/removed", a.removeUnsentSource)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)

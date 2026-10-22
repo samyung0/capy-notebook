@@ -63,10 +63,6 @@ OFFICE_ONLY_EDIT = (
     "with edit_document."
 )
 PDF = "Cannot edit PDF files."
-ONE_SLIDE = (
-    "Reading one slide is not available yet; read the deck's shapes with start "
-    "and count."
-)
 TITLE_UNSAFE = re.compile(r"[\\/\x00-\x1f]+")
 
 
@@ -275,17 +271,14 @@ async def _inspect(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, 
         scoped = {k: query[k] for k in ("sheet", "range") if query.get(k)}
         body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, scoped)
         return body
+    page = {
+        "start": max(int(query.get("start") or 0), 0),
+        "count": _page_count(query.get("count")),
+    }
+    # PPTX: a page of slides, or one slide's shapes and a page of its paragraphs.
     if fmt == "pptx" and int(query.get("slide") or 0) > 0:
-        raise Refusal("unsupported_operation", ONE_SLIDE)
-    entries = await call("inspectOffice", base, checkpoint)
-    start, total = max(int(query.get("start") or 0), 0), len(entries)
-    end = min(start + _page_count(query.get("count")), total)
-    body.update(
-        entries=entries[min(start, total) : end],
-        total=total,
-        nextStart=end if end < total else None,
-        supportedOperations=["replace_text"],
-    )
+        page["slide"] = int(query["slide"])
+    body["scoped"] = await call("inspectOfficeScoped", base, checkpoint, page)
     return body
 
 
@@ -320,10 +313,10 @@ async def _create(state: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     """internalCreateOfficeDocument: the starter with the call's other
     commands, kept in the run instead of stored as an upload."""
     fmt = payload["format"]
-    if fmt != "xlsx":
+    if fmt not in ("xlsx", "docx"):
         raise Refusal(
             "invalid_input",
-            "create makes an xlsx file; a deck is made with create_deck",
+            "create makes an xlsx or docx file; a deck is made with create_deck",
         )
     title = " ".join(TITLE_UNSAFE.sub(" ", str(payload["title"])).split())
     if not title:

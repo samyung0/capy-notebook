@@ -1,3 +1,4 @@
+import { isApiError } from '@/api/client';
 import type {
   ActivityBlock,
   ResourceEffect,
@@ -28,7 +29,8 @@ export type TraceRow =
   | { type: 'group'; id: string; name: string; tools: ToolBlock[] }
   /** A file the turn created; later steps on that file fold into it. */
   | { type: 'created'; id: string; effect: ResourceEffect; tool: ToolBlock }
-  /** An undoable change to an existing file: the tool's own row. */
+  /** A change to an existing file: the tool's own row, with Undo while the
+   * edit's room holds it. */
   | { type: 'edited'; id: string; effect: ResourceEffect; tool: ToolBlock };
 
 /** A wait shorter than this between steps is not a thinking step; the live
@@ -315,7 +317,7 @@ export interface TraceInput {
 }
 
 /** Turns a message's activity into trace rows: thinking gaps from the step
- * times, receipts for created and undoable files, and groups of one tool. */
+ * times, receipts for created and edited files, and groups of one tool. */
 export function buildTrace({
   activity,
   startedAt,
@@ -380,9 +382,12 @@ export function buildTrace({
         effects.every((effect) => created.has(effect.resource.id))
       )
         continue;
-      const undoable = effects.filter((effect) => effect.undo);
-      if (undoable.length) {
-        for (const effect of undoable) {
+      const edits = effects.filter(
+        (effect) =>
+          effect.operation === 'edited' || effect.operation === 'edit_undone'
+      );
+      if (edits.length) {
+        for (const effect of edits) {
           rows.push({
             effect,
             id: `${tool.id}:${effect.resource.id}`,
@@ -498,6 +503,25 @@ export function foldSegments(rows: readonly TraceRow[]): TraceRow[][] {
     } else out.push([row]);
   }
   return out;
+}
+
+/** Refusals that keep the step: the Office maintenance pause and a room busy
+ * for a moment (a publication handoff, a reset under way). */
+const temporaryUndoRefusals = new Set([
+  'office_editing_paused',
+  'unavailable_target',
+]);
+
+/** Whether a failed Undo or Redo was refused (its step is gone: hide the
+ * button) rather than of unknown outcome (no answer, a server error) or
+ * refused for a moment, which keep the button: a retry gets the step's
+ * receipt if the first landed, or lands once the room takes it. */
+export function undoRefused(error: unknown): boolean {
+  return (
+    isApiError(error) &&
+    error.status < 500 &&
+    !temporaryUndoRefusals.has(error.code ?? '')
+  );
 }
 
 /** Undo reverses created, edited and restored; Redo reverses an Undo. */

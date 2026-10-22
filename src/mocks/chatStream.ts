@@ -52,8 +52,6 @@ function fixtureEffect(
       : undefined;
   if (!effect?.undo) return [];
   if (change.undo === 'none') return [{ ...effect, undo: undefined }];
-  if (change.undo === 'unavailable')
-    return [{ ...effect, undo: { ...effect.undo, status: 'unavailable' } }];
   return [effect];
 }
 

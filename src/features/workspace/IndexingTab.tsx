@@ -19,6 +19,7 @@ import {
   UsageLegend,
 } from '@/components/app/UsageMeter';
 import { Button } from '@/components/ui/Button';
+import { ErrorId } from '@/components/ui/ErrorId';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Skeleton, SkeletonList, Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -86,7 +87,7 @@ function ChangeStatus({
 }
 
 /** One file or note in the changes list. */
-type ChangeRow = Pick<FileChange, 'lastEditedAt' | 'state'> & {
+type ChangeRow = Pick<FileChange, 'errorId' | 'lastEditedAt' | 'state'> & {
   icon: FileIconName;
   id: string;
   name: string;
@@ -94,19 +95,18 @@ type ChangeRow = Pick<FileChange, 'lastEditedAt' | 'state'> & {
 };
 
 function FileChanges({
-  autoProcess,
   changes,
   moreNotes,
   noteChanges,
   owner,
   workspaceId,
 }: {
-  autoProcess: boolean;
   changes: FileChange[];
   /** Notes past the list's cap, not listed. */
   moreNotes: number;
   noteChanges: NoteChange[];
-  /** Only the owner processes or cancels; editors see the list. */
+  /** Only the owner processes or cancels; editors see the same rows and
+   * status without any action (Epo 2026-10-21). */
   owner: boolean;
   workspaceId: string;
 }) {
@@ -119,6 +119,7 @@ function FileChanges({
   // 2026-10-21); a queued note job has no Cancel.
   const rows: ChangeRow[] = [
     ...changes.map((change) => ({
+      errorId: change.errorId,
       icon: fileIconName(change),
       id: change.fileId,
       lastEditedAt: change.lastEditedAt,
@@ -127,6 +128,7 @@ function FileChanges({
       state: change.state,
     })),
     ...noteChanges.map((change) => ({
+      errorId: change.errorId,
       icon: materialIconName('note'),
       id: change.materialId,
       lastEditedAt: change.lastEditedAt,
@@ -164,19 +166,12 @@ function FileChanges({
         <ul className="m-0 mt-3 flex list-none flex-col p-0">
           {rows.map((row) => (
             <li
-              className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex"
+              className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex sm:flex-wrap"
               data-state={row.state}
               key={row.id}
             >
               <FileIcon className="size-3.75" name={row.icon} />
-              <span className="min-w-0 sm:flex-1">
-                <span className="block truncate">{row.name}</span>
-                {row.note && row.state === 'waiting' && autoProcess && (
-                  <span className="t-meta block text-fg-muted">
-                    {m.workspace_note_change_auto()}
-                  </span>
-                )}
-              </span>
+              <span className="min-w-0 truncate sm:flex-1">{row.name}</span>
               <span className="t-meta col-start-2 flex shrink-0 -translate-x-0.5 items-center gap-1.5 text-fg-muted">
                 <ChangeStatus change={row} />
               </span>
@@ -204,6 +199,14 @@ function FileChanges({
                     : m.workspace_change_process()}
                 </Button>
               )}
+              {/* A failed row's error id, on its own line under the row and
+                  aligned with the name; the failure's text stays hidden. */}
+              {row.errorId && (
+                <ErrorId
+                  className="col-span-2 col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
+                  id={row.errorId}
+                />
+              )}
             </li>
           ))}
         </ul>
@@ -219,9 +222,10 @@ function FileChanges({
   );
 }
 
-/** Files whose processing failed. Automatic processing skips them; the owner
- * retries one through the upload dialog's Retry processing, or in one click
- * when it is still indexed (a part missing, parts design Q8). */
+/** Files whose processing failed, each with its error id. Automatic
+ * processing skips them; the owner retries one through the upload dialog's
+ * Retry processing, or in one click when it is still indexed (a part missing,
+ * parts design Q8). */
 function FailedFiles({
   owner,
   workspaceId,
@@ -244,7 +248,7 @@ function FailedFiles({
       <ul className="m-0 mt-3 flex list-none flex-col p-0">
         {failed.map((file) => (
           <li
-            className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex"
+            className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 py-1.5 sm:flex sm:flex-wrap"
             key={file.id}
           >
             <FileIcon className="size-3.75" name={fileIconName(file)} />
@@ -267,6 +271,12 @@ function FailedFiles({
               >
                 {m.error_action_retry()}
               </Button>
+            )}
+            {file.errorId && (
+              <ErrorId
+                className="col-span-2 col-start-2 mt-1 text-fg-muted sm:basis-full sm:pl-6.75"
+                id={file.errorId}
+              />
             )}
           </li>
         ))}
@@ -363,7 +373,6 @@ export function IndexingTab({
         )}
       </div>
       <FileChanges
-        autoProcess={workspace.autoProcess}
         changes={stats.fileChanges}
         moreNotes={stats.moreNoteChanges}
         noteChanges={stats.noteChanges}
@@ -373,9 +382,10 @@ export function IndexingTab({
       <FailedFiles owner={workspace.isOwner} workspaceId={workspace.id} />
       <label className="flex items-center justify-between gap-5">
         <span className="font-medium">{m.workspace_auto_process()}</span>
+        {/* Owner-only, like the actions above; the server refuses editors. */}
         <Switch
           checked={workspace.autoProcess}
-          disabled={saving}
+          disabled={saving || !workspace.isOwner}
           onCheckedChange={(autoProcess) => {
             void update({ autoProcess, id: workspace.id }).catch(() => {});
           }}

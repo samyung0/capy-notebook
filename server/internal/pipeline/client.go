@@ -113,7 +113,7 @@ func (c *Client) applySecret(req *http.Request) {
 // PostStream posts body as JSON and returns the live response body for the
 // caller to stream. The caller MUST Close the returned ReadCloser. Unlike
 // PostRaw this uses a client without a read timeout so long token streams aren't
-// cut off; cancellation is driven by ctx (the browser disconnecting).
+// cut off; cancellation is driven by ctx.
 func (c *Client) PostStream(ctx context.Context, path string, body any) (io.ReadCloser, error) {
 	buf, err := json.Marshal(body)
 	if err != nil {

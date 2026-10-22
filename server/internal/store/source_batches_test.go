@@ -36,13 +36,14 @@ func takeBatchNotifications(t *testing.T, s *Store, ws string) []Notification {
 	return mine
 }
 
-func batchCounts(t *testing.T, n Notification, source string) (done, failed int) {
+func batchCounts(t *testing.T, n Notification, source string) (done, failed, removed int) {
 	t.Helper()
 	var data struct {
-		Code   string `json:"code"`
-		Source string `json:"source"`
-		Done   int    `json:"done"`
-		Failed int    `json:"failed"`
+		Code    string `json:"code"`
+		Source  string `json:"source"`
+		Done    int    `json:"done"`
+		Failed  int    `json:"failed"`
+		Removed int    `json:"removed"`
 	}
 	if err := json.Unmarshal(n.Data, &data); err != nil {
 		t.Fatal(err)
@@ -50,7 +51,7 @@ func batchCounts(t *testing.T, n Notification, source string) (done, failed int)
 	if n.Kind != "system" || data.Code != "source_batch" || data.Source != source {
 		t.Fatalf("notification = %s %s", n.Kind, n.Data)
 	}
-	return data.Done, data.Failed
+	return data.Done, data.Failed, data.Removed
 }
 
 // A batch notifies once, when its last file settles: a stored file, an expired
@@ -94,7 +95,7 @@ func TestSourceBatchNotifiesOnceWhenEveryFileSettles(t *testing.T) {
 	if len(got) != 1 || got[0].UserID != owner || got[0].Href != "/workspaces/"+ws.ID {
 		t.Fatalf("notifications = %+v", got)
 	}
-	if done, failed := batchCounts(t, got[0], "upload"); done != 1 || failed != 2 {
+	if done, failed, _ := batchCounts(t, got[0], "upload"); done != 1 || failed != 2 {
 		t.Fatalf("done=%d failed=%d, want 1 and 2", done, failed)
 	}
 	if again := takeBatchNotifications(t, s, ws.ID); len(again) != 0 {
@@ -102,7 +103,8 @@ func TestSourceBatchNotifiesOnceWhenEveryFileSettles(t *testing.T) {
 	}
 }
 
-// A batch idle for an hour notifies with its unsettled files counted failed.
+// A batch idle for an hour notifies with its unsettled files counted failed;
+// a file the user removed stays removed.
 func TestIdleSourceBatchClosesWithUnsentFilesFailed(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -119,6 +121,9 @@ func TestIdleSourceBatchClosesWithUnsentFilesFailed(t *testing.T) {
 	if _, err := s.FinalizeUploadSession(ctx, owner, stored.ID, "etag", "", ""); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.RemoveSourceBatchFile(ctx, batch); err != nil {
+		t.Fatal(err)
+	}
 	if got := takeBatchNotifications(t, s, ws.ID); len(got) != 0 {
 		t.Fatalf("notified an active batch: %v", got)
 	}
@@ -129,8 +134,54 @@ func TestIdleSourceBatchClosesWithUnsentFilesFailed(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("notifications = %v", got)
 	}
-	if done, failed := batchCounts(t, got[0], "upload"); done != 1 || failed != 3 {
-		t.Fatalf("done=%d failed=%d, want 1 and 3", done, failed)
+	if done, failed, removed := batchCounts(t, got[0], "upload"); done != 1 || failed != 2 || removed != 1 {
+		t.Fatalf("done=%d failed=%d removed=%d, want 1, 2 and 1", done, failed, removed)
+	}
+}
+
+// A file the user removed before its upload started counts at once as
+// removed, not failed (Epo 2026-10-22); a batch whose every file was
+// removed closes without a notification, and a removal past the total is
+// ignored (upload-limits review r2 L2).
+func TestSourceBatchCountsRemovedFiles(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_batch_removed")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Removed", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, gone := uid("sb"), uid("sb")
+	if err := s.OpenSourceBatch(ctx, batch, ws.ID, owner, "upload", 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.OpenSourceBatch(ctx, gone, ws.ID, owner, "upload", 2); err != nil {
+		t.Fatal(err)
+	}
+	stored := newBatchUpload(t, s, ws.ID, owner, batch, time.Now().Add(time.Hour))
+	if _, err := s.FinalizeUploadSession(ctx, owner, stored.ID, "etag", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	// The third removal of the 2-file batch would pass its total: ignored.
+	for _, id := range []string{batch, gone, gone, gone} {
+		if err := s.RemoveSourceBatchFile(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var counted int
+	if err := s.pool.QueryRow(ctx, `SELECT removed FROM source_batches WHERE id=$1`, gone).Scan(&counted); err != nil || counted != 2 {
+		t.Fatalf("removals past the total counted: removed=%d (%v)", counted, err)
+	}
+	got := takeBatchNotifications(t, s, ws.ID)
+	if len(got) != 1 {
+		t.Fatalf("notifications = %v", got)
+	}
+	if done, failed, removed := batchCounts(t, got[0], "upload"); done != 1 || failed != 0 || removed != 1 {
+		t.Fatalf("done=%d failed=%d removed=%d, want 1, 0 and 1", done, failed, removed)
+	}
+	var open int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM source_batches WHERE id=$1`, gone).Scan(&open); err != nil || open != 0 {
+		t.Fatalf("the all-removed batch is still open (%d, %v)", open, err)
 	}
 }
 
@@ -197,7 +248,7 @@ func TestImportBatchCountsEveryRequestsFiles(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("notifications = %v", got)
 	}
-	if done, failed := batchCounts(t, got[0], "import"); done != 0 || failed != 4 {
+	if done, failed, _ := batchCounts(t, got[0], "import"); done != 0 || failed != 4 {
 		t.Fatalf("done=%d failed=%d, want 0 and 4", done, failed)
 	}
 }

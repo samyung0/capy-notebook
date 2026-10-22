@@ -269,7 +269,8 @@ type GenerateReq struct {
 	Title       MaterialTitle                `json:"title" minLength:"1"`
 }
 
-// CreateSourceUploadReq reserves a direct-to-blob PUT. Empty kind and parseMode
+// CreateSourceUploadReq is a streamed source upload's metadata part (see
+// uploadSource); the schema bounds are checked there. Empty kind and parseMode
 // are inferred from name, then validated. That inference is not a product default.
 type CreateSourceUploadReq struct {
 	Name        FileName    `json:"name" minLength:"1"`
@@ -290,15 +291,6 @@ type CreateSourceUploadReq struct {
 	// belongs to; its notification fires once BatchTotal files settle.
 	BatchID    string `json:"batchId" minLength:"1" maxLength:"64" pattern:"^[A-Za-z0-9_-]+$"`
 	BatchTotal int    `json:"batchTotal" minimum:"1" maximum:"10000"`
-}
-
-// SourceUploadReservation is the presigned PUT the browser uses after reserve.
-type SourceUploadReservation struct {
-	UploadID  string            `json:"uploadId"`
-	URL       string            `json:"url"`
-	Method    string            `json:"method"`
-	Headers   map[string]string `json:"headers" nullable:"false"`
-	ExpiresAt time.Time         `json:"expiresAt"`
 }
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.

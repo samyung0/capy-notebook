@@ -5,6 +5,7 @@ call. ``retrieval/skills.py`` offers them; Epo tunes this text in the playground
 
 from __future__ import annotations
 
+from ..retrieval.contract import OFFICE_SHAPE_TEXT
 from ..retrieval.limits import WRITE_ERROR_GRACE, WRITE_ERROR_GRACE_MAX
 
 EDITING_WHEN = (
@@ -45,7 +46,7 @@ Budget:
 Precautions:
 - Ground every write in passages or excerpts you have read, and leave out what they do not support. Label an example the sources do not give as illustrative.
 - Write each item as soon as its evidence is in hand. Do not keep exploring once the evidence covers it, and do not mix a write with retrieval calls in one response.
-- Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly; most can be undone from the chat.
+- Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly (the result says when the user can undo one).
 - After you read a document you see its most recent changes. Edits not yet in search show up as hints with the user's message, and a search passage whose document has newer edits says so: read that document before relying on the passage.
 - In a note, change plain wording with replace_text. Rewrite a block that has formatting or math ($…$ in inspect_document) with replace_block, writing the whole block as note markdown (a heading keeps its #).
 - Keep changes other people made to a document unless the learner asks otherwise.
@@ -55,7 +56,7 @@ Quizzes: add_questions writes multiple-choice, short-answer and open (written-an
 
 Flashcards: cards, a list of {{front, back}}.
 
-Mindmaps and diagrams: content is one ```mermaid fence.
+Mindmaps and diagrams: content is one ```mermaid fence; edit_document replace_block rewrites it whole, expecting the source inspect shows as its text; its caption, width and theme stay.
 
 When done, answer with the materials made, what each covers and its size, and the work still open."""
 
@@ -65,18 +66,32 @@ _OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and
 
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, count at a time from start. PPTX: shapes with their target ids and text, the same way.
+- DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines; they take replace_text only. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor. The first page lists the paragraph styles by id and name.
+- PPTX: without slide, the slides count at a time from start, each with its layout and its first shapes (id, kind, placeholder type, first line of text) and how many more it holds; the first page lists the deck's layouts. With slide (its number), that slide's shapes and paragraphs count at a time from start, each shape with its name and box in points from the slide's top left corner and then its paragraphs with their target ids, levels and table cells; the first page also gives the slide's speaker notes, cut past a length with a marker. A shape marked equation takes no edits.
 
 Edit, one file a call; one stale expectation refuses the whole call:
 - set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
 - format_cells sets fonts, colours, alignment, wrapping and number formats on a range; fields left out stay as they are.
 - add_sheet, rename_sheet and delete_sheet change sheets; insert_rows, delete_rows, insert_columns and delete_columns change rows and columns. A delete names what it removes: the sheet's name, or the rows' or columns' inputs as rows of cells like set_range's expected (a row's cells from column A; for columns, rows from row 1 holding the deleted columns' cells), trailing empty cells and rows left out.
-- replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
 - Formulas use only functions the workbook supports, never HYPERLINK, and name only this workbook's sheets: no other workbooks, URLs or file paths.
+- replace_text (DOCX, PPTX) replaces text inside one paragraph or shape; its expected_text occurs once there.
+- insert_paragraph (DOCX, PPTX) adds one paragraph of plain text right after after_id or right before before_id (the first paragraph's id to start); several after one paragraph land in call order. In DOCX it goes in the body, at its end with neither id, and continues the paragraph before it as Enter does (a list goes on, a heading's next style follows); a style id from the read takes the place of that next style, keeping the list and indent, and list (bullet, numbered or none) starts or ends a list. In PPTX it takes the level and bullet of the paragraph it goes after or before.
+- delete_paragraph (DOCX, PPTX) removes one paragraph naming its whole text, never a story's or shape's last. In DOCX the paragraph after it keeps its own id and style, and takes the table the deleted one followed; it refuses a locked paragraph (but one that only follows a table), the paragraph after a table that ends the body or a cell, and one that ends a section.
+- set_list makes paragraphs bulleted or numbered, or ends their list (none, which also ends a list the paragraph's style gives); a document has one bulleted and one numbered list, so numbering continues across them.
+- insert_table adds a table of text, at most 20 rows of 10 cells, after after_id (in call order) or at the body's end; an empty paragraph follows it only where Word needs one (the table ends the body or comes before another table). delete_table names the table's id and its cells' text as rows of cells.
+- format_text (DOCX, PPTX) formats the one occurrence of expected_text in a paragraph (bold, italic, underline, strikethrough, colour, size, font; highlight in DOCX only); set_alignment (DOCX, PPTX) aligns one paragraph.
+- set_shape_text (PPTX) replaces a shape's whole text: expected_text is its paragraphs as the slide read shows them, joined by line breaks; paragraphs is the new text, one string a paragraph (at most {shape_paragraphs}, {shape_characters} characters together). Its paragraphs keep their level and bullet, added ones continue the last. A table's text is edited by paragraph with replace_text, insert_paragraph and delete_paragraph.
+- add_slide (PPTX) adds a slide right after after_slide or right before before_slide, last with neither, holding its layout's title and text placeholders, empty; layout is a layout id from the deck read, by default the layout of the slide it follows. Read the slide afterwards for its placeholders' ids and fill them with set_shape_text. A slide on a blank layout (every slide of a deck made with create_deck) has none: add_text_box puts text on it.
+- add_text_box (PPTX) adds a text box of paragraphs (one string each) at x, y with width w and height h, in points from the slide's top left corner and inside the slide; the slide read gives the slide's size and each shape's box.
+- delete_slide (PPTX) names the slide's text as its slide read shows it, every paragraph one a line in shape order and then its speaker notes as shown, cut marker included (blank lines and the spaces around a line are not compared), and never deletes the deck's only slide; move_slide puts a slide right after after_slide or right before before_slide.
+- A call's later commands cannot name the slides and shapes its earlier ones add: read again for their ids.
 
-Create: a new Excel file is a create command first, without file_id, followed by the commands that fill it. Word files cannot be created yet. A deck is made with create_deck (the deck_building skill).
+Create: a new Excel or Word file is a create command first, without file_id, followed by the commands that fill it; a new Word file's insert_paragraph and insert_table commands omit after_id and build it in order. A deck is made with create_deck (the deck_building skill).
 
-Limits: a call's commands up to 256 KB, writing up to 10,000 cells; split larger edits into several calls."""
+Limits: edit_office_document's description lists a call's limits, per command kind (commands, cells, paragraphs, table cells, formatted spans, list and alignment paragraphs, rows, sheets, slides, text boxes, shape text); past one, the commands before it apply and the rest come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it.""".format(
+    shape_paragraphs=f"{OFFICE_SHAPE_TEXT['paragraphs']:,}",
+    shape_characters=f"{OFFICE_SHAPE_TEXT['characters']:,}",
+)
 
 _EDITING_LIBRARY = """
 - excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""

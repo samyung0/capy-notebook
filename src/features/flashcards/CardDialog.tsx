@@ -58,18 +58,27 @@ export function CardDialog({
   const [picking, setPicking] = useState(false);
   const [imageError, setImageError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  // Closing the dialog cancels an image still waiting in the upload line.
+  const pickAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => pickAbort.current?.abort(), []);
 
   async function pick(file: File) {
     setPicking(true);
     setImageError('');
+    pickAbort.current?.abort();
+    const controller = new AbortController();
+    pickAbort.current = controller;
     try {
       const fitted = await fitImage(file, await editorImageMaxBytes(setId));
-      const { assetId } = await uploadEditorAsset(setId, fitted, 'image');
+      const { assetId } = await uploadEditorAsset(setId, fitted, 'image', {
+        signal: controller.signal,
+      });
       // Someone may have removed the card while the image uploaded.
       if (readCards(doc).some((c) => c.id === cardId))
         setCardImage(doc, cardId, { assetId });
     } catch (error) {
-      setImageError(errorCopy(error, m.question_ui_upload_failed()));
+      if (!controller.signal.aborted)
+        setImageError(errorCopy(error, m.question_ui_upload_failed()));
     } finally {
       setPicking(false);
     }

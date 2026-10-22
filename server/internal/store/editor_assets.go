@@ -117,6 +117,22 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 	return asset, upload, err
 }
 
+// AssertEditorAssetRoom runs an editor-asset upload's reservation gates (the
+// scope's locks and the payer's storage) and rolls back, for the upload's
+// ticket. The reservation still gates.
+func (s *Store) AssertEditorAssetRoom(ctx context.Context, workspaceID, materialID, actorID string, size int64) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	payerID, err := s.lockEditorAssetScopeTx(ctx, tx, workspaceID, materialID, actorID)
+	if err != nil {
+		return err
+	}
+	return s.gateStorageTx(ctx, tx, payerID, size)
+}
+
 const editorAssetCols = `id, COALESCE(workspace_id,''), COALESCE(material_id,''), user_id, created_by, name, purpose, object_path,
 	content_type, size_bytes, status, COALESCE(etag,''), created_at, completed_at, trashed_at IS NOT NULL`
 

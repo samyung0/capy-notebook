@@ -11,12 +11,14 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
@@ -34,8 +36,6 @@ type sourceUploadPolicyOutput struct {
 func (a *api) registerSourceUploads(api huma.API) {
 	const tag = "Content"
 	reg(api, http.MethodGet, "/api/source-upload-policy", "getSourceUploadPolicy", tag, "Get source upload policy", http.StatusOK, a.getSourceUploadPolicy)
-	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/sources/uploads", "createSourceUpload", tag, "Reserve a direct source upload", http.StatusCreated, 64<<10, a.createSourceUpload)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/uploads/{uploadId}/complete", "completeSourceUpload", tag, "Complete a direct source upload", http.StatusCreated, a.completeSourceUpload)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/import", "importSources", tag, "Queue sources from a connected drive", http.StatusAccepted, a.importSources)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/sources/import-inspect", "inspectSourceImports", tag, "Inspect sources selected from a connected drive", http.StatusOK, 64<<10, a.inspectSourceImports)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/sources/imports/{jobId}", "getSourceImport", tag, "Get source import status", http.StatusOK, a.getSourceImport)
@@ -128,25 +128,6 @@ func (a *api) getSourceUploadPolicy(
 	}, nil
 }
 
-type createSourceUploadInput struct {
-	ID   string `path:"id"`
-	Body apimodel.CreateSourceUploadReq
-}
-
-type sourceUploadReservationOutput struct {
-	Body apimodel.SourceUploadReservation
-}
-
-type completeSourceUploadInput struct {
-	ID       string `path:"id"`
-	UploadID string `path:"uploadId"`
-}
-
-type sourceFileOutput struct {
-	Status int
-	Body   apimodel.File
-}
-
 type importSourcesInput struct {
 	ID   string `path:"id"`
 	Body apimodel.ImportSourcesReq
@@ -165,20 +146,73 @@ type sourceImportStatusOutput struct {
 	Body apimodel.SourceImportStatus
 }
 
-func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInput) (*sourceUploadReservationOutput, error) {
-	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
-		return nil, hErr(err)
+// sourceUploadTicket checks a source upload's metadata and the uploader's
+// room, the checks its upload repeats, and takes the upload's ticket
+// (upload_queue.go), so a refused upload never waits in line.
+func (a *api) sourceUploadTicket(w http.ResponseWriter, r *http.Request) {
+	var batch string
+	turn, err := a.takeSourceTicket(w, r, &batch)
+	if err != nil {
+		if status := answerError(w, r, err); batch != "" && status != http.StatusTooManyRequests {
+			a.failSourceBatchFile(r.Context(), batch)
+		}
+		return
 	}
-	if err := a.openSourceBatch(ctx, in.ID, "upload", in.Body.BatchID, in.Body.BatchTotal); err != nil {
-		return nil, err
+	writeJSON(w, http.StatusCreated, turn)
+}
+
+func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *string) (uploadTurn, error) {
+	ctx := r.Context()
+	wsID := id(r)
+	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
+	if err != nil {
+		return uploadTurn{}, err
 	}
-	out, err := a.reserveSourceUpload(ctx, in)
-	// A refused reservation is a failed file of its batch, except a 429 the
-	// browser retries (withUploadRetry).
-	if err != nil && errorStatus(err) != http.StatusTooManyRequests {
-		a.failSourceBatchFile(ctx, in.Body.BatchID)
+	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+		return uploadTurn{}, err
 	}
-	return out, err
+	var body apimodel.CreateSourceUploadReq
+	if err := readTicketMetadata(w, r, &body); err != nil {
+		return uploadTurn{}, err
+	}
+	if _, _, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch); err != nil {
+		return uploadTurn{}, err
+	}
+	if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), body.SizeBytes); err != nil {
+		return uploadTurn{}, err
+	}
+	return a.uploads.take(uid(r), sourceUploadTarget(wsID), sourceClaim(&body))
+}
+
+// sourceClaim is what a source upload's metadata asks for, as its ticket
+// keeps it: the trimmed name and the type with its default.
+func sourceClaim(body *apimodel.CreateSourceUploadReq) uploadClaim {
+	contentType := body.ContentType
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return uploadClaim{
+		name: strings.TrimSpace(string(body.Name)), contentType: contentType,
+		batch: body.BatchID, size: body.SizeBytes,
+	}
+}
+
+// uploadSource streams one source file through the gateway (Epo 2026-10-22;
+// see uploads.go): it reserves the uploader's storage, spools and hashes the
+// bytes, writes them to their final key in one bounded PUT, and creates the
+// file with its first pipeline job. Every kind records its SHA-256.
+func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
+	var batch string
+	file, err := a.receiveSource(w, r, &batch)
+	if err != nil {
+		// A refused upload is a failed file of its batch, except a 429 the
+		// browser retries (withUploadRetry).
+		if status := a.failUpload(w, r, err); batch != "" && status != http.StatusTooManyRequests {
+			a.failSourceBatchFile(r.Context(), batch)
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, file)
 }
 
 func (a *api) openSourceBatch(ctx context.Context, wsID, source, batchID string, total int) error {
@@ -195,6 +229,49 @@ func (a *api) failSourceBatchFile(ctx context.Context, batchID string) {
 	}
 }
 
+func (a *api) removeSourceBatchFile(ctx context.Context, batchID string) {
+	if err := a.s.RemoveSourceBatchFile(context.WithoutCancel(ctx), batchID); err != nil {
+		log.Printf("count removed source in batch %s: %v", batchID, err)
+	}
+}
+
+// removeUnsentSource counts a file that the user removed from the transfer
+// panel before its upload or import request was sent as removed in its
+// batch (Epo 2026-10-22), so the batch's notification neither waits for the
+// idle sweep nor calls the file failed. The batch opens here when none of its
+// files has reached the server yet.
+func (a *api) removeUnsentSource(w http.ResponseWriter, r *http.Request) {
+	if err := a.countRemovedSource(w, r); err != nil {
+		answerError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *api) countRemovedSource(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	wsID := id(r)
+	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+		return err
+	}
+	var body struct {
+		Source string `json:"source"`
+		Total  int    `json:"total"`
+	}
+	if err := readTicketMetadata(w, r, &body); err != nil {
+		return err
+	}
+	batch := chi.URLParam(r, "batchId")
+	if !batchIDPattern.MatchString(batch) || (body.Source != "upload" && body.Source != "import") ||
+		body.Total < 1 || body.Total > 10000 {
+		return huma.Error422UnprocessableEntity("validation failed")
+	}
+	if err := a.openSourceBatch(ctx, wsID, body.Source, batch, body.Total); err != nil {
+		return err
+	}
+	return a.s.RemoveSourceBatchFile(ctx, batch)
+}
+
 func errorStatus(err error) int {
 	var status huma.StatusError
 	if errors.As(err, &status) {
@@ -203,19 +280,97 @@ func errorStatus(err error) int {
 	return http.StatusInternalServerError
 }
 
-func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInput) (*sourceUploadReservationOutput, error) {
-	wsID := in.ID
-	if a.blob == nil {
-		return nil, huma.Error503ServiceUnavailable("blob store not configured")
+var batchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// receiveSource stores one streamed source upload; batch names the upload's
+// batch once it is open. An upload refused for its ticket, before its body
+// is read, is settled by its batch's idle sweep (store.SourceBatchIdle).
+func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *string) (store.File, error) {
+	ctx := r.Context()
+	wsID := id(r)
+	claim, release, err := a.uploads.start(r.URL.Query().Get("ticket"), uid(r), sourceUploadTarget(wsID))
+	if err != nil {
+		return store.File{}, err
 	}
-	body := in.Body
-	name := strings.TrimSpace(string(body.Name))
-	chapterName := strings.TrimSpace(string(body.ChapterName))
+	defer release()
+	maxBytes, err := a.sourceMaxBytes(ctx, uid(r))
+	if err != nil {
+		return store.File{}, err
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+uploadMetadataMaxBytes)
+	if a.blob == nil {
+		return store.File{}, errors.New("blob store not configured")
+	}
+	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
+		return store.File{}, err
+	}
+	var body apimodel.CreateSourceUploadReq
+	stream, err := readUploadMetadata(w, r, claim.size, &body)
+	if err != nil {
+		return store.File{}, err
+	}
+	// The ticket's batch counts a mismatch, which the upload's own does not
+	// reach.
+	if err := claim.matches(sourceClaim(&body)); err != nil {
+		*batch = claim.batch
+		return store.File{}, err
+	}
+	name, chapterName, err := a.checkSourceUpload(ctx, wsID, maxBytes, &body, batch)
+	if err != nil {
+		return store.File{}, err
+	}
+
+	uploadID := randID("up")
+	_, key := sourceObjectKeys(uploadID, name)
+	if _, err := a.s.CreateUploadSession(ctx, store.NewUploadSession{
+		ID: uploadID, WorkspaceID: wsID, CreatedBy: uid(r),
+		ChapterID: body.ChapterID, ChapterName: chapterName,
+		ObjectPath: key, FinalPath: key, Name: name, Kind: body.Kind,
+		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
+		ParseMode: body.ParseMode,
+		ExpiresAt: time.Now().UTC().Add(uploadSessionTTL), BatchID: body.BatchID,
+	}); err != nil {
+		return store.File{}, err
+	}
+	file, err := a.storeSourceBytes(ctx, stream, uploadID, key, body.ContentType, body.SizeBytes)
+	if err != nil {
+		// A failed upload is charged nothing; the release also queues the key
+		// for the reaper, which deletes it once nothing references it.
+		if err := a.s.MarkUploadExpired(context.WithoutCancel(ctx), uploadID); err != nil {
+			log.Printf("release failed upload %s: %v", uploadID, err)
+		}
+		return store.File{}, err
+	}
+	log.Printf("source upload stored upload=%s workspace=%s file=%s bytes=%d",
+		uploadID, wsID, file.ID, body.SizeBytes)
+	return file, nil
+}
+
+// checkSourceUpload checks a source upload's metadata for its ticket and
+// again for its upload, filling in the inferred kind and parse mode and the
+// default content type, and returns the trimmed file and chapter names.
+// batch names the upload's batch once it is open.
+func (a *api) checkSourceUpload(
+	ctx context.Context, wsID string, maxBytes int64, body *apimodel.CreateSourceUploadReq, batch *string,
+) (name, chapterName string, err error) {
+	// The bounds the JSON schema applied when the metadata was its own request.
+	if !batchIDPattern.MatchString(body.BatchID) || body.BatchTotal < 1 || body.BatchTotal > 10000 ||
+		body.EstimatedCreditMicros < 0 ||
+		utf8.RuneCountInString(string(body.Name)) > fieldlimits.FileName ||
+		utf8.RuneCountInString(string(body.ChapterName)) > fieldlimits.ChapterName {
+		return "", "", huma.Error422UnprocessableEntity("validation failed")
+	}
+	if err := a.openSourceBatch(ctx, wsID, "upload", body.BatchID, body.BatchTotal); err != nil {
+		return "", "", err
+	}
+	*batch = body.BatchID
+	name = strings.TrimSpace(string(body.Name))
+	chapterName = strings.TrimSpace(string(body.ChapterName))
 	if name == "" {
-		return nil, huma.Error400BadRequest("file name is required")
+		return "", "", huma.Error400BadRequest("file name is required")
 	}
 	if body.ChapterID != nil && chapterName != "" {
-		return nil, huma.Error400BadRequest("chapterId and chapterName cannot both be set")
+		return "", "", huma.Error400BadRequest("chapterId and chapterName cannot both be set")
 	}
 	if body.Kind == "" {
 		body.Kind = kindFromName(name)
@@ -223,141 +378,57 @@ func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInp
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
-	if err != nil {
-		return nil, hErr(err)
-	}
-	if body.SizeBytes < 0 || body.SizeBytes > maxBytes {
-		return nil, huma.Error400BadRequest(fmt.Sprintf("uploads support files up to %d MB", maxBytes>>20))
-	}
 	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return "", "", huma.Error400BadRequest(err.Error())
 	}
 	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
-		return nil, err
+		return "", "", err
 	}
 	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {
-			return nil, hErr(err)
+			return "", "", err
 		}
 	}
 	if body.ChapterID != nil {
 		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *body.ChapterID)
 		if err != nil || chapterWorkspace != wsID {
-			return nil, huma.Error400BadRequest("chapter does not belong to this workspace")
+			return "", "", huma.Error400BadRequest("chapter does not belong to this workspace")
 		}
 	}
 	if body.ContentType == "" {
 		body.ContentType = "application/octet-stream"
 	}
 	if _, _, err := mime.ParseMediaType(body.ContentType); err != nil || strings.ContainsAny(body.ContentType, "\r\n") {
-		return nil, huma.Error400BadRequest("invalid content type")
+		return "", "", huma.Error400BadRequest("invalid content type")
 	}
-
-	uploadID := randID("up")
-	incoming, finalPath := sourceObjectKeys(uploadID, name)
-	signed, err := a.blob.PresignPut(ctx, incoming, body.ContentType, body.SizeBytes)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	session, err := a.s.CreateUploadSession(ctx, store.NewUploadSession{
-		ID: uploadID, WorkspaceID: wsID, CreatedBy: userID(ctx),
-		ChapterID: body.ChapterID, ChapterName: chapterName,
-		ObjectPath: incoming, FinalPath: finalPath, Name: name, Kind: body.Kind,
-		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
-		ParseMode: body.ParseMode,
-		ExpiresAt: signed.ExpiresAt, BatchID: body.BatchID,
-	})
-	if err != nil {
-		return nil, hErr(err)
-	}
-	log.Printf("direct upload reserved upload=%s workspace=%s bytes=%d mode=%s",
-		session.ID, wsID, session.DeclaredSize, session.ParseMode)
-	if signed.Headers == nil {
-		signed.Headers = map[string]string{}
-	}
-	return &sourceUploadReservationOutput{Body: apimodel.SourceUploadReservation{
-		UploadID: session.ID, URL: signed.URL, Method: "PUT",
-		Headers: signed.Headers, ExpiresAt: signed.ExpiresAt,
-	}}, nil
+	return name, chapterName, nil
 }
 
-func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUploadInput) (*sourceFileOutput, error) {
-	session, err := a.s.GetUploadSession(ctx, in.UploadID)
+// storeSourceBytes spools the file part, writes it in one PUT and finalizes the
+// reserved upload. Once the bytes are stored, finalize runs to its end even if
+// the browser leaves, so a committed file is never reported (and released) as
+// failed.
+func (a *api) storeSourceBytes(ctx context.Context, stream *uploadBody, uploadID, key, contentType string, size int64) (store.File, error) {
+	spool, sha, err := spoolUpload(stream, size, contentType)
 	if err != nil {
-		return nil, hErr(err)
+		return store.File{}, err
 	}
-	// Only the uploader completes its reservation (Sam 2026-10-18).
-	if session.WorkspaceID != in.ID || session.CreatedBy == nil || *session.CreatedBy != userID(ctx) {
-		return nil, hErr(store.ErrNotFound)
-	}
-	if err := a.assertWorkspaceEditor(ctx, session.WorkspaceID); err != nil {
-		return nil, hErr(err)
-	}
-	if session.Status == "completed" {
-		res, err := a.s.FinalizeUploadSession(ctx, userID(ctx), in.UploadID, "", "", a.parser)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		return &sourceFileOutput{Status: http.StatusOK, Body: res}, nil
-	}
-	if time.Now().UTC().After(session.ExpiresAt) {
-		return nil, &huma.ErrorModel{
-			Status: http.StatusGone,
-			Title:  http.StatusText(http.StatusGone),
-			Detail: store.ErrUploadExpired.Error(),
-		}
-	}
-
-	info, finalErr := a.blob.Head(ctx, session.FinalPath)
-	if finalErr != nil {
-		info, err = a.blob.Head(ctx, session.ObjectPath)
-		if err != nil {
-			return nil, huma.Error409Conflict("uploaded object is not available")
-		}
-	}
-	if info.Size != session.DeclaredSize {
-		_ = a.blob.Delete(ctx, session.ObjectPath)
-		return nil, huma.Error400BadRequest("uploaded size does not match the reserved size")
-	}
-	// The PUT signs its Content-Type, so B2 always reports one; an empty one
-	// is a mismatch, not a pass.
-	if info.ContentType != session.ContentType {
-		return nil, huma.Error400BadRequest("uploaded content type does not match the reservation")
-	}
-	if finalErr != nil {
-		info, err = promoteUploadObject(ctx, a.blob, session, info)
-		if err != nil {
-			return nil, hErr(err)
-		}
-	}
-	sha, err := storedSourceSHA256(ctx, a.blob, session.Name, session.Kind, session.FinalPath, session.DeclaredSize)
-	if errors.Is(err, errStoredSourceChanged) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
+	defer dropSpool(spool)
+	etag, err := putUpload(ctx, a.blob, uploadID, key, spool, contentType)
 	if err != nil {
-		return nil, hErr(err)
+		return store.File{}, err
 	}
-	res, err := a.s.FinalizeUploadSession(ctx, userID(ctx), in.UploadID, info.ETag, sha, a.parser)
-	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrUploadState) {
-		return nil, huma.Error409Conflict(err.Error())
-	}
-	if err != nil {
-		return nil, hErr(err)
-	}
-	log.Printf("direct upload completed upload=%s file=%s bytes=%d etag=%s",
-		in.UploadID, res.ID, info.Size, info.ETag)
-	return &sourceFileOutput{Status: http.StatusCreated, Body: res}, nil
+	return a.s.FinalizeUploadSession(context.WithoutCancel(ctx), userID(ctx), uploadID, etag, sha, a.parser)
 }
 
 var errStoredSourceChanged = errors.New("uploaded object changed during completion")
 
-// storedSourceSHA256 hashes a completed upload's stored object once, for a file
-// with source sessions (Office and text), so every session names its SHA-256
-// from the first open (Epo 2026-10-17); a file without them is not read ("").
-// The gateway hashes the bytes itself: B2's documented PutObject verifies no
-// client-sent checksum, and the collaboration server checks every original it
-// loads against this SHA, so a hash the browser sent would be trusted unseen.
+// storedSourceSHA256 hashes a completed drive import's stored object once, for
+// a file with source sessions (Office and text), so every session names its
+// SHA-256 from the first open (Epo 2026-10-17); a file without them is not read
+// (""). The gateway hashes the bytes itself: B2's documented PutObject verifies
+// no client-sent checksum, and the collaboration server checks every original
+// it loads against this SHA. Browser uploads hash as they stream instead.
 func storedSourceSHA256(ctx context.Context, objects blob.Store, name, kind, path string, size int64) (string, error) {
 	if store.SourceEditFormat(name, kind) == "" {
 		return "", nil
@@ -378,20 +449,8 @@ func storedSourceSHA256(ctx context.Context, objects blob.Store, name, kind, pat
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// promoteUploadObject treats a matching stable object as success when another
+// promoteMatchingObject treats a matching stable object as success when another
 // completion request wins the incoming-object promotion race.
-func promoteUploadObject(
-	ctx context.Context,
-	objects blob.Store,
-	session store.UploadSession,
-	incoming blob.ObjectInfo,
-) (blob.ObjectInfo, error) {
-	return promoteMatchingObject(
-		ctx, objects, session.ObjectPath, session.FinalPath,
-		session.DeclaredSize, session.ContentType, incoming,
-	)
-}
-
 func promoteMatchingObject(
 	ctx context.Context,
 	objects blob.Store,

@@ -57,17 +57,16 @@ func officeSource(t *testing.T, fx deckFileFixture, name string) string {
 }
 
 // inspect_office_document's query reaches the engine as the inspect body's
-// office object and its scoped answer comes back unchanged; DOCX reads its
-// entries a page at a time until the engine's scoped DOCX read lands, and
+// office object and its scoped answer comes back unchanged, a DOCX page's
+// query being its start and count and a PPTX read's its slide too; and
 // inspect_document points an Office file at the Office tools.
 func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	fx := openDeckFiles(t)
 	scoped := `{"sheet":"0","name":"Grades","range":"A1:B2","cells":[{"address":"A1","input":"=1+1","value":"2"}]}`
 	authority := newOfficeAuthority(t, fx.st, map[string]string{
-		"/internal/documents/inspect": `{"format":"xlsx","access":"edit","epoch":2,"checkpoint":5,"scoped":` + scoped +
-			`,"entries":[{"id":"p1","label":"Paragraph 1","value":"One"},{"id":"p2","label":"Paragraph 2","value":"Two"}]}`,
+		"/internal/documents/inspect": `{"format":"xlsx","access":"edit","epoch":2,"checkpoint":5,"scoped":` + scoped + `}`,
 	})
-	xlsx, docx := officeSource(t, fx, "grades.xlsx"), officeSource(t, fx, "essay.docx")
+	xlsx, docx, pptx := officeSource(t, fx, "grades.xlsx"), officeSource(t, fx, "essay.docx"), officeSource(t, fx, "lesson.pptx")
 	inspect := func(file string, office any) *httptest.ResponseRecorder {
 		body := map[string]any{
 			"workspaceId": fx.ws, "userId": fx.editor, "target": map[string]any{"kind": "source_file", "id": file},
@@ -93,12 +92,21 @@ func TestOfficeInspectPassesTheQueryThrough(t *testing.T) {
 	}
 
 	rec = inspect(docx, map[string]any{"start": 1, "count": 1})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"entries":[{"id":"p2","label":"Paragraph 2","value":"Two"}]`) ||
-		!strings.Contains(rec.Body.String(), `"supportedOperations":["replace_text"]`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
+		strings.Contains(rec.Body.String(), "supportedOperations") {
 		t.Fatalf("docx read = %d %s", rec.Code, rec.Body.String())
 	}
-	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || sent[1]["office"] != nil {
-		t.Fatalf("a DOCX page sent an office query: %v", sent)
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 2 || string(sent[1]["office"]) != `{"start":1,"count":1}` {
+		t.Fatalf("a DOCX page's query: %v", sent)
+	}
+
+	rec = inspect(pptx, map[string]any{"slide": 2, "start": 1})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"scoped":`+scoped) ||
+		strings.Contains(rec.Body.String(), "supportedOperations") {
+		t.Fatalf("pptx read = %d %s", rec.Code, rec.Body.String())
+	}
+	if sent := authority.sent("/internal/documents/inspect"); len(sent) != 3 || string(sent[2]["office"]) != `{"start":1,"count":60,"slide":2}` {
+		t.Fatalf("a PPTX slide's query: %v", sent)
 	}
 
 	rec = inspect(xlsx, nil)
@@ -175,15 +183,30 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 	if err != nil || file.SizeBytes != int64(len(content)) || file.ChapterID == nil || *file.ChapterID != fx.ch {
 		t.Fatalf("file = %+v err = %v", file, err)
 	}
-	step, _, err := fx.st.GetEditInverse(context.Background(), receipt.OperationID)
-	if err != nil || step.Step != store.StepTrash {
-		t.Fatalf("undo step = %+v err = %v", step, err)
+	if receipt.Effect.Undo == nil || receipt.Effect.Undo.OperationID != receipt.OperationID {
+		t.Fatalf("undo ref = %s", rec.Body.String())
 	}
 
 	replay := doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, body)
 	if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), receipt.Effect.Resource.ID) ||
 		len(authority.sent("/internal/documents/create")) != 1 || fx.blobs(t) != 1 {
 		t.Fatalf("replay = %d %s", replay.Code, replay.Body.String())
+	}
+
+	// A Word file is created the same way, its commands normalized.
+	rec = doInternal(t, fx.h, http.MethodPost, "/api/internal/documents/office/create", pipeSecret, map[string]any{
+		"workspaceId": fx.ws, "userId": fx.editor, "assistantMessageId": msgID, "toolCallId": "call_create_docx",
+		"format": "docx", "title": "Lab report",
+		"commands": []map[string]any{{"type": "insert_paragraph", "text": "Method", "style": "Heading1"}},
+	})
+	if err := json.Unmarshal(rec.Body.Bytes(), &receipt); err != nil || rec.Code != http.StatusOK ||
+		receipt.Effect == nil || receipt.Effect.Resource.Title != "Lab report.docx" {
+		t.Fatalf("docx create = %d %s", rec.Code, rec.Body.String())
+	}
+	sent = authority.sent("/internal/documents/create")
+	if len(sent) != 2 || string(sent[1]["format"]) != `"docx"` ||
+		string(sent[1]["commands"]) != `[{"style":"Heading1","text":"Method","type":"insert_paragraph"}]` {
+		t.Fatalf("authority got %v", sent)
 	}
 }
 
@@ -213,8 +236,8 @@ func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
 		name, user, ws, chapter string
 		status                  int
 	}{
-		{"viewer", fx.viewer, fx.ws, "", http.StatusNotFound},
-		{"editor of another workspace", fx.editor, elsewhere.ID, "", http.StatusNotFound},
+		{"viewer", fx.viewer, fx.ws, "", http.StatusForbidden},
+		{"editor of another workspace", fx.editor, elsewhere.ID, "", http.StatusForbidden},
 		{"chapter not in the workspace", fx.editor, fx.ws, "ch_elsewhere", http.StatusBadRequest},
 	} {
 		msgID := seedAssistantMessage(t, fx.st, tc.user, tc.ws)

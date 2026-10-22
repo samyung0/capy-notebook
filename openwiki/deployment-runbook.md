@@ -1201,7 +1201,8 @@ covers 1 and 2 with the service token):
    without opening the writer database pool.
 
 **Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
-chat streams. Parser traffic stays on WireGuard and does not cross Cloudflare.
+chat streams. An upload ticket's long poll answers within 25 s, under it.
+Parser traffic stays on WireGuard and does not cross Cloudflare.
 Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
 raise that on `api.capynotebook.com` if streams die around a minute.
 
@@ -1554,22 +1555,36 @@ playbook revision.
    `listBuckets`, `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`.
    Record `B2_KEY_ID` / `B2_APP_KEY` — the secret is shown once.
 3. Set `B2_ENDPOINT`, `B2_REGION`, `B2_BUCKET`, `B2_PRESIGN_TTL` (default
-   900 s: upload PUT lifetime and the reservation deadline completion checks,
-   so it must cover a slow full-size upload) and `B2_LINK_TTL` (default 300 s:
-   read links, which the browser fetches as soon as they land).
-4. **CORS rules on the bucket.** The browser uploads directly to B2 via
-   presigned PUT (the only source upload path), so B2 itself must allow the
-   SPA origin. Apply the file for the bucket's environment rather than
-   hand-writing rules:
+   900 s: the lifetime of the PUT the collaboration service writes a source
+   refresh candidate with) and `B2_LINK_TTL` (default 300 s: read links, which
+   the browser fetches as soon as they land). Browser uploads no longer use a
+   presigned PUT: they stream through the API host (Epo 2026-10-22), whose
+   Cloudflare proxy accepts request bodies up to 100 MB, above the 30 MiB
+   largest per-file cap. Running uploads share 1 GB of declared size (at
+   most 256 at once), behind a line of tickets the API keeps in its process:
+   run one API instance, or move the line to Redis before scaling it out.
+   Each upload's body spools to the API container's temp directory
+   (`os.CreateTemp`, `/tmp`, on the Docker data disk) before its PUT. Keep
+   about 2 GB free there for upload spools: the 1 GB budget doubles while an
+   old and a new container overlap during a deploy, and a process that dies
+   mid-upload leaves its spools behind until the next start clears them
+   (`RemoveUploadSpools`)
+   ([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
+   A deploy whose old and new containers overlap briefly is the same as a
+   restart: a ticket one container issued is a 410 on the other, which the
+   browser shows as the turn passed, and the user adds the file again.
+4. **CORS rules on the bucket.** The browser reads B2 through presigned GETs,
+   so B2 itself must allow the SPA origin. Apply the file for the bucket's
+   environment rather than hand-writing rules:
 
    | Bucket             | File                       | Origins                                            |
    | ------------------ | -------------------------- | -------------------------------------------------- |
    | production         | `deploy/b2-cors.prod.json` | the production SPA                                  |
    | UAT (local shares it) | `deploy/b2-cors.uat.json` | UAT SPA, the tunnelled dev origin, `localhost:5173` |
 
-   `PresignPut` sends only `Content-Type`, so the allowed headers do not grow
-   as the app does. `etag` must be exposed or upload completion cannot verify
-   what was stored.
+   The files still allow `s3_put`, which only the removed browser upload
+   used; dropping it is a separate bucket change, applied after a release
+   without the presigned upload is live everywhere.
 
 5. **Lifecycle rule:** delete unfinished large-file uploads after 1 day. An
    aborted multipart upload is billed indefinitely and is invisible in the
@@ -1774,9 +1789,9 @@ at production launch.
 ## 7. Dedicated ingest host
 
 The Netcup ingest host runs the parse coordinator, ingest workers, parser, and
-host sampler, and the Drive/OneDrive import worker. Browser uploads go straight
-to B2 and imported files are streamed into B2 by the import worker here; source
-bytes do not traverse the Go application process.
+host sampler, and the Drive/OneDrive import worker. Browser uploads stream
+through the Go gateway, which writes each to B2 in one PUT (Epo 2026-10-22);
+imported files are streamed into B2 by the import worker here.
 Coordinator, worker, and parser containers mount the same `parse_spool` volume.
 The compose init service gives the unprivileged pipeline user access before
 those services start.
@@ -3383,8 +3398,8 @@ config line on stdin, never as an argument. `scripts/ci/hardening.test.mjs`
 
 **Dependency vulnerabilities.** CI runs one job per ecosystem and fails on a
 known advisory: `audit_rust` (`cargo deny check advisories` on
-`collaboration-rs`), `audit_go` (govulncheck on `server`, with the Go line the
-gateway and Ops images build with; it prints its counts and also fails on a
+`collaboration-rs`), `audit_go` (govulncheck on `server`, with the Go release
+the gateway and Ops images build with; it prints its counts and also fails on a
 listed id it no longer reports), `audit_pnpm` (`pnpm audit --prod`) and
 `audit_python` (pip-audit over `uv.lock`'s runtime set, `parser/requirements.txt`
 and `pipeline/ppt-master-requirements.txt`). An advisory that has to wait goes
@@ -3393,8 +3408,15 @@ on that ecosystem's commented ignore list, with its reason:
 `auditConfig.ignoreGhsas` in `pnpm-workspace.yaml` and `pip-audit-ignore.txt`.
 Prefer a version bump or a commented `overrides` entry (the developer's rule,
 2026-10-20); an advisory stays listed only when its fix breaks something, and
-the entry says what. Drop an entry when its fix lands, for example the Go
-entries with the version wave.
+the entry says what. Drop an entry when its fix lands.
+
+**Go release.** `server/go.mod`'s `go` line names the exact Go release (1.26.10
+since 2026-10-21). `server/Dockerfile` and `ops/Dockerfile` pin the same
+`golang` Alpine image and the Alpine runtime by version and digest, and both CI
+Go jobs read the version from `go.mod`. A Go upgrade moves the three together;
+the `golang` image sets `GOTOOLCHAIN=local`, so an image older than `go.mod`
+fails its build. Upgrades go ahead without asking (developer decision,
+2026-10-21); the images rebuild on the next deploy.
 
 Required families include application origins, Clerk/webhook keys, Postgres,
 B2, collaboration/pipeline secrets, actual provider/mail/billing keys, Coolify
@@ -3801,6 +3823,21 @@ Steps:
    confirm quota and the `source_documents` rows (an Office edit stores a small
    `state` with `state_seed_sha256` set).
 
+**Seed-changing pins without a window.** While Capy has no users, a pin that
+changes seeds deploys without the window (decision of 2026-10-18): its
+migration is the template's reset with no guard, for the formats whose seeds
+changed (DOCX in
+[`0103_docx_engine_round_reset.sql`](../server/migrations/0103_docx_engine_round_reset.sql)),
+and it drops their unpublished edits. The old collaboration server must be
+stopped before that migration runs and must not outlive it. Otherwise an open
+room's next save fails on the new epoch, the browser reopens the room at that
+epoch, and the old engine seeds it. Its saves then name the old seed, which the
+new engine refuses (`SeedChanged`), and the file stays closed to editing until
+an operator acts. Nothing is corrupted. UAT's Coolify deploy stops the old
+stack before `migrate` runs, so this holds there. A deploy that keeps the old
+collaboration container up while the gateway migrates (a rolling update) must
+stop it first.
+
 **Migration 0043 (DOCX and PPTX rebases onto seed(export)).** It drops
 `source_documents.indexed_baseline` and requires every Office state to name
 its seed. A DOCX or PPTX state that a publication rebased on the earlier
@@ -3921,8 +3958,7 @@ Steps on UAT (`docker exec` on the UAT host; find the container names with
     <> COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id = u.id), 0)
        + COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id = u.id), 0)
        + COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id = u.id AND status = 'ready'), 0)
-       + COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id = u.id), 0)
-       + COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE owner_user_id = u.id), 0);
+       + COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id = u.id), 0);
    ```
 
 7. Back up the database (nothing writes it now):

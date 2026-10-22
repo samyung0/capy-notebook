@@ -292,53 +292,6 @@ async function upload<T>(
   });
 }
 
-/** Upload bytes to a storage-provider URL without adding API auth headers.
- * XHR is used because fetch still has no upload-progress events. */
-function putFile(
-  url: string,
-  file: File,
-  headers: Record<string, string>,
-  onProgress?: (pct: number) => void,
-  signal?: AbortSignal
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const abort = () => xhr.abort();
-    const cleanup = () => signal?.removeEventListener('abort', abort);
-    const succeed = () => {
-      cleanup();
-      onProgress?.(100);
-      resolve();
-    };
-    const fail = (error: Error) => {
-      cleanup();
-      reject(error);
-    };
-    xhr.open('PUT', url);
-    for (const [name, value] of Object.entries(headers))
-      xhr.setRequestHeader(name, value);
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable)
-        onProgress?.(Math.round((event.loaded / event.total) * 100));
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) succeed();
-      else fail(new Error(`B2 upload failed: ${xhr.status} ${xhr.statusText}`));
-    };
-    xhr.onerror = () => fail(new Error('B2 upload failed: network error'));
-    xhr.onabort = () =>
-      fail(new DOMException('Upload cancelled', 'AbortError'));
-    if (signal) {
-      if (signal.aborted) {
-        fail(new DOMException('Upload cancelled', 'AbortError'));
-        return;
-      }
-      signal.addEventListener('abort', abort, { once: true });
-    }
-    xhr.send(file);
-  });
-}
-
 type RequestOptions = Pick<RequestInit, 'signal'>;
 
 export const api = {
@@ -363,7 +316,6 @@ export const api = {
       body: body === undefined ? undefined : JSON.stringify(body),
       method: 'PUT',
     }),
-  putFile,
   upload: <T>(
     path: string,
     form: FormData,

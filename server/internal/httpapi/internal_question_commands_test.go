@@ -2,17 +2,35 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/store"
 )
+
+// A note command sent to a quiz is refused with the commands a quiz supports,
+// as its inspection lists them (Epo 2026-10-21).
+func TestKindRefusalNamesTheQuizCommands(t *testing.T) {
+	_, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(
+		`{"type":"replace_text","target_id":"b1","expected_text":"old","text":"new"}`)}, nil)
+	var refused *store.EditRefusal
+	if !errors.As(err, &refused) || refused.Code != agenttools.ErrUnsupportedOperation ||
+		!strings.Contains(refused.Message, "supported: "+strings.Join(materialOperations("quiz"), ", ")) ||
+		!strings.Contains(refused.Message, "remove_question") || !strings.Contains(refused.Message, "add_questions") {
+		t.Fatalf("refusal = %v", err)
+	}
+}
 
 func TestQuizQuestionCommandPreservesTargetIdentity(t *testing.T) {
 	for _, kind := range []string{"replace_question", "remove_question"} {
-		_, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(`{"type":"` + kind + `","question_id":""}`)}, nil, nil)
+		_, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(`{"type":"` + kind + `","question_id":""}`)}, nil)
 		if err == nil {
 			t.Fatalf("%s accepted missing target", kind)
 		}
 	}
-	commands, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(`{"type":"replace_question","question_id":"existing","question":{"id":"model-id","stem":[],"parts":[{"id":"part1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}}`)}, nil, nil)
+	commands, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(`{"type":"replace_question","question_id":"existing","question":{"id":"model-id","stem":[],"parts":[{"id":"part1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}}`)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

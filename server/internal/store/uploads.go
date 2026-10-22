@@ -81,6 +81,13 @@ func (s *Store) FailSourceBatchFile(ctx context.Context, id string) error {
 	return err
 }
 
+// RemoveSourceBatchFile counts a file the user removed before its upload
+// started as removed (Epo 2026-10-22).
+func (s *Store) RemoveSourceBatchFile(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx, `SELECT source_batch_settle($1, 0, 0, 1)`, id)
+	return err
+}
+
 // SourceBatchIdle closes batches idle this long, counting their unsettled files
 // as failed (tab closed, file never sent).
 const SourceBatchIdle = time.Hour
@@ -89,8 +96,8 @@ const SourceBatchIdle = time.Hour
 // notified: their rows are deleted and their notifications returned for the
 // live push. A late file of a deleted batch settles nothing.
 func (s *Store) SettleSourceBatches(ctx context.Context) ([]Notification, error) {
-	if _, err := s.pool.Exec(ctx, `SELECT source_batch_settle(id, 0, total-done-failed)
-		FROM (SELECT id, total, done, failed FROM source_batches
+	if _, err := s.pool.Exec(ctx, `SELECT source_batch_settle(id, 0, total-done-failed-removed)
+		FROM (SELECT id, total, done, failed, removed FROM source_batches
 			WHERE notified_at IS NULL AND updated_at < now() - make_interval(secs => $1)
 			ORDER BY updated_at LIMIT 100) idle`, SourceBatchIdle.Seconds()); err != nil {
 		return nil, err
@@ -170,10 +177,11 @@ func (s *Store) GetUploadSession(ctx context.Context, id string) (UploadSession,
 	return u, err
 }
 
-// FinalizeUploadSession creates the source and its first pipeline job exactly once. The
-// B2 promotion happens before this transaction and is safe to retry.
-// sourceSHA256 is the stored object's SHA-256 as the gateway hashed it ("" for
-// a file without source sessions); a replayed completion ignores it.
+// FinalizeUploadSession creates the source and its first pipeline job exactly once,
+// after its bytes are stored (a browser upload's one PUT, a drive import's
+// promotion). sourceSHA256 is the stored bytes' SHA-256 as the gateway hashed
+// them ("" for an imported file without source sessions); a replayed
+// completion ignores it.
 //
 // Only the account that reserved the upload completes it (Sam 2026-10-18);
 // anyone else gets ErrNotFound.
@@ -316,8 +324,8 @@ func (s *Store) finalizeUploadSessionTx(
 	return file, nil
 }
 
-// SweepExpiredUploads writes off reservations whose presigned window closed
-// without a completion. It covers both upload targets, because they share the
+// SweepExpiredUploads writes off reservations whose deadline passed without a
+// completion (a drive import never completed, an upload request that died). It covers both upload targets, because they share the
 // table, and processes each session in its own transaction so one wedged row
 // cannot block the batch behind it.
 //

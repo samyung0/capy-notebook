@@ -18,6 +18,7 @@ import logging
 import math
 import random
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -402,16 +403,20 @@ async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
 # search keeps fused order.
 RERANK_TIMEOUT_S = 5.0
 
+# Rerank requests a search stopped waiting for, held until they settle.
+_detached: set[asyncio.Future[Any]] = set()
+
 
 async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list[float]:
     """Relevance of each document to ``query``, in document order.
 
     Settles as kind ``rerank`` at zero credits, labeled with ``spec``'s catalog
-    row. The scores return as soon as they arrive and the settlement finishes
-    in the background, so :data:`RERANK_TIMEOUT_S` bounds admission and the
-    provider request, which is timed out itself rather than cancelled from
-    outside; a timed-out call stays open for its receipt window like any other
-    uncertain call.
+    row. The search waits at most :data:`RERANK_TIMEOUT_S` for the scores,
+    admission and busy retry included. The provider request is not cut off
+    there: it keeps the whole-call bound of any non-streaming call, so one that
+    answers after the search moved on, or after the search was cancelled, still
+    settles its measured usage. The settlement always finishes in the
+    background.
     """
     bound = time.monotonic() + RERANK_TIMEOUT_S
 
@@ -422,9 +427,7 @@ async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list
             spec=spec,
             deadline=min(deadline, bound),
         ) as call_id:
-            raw = await elitellm.rerank(
-                spec, query, documents, timeout=bound - time.monotonic()
-            )
+            raw = await elitellm.rerank(spec, query, documents)
             accounting.settle_in_background(
                 call_id=call_id,
                 kind=accounting.KIND_RERANK,
@@ -435,7 +438,12 @@ async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list
             )
         return raw
 
-    raw = await _call_with_retry(_one)
+    request = asyncio.ensure_future(_call_with_retry(_one))
+    _detached.add(request)
+    request.add_done_callback(_detached.discard)
+    raw = await asyncio.wait_for(
+        asyncio.shield(request), max(0.0, bound - time.monotonic())
+    )
     scores = raw.get("scores") if isinstance(raw, dict) else None
     if (
         not isinstance(scores, list)
@@ -728,6 +736,7 @@ async def stream_agent_response(
     on_event: Any | None = None,
     call_purpose: str = accounting.PURPOSE_AGENT,
     response_format: dict[str, Any] | None = None,
+    stopped: Callable[[], bool] | None = None,
 ) -> AssembledResponse:
     """Stream one tool-capable model response into a normalized assembly.
 
@@ -735,7 +744,8 @@ async def stream_agent_response(
     under the retry policy; a busy answer waits for Retry-After. A byte from
     the provider, or a token already handed to the client from this call,
     makes the attempt final: abandon and raise. The client not having seen
-    SSE yet does not make a post-byte failure retryable.
+    SSE yet does not make a post-byte failure retryable. Once ``stopped()``
+    says the turn was stopped, a failure raises instead of retrying.
     """
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec)
@@ -797,6 +807,8 @@ async def stream_agent_response(
             mapped = classify_user_key_error(exc)
             if mapped is not None and mapped.code == INVALID_KEY:
                 raise mapped from exc
+            if stopped is not None and stopped():
+                raise
             await _retry_or_raise(
                 exc,
                 attempt=attempt,
@@ -804,6 +816,10 @@ async def stream_agent_response(
                 deadline=deadline,
                 retry_any=True,
             )
+            # A stop during the wait (a backoff or the provider's Retry-After)
+            # starts no next attempt either.
+            if stopped is not None and stopped():
+                raise
     raise AssertionError("retry loop must return or raise")
 
 

@@ -172,8 +172,10 @@ def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -
     elif name == "write_slide":
         detail = f"slide {args.get('slide')}"
     elif name == "edit_office_document" and not args.get("file_id"):
-        # A create names the new file by its title.
-        first = (args.get("commands") or [{}])[0]
+        # A create names the new file by its title; malformed commands name
+        # nothing (the model's arguments are unchecked here).
+        commands = args.get("commands")
+        first = commands[0] if isinstance(commands, list) and commands else {}
         detail = str(first.get("title") or "") if isinstance(first, dict) else ""
     else:
         detail = named(_target_id(name, args))
@@ -186,18 +188,25 @@ CLIENT_ERROR_CODE = "agent_failed"
 
 @dataclass
 class ClientDrop:
-    """Set when the browser or Go hop is gone. The current provider call still
-    finishes and settles. The loop does not start another one.
+    """Set when the Go hop is gone (``dropped``) or the user pressed Stop
+    (``stopped``, Epo 2026-10-21). Either way the calls already running finish
+    and settle, and the loop starts no other model or tool call. Only a dropped
+    hop stops the stream: a stopped turn still sends Go what its running calls
+    did.
     """
 
     dropped: bool = False
+    stopped: bool = False
 
     def mark(self) -> None:
         self.dropped = True
 
+    def stop(self) -> None:
+        self.stopped = True
+
 
 def _client_gone(client: ClientDrop | None) -> bool:
-    return bool(client and client.dropped)
+    return bool(client and (client.dropped or client.stopped))
 
 
 def _with_usage(event: dict[str, Any]) -> dict[str, Any]:
@@ -226,9 +235,10 @@ def _flagged_error() -> dict[str, Any]:
 
 def with_turn_state(event: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     """An event that ends the turn without an answer carries the turn so far:
-    its activity and its evidence, nothing cited (Epo 2026-10-21)."""
+    its activity and its evidence (Epo 2026-10-21), with the passages the
+    answer cited before it ended (Epo 2026-10-22)."""
     event["activity"] = ctx.activity
-    event["toolEvidence"] = evidence.pack(ctx, [])
+    event["toolEvidence"] = evidence.pack(ctx, ctx.cited_shown)
     return event
 
 
@@ -295,6 +305,7 @@ async def run_agent(
     ``script`` is UAT's scripted turn (``scripted.py``): its steps stand in
     for the model.
     """
+    ended = False
     try:
         async for event in _run_turn(
             query=query,
@@ -308,7 +319,18 @@ async def run_agent(
         ):
             if event["type"] == "error":
                 with_turn_state(event, ctx)
+            ended = ended or event["type"] in ("done", "error")
             yield event
+        if client and client.stopped and not ended:
+            # Stop: what the calls running at the stop did goes to the stopped
+            # turn's record, never back to the model in this turn (Epo 2026-10-21).
+            yield _with_usage(
+                events.turn_checkpoint(
+                    list(ctx.activity),
+                    evidence.pack(ctx, ctx.cited_shown),
+                    stopped=True,
+                )
+            )
     finally:
         # Before the await: a cancelled record must not leave the directory.
         if ctx.deck_dir:
@@ -497,12 +519,9 @@ async def _run_turn(
                 budget.completion_calls += 1
                 budget.compaction_calls += 1
 
-            # Captures ride outside ``messages``; the budget still has to hold the
-            # ones whose exchange is still live. ponytail: the post-fold fit check
-            # inside compact_messages reuses this count, so the step that folds an
-            # exchange over-counts its captures once; recompute inside compaction
-            # if a turn ever fails on that margin.
-            image_tokens = capture.image_tokens(ctx.captures, messages)
+            # Captures ride outside ``messages``, every one until the answer, so
+            # the budget holds them all.
+            image_tokens = capture.image_tokens(ctx.captures)
             if ctx.library:
                 ctx.library_evidence.activate(messages, ctx.library_reads)
             allowance = ""
@@ -607,6 +626,8 @@ async def _run_turn(
                     model=spec,
                     tools=active_schemas,
                     on_event=_on_event,
+                    # A stopped turn starts no retry of this call.
+                    stopped=lambda: _client_gone(client),
                     call_purpose=(
                         accounting.PURPOSE_TERMINAL
                         if terminal_call
@@ -646,6 +667,7 @@ async def _run_turn(
                             started = True
                         if len(renderer.order) > len(sent_citations):
                             sent_citations = _ordered_citations(ctx, renderer.order)
+                            ctx.cited_shown = list(renderer.order)
                             citation_version += 1
                             yield events.citations(
                                 sent_citations, citation_version, final=True
@@ -697,10 +719,13 @@ async def _run_turn(
             budget.stop_reason = STOP_ERROR
             return
         except Exception as exc:
+            if _client_gone(client):
+                # A stop or a lost hop is not a failure of the turn.
+                log.info("agent step ended after the client left: %s", exc)
+                budget.stop_reason = STOP_CLIENT_GONE
+                return
             log.exception("agent step failed")
-            event = _flagged_error() if guard.flagged else _client_error(exc)
-            if not _client_gone(client):
-                yield event
+            yield _flagged_error() if guard.flagged else _client_error(exc)
             budget.stop_reason = STOP_ERROR
             return
 
@@ -710,6 +735,7 @@ async def _run_turn(
         budget.reasoning_tokens += assembled.usage.reasoning_tokens
 
         if _client_gone(client):
+            ctx.evidence_notes.extend(_cancelled(c, ctx) for c in assembled.tool_calls)
             budget.stop_reason = STOP_CLIENT_GONE
             return
 
@@ -825,7 +851,7 @@ async def _run_turn(
             results_from = len(messages)
             try:
                 async for event in _run_tools(
-                    calls, ctx, budget, messages, building=building
+                    calls, ctx, budget, messages, building=building, client=client
                 ):
                     if event.get("type") == "_tool_message":
                         continue
@@ -1188,6 +1214,21 @@ def _activity(
     return block
 
 
+CANCELLED = "Not run: the user stopped the turn before this call started."
+
+
+def _cancelled(call: ToolCall, ctx: ToolContext) -> dict[str, Any]:
+    """The record of a call the Stop kept from starting, whatever its tool: it
+    has no result for retention to trim (Epo 2026-10-22)."""
+    detail = _describe(call.name, _parse_args(call.arguments), ctx)
+    return {
+        "name": call.name,
+        "detail": detail,
+        "outcome": "cancelled",
+        "text": CANCELLED,
+    }
+
+
 def _tool_start(call: ToolCall, name: str, run: _Run) -> dict[str, Any]:
     return events.tool_start(call.id, name, run.detail, started_at=run.started_at)
 
@@ -1210,6 +1251,7 @@ async def _run_tools(
     messages: list[dict[str, Any]],
     *,
     building: bool = False,
+    client: ClientDrop | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     accepted: list[tuple[ToolCall, dict[str, Any], str]] = []
     results: list[tuple[ToolCall, ToolResult]] = []
@@ -1285,6 +1327,11 @@ async def _run_tools(
             # A mutation keeps the whole response serial, so a create/edit/trash
             # never races a read of the same resource inside one response.
             for call, args, name in work:
+                if _client_gone(client):
+                    # After a stop the next call never starts.
+                    notes[call.id] = _cancelled(call, ctx)
+                    ctx.evidence_notes.append(notes[call.id])
+                    continue
                 yield _start(call, name, args)
                 for event in _finish(call.id, await tools.run(name, args, ctx)):
                     yield event

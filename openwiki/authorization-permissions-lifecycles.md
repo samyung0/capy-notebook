@@ -360,7 +360,10 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   frozen; narrowing (privacy toward private, share role toward viewer) stays
   open to both.
 - **Owner only** can invite a member, change a member's role, remove a member,
-  and delete the workspace.
+  delete the workspace, and switch Auto process edits (Epo 2026-10-21): a
+  workspace update carrying `autoProcess` from anyone else is refused whole
+  with the non-disclosing `404` (`ErrForbidden`), and the Indexing tab shows
+  editors the switch disabled. Editors keep every other field of that update.
 - Frozen owners cannot create invitations or promote an existing member,
   because either action widens exposure. They may demote or remove members as
   recovery-safe mutations. Grace owners invite and promote normally.
@@ -1028,12 +1031,19 @@ normal tombstone policy; it does not create a negative-identity row for an
 identity that was never provisioned.
 
 The stored `name` belongs to the user. The Clerk name (first plus last, else
-username, else email, else a localized fallback) seeds the row only when the
-local account is inserted, by the request-time sync or the `user.created`
-webhook, whichever runs first. Every later sync, including `user.updated`,
-refreshes email and avatar only. `PATCH /api/me` stores the name the user
-typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
-are created with that same name because no separate legal name is stored.
+username, else the email's local part before the `@`, else a localized
+fallback, trimmed and cut to 60 runes; a whitespace-only name counts as none)
+seeds the row only when the local account is inserted, by the request-time
+sync or the `user.created` webhook, whichever runs first; both read it through
+`auth.ProfileName`. An unnamed account never shows its whole address (Epo
+2026-10-21): every place a name shows (profile, members, mentions, presence
+and cursors through the collaboration token's `name` claim) reads
+`users.name`, and migration `0104_unnamed_user_names.sql` renamed rows created
+earlier whose name was their email (any case, cut to 60). Every later sync,
+including `user.updated`, refreshes email and avatar only. `PATCH /api/me`
+stores the name the user typed, trimmed, 1 to 60 runes, rejected with `422`
+otherwise. Stripe customers are created with that same name because no
+separate legal name is stored.
 
 A Clerk session token is accepted only when its `azp` (the origin that minted
 it) is one of `COLLABORATION_ALLOWED_ORIGINS` (Epo 2026-10-21); a token without
@@ -1210,9 +1220,9 @@ live row references them.
 
 | Stage                                | Database/storage effect                                                                                                                                                                                            | Bucket effect                                                                        | Background cleanup                                                                   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Upload reserved                      | Creates a pending `upload_sessions` row and reserves the declared bytes against the uploader                                                                                                                       | Browser receives a presigned PUT for an `incoming/` or `editor-assets/incoming/` key | Pending session is eligible for expiry after its presigned deadline                  |
-| Upload finalized                     | Creates the source file or editor asset, converts reserved bytes into used bytes, and marks the session completed                                                                                                  | Incoming object is promoted to its stable `sources/` or `editor-assets/` key         | Completed session remains temporarily as an idempotency record                       |
-| Upload abandoned/expired             | Marks the session expired and releases its storage reservation                                                                                                                                                     | Both incoming and possible promoted paths are queued, with a 24-hour presign grace   | Upload sweeper runs at startup and every minute, up to 100 expired sessions per pass |
+| Upload reserved                      | Creates a pending `upload_sessions` row and reserves the declared bytes against the uploader (a drive import's row too)                                                                                            | A browser upload's gateway PUTs its stable key; the import worker writes `incoming/` | Pending session is eligible for expiry after its deadline                            |
+| Upload finalized                     | Creates the source file or editor asset, converts reserved bytes into used bytes, and marks the session completed                                                                                                  | A drive import's incoming object is promoted to its stable `sources/` key            | Completed session remains temporarily as an idempotency record                       |
+| Upload failed/abandoned/expired      | Marks the session expired and releases its storage reservation (a failed browser upload at once, in its request)                                                                                                   | Both paths are queued, with a 24-hour grace; the reaper deletes once nothing references them | Upload sweeper runs at startup and every minute, up to 100 expired sessions per pass |
 | File/asset deleted                   | Logical row is deleted; workspace deletion and account purge do this through foreign-key cascades too. Pending/running parse, ingest, import, and provider reservations are cancelled at the same boundary.        | The path is queued only when its last database reference disappears                  | Blob reaper runs at startup and every minute                                         |
 | Shared blob still referenced         | One row/reference is removed, but the remaining clone/reference keeps the blob live                                                                                                                                | Object is not deleted                                                                | Reaper re-checks references before every claim                                       |
 | Stable object has no database record | No row exists to enqueue it, for example after a request dies between PUT and row creation                                                                                                                         | Object remains in the bucket                                                         | Monthly orphan sweep reports it after 48 hours; it currently **does not delete it**  |
@@ -1242,31 +1252,40 @@ while processing continues; the viewer shows progress above the preview.
 Source uploads and editor assets share the `upload_sessions` table but use
 different targets. Reserving an upload immediately reserves its declared bytes
 against the uploader. Editor assets upload through their material, so
-only that material's editors can reserve them, and every asset names it. The
-presigned PUT signs the declared size as its Content-Length (`blob.PresignPut`),
-so B2 refuses a body of any other size with a 403 (checked on the UAT bucket
-2026-10-06); the S3 SDK cannot sign a zero length, so a declared empty source
-file stays unbound and finalize's size check still refuses a mismatch. A successful finalize promotes the object from a
-temporary incoming key, creates the durable resource row, and marks the upload
-session completed. Finalization is idempotent, so retrying a completed source
-upload returns the already-created file. Concurrent duplicate completions may
-race before either database commit. If one request has already moved the
-incoming object, the other accepts the stable object only when its recorded
-size and content type match, then converges through the same idempotent
-finalization transaction. For a file with source sessions the gateway reads
-the promoted object back once and records its SHA-256 in that transaction;
-it never takes a hash from the browser, since the collaboration server checks
-the originals it loads against it ([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
+only that material's editors can reserve them, and every asset names it. A
+browser upload is one request through the gateway (Epo 2026-10-22,
+[backend-storage-quota](backend-storage-quota.md#reservations-and-clones)): it
+reserves, spools and hashes the bytes, writes them to the stable key in one
+bounded PUT and finalizes in the same request, so no browser ever holds a
+bucket URL it could write with and only its own uploader can finish an upload.
+A failure in that request releases the reservation and queues the key for the
+reaper. The upload first takes a ticket in the gateway's line, which only the
+same editors can take and only its own user can spend, on its own route
+([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
+A drive import completes separately (`internalCompleteSourceImport`):
+finalization promotes the object from a temporary `incoming/` key, creates the
+durable resource row, and marks the upload session completed. Finalization is
+idempotent, so retrying a completed import returns the already-created file.
+Concurrent duplicate completions may race before either database commit. If
+one request has already moved the incoming object, the other accepts the
+stable object only when its recorded size and content type match, then
+converges through the same idempotent finalization transaction. For a file
+with source sessions the gateway reads the promoted object back once and
+records its SHA-256 in that transaction; it never takes a hash from the
+browser or the worker, since the collaboration server checks the originals it
+loads against it.
 
 The upload sweeper runs once on server startup and every minute afterward. It
-finds pending sessions whose presigned deadline has passed, marks each one
-expired, releases the owner's reserved bytes, and queues both the incoming and
-stable destination paths in the same transaction. Both paths are included
-because a late or partially completed request may have written either one.
+finds pending sessions whose deadline has passed (a drive import's, or a
+browser upload whose gateway died mid-request: its deadline is an hour,
+`uploadSessionTTL`), marks each one expired, releases the owner's reserved
+bytes, and queues both the incoming and stable destination paths in the same
+transaction. Both paths are included because a late or partially completed
+request may have written either one.
 
-Queued upload paths are delayed by a further 24-hour presign grace. This delay
-outlasts an already-issued PUT URL so a late upload is collected rather than
-appearing after cleanup has already run. Independently, bucket lifecycle rules
+Queued upload paths are delayed by a further 24-hour grace, so a late write
+(an import worker's, or a PUT that answered after its 60 s bound) is collected
+rather than appearing after cleanup has already run. Independently, bucket lifecycle rules
 expire `incoming/` and `editor-assets/incoming/` objects after one day. The
 database sweep repairs quota/accounting state; the bucket rule is the final
 backstop for temporary objects that never obtained a database session.
@@ -1332,8 +1351,8 @@ Sources: [deletion outbox and reference re-check](../server/internal/store/blobs
 `files` and `materials` carry `trashed_at`, `trashed_by`, `trash_episode_id` and
 `purge_after` (30 days). Every active-resource query filters
 `trashed_at IS NULL` explicitly; maintenance, quota, refcount and trash paths
-read trashed rows on purpose. Trashing cancels the file's pipeline jobs, evicts
-its collaboration rooms and releases outstanding chat Undo entries; the row
+read trashed rows on purpose. Trashing cancels the file's pipeline jobs and
+evicts its collaboration rooms, which ends their chat Undo steps; the row
 keeps its bytes and stays charged to the owner until purge. Restore bumps the
 source epoch or the material `room_schema` so stale clients cannot resume.
 `GET /api/trash`, `POST /api/trash/{kind}/{id}/restore` and
@@ -1461,9 +1480,11 @@ Once requested, the account enters `deletion_pending`, sessions are revoked,
 live collaboration rooms are evicted, and queued or running imports, ingest,
 parse, and provider reservations are cancelled. The owner's workspaces
 and materials immediately disappear from member lists, Explore, direct shared
-reads, and clone endpoints. Long-running chat, generate, editor-AI, and ingest
+reads, and clone endpoints. Long-running generate, editor-AI, and ingest
 streams recheck both the actor session and workspace access and cancel when
-either boundary closes. A suspension hides them the same way while it lasts
+either boundary closes. A chat turn runs no periodic check (Epo 2026-10-21):
+each of its tool calls checks the actor, and a write refused for lost
+permission tells the agent to stop editing and end the turn. A suspension hides them the same way while it lasts
 (see "What everyone else sees" under Account lifecycle gates). Clerk revocation reads explicit pages into a complete sweep before it
 revokes them, then repeats until no active session remains. A page or sweep
 safety limit is a retryable failure, never success. A confirmed empty active

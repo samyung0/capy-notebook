@@ -160,11 +160,13 @@ const comment = {
   contentRich: [{ children: [{ text: 'Margin note' }], type: 'p' }],
 };
 
-/** A 1 KiB store-only reservation, under the Free per-file cap so only the
- * lifecycle or storage gate can refuse it. */
+/** A 1 KiB store-only upload's ticket request, under the Free per-file cap
+ * so only the lifecycle or storage gate can refuse it: the ticket runs the
+ * upload's gates before it waits in the gateway's line. */
 const probe = () => ({
   batchId: randomUUID(),
   batchTotal: 1,
+  contentType: 'application/octet-stream',
   name: 'probe.bin',
   parseMode: 'none',
   sizeBytes: 1024,
@@ -508,7 +510,7 @@ test('storage lifecycle: a lapsed Pro owner over the Free limit is frozen, resub
   expect(await fileCap(owner, ownerWs)).toBe(FREE_FILE);
   await refused(
     owner,
-    `/api/workspaces/${ownerWs}/sources/uploads`,
+    `/api/workspaces/${ownerWs}/sources/uploads/tickets`,
     'POST',
     probe(),
     'account_over_quota'
@@ -627,7 +629,7 @@ test('storage lifecycle: a lapsed Pro owner over the Free limit is frozen, resub
   // Storage growth fails the quota against the Free limit.
   const quota = await refused(
     owner,
-    `/api/workspaces/${ownerWs}/sources/uploads`,
+    `/api/workspaces/${ownerWs}/sources/uploads/tickets`,
     'POST',
     probe(),
     'storage_quota_exceeded'

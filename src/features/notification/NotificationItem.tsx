@@ -33,39 +33,58 @@ function workspaceName(notification: AppNotification): string {
   );
 }
 
+interface SourceBatchCounts {
+  done: number;
+  failed: number;
+  removed: number;
+  workspaceName: string;
+}
+
+/** A batch's body names its failed and removed files only when it has any. */
+function sourceBatchBody(
+  counts: SourceBatchCounts,
+  copy: Record<
+    'failed' | 'failedRemoved' | 'plain' | 'removed',
+    (counts: SourceBatchCounts) => string
+  >
+) {
+  if (counts.failed && counts.removed) return copy.failedRemoved(counts);
+  if (counts.failed) return copy.failed(counts);
+  if (counts.removed) return copy.removed(counts);
+  return copy.plain(counts);
+}
+
 function systemCopy(notification: AppNotification) {
   const { data } = notification;
   switch (dataString(data, 'code')) {
     case 'source_batch': {
-      const done = dataNumber(data, 'done');
-      const failed = dataNumber(data, 'failed');
-      const name = workspaceName(notification);
+      const counts = {
+        done: dataNumber(data, 'done'),
+        failed: dataNumber(data, 'failed'),
+        // Files the user removed from the transfer panel (Epo 2026-10-22).
+        removed: dataNumber(data, 'removed'),
+        workspaceName: workspaceName(notification),
+      };
       if (dataString(data, 'source') === 'import') {
         return {
-          body: failed
-            ? m.notification_system_source_imported_failed_body({
-                done,
-                failed,
-                workspaceName: name,
-              })
-            : m.notification_system_source_imported_body({
-                done,
-                workspaceName: name,
-              }),
+          body: sourceBatchBody(counts, {
+            failed: m.notification_system_source_imported_failed_body,
+            failedRemoved:
+              m.notification_system_source_imported_failed_removed_body,
+            plain: m.notification_system_source_imported_body,
+            removed: m.notification_system_source_imported_removed_body,
+          }),
           title: m.notification_system_source_import_title(),
         };
       }
       return {
-        body: failed
-          ? m.notification_system_source_uploaded_failed_body({
-              done,
-              failed,
-              workspaceName: name,
-            })
-          : m.notification_system_source_uploaded_body({
-              done,
-              workspaceName: name,
-            }),
+        body: sourceBatchBody(counts, {
+          failed: m.notification_system_source_uploaded_failed_body,
+          failedRemoved:
+            m.notification_system_source_uploaded_failed_removed_body,
+          plain: m.notification_system_source_uploaded_body,
+          removed: m.notification_system_source_uploaded_removed_body,
+        }),
         title: m.notification_system_source_upload_title(),
       };
     }

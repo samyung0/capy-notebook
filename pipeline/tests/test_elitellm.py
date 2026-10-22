@@ -422,7 +422,7 @@ async def test_qwen_rerank_uses_the_deepinfra_inference_route(monkeypatch):
         slots=("rerank",),
     )
 
-    raw = await transport.rerank(spec, "q", ["a", "b", "c"], timeout=5.0)
+    raw = await transport.rerank(spec, "q", ["a", "b", "c"])
 
     assert seen == {
         "url": "https://api.deepinfra.com/v1/inference/Qwen/Qwen3-Reranker-4B",

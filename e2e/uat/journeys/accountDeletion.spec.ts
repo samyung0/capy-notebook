@@ -53,14 +53,13 @@ async function storage(run: UatRun, userId: string) {
     `SELECT COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=%s),0)
       + COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=%s),0)
       + COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id=%s AND status='ready'),0)
-      + COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=%s),0)
-      + COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE owner_user_id=%s),0) AS recount,
+      + COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=%s),0) AS recount,
     COALESCE((SELECT sum(COALESCE(reserved_size,declared_size)) FROM upload_sessions
       WHERE user_id=%s AND status='pending' AND expires_at>now()),0) AS recount_reserved,
     (SELECT s.used_bytes+COALESCE((SELECT sum(d.delta_bytes) FROM user_storage_deltas d WHERE d.user_id=s.user_id),0)
       FROM user_storage s WHERE s.user_id=%s) AS used,
     (SELECT reserved_bytes FROM user_storage WHERE user_id=%s) AS reserved`,
-    Array.from({ length: 8 }, () => userId)
+    Array.from({ length: 7 }, () => userId)
   );
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [key, Number(value)])

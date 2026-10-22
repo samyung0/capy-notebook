@@ -7,7 +7,7 @@ import io
 import itertools
 import json
 import re
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime
 
 import pytest
@@ -22,9 +22,11 @@ from pipeline.retrieval import (
     contract,
     pending,
     scripted,
+    search,
     skills,
     tools,
 )
+from pipeline.retrieval.chunking import estimate_tokens
 from pipeline.retrieval.limits import TOOLS_PER_RESPONSE
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
@@ -136,6 +138,7 @@ def _script_stream(responses: list[AssembledResponse]):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del model, call_purpose
         seen.append(
@@ -158,8 +161,6 @@ def _script_stream(responses: list[AssembledResponse]):
 
 
 async def test_completed_tool_evidence_is_reused_in_the_next_turn(monkeypatch):
-    from dataclasses import asdict
-
     passage = _passage()
     stream, seen = _script_stream(
         [
@@ -494,6 +495,49 @@ async def test_create_material_sends_its_sources_as_written(monkeypatch):
     assert "fileIds" not in seen and "chapterIds" not in seen
     assert seen["assistantMessageId"] == "m_1"
     assert seen["toolCallId"] == "call_1"
+
+
+@pytest.mark.parametrize(
+    "status, code, told",
+    [
+        (403, "permission_denied", True),
+        (403, "account_suspended", True),
+        (404, "", False),
+    ],
+)
+async def test_a_write_refused_for_permission_tells_the_model_to_stop(
+    monkeypatch, status, code, told
+):
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+    )
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    class _Resp:
+        status_code = status
+
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
+        def json(self):
+            return (
+                {"code": code, "message": "refused"}
+                if code
+                else {"message": "not found"}
+            )
+
+    monkeypatch.setattr(tools.requests, "post", lambda *_a, **_k: _Resp())
+    result = await tools._create_material(
+        {"kind": "note", "content": "body", "_tool_call_id": "call_1"}, ctx
+    )
+
+    assert result.refused
+    assert (tools.NO_PERMISSION in agent._result_text(result, [])) is told
+    assert tools.NO_PERMISSION not in result.error_payload()["message"]
 
 
 async def test_create_material_clamps_model_title(monkeypatch):
@@ -869,6 +913,7 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -1251,6 +1296,7 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, on_event
         purposes.append(call_purpose)
@@ -1650,6 +1696,7 @@ async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, call_purpose
         calls["n"] += 1
@@ -1689,6 +1736,7 @@ async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, on_event, call_purpose
         calls["n"] += 1
@@ -1725,6 +1773,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -1760,8 +1809,7 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
     assert not any(e.get("type") == "error" for e in events)
 
 
-@pytest.mark.asyncio
-async def test_relay_stops_sse_and_waits_for_agent():
+async def test_a_go_hang_up_marks_the_client_and_lets_the_running_call_finish():
     from pipeline.retrieve import service as retrieve_service
 
     released = asyncio.Event()
@@ -1773,33 +1821,23 @@ async def test_relay_stops_sse_and_waits_for_agent():
         finished["n"] += 1
         yield {"type": "done"}
 
-    class _Req:
-        def __init__(self) -> None:
-            self.gone = False
-
-        async def is_disconnected(self) -> bool:
-            return self.gone
-
-    req = _Req()
     client = agent.ClientDrop()
-    chunks: list[str] = []
+    first = asyncio.Event()
 
     async def _consume() -> None:
-        async for chunk in retrieve_service._relay_until_disconnect(
-            req, _agen(), client
-        ):
-            chunks.append(chunk)
-            req.gone = True
+        async for _chunk in retrieve_service._relay_until_disconnect(_agen(), client):
+            first.set()
 
     task = asyncio.create_task(_consume())
-    await asyncio.sleep(0.05)
-    assert finished["n"] == 0
-    assert client.dropped
+    await first.wait()
+    task.cancel()  # Starlette cancels the response when Go hangs up
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert client.dropped and finished["n"] == 0
     released.set()
-    await task
+    with pytest.raises(asyncio.CancelledError):
+        await task
     assert finished["n"] == 1
-    assert any("planning" in c for c in chunks)
-    assert not any("done" in c for c in chunks)
 
 
 # ------------------------------------- turn saves, however it ends (Epo 2026-10-21)
@@ -1902,6 +1940,496 @@ async def test_a_turn_without_an_answer_still_records_its_searches(monkeypatch):
     assert [event["cited"] for event in recorded] == [[False]]
 
 
+# ------------------------------------------------------- Stop (Epo 2026-10-21)
+
+
+def _stop_turn(monkeypatch, responses: list[AssembledResponse], run) -> None:
+    """A turn that answers from ``responses`` and runs tools with ``run``; a
+    model call past them, or an error report, fails the test."""
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        assert responses, "a model call after the stop"
+        return responses.pop(0)
+
+    def _report(*_args, **_kwargs):
+        raise AssertionError("a stop reported an error")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.tools, "run", run)
+    monkeypatch.setattr(agent.obs, "reported_event", _report)
+
+
+def _stopped_calls(event: dict) -> list[tuple[str, str]]:
+    assert event["type"] == "turn_checkpoint" and event["stopped"]
+    return [
+        (b["callId"], b["outcome"]) for b in event["activity"] if b["kind"] == "tool"
+    ]
+
+
+async def test_a_stop_during_a_slow_tool_lets_it_finish_and_starts_nothing_more(
+    monkeypatch,
+):
+    client = agent.ClientDrop()
+    running, release = asyncio.Event(), asyncio.Event()
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        running.set()
+        await release.wait()
+        return ToolResult(text_parts=["slow listing"])
+
+    _stop_turn(monkeypatch, [_assembled("", [_call("list_sources", "{}", "c1")])], _run)
+    task = asyncio.create_task(
+        _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    )
+    await running.wait()
+    client.stop()
+    release.set()
+    events = await task
+
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+    assert [n["text"] for n in events[-1]["toolEvidence"]["tools"]] == ["slow listing"]
+    assert not any(e["type"] in ("done", "error") for e in events)
+
+
+async def test_a_stop_during_a_write_starts_no_further_call_of_its_batch(monkeypatch):
+    client = agent.ClientDrop()
+    ran: list[str] = []
+
+    async def _run(name, args, ctx):
+        del name, ctx
+        ran.append(args["_tool_call_id"])
+        client.stop()  # the user stops while the first write runs
+        return ToolResult(text_parts=["created"])
+
+    writes = [
+        _call("create_material", '{"kind":"note","title":"A"}', "c1"),
+        _call("create_material", '{"kind":"note","title":"B"}', "c2"),
+    ]
+    _stop_turn(monkeypatch, [_assembled("", writes)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert ran == ["c1"]
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+
+
+async def test_a_stop_during_a_search_lets_its_rerank_finish_and_settle(monkeypatch):
+    """A provider call running inside a tool at Stop is billed with the turn."""
+    client = agent.ClientDrop()
+    running, answer = asyncio.Event(), asyncio.Event()
+    opened: list[str] = []
+    settled: list[str] = []
+
+    async def _open(call_id, **_kwargs):
+        opened.append(call_id)
+
+    async def _no_lease(_call_id):
+        return None
+
+    async def _post(payload, **_kwargs):
+        settled.append(payload["callId"])
+        return {}
+
+    async def _rerank(_spec, _query, documents):
+        running.set()
+        await answer.wait()
+        return {"scores": [1.0] * len(documents), "input_tokens": 30}
+
+    async def _run(name, args, ctx):
+        del name, args, ctx
+        rows = [{"id": "a", "indexed_text": "a"}, {"id": "b", "indexed_text": "b"}]
+        _, reranked = await search.rerank("q", rows)
+        return ToolResult(text_parts=[f"reranked={reranked}"])
+
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(accounting, "open_call", _open)
+    monkeypatch.setattr(accounting, "release_call", _no_lease)
+    monkeypatch.setattr(accounting, "_post_settlement", _post)
+    monkeypatch.setattr(agent.models.elitellm, "rerank", _rerank)
+    monkeypatch.setattr(search, "_rerank_spec", lambda: _model())
+    search_call = _call("search_knowledge", '{"query":"q"}', "c1")
+    _stop_turn(monkeypatch, [_assembled("", [search_call])], _run)
+    token = accounting.bind("cr_stop")
+    try:
+        turn = asyncio.create_task(
+            _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+        )
+        await running.wait()
+        client.stop()
+        answer.set()
+        events = await turn
+        await asyncio.gather(*list(accounting._background))
+    finally:
+        accounting.reset(token)
+
+    assert _stopped_calls(events[-1]) == [("c1", "succeeded")]
+    assert len(opened) == 1 and settled == opened
+
+
+async def test_a_model_call_failing_after_a_stop_is_not_reported(monkeypatch):
+    client = agent.ClientDrop()
+
+    async def _stream(_messages, **_kwargs):
+        client.stop()
+        raise RuntimeError("provider session is closed")
+
+    def _report(*_args, **_kwargs):
+        raise AssertionError("a stop reported an error")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.obs, "reported_event", _report)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert _stopped_calls(events[-1]) == []
+    assert not any(e["type"] == "error" for e in events)
+
+
+async def test_chat_stop_marks_only_the_running_turn():
+    from pipeline.retrieve import service as retrieve_service
+
+    client = agent.ClientDrop()
+    retrieve_service._running["m_run"] = client
+    try:
+        stopped = await retrieve_service.chat_stop(
+            retrieve_service.ChatStopReq(assistantMessageId="m_run")
+        )
+        missing = await retrieve_service.chat_stop(
+            retrieve_service.ChatStopReq(assistantMessageId="m_other")
+        )
+    finally:
+        retrieve_service._running.pop("m_run", None)
+    assert stopped == {"stopped": True} and client.stopped and not client.dropped
+    assert missing.status_code == 404
+
+
+async def test_stopped_and_failed_turns_replay_marked_unfinished():
+    def _turn(id_: str, status: str, content: str, note: str) -> dict:
+        evidence = {"tools": [{"name": "list_sources", "text": note}], "passages": []}
+        return {
+            "id": id_,
+            "role": "assistant",
+            "content": content,
+            "status": status,
+            "toolEvidence": evidence,
+        }
+
+    history = [
+        {"id": "u1", "role": "user", "content": "make a note", "status": "complete"},
+        _turn("a1", "aborted", "Working on it", "stopped listing"),
+        {"id": "u2", "role": "user", "content": "try again", "status": "complete"},
+        _turn("a2", "error", "", "failed listing"),
+    ]
+    out = await agent.evidence.history_turns(history, ToolContext(workspace_id="ws_1"))
+    texts = [message["content"] for message in out]
+
+    assert texts[1] == "Working on it\n\n" + agent.evidence.UNFINISHED["aborted"]
+    assert agent.evidence.UNFINISHED["error"] in texts
+    assert sum("stopped listing" in t or "failed listing" in t for t in texts) == 2
+
+
+# ---------------------------- result retention between messages (Epo 2026-10-21)
+
+
+async def _ran(name, args, ctx):
+    del args, ctx
+    return ToolResult(text_parts=[f"ran {name}"])
+
+
+async def test_an_answered_turn_replays_its_edit_receipt_not_its_inspection(
+    monkeypatch,
+):
+    stream, _seen = _script_stream(
+        [
+            _assembled("", [_call("inspect_document", '{"material_id":"m"}', "c1")]),
+            _assembled("", [_call("edit_document", '{"material_id":"m"}', "c2")]),
+            _assembled(_answer(("Edited.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _ran)
+    done = (await _collect("Fix my note", ToolContext(workspace_id="ws_1")))[-1]
+
+    assert done["type"] == "done"
+    assert [n["name"] for n in done["toolEvidence"]["tools"]] == ["edit_document"]
+    history = [
+        {"id": "u1", "role": "user", "content": "Fix my note", "status": "complete"},
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": "Edited.",
+            "status": "complete",
+            "toolEvidence": done["toolEvidence"],
+        },
+    ]
+    out = await agent.evidence.history_turns(history, ToolContext(workspace_id="ws_1"))
+    replayed = "\n".join(m["content"] for m in out)
+    assert "ran edit_document" in replayed and "ran inspect_document" not in replayed
+
+
+_SEARCHED = _passage(chunk_id="s1", text="Mitosis has four phases.")
+_JPEG = "data:image/jpeg;base64,AA=="
+
+
+def _after_stop(evidence: dict) -> list[dict]:
+    return [
+        {
+            "id": "u1",
+            "role": "user",
+            "content": "Explain mitosis",
+            "status": "complete",
+        },
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": "",
+            "status": "aborted",
+            "toolEvidence": evidence,
+        },
+    ]
+
+
+async def test_a_stopped_turn_keeps_its_edit_receipt_not_its_reads_or_captures(
+    monkeypatch,
+):
+    """A stopped turn counts as finished (Epo 2026-10-22): its search, read and
+    capture results never reach the next prompt, its edit receipt does."""
+    client = agent.ClientDrop()
+
+    async def _run(name, args, ctx):
+        if name == "capture_page":
+            call_id = args["_tool_call_id"]
+            ctx.captures.append(
+                {"callId": call_id, "page": 1, "bbox": [0, 0, 1000, 1000], "bytes": 3}
+                | {"estimatedImageTokens": 4}
+            )
+            ctx.pending_images[call_id] = ("capture_page result 1", _JPEG)
+            return ToolResult(text_parts=["Captured page 1."])
+        if name == "edit_document":
+            client.stop()  # the user stops while the edit runs
+            return ToolResult(text_parts=["edit receipt: 1 block replaced"])
+        return ToolResult(passages=[_SEARCHED], text_parts=[f"ran {name}"])
+
+    calls = [
+        _call("search_workspace", '{"query":"mitosis"}', "c1"),
+        _call("read_document", '{"file_id":"f_1"}', "c2"),
+        _call("capture_page", '{"file_id":"f_1","page":1}', "c3"),
+        _call("edit_document", '{"material_id":"m"}', "c4"),
+    ]
+    _stop_turn(monkeypatch, [_assembled("", calls)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    evidence = events[-1]["toolEvidence"]
+    assert [n["name"] for n in evidence["tools"]] == ["edit_document"]
+
+    stream, seen = _script_stream([_assembled(_answer(("Done.", [])))])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    async for _event in agent.run_agent(
+        query="go on",
+        ctx=ToolContext(workspace_id="ws_1"),
+        history=_after_stop(evidence),
+        model=_model(),
+    ):
+        pass
+    prompt = json.dumps(seen[0]["messages"])
+    assert "edit receipt: 1 block replaced" in prompt
+    assert _SEARCHED.text not in prompt and "ran read_document" not in prompt
+    assert "Captured page 1." not in prompt and _JPEG not in prompt
+
+
+@pytest.mark.parametrize("ending", ["stop", "failure"])
+async def test_a_partial_answer_keeps_the_passages_it_cited(monkeypatch, ending):
+    """A turn stopped or failed mid-answer keeps the passages the user saw
+    cited, like an answered turn (Epo 2026-10-22)."""
+    client = agent.ClientDrop()
+    ctx = ToolContext(workspace_id="ws_1")
+    program = _answer(("Mitosis has four phases.", [1]), ("More.", []))
+    shown, rest = program.split('"More', 1)
+
+    async def _stream(_messages, *, on_event=None, **_kwargs):
+        if not ctx.citations:
+            return _assembled("", [_call("read_document", '{"file_id":"f_1"}', "r1")])
+        on_event(StreamEvent(kind="text", text=shown))
+        for _ in range(20):  # the user sees the first claim with its citation
+            if ctx.cited_shown:
+                break
+            await asyncio.sleep(0)
+        if ending == "failure":
+            raise RuntimeError("provider disconnected")
+        client.stop()
+        on_event(StreamEvent(kind="text", text='"More' + rest))
+        return _assembled(program)
+
+    async def _run(name, args, ctx):
+        return ToolResult(passages=[_SEARCHED], paged=True, text_parts=["(end)"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ctx, client=client)
+
+    if ending == "stop":
+        assert events[-1]["type"] == "turn_checkpoint" and events[-1]["stopped"]
+    else:
+        assert events[-1]["type"] == "error"
+    passages = events[-1]["toolEvidence"]["passages"]
+    assert [p["chunk_id"] for p in passages] == ["s1"]
+
+
+async def test_a_call_the_stop_kept_from_starting_replays_as_cancelled(monkeypatch):
+    client = agent.ClientDrop()
+
+    async def _run(name, args, ctx):
+        client.stop()  # the user stops while the first write runs
+        return ToolResult(text_parts=["created A"])
+
+    writes = [
+        _call("create_material", '{"kind":"note","title":"A"}', "c1"),
+        _call("create_material", '{"kind":"note","title":"B"}', "c2"),
+    ]
+    _stop_turn(monkeypatch, [_assembled("", writes)], _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+    evidence = events[-1]["toolEvidence"]
+
+    assert [(n["outcome"], n["text"]) for n in evidence["tools"]] == [
+        ("succeeded", "created A"),
+        ("cancelled", agent.CANCELLED),
+    ]
+    out = await agent.evidence.history_turns(
+        _after_stop(evidence), ToolContext(workspace_id="ws_1")
+    )
+    replayed = [m["content"] for m in out if agent.CANCELLED in m["content"]]
+    assert len(replayed) == 1
+    assert '"name":"create_material"' in replayed[0]
+    assert evidence["tools"][1]["detail"] in replayed[0]
+
+
+async def test_a_stop_with_a_malformed_office_create_still_saves_its_record(
+    monkeypatch,
+):
+    """Review r2 L4: commands sent as an object instead of a list name nothing
+    in the call's detail instead of failing the stop checkpoint."""
+    client = agent.ClientDrop()
+    create = '{"commands": {"type": "create", "title": "Budget"}}'
+
+    async def _stream(_messages, **_kwargs):
+        client.stop()  # the response was still streaming at the stop
+        return _assembled("", [_call("edit_office_document", create, "c1")])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert events[-1]["type"] == "turn_checkpoint" and events[-1]["stopped"]
+    assert events[-1]["toolEvidence"]["tools"] == [
+        {
+            "name": "edit_office_document",
+            "detail": "",
+            "outcome": "cancelled",
+            "text": agent.CANCELLED,
+        }
+    ]
+
+
+async def test_a_note_its_tool_no_longer_keeps_is_not_replayed():
+    """Review r2 L5: a row saved while inspections were kept whole follows the
+    current retention; the record of a cancelled call still replays."""
+    saved = {
+        "tools": [
+            {
+                "name": "inspect_document",
+                "outcome": "succeeded",
+                "text": "quiz answers",
+            },
+            {"name": "list_sources", "outcome": "succeeded", "text": "a listing"},
+            {
+                "name": "search_workspace",
+                "outcome": "cancelled",
+                "text": agent.CANCELLED,
+            },
+        ]
+    }
+    out = await agent.evidence.history_turns(
+        [
+            {"id": "u1", "role": "user", "content": "q", "status": "complete"},
+            {
+                "id": "a1",
+                "role": "assistant",
+                "content": "Done.",
+                "status": "complete",
+                "toolEvidence": saved,
+            },
+        ],
+        ToolContext(workspace_id="ws_1"),
+    )
+    replayed = "\n".join(m["content"] for m in out)
+    assert "a listing" in replayed and agent.CANCELLED in replayed
+    assert "quiz answers" not in replayed
+
+
+async def test_the_calls_of_a_response_ending_after_the_stop_are_cancelled(
+    monkeypatch,
+):
+    client = agent.ClientDrop()
+
+    async def _stream(_messages, **_kwargs):
+        client.stop()  # the response was still streaming at the stop
+        return _assembled("", [_call("search_workspace", '{"query":"q"}', "c1")])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", _stream)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"), client=client)
+
+    assert [(n["name"], n["outcome"]) for n in events[-1]["toolEvidence"]["tools"]] == [
+        ("search_workspace", "cancelled")
+    ]
+
+
+async def test_the_office_tools_stay_offered_after_a_dropped_office_inspection(
+    monkeypatch,
+):
+    _gateway(monkeypatch)
+    run = agent.tools.run
+
+    async def _run(name, args, ctx):
+        if name == "inspect_office_document":
+            return ToolResult(text_parts=["Sheet1!A1 = 3"])
+        return await run(name, args, ctx)
+
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("read_skill", '{"name": "office_building"}', "c1")]),
+            _assembled(
+                "", [_call("inspect_office_document", '{"file_id":"f_1"}', "c2")]
+            ),
+            _assembled(_answer(("A1 is 3.", []))),
+            _assembled(_answer(("Still 3.", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    done = (await _collect("What is in A1?", _owner_ctx()))[-1]
+    evidence = done["toolEvidence"]
+    assert evidence["officeTools"] is True and evidence["tools"] == []
+
+    # The next message, as the gateway sends it (store.ConversationPrompt).
+    later = _owner_ctx()
+    later.office_tools = evidence["officeTools"]
+    history = [
+        {"id": "u1", "role": "user", "content": "What is in A1?", "status": "complete"},
+        {
+            "id": "a1",
+            "role": "assistant",
+            "content": "A1 is 3.",
+            "status": "complete",
+            "toolEvidence": evidence,
+        },
+    ]
+    async for _event in agent.run_agent(
+        query="And now?", ctx=later, history=history, model=_model()
+    ):
+        pass
+    offered = [t["function"]["name"] for t in seen[3]["tools"]]
+    assert offered[-2:] == list(tools.OFFICE_TOOLS)
+    assert not any("Sheet1!A1" in str(m["content"]) for m in seen[3]["messages"])
+
+
 async def test_an_answer_that_fails_after_recording_does_not_record_again(
     monkeypatch,
 ):
@@ -1912,7 +2440,7 @@ async def test_an_answer_that_fails_after_recording_does_not_record_again(
     async def _record(events):
         calls.append(events)
 
-    def _pack(_ctx, _order):
+    def _pack(_ctx, _order, **_kwargs):
         raise RuntimeError("pack failed")
 
     monkeypatch.setattr(agent.store, "record_search_events", _record)
@@ -1980,7 +2508,7 @@ async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
                 "",
                 [
                     _call("list_sources", "{}", "c1"),
-                    _call("list_trashed_files", "{}", "c2"),
+                    _call("list_sources", "{}", "c2"),
                 ],
             ),
             _assembled(_answer(("done", []))),
@@ -1989,12 +2517,12 @@ async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
     second_done = asyncio.Event()
 
     async def _run(name, args, ctx):
-        del args, ctx
-        if name == "list_sources":
+        del name, ctx
+        if args["_tool_call_id"] == "c1":
             await second_done.wait()  # the first call finishes last
         else:
             second_done.set()
-        return ToolResult(text_parts=[f"ran {name}"])
+        return ToolResult(text_parts=[f"listed for {args['_tool_call_id']}"])
 
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.tools, "run", _run)
@@ -2020,14 +2548,9 @@ async def test_a_finished_turn_sends_done_as_before_with_notes_in_call_order(
                 "name": "list_sources",
                 "detail": "listing sources",
                 "outcome": "succeeded",
-                "text": "ran list_sources",
-            },
-            {
-                "name": "list_trashed_files",
-                "detail": "",
-                "outcome": "succeeded",
-                "text": "ran list_trashed_files",
-            },
+                "text": f"listed for {call_id}",
+            }
+            for call_id in ("c1", "c2")
         ],
         "passages": [],
         "skills": [],
@@ -2044,10 +2567,6 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
         ctx.evidence_notes.append({"name": "list_sources", "text": "ran list_sources"})
         yield {"type": "phase", "phase": "planning"}
         raise RuntimeError("citation regions unavailable")
-
-    class _Request:
-        async def is_disconnected(self) -> bool:
-            return False
 
     monkeypatch.setattr(service, "run_agent", _agent)
     monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
@@ -2066,11 +2585,43 @@ async def test_an_exception_past_the_agent_still_sends_the_turn_so_far(monkeypat
         spendSessionId="cr_1",
         role="editor",
     )
-    chunks = [chunk async for chunk in service._chat_events(req, _Request())]
+    chunks = [chunk async for chunk in service._chat_events(req)]
 
     last = json.loads(chunks[-1].removeprefix("data: "))
     assert last["code"] == "agent_failed"
     _saved_listing(last)
+
+
+async def test_a_chat_stream_is_stoppable_until_it_ends(monkeypatch):
+    from pipeline.retrieve import service
+
+    registered = []
+
+    async def _agent(*, client, **_kwargs):
+        registered.append(service._running.get("m_turn") is client)
+        yield {"type": "done"}
+
+    monkeypatch.setattr(service, "run_agent", _agent)
+    monkeypatch.setattr(service.accounting, "bind", lambda _session: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a: _model())
+    req = service.ChatStreamReq(
+        providerSlug="deepseek",
+        modelSlug="deepseek-v4-flash",
+        configVersion=1,
+        userId="u_1",
+        paidBy="platform",
+        thinking="high",
+        query="q",
+        workspaceId="ws_1",
+        contractVersion=contract.VERSION,
+        operations=[],
+        assistantMessageId="m_turn",
+        spendSessionId="cr_1",
+        role="editor",
+    )
+    _chunks = [chunk async for chunk in service._chat_events(req)]
+
+    assert registered == [True] and "m_turn" not in service._running
 
 
 # ------------------------------------------------------------- trash tools
@@ -2461,8 +3012,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
                     {
                         "id": "m1",
                         "type": "mermaid",
-                        "text": "",
-                        "properties": {"source": "graph TD"},
+                        "text": "graph TD",
+                        "properties": {"caption": "Tide flow"},
                     },
                     {
                         "id": "r1",
@@ -2516,7 +3067,8 @@ async def test_inspect_document_renders_a_materials_blocks(monkeypatch):
     text = material.text()
     assert "[b1] (p) hello" in text
     assert "    [qq1] (quiz_question) Why?" in text
-    assert "source: graph TD" in text
+    # A Mermaid block reads as its source, its caption apart (Epo 2026-10-22).
+    assert "[m1] (mermaid) graph TD\n    caption: Tide flow" in text
     assert "embedded quiz material id=mat_q: inspect it as kind material" in text
     assert "embedded flashcards reference, not yet created" in text
 
@@ -2558,6 +3110,7 @@ async def test_edit_document_posts_commands_and_refreshes_the_turn_view(monkeypa
     assert seen["assistantMessageId"] == "m_1" and seen["toolCallId"] == "c1"
     assert result.effects[0]["operation"] == "edited"
     assert ctx._scope_outline is None and reloaded["n"] == 1
+    assert "The user can undo this" in result.text()
 
 
 async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_commands(
@@ -2685,6 +3238,60 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
     assert twice.text().endswith("Block b1 (p) now reads:\nalpha delta")
 
 
+async def test_a_mermaid_expectation_is_its_stored_source(monkeypatch):
+    """A Mermaid source's edge whitespace does not show where inspect or a
+    stale refusal prints it, so an edit expecting the source as shown expects
+    the stored one (review r2 L3: the model looped on stale_target)."""
+    ctx = _owner_ctx()
+    ctx.skills_read = {"editing"}
+    stored, typed = "flowchart LR\n  A --> B\n", "flowchart LR\n  A --> C \n"
+    sent: list[dict] = []
+    answers = iter(
+        [
+            _JsonResp(
+                {
+                    "format": "plate",
+                    "title": "Notes",
+                    "blocks": [{"id": "m1", "type": "mermaid", "text": stored}],
+                }
+            ),
+            _JsonResp(
+                {
+                    "code": "stale_target",
+                    "message": "block m1 changed",
+                    "details": {
+                        "block": {"id": "m1", "type": "mermaid", "text": typed}
+                    },
+                },
+                status=409,
+            ),
+            _JsonResp(_receipt("edited", "material", "mat_1")),
+        ]
+    )
+
+    def _post(url, **kwargs):
+        if "data" in kwargs:
+            sent.append(json.loads(kwargs["data"]))
+        return next(answers)
+
+    _gateway(monkeypatch, post=_post)
+    target = {"kind": "material", "id": "mat_1"}
+    await tools.run("inspect_document", {"target": target, "_tool_call_id": "c0"}, ctx)
+
+    def remove(n, expected):
+        command = {"type": "remove_block", "block_id": "m1", "expected_text": expected}
+        return tools.run(
+            "edit_document",
+            {"target": target, "commands": [command], "_tool_call_id": f"c{n}"},
+            ctx,
+        )
+
+    assert (await remove(1, stored.strip())).outcome != "succeeded"
+    assert (await remove(2, typed.strip())).outcome == "succeeded"
+    expected = [body["commands"][0]["expected_text"] for body in sent[-2:]]
+    assert expected == [stored, typed]
+
+
 async def test_a_write_naming_unread_excerpts_credits_them(monkeypatch):
     """Named excerpts are credited whether this turn read them or not (Epo
     2026-10-14): no refusal sends the model back to read them."""
@@ -2724,9 +3331,9 @@ def test_an_office_edit_receipt_says_which_characters_it_removed():
 
 
 def test_an_edit_receipt_offers_undo_only_when_it_has_one():
-    """An edit the engine returned no inverse for has no Undo ref, so its
-    result does not promise one (Epo 2026-10-20)."""
-    undo = " The user can undo this edit from the chat result."
+    """An edit no loaded room took has no Undo ref, so its result does not
+    promise one (Epo 2026-10-20)."""
+    undo = " The user can undo this from the chat result."
     body = _receipt("edited", "source_file", "f_1")
     assert undo not in tools._receipt_result(body).text()
     body["effect"]["undo"] = {"operationId": "op_x", "status": "available"}
@@ -2803,6 +3410,21 @@ async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch
     assert tools.without_blanks(
         "create_material", {"kind": "note", "sources": [], "title": "null", "cards": {}}
     ) == {"kind": "note"}
+    # A blank expectation beside its side is one: a card's empty front
+    # (Epo 2026-10-21); without the side it means nothing and goes.
+    card = {"type": "replace_card", "card_id": "c1", "front": "F", "expected_front": ""}
+    assert tools.without_blanks(
+        "edit_document", {"target": edit["target"], "commands": [card]}
+    )["commands"] == [card]
+    assert tools.without_blanks(
+        "edit_document",
+        {
+            "target": edit["target"],
+            "commands": [{**card, "front": None, "back": "B", "expected_back": "b"}],
+        },
+    )["commands"] == [
+        {"type": "replace_card", "card_id": "c1", "back": "B", "expected_back": "b"}
+    ]
 
     # Dispatch hands the handler the cleaned arguments.
     seen = {}
@@ -2839,6 +3461,7 @@ def _stream_chunks(
         on_event=None,
         call_purpose="agent",
         response_format=None,
+        stopped=None,
     ):
         del model, call_purpose
         seen.append(
@@ -3011,6 +3634,78 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
     stripped, _ = agent.capture.split_images(seen[2]["messages"])
     without = agent.models.measure_request_context(stripped, model=_model())
     assert with_image.total_tokens - without.total_tokens == 2
+
+
+async def test_a_compacted_turn_still_sends_every_capture(monkeypatch):
+    """Live compaction folds the capture's exchange into the turn note; its
+    image still rides with every later request of the turn, and the budget
+    still counts it (Epo 2026-10-21)."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (56, 28), "white").save(buffer, "JPEG")
+    jpeg = buffer.getvalue()
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("capture_page", '{"file_id":"f_1","page":1}', "k1")]),
+            _assembled("", [_call("list_sources", "{}", "r1")]),
+            _assembled("", [_call("list_sources", "{}", "r2")]),
+            _assembled("", [_call("list_sources", "{}", "r3")]),
+            _assembled(_answer(("Seen.", []))),
+        ]
+    )
+
+    async def _run(name, args, ctx):
+        if name == "capture_page":
+            call_id = args["_tool_call_id"]
+            ctx.captures.append(
+                agent.capture.record(
+                    call_id=call_id,
+                    file_id="f_1",
+                    page=1,
+                    box=[0, 0, 1000, 1000],
+                    jpeg=jpeg,
+                    size=(56, 28),
+                    started=0.0,
+                )
+                | {"estimatedImageTokens": 5000}
+            )
+            ctx.pending_images[call_id] = (
+                "capture_page result 1",
+                agent.capture.data_url(jpeg),
+            )
+        return ToolResult(text_parts=[f"ran {name}"])
+
+    def _full(messages, *_args, **_kwargs):
+        """The request is too large once three exchanges are in, until folded."""
+        kinds = [m.get("_kind") for m in messages]
+        return (
+            "turn_note" not in kinds and sum(m["role"] == "tool" for m in messages) == 3
+        )
+
+    async def _note(**_kwargs):
+        return "Captured page 1 of f_1; listed sources."
+
+    extras: list[int] = []
+    compact = agent.compact.compact_messages
+
+    async def _compact(messages, spec, *, extra=0, **kwargs):
+        extras.append(extra)
+        return await compact(messages, spec, extra=extra, **kwargs)
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    monkeypatch.setattr(agent.compact, "needs_compact", _full)
+    monkeypatch.setattr(agent.compact, "summarize_checkpoint", _note)
+    monkeypatch.setattr(agent.compact, "compact_messages", _compact)
+    await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    # The fourth request folded k1's exchange; the fifth runs on the folded turn.
+    for request in seen[3:]:
+        messages = request["messages"]
+        assert not any(m.get("tool_call_id") == "k1" for m in messages)
+        note = next(i for i, m in enumerate(messages) if m.get("_kind") == "turn_note")
+        assert messages[note + 1]["content"][-2]["type"] == "image_url"
+    # The budget of the request after the fold still holds the capture.
+    assert 4950 < extras[4] - extras[0] < 5050
 
 
 @pytest.mark.parametrize(
@@ -4500,10 +5195,151 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             {
                 "format": "docx",
                 "title": "essay.docx",
-                "supportedOperations": ["replace_text"],
-                "entries": [{"id": "p1", "label": "Paragraph 1", "value": "Intro"}],
-                "total": 80,
-                "nextStart": 60,
+                "scoped": {
+                    "paragraphs": [
+                        {
+                            "id": "body:paragraph:1A",
+                            "style": "Heading1",
+                            "list": None,
+                            "text": "Method",
+                        },
+                        {
+                            "id": "body:paragraph:2B",
+                            "style": None,
+                            "list": "bullet",
+                            "text": "Ruler",
+                        },
+                        {
+                            "id": "body:t0:r0c1:paragraph:3C",
+                            "list": None,
+                            "table": {
+                                "id": "body:t0:r0c0:paragraph:3A",
+                                "row": 0,
+                                "column": 1,
+                            },
+                            "text": "Period",
+                        },
+                        {
+                            "id": "body:sdt0:paragraph:4D",
+                            "style": None,
+                            "list": None,
+                            "contentControl": True,
+                            "text": "Name",
+                        },
+                        {
+                            "id": "body:paragraph:5E",
+                            "style": None,
+                            "list": None,
+                            "locked": "holds a field",
+                            "text": "Page 1",
+                        },
+                        {
+                            "id": "hf:rIdH:paragraph:6F",
+                            "style": "Header",
+                            "list": None,
+                            "part": "header (default)",
+                            "text": "Lab 3",
+                        },
+                    ],
+                    "total": 80,
+                    "nextStart": 60,
+                    "styles": [
+                        {"id": "Normal", "name": "Normal"},
+                        {"id": "Heading1", "name": "heading 1"},
+                    ],
+                    "stylesMore": 3,
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slides": [
+                        {
+                            "id": "slide:0:256",
+                            "number": 1,
+                            "layout": "Title Slide",
+                            "shapes": [
+                                {
+                                    "id": "slide:0:256:shape:0",
+                                    "kind": "text",
+                                    "placeholder": "ctrTitle",
+                                    "text": "Cells",
+                                },
+                                {"id": "slide:0:256:shape:1", "kind": "picture"},
+                            ],
+                            "moreShapes": 3,
+                        }
+                    ],
+                    "total": 12,
+                    "nextStart": 1,
+                    "layouts": [
+                        {
+                            "id": "ppt/slideLayouts/slideLayout1.xml",
+                            "name": "Title Slide",
+                        },
+                        {"id": "ppt/slideLayouts/slideLayout2.xml", "name": "Blank"},
+                    ],
+                },
+            },
+            {
+                "format": "pptx",
+                "title": "deck.pptx",
+                "scoped": {
+                    "width": 960.0,
+                    "height": 540.0,
+                    "slide": {
+                        "id": "slide:1:257",
+                        "number": 2,
+                        "layout": {
+                            "id": "ppt/slideLayouts/slideLayout2.xml",
+                            "name": "Blank",
+                        },
+                        "notes": "Greet the room.\nThen the demo.",
+                    },
+                    "slides": 12,
+                    "shapes": [
+                        {
+                            "id": "slide:1:257:shape:0",
+                            "kind": "text",
+                            "name": "Title 1",
+                            "placeholder": "title",
+                            "box": [36.0, 20.5, 888.0, 90.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:1",
+                            "kind": "table",
+                            "name": "Table 2",
+                            "box": [36.0, 120.0, 400.0, 200.0],
+                        },
+                        {
+                            "id": "slide:1:257:shape:2",
+                            "kind": "text",
+                            "name": "Equation",
+                            "equation": True,
+                            "box": [36.0, 400.0, 100.0, 30.0],
+                        },
+                    ],
+                    "paragraphs": [
+                        {
+                            "id": "para:story:slide:1:257:shape:0:0:0",
+                            "shape": "slide:1:257:shape:0",
+                            "text": "Cells",
+                        },
+                        {
+                            "id": "para:story:slide:1:257:shape:1:table:0:1:0",
+                            "shape": "slide:1:257:shape:1",
+                            "text": "Nucleus",
+                            "level": 1,
+                            "row": 0,
+                            "column": 1,
+                        },
+                    ],
+                    "total": 6,
+                    "nextStart": 5,
+                },
             },
         ]
     )
@@ -4537,10 +5373,218 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
     cells = await inspect(sheet="Grades", range="A1:B2")
     assert cells.text().endswith(source_block("A1: Name\nB2: =SUM(B3:B9) → 512"))
     assert sent[1]["office"] == {"sheet": "Grades", "range": "A1:B2"}
+    # A DOCX page is the engine's scoped read, its first page listing the
+    # paragraph styles, at most 50 and a count of the rest (Epo 2026-10-21).
     paragraphs = (await inspect(start=0, count=60)).text()
-    assert (
-        "[p1] Paragraph 1: Intro" in paragraphs
-        and "(next start = 60 of 80)" in paragraphs
+    assert paragraphs == "\n".join(
+        [
+            "essay.docx format=docx",
+            (
+                "paragraphs as [id] (style unless the default, list, table cell, "
+                "content control, locked: why replace_text and format_text refuse "
+                "it, and delete_paragraph unless it only follows a table) text; after "
+                "the body, headers, footers and notes under == part == lines, which "
+                "take replace_text only:"
+            ),
+            source_block(
+                "paragraph styles as id (name): Normal (Normal), Heading1 (heading 1)"
+                " and 3 more\n"
+                "[body:paragraph:1A] (Heading1) Method\n"
+                "[body:paragraph:2B] (bullet) Ruler\n"
+                "[body:t0:r0c1:paragraph:3C] (table "
+                "body:t0:r0c0:paragraph:3A row 1 column 2) Period\n"
+                "[body:sdt0:paragraph:4D] (content control) Name\n"
+                "[body:paragraph:5E] (locked: holds a field) Page 1\n"
+                "== header (default) ==\n"
+                "[hf:rIdH:paragraph:6F] (Header) Lab 3"
+            ),
+            "(next start = 60 of 80)",
+        ]
+    )
+    assert sent[2]["office"] == {"start": 0, "count": 60}
+    # A PPTX read lists slides with their layouts and shapes, the first page
+    # the deck's layouts; a slide read its shapes and paragraphs (Epo
+    # 2026-10-20). What the file names sits inside the fence.
+    deck = (await inspect(count=1)).text()
+    assert deck == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                "slide size 960 x 540 points; slides as N. [id] (layout), each shape as "
+                "[id] kind (placeholder): its first line of text (… when longer); read "
+                "one slide by its number for all its shapes and its paragraphs:"
+            ),
+            source_block(
+                "layouts as [id] name: [ppt/slideLayouts/slideLayout1.xml] Title Slide, "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "1. [slide:0:256] (Title Slide)\n"
+                "  [slide:0:256:shape:0] text (ctrTitle placeholder): Cells\n"
+                "  [slide:0:256:shape:1] picture\n"
+                "  … and 3 more shapes"
+            ),
+            "(next start = 1 of 12 slides)",
+        ]
+    )
+    slide = (await inspect(slide=2)).text()
+    assert sent[4]["office"] == {"slide": 2}
+    assert slide == "\n".join(
+        [
+            "deck.pptx format=pptx",
+            (
+                'slide size 960 x 540 points; shapes as [id] kind "name" (marks) at x, y '
+                "size w x h points from the top left corner (shapes in a group show no "
+                "box), each followed by its paragraphs as [id] (level, table cell) text; "
+                "a page counts shapes and paragraphs:"
+            ),
+            source_block(
+                "slide 2 of 12 [slide:1:257], layout "
+                "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "speaker notes:\nGreet the room.\nThen the demo.\n"
+                '[slide:1:257:shape:0] text "Title 1" (title placeholder) at 36, 20.5 '
+                "size 888 x 90\n"
+                "  [para:story:slide:1:257:shape:0:0:0] Cells\n"
+                '[slide:1:257:shape:1] table "Table 2" at 36, 120 size 400 x 200\n'
+                "  [para:story:slide:1:257:shape:1:table:0:1:0] (level 1, row 1 column 2) "
+                "Nucleus\n"
+                '[slide:1:257:shape:2] text "Equation" (equation, not editable) at 36, '
+                "400 size 100 x 30"
+            ),
+            "(next start = 5 of 6 shapes and paragraphs)",
+        ]
+    )
+
+
+async def test_a_long_pptx_read_shows_the_slides_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A deck page over the tool output limit is cut between slides, its next
+    start the first slide not shown."""
+    slides = [
+        {
+            "id": f"slide:{i}:{256 + i}",
+            "number": i + 1,
+            "layout": "Title and Content",
+            "shapes": [
+                {
+                    "id": f"slide:{i}:{256 + i}:shape:{j}",
+                    "kind": "text",
+                    "text": "word " * 16,
+                }
+                for j in range(12)
+            ],
+        }
+        for i in range(60)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {"width": 720.0, "height": 540.0, "slides": slides, "total": 60},
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "count": 60, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    shown = re.findall(r"^(\d+)\. \[slide:", text, re.MULTILINE)
+    assert 0 < len(shown) < 60 and shown == [str(i + 1) for i in range(len(shown))]
+    assert text.endswith(
+        "</source>\n(page cut at the tool output limit; "
+        f"next start = {len(shown)} of 60 slides)"
+    )
+
+
+async def test_a_long_slide_read_shows_the_shapes_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A slide page over the tool output limit, its notes at the cap, is cut
+    between its shapes and paragraphs, its next start the first not shown; a
+    page that begins inside a shape names the shape its first paragraphs
+    continue (review M1)."""
+    shapes = [
+        {"id": f"s:{i}", "kind": "text", "name": "Box " * 10, "box": [0, 0, 72, 36]}
+        for i in range(1, 100)
+    ]
+    paragraphs = [{"id": "p:0:0", "shape": "s:0", "text": "word " * 400}] + [
+        {"id": f"p:{i}:0", "shape": f"s:{i}", "text": "word " * 400}
+        for i in range(1, 100)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {
+            "width": 720.0,
+            "height": 540.0,
+            # Notes at the cap and its marker (Epo 2026-10-22).
+            "slide": {
+                "id": "slide:0:256",
+                "number": 1,
+                "notes": "n" * 2_000 + "… [notes cut: 9 more characters]",
+            },
+            "slides": 1,
+            "shapes": shapes,
+            "paragraphs": paragraphs,
+            "total": 1201,
+            "nextStart": 600,
+        },
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "slide": 1, "start": 401, "count": 199, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    assert "slide 1 of 1 [slide:0:256]\nspeaker notes:\nnnn" in text
+    assert "… [notes cut: 9 more characters]\n[s:0] continued:\n  [p:0:0] word" in text
+    shown = len(re.findall(r"^\[s:\d+\] text|^  \[p:", text, re.MULTILINE))
+    assert 0 < shown < 199
+    assert text.endswith(
+        "</source>\n(slide cut at the tool output limit; "
+        f"next start = {401 + shown} of 1201 shapes and paragraphs)"
+    )
+
+
+async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A page over the tool output limit keeps its styles (first, inside the
+    source fence) and is cut between paragraphs, its next start the first
+    paragraph not shown."""
+    paragraphs = [
+        {"id": f"body:paragraph:{i}", "text": f"{i} " + "word " * 400}
+        for i in range(60)
+    ]
+    body = {
+        "format": "docx",
+        "title": "essay.docx",
+        "scoped": {
+            "paragraphs": paragraphs,
+            "total": 300,
+            "nextStart": 65,
+            "styles": [{"id": "Normal", "name": "Normal"}],
+        },
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "start": 5, "count": 60, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    assert "<source>\nparagraph styles as id (name): Normal (Normal)\n" in text
+    shown = re.findall(r"^\[body:paragraph:(\d+)\]", text, re.MULTILINE)
+    assert 0 < len(shown) < 60 and shown == [str(i) for i in range(len(shown))]
+    assert text.endswith(
+        "</source>\n(page cut at the tool output limit; "
+        f"next start = {5 + len(shown)} of 300)"
     )
 
 
@@ -4568,35 +5612,6 @@ async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatc
     )
 
 
-async def test_an_office_edit_over_10_000_cells_is_refused_before_it_leaves(
-    monkeypatch,
-):
-    """set_range and format_cells areas count toward the call's 10,000 cells
-    (Epo 2026-10-20, review finding 3); the engine counts the rest."""
-    posts: list[str] = []
-    ctx = _office_ctx(monkeypatch, post=lambda url, **_: posts.append(url))
-    commands = [
-        {
-            "type": "set_range",
-            "sheet": "Grades",
-            "range": "$A$6000:A1",
-            "expected": [[""]] * 6000,
-            "values": [["1"]] * 6000,
-        },
-        {"type": "format_cells", "sheet": "Grades", "range": "b1:f1000", "bold": True},
-    ]
-    result = await tools.run(
-        "edit_office_document",
-        {"file_id": "f_1", "commands": commands, "_tool_call_id": "c1"},
-        ctx,
-    )
-    assert result.error_code == "invalid_input" and posts == []
-    assert result.error == (
-        "The commands write 11,000 cells, over the 10,000 one call may write; "
-        "split the edit into several calls."
-    )
-
-
 def test_a_stale_office_band_shows_its_grid_to_copy():
     """A refused row or column delete shows the band as rows of cells, exact
     for cells holding tabs or line breaks, and says when the engine cut it
@@ -4614,6 +5629,16 @@ def test_a_stale_office_band_shows_its_grid_to_copy():
     cut = tools._missed_target({"block": {**block, "gridCut": True}}, {}, office=True)
     assert cut.endswith(
         " … (its first 2,000 cells; inspect_office_document reads the rest)"
+    )
+    # A refused table delete shows the table's cells the same way.
+    table = {
+        "id": "body:t0:r0c0:paragraph:3A",
+        "type": "table",
+        "text": "a\tb",
+        "grid": [["a", "b"]],
+    }
+    assert tools._missed_target({"block": table}, {}, office=True) == (
+        'Table body:t0:r0c0:paragraph:3A now holds, as rows of cells:\n[["a","b"]]'
     )
 
 

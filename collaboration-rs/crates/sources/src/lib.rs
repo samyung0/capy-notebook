@@ -20,6 +20,7 @@ pub mod schedule;
 pub mod seed_check;
 pub mod store;
 pub mod text;
+pub mod undo_cost;
 
 pub use admit::{Admission, Estimate, Refusal, admit_update};
 pub use disk::Hold;

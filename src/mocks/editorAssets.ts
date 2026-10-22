@@ -30,52 +30,39 @@ export const editorAssetHandlers = [
     if (!asset) return new HttpResponse(null, { status: 404 });
     return new HttpResponse(await (await fetch(asset.url)).blob());
   }),
+  // The mock gateway always has a free slot: every ticket's turn is now.
+  http.post('/api/materials/:id/editor-assets/uploads/tickets', () =>
+    HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
+  ),
+  // Mirrors the streamed upload: one multipart request, metadata then file.
   http.post('/api/materials/:id/editor-assets/uploads', async ({ request }) => {
-    const body = (await request.json()) as {
+    const form = await request.formData();
+    const body = JSON.parse(String(form.get('metadata'))) as {
       contentType: string;
       name: string;
+      purpose: 'image' | 'audio';
     };
+    const bytes = form.get('file');
+    if (!(bytes instanceof Blob))
+      return new HttpResponse(null, { status: 400 });
     const id = `asset_mock_${crypto.randomUUID()}`;
     uploads.set(id, body);
-    return HttpResponse.json({
-      assetId: id,
-      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-      headers: { 'Content-Type': body.contentType },
-      method: 'PUT',
-      uploadId: id,
-      url: `/mock-editor-uploads/${id}`,
-    });
-  }),
-  http.put('/mock-editor-uploads/:id', async ({ params, request }) => {
-    const id = String(params.id);
-    const upload = uploads.get(id);
-    if (!upload) return new HttpResponse(null, { status: 404 });
-    assets[id] = {
-      name: upload.name,
-      url: URL.createObjectURL(await request.blob()),
-    };
-    return new HttpResponse(null, { status: 200 });
-  }),
-  http.post(
-    '/api/materials/:id/editor-assets/uploads/:uploadId/complete',
-    ({ params }) => {
-      const id = String(params.uploadId);
-      const upload = uploads.get(id);
-      if (!upload || !assets[id])
-        return new HttpResponse(null, { status: 409 });
-      return HttpResponse.json({
+    assets[id] = { name: body.name, url: URL.createObjectURL(bytes) };
+    return HttpResponse.json(
+      {
         assetId: id,
         completedAt: new Date().toISOString(),
-        contentType: upload.contentType,
+        contentType: body.contentType,
         createdAt: new Date().toISOString(),
-        name: upload.name,
-        purpose: 'image',
-        sizeBytes: 0,
+        name: body.name,
+        purpose: body.purpose,
+        sizeBytes: bytes.size,
         status: 'ready',
         workspaceId: '',
-      });
-    }
-  ),
+      },
+      { status: 201 }
+    );
+  }),
   http.get('/api/editor-assets/:id/resolve', ({ params }) => {
     const id = String(params.id);
     const asset = assets[id];

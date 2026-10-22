@@ -46,12 +46,8 @@ type documentRequest struct {
 	Target      DocumentTarget     `json:"target"`
 	Room        string             `json:"room,omitempty"`
 	ActorUserID string             `json:"actorUserId"`
-	Epoch       *int64             `json:"epoch,omitempty"`
 	Commands    []json.RawMessage  `json:"commands,omitempty"`
 	Operation   *DocumentOperation `json:"operation,omitempty"`
-	UndoOf      string             `json:"undoOf,omitempty"`
-	Inverse     json.RawMessage    `json:"inverse,omitempty"`
-	Guards      json.RawMessage    `json:"guards,omitempty"`
 	// Provenance is the merged attribution record the authority writes onto the
 	// material in the edit's own transaction.
 	Provenance *Provenance `json:"provenance,omitempty"`
@@ -60,11 +56,16 @@ type documentRequest struct {
 	Office *OfficeQuery `json:"office,omitempty"`
 }
 
-// OfficeQuery scopes an XLSX read: no range lists the sheets, a sheet and a
-// range read those cells.
+// OfficeQuery scopes an Office read: for XLSX no range lists the sheets, a
+// sheet and a range read those cells; for DOCX a page of count paragraphs
+// from start; for PPTX no slide is a page of count slides from start, a
+// slide (its number) that slide's shapes and a page of its paragraphs.
 type OfficeQuery struct {
 	Sheet string `json:"sheet,omitempty"`
 	Range string `json:"range,omitempty"`
+	Start int    `json:"start,omitempty"`
+	Count int    `json:"count,omitempty"`
+	Slide int    `json:"slide,omitempty"`
 }
 
 // MaterialInspection is the authority's editable view of a material.
@@ -81,12 +82,11 @@ type MaterialInspection struct {
 
 // SourceInspection is the authority's editable view of a source.
 type SourceInspection struct {
-	Access     string            `json:"access"`
-	Checkpoint int64             `json:"checkpoint"`
-	Epoch      int64             `json:"epoch"`
-	Format     string            `json:"format"`
-	Text       *string           `json:"text,omitempty"`
-	Entries    []json.RawMessage `json:"entries,omitempty"`
+	Access     string  `json:"access"`
+	Checkpoint int64   `json:"checkpoint"`
+	Epoch      int64   `json:"epoch"`
+	Format     string  `json:"format"`
+	Text       *string `json:"text,omitempty"`
 	// Scoped is the engine's answer to an Office query, passed on unchanged.
 	Scoped json.RawMessage `json:"scoped,omitempty"`
 }
@@ -101,7 +101,6 @@ var limitMessages = map[string]string{
 	"document_size_exceeded":  "the material would be over its size limit; put the rest in a new material",
 	"document_nodes_exceeded": "the material would hold too many blocks; put the rest in a new material",
 	"document_depth_exceeded": "the material would nest lists or quotes too deeply; flatten them",
-	"undo_payload_exceeded":   "this edit is too large to undo; make it as several smaller edits",
 	// Over the collaboration server's 8 MiB update cap (Epo 2026-10-18).
 	"update_size_exceeded": "this edit is too large to apply at once; make it as several smaller edits",
 }
@@ -224,8 +223,8 @@ type DocumentEdit struct {
 }
 
 // EditDocument applies normalized commands through the authority, which
-// commits state, receipt, inverse and the merged provenance together and
-// returns the receipt.
+// commits state, receipt and the merged provenance together and returns the
+// receipt; its Undo ref is set when a loaded room took the edit.
 func (s *Store) EditDocument(ctx context.Context, actorID string, target DocumentTarget, commands []json.RawMessage, provenance *Provenance, op DocumentOperation) (DocumentEdit, error) {
 	req := documentRequest{
 		Target: target, ActorUserID: actorID, Commands: commands,
@@ -242,41 +241,6 @@ func (s *Store) EditDocument(ctx context.Context, actorID string, target Documen
 	}
 	var out DocumentEdit
 	err := s.postDocumentAuthority(ctx, "/internal/documents/edit", req, &out)
-	return out, err
-}
-
-// UndoDocumentEdit reverses one committed edit through the authority using the
-// stored inverse and guards; the authority validates the guards against the
-// durable pre-state and consumes the Undo eligibility in the same transaction.
-// It carries no provenance: an undo restores the text only, because provenance
-// only grows — over-crediting a source is harmless and under-crediting one is
-// the licence risk.
-func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, inv EditInverse, op DocumentOperation) (AgentOperation, error) {
-	var payload struct {
-		Commands json.RawMessage `json:"commands"`
-	}
-	if err := json.Unmarshal(inv.Inverse, &payload); err != nil || len(payload.Commands) == 0 {
-		return AgentOperation{}, ErrUndoUnavailable
-	}
-	req := documentRequest{
-		Target: DocumentTarget{Kind: inv.ResourceKind, ID: inv.ResourceID}, ActorUserID: actorID,
-		Operation: &op, UndoOf: inv.OperationID, Inverse: payload.Commands, Guards: inv.Guards,
-	}
-	if inv.ResourceKind == agenttools.KindMaterial {
-		room, err := s.MaterialRoom(ctx, inv.ResourceID)
-		if err != nil {
-			return AgentOperation{}, err
-		}
-		req.Room = room
-	} else {
-		if err := s.officeEditRefusal(ctx, inv.ResourceID); err != nil {
-			return AgentOperation{}, err
-		}
-		epoch := inv.Incarnation
-		req.Epoch = &epoch
-	}
-	var out AgentOperation
-	err := s.postDocumentAuthority(ctx, "/internal/documents/undo", req, &out)
 	return out, err
 }
 

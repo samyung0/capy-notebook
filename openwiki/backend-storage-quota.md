@@ -76,7 +76,7 @@ Storage is charged once per logical row owned by a user:
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
 | Trashed rows  | same as above              | until the 30-day purge        |
-| Chat Undo     | `agent_edit_inverses.inverse_bytes` | while Undo is available; released on Undo, trash or invalidation |
+| Chat Undo     | none                       | never: the loaded room holds it in memory (Epo 2026-10-20) |
 
 **Uploader pays** (Sam 2026-10-18, Google Drive's My Drive model). The payer
 of a row is the account that uploaded, imported, cloned or created it, in any
@@ -131,7 +131,12 @@ uploaded as a source takes the source cap, not the image cap. They follow the
 **uploader's** plan, create-only (no retroactive invalidation): **10 MiB**
 free, **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy` returns the caller's own cap, which
-the dialog enforces.
+the dialog enforces before it asks for a ticket. The material response
+carries its payer's editor caps as `imageMaxBytes` and `audioMaxBytes`, which
+`uploadEditorAsset` checks the same way (Epo 2026-10-22); the server keeps
+its own checks. Uploads stream through the API host, which Cloudflare
+proxies with a 100 MB request body limit; the 30 MiB largest per-file cap stays
+well under it.
 
 Office parsing keeps its structured handoff temporarily on the ingest host, with
 no durable B2 parse cache or preview PDF. Temporary parse output is a platform
@@ -178,10 +183,10 @@ counters/triggers for accounting only.
 
 Reconciliation (`reconcileStorageUserTx`) locks the counter row and the
 owner's files, editor assets, materials and pending upload sessions, recounts
-used bytes from files, `source_documents.storage_bytes`, ready editor assets,
-materials and `agent_edit_inverses` and reserved bytes from pending uploads
-(`storageRecountSQL`), and deletes the folded delta rows. Two known gaps, fix
-deferred: it locks no `source_documents` or `agent_edit_inverses` row, so a
+used bytes from files, `source_documents.storage_bytes`, ready editor assets
+and materials and reserved bytes from pending uploads (`storageRecountSQL`),
+and deletes the folded delta rows. Two known gaps, fix deferred: it locks no
+`source_documents` row, so a
 save committing between its delta read and the recount is counted twice until
 the next run; and its `storage_counter_drift` report compares the counter
 without the pending deltas, so it reports drift whenever deltas are pending.
@@ -299,29 +304,140 @@ net-growth check stay.
 
 ## Reservations and clones
 
-Direct B2 uploads call `reserveStorageTx` on the uploader's counter, and
-editor-asset reservations on the material's payer's counter, before the client
-receives a signed PUT URL. Reserved bytes
-count toward the gate immediately so concurrent uploads cannot double-spend
-remaining quota. Finalize converts reservation → used (via status transitions
-/ triggers). Only the account that reserved an upload completes it (Sam
-2026-10-18): another editor's completion answers 404 (`completeSourceUpload`,
-`completeEditorAssetUpload`, `FinalizeUploadSession`).
-Completion (`completeSourceUpload`, and a drive import's internal completion)
-checks the object's size and type by HEAD (a missing type is a mismatch: the
-PUT signs it and the import worker writes it), promotes it to its `sources/` key,
-and, for a file with source sessions (DOCX, XLSX, PPTX and text), reads it
-back once and records its SHA-256 as `files.source_sha256` in the finalize
-transaction (Epo 2026-10-17), so the first source session names its base and
-the browser's device copy works from the first reopen. The gateway hashes the
-stored bytes itself: Backblaze documents no checksum header on PutObject that
-the bucket would verify, and the collaboration server checks every original
-it loads against this SHA, so a browser-sent hash is never trusted. Bytes read
-back at another size than the HEAD reported refuse the completion (409; the
-upload stays pending). A PDF, image or other file without source sessions is
-not read. Ingest still hashes its own download and writes the same value (its
-cache key, and the SHA of files uploaded before this); the first save no longer
-writes the file's SHA.
+Source uploads and editor assets stream through the gateway (Epo 2026-10-22):
+one multipart request (`POST /api/workspaces/{id}/sources/uploads`,
+`POST /api/materials/{id}/editor-assets/uploads`; raw chi routes, outside the
+OpenAPI spec) whose first part, `metadata`, is the upload's JSON and whose
+second part, `file`, is its bytes (`uploadSource`, `uploadEditorAsset`,
+helpers in `server/internal/httpapi/uploads.go`). The request body is capped
+(`http.MaxBytesReader`) at the payer's per-file cap plus 64 KiB of metadata
+and framing. From the metadata the gateway reserves storage as before:
+`reserveStorageTx` on the uploader's counter for a source, on the material's
+payer's counter for an editor asset. Reserved bytes count toward the gate
+immediately so concurrent uploads cannot double-spend remaining quota. It
+then spools the file part to a temporary file, hashing it (SHA-256) as it
+streams, and refuses a part whose type differs from the metadata's or whose
+length differs from the declared size; an editor asset's first bytes must also
+carry its type's signature. The spooled bytes go to the final key
+(`sources/blob_…`, `editor-assets/{id}/blob_…`) in one PutObject
+(`blob.Store.PutObjectOnce`, no SDK retries) bounded at 60 s, which logs one
+`upload b2 put` line with the upload id, `duration_ms` and `outcome` (ok,
+error, timeout; never keys or URLs; Epo 2026-10-21, kept 2026-10-22). Spooling
+first keeps the bound on B2 alone, not on the browser's upload. The same
+request finalizes, on a context the browser's leaving cannot cancel (the bytes
+are stored by then): a source's file row and first pipeline job, with the hash
+as `files.source_sha256` for every source kind (so the first source session
+names its base and the device copy works from the first reopen, Epo
+2026-10-17), or the editor asset's ready row. Only source files record their
+SHA-256: an editor asset is hashed while it streams, but `editor_assets` has no
+column for it. Finalize converts reservation → used (via status transitions /
+triggers). Any failure after the reservation releases it (`MarkUploadExpired`,
+`MarkEditorAssetUploadExpired`), which also queues the key in
+`pending_blob_deletions`; the reaper deletes an object a timed-out PUT may
+still have landed only once nothing references it, so the request never
+deletes inline and answers right after the PUT's bound. A PUT past its bound
+answers the generic 500, which the browser shows as a server error to try
+again; nothing retries it. A session that expired or changed state while its
+body streamed answers 410 or 409. A refusal (400, 413, 403/404) is answered
+without reading the rest of the body, with `Connection: close`. The upload's
+parse download is its only B2 egress.
+
+An upload first takes a ticket in the gateway's line (Epo 2026-10-22,
+`server/internal/httpapi/upload_queue.go`): `POST …/sources/uploads/tickets`
+or `POST …/editor-assets/uploads/tickets` with the upload's metadata as JSON
+(its body has 10 s to arrive). The ticket keeps the file name, size, type
+and, for a source, batch it was issued for; an upload whose metadata differs
+is refused (400, its ticket's batch counting the file). The ticket runs the
+checks its upload repeats (editor access, the metadata's
+bounds, size, type, parse pages and credit headroom) and the reservation's
+gates in a rolled-back transaction (`AssertSourceUploadRoom`: the uploader's
+account and storage and the workspace's file cap; `AssertEditorAssetRoom`:
+the scope's locks and the payer's storage), so an upload that would be
+refused never waits. The reservation itself still happens when the upload
+starts, and gates again; a ticket holds none. Running uploads share a
+budget of 1 GB of declared size, the temp disk their bodies spool to; at most
+256 run at once, a sanity bound on connections, and at most 4 of one user's
+(Epo 2026-10-22). Held turns count as running. A ticket whose file fits the
+budget, whose user is under 4 and that no blocking ticket holds back answers
+`{ticketId, position: 0}` (its turn), else it waits with its place (1 is
+next). Freed bytes go to the line oldest first: a ticket whose user is at 4
+is passed by, so one user's fifth file waits while other users' files run,
+and a file that does not fit is passed by smaller ones that do until it has
+waited 30 s; from then on it blocks every file behind it until it fits, so
+small files cannot starve a big one. There is no minimum send rate: the
+size-scaled body deadline and the 4 per user bound a slow upload. The line holds 128 waiting tickets
+and 20 of one user's; past either the ticket is refused with a typed 503,
+`upload_queue_full` (busy, try again). The browser long-polls
+`GET /api/uploads/tickets/{id}?position=N`, which answers at once when the
+turn comes, when the ticket's place differs from N but no sooner than 2 s
+after the ask (so a fast line costs a browser one poll per 2 s, inside the
+per-user rate limit), and otherwise after 25 s, under Cloudflare's 100 s. A
+turn holds its bytes for 30 s; an upload that has not started by then passes
+them to the line, and its own upload is refused. When waiting or
+the upload fails in the browser (a cancel, the row's remove button, a closed
+editor or dialog, or a 429 the browser retries with a new ticket), it gives
+the ticket back with `DELETE /api/uploads/tickets/{id}` (its owner only),
+which hands the ticket's place, or its turn's bytes, to the line at
+once. A source ticket given back counts at once as a failed file of its
+batch, or as a removed one when the user removed its row (`?reason=removed`);
+a retry's (`?reason=retry`, sent only when the browser will retry the 429,
+not after its last attempt) settles nothing: the retry counts the file. Any
+other reason is a 400. Giving back a ticket the upload already spent is a
+harmless 410. An abandoned tab sends nothing, and its ticket waits for its
+turn to pass. The upload carries
+`?ticket=` and is refused before its body is read when the ticket is missing,
+unknown, another user's or another route's, spent, given back or passed
+(410 `upload_ticket_gone`, which the browser shows as "Your turn to upload
+passed. Try again."), or still waiting (409). Its bytes go back to the budget when the upload request ends, however it ends (finished, cut off or refused). The upload has
+30 s plus its declared size at 100 KB/s, at most 5 minutes, from the
+gateway's first read of its body to send it (`bodyDeadline`, Epo 2026-10-22:
+a 1 MB file 40 s, a 30 MiB file the full 5 minutes; the connection's read
+deadline, lifted once the body is read so it never cuts the PUT); past that
+it answers 408 `upload_timeout`, which the browser shows as
+"The upload took too long. Try again." (a connection dropped
+before the answer reads as a network error), and releases its reservation
+like any failure.
+The line lives in the API process, which runs as one instance; a scaled-out
+API would need it in Redis. A restart forgets it: a waiting browser's next
+poll is refused 410 and the user tries again (so is a ticket that a deploy's
+overlapping old container issued). A source ticket whose turn passes counts at
+once as a failed file of its batch, so the batch's notification does not wait
+for the idle sweep (`SourceBatchIdle`, 1 h). The transfer panel shows a waiting file as "Waiting to upload (position
+N)"; an editor asset's placeholder waits without a place. Each panel row has
+a remove button that cancels its file (Epo 2026-10-22, `removeSourceTransfer`),
+labelled "Remove" while the file waits, uploads or imports and "Hide" once it
+is finished, failed or in the background.
+
+A removed file counts as removed in its batch (Epo 2026-10-22). A file not
+yet sent is never sent:
+it asks for no ticket and counts at once as removed in its batch with
+`POST /api/workspaces/{id}/sources/batches/{batchId}/removed` (`{source,
+total}`, upload rate class, an editor of the workspace only; it opens the
+batch when none of its files has reached the server, a batch id held by
+another submission is a 409, and a removal that would take the batch past its
+total is ignored). A ticket request is never aborted: a file removed while its
+ticket request is out gives the ticket back once it answers, and a waiting one
+gives its ticket back as removed (`?reason=removed`), so a removed file is
+counted once. A running upload is aborted, which the gateway counts as failed.
+An importing file's removal aborts its import request; it counts as removed
+when the server holds nothing of it (not yet requested, or waiting to retry
+after a 408, 429 or 5xx), and is otherwise left to the server, which counts
+the import (an import already queued keeps going). So the batch's notification
+no longer waits for the idle sweep, and it reports removed files as removed; a
+batch whose every file was removed closes without one.
+
+A drive import keeps its own completion (`internalCompleteSourceImport`): the
+import worker writes an `incoming/` object, and the gateway checks its size and
+type by HEAD (a missing type is a mismatch: the worker writes it), promotes it
+to its `sources/` key, and, for a file with source sessions (DOCX, XLSX, PPTX
+and text), reads it back once and records its SHA-256 in the finalize
+transaction. The gateway hashes the stored bytes itself: Backblaze documents no
+checksum header on PutObject that the bucket would verify, and the
+collaboration server checks every original it loads against this SHA. Bytes
+read back at another size than the HEAD reported refuse the completion (409;
+the upload stays pending). Ingest still hashes its own download and writes the
+same value (its cache key, and the SHA of files uploaded before this); the
+first save no longer writes the file's SHA.
 Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
@@ -428,8 +544,10 @@ watermarks take the same path. The check is the browser's only: the
 collaboration server does not read image sizes (a server check is queued for
 later).
 A note's audio is capped by the payer's per-file cap (10 MiB Free, 30 MiB
-Pro) at the reservation; the browser does not check it first, and the
-server's refusal names the limit in the placeholder. Notes hold no other
+Pro) at the reservation. The browser checks it first against the material's
+`audioMaxBytes` (Epo 2026-10-22): a file over it asks for no ticket and its
+placeholder shows "The selected file is larger than N MB."; an image still
+over `imageMaxBytes` after shrinking is refused the same way. Notes hold no other
 asset: the purposes are `image` and `audio` (Epo 2026-10-15; the table's
 `purpose` check still lists the old `pdf` and `file`, unused).
 Quizzes and flashcard sets edit live (Epo
@@ -457,11 +575,10 @@ the same rule (trashed for a day, see
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
 Pending reservations are left to the upload expiry. Purging the material
 deletes the rest through the `material_id` cascade, including leftovers of a
-material never saved again. Both write to an `editor-assets/incoming/…` key and are promoted to
-an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
-still-valid upload URL cannot overwrite a ready object. If creating the
-durable DB row fails after a source object was written, handlers delete the
-orphan object.
+material never saved again. Both are written straight to their stable
+`editor-assets/{id}/…` key by the gateway, as above; no presigned URL exists
+that could overwrite a ready object. If creating the durable DB row fails
+after a source object was written, handlers delete the orphan object.
 
 A library figure the chat agent places in a note is stored by the gateway as
 the same kind of asset (`server/internal/httpapi/agent_figures.go`,

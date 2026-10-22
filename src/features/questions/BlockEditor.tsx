@@ -1,5 +1,5 @@
 import { Collapsible } from 'radix-ui';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
@@ -28,8 +28,10 @@ import {
 } from './types';
 
 /** Bank uploads return a public URL; quiz uploads return a workspace editor asset. */
+/** `signal` cancels an upload the editor no longer wants (it closed). */
 export type UploadQuestionAsset = (
-  file: File
+  file: File,
+  signal?: AbortSignal
 ) => Promise<{ url: string } | { assetId: string }>;
 
 const chartLabels = {
@@ -1003,6 +1005,9 @@ export function BlockEditor({
   const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  // Closing the editor cancels a picked image still waiting to upload.
+  const uploadAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadAbort.current?.abort(), []);
   const descriptionMax = bank
     ? limits.QUESTION_TEXT_MAX
     : limits.QUESTION_DESCRIPTION_MAX;
@@ -1094,6 +1099,9 @@ export function BlockEditor({
               setUploading(true);
               onBusyChange?.(true);
               setError('');
+              uploadAbort.current?.abort();
+              const controller = new AbortController();
+              uploadAbort.current = controller;
               const local = URL.createObjectURL(file);
               try {
                 const image = new Image();
@@ -1102,11 +1110,12 @@ export function BlockEditor({
                 onChange({
                   ...block,
                   height: image.naturalHeight,
-                  image: await uploadAsset(file),
+                  image: await uploadAsset(file, controller.signal),
                   width: image.naturalWidth,
                 });
               } catch (error) {
-                setError(errorCopy(error, m.question_ui_upload_failed()));
+                if (!controller.signal.aborted)
+                  setError(errorCopy(error, m.question_ui_upload_failed()));
               } finally {
                 URL.revokeObjectURL(local);
                 setUploading(false);

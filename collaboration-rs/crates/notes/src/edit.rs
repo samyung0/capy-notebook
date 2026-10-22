@@ -1,17 +1,16 @@
 //! Direct AI content edits on a Plate material or a plain-text source
-//! (`collaboration/src/editCommands.ts` minus the Office guards, which
-//! `sources` owns). Commands name stable targets (block ids, child node ids)
-//! and the exact text they expect; they run on an isolated document built
-//! from the durable state under the material lock, through the same headless
-//! Slate editor as the Node server, so the change is ordinary Slate
-//! operations. The caller commits the state with the receipt, the inverse
-//! commands and the post-edit guards.
+//! (`collaboration/src/editCommands.ts` minus Office, which `sources` owns).
+//! Commands name stable targets (block ids, child node ids) and the exact
+//! text they expect; they run on an isolated document built from the
+//! durable state under the material lock, through the same headless Slate
+//! editor as the Node server, so the change is ordinary Slate operations.
+//! The caller commits the state with the receipt; the edit's Undo reverts its
+//! Yjs items in the live room (`ydoc::undo`).
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use ydoc::guards::{GuardRun, guards_equal, range_guard};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::{GetString, ReadTxn, Text, TextRef, TransactionMut};
 
@@ -69,7 +68,7 @@ fn edit_with<T>(
 
 use EditErrorCode::{InvalidInput, StaleTarget, UnavailableTarget, UnsupportedOperation};
 
-/// Same JSON as the TS `DocumentCommand`, stored in `agent_edit_inverses`.
+/// Same JSON as the TS `DocumentCommand`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(
     tag = "type",
@@ -82,9 +81,6 @@ pub enum DocumentCommand {
         block_id: Option<String>,
         expected_text: String,
         text: String,
-        /// Set on inverses: replace exactly this span instead of searching.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        offset: Option<usize>,
     },
     InsertBlock {
         after_block_id: Option<String>,
@@ -113,58 +109,21 @@ pub enum DocumentCommand {
         parent_type: String,
         node_id: String,
     },
-    SetProperty {
-        node_type: String,
-        property: String,
-        expected_value: String,
-        value: String,
-    },
-}
-
-/// One guarded region after an edit (`GuardTarget`); `office` targets are
-/// built and checked by `sources`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    rename_all = "snake_case",
-    rename_all_fields = "camelCase"
-)]
-pub enum GuardTarget {
-    Block {
-        block_id: String,
-        runs: Vec<GuardRun>,
-    },
-    Gap {
-        after_block_id: Option<String>,
-        runs: Vec<GuardRun>,
-    },
-    Child {
-        parent_id: String,
-        node_id: String,
-        runs: Vec<GuardRun>,
-    },
-    ChildGap {
-        parent_id: String,
-        after_node_id: Option<String>,
-        runs: Vec<GuardRun>,
-    },
-    Text {
-        offset: usize,
-        length: usize,
-        /// The span's content after the edit, used to re-find a moved span.
-        text: String,
-        runs: Vec<GuardRun>,
-    },
-    Office {
-        id: String,
-        path: Vec<String>,
+    /// A flashcard set's card (the items crate applies it): each side sent
+    /// replaces that side, which must still read as its expected text; a
+    /// side left out and the image stay as the live set holds them (Epo
+    /// 2026-10-21).
+    ReplaceCard {
+        card_id: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        range: Option<[u32; 2]>,
-        runs: Vec<GuardRun>,
+        front: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        back: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_front: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_back: Option<String>,
     },
-    /// A live item's entry (a card) as the edit left it, null when the edit
-    /// removed it: built and checked by the `items` crate.
-    Item { path: Vec<String>, value: Value },
 }
 
 /// An insert whose anchor block was gone, and where it landed instead: after
@@ -178,18 +137,17 @@ pub struct Relocation {
     pub end: bool,
 }
 
+/// What a material edit reports beyond its change: the inserts that landed
+/// away from a gone anchor.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct EditOutcome {
-    pub guards: Vec<GuardTarget>,
-    pub inverse: Vec<DocumentCommand>,
-    /// Material edits only (a text source has no blocks to relocate).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relocated: Option<Vec<Relocation>>,
+    pub relocated: Vec<Relocation>,
 }
 
-/// A media block an agent's edit cannot write: an uploaded file
-/// ([crate::material::MEDIA_TYPES]) or an embedded video (the catalog's
-/// elements that require or forbid `assetId`).
+/// A media block: an uploaded file ([crate::material::MEDIA_TYPES]) or an
+/// embedded video (the catalog's elements that require or forbid `assetId`).
+/// An agent's edit may remove or replace one (Epo 2026-10-21) but inserts
+/// none except a library figure ([inserts_media]).
 pub fn media_type(kind: &str) -> bool {
     kind == "video" || crate::material::MEDIA_TYPES.contains(&kind)
 }
@@ -230,45 +188,62 @@ fn has_media(node: &Value) -> bool {
             .is_some_and(|children| children.iter().any(has_media))
 }
 
+/// A span of a block's shown text that replace_text cannot reach: math, or
+/// a Mermaid block shown as its source. `text` counts the UTF-16 units of
+/// the block's own text it stands for (a Mermaid block's caption; math has
+/// none).
+struct Opaque {
+    start: usize,
+    end: usize,
+    text: usize,
+    mermaid: bool,
+}
+
 /// A block's text as inspect shows it, the text an expected text matches:
 /// its text with math written out, inline as `$tex$` and display as
-/// `$$tex$$` (`Node.string` leaves math out), and the UTF-16 [start, end)
-/// spans the math takes in it (`shownText`).
-fn shown_text(node: &Value) -> (String, Vec<(usize, usize)>) {
-    fn walk(node: &Value, text: &mut String, units: &mut usize, math: &mut Vec<(usize, usize)>) {
+/// `$$tex$$` (`Node.string` leaves math out), a Mermaid block, nested ones
+/// included, as its source, its caption the person's and never compared
+/// (Epo 2026-10-22), and the UTF-16 spans those take in it (`shownText`).
+fn shown_text(node: &Value) -> (String, Vec<Opaque>) {
+    fn leaves(node: &Value) -> usize {
+        if is_text(node) {
+            return len16(slate::text(node));
+        }
+        children(node).iter().map(leaves).sum()
+    }
+    fn walk(node: &Value, text: &mut String, units: &mut usize, spans: &mut Vec<Opaque>) {
         if is_text(node) {
             let leaf = slate::text(node);
             text.push_str(leaf);
             *units += len16(leaf);
             return;
         }
-        let delimiter = match node.get("type").and_then(Value::as_str) {
-            Some("inline_equation") => "$",
-            Some("equation") => "$$",
+        let kind = node.get("type").and_then(Value::as_str);
+        let tex = || js_string(node.get("texExpression"));
+        let shown = match kind {
+            Some("inline_equation") => format!("${}$", tex()),
+            Some("equation") => format!("$${}$$", tex()),
+            Some("mermaid") => js_string(node.get("source")),
             _ => {
-                for child in node
-                    .get("children")
-                    .and_then(Value::as_array)
-                    .into_iter()
-                    .flatten()
-                {
-                    walk(child, text, units, math);
+                for child in children(node) {
+                    walk(child, text, units, spans);
                 }
                 return;
             }
         };
-        let shown = format!(
-            "{delimiter}{}{delimiter}",
-            js_string(node.get("texExpression"))
-        );
         let start = *units;
         *units += len16(&shown);
-        math.push((start, *units));
+        spans.push(Opaque {
+            start,
+            end: *units,
+            text: leaves(node),
+            mermaid: kind == Some("mermaid"),
+        });
         text.push_str(&shown);
     }
-    let (mut text, mut units, mut math) = (String::new(), 0, Vec::new());
-    walk(node, &mut text, &mut units, &mut math);
-    (text, math)
+    let (mut text, mut units, mut spans) = (String::new(), 0, Vec::new());
+    walk(node, &mut text, &mut units, &mut spans);
+    (text, spans)
 }
 
 /// `blockText`.
@@ -276,11 +251,42 @@ fn block_text(node: &Value) -> String {
     shown_text(node).0
 }
 
-/// An offset in a block's shown text as an offset in its text without math.
-fn without_math(math: &[(usize, usize)], offset: usize) -> usize {
-    math.iter()
-        .filter(|(_, end)| *end <= offset)
-        .fold(offset, |flat, (start, end)| flat - (end - start))
+/// A block replaced by blocks holding one of its own type is rewritten
+/// there: the rewrite keeps its caption (a Mermaid block's caption element,
+/// another block's `caption`), width and a Mermaid block's theme, which agent
+/// edits never change, unless it shows a different picture, file or video:
+/// that is a new block bringing its own caption and credit (Epo 2026-10-22).
+fn keep_caption(old: &Value, new: &mut Value) {
+    if ["assetId", "provider", "videoId"]
+        .iter()
+        .any(|key| old.get(key) != new.get(key))
+    {
+        return;
+    }
+    let keys: &[&str] = if js_string(old.get("type")) == "mermaid" {
+        &["children", "width", "theme"]
+    } else {
+        &["caption", "width"]
+    };
+    let Some(new) = new.as_object_mut() else {
+        return;
+    };
+    for &key in keys {
+        match old.get(key) {
+            Some(value) => new.insert(key.to_owned(), value.clone()),
+            None => new.remove(key),
+        };
+    }
+}
+
+/// An offset in a block's shown text as an offset in its own text.
+fn in_text(spans: &[Opaque], offset: usize) -> usize {
+    spans
+        .iter()
+        .filter(|span| span.end <= offset)
+        .fold(offset, |flat, span| {
+            flat + span.text - (span.end - span.start)
+        })
 }
 
 /// How many blocks, and how much of each, a refusal for a gone id lists.
@@ -459,8 +465,6 @@ fn require_block(editor: &Editor, block_id: &str) -> Result<(Value, usize), Edit
 }
 
 /// A command's target block: a gone id refuses with the material's blocks.
-/// Guards look blocks up with [require_block], whose misses they swallow, so
-/// the listing is built only for a refusal the caller returns.
 fn target_block(editor: &Editor, block_id: &str) -> Result<(Value, usize), EditError> {
     require_block(editor, block_id).map_err(|error| match error {
         EditError::Edit {
@@ -503,7 +507,7 @@ fn surviving(candidates: &[String], exists: impl Fn(&str) -> bool) -> Option<Str
     candidates.iter().rev().find(|id| exists(id)).cloned()
 }
 
-fn assert_node_shape(node: &Value, what: &str, undo: bool) -> Result<(), EditError> {
+fn assert_node_shape(node: &Value, what: &str) -> Result<(), EditError> {
     if !node.is_object()
         || stable_id(node).is_empty()
         || !node.get("type").is_some_and(Value::is_string)
@@ -524,16 +528,11 @@ fn assert_node_shape(node: &Value, what: &str, undo: bool) -> Result<(), EditErr
     }
     // A figure an edit writes is checked whole, as outside a room: what a
     // merge may leave in a room (no series, a pie without a positive total)
-    // is no block an agent writes (Epo 2026-10-18). An Undo puts back what
-    // the room held, so it takes the room's live check.
+    // is no block an agent writes (Epo 2026-10-18).
     let kind = js_string(node.get("type"));
     let block = node.get("block").unwrap_or(&Value::Null);
     if crate::plate::holds_map(&kind, "block")
-        && let Err(error) = if undo {
-            crate::material::live_figure_block(&kind, block)
-        } else {
-            crate::material::figure_block(&kind, block)
-        }
+        && let Err(error) = crate::material::figure_block(&kind, block)
     {
         return edit(InvalidInput, format!("{what}: {}", error.0));
     }
@@ -583,35 +582,11 @@ fn node_string(node: &Value) -> Result<String, EditError> {
     }
 }
 
-/// Where a remembered span sits now: at its stored offset when the text still
-/// matches there, else at its unique occurrence, else nowhere. An empty span
-/// can only be trusted at its offset.
-fn anchor_span(current: &str, offset: usize, expected: &str) -> Option<usize> {
-    if slice16(current, offset, offset.saturating_add(len16(expected))) == expected {
-        return Some(offset);
-    }
-    let found = occurrences(current, expected);
-    if expected.is_empty() || found.len() != 1 {
-        return None;
-    }
-    Some(found[0])
-}
-
 /// `resolveSpan`: the span a command replaces, as UTF-16 offset and length.
-fn resolve_span(
-    current: &str,
-    expected: &str,
-    offset: Option<usize>,
-) -> Result<(usize, usize), EditError> {
+fn resolve_span(current: &str, expected: &str) -> Result<(usize, usize), EditError> {
     let length = len16(expected);
     if length > MAX_TEXT_EDIT_CHARS {
         return edit(InvalidInput, "expected text is too long");
-    }
-    if let Some(offset) = offset {
-        return match anchor_span(current, offset, expected) {
-            Some(offset) => Ok((offset, length)),
-            None => edit(StaleTarget, "the edited span changed"),
-        };
     }
     if expected.is_empty() {
         return edit(
@@ -631,237 +606,36 @@ fn resolve_span(
     }
 }
 
-/* ---------------------------------------------------------------- guards */
-
-fn block_guard<T: ReadTxn>(
-    txn: &T,
-    root: &Branch,
-    editor: &Editor,
-    block_id: &str,
-) -> Result<GuardTarget, EditError> {
-    let (_, index) = require_block(editor, block_id)?;
-    Ok(GuardTarget::Block {
-        block_id: block_id.to_owned(),
-        runs: range_guard(txn, root, index as u32, index as u32 + 1, 0),
-    })
-}
-
-/// The nested Y.XmlText of the top-level element at `index`.
-fn nested_type_at(root: &Branch, index: usize) -> Result<BranchPtr, EditError> {
-    let mut position = 0;
-    let mut next = root.start();
-    while let Some(item) = next {
-        next = item.right();
-        if item.is_deleted() || !item.is_countable() {
-            continue;
-        }
-        if position + item.len() as usize > index {
-            if let Some(branch) = plate::xml_text(item) {
-                return Ok(branch);
-            }
-            break;
-        }
-        position += item.len() as usize;
-    }
-    edit(StaleTarget, "the parent block is not an element")
-}
-
-fn child_guard<T: ReadTxn>(
-    txn: &T,
-    root: &Branch,
-    editor: &Editor,
-    parent_id: &str,
-    node_id: &str,
-) -> Result<GuardTarget, EditError> {
-    let (parent, index) = require_block(editor, parent_id)?;
-    let Some(at) = child_index(&parent, node_id) else {
-        return edit(UnavailableTarget, format!("{node_id} no longer exists"));
-    };
-    Ok(GuardTarget::Child {
-        node_id: node_id.to_owned(),
-        parent_id: parent_id.to_owned(),
-        runs: range_guard(
-            txn,
-            &*nested_type_at(root, index)?,
-            at as u32,
-            at as u32 + 1,
-            0,
-        ),
-    })
-}
-
-fn child_gap_guard<T: ReadTxn>(
-    txn: &T,
-    root: &Branch,
-    editor: &Editor,
-    parent_id: &str,
-    after_node_id: Option<&str>,
-) -> Result<GuardTarget, EditError> {
-    let (parent, index) = require_block(editor, parent_id)?;
-    let at = match after_node_id {
-        None => 0,
-        Some(id) => match child_index(&parent, id) {
-            Some(i) => i + 1,
-            None => return edit(UnavailableTarget, format!("{id} no longer exists")),
-        },
-    };
-    Ok(GuardTarget::ChildGap {
-        after_node_id: after_node_id.map(str::to_owned),
-        parent_id: parent_id.to_owned(),
-        runs: range_guard(txn, &*nested_type_at(root, index)?, at as u32, at as u32, 1),
-    })
-}
-
-fn gap_guard<T: ReadTxn>(
-    txn: &T,
-    root: &Branch,
-    editor: &Editor,
-    after_block_id: Option<&str>,
-) -> Result<GuardTarget, EditError> {
-    let index = match after_block_id {
-        None => 0,
-        Some(id) => require_block(editor, id)?.1 + 1,
-    };
-    Ok(GuardTarget::Gap {
-        after_block_id: after_block_id.map(str::to_owned),
-        runs: range_guard(txn, root, index as u32, index as u32, 1),
-    })
-}
-
-/// A guard to read once the commands are applied.
-enum Pending {
-    Block(String),
-    Gap(Vec<String>),
-    Child(String, String),
-    ChildGap(String, Vec<String>),
-}
-
-fn dedupe(guards: Vec<GuardTarget>) -> Vec<GuardTarget> {
-    let mut seen = std::collections::HashSet::new();
-    guards
-        .into_iter()
-        .filter(|guard| {
-            let key = match guard {
-                GuardTarget::Block { block_id, .. } => format!("block:{block_id}"),
-                GuardTarget::Gap { after_block_id, .. } => {
-                    format!("gap:{}", after_block_id.as_deref().unwrap_or(""))
-                }
-                GuardTarget::Child {
-                    parent_id, node_id, ..
-                } => format!("child:{parent_id}:{node_id}"),
-                GuardTarget::ChildGap {
-                    parent_id,
-                    after_node_id,
-                    ..
-                } => format!(
-                    "child_gap:{parent_id}:{}",
-                    after_node_id.as_deref().unwrap_or("")
-                ),
-                GuardTarget::Text { offset, length, .. } => format!("text:{offset}:{length}"),
-                GuardTarget::Office { id, .. } => format!("office:{id}"),
-                GuardTarget::Item { path, .. } => format!("item:{}", path.join("/")),
-            };
-            seen.insert(key)
-        })
-        .collect()
-}
-
-fn unavailable(error: &EditError) -> bool {
-    matches!(
-        error,
-        EditError::Edit {
-            code: UnavailableTarget,
-            ..
-        }
-    )
-}
-
 /* ---------------------------------------------------------------- material */
 
 /// `applyMaterialCommands` on an isolated document (the durable state merged
-/// with the live room); the caller commits state, receipt and inverse. Each
-/// command validates against the document as the earlier ones left it; a
-/// failing command leaves the document partially applied, and the caller
-/// discards it.
+/// with the live room); the caller commits state and receipt. Each command
+/// validates against the document as the earlier ones left it; a failing
+/// command leaves the document partially applied, and the caller discards it.
 pub fn apply_material_commands(
     txn: &mut TransactionMut,
     root: &TextRef,
     commands: &[DocumentCommand],
-) -> Result<EditOutcome, EditError> {
-    material_commands(txn, root, commands, false)
-}
-
-/// An Undo's inverse commands (its guards verified first): as an edit, except
-/// that it removes the media blocks its edit inserted, a library figure
-/// (`figure:<id>`) the agent placed, which an edit itself may not remove.
-pub fn undo_material_commands(
-    txn: &mut TransactionMut,
-    root: &TextRef,
-    commands: &[DocumentCommand],
-) -> Result<EditOutcome, EditError> {
-    material_commands(txn, root, commands, true)
-}
-
-fn material_commands(
-    txn: &mut TransactionMut,
-    root: &TextRef,
-    commands: &[DocumentCommand],
-    undo: bool,
 ) -> Result<EditOutcome, EditError> {
     if commands.is_empty() {
         return edit(InvalidInput, "no commands");
     }
     let y_root = BranchPtr::from(root.as_ref() as &Branch);
     let mut editor = Editor::open(txn, y_root)?;
-    let mut run = Run {
-        undo,
-        ..Run::default()
-    };
+    let mut run = Run::default();
     run_commands(&mut editor, commands, &mut run)?;
-    // Guards describe the committed state. A node a later command removed
-    // needs no guard of its own: that removal left a gap guard over it.
-    let mut captured = Vec::new();
-    for target in run.pending {
-        let txn = &*editor.txn;
-        let guard = match &target {
-            Pending::Block(id) => block_guard(txn, &y_root, &editor, id),
-            Pending::Gap(before) => {
-                let after = surviving(before, |id| exists(&editor, id));
-                gap_guard(txn, &y_root, &editor, after.as_deref())
-            }
-            Pending::Child(parent, node) => child_guard(txn, &y_root, &editor, parent, node),
-            Pending::ChildGap(parent, before) => match require_block(&editor, parent) {
-                Ok((parent_node, _)) => {
-                    let after = surviving(before, |id| child_index(&parent_node, id).is_some());
-                    child_gap_guard(txn, &y_root, &editor, parent, after.as_deref())
-                }
-                Err(error) => Err(error),
-            },
-        };
-        match guard {
-            Ok(guard) => captured.push(guard),
-            Err(error) if unavailable(&error) => {}
-            Err(error) => return Err(error),
-        }
-    }
     Ok(EditOutcome {
-        guards: dedupe(captured),
-        inverse: run.inverse,
-        relocated: Some(run.relocated),
+        relocated: run.relocated,
     })
 }
 
-/// What a call's commands leave behind: their inverse, the guards to read
-/// once they all ran, the inserts that landed away from a gone anchor, and
-/// the blocks the call removed (by id: the ids that stood before each).
-/// `undo` marks an Undo's inverse.
+/// What a call's commands leave behind: the inserts that landed away from a
+/// gone anchor, and the blocks the call removed (by id: the ids that stood
+/// before each).
 #[derive(Default)]
 struct Run {
-    inverse: Vec<DocumentCommand>,
-    pending: Vec<Pending>,
     relocated: Vec<Relocation>,
     removed: HashMap<String, Vec<String>>,
-    undo: bool,
 }
 
 fn run_commands(
@@ -893,19 +667,12 @@ fn run_command(
     command: &DocumentCommand,
     run: &mut Run,
 ) -> Result<(), EditError> {
-    let Run {
-        inverse,
-        pending,
-        relocated,
-        removed,
-        undo,
-    } = run;
+    let Run { relocated, removed } = run;
     match command {
         DocumentCommand::ReplaceText {
             block_id,
             expected_text,
             text,
-            offset,
         } => {
             let Some(block_id) = block_id.as_deref().filter(|id| !id.is_empty()) else {
                 return edit(InvalidInput, "replace_text on a material needs target_id");
@@ -914,43 +681,42 @@ fn run_command(
             if has_media(&block) && node_string(&block)?.is_empty() {
                 return edit(UnsupportedOperation, "this block holds media, not text");
             }
-            // Expected text matches the block as inspect shows it, math
-            // included, but only plain text around the math can be replaced.
-            let (shown, math) = shown_text(&block);
-            let (span_offset, span_length) = resolve_span(&shown, expected_text, *offset)
-                .map_err(|error| with_current(error, &block, &shown))?;
-            let span_end = span_offset.saturating_add(span_length);
-            if math.iter().any(|&(from, to)| {
-                if span_length > 0 {
-                    span_offset < to && span_end > from
-                } else {
-                    from < span_offset && span_offset < to
-                }
-            }) {
-                return edit_with(
-                    InvalidInput,
-                    "replace_text changes plain text and this span includes math; rewrite the block with replace_block",
-                    current_block(&block, shown),
+            // Its text is its caption, which an agent edit never changes.
+            if js_string(block.get("type")) == "mermaid" {
+                return edit(
+                    UnsupportedOperation,
+                    "a Mermaid block changes through replace_block with a ```mermaid fence; its caption stays",
                 );
             }
-            let start = point_at(editor, index, without_math(&math, span_offset), Edge::Start)?;
-            let end = point_at(editor, index, without_math(&math, span_end), Edge::End)?;
+            // Expected text matches the block as inspect shows it, math and
+            // nested Mermaid sources included, but only plain text around
+            // them can be replaced.
+            let (shown, spans) = shown_text(&block);
+            let (span_offset, span_length) = resolve_span(&shown, expected_text)
+                .map_err(|error| with_current(error, &block, &shown))?;
+            let span_end = span_offset.saturating_add(span_length);
+            if let Some(span) = spans.iter().find(|span| {
+                if span_length > 0 {
+                    span_offset < span.end && span_end > span.start
+                } else {
+                    span.start < span_offset && span_offset < span.end
+                }
+            }) {
+                let message = if span.mermaid {
+                    "replace_text changes plain text and this span includes a Mermaid block; rewrite the block with replace_block"
+                } else {
+                    "replace_text changes plain text and this span includes math; rewrite the block with replace_block"
+                };
+                return edit_with(InvalidInput, message, current_block(&block, shown));
+            }
+            let start = point_at(editor, index, in_text(&spans, span_offset), Edge::Start)?;
+            let end = point_at(editor, index, in_text(&spans, span_end), Edge::End)?;
             if span_length > 0 {
                 editor.delete_range(start.clone(), end)?;
             }
             if !text.is_empty() {
                 editor.insert_text(start, text)?;
             }
-            inverse.insert(
-                0,
-                DocumentCommand::ReplaceText {
-                    block_id: Some(block_id.to_owned()),
-                    expected_text: text.clone(),
-                    offset: Some(span_offset),
-                    text: expected_text.clone(),
-                },
-            );
-            pending.push(Pending::Block(block_id.to_owned()));
         }
         DocumentCommand::InsertBlock {
             after_block_id,
@@ -960,7 +726,7 @@ fn run_command(
                 return edit(InvalidInput, "insert_block needs blocks");
             }
             for block in blocks {
-                assert_node_shape(block, "insert_block", *undo)?;
+                assert_node_shape(block, "insert_block")?;
             }
             let index = match after_block_id {
                 None => 0,
@@ -990,18 +756,6 @@ fn run_command(
                 }
             }
             editor.insert_nodes(vec![index], blocks.clone())?;
-            for block in blocks.iter().rev() {
-                inverse.insert(
-                    0,
-                    DocumentCommand::RemoveBlock {
-                        block_id: stable_id(block),
-                        expected_text: block_text(block),
-                    },
-                );
-            }
-            for block in blocks {
-                pending.push(Pending::Block(stable_id(block)));
-            }
         }
         DocumentCommand::RemoveBlock {
             block_id,
@@ -1016,35 +770,16 @@ fn run_command(
                     current_block(&block, text),
                 );
             }
-            if has_media(&block) && !*undo {
-                return edit(
-                    UnsupportedOperation,
-                    "blocks holding media cannot be removed by an edit",
-                );
-            }
-            if editor.root.children.len() == 1 {
-                return edit(
-                    UnsupportedOperation,
-                    "a material must keep at least one block",
-                );
-            }
+            // Media included, and the last block too: the server gives an
+            // emptied note its empty paragraph in the edit's transaction (Epo
+            // 2026-10-21, `repair::emptied`), and the store refuses any other
+            // kind left without its block.
             let before: Vec<String> = editor.root.children[..index]
                 .iter()
                 .map(stable_id)
                 .collect();
-            let previous = before.last().cloned();
             editor.remove_node(vec![index])?;
-            removed.insert(block_id.clone(), before.clone());
-            inverse.insert(
-                0,
-                DocumentCommand::InsertBlock {
-                    after_block_id: previous,
-                    blocks: vec![block],
-                },
-            );
-            // A later command in this call may remove the anchor too; the
-            // gap is then guarded after the nearest block that survived.
-            pending.push(Pending::Gap(before));
+            removed.insert(block_id.clone(), before);
         }
         DocumentCommand::ReplaceBlock {
             block_id,
@@ -1055,7 +790,7 @@ fn run_command(
                 return edit(InvalidInput, "replace_block needs blocks");
             }
             for node in blocks {
-                assert_node_shape(node, "replace_block", *undo)?;
+                assert_node_shape(node, "replace_block")?;
             }
             let (block, index) = target_block(editor, block_id)?;
             let text = block_text(&block);
@@ -1066,45 +801,36 @@ fn run_command(
                     current_block(&block, text),
                 );
             }
-            if has_media(&block) {
-                return edit(
-                    UnsupportedOperation,
-                    "blocks holding media cannot be replaced by an edit",
-                );
-            }
             let ids: Vec<String> = blocks.iter().map(stable_id).collect();
             if let Some(id) = ids.iter().find(|id| exists(editor, id)) {
                 return edit(StaleTarget, format!("block id {id} already exists"));
+            }
+            // The replacement's first block of the replaced one's type is its
+            // rewrite, whatever else the markdown adds beside it.
+            let mut blocks = blocks.clone();
+            if let Some(rewrite) = blocks
+                .iter_mut()
+                .find(|node| node.get("type") == block.get("type"))
+            {
+                keep_caption(&block, rewrite);
             }
             let mut before: Vec<String> = editor.root.children[..index]
                 .iter()
                 .map(stable_id)
                 .collect();
             editor.remove_node(vec![index])?;
-            editor.insert_nodes(vec![index], blocks.clone())?;
+            editor.insert_nodes(vec![index], blocks)?;
             // An insert after the replaced id later in this call follows the
             // replacement.
-            before.extend(ids.iter().cloned());
+            before.extend(ids);
             removed.insert(block_id.clone(), before);
-            // Undo puts the original back after the first new block, then
-            // removes the new blocks, so it returns to its own place.
-            let undo = std::iter::once(DocumentCommand::InsertBlock {
-                after_block_id: Some(ids[0].clone()),
-                blocks: vec![block],
-            })
-            .chain(blocks.iter().map(|node| DocumentCommand::RemoveBlock {
-                block_id: stable_id(node),
-                expected_text: block_text(node),
-            }));
-            inverse.splice(0..0, undo);
-            pending.extend(ids.into_iter().map(Pending::Block));
         }
         DocumentCommand::ReplaceChild {
             parent_type,
             node_id,
             node,
         } => {
-            assert_node_shape(node, "replace_child", *undo)?;
+            assert_node_shape(node, "replace_child")?;
             let (parent, parent_index) = require_parent(editor, parent_type)?;
             let Some(at) = child_index(&parent, node_id) else {
                 return edit(UnavailableTarget, format!("{node_id} no longer exists"));
@@ -1112,25 +838,15 @@ fn run_command(
             if &stable_id(node) != node_id {
                 return edit(InvalidInput, "replacement must keep the node id");
             }
-            let current = children(&parent)[at].clone();
             editor.remove_node(vec![parent_index, at])?;
             editor.insert_nodes(vec![parent_index, at], vec![node.clone()])?;
-            inverse.insert(
-                0,
-                DocumentCommand::ReplaceChild {
-                    node: current,
-                    node_id: node_id.clone(),
-                    parent_type: parent_type.clone(),
-                },
-            );
-            pending.push(Pending::Child(stable_id(&parent), node_id.clone()));
         }
         DocumentCommand::InsertChild {
             parent_type,
             after_node_id,
             node,
         } => {
-            assert_node_shape(node, "insert_child", *undo)?;
+            assert_node_shape(node, "insert_child")?;
             let (parent, parent_index) = require_parent(editor, parent_type)?;
             let id = stable_id(node);
             if child_index(&parent, &id).is_some() {
@@ -1144,14 +860,6 @@ fn run_command(
                 },
             };
             editor.insert_nodes(vec![parent_index, at], vec![node.clone()])?;
-            inverse.insert(
-                0,
-                DocumentCommand::RemoveChild {
-                    node_id: id.clone(),
-                    parent_type: parent_type.clone(),
-                },
-            );
-            pending.push(Pending::Child(stable_id(&parent), id));
         }
         DocumentCommand::RemoveChild {
             parent_type,
@@ -1161,119 +869,19 @@ fn run_command(
             let Some(at) = child_index(&parent, node_id) else {
                 return edit(UnavailableTarget, format!("{node_id} no longer exists"));
             };
-            let list = children(&parent);
-            if list.len() == 1 {
+            if children(&parent).len() == 1 {
                 return edit(
                     UnsupportedOperation,
                     format!("a {parent_type} block must keep one item"),
                 );
             }
-            let current = list[at].clone();
-            let before: Vec<String> = list[..at].iter().map(stable_id).collect();
-            let previous = before.last().cloned();
             editor.remove_node(vec![parent_index, at])?;
-            inverse.insert(
-                0,
-                DocumentCommand::InsertChild {
-                    after_node_id: previous,
-                    node: current,
-                    parent_type: parent_type.clone(),
-                },
-            );
-            pending.push(Pending::ChildGap(stable_id(&parent), before));
         }
-        DocumentCommand::SetProperty {
-            node_type,
-            property,
-            expected_value,
-            value,
-        } => {
-            let (node, index) = require_parent(editor, node_type)?;
-            let current = node.get(property).and_then(Value::as_str).unwrap_or("");
-            if current != expected_value {
-                // The value as it is now (a diagram's source), as a stale
-                // block carries its text.
-                return edit_with(
-                    StaleTarget,
-                    format!("{node_type}.{property} changed"),
-                    current_block(&node, current.to_owned()),
-                );
-            }
-            let props = Map::from_iter([(property.clone(), Value::String(value.clone()))]);
-            editor.set_nodes_at(vec![index], &props)?;
-            inverse.insert(
-                0,
-                DocumentCommand::SetProperty {
-                    expected_value: value.clone(),
-                    node_type: node_type.clone(),
-                    property: property.clone(),
-                    value: expected_value.clone(),
-                },
-            );
-            pending.push(Pending::Block(stable_id(&node)));
+        DocumentCommand::ReplaceCard { .. } => {
+            return edit(UnsupportedOperation, "replace_card edits a flashcard set");
         }
     }
     Ok(())
-}
-
-/// `verifyMaterialGuards`: recompute each guarded region and compare. Opens
-/// the headless editor, so its normalization reaches the document, as in the
-/// TS: returns whether it wrote into the transaction (it may have, too, when
-/// it refuses), and the server invalidates the room's validator when the
-/// transaction commits a change.
-pub fn verify_material_guards(
-    txn: &mut TransactionMut,
-    root: &TextRef,
-    guards: &[GuardTarget],
-) -> Result<bool, EditError> {
-    let y_root = BranchPtr::from(root.as_ref() as &Branch);
-    let editor = Editor::open(txn, y_root)?;
-    for guard in guards {
-        let txn = &*editor.txn;
-        let now = match guard {
-            GuardTarget::Block { block_id, .. } => block_guard(txn, &y_root, &editor, block_id),
-            GuardTarget::Gap { after_block_id, .. } => {
-                gap_guard(txn, &y_root, &editor, after_block_id.as_deref())
-            }
-            GuardTarget::Child {
-                parent_id, node_id, ..
-            } => child_guard(txn, &y_root, &editor, parent_id, node_id),
-            GuardTarget::ChildGap {
-                parent_id,
-                after_node_id,
-                ..
-            } => child_gap_guard(txn, &y_root, &editor, parent_id, after_node_id.as_deref()),
-            GuardTarget::Text { .. } | GuardTarget::Office { .. } | GuardTarget::Item { .. } => {
-                Ok(GuardTarget::Gap {
-                    after_block_id: None,
-                    runs: Vec::new(),
-                })
-            }
-        };
-        let now = match now {
-            Ok(target) => runs_of(&target).to_vec(),
-            Err(EditError::Edit { .. }) => {
-                return edit(StaleTarget, "an edited target no longer exists");
-            }
-            Err(error) => return Err(error),
-        };
-        if !guards_equal(&now, runs_of(guard)) {
-            return edit(StaleTarget, "an edited target changed since this edit");
-        }
-    }
-    Ok(!editor.operations.is_empty())
-}
-
-fn runs_of(guard: &GuardTarget) -> &[GuardRun] {
-    match guard {
-        GuardTarget::Block { runs, .. }
-        | GuardTarget::Gap { runs, .. }
-        | GuardTarget::Child { runs, .. }
-        | GuardTarget::ChildGap { runs, .. }
-        | GuardTarget::Text { runs, .. }
-        | GuardTarget::Office { runs, .. } => runs,
-        GuardTarget::Item { .. } => &[],
-    }
 }
 
 /* ----------------------------------------------------------- text sources */
@@ -1283,17 +891,15 @@ pub fn apply_text_commands(
     txn: &mut TransactionMut,
     text: &TextRef,
     commands: &[DocumentCommand],
-) -> Result<EditOutcome, EditError> {
+) -> Result<(), EditError> {
     if commands.is_empty() {
         return edit(InvalidInput, "no commands");
     }
-    let mut inverse = Vec::new();
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for command in commands {
         let DocumentCommand::ReplaceText {
             expected_text,
             text: replacement,
-            offset,
             ..
         } = command
         else {
@@ -1306,8 +912,8 @@ pub fn apply_text_commands(
             return edit(InvalidInput, "replacement text is too long");
         }
         let current = text.get_string(txn);
-        let (span_offset, span_length) = resolve_span(&current, expected_text, *offset)?;
-        // Earlier spans keep describing the final text: those after this
+        let (span_offset, span_length) = resolve_span(&current, expected_text)?;
+        // Later spans are checked against the earlier ones: those after this
         // replacement shift by its length change, overlaps are refused.
         let delta = len16(replacement) as isize - span_length as isize;
         for earlier in &mut spans {
@@ -1323,75 +929,7 @@ pub fn apply_text_commands(
         if !replacement.is_empty() {
             text.insert(txn, span_offset as u32, replacement);
         }
-        inverse.insert(
-            0,
-            DocumentCommand::ReplaceText {
-                block_id: None,
-                expected_text: replacement.clone(),
-                offset: Some(span_offset),
-                text: expected_text.clone(),
-            },
-        );
         spans.push((span_offset, len16(replacement)));
-    }
-    let current = text.get_string(txn);
-    let branch: &Branch = text.as_ref();
-    let guards = spans
-        .into_iter()
-        .map(|(offset, length)| GuardTarget::Text {
-            length,
-            offset,
-            runs: text_span_guard(txn, branch, offset, length),
-            text: slice16(&current, offset, offset + length).to_owned(),
-        })
-        .collect();
-    Ok(EditOutcome {
-        guards,
-        inverse,
-        relocated: None,
-    })
-}
-
-/// A replaced span guards its own runs; a pure deletion needs a neighbour.
-fn text_span_guard<T: ReadTxn>(
-    txn: &T,
-    text: &Branch,
-    offset: usize,
-    length: usize,
-) -> Vec<GuardRun> {
-    range_guard(
-        txn,
-        text,
-        offset as u32,
-        (offset + length) as u32,
-        if length > 0 { 0 } else { 1 },
-    )
-}
-
-/// `verifyTextGuards`.
-pub fn verify_text_guards<T: ReadTxn>(
-    txn: &T,
-    text: &TextRef,
-    guards: &[GuardTarget],
-) -> Result<(), EditError> {
-    let current = text.get_string(txn);
-    let branch: &Branch = text.as_ref();
-    for guard in guards {
-        let GuardTarget::Text {
-            offset,
-            length,
-            text: expected,
-            runs,
-        } = guard
-        else {
-            return edit(StaleTarget, "guard does not fit a text source");
-        };
-        let found = anchor_span(&current, *offset, expected);
-        let matches =
-            found.is_some_and(|at| guards_equal(&text_span_guard(txn, branch, at, *length), runs));
-        if !matches {
-            return edit(StaleTarget, "the edited text changed since this edit");
-        }
     }
     Ok(())
 }
@@ -1418,6 +956,13 @@ pub struct InspectedBlock {
     pub kind: String,
 }
 
+/// A card as inspect shows it and a stale `replace_card` carries it: its
+/// sides as JSON, `{"back":…,"front":…}`, the texts the expected sides
+/// match (Epo 2026-10-21; the sides ran together before).
+pub fn card_text(front: &str, back: &str) -> String {
+    json!({ "back": back, "front": front }).to_string()
+}
+
 /// `inspectMaterial`: top-level blocks with ids and flattened text. Object
 /// values (a quiz question, a chart block) print with sorted keys: the
 /// document keeps no key order for them.
@@ -1440,15 +985,24 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                         .iter()
                         .map(|child| {
                             let child_kind = js_string(child.get("type"));
+                            let side = |side: &str| {
+                                children(child)
+                                    .iter()
+                                    .find(|node| js_string(node.get("type")) == side)
+                                    .map_or(Ok(String::new()), node_string)
+                            };
                             Ok(InspectedChild {
                                 id: stable_id(child),
-                                text: if child_kind == "quiz_question" {
-                                    child
+                                text: match child_kind.as_str() {
+                                    "quiz_question" => child
                                         .get("question")
                                         .map(crate::json::stringify)
-                                        .unwrap_or_default()
-                                } else {
-                                    node_string(child)?
+                                        .unwrap_or_default(),
+                                    "flashcard" => card_text(
+                                        &side("flashcard_front")?,
+                                        &side("flashcard_back")?,
+                                    ),
+                                    _ => node_string(child)?,
                                 },
                                 kind: child_kind,
                             })
@@ -1472,10 +1026,12 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                     .unwrap_or_default();
                 out.properties = props(vec![("block", printed)]);
             }
-            if kind == "mermaid"
-                && let Some(source) = block.get("source").and_then(Value::as_str)
-            {
-                out.properties = props(vec![("source", source.to_owned())]);
+            // A Mermaid block's text is its source; its caption shows apart.
+            if kind == "mermaid" {
+                let caption = node_string(block)?;
+                if !caption.is_empty() {
+                    out.properties = props(vec![("caption", caption)]);
+                }
             }
             if kind == "html_embed"
                 && let Some(caption) = block.get("caption").and_then(Value::as_str)

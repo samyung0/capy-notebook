@@ -17,6 +17,7 @@ Knowledge curate-loop and duplicate-result follow-up: todo-learning.md, Later (d
 13. manage feature flags better than just env, likely in posthog?
 14. Gemma-4-E2B
 15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
+16. chat: after a reload, a turn still running on the server (its browser left; it runs to completion) is invisible, since history hides streaming rows, and cannot be stopped, since the browser lost its message id; the learner may resend and run two turns at once (review of stop-and-replay, 2026-10-21)
 
 high PRIORITIES:
 k6 stress test

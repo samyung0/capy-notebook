@@ -8,8 +8,10 @@ import {
 import { createSlateEditor } from 'platejs';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import type { MaterialDiscussion } from '@/api/types';
 import {
   commentDecorationRangesForEntry,
+  documentThreads,
   resolveCommentDecorations,
 } from './Collaboration';
 
@@ -89,5 +91,21 @@ describe('comment decorations per node', () => {
     expect(
       commentDecorationRangesForEntry([null, [11, 0]], [range])
     ).toHaveLength(0);
+  });
+});
+
+describe('document threads', () => {
+  // Epo 2026-10-21: a thread with no block, or whose block left the
+  // document, lists at the document root until the block comes back.
+  it('lists threads without a block or without their block', () => {
+    const threads = [
+      { blockId: 'p1', id: 'on-p1' },
+      { blockId: 'p2', id: 'on-p2' },
+      { id: 'document' },
+    ] as MaterialDiscussion[];
+    const ids = (children: { id: string }[]) =>
+      documentThreads(children, threads).map((thread) => thread.id);
+    expect(ids([{ id: 'p1' }])).toEqual(['on-p2', 'document']);
+    expect(ids([{ id: 'p1' }, { id: 'p2' }])).toEqual(['document']);
   });
 });

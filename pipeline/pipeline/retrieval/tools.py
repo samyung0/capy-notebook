@@ -204,6 +204,9 @@ class ToolContext:
     # widen the scope to every file.
     file_ids: list[str] | None = None
     citations: list[Passage] = field(default_factory=list)
+    # The citation numbers the answer has shown so far: a turn stopped or
+    # failed mid-answer keeps their passages like an answered one (Epo 2026-10-22).
+    cited_shown: list[int] = field(default_factory=list)
     # The turn's narration and tool blocks so far: what its checkpoints and
     # whatever event ends it carry, so Go saves them however the turn ends.
     activity: list[dict[str, Any]] = field(default_factory=list)
@@ -229,6 +232,8 @@ class ToolContext:
     # call id) the next model request carries. Both live for this turn only.
     captures: list[dict[str, Any]] = field(default_factory=list)
     pending_images: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Images this message attached: page captures and source-change images.
+    images_taken: int = 0
     # Decks this turn outlined (deck.py records, by deck id) and the working
     # directory their figures and exports go to; the agent removes it at turn end.
     decks: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -237,10 +242,11 @@ class ToolContext:
     # -> text), from inspect_document and its own replace_text edits, so a
     # refused edit can say its target changed since.
     seen_blocks: dict[str, dict[str, str]] = field(default_factory=dict)
-    # Embedded quiz blocks inspect_document showed as a quiz fence (material id
-    # -> block id -> (shown, stored text)): an edit expecting the shown text
-    # expects the stored one.
-    shown_quizzes: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
+    # Blocks whose shown text an edit may not copy exactly (material id ->
+    # block id -> (shown, stored text)): an embedded quiz shown as a quiz
+    # fence, a Mermaid source whose edge whitespace the view hides. An edit
+    # expecting the shown text, edge whitespace aside, expects the stored one.
+    shown_views: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
     # What the chat's tool rows call a resource or excerpt (id -> file name,
     # material title, or book and chapter), learned from this turn's results
     # so a row names its target without a lookup per call.
@@ -645,6 +651,42 @@ def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
     return passage.page_start <= page <= (passage.page_end or passage.page_start)
 
 
+# A user message attaches at most this many images, capture_page,
+# capture_knowledge_page and resolve_source_change's image changes together, so
+# the images every request of the turn carries stay bounded (Epo 2026-10-21,
+# raised and shared 2026-10-22). Only a capture says the decided sentence; a
+# source change past the cap fails with its own reason.
+MAX_IMAGES = 16
+IMAGE_LIMIT = "capture_page limit reached, do not call capture_page anymore."
+SOURCE_IMAGE_LIMIT = (
+    "resolve_source_change: this message's image limit is reached, so the "
+    "change's image cannot be attached."
+)
+
+
+def _image_limit(ctx: ToolContext) -> ToolResult | None:
+    """A capture's refusal once the message's images are used; checked again
+    after the render, since the image calls of one response run side by side."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return _refused(IMAGE_LIMIT, code="limit_reached")
+    return None
+
+
+def _source_image_limit(ctx: ToolContext) -> ToolResult | None:
+    """The same check for a source change's image, which fails instead."""
+    if ctx.images_taken >= MAX_IMAGES:
+        return _failed(SOURCE_IMAGE_LIMIT, code="limit_reached")
+    return None
+
+
+def _imaged(ctx: ToolContext, text: str) -> ToolResult:
+    """Count a capture; the last image allowed says so with its image."""
+    ctx.images_taken += 1
+    if ctx.images_taken == MAX_IMAGES:
+        text += "\n\n" + IMAGE_LIMIT
+    return _result(text)
+
+
 async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     """Render a cited page (or a box on it) and attach it to the next request.
 
@@ -652,8 +694,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     browse the document by pixels, and a capture adds no citation of its own:
     the tool result names the numbers already covering that page.
     """
-    # No per-turn cap: a capture is dropped when its exchange folds into the
-    # turn note anyway, and a whole set of materials can be one turn.
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
     refused = await _refuse_material_as_file(ctx, file_id)
     if refused is not None:
@@ -679,6 +721,8 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(f"capture_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_page: {exc}")
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     changes = ctx.pending_sources.for_read(file_id)
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
@@ -701,10 +745,11 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         capture.data_url(jpeg),
     )
     numbers = "".join(f"[{i}]" for i in existing)
-    result = _result(
+    result = _imaged(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
-        f"{numbers}; cite those numbers for what the capture shows."
+        f"{numbers}; cite those numbers for what the capture shows.",
     )
     result.pending = changes
     return result
@@ -962,6 +1007,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     reprinted text the library does not reproduce). Like ``capture_page`` it adds no
     citation: the attribution lives on the material.
     """
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     excerpt_id, page, bbox = args["excerpt_id"], args["page"], args.get("bbox")
     try:
         target = await library.capture_target(excerpt_id)
@@ -986,6 +1033,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         return _refused(f"capture_knowledge_page: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"capture_knowledge_page: {exc}")
+    if (limit := _image_limit(ctx)) is not None:
+        return limit
     call_id = str(args.get("_tool_call_id") or "")
     n = len(ctx.captures) + 1
     label = f"{target.book_title} page {page}" + (
@@ -1008,9 +1057,10 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         f"capture_knowledge_page result {n}: {label}",
         capture.data_url(jpeg),
     )
-    return _result(
+    return _imaged(
+        ctx,
         f"Captured {label} as capture {n}. The rendered image is attached to the next "
-        "message; read it directly."
+        "message; read it directly.",
     )
 
 
@@ -1064,16 +1114,9 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             if effect.get("projectionPending")
             else ""
         )
-        # Only an edit whose receipt carries an Undo ref has one (an Office
-        # edit the engine returned no inverse for has none, Epo 2026-10-20).
-        undo_note = (
-            " The user can undo this edit from the chat result."
-            if effect.get("undo")
-            else ""
-        )
         text = (
             f"Edited '{title}' (id {rid}).{notice}{pending_note}{_relocations(effect)}"
-            f"{_block_ids(effect)}{undo_note}"
+            f"{_block_ids(effect)}{_undo_note(effect)}"
         )
     elif operation == "edit_undone":
         text = f"Reversed the earlier edit of '{title}' (id {rid})."
@@ -1083,6 +1126,12 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             f"It is now in the workspace.{_block_ids(effect)}"
         )
     return ToolResult(text_parts=[text], effects=[effect])
+
+
+def _undo_note(effect: dict[str, Any]) -> str:
+    """An edit has an Undo only when a room someone has open took it (Epo
+    2026-10-20)."""
+    return " The user can undo this from the chat result." if effect.get("undo") else ""
 
 
 def _block_ids(effect: dict[str, Any]) -> str:
@@ -1618,9 +1667,9 @@ async def _post_operation(
             ):
                 detail = _response_detail(resp)
                 details = _response_details(resp)
-                return _refused(
+                return _gateway_refused(
+                    resp,
                     f"Could not {failure}: {detail or resp.status_code}",
-                    code=_gateway_error_code(resp),
                     detail=explain(details) if explain and details else "",
                 )
         except (requests.Timeout, requests.ConnectionError) as exc:
@@ -1704,7 +1753,42 @@ def _response_details(resp: requests.Response) -> dict[str, Any]:
 _GATEWAY_CODES = {
     "storage_quota_exceeded": "quota_rejected",
     "account_over_quota": "lifecycle_rejected",
+    "permission_denied": "lifecycle_rejected",
 }
+
+# Gateway codes for an actor who may no longer act in the workspace: a role
+# change, a removed membership, a frozen or locked account. Chat turns run no
+# periodic access check, so the refused call tells the model to stop
+# (Epo 2026-10-21).
+_NO_PERMISSION_CODES = frozenset(
+    {
+        "permission_denied",
+        "account_over_quota",
+        "account_suspended",
+        "account_deleted",
+        "account_deletion_pending",
+        "account_locked",
+    }
+)
+NO_PERMISSION = (
+    "The user no longer has permission to edit this workspace. Stop editing: "
+    "make no more tool calls and tell the user the work stopped because they "
+    "lack permission."
+)
+
+
+def _gateway_refused(
+    resp: requests.Response, text: str, *, detail: str = ""
+) -> ToolResult:
+    """A gateway refusal as a tool result; one for lack of permission tells
+    the model, after the error, to stop editing."""
+    try:
+        code = str(resp.json().get("code") or "")
+    except ValueError:
+        code = ""
+    if code in _NO_PERMISSION_CODES:
+        detail = "\n\n".join(part for part in (detail, NO_PERMISSION) if part)
+    return _refused(text, code=_gateway_error_code(resp), detail=detail)
 
 
 def _gateway_error_code(resp: requests.Response) -> str:
@@ -1753,6 +1837,8 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         or not isinstance(checkpoint, int)
     ):
         return _refused("A file id, change id and integer checkpoint are required.")
+    if (limit := _source_image_limit(ctx)) is not None:
+        return limit
     started = time.perf_counter()
     try:
         raw = await pending.resolve(
@@ -1770,6 +1856,8 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         return _refused(f"resolve_source_change: {exc}", code=exc.code)
     except ValueError as exc:
         return _refused(f"resolve_source_change: {exc}")
+    if (limit := _source_image_limit(ctx)) is not None:
+        return limit
     call_id = str(args.get("_tool_call_id") or "")
     ctx.captures.append(
         capture.record(
@@ -1786,6 +1874,7 @@ async def _resolve_source_change(args: dict[str, Any], ctx: ToolContext) -> Tool
         f"resolve_source_change result: change {change_id} of file {file_id}",
         capture.data_url(jpeg),
     )
+    ctx.images_taken += 1  # counted, with no limit sentence (Epo 2026-10-22)
     return _result(
         "The pending source image is attached to the next message; read it directly."
     )
@@ -1876,9 +1965,9 @@ async def _list_trashed_files(_args: dict[str, Any], ctx: ToolContext) -> ToolRe
     except requests.RequestException as exc:
         return _failed(f"Could not list the trash: {exc}")
     if resp.status_code != 200:
-        return _refused(
+        return _gateway_refused(
+            resp,
             f"Could not list the trash: {_response_detail(resp) or resp.status_code}",
-            code=_gateway_error_code(resp),
         )
     items = list((resp.json() or {}).get("items") or [])
     if not items:
@@ -1934,12 +2023,46 @@ async def _gateway_read(
     except requests.RequestException as exc:
         return _failed(f"Could not {failure}: {exc}")
     if resp.status_code != 200:
-        return _refused(
-            f"Could not {failure}: {_response_detail(resp) or resp.status_code}",
-            code=_gateway_error_code(resp),
+        return _gateway_refused(
+            resp, f"Could not {failure}: {_response_detail(resp) or resp.status_code}"
         )
     body = resp.json()
     return body if isinstance(body, dict) else {}
+
+
+# How long a chart's, plot's or graph's block an inspection prints as JSON; a
+# longer one is summed up, so inspect pages stay lean (Epo 2026-10-21).
+FIGURE_JSON_CHARS = 1500
+
+
+def _figure_view(printed: str) -> str:
+    """A chart's, plot's or graph's block as inspect_document prints it: its
+    compact JSON without a graph's drawn SVG (``image``), or past
+    FIGURE_JSON_CHARS its type, kind, title, labels and series names."""
+    try:
+        block = json.loads(printed)
+    except ValueError:
+        block = None
+    if not isinstance(block, dict):
+        return printed[:FIGURE_JSON_CHARS]
+    block.pop("image", None)
+    shown = json.dumps(block, ensure_ascii=False, separators=(",", ":"))
+    if len(shown) <= FIGURE_JSON_CHARS:
+        return shown
+    summary = {k: block[k] for k in ("type", "kind", "title") if block.get(k)}
+    labels = block.get("labels") or []
+    if labels:
+        more = [f"… {len(labels) - 12} more"] if len(labels) > 12 else []
+        summary["labels"] = labels[:12] + more
+    series = [s.get("name") for s in block.get("series") or [] if isinstance(s, dict)]
+    if series:
+        summary["series"] = series
+    if block.get("elements"):
+        summary["elements"] = len(block["elements"])
+    return (
+        json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+        + f" (summed up from {len(shown)} characters of JSON)"
+    )
 
 
 def _render_inspection(
@@ -1951,9 +2074,8 @@ def _render_inspection(
     """An inspection as the model reads it; an embedded quiz block shows as the
     quiz fence an edit writes, recorded in ``shown``. A source file's content
     sits in one source block, the next start after it."""
+    # The gateway's list, which its refusals for a kind name too.
     supported = list(body.get("supportedOperations") or [])
-    if body.get("materialKind") == "quiz":
-        supported.append("(add or replace questions with add_questions)")
     head = [
         f"{body.get('title') or ''} format={body.get('format')}",
         "supported: " + ", ".join(supported),
@@ -1964,6 +2086,8 @@ def _render_inspection(
         flags = " [media]" if props.get("media") else ""
         text = str(block.get("text") or "")
         view = questions.quiz_fence_view(text) if block.get("type") == "quiz" else None
+        if block.get("type") == "mermaid":
+            view = text
         if view is not None and shown is not None:
             shown[str(block.get("id"))] = (view, text)
             text = view
@@ -1972,8 +2096,10 @@ def _render_inspection(
             lines.append(
                 f"    [{child.get('id')}] ({child.get('type')}) {child.get('text') or ''}"
             )
-        if props.get("source") is not None:
-            lines.append(f"    source: {props['source']}")
+        if props.get("block") is not None:
+            lines.append(f"    block: {_figure_view(str(props['block']))}")
+        if props.get("caption"):
+            lines.append(f"    caption: {props['caption']}")
         if props.get("refKind"):
             if props.get("materialId"):
                 lines.append(
@@ -2027,7 +2153,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         seen = ctx.seen_blocks.setdefault(rid, {})
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
-        shown = ctx.shown_quizzes.setdefault(rid, {})
+        shown = ctx.shown_views.setdefault(rid, {})
     result = _result(_render_inspection(body, shown, source=kind == "source_file"))
     result.pending = changes
     return result
@@ -2044,6 +2170,7 @@ _OFFICE_TARGETS = {
     "sheet": "Sheet {id} now reads:",
     "paragraph": "Paragraph {id} now reads:",
     "shape": "Shape {id} now reads:",
+    "slide": "Slide {id} now reads:",
 }
 
 
@@ -2064,14 +2191,16 @@ def _missed_target(
             shown += f" … ({more} more characters; {reader} shows them)"
         grid = block.get("grid")
         if office and isinstance(grid, list):
-            # A refused row or column delete's band, exact for its expected.
+            # A refused row, column or table delete's cells, exact for its
+            # expected.
             cut = (
                 f" … (its first 2,000 cells; {reader} reads the rest)"
                 if block.get("gridCut")
                 else ""
             )
+            what = "Table" if block.get("type") == "table" else "Range"
             return (
-                f"Range {bid} now holds, as rows of cells:\n"
+                f"{what} {bid} now holds, as rows of cells:\n"
                 + json.dumps(grid, ensure_ascii=False, separators=(",", ":"))
                 + cut
             )
@@ -2127,8 +2256,9 @@ def _saw_edit(seen: dict[str, str], commands: list[dict[str, Any]]) -> None:
 def _stored_expectation(
     command: dict[str, Any], shown: dict[str, tuple[str, str]]
 ) -> dict[str, Any]:
-    """A command expecting an embedded quiz block's text as inspect_document
-    showed it (_render_inspection) expects the block's stored text."""
+    """A command expecting an embedded quiz block's or a Mermaid block's text
+    as inspect_document or a refusal showed it, edge whitespace aside, expects
+    the block's stored text (_render_inspection, review r2 L3)."""
     view = shown.get(str(command.get("block_id") or ""))
     if view and str(command.get("expected_text") or "").strip() == view[0].strip():
         return {**command, "expected_text": view[1]}
@@ -2143,7 +2273,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
     commands = [
-        _stored_expectation(c, ctx.shown_quizzes.get(rid, {}))
+        _stored_expectation(c, ctx.shown_views.get(rid, {}))
         for c in args.get("commands") or []
     ]
     # Note markdown may hold quiz fences and place library figures; a source
@@ -2195,6 +2325,11 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     }
 
     def explain(details: dict[str, Any]) -> str:
+        block = details.get("block")
+        if isinstance(block, dict) and block.get("type") == "mermaid":
+            # A retry copies the source the refusal shows, as an inspected one.
+            stored = str(block.get("text") or "")
+            ctx.shown_views.setdefault(rid, {})[str(block.get("id"))] = (stored, stored)
         # A source's text as it reads now sits in a source block.
         text = _missed_target(details, ctx.seen_blocks.get(rid, {}))
         return source_block(text) if text and kind == "source_file" else text
@@ -2245,32 +2380,220 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 # One edit_office_document call's commands at most, as compact JSON (Epo
 # 2026-10-20); a larger call is refused before it leaves.
 OFFICE_COMMANDS_MAX_BYTES = 256 * 1024
-# Cells one call writes across its commands (Epo 2026-10-20, review finding
-# 3). The pipeline counts set_range and format_cells areas for an early
-# refusal; the engine counts every command's cells and stays the authority.
-OFFICE_CALL_MAX_CELLS = 10_000
-_A1_RANGE = re.compile(r"\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
 
 
-def _range_cells(text: str) -> int:
-    """The cells an A1 range covers; 0 for one the engine refuses anyway."""
-    match = _A1_RANGE.fullmatch(text.strip().upper())
-    if not match:
-        return 0
+def _render_docx_page(head: str, scoped: dict[str, Any], start: int) -> str:
+    """A DOCX read: the styles (first page), then its paragraphs as ``[id]
+    (style unless the default, list, table cell, content control, locked:
+    why) text``, the body's and then each header's, footer's and note's
+    under a ``== part ==`` line, inside the source fence, cut to the
+    paragraphs that fit the tool output limit so the next start names the
+    first one not shown."""
+    head += (
+        "\nparagraphs as [id] (style unless the default, list, table cell, content control, "
+        "locked: why replace_text and format_text refuse it, and delete_paragraph unless "
+        "it only follows a table) text; "
+        "after the body, headers, footers and notes under == part == lines, which "
+        "take replace_text only:"
+    )
+    lines = []
+    part = None
+    for paragraph in scoped.get("paragraphs") or []:
+        marks = [str(paragraph[k]) for k in ("style", "list") if paragraph.get(k)]
+        if table := paragraph.get("table"):
+            marks.append(
+                f"table {table.get('id')} row {int(table.get('row') or 0) + 1} "
+                f"column {int(table.get('column') or 0) + 1}"
+            )
+        if paragraph.get("contentControl"):
+            marks.append("content control")
+        if locked := paragraph.get("locked"):
+            marks.append(f"locked: {locked}")
+        group = f" ({', '.join(marks)})" if marks else ""
+        line = f"[{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
+        if paragraph.get("part") != part:
+            part = paragraph.get("part")
+            line = f"== {part or 'body'} ==\n{line}"
+        lines.append(line)
+    more = scoped.get("stylesMore")
+    styles = (
+        [
+            "paragraph styles as id (name): "
+            + ", ".join(f"{s.get('id')} ({s.get('name')})" for s in scoped["styles"])
+            + (f" and {more} more" if more else "")
+        ]
+        if scoped.get("styles")
+        else []
+    )
+    total = scoped.get("total")
 
-    def column(letters: str) -> int:
-        return sum((ord(ch) - 64) * 26**i for i, ch in enumerate(reversed(letters)))
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(styles + lines[:n]))
+        if n < len(lines):
+            return body, (
+                "\n(page cut at the tool output limit; "
+                f"next start = {start + n} of {total})"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, f"\n(next start = {scoped['nextStart']} of {total})"
+        return body, ""
 
-    first, row = column(match[1]), int(match[2])
-    last, end = (column(match[3]), int(match[4])) if match[3] else (first, row)
-    return (abs(last - first) + 1) * (abs(end - row) + 1)
+    return _fitting(page, len(lines))[1]
 
 
-def _render_scoped(body: dict[str, Any], scoped: dict[str, Any]) -> str:
+def _points(value: Any) -> str:
+    return f"{value:g}" if isinstance(value, int | float) else str(value)
+
+
+def _pptx_shape(shape: dict[str, Any], *, boxed: bool = False) -> str:
+    """``[id] kind "name" (placeholder, equation, in a group) at x, y size w x h``,
+    the name and box in a slide read only."""
+    line = f"[{shape.get('id')}] {shape.get('kind')}"
+    if boxed:
+        line += f' "{shape.get("name") or ""}"'
+    marks = [f"{shape['placeholder']} placeholder"] if shape.get("placeholder") else []
+    if shape.get("equation"):
+        marks.append("equation, not editable")
+    if shape.get("inGroup"):
+        marks.append("in a group")
+    if marks:
+        line += f" ({', '.join(marks)})"
+    if boxed and isinstance(shape.get("box"), list):
+        x, y, w, h = (_points(value) for value in shape["box"])
+        line += f" at {x}, {y} size {w} x {h}"
+    return line
+
+
+def _render_pptx_deck(head: str, scoped: dict[str, Any], start: int) -> str:
+    """A PPTX deck read: the first page's layouts as ``[id] name``, then its
+    slides from ``start`` as ``N. [id] (layout)``, each listed shape under one
+    as ``[id] kind (placeholder): first line`` and how many more it holds,
+    inside the source fence, cut to the slides that fit the tool output
+    limit."""
+    head += (
+        f"\nslide size {_points(scoped.get('width'))} x {_points(scoped.get('height'))} "
+        "points; slides as N. [id] (layout), each shape as [id] kind (placeholder): its "
+        "first line of text (… when longer); read one slide by its number for all its "
+        "shapes and its paragraphs:"
+    )
+    layouts = scoped.get("layouts") or []
+    prelude = (
+        [
+            "layouts as [id] name: "
+            + ", ".join(
+                f"[{layout.get('id')}] {layout.get('name')}" for layout in layouts
+            )
+        ]
+        if layouts
+        else []
+    )
+    blocks = []
+    for slide in scoped.get("slides") or []:
+        lines = [f"{slide.get('number')}. [{slide.get('id')}] ({slide.get('layout')})"]
+        for shape in slide.get("shapes") or []:
+            text = f": {shape['text']}" if shape.get("text") else ""
+            lines.append(f"  {_pptx_shape(shape)}{text}")
+        if more := slide.get("moreShapes"):
+            lines.append(f"  … and {more} more shapes")
+        blocks.append("\n".join(lines))
+    total = scoped.get("total")
+
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(prelude + blocks[:n]))
+        if n < len(blocks):
+            return body, (
+                "\n(page cut at the tool output limit; "
+                f"next start = {start + n} of {total} slides)"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, f"\n(next start = {scoped['nextStart']} of {total} slides)"
+        return body, ""
+
+    return _fitting(page, len(blocks))[1]
+
+
+def _render_pptx_slide(head: str, scoped: dict[str, Any], start: int) -> str:
+    """One PPTX slide: a page of its shapes and paragraphs from ``start``, each
+    shape as ``[id] kind "name" (marks) at x, y size w x h`` followed by its
+    paragraphs as ``[id] (level, table cell) text``, the first page also giving
+    the slide's speaker notes, inside the source fence, cut to the shapes and
+    paragraphs that fit the tool output limit so the next start names the
+    first one not shown (review M1)."""
+    slide = scoped.get("slide") or {}
+    layout = slide.get("layout") or {}
+    head += (
+        f"\nslide size {_points(scoped.get('width'))} x {_points(scoped.get('height'))} "
+        'points; shapes as [id] kind "name" (marks) at x, y size w x h points from the '
+        "top left corner (shapes in a group show no box), each followed by its paragraphs "
+        "as [id] (level, table cell) text; a page counts shapes and paragraphs:"
+    )
+    title = f"slide {slide.get('number')} of {scoped.get('slides')} [{slide.get('id')}]"
+    if layout:
+        title += f", layout [{layout.get('id')}] {layout.get('name')}"
+    prelude = [title]
+    if slide.get("notes"):
+        prelude.append(f"speaker notes:\n{slide['notes']}")
+    shapes = scoped.get("shapes") or []
+    paragraphs = scoped.get("paragraphs") or []
+    total = scoped.get("total")
+
+    def paragraph_line(paragraph: dict[str, Any]) -> str:
+        marks = [f"level {paragraph['level']}"] if paragraph.get("level") else []
+        if paragraph.get("row") is not None:
+            marks.append(
+                f"row {int(paragraph['row']) + 1} "
+                f"column {int(paragraph.get('column') or 0) + 1}"
+            )
+        group = f" ({', '.join(marks)})" if marks else ""
+        return f"  [{paragraph.get('id')}]{group} {paragraph.get('text') or ''}"
+
+    # The page's shapes and paragraphs in the engine's order: a shape the
+    # page before began goes on first, then each shape and its paragraphs.
+    listed = {shape.get("id") for shape in shapes}
+    units = [
+        paragraph_line(paragraph)
+        for paragraph in paragraphs
+        if paragraph.get("shape") not in listed
+    ]
+    if units:
+        prelude.append(f"[{paragraphs[0].get('shape')}] continued:")
+    for shape in shapes:
+        units.append(_pptx_shape(shape, boxed=True))
+        units.extend(
+            paragraph_line(paragraph)
+            for paragraph in paragraphs
+            if paragraph.get("shape") == shape.get("id")
+        )
+
+    def page(n: int) -> tuple[str, str]:
+        body = head + "\n" + source_block("\n".join(prelude + units[:n]))
+        if n < len(units):
+            return body, (
+                "\n(slide cut at the tool output limit; "
+                f"next start = {start + n} of {total} shapes and paragraphs)"
+            )
+        if scoped.get("nextStart") is not None:
+            return body, (
+                f"\n(next start = {scoped['nextStart']} of {total} shapes and paragraphs)"
+            )
+        return body, ""
+
+    return _fitting(page, len(units))[1]
+
+
+def _render_scoped(body: dict[str, Any], scoped: dict[str, Any], start: int) -> str:
     """An XLSX read: its sheets as ``[id] name used-range``, or a range's
-    cells as ``A1: input``, followed by ``→ shown value`` where that differs."""
+    cells as ``A1: input``, followed by ``→ shown value`` where that differs.
+    A DOCX read: a page of its paragraphs from ``start``. A PPTX read: a page
+    of its slides, or a page of one slide's shapes and paragraphs."""
     head = f"{body.get('title') or ''} format={body.get('format')}"
     lines: list[str] = []
+    if "slide" in scoped:
+        return _render_pptx_slide(head, scoped, start)
+    if "slides" in scoped:
+        return _render_pptx_deck(head, scoped, start)
+    if "paragraphs" in scoped:
+        return _render_docx_page(head, scoped, start)
     if "sheets" in scoped:
         head += "\nsheets as [id] name used range:"
         for sheet in scoped.get("sheets") or []:
@@ -2323,7 +2646,8 @@ async def _inspect_office_document(
     ctx.pending_sources.read(rid)
     scoped = body.get("scoped")
     if isinstance(scoped, dict):
-        return _result(_render_scoped(body, scoped))
+        start = max(int(args.get("start") or 0), 0)
+        return _result(_render_scoped(body, scoped, start))
     return _result(_render_inspection(body, source=True))
 
 
@@ -2340,16 +2664,8 @@ async def _edit_office_document(args: dict[str, Any], ctx: ToolContext) -> ToolR
             f"The commands are {-(-size // 1024)} KB, over the 256 KB one call may "
             "send; split the edit into several calls."
         )
-    cells = sum(
-        _range_cells(str(command.get("range") or ""))
-        for command in commands
-        if command.get("type") in ("set_range", "format_cells")
-    )
-    if cells > OFFICE_CALL_MAX_CELLS:
-        return _refused(
-            f"The commands write {cells:,} cells, over the 10,000 one call may "
-            "write; split the edit into several calls."
-        )
+    # The engine alone counts a call's limits (Epo 2026-10-22): it applies
+    # the commands before the first past one and its notice names the rest.
     rid = str(args.get("file_id") or "")
     creating = commands[0].get("type") == "create"
     if creating == bool(rid):
@@ -2542,7 +2858,10 @@ async def write_questions(
         return result
     landed(ctx, credited)
     resource = result.effects[0].get("resource") or {}
-    result.text_parts = [questions.result_text(found, built, resource, quiz is None)]
+    undoable = bool(result.effects[0].get("undo"))
+    result.text_parts = [
+        questions.result_text(found, built, resource, quiz is None, undoable)
+    ]
     return result
 
 
@@ -2636,8 +2955,8 @@ async def write_media(
         result.text_parts = [
             (
                 f"Added the {clean['media']['type']} to question {qid} of quiz "
-                f"'{resource.get('title')}' (id {resource.get('id')}), after its text. "
-                "The user can undo this from the chat result."
+                f"'{resource.get('title')}' (id {resource.get('id')}), after its text."
+                + _undo_note(result.effects[0])
             ),
             *found.notes,
         ]

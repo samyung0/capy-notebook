@@ -43,13 +43,17 @@ var editorSuffixes = []string{
 	"/ai/copilot",
 }
 
+// A gateway upload counts once, at its ticket: the upload itself is refused
+// without a ticket whose turn has come.
 var uploadSuffixes = []string{
 	"/sources",
-	"/sources/uploads",
+	"/sources/uploads/tickets",
 	"/sources/import",
 	"/sources/import-inspect",
 	"/sources/import-content",
-	"/editor-assets/uploads",
+	"/editor-assets/uploads/tickets",
+	// A file removed before it was sent, counted into its batch.
+	"/removed",
 }
 
 // exemptPrefixes must never be limited.

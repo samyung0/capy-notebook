@@ -1707,9 +1707,9 @@ rows; on 2026-09-24 it rewrote 3,239 library chunks and 2,270 pilot chunks.
 
 Before parsing, the worker hashes the uploaded bytes (`files.source_sha256`) by
 streaming the object and digesting it. The object's stored
-`x-amz-checksum-sha256` is deliberately not trusted, however convenient: the
-browser PUTs through a presigned URL that signs only host and content-type, so
-that header is uploader-controlled, and a hash the uploader chooses would let
+`x-amz-checksum-sha256` is deliberately not trusted, however convenient: a
+checksum header is whatever its writer sent, and a hash the uploader chooses
+would let
 anyone claim the hash of a document they do not have and be handed its chunks
 and summary. One GET per ingest is the price. It then looks for a
 **ready** `rag_contents` row with the same
@@ -1932,7 +1932,7 @@ content is ready or it has taken the claim over itself.
 ### Upload and import notifications
 
 The actor gets one `system` notification per upload or import, never per file
-(`{"code":"source_batch","source":"upload"|"import","done","failed"}`, href
+(`{"code":"source_batch","source":"upload"|"import","done","failed","removed"}`, href
 `/workspaces/{id}`). A `source_batches` row (migration 0061) counts the batch:
 the browser sends `batchId` and `batchTotal` (files or picked items of one
 AddSourceDialog submission) with every upload reservation and every
@@ -1946,8 +1946,14 @@ and `failed` counts failed (`files.batch_id` is cleared, so a file counts
 once); an upload session expiring without a file (abandoned PUT, failed import)
 counts failed, as does an upload reservation or import request the handler
 refuses (other than the statuses the browser retries, 3 attempts in all: 429
-for uploads; network errors, 408, 429 and 5xx for imports; a request whose
-attempts run out is left to the idle sweep). The settle that reaches `total` writes the notification. The
+for uploads, whose last attempt gives its ticket back as failed; network
+errors, 408, 429 and 5xx for imports, where a request whose attempts run out
+is left to the idle sweep). A file the user removes from the transfer panel
+before the server hears of it, or while its ticket waits, counts removed
+(`source_batch_settle`'s removed count, migration 0107, never past the
+batch's total; Epo 2026-10-22, see backend-storage-quota.md). The settle that reaches `total` writes the
+notification, which names failed and removed files only when there are any;
+a batch whose every file was removed closes without one. The
 API's `runSourceBatchWorker` polls every second: it closes batches idle for an
 hour (unsent or unsettled files count failed), then deletes notified rows and
 publishes their notifications to `notif:{userId}`.
@@ -2032,9 +2038,12 @@ always point at document passages.
    The 5-second bound (`models.RERANK_TIMEOUT_S`) covers the whole wait a
    search sees: admission and the provider request, busy retry included; the
    zero-credit `rerank` settlement finishes in the background once the
-   scores arrive. An error, a busy provider or the bound keeps fused order
-   and logs a `capy.search` warning, so search never fails because of the
-   reranker. An unassigned rerank slot skips the call: it is the operator off
+   scores arrive. The bound ends only the search's wait: the request runs on
+   under the whole-call bound of any non-streaming call (15 s) and settles its
+   measured usage when it answers (`models._detached` holds it), so a slow
+   rerank is metered rather than cut off without a receipt. An error, a busy
+   provider or the bound keeps fused order and logs a `capy.search` warning,
+   so search never fails because of the reranker. An unassigned rerank slot skips the call: it is the operator off
    switch, and the only slot whose missing default is not an error. Library
    search (`search_knowledge`) runs the same step before the excerpt fold,
    holding no pooled library connection while the reranker runs. When a
@@ -2427,10 +2436,15 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
 One user send creates one assistant row. `messages.content` is the final answer
 only. Completed narration and tool-display blocks live in `messages.metadata`
 and are not sent back as LLM history. Separately, `metadata.toolEvidence` retains
-conversation evidence according to each tool's `retention` contract field:
+conversation evidence in two scopes (Epo 2026-10-21). Within a turn, until its
+answer is finished, every result stays whole. Between user messages each tool
+keeps what its `retention` contract field says
+(`agenttools_test.TestRetentionBetweenMessages` pins the list):
 
-- `full`: listing, descriptions, document inspection and mutation tools retain
-  the full text result already limited to 8,192 tool-output tokens.
+- `full`: `list_sources` and the mutation tools (`create_material`, the
+  question tools, `create_deck`, `write_slide`, `edit_document`,
+  `edit_office_document`, `trash_file`, `restore_file`) retain the full text
+  result already limited to 8,192 tool-output tokens.
 - `cited_passages`: `search_workspace` and `read_document` retain only whole
   chunks cited in the final answer, deduplicated by chunk id.
 - `used_excerpts`: `read_knowledge` retains its exact bounded text only when the
@@ -2439,8 +2453,28 @@ conversation evidence according to each tool's `retention` contract field:
   excerpt ID and start at the latest owning turn. Replay revalidates them with
   read-only library queries. Full text remaining after compaction counts as read;
   changed/missing text or a compacted summary does not.
-- `none`: captures persist no result context or image bytes; library search
-  and browsing results are not replayed as source evidence.
+- `none`: `inspect_document`, `inspect_office_document`, `read_study_progress`,
+  `list_trashed_files`, `search_knowledge`, both captures and
+  `resolve_source_change` (no image bytes), and `read_skill` (the skill itself
+  replays by name, below).
+
+A turn keeps its notes as its calls finish (`agent._run_tools`: name, detail,
+outcome and text of each `full` result), and every `turn_checkpoint`, `error`
+and `done` packs only those plus the passages the answer cited
+(`evidence.pack`), so a row never stores a result that will not replay. A
+stopped or failed turn counts as finished (Epo 2026-10-22): from the next
+message on it replays like an answered one, its reads and capture images
+dropped and its edit receipts kept, and the passages its partial answer cited
+before it ended (`ToolContext.cited_shown`) follow the cited-passage path with
+its re-check. What a retained result carries replays without a further access
+check (Epo 2026-10-22). A call the Stop kept from starting (the later calls
+of a serial response, or the calls of a response that ended after the stop)
+is recorded with outcome `cancelled` and "Not run: the user stopped the turn
+before this call started." (`agent._cancelled`), whatever its tool, since it
+has no result for retention to trim. Replay applies the same rule
+(`evidence._kept`): a saved note replays only if its tool keeps results
+between messages or it records a cancelled call, so rows saved under an older
+retention (an inspection kept whole) follow the current one.
 
 Result retention was added in contract version 3. Every tool must declare a policy; the policy is
 internal and is not a model argument. Live results stay exact until live
@@ -2605,7 +2639,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
    calls, passage numbers with their locations and facts, gaps, and the intended
    next step; citation numbers stay valid because the number→chunk map lives on
    `ToolContext`, not in the messages. The note is turn-local and never persisted
-   or checkpointed. There is no percentage trigger and no deterministic clipping
+   or checkpointed. The images of folded exchanges (page captures, source-change images) stay attached right
+   after the note and in the budget (capture_page, below). There is no percentage trigger and no deterministic clipping
    fallback. Tool output is capped at 8,192 estimated tokens with a visible
    truncation marker. If protected context still cannot fit, the turn fails with
    `context_too_large`. Keep-tail folding drops whole exchanges only; on providers
@@ -2644,10 +2679,31 @@ current pending changes applied. Embedded source instructions remain untrusted.
    error, so a cut-off answer is never assembled as complete and an empty one
    never reads as `invalid_answer`. A 200 stream that sends no data at all is a
    provider error too (before any byte, so it takes the one pre-byte retry);
-   the user is charged for neither. If the browser
-   disconnects, Python stops writing SSE but finishes the in-flight provider
-   call, settles usage when it arrives, and does not start another planning
-   step.
+   the user is charged for neither. A browser that disconnects without Stop
+   does not end the turn: Go relays on a context detached from the browser
+   request and finishes, saves and settles the turn as usual (Epo 2026-10-21;
+   it keeps the user's AI request slot until then). The browser gets the
+   events from its own writer goroutine (`chat_browser.go`) through an
+   unbounded queue, so the relay never waits for the browser: the turn's save,
+   credit settlement and AI request slot follow the pipeline, a browser that
+   stops reading only delays its own copy, no event is dropped while it reads,
+   and no write time limit is set (Epo 2026-10-21). The response closes after
+   the last event is written. Only Stop (below) or the
+   pipeline's own bounds end a turn early. A chat stream and its connections
+   run no periodic check (Epo 2026-10-21): no access re-check in Go and no
+   disconnect polling in the pipeline. Permission lost mid-turn (a role
+   change, a removed membership, a frozen or locked account) surfaces through
+   each tool call's own check: Go refuses the write as `permission_denied`
+   (`permissionRefusal` in `internal_documents.go`, used by the document,
+   Office, file and material writes) or with the account's lock code, and the
+   pipeline (`tools._gateway_refused`, one place for every gateway refusal)
+   adds, after the error the chat shows, an instruction to stop editing and
+   tell the user, so the agent ends the turn. Reads the pipeline makes from
+   the database itself (search) have no such check and run until the turn
+   ends. If the Go hop itself goes away, Starlette cancels the response
+   generator, which marks the client: Python stops writing SSE but finishes
+   the in-flight provider call, settles usage when it arrives, and does not
+   start another planning step.
 9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
    `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
@@ -2711,8 +2767,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    later steps on that file fold into its strip. After an edit's Undo the strip
    reads "Undid the edit to X", muted, with Redo (ghost-hover). The receipt's effect replaces the block's effect and the
    button reads Undo or Redo from the operation; a refused step shows an error
-   toast and disables its button for the session, and history disables a
-   button whose status is not `available`.
+   toast and disables its button for the session, while a refusal for a
+   moment (`office_editing_paused`, `unavailable_target`) only toasts. An
+   edit without an Undo ref (no loaded room took it, its Undo would be too
+   large to send, or a reload after its room unloaded) keeps its strip without
+   the button; a reopened conversation shows created files without Undo or
+   Redo (Epo 2026-10-20).
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
@@ -2741,7 +2801,8 @@ copy (single or workspace clone) keeps them as a material copy does.
 
 However a turn ends, its assistant row keeps the tool calls that finished
 (activity blocks, which Ops' `ops_assistant_turns.tool_calls` counts) and
-their results (`toolEvidence`) (Epo 2026-10-21). Python keeps a call's
+their retained results (`toolEvidence`) (Epo 2026-10-21; retained only since
+2026-10-22). Python keeps a call's
 evidence note when the call finishes (`agent._run_tools`; notes are put back
 in call order after the batch), sends `turn_checkpoint` with the turn's
 `activity` and `toolEvidence` (nothing cited yet) after every tool batch, and
@@ -2752,26 +2813,76 @@ the latest `activity` and `toolEvidence` from `turn_checkpoint`, `error` and
 `done`, writes each checkpoint onto the row while it is `streaming`
 (`store.CheckpointAssistantMessage`), and finalizes any ending with that state
 merged with the mutation receipts, on a context detached from the request.
-Only `complete` rows replay into later turns (`ConversationPrompt`), so the
-evidence an aborted or failed row keeps serves history and Ops.
+Every finalized row replays into later turns (`ConversationPrompt`, `status <>
+'streaming'`, each row with its status; Epo 2026-10-21): `evidence.history_turns`
+adds "[This reply was stopped before it finished.]" (a stop or a crash) or
+"[This reply failed
+before it finished.]" to an `aborted` or `error` assistant row (an empty one
+replays the line alone), and its retained results (the calls added after a
+stop included) and cited passages replay like a finished turn's, under the same
+compaction (Chat agent workflow, above). A turn that fails before any tool
+call keeps its empty tool record (empty lists).
 
 | Ending | Where handled | Tool calls saved | Results saved | Status |
 | --- | --- | --- | --- | --- |
-| Answer; planning, stall and tool caps | `agent._run_turn` `done` → `chat_stream.go` | all | all, cited passages included | `complete` |
-| Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | all, nothing cited | `error` |
+| Answer; planning, stall and tool caps | `agent._run_turn` `done` → `chat_stream.go` | all | retained, cited passages included | `complete` |
+| Context cap, compaction failure | `agent._run_turn` `error`, state from `run_agent` | all | retained, passages cited so far | `error` |
 | Turn time cap | none exists; a provider call past its deadline is a provider error | — | — | — |
-| User stop, client disconnect | `chat_stream.go`: request cancelled, detached finalize | up to the last checkpoint, plus receipts | up to the last checkpoint | `aborted` |
+| User stop | `chat_stop.go` saves the row at once; `chat_stream.go` adds the late calls (`store.AddStoppedTurnCalls`) | all, the calls running at the stop included, plus receipts | retained, passages cited so far | `aborted` |
+| Browser disconnect without Stop | the turn runs on (`chat_stream.go` on a detached context) | as the turn's own ending | as the turn's own ending | the turn's |
+| Permission lost mid-turn | the refused tool call tells the agent to stop editing (`permission_denied`, account lock codes) | as the turn's own ending | as the turn's own ending | the turn's |
 | Tool exception | `tools.run`: a failed result, the turn goes on | its failed row | its error text | the turn's |
-| `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | all, nothing cited | `error` |
-| Exception outside the step (loop code) | `service._chat_events` `error` with state | all | all, nothing cited | `error` |
-| Flagged response | `agent._run_turn` `response_flagged`, state from `run_agent` | all | all, nothing cited | `error` |
+| `TurnFailed`, `SourceChanged`, step exceptions, empty answer, provider error or busy, rejected key | `agent._run_turn` `error`, state from `run_agent` | all, a batch cut short included | retained, passages cited so far | `error` |
+| Exception outside the step (loop code) | `service._chat_events` `error` with state | all | retained, passages cited so far | `error` |
+| Flagged response | `agent._run_turn` `response_flagged`, state from `run_agent` | all | retained, passages cited so far | `error` |
 | Pipeline dies | `relayChat` EOF → `chat_stream.go` | last checkpoint, plus receipts | last checkpoint | `error` |
 | Go dies | `AbortOrphanedStreams` at the next boot | last checkpoint on the row, plus receipts | last checkpoint | `aborted` |
 
-A stop or a lost hop ends what Go hears at the last checkpoint: calls of the
-batch that was running then keep only their receipts. The boot sweep marks
-every `streaming` row, so with several API replicas a restart would abort
-another replica's live turn.
+A lost hop (a pipeline that dies, a stop that falls back to hanging up) ends what Go hears at
+the last checkpoint: calls of the batch that was running then keep only their
+receipts. The boot sweep marks every `streaming` row, so with several API
+replicas a restart would abort another replica's live turn.
+
+### Stop
+
+Stop ends a turn at once (Epo 2026-10-21). The browser sends
+`POST /api/conversations/{id}/messages/{messageId}/stop` (204; 404 unless the
+caller owns the conversation and may still chat in its workspace and the id
+is one of its assistant rows; a finished or already stopped turn answers 204
+and nothing changes), then stops reading.
+
+1. Go finds the turn in `api.turns`, the turns this API process relays by
+   assistant message id. A stop must reach the instance relaying the stream:
+   one API instance (and one retrieval process) today; with several, a stop
+   landing elsewhere finds no turn and answers 204 without stopping it, so
+   scaling out needs a shared channel first. Under the turn's lock it marks
+   the turn stopped and saves the row `aborted` from what the relay has heard
+   (latest `turn_checkpoint`, citations, and as the body the answer, or the
+   text of a block still streaming; a finished narration stays only in the
+   activity) merged with the receipts, so history lists it at once.
+2. Go posts `POST /chat/stop {assistantMessageId}` to the retrieval service,
+   which marks the turn's `ClientDrop.stopped` (a process-local map; one
+   uvicorn process). If that fails (not running there yet or any more, out of
+   reach), Go hangs up on the pipeline request instead, which stops it the
+   lost-hop way.
+3. The agent starts no further model call (step top, after compaction, after
+   a response), no later call of a serial write batch, and no retry of a model
+   call, also when the stop lands during the retry's wait
+   (`stream_agent_response(stopped=...)`); calls already running finish,
+   no prose is streamed after the stop, and nothing is sent back to the model.
+   A step exception after the stop logs at info, with no error event or
+   Sentry report. `run_agent` then sends one `turn_checkpoint` with
+   `stopped: true`, the turn's activity and retained evidence (with the
+   passages the answer cited before the stop, and the calls the stop kept from
+   starting recorded as cancelled) and usage.
+4. When the pipeline stream ends, Go adds that state to the aborted row
+   (`store.AddStoppedTurnCalls`: only an `aborted` row, receipts merged by call
+   id, the token count, and the citations and generation id of a turn that
+   finished as it stopped), then settles credits once. A row the stop could
+   not save (a database error) is still `streaming` then and is saved
+   `aborted` with that state instead. No error is reported or sent for a
+   stopped turn. The browser that stopped reading sees the late calls on its
+   next history load.
 
 ### Chat below lg
 
@@ -2876,7 +2987,8 @@ build, and the knowledge library is one more source while the switch is on.
   progress, the turn context counts the responses left, the errored-write
   grace), and the precautions (ground every write, write as soon
   as the evidence is in hand, no write beside retrieval in one response,
-  inspect before editing, edits save with an Undo, `replace_text` for plain
+  inspect before editing, edits save directly and the result says when the
+  user can undo one, `replace_text` for plain
   wording and `replace_block` for a block with formatting or math, keep other
   people's changes unless the learner asks otherwise, source files only when
   asked), with Library on the `excerpt_ids` rule (name excerpts read this turn
@@ -2929,9 +3041,10 @@ build, and the knowledge library is one more source while the switch is on.
   read before reading, editing or creating a Word, Excel or PowerPoint file:
   how to read each format, each command's purpose, expected values exactly as
   the read shows them, formulas only with functions the workbook supports and
-  only its own sheets, `create` first for a new Excel file (Word files
-  cannot be created yet; decks stay `create_deck`), and one limits line (a call's commands up to 256 KB; split
-  larger edits). Reading it offers the Office tools (Office tools, above).
+  only its own sheets, `create` first for a new Excel or Word file (decks stay
+  `create_deck`), and one limits line (the tool description lists a
+  call's per-command-kind limits, the commands past one coming back
+  unapplied; a request over 256 KB is refused). Reading it offers the Office tools (Office tools, above).
   `editing` carries no Office instructions and says that after reading a
   document the agent sees its most recent changes, recent edits not yet in
   search possibly showing as hints.
@@ -2978,7 +3091,8 @@ build, and the knowledge library is one more source while the switch is on.
   `FINAL_ANSWER_NOTICE` instead (answer with what was found). The message's
   private `_kind` is `turn_context`.
 - **Limits** (`retrieval/limits.py`). Every turn: four tool calls per response,
-  one `search_workspace` per response and no capture cap. Until its first
+  one `search_workspace` per response and 16 images per user message
+  (`tools.MAX_IMAGES`, below). Until its first
   successful write a turn gets 12 responses (`PLANNING_RESPONSES`, lowered by
   `CAPY_AGENT_MAX_STEPS` and stated in the prompt from that value), the last
   with tools off, and an empty response ends it with `invalid_answer`; reads
@@ -3279,15 +3393,16 @@ build, and the knowledge library is one more source while the switch is on.
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
 | `read_skill` | none | Offered to every role that can chat (`source.read`), so a viewer reads `office_building` and gets `inspect_office_document`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
-| `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
-| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
+| `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
+| `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
-| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
+| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
-| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
-| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX and PPTX page their paragraph or shape entries with target ids by `start`/`count` as `inspect_document` paged them (their scoped reads are phases 2 and 3); a PPTX `slide` is refused as not available yet. The result sits in one source block and marks the file read for its pending changes |
-| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX made by a first `create` command without `file_id` (Office tools, below; DOCX create is phase 2). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`. Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON, or whose `set_range` and `format_cells` ranges cover over 10,000 cells, is refused before it leaves (`invalid_input`, naming its size or cell count and asking for several calls); the engine refuses a call writing over 10,000 cells across all its commands. Receipts and refusals as `edit_document`'s for a source; a call holding a command the engine returns no inverse for has no Undo, and its result offers none |
+| `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
+| `inspect_office_document` | none | Offered with `edit_office_document`, last in the tool list, once the office_building skill is read (Office tools, below). Reads one Office source by `file_id`: XLSX without `range` lists its sheets (`[id] name used-range`), with `sheet` and `range` each non-empty cell's input and, after `→`, its shown value where that differs (at most 2,000 cells a read, the engine's bound); DOCX pages, through the engine's scoped read, the body's paragraphs and then the headers', footers' and notes' (each part under a `== part ==` line; they take `replace_text` only) by `start`/`count` (at most 200) as `[id] (style unless the default, list, table cell, content control, locked: why) text`, a table's cells before the paragraph after it, each marked with its table's id and its row and column, tracked-deleted text left out, a list its paragraph style gives shown as the list, and a paragraph the text commands refuse marked `locked` with the reason the engine gives (a picture, field, equation or tracked changes in it or on its mark, or the table or content control before it); the first page opens with the file's shown paragraph styles as `id (name)`, at most 50 and a count of the rest (Epo 2026-10-21), inside the source block, and a page over the tool output limit is cut between paragraphs (`_fitting`, as `read_document`), its next start the first paragraph not shown; PPTX (Epo 2026-10-20) without `slide` pages its slides by `start`/`count`, each as `N. [id] (layout)` with its shapes under it as `[id] kind (placeholder): first line` (kind `text`, `shape`, `picture`, `table`, `chart`, `diagram`, `object` or `group`; the placeholder type as the file names it, `obj` when it names none; the first non-blank paragraph, cut after 80 characters with `…`), the first page opening with the deck's layouts as `[id] name` (a layout's id is its part path) and the head giving the slide size in points; with `slide` (its number) it lists that slide's shapes as `[id] kind "name" (marks) at x, y size w x h` in points from the top left corner (a placeholder that spells out no position at its layout's, else its master's; a shape in a group shows no box) and pages its paragraphs by `start`/`count` under their shapes as `[id] (level, table row and column) text`; a shape whose text is an equation is marked `equation, not editable`. Both pages are cut at the tool output limit between slides or paragraphs, the next start the first one not shown. The result sits in one source block and marks the file read for its pending changes |
+| `edit_office_document` | yes | Commands for one Office file (`file_id`), or a new XLSX or DOCX made by a first `create` command without `file_id` (Office tools, below). XLSX: `set_range`, `format_cells`, `add_sheet`, `rename_sheet`, `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `delete_sheet`; DOCX and PPTX: `replace_text`, `insert_paragraph` and `delete_paragraph` (Epo 2026-10-21); DOCX and PPTX: `format_text` and `set_alignment`; DOCX: `set_list`, `insert_table`, `delete_table`; PPTX: `set_shape_text`, `add_slide`, `delete_slide`, `move_slide`, `add_text_box` (Epo 2026-10-20). Each variant's description names its formats. A call whose commands are over 256 KB of compact JSON is refused before it leaves (`invalid_input`, naming its size). Past a call's limits (the engine's table, below; the description lists them) the engine applies the commands before the first that would pass one, and the receipt's notice, in the result text, ends `Not applied: the commands at indexes N to M (counting from 0), past the limit of … a call; send them in another call.`; the schema sets no item cap. Receipts and refusals as `edit_document`'s for a source, structural commands included: an Undo ref when a loaded room took the edit, and its result offers Undo only then |
+
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
 | `restore_file` | yes | Restores one trashed resource, owner only |
@@ -3347,10 +3462,20 @@ through the ordinary LLM usage path. Context telemetry and the compaction
 budget count each attached image by its 28-px patch estimate
 (`capture.patch_tokens`), not by its base64; the captures ride outside the
 compacted history, so their estimate is passed to compaction as extra weight.
-A capture is attached after its own tool result, so it lives exactly as long as
-that exchange stays verbatim: once live compaction folds the exchange into the
-turn note (decision 2026-09-16), the image leaves the request and
-`capture.image_tokens` stops counting it. The chat prompt requires capture before
+A capture is attached after its own tool result, and every capture stays
+attached until the turn's answer (Epo 2026-10-21): once live compaction folds
+its exchange into the turn note, `capture.inject_images` attaches its image
+right after the note, and `capture.image_tokens` counts every capture of the
+turn. A user message attaches 16 images, `capture_page`,
+`capture_knowledge_page` and `resolve_source_change`'s image changes together
+(`tools.MAX_IMAGES`, Epo 2026-10-22; counted in `ToolContext.images_taken` and
+checked again after the render, since a response's image calls run side by
+side): a 16th image from a capture returns with "capture_page limit reached,
+do not call capture_page anymore." and later captures are refused with that
+sentence (`limit_reached`); a source change's image says nothing when it is the
+16th and fails past the cap with `tools.SOURCE_IMAGE_LIMIT` (`limit_reached`,
+Epo 2026-10-22). A `resolve_source_change` image stays attached through folds the
+same way. No capture image is carried to the next message. The chat prompt requires capture before
 using source-specific numerical results, formulas, table cells/relationships or
 figures, regardless of extraction confidence. Low-confidence text also requires
 capture when the uncertain passage matters. The model reads the image directly
@@ -3375,9 +3500,9 @@ of its figures, may be captured (`library.capture_target`). A page in the
 book's `library_books.withheld_pages` (reprinted texts the library withholds,
 written at publish from the run manifest like `figure_exclusions`) is never
 captured, also on a boundary page shared with open text or through a guessed
-excerpt id, and a request for one is refused as withheld. Neither capture
-tool has a per-turn cap: a capture leaves the request once its exchange folds
-into the turn note. It adds no citation, and its JPEG
+excerpt id, and a request for one is refused as withheld. It shares the
+message's 16 images with `capture_page` and stays attached until the answer
+like it. It adds no citation, and its JPEG
 rides in the same user message after the step's tool results. An unset bucket
 leaves the tool unoffered; the five settings are validated all-or-none.
 
@@ -3437,8 +3562,28 @@ an option by its letter or position. Version 32 (2026-10-20) adds
 Office targets out of `edit_document`. Version 33 (2026-10-21) gives
 `create_material`, `add_questions` (a new quiz) and `create_deck` a `sources`
 made-from line of plain strings instead of an id scope, and lets
-`search_workspace`'s `file_ids` take any workspace item. Go and the pipeline
-deploy together. `cmd/openapi -agent-tools`
+`search_workspace`'s `file_ids` take any workspace item. Version 34 (the live
+Undo) gives an edit receipt `effect.undo` only when a loaded room holds the
+edit's Undo, and drops the Undo promises from `edit_document` and
+`edit_office_document`. Version 35 (2026-10-21) adds the DOCX and PPTX
+paragraph commands (`insert_paragraph`, `delete_paragraph`) and the DOCX
+read's paragraph styles. Version 36 (2026-10-21) creates Word files, makes
+`insert_paragraph`'s anchor optional with a `list`, adds `set_list`,
+`insert_table`, `delete_table`, `format_text` and `set_alignment`, reads
+headers, footers and notes with lists, table cells and `locked` marks, and
+lists in its description the engine's per-call limits (one table, a
+limit per command kind), the rest returned unapplied. Version 37
+(2026-10-22) drops `set_mermaid` (a mindmap's or diagram's Mermaid block
+changes through `replace_block`, expecting its source), lets
+`edit_document` remove or replace any note block, media included, keeps a
+rewritten block's caption and width (a diagram's theme too; a swapped
+picture brings its own), and gives `replace_card`
+`expected_front` and `expected_back`. Version 38 (2026-10-22) reads a
+PPTX by slide (its slides with their layouts and first shapes; one
+slide's shapes and paragraphs, paged together, with its speaker notes)
+and adds `set_shape_text`, `add_slide`, `delete_slide` (naming the
+notes), `move_slide` and `add_text_box`, with PPTX `format_text` and
+`set_alignment`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3481,7 +3626,7 @@ the collaboration service's note check (an eleventh interactive block across
 the note; `compute` in `collaboration-rs/crates/server/src/edits.rs`), a source edit whose checkpoint would
 be over its byte limit (authority 413) as `quota_rejected`, and the
 authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
-`undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). An
+`update_size_exceeded`) reach it as sentences (`store.limitMessages`). An
 Office edit or create carrying characters no Office file can
 store applies without them, and its tool result says which were removed
 (the receipt's `notice`, Epo 2026-10-15); whatever an Office engine refuses
@@ -3622,15 +3767,35 @@ playground's write stubs run the same code.
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,
 `replace_card`, `add_card`, `remove_card`, `replace_question`, `add_question`,
-`remove_question`, `set_mermaid` for Plate materials; `replace_text` for
-text sources) and applied by the collaboration service on an isolated Y.Doc.
+`remove_question` for Plate materials; `replace_text` for text sources) and
+applied by the collaboration service on an isolated Y.Doc. A mindmap or
+diagram takes `replace_block` only: its one Mermaid block is rewritten from a
+```` ```mermaid ```` fence with a new id, like a note's block (Epo 2026-10-21,
+`set_mermaid` removed), expecting the source and keeping the caption and
+width (Epo 2026-10-22, below). Go refuses (`invalid_input`) markdown that converts to anything but
+that one mermaid block, and library figures for these kinds, since their
+editor and viewer draw only the mermaid block (review r1 M1).
 `edit_office_document` commands go through the same route with `office: true`
 and Go's `normalizeOfficeCommands` (Office tools, below). The agent's `edit_document` schema offers
 `remove_question` but not `add_question` or `replace_question`, which only the
 question tools send; inspecting a quiz lists `remove_question` and names
-`add_questions` for the rest. A `replace_card` keeps the side it is not sent
-and the card's image, from the set's stored document (`ExtractFlashcards`; a
-card the set does not hold needs both sides). `insert_markdown` after block
+`add_questions` for the rest. That list is Go's `materialOperations` (and
+`textOperations` for a text source), and a command refused for its target's
+kind names it the same way: "replace_text does not apply to a quiz;
+supported: remove_question, (add or replace questions with add_questions)"
+(`kindRefusal`, Epo 2026-10-21). A `replace_card` sends Rust only the sides it
+replaces, each with what it expects there (`expected_front` with `front`,
+`expected_back` with `back`, else `invalid_input` from Go); the items crate
+reads the card from the set as the live room holds it, so a side left out and
+the card's image keep typing made since the inspection, and a side it replaces
+whose text moved on refuses as `stale_target` with the card's sides as they
+read now; the sides are separate targets, so only a replaced side is held to
+its expected text and typing on the other side never makes the edit stale
+(Epo 2026-10-22)
+(`DocumentCommand::ReplaceCard`, `items::flashcards::apply_commands`; Epo
+2026-10-21, the stored set the gateway filled sides from lagged typing).
+The pipeline keeps a blank `expected_front` or `expected_back` beside a sent
+side (`contract.drop_blanks`): an empty side is an expectation. `insert_markdown` after block
 `"end"` appends after the note's last block: no block holds that id, so the
 collaboration server lands it at the end (the gone-anchor rule, 2026-10-09)
 and the pipeline leaves that relocation out of the receipt. The receipt of a
@@ -3668,69 +3833,214 @@ commit landing in between conflicts and the edit retries from fresh state,
 3 attempts in all. There is no revision precondition: expected content compared under
 the lock catches target drift, the lock and the source checkpoint CAS serialize
 concurrent commits, and the server-resolved room incarnation fences trash,
-restore and rebase. Each edit stores an inverse command list and target guards
-in `agent_edit_inverses`; guards are the Yjs item-run signatures of the edited
-target only (`collaboration-rs/crates/notes/src/edit.rs`,
-`crates/sources/src/edit.rs` for Office): a block, a card or question node,
-a gap with its two neighbours by identity only, a text span re-found by its
-text when earlier edits moved it, or an Office paragraph or cell re-located by
-its stable id at Undo time. A gap whose anchor the same call also removed is
-guarded after the nearest surviving block, a node the same call inserted and
-removed needs no guard of its own, and no guard reaches past its neighbours,
-so a deletion two blocks away or a keystroke beside a span keeps the Undo. Undo refuses with `stale_target`
-when its target changed, and stays valid when nearby content changed. An
-edit may not remove or replace a block holding media, but the Undo of an
-edit that inserted a library figure removes it again
-(`undo_material_commands`); its asset follows the removed-block trash
-rule.
+restore and rebase. An edit's Undo lives in the collaboration room that took
+it (Epo 2026-10-20, superseding the guarded Undo of 2026-09-09 and the
+server-kept Redo of 2026-10-15): when this replica has a loaded room for every
+document the edit writes (a quiz: its content and its keys room), the room
+applies the edit keeping the items it deleted from garbage collection
+(`ydoc::undo::apply_kept`) and holds the edit's own Yjs items, read from the
+edit's transaction (`ydoc::undo::Captured`), as an undo step under the edit's
+operation id (`Room.agent_changes`, indexed by `app.agent_steps`). The
+receipt commits without an Undo ref; once every room the edit wrote answers
+that it took the step (`ServiceEdit.taken`), the server stores
+`undo: {operationId, status: "available"}` on it and returns it so
+(`offer_undo` in `edits.rs`; a source's receipt is Go's checkpoint receipt,
+which never sets the ref). An edit of a file or material no room has loaded
+gets no Undo: nothing opens or holds a room for it, and its receipt shows
+none. A room that loaded after the edit committed already holds its items and
+takes no step either. An edit may remove or replace any note block, media
+included (an image, a placed library figure, audio, a YouTube video; Epo
+2026-10-21): the next projection trashes an asset no block references, like a
+person's deletion, and the Undo's children pass and projection restore it. It
+inserts no media but a library figure (`inserts_media`). An edit that removes
+a note's last block gets one empty paragraph in its own transaction
+(`repair::emptied` in `compute`), so no editor sees the note empty and its
+Undo takes the paragraph out again. An agent Undo or Redo that would leave a
+note with no block (a person deleted the rest meanwhile) gets the paragraph
+too, in a transaction of its own outside the step's reverse, so the chat Undo
+succeeds and a Redo neither fails nor takes the paragraph out (Epo 2026-10-22,
+`agent_undo` in `room.rs`). Only notes: a mindmap or diagram takes
+`replace_block` alone, whose blocks are never empty, and the store's check
+refuses one left without its Mermaid block; items keep their own rules
+(`remove_card` keeps a set's last card, `remove_question` may empty a quiz).
 `inspect_document` reads what the editors see (Epo 2026-10-13): the
 stored state with this replica's live room merged in, a quiz's keys room
 too, as an edit reads it (`inspect_material` in
 `collaboration-rs/crates/server/src/edits.rs`, `Sources::inspect` for text
 and the Office entries); with no room loaded it reads the stored state and
-loads nothing more. A material
-inverse plus guards above 256 KB refuses the edit as `quota_rejected`. Office
+loads nothing more. Office
 edits run in the collaboration server's Office engine processes (the fork's
-`office-service`: inspect, apply commands, locate targets), which return the
-new checkpoint state, the inverse and Yrs locators of the targets; Capy derives the
-guards from those locators. PDFs and store-only files refuse with
-`unsupported_format`. Undo is `POST /api/chat/edit-operations/{id}/undo`, only
-for the original chat actor with current edit access; a trash, source rebase or
-material compaction invalidates outstanding Undo entries.
+`office-service`: inspect, apply commands), which return the new checkpoint
+state; the command result's inverse is unused. PDFs and store-only files
+refuse with `unsupported_format`. Undo is
+`POST /api/chat/edit-operations/{id}/undo`, only for the original chat actor
+with current edit access, checked before the collaboration service
+(`server/internal/httpapi/huma_undo.go`).
 
-**Undo chain** (Epo 2026-10-15). Redo is the Undo of an Undo: every Undo
-stores the step that reverses it as an `agent_edit_inverses` row under the
-Undo's own operation id, so the same endpoint called with that id is Redo,
-for any number of steps. A material Undo keeps the inverse and guards
-`undo_material_commands` (or the item and quiz commands) return, within the
-same 256 KB bound; an Undo whose own inverse is over it, or holds no
-commands, still lands, without a Redo. A text source's Undo keeps the
-guards `apply_text_commands` returns and an Office Undo derives guards from
-the engine's located targets as an edit does; the checkpoint carries them
-with `undoOf` and Go stores the row in the checkpoint's transaction. Each
-step's `undone_by` names the next. The effect alternates: an edit is
-`edited`, its Undo `edit_undone`, the Undo of that `edited` again (from the
-undone step's effect), and each receipt's effect carries `undo:
-{operationId, status}` while the step can be reversed. Every step is
-guarded and refuses `stale_target` like an Undo; trash, source rebase,
-compaction and an editing-epoch change release every available row of the
-resource, so they reach whatever step a chain stands at. A file the chat
-creates (`create_material`, `add_questions` creating a quiz, a deck's PPTX)
-gets a row of step `trash` with its receipt (`insertFileStepTx`): its Undo
-trashes the file through the ordinary trash path under the Undo's
-operation id (`UndoFileStep`), the trash consumes the step and stores a
-`restore` step naming the trash episode, whose Undo restores it and stores
-a `trash` step again, and so on (`created`, `trashed`, `restored`,
-`trashed`...). A restore stays the owner's (the trash rule), so a trashed
-file gets its Redo ref only when the chat actor owns it. Compaction and
-rebases release `edit` steps only (`step='edit'`); trash and purge release
-every step. History (`ListMessages` → `refreshUndoStatuses` →
-`LatestSteps`) follows each block's chain to its latest step and returns
-that step's effect with its current ref, so a reload shows what the live
-view showed. A retried Undo request answers with its receipt even after the
-step was used. Refusals keep their codes: `undo_unavailable` for a used,
-released, expired or purged step, `stale_target`, `quota_rejected`,
-`lifecycle_rejected`. After a material edit
+**Undo chain** (live, Epo 2026-10-20). An Undo reverts its step as the
+editor's undo does (yrs `UndoManager` over the room's roots but the
+contributor markers, tracked origin `capy-agent-edit`, in `ydoc::undo`): the
+edit's inserted items go and the items it deleted come back, so other
+people's later typing stays, in the edited block too. XLSX needs nothing
+more: Yjs holds cell inputs and every engine recalculates values from them.
+The revert goes out like a writer's update under the chat actor's
+contributor marker (the store rechecks the actor's access); the room stores
+at once and answers when the first store holding the revert ends, even if
+people typed on meanwhile and the room is dirty again (review r2 M2; each
+store's snapshot is counted, and an Undo arriving during a store waits for
+the next one). A store that fails and
+retries still answers done, the revert staying in the room; a store the room
+gives up on (a discard) answers the error. Once the rooms answer, a
+material's room projects at once (`RoomCmd::Project`), as the edit it reverts
+projected, so `materials.content` follows without the idle projection (a
+diagram or mindmap has no on-read projection). A note whose reverted state the
+store would refuse (`validate`) is put back at once and the Undo answers
+`invalid_input` or `quota_rejected`; a source counts the bytes toward its cap
+estimate. A room under a publication handoff or a forced unload refuses it
+(`unavailable_target`), keeping the step. The redo item the revert leaves is
+kept as the next step under the Undo's own operation id, so the same endpoint
+called with that id is Redo, for any number of steps.
+
+An agent edit's Undo is sized from its commands (Epo 2026-10-21), never by
+reverting on a copy of the document: `sources::undo_cost` holds one rule per
+command type, named after it, and the edit's estimate is their sum. An Undo
+re-inserts what the edit removed and a Redo what it inserted, so each rule
+counts both sides:
+- removed or replaced content of a note, live item or text source (an
+  expected text, a removed or replaced block or child read from the document
+  before the edit) and an XLSX value or grid: its bytes times `CONTENT` (3);
+- an insert (a replacement text, inserted blocks, a card or question): its
+  text or JSON times `CONTENT`, plus a `PIECE` (160 bytes) for each run or
+  block it splits at either end. A `replace_block` rewrite also writes the
+  old block's caption and width (`keep_caption`), part of the replaced block
+  already counted, so the Redo stays under the estimate (a long caption kept
+  on a small new block measures 3.0 in the server's `edits.rs` ratio test);
+- formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
+- XLSX structure: a `PIECE` per inserted or deleted row or column (a delete
+  writes an axis change; the cells stay in Yjs), a new sheet's name and 4
+  `PIECE`s, a rename's two names and 1;
+- what an Office command's Undo re-creates (the Editor's rule,
+  2026-10-22): the engine measures it before the command applies
+  (`office_service::Touched`, one per applied command in
+  `CommandResult::touched`, from `touched.rs` in the fork) as live Yjs items
+  and their content's bytes: the text a DOCX or PPTX `replace_text` takes
+  out (the changed span, found as apply finds it: in a header, footer or
+  note too; review r2 H1), the text and format markers a `format_text` span
+  covers, the mark entries `set_alignment` (`alignment`) and `set_list`
+  (`numPr`, `listIsBullet`, `listNumFmt`, `listMarker`) write, a deleted
+  paragraph's text and mark (its format markers stay where they are), a
+  deleted table's embed and cell stories whole (with the tables in its
+  cells), a deleted sheet's key in the sheet order, the text and marks of
+  the shape a PPTX `set_shape_text` rewrites, and a deleted slide whole
+  (its entry and notes, its shapes and their stories, its comments, read
+  from that slide alone); a command whose Undo only deletes what it wrote
+  measures nothing. Two PPTX commands add, read after they apply, what
+  they wrote, which their Redo re-creates and the command alone cannot
+  size (the Editor 2026-10-22): `add_slide` the slide whole (its layout's
+  placeholders; review H1) and `set_shape_text` the shape's story whole
+  (each paragraph takes its runs' formatting, a start and an end marker a
+  key; review M3). `undo_cost::office`
+  takes those bytes times `CONTENT` and an `ITEM` (33 bytes: the most the
+  fixtures sent beyond content was 22 bytes an item, plus half again) an
+  item, plus what the command writes itself: a replacement's text and 3
+  items (its run and the two it splits), `format_text` twice its format
+  JSON and a start and an end marker a key it sets plus 4 (font's own pass
+  and the two splits; review r2 M1), `set_alignment` its entry, `set_list` 80 bytes and 4 entries a
+  paragraph, a paragraph or table delete 1; a paragraph insert's text and
+  style times `CONTENT` and 8 `PIECE`s (the new mark, a copy of its
+  anchor's properties: a list item's measured 837 bytes, and the run it
+  splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8;
+  `set_shape_text` its paragraphs' text and 2 items a paragraph plus 2,
+  `add_text_box` the same and 12 `PIECE`s (the shape entry), `move_slide`
+  the slide's id and 2 items, `delete_slide` 1 item, `add_slide` its
+  layout's path and 1 item (its id in the slide order). On the fixtures
+  (lesson.docx and .pptx, paragraphs of 5-character runs and of one run a
+  character, 1x1 to 50x10 tables, a slide on each of lesson.pptx's 11
+  layouts and on a layout of nine text placeholders with 200-character
+  names, 50 short paragraphs over a run of six formats) every DOCX and PPTX
+  command over-estimates 1.4 to 7.4 times, and the calibration fails one
+  past 10 times (`CEILING`), so an ordinary 50-command call keeps its
+  Undo.
+
+A new command adds its rule there; both matches are exhaustive, so it does
+not compile without one. The factors were
+calibrated to over-estimate the real revert on the fixtures
+(`every_command_costs_at_least_what_its_undo_and_redo_send` in
+`sources/tests/live_undo_office.rs`,
+`every_material_command_costs_at_least_what_its_undo_and_redo_send` in the
+server's `edits.rs` tests, both measuring with `ydoc::undo::revert_len` on
+copies, which only tests use). The edit is broadcast to the editors first;
+the room then keeps the step with its estimate only when the estimate fits
+(within the 8 MiB update cap and, in a source room, its admission headroom by
+the running estimate). A step that does not fit is not kept: the edit's
+receipt gets no Undo ref, and an Undo's answer says `reversible: false`, so
+Go records its receipt without a Redo ref. A removal is the usual large
+case: a small update whose Undo brings the removed content back. XLSX
+`delete_sheet` and `delete_rows` are not: they leave the cells in Yjs, and
+their Undo measures tens of bytes whatever the sheet holds (measured
+2026-10-21; 2026-10-22 on a sheet of 10,000 written cells and the large
+gradebook's 16,000-cell sheet: 32 to 57 bytes). The room checks the estimate again when an Undo is asked,
+against the room as it is then (a person may have filled a source room
+since), and refuses one that no longer fits with `undo_unavailable`,
+dropping the step. A timed-out Undo whose reverse was too large to keep is not
+put back (the room no longer holds it); every put-back answer other than done
+is captured (`agent_undo_put_back`, review r3 L1). Go names the step's
+document (`target`) and the room cross-checks that every room holding the
+step is that document's. Go records each Undo's receipt (`agent_operations`,
+kind `undo_edit`) with `undo_of` naming the step it reversed (unique, so a
+step is reversed once; migration 0106 dropped `agent_edit_inverses`). The
+effect alternates: an edit is `edited`, its Undo `edit_undone`, the Undo of
+that `edited` again, each carrying its next step's ref. A step ends with its
+room: any unload (the last editor leaving, an epoch change or publication
+handoff, a discard, lineage compaction's eviction), a restart or an Office
+reset, so trash, rebase and compaction need no invalidation of their own. A
+step no room holds, or one with nothing of the edit left, answers 409
+`undo_unavailable` ("this edit can no longer be undone"). The Office
+maintenance pause refuses an Office Undo (`office_editing_paused`), in Go and
+in the room. One collaboration server runs per environment, so the rooms
+holding steps are the only copy.
+
+A lost answer cannot strand a step (review H1). The room remembers each step
+it reverted (`Room.agent_reverted`; the server finds those rooms by
+`AgentSteps::reverted`) and answers a later request for it done again, with
+the id it kept the reverse under; Go records the receipt under that id. The API runs the requests for one step one at a time
+(`operationLocks`, in memory: one gateway process per environment) and, once
+one starts, runs it to its end whatever happens to the client
+(`context.WithoutCancel`); before asking the room it answers with the step's
+receipt when one exists (`UndoReceipt`, by `undo_of`), so a retry or a second
+click gets the first one's receipt. A quiz step reverts in its content room,
+then its keys room; when the second fails (or does not answer within 8 s), the
+first is put back (its revert reverted, the step under its old id), so both
+documents stay as they were and the step stays (review M2). In the chat a
+refused Undo (a 4xx) hides the button for the session, except a refusal for a
+moment that keeps the step (`office_editing_paused`, `unavailable_target`:
+the Office pause, a publication handoff or a room reset under way), which
+keeps it (review r2 L2); an unknown outcome (no answer, a 5xx) keeps it for a
+retry, and a second click while a request is out sends nothing.
+
+The Undo of an earlier edit after a later one (the agent's or a person's)
+rewrote the same span keeps both, as the editor's undo does: the earlier
+edit's own text is gone already, and the text it deleted comes back beside the
+later text (`undo_of_an_earlier_edit_keeps_a_later_edit_of_its_span`).
+
+A file the chat creates (`create_material`, `add_questions` creating a quiz,
+a deck's PPTX) carries an Undo ref on its own receipt (`markFileUndoTx`): its
+Undo trashes the file through the ordinary trash path under the Undo's
+operation id (`UndoFileStep`), and that receipt's ref is the Redo, restoring
+the trash episode it names, and so on (`created`, `trashed`, `restored`,
+`trashed`...). A restore stays the owner's (the trash rule), so a trashed file
+gets its Redo ref only when the chat actor owns it.
+
+History (`ListMessages` → `refreshUndoStatuses`) follows each receipt's
+`undo_of` chain to its latest step (`LatestSteps`) and shows that step's
+effect. It keeps the ref only on an edit step a loaded room still holds
+(`/internal/documents/undo-status`), so a reopened conversation shows created
+files and edits whose room unloaded without Undo or Redo (Epo 2026-10-20 Q2);
+when the collaboration service cannot answer within 2 s (`undoStatusWait`),
+no ref stays, so a hung collaboration server cannot hold a conversation load. A retried Undo
+request answers with its receipt even after the step was used. Refusals keep
+their codes: `undo_unavailable`, `invalid_input`, `quota_rejected`,
+`lifecycle_rejected`, `office_editing_paused`. After a material edit
 or its Undo the collaboration service runs its children pass over the update
 as the chat actor (`collaboration-rs/crates/server/src/children.rs`): a quiz, flashcard set or
 image the note trashed within the day comes back, one purged since (or never
@@ -3758,9 +4068,9 @@ request (`skills.REQUIRES`: `inspect_office_document` needs
 the refusal carries them, worded `Not applied: this call needs the …`).
 A read reaches Go's `/api/internal/documents/inspect` with an `office` query
 (`sheet`, `range`, `start`, `count`, `slide`); for XLSX Go forwards
-`{sheet, range}` as the collaboration inspect body's `office` and passes the
-engine's `scoped` answer through unchanged, and DOCX and PPTX page their
-existing entries. An edit reaches `/api/internal/documents/edit` with
+`{sheet, range}` and for DOCX `{start, count}` (Go's `pageCount` sends 60 for a count
+outside 1 to 200) as the collaboration inspect body's `office` and passes the engine's
+`scoped` answer through unchanged, and for PPTX `{start, count}` with `slide` when one is read. An edit reaches `/api/internal/documents/edit` with
 `office: true`, where only an Office source takes it and
 `normalizeOfficeCommands` turns each command into the engine's JSON (type
 snake_case, fields camelCase, `format_cells`' flat fields into its `style`
@@ -3773,11 +4083,43 @@ checks the actor, replays a receipt as `/api/internal/files` does and checks
 for the file's bytes and stores them as the agent's deck is stored
 (`storeAgentFile`: the upload's size check, the blob, the files row, the parse
 job and a receipt whose Undo trashes the file); the file is named from the
-title (path separators and control characters dropped) plus `.xlsx`.
-`/api/internal/files` itself stays `.pptx`-only for decks (review finding 9).
-Only XLSX is created: the schema and Go take `xlsx` alone, and the engine
-refuses a format without a starter as `unsupported_operation` (DOCX create is
-phase 2).
+title (path separators and control characters dropped) plus `.xlsx` or
+`.docx`. `/api/internal/files` itself stays `.pptx`-only for decks (review
+finding 9). XLSX and DOCX are created: the schema and Go take `xlsx` and
+`docx`, and the engine refuses a format without a starter (PPTX) as
+`unsupported_operation`.
+
+Paragraphs (Epo 2026-10-21):
+`insert_paragraph` puts one paragraph of plain text (no line breaks, at most
+5,000 characters, at most 20 inserts a call) right after `after_id` or right
+before `before_id`, at most one of them; the first paragraph's id with
+`before_id` inserts at the start. A DOCX paragraph goes in the document body
+only; with neither id it goes at the body's end, into the body's only
+paragraph when that is empty (a new file's), and PPTX needs one. Without
+`style` it continues its anchor as Enter at the anchor's end
+does (Epo 2026-10-21): the anchor's paragraph properties (list, indent) and
+its style's `w:next` style, else that style; the anchor is the `after_id`
+paragraph, else the paragraph before the new one, at the body's start the
+one it goes before. With `style`, a paragraph style id of the file (an
+unknown one is `invalid_input`; the read names each paragraph's style unless
+it is the default), it keeps those properties and takes that style in place
+of the next style (Epo 2026-10-22). A DOCX `list` (`bullet`, `numbered` or
+`none`) sets or ends its list at the anchor's level, as `set_list` writes
+it. Its runs are plain either way. A PPTX paragraph takes
+the paragraph properties (level, bullet, alignment) of the paragraph it goes
+after or before and the style of that paragraph's character next to it, and
+`style` is refused. Several inserts after one paragraph land in call order,
+each right after the last one the call put there. `delete_paragraph` names
+the paragraph and its whole text (`stale_target` with `details.block` when
+it differs) and is refused for a story's or shape's last paragraph, a DOCX
+paragraph the read marks locked (but one that only follows a table), one
+following a content control, one ending a section, one between two tables
+and the one after a table that ends the body or a cell (Word needs both),
+and an equation's text; a page or column break, table or content control
+opening a DOCX paragraph stays, opening the next one. The paragraphs around an insert or a delete
+keep their ids and properties (the engines' `insert_paragraph_before` and
+`remove_paragraph` in the fork's docx-edit and pptx-edit), so later commands
+of the call still name them.
 
 Retries (Epo 2026-10-20, review finding 3): the retrieval service posts an
 Office edit again under the same operation id when its 10 s timeout passes
@@ -3792,37 +4134,185 @@ build and store.
 
 The collaboration server runs both on the engine's Background lane: its
 inspect route answers an `office` query with the engine's scoped read
-(`inspect_scoped`, XLSX; a range over 2,000 cells is refused like an edit,
-with its sentence), and `/internal/documents/create` seeds the committed XLSX
-starter (`crates/office-service/starters/blank.xlsx` in the fork), applies the
+(`inspect_scoped`; a range over 2,000 cells, a DOCX or PPTX count outside 1
+to 200 or a slide number outside the deck, which only a direct caller can
+send, is refused like an edit, with its sentence), and
+`/internal/documents/create` seeds the committed starter
+(`crates/office-service/starters/blank.xlsx`, Excel's blank workbook, or
+`blank.docx`, python-docx's default template, in the fork), applies the
 commands and exports at a fixed time with a seed from the request, so a
 retried create gives the same bytes. The engine has every XLSX command above
-(`crates/office-service/src/xlsx.rs`); DOCX and PPTX scoped reads and their new
-commands are phases 2 and 3. A row or column delete names its band's inputs
+(`crates/office-service/src/xlsx.rs`) and every DOCX one
+(`crates/office-service/src/docx/agent.rs`), and every PPTX one
+(`crates/office-service/src/pptx/agent.rs`).
+
+Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
+expected_text, paragraphs}` replaces a shape's whole text, `expected_text`
+being its paragraphs joined by line breaks (`stale_target` with
+`details.block {type: "shape", text}` when it differs) and `paragraphs`
+the new text, strings without line breaks within `limits.json`'s
+`shapeText` (50 paragraphs and 5,000 characters, as for `add_text_box`;
+`cmd/openapi` writes them into both schemas and into the contract's
+`officeShapeText`, which the office_building skill reads; review L2); the paragraphs it keeps keep their properties (level,
+bullet, alignment) and take their first run's formatting, added ones
+continue the last, and fewer ones join into the last kept one. A table's
+cells are refused (they are edited by paragraph), as are a shape with no
+text (a picture, a shape without a text body) and an equation's text.
+`add_slide {after_slide?, before_slide?, layout?}` puts a slide right
+after or before a slide (at most one; neither: last) on `layout` (a layout
+part path the read lists; an unknown one is `unavailable_target`),
+by default the layout of the slide it follows, else of the one it
+precedes; it gives the slide its layout's title, subtitle, body and
+content placeholders (not date, footer, slide number, header, picture,
+chart, table or media ones) as empty text shapes tied to them by a copy of
+the layout's `p:ph` (type, orientation, size, index), at the layout's box,
+else the master's (a placeholder with neither is refused): pptx-edit
+`DeckSession::add_layout_placeholders`, saved by the PPTX writer's new
+`ShapeAdd.placeholder` (`p:nvPr/p:ph` on the added shape, with its box
+written out), so the shapes inherit the layout's text formatting in
+PowerPoint and in the editor. A deck made by `create_deck` has one blank
+layout, so its new slides are empty and `add_text_box {slide_id,
+paragraphs, x, y, w, h}` puts text on them: a text box at a box in points
+from the slide's top left corner, refused unless it lies on the slide
+with a positive size. `delete_slide {slide_id, expected_text}` names the
+slide's text, every paragraph one a line in the read's shape order, then
+its speaker notes as the slide read shows them, cut marker included (Epo
+2026-10-22), compared without blank lines and the spaces around a line
+(`stale_target` with `details.block {type: "slide", text}` in that
+form), so notes edited after the read make it stale, and never deletes a
+deck's only slide; `move_slide {slide_id,
+after_slide | before_slide}` takes exactly one anchor. A PPTX
+`format_text` takes what DOCX's does but `highlight` (refused), writing
+the run's `b`, `i`, `u` (`sng`/`none`), `strike`
+(`sngStrike`/`noStrike`), colour, size and latin font, and
+`set_alignment` writes `algn` (`l`, `ctr`, `r`, `just`). New slides and
+shapes get ids the call cannot know, so the agent reads again before
+filling them.
+
+The PPTX read (`inspect_scoped` in `pptx/agent.rs`) reads the slides it
+shows (`slide_scope`), never the whole deck. Without `slide` it pages the
+slides, each with its layout name and its first 20 shapes (id, kind,
+placeholder type, first line) and `moreShapes`, the count of the rest; the
+first page lists the deck's layouts. With `slide` it pages that slide's
+shapes and paragraphs together (review M1: a slide of hundreds of shapes
+pages like its text): `start` and `count` count both, each shape (name,
+placeholder type, box in points unless in a group) followed by its
+paragraphs, and `nextStart` names the first one not shown. Its first page
+also gives the slide's speaker notes, at most `limits.json`'s
+`slideNotes` characters (2,000; people's own notes input takes 4,000, the
+Editor's build) with `… [notes cut: N more characters]` after them (Epo
+2026-10-22). The retrieval service renders the notes and every shape and
+paragraph inside the source fence and cuts a page at the tool output
+limit between shapes and paragraphs, naming the next start; a page that
+begins inside a shape names the shape its first paragraphs continue. A
+slide's paragraph id never changes story, so a call keeps its paragraph
+lookup across slide and shape commands and reads the deck again only
+when it misses an id (review L5).
+
+The other DOCX commands (Epo 2026-10-20, phase 2) edit through docx-edit's
+own ops in one session per call and set a paragraph's style id and direct
+formatting only, never resolved style values. Every DOCX command but
+`replace_text` takes body paragraphs only (the body's tables and content
+controls included): a header, footer or note paragraph is refused as
+`unsupported_operation` (`header, footer and note paragraphs take
+replace_text only`), and an insert's anchor must be a top-level body
+paragraph. `insert_table {after_id?, rows}` (at most 20 rows of 10 cells,
+rectangular) puts the table in a new plain empty paragraph's slot, placed as
+`insert_paragraph` places one after `after_id` (in call order) or at the
+body's end, and writes each cell's text into its one paragraph; after the
+call's commands (`finish_agent`, from `apply_commands` and `create`) that
+empty paragraph goes where Word does not need it (Epo 2026-10-21): it stays
+only when the table ends the body or comes before another table, and
+elsewhere the next paragraph takes the table into its slot. `delete_table
+{id, expected}` takes any paragraph id of a table's cells (the read names a
+table by its first cell's first paragraph) and its cells' text as rows (a
+cell's paragraphs joined by line breaks); a stale one carries
+`details.block {type: "table", text, grid}`, and a table whose cell holds
+what `delete_paragraph` refuses (a table or content control, which
+`expected` cannot name, a picture, equation, field, note reference or
+tracked change) is refused as `unavailable_target` naming it (reviews H2,
+r2 L2). `set_list {ids, list}` writes
+the toolbar buttons' `numPr` (the two `w:num` ids after the file's own, one
+bulleted and one numbered list per document, no restart), keeping each
+paragraph's level, or ends the list (`none` writes `numId` 0, which also
+ends a list the paragraph's style gives it). `format_text {target_id,
+expected_text, ...}` formats the one occurrence of its text in a paragraph
+the read does not mark locked (bold, italic, underline, strikethrough, a hex
+colour, one of Word's highlight colours or `none`, a size of 1 to 1,638
+points, a font name), and `set_alignment {target_id, alignment}` sets
+`left`, `center`, `right` or
+`justify` (`both`). A row or column delete names its band's inputs
 as rows of cells like `set_range`'s `expected` (a row's cells from column A;
 for columns, rows from row 1 holding the deleted columns' cells), trailing
 empty cells and rows left out, so `[]` expects an empty band and cells holding
 tabs or line breaks match exactly (review finding 6); Go refuses an `expected`
 that is not such a grid. A stale band's refusal carries `details.block.grid`,
 the exact grid to copy, cut after 2,000 cells (an empty row counting as one)
-with `gridCut`, beside its TSV `text`. One call writes at most 10,000 cells
-across its commands (review finding 3): the engine's XLSX session counts a
-range's area for `set_range` and `format_cells` and a delete's stored cells,
-inserts and sheet changes counting none, and `apply_commands` and `create`
-refuse past it as `invalid_input` naming the count so far; the retrieval
-service refuses earlier from the `set_range` and `format_cells` areas alone.
+with `gridCut`, beside its TSV `text`. Per-call limits (Epo 2026-10-21 and 2026-10-22; agent tool only,
+people's edits are not limited): the Office engine alone counts them, from
+one table, `crates/office-service/limits.json` in the fork, keyed by
+format, which `limits.rs` reads (`include_str!`) and Go's `cmd/openapi
+-office-limits` writes into `edit_office_document`'s description
+(`agenttools/office_limits.go`; `pnpm gen:openapi` passes the vendor path),
+so description and engine cannot drift. A DOCX call reads each story's
+paragraphs once into an index (`ParaIndex` in `docx/agent.rs`) that
+`touched`, apply and the targets' lookup share; it follows the call's own
+replacements and formats, and any other commit drops it (review r2 L9).
+It holds 50 commands and, per
+format, XLSX 10,000 cells written (a range's area for `set_range` and
+`format_cells`, 1 for `set_cell`, a row or column delete's `expected`
+cells), 1,000 inserted rows and columns and 5 sheets added, renamed or
+deleted; DOCX 20 text replacements, 20 inserted and 20 deleted
+paragraphs, 400 inserted table cells, 5 deleted tables (a table of any
+size counts one; Epo 2026-10-22), 30 formatted spans and 200 paragraphs
+given a list or an alignment; PPTX 20 text replacements, 20 inserted and
+20 deleted paragraphs, 30 formatted spans, 200 paragraphs given an
+alignment, 500 paragraphs and 50,000 characters of shape and text box
+text, 20 slides added, 20 deleted, 50 moved and 20 text boxes added. `apply_commands` and `create` apply
+the commands up to the first that would pass a limit and end the result's
+notice with `Not applied: the commands at indexes N to M (counting from 0),
+past the limit of … a call; send them in another call.` (after a create
+command the indexes start at 1, the agent's call counting it); a first
+command alone past one is refused as `invalid_input`. The retrieval service
+counts nothing: its result passes the receipt's notice through. Measured at
+each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`,
+`bench_pptx.py` (a 60-slide deck) and `bench_pptx500.py` (50 commands of
+each PPTX type on a 500-slide deck, against 10 s).
 
-Undo (Epo 2026-10-20): until the live-room Undo lands, an Office command
-returns only the inverse the engine gives cheaply (`set_range` with values and
-expected swapped, `rename_sheet` back, a row or column insert as its delete,
-`replace_text` the paragraph); `format_cells`, `add_sheet`, `delete_sheet` and
-row and column deletes return none, and a call holding one keeps no Undo (no
-step row, no Undo ref on its receipt, no Undo line in its tool result).
+Undo (Epo 2026-10-20): every Office command, structural ones included
+(`format_cells`, `add_sheet`, `delete_sheet`, row and column inserts and
+deletes, and every DOCX and PPTX paragraph, list, table and formatting
+command), gets the live Undo of any
+edit (Undo chain, above): the room reverts the Yjs items the call added and
+removed, so a row delete comes back with its cells and the formulas it
+rewrote to `#REF!` read the band again, a deleted sheet comes back with its
+cells, and a deleted paragraph with its id and formatting. The engine's
+inverse is not used.
 
 A block's text, as `inspect_document` shows it and as every expected text
-(`replace_text`, `remove_block`, `replace_block`, their Undo) matches it, is its
+(`replace_text`, `remove_block`, `replace_block`) matches it, is its
 flattened text with inline math written `$tex$` and display math `$$tex$$`
-(`block_text` in `collaboration-rs/crates/notes/src/edit.rs`). `replace_text` replaces
+(`block_text` in `collaboration-rs/crates/notes/src/edit.rs`). Agent edits
+never change a block's caption and a stale check never compares one (Epo
+2026-10-22): a Mermaid block's text is its source, its caption printed apart
+(`properties.caption`), and `replace_text` on it is refused, since its text
+leaf is the caption. A Mermaid block inside a container (a callout, a column)
+reads as its source in the container's text too, and a `replace_text` span
+reaching into it is refused like one over math (review r2 L1). An image's,
+audio's, video's or interactive block's caption is an attribute outside the
+text. In a `replace_block`, the replacement's first block of the replaced
+one's type is that block rewritten, whatever else the markdown adds beside
+it (review r2 M1): it takes the old block's caption (a Mermaid block's
+caption element, another's `caption`), `width` and a Mermaid block's `theme`
+as they read at the edit, over any the agent's markdown gave
+(`keep_caption`). A rewrite that shows a different picture, file or video
+(another `assetId`, or `provider`/`videoId`) is a new block instead and keeps
+its own caption, so a swapped-in library figure carries its printed credit
+(Epo 2026-10-22, refining the caption rule). Inspect prints a
+Mermaid source without showing its edge whitespace, so the pipeline maps an
+expectation matching a shown source, edge whitespace aside, to the stored one,
+from the inspection or a stale refusal (`_stored_expectation`, as for a quiz
+fence view; review r2 L3). `replace_text` replaces
 plain text only: a span over math is refused (`invalid_input`) with a pointer
 to `replace_block`, which rewrites the whole block from note markdown and keeps
 its place, Undo putting the original back there. The headless editor every
@@ -3838,8 +4328,9 @@ passes through unchanged and the pipeline gives the model only
 `stale_target` from `replace_text`, `remove_block` or `replace_block` carries
 the block's current text (shown up to 2,000 characters), as does every other
 refused `replace_text` span (an expected text occurring more than once, an
-empty or overlong one; 2026-10-14), a stale `set_mermaid` carries the source
-the diagram holds as its block's text, and an id that is gone carries the
+empty or overlong one; 2026-10-14), a stale `replace_card` carries the card
+as inspect shows it (`type: "flashcard"`, its sides as JSON), and an id that
+is gone carries the
 material's first 60 blocks with an 80-character preview and the total, as
 does an edit of a material rebuilt since it was read (its room schema moved,
 `edit::listing`). A text source's expected text that occurs more than once
@@ -3857,9 +4348,10 @@ text as `inspect_office_document` shows it) (Epo 2026-10-14, the fork's
 `edit_office_document` refusal names its target by the block's type
 (`_missed_target(office=True)`): `Range <id> now holds, as TSV:` (a delete's
 band `as rows of cells:` with its grid as compact JSON, saying when it was
-cut), `Cell`,
-`Sheet`, `Paragraph` or `Shape <id> now reads:`, and a `details.blocks`
-listing of sheets as `The workbook's sheets now:` with `[id] name` lines. The pipeline keeps what this turn last inspected or wrote of each
+cut, and a stale table `Table <id> now holds, as rows of cells:`), `Cell`,
+`Sheet`, `Paragraph` or `Shape <id> now reads:`, a `details.blocks`
+listing of sheets as `The workbook's sheets now:` with `[id] name` lines, and
+one of paragraph styles as `The document's paragraph styles as id (name):`. The pipeline keeps what this turn last inspected or wrote of each
 block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
 adds "changed since you last saw it" when the block differs. An insert whose
 `after_block_id` is gone is not refused (decision 2026-10-09): when the same
@@ -3868,7 +4360,7 @@ surviving block before its place (after the replacement for a replaced one);
 otherwise at the end of the material, since a deleted block's tombstone keeps
 no id once Yjs garbage-collects it. The receipt's effect lists each
 `relocated` insert (`anchor`, `after`, `end`) and the tool result says where
-the blocks landed and why; Undo removes them by id as for any insert.
+the blocks landed and why; Undo reverts them as for any insert.
 
 Citation numbers belong to the current answer. Structured citations still map
 the answer to file, page, region, and chunk data for the UI. Checkpoints preserve
@@ -4252,6 +4744,12 @@ compares the captured candidate with the latest state and retains later edits.
 The transient candidate still fixes one export while editing continues. The
 internal checkpoint request carries `baseSourceSHA256` (and, for text,
 `seedBytes`) only on the first save from a NULL state; ordinary saves omit them.
+An agent edit's checkpoint counts as that first save: once it commits, the
+loaded room's record is marked saved (`Sources::not_seeded`), so the room's
+own next save carries no seed (a text room's first row merges the seed, and
+merging it again under a change that touches the edit's items, such as a
+person typing inside the agent's text, left content pending and discarded the
+room).
 The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`
 holds its source, seed, parse artifacts, canonical index and consumed
@@ -4569,7 +5067,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default and maximum 12 (`PLANNING_RESPONSES`): the responses a turn gets until its first successful write, the last with tools off. 4 tool calls per response on every turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Once a write lands there is no response ceiling: `BUILD_TOOLS_PER_TURN` (160) and the `STALL_RESPONSES` guard (5, plus `WRITE_ERROR_GRACE` 2 per errored write for at most 2 errors) bound it. No context-window minimum |
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
-| capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
+| capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 16 images per user message |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |

@@ -1,8 +1,4 @@
-import {
-  relativeRangeToSlateRange,
-  slateRangeToRelativeRange,
-  type YjsEditor,
-} from '@slate-yjs/core';
+import { slateRangeToRelativeRange, type YjsEditor } from '@slate-yjs/core';
 import { NodeApi, type Path, PathApi, RangeApi, type TElement } from 'platejs';
 import {
   createPlatePlugin,
@@ -53,6 +49,7 @@ import { textLength } from '@/lib/textLength';
 import { firstLineMiddle } from './BlockInteractions';
 import { useEditorRuntime } from './EditorRuntime';
 import { liveSelection } from './editorTransforms';
+import { liveSlateRange } from './liveRange';
 
 const COMMENT_DECORATION_KEY = 'capy_comment_highlight';
 
@@ -126,23 +123,37 @@ export function resolveCommentDecorations(
   if (!editor.sharedRoot) return decorations;
   for (const discussion of discussions) {
     if (!(discussion.anchorStart && discussion.anchorEnd)) continue;
-    try {
-      const range = relativeRangeToSlateRange(editor.sharedRoot, editor, {
-        anchor: Y.decodeRelativePosition(base64ToBytes(discussion.anchorStart)),
-        focus: Y.decodeRelativePosition(base64ToBytes(discussion.anchorEnd)),
+    // A thread whose anchor no longer resolves (its block left the document,
+    // or a schema change) keeps only its thread and quote.
+    const range = liveSlateRange(editor, {
+      anchor: Y.decodeRelativePosition(base64ToBytes(discussion.anchorStart)),
+      focus: Y.decodeRelativePosition(base64ToBytes(discussion.anchorEnd)),
+    });
+    if (range) {
+      decorations.push({
+        ...range,
+        [COMMENT_DECORATION_KEY]: true,
+        commentId: discussion.id,
       });
-      if (range) {
-        decorations.push({
-          ...range,
-          [COMMENT_DECORATION_KEY]: true,
-          commentId: discussion.id,
-        });
-      }
-    } catch {
-      // Deleted or schema-incompatible anchors remain visible as block threads.
     }
   }
   return decorations;
+}
+
+/** Threads listed at the document root (Epo 2026-10-21): a thread with no
+ * block, and one whose block is not a top-level block of the document now
+ * (deleted by anyone, or replaced by the agent's replace_block). Decided at
+ * render with no data moved, so Undo bringing a block back returns its
+ * threads to it. */
+export function documentThreads(
+  children: readonly unknown[],
+  discussions: MaterialDiscussion[]
+) {
+  if (discussions.length === 0) return discussions;
+  const blocks = new Set(children.map((node) => (node as { id?: unknown }).id));
+  return discussions.filter(
+    (discussion) => !(discussion.blockId && blocks.has(discussion.blockId))
+  );
 }
 
 function CommentDecorationLeaf(props: PlateLeafProps) {
@@ -226,29 +237,11 @@ function BlockDiscussionThreads({
     <div className="flex w-full justify-between" ref={rowRef}>
       <Popover onOpenChange={setOpen} open={open}>
         <div className="min-w-0 flex-1">{children}</div>
-        <PopoverContent
+        <DiscussionThreadsContent
           align="start"
-          className="max-h-[min(60dvh,var(--radix-popper-available-height))] w-90 max-w-[calc(100vw-24px)] gap-0 overflow-y-auto px-1 py-1.5 shadow-card"
-          contentEditable={false}
-          onCloseAutoFocus={(event) => event.preventDefault()}
-          onOpenAutoFocus={(event) => event.preventDefault()}
+          discussions={discussions}
           side="left"
-          sideOffset={8}
-        >
-          {discussions.map((discussion, index) => (
-            <Fragment key={discussion.id}>
-              {index > 0 && (
-                <div className="-mx-1 my-1.5 border-divider border-t" />
-              )}
-              <DiscussionThread discussion={discussion} />
-            </Fragment>
-          ))}
-          {actions.collaborationError && (
-            <p className="px-2 py-1.5 text-sm text-solid-error">
-              {actions.collaborationError}
-            </p>
-          )}
-        </PopoverContent>
+        />
         <div className="relative size-0 select-none">
           <PopoverTrigger asChild>
             <Button
@@ -276,6 +269,51 @@ function BlockDiscussionThreads({
         </div>
       </Popover>
     </div>
+  );
+}
+
+/** A popover of comment threads, divided by rules: a block's, or the
+ * document's (toolbar/ToolbarDocumentComments). */
+export function DiscussionThreadsContent({
+  align,
+  discussions,
+  heading,
+  side,
+}: Pick<React.ComponentProps<typeof PopoverContent>, 'align' | 'side'> & {
+  discussions: MaterialDiscussion[];
+  heading?: string;
+}) {
+  const actions = useCollaborationActions();
+  return (
+    <PopoverContent
+      align={align}
+      className="max-h-[min(60dvh,var(--radix-popper-available-height))] w-90 max-w-[calc(100vw-24px)] gap-0 overflow-y-auto px-1 py-1.5 shadow-card"
+      collisionPadding={12}
+      contentEditable={false}
+      onCloseAutoFocus={(event) => event.preventDefault()}
+      onOpenAutoFocus={(event) => event.preventDefault()}
+      side={side}
+      sideOffset={8}
+    >
+      {heading && (
+        <p className="px-2 pb-1 font-semibold text-fg-muted text-xs">
+          {heading}
+        </p>
+      )}
+      {discussions.map((discussion, index) => (
+        <Fragment key={discussion.id}>
+          {index > 0 && (
+            <div className="-mx-1 my-1.5 border-divider border-t" />
+          )}
+          <DiscussionThread discussion={discussion} />
+        </Fragment>
+      ))}
+      {actions?.collaborationError && (
+        <p className="px-2 py-1.5 text-sm text-solid-error">
+          {actions.collaborationError}
+        </p>
+      )}
+    </PopoverContent>
   );
 }
 

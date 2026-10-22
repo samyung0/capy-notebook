@@ -331,15 +331,13 @@ def healthz():
     return {"ok": True}
 
 
-async def _relay_until_disconnect(
-    request: Request,
-    agen,
-    client: ClientDrop,
-):
-    """Write SSE while the client is here. Never cancel the agent pump.
+async def _relay_until_disconnect(agen, client: ClientDrop):
+    """Write SSE until the agent ends. Never cancel the agent pump.
 
-    On disconnect we stop writing and wait for the current provider call to
-    settle. The agent sees ``client.dropped`` and does not start another call.
+    There is no periodic disconnect check (Epo 2026-10-21): when Go hangs up,
+    Starlette cancels this generator, the client is marked and the current
+    provider call settles. The agent sees ``client.dropped`` and does not
+    start another call.
     """
     queue: asyncio.Queue[object] = asyncio.Queue()
 
@@ -357,13 +355,7 @@ async def _relay_until_disconnect(
     pump = asyncio.create_task(_pump())
     try:
         while True:
-            if await request.is_disconnected():
-                client.mark()
-                break
-            try:
-                item = await asyncio.wait_for(queue.get(), timeout=0.2)
-            except TimeoutError:
-                continue
+            item = await queue.get()
             if item is None:
                 return
             if isinstance(item, BaseException):
@@ -375,7 +367,27 @@ async def _relay_until_disconnect(
             await asyncio.shield(pump)
 
 
-async def _chat_events(req: ChatStreamReq, request: Request):
+# The running turns' stop flags by assistant message id. The retrieval service
+# runs one process; several would need a shared channel for /chat/stop.
+_running: dict[str, ClientDrop] = {}
+
+
+class ChatStopReq(BaseModel):
+    assistantMessageId: str
+
+
+@app.post("/chat/stop")
+async def chat_stop(req: ChatStopReq):
+    """The user pressed Stop (Epo 2026-10-21): the turn starts no further model
+    or tool call and sends what its running calls did, then ends."""
+    client = _running.get(req.assistantMessageId)
+    if client is None:
+        return JSONResponse({"code": "not_running"}, status_code=404)
+    client.stop()
+    return {"stopped": True}
+
+
+async def _chat_events(req: ChatStreamReq):
     if (
         len(req.query) > CHAT_CHARACTER_LIMIT
         or len(req.query.encode("utf-8")) > QUERY_MAX_BYTES
@@ -426,6 +438,9 @@ async def _chat_events(req: ChatStreamReq, request: Request):
         office_tools=req.officeTools,
         role=req.role,
     )
+    turn_id = req.assistantMessageId or ""
+    if turn_id:
+        _running[turn_id] = client
     try:
         accounting_token = accounting.bind(req.spendSessionId)
         agen = run_agent(
@@ -440,7 +455,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             client=client,
             script=script,
         )
-        async for chunk in _relay_until_disconnect(request, agen, client):
+        async for chunk in _relay_until_disconnect(agen, client):
             yield chunk
     except models.UserKeyError as exc:
         if not client.dropped:
@@ -451,14 +466,16 @@ async def _chat_events(req: ChatStreamReq, request: Request):
         if not client.dropped:
             yield _sse(with_turn_state(event, ctx))
     finally:
+        if _running.get(turn_id) is client:
+            del _running[turn_id]
         if accounting_token is not None:
             accounting.reset(accounting_token)
 
 
 @app.post("/chat/stream")
-async def chat_stream(req: ChatStreamReq, request: Request):
+async def chat_stream(req: ChatStreamReq):
     return StreamingResponse(
-        _chat_events(req, request),
+        _chat_events(req),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -1,6 +1,7 @@
 package blob
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,7 @@ func TestPutObjectOnceSendsOneRequest(t *testing.T) {
 		o.BaseEndpoint = aws.String(srv.URL)
 		o.UsePathStyle = true
 	})
-	if err := store.PutObjectOnce(context.Background(), "thumbs/f/a.webp", []byte("RIFF"), "image/webp", "immutable"); err == nil {
+	if _, err := store.PutObjectOnce(context.Background(), "thumbs/f/a.webp", bytes.NewReader([]byte("RIFF")), "image/webp", "immutable"); err == nil {
 		t.Fatal("a 503 put succeeded")
 	}
 	if got := hits.Load(); got != 1 {

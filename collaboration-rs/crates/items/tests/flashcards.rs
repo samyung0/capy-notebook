@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use items::flashcards::{self, Card};
 use items::{Admission, Kind, Refusal, Validator};
-use notes::edit::{DocumentCommand, EditError};
+use notes::edit::DocumentCommand;
 use serde_json::{Value, json};
 use yrs::updates::decoder::Decode;
 use yrs::{
@@ -351,13 +351,17 @@ fn node(id: &str, front: &str, back: &str) -> Value {
 }
 
 #[test]
-fn agent_card_commands_apply_undo_and_refuse_a_changed_card() {
+/// The agent's card commands, computed on a copy as the server does, land in
+/// the room, and the room's Undo of them (`ydoc::undo`) brings the set back.
+fn agent_card_commands_apply_and_undo_in_the_room() {
     let (doc, _) = room(&set_value(&[("c1", "A", "a"), ("c2", "B", "b")]));
     let commands = vec![
-        DocumentCommand::ReplaceChild {
-            parent_type: "flashcards".into(),
-            node_id: "c1".into(),
-            node: node("c1", "A2", "a2"),
+        DocumentCommand::ReplaceCard {
+            card_id: "c1".into(),
+            front: Some("A2".into()),
+            back: Some("a2".into()),
+            expected_front: Some("A".into()),
+            expected_back: Some("a".into()),
         },
         DocumentCommand::InsertChild {
             parent_type: "flashcards".into(),
@@ -369,27 +373,30 @@ fn agent_card_commands_apply_undo_and_refuse_a_changed_card() {
             node_id: "c2".into(),
         },
     ];
-    let outcome = {
-        let mut txn = doc.transact_mut();
+    let copy = Doc::with_client_id(77);
+    let whole = doc
+        .transact()
+        .encode_state_as_update_v1(&yrs::StateVector::default());
+    copy.transact_mut()
+        .apply_update(Update::decode_v1(&whole).unwrap())
+        .unwrap();
+    let captured = {
+        let mut txn = copy.transact_mut();
         Kind::Flashcards
             .apply_commands(&mut txn, &commands)
-            .unwrap()
+            .unwrap();
+        ydoc::undo::Captured::of(&mut txn)
     };
+    let update = copy
+        .transact()
+        .encode_state_as_update_v1(&doc.transact().state_vector());
+    ydoc::undo::apply_kept(&doc, Update::decode_v1(&update).unwrap()).unwrap();
     let after: Vec<(String, String)> = cards(&doc).into_iter().map(|c| (c.id, c.front)).collect();
     assert_eq!(
         after,
         [("c1".into(), "A2".into()), ("c3".into(), "C".into())]
     );
-    // Undo: guards hold, the inverse brings the set back.
-    Kind::Flashcards
-        .verify_guards(&doc.transact(), &outcome.guards)
-        .unwrap();
-    {
-        let mut txn = doc.transact_mut();
-        Kind::Flashcards
-            .apply_commands(&mut txn, &outcome.inverse)
-            .unwrap();
-    }
+    ydoc::undo::revert(&doc, captured.change(&doc)).unwrap();
     let restored: Vec<(String, String, String)> = cards(&doc)
         .into_iter()
         .map(|c| (c.id, c.front, c.back))
@@ -401,19 +408,152 @@ fn agent_card_commands_apply_undo_and_refuse_a_changed_card() {
             ("c2".into(), "B".into(), "b".into())
         ]
     );
-    // A card someone typed in since the edit: Undo is refused.
-    let (doc, _) = room(&set_value(&[("c1", "A", "a"), ("c2", "B", "b")]));
-    let outcome = {
-        let mut txn = doc.transact_mut();
-        Kind::Flashcards
-            .apply_commands(&mut txn, &commands[..1])
-            .unwrap()
+}
+
+/// replace_card reads the set as the room holds it (Epo 2026-10-21): typing
+/// in a card since the agent inspected it stays in the side the command
+/// leaves out, and the image stays; a side whose text moved on refuses as
+/// stale with the card's sides as they read now. Fails if the left-out side
+/// is written from anything but the live set (Go filled it from the stored
+/// set, which reverted the typing).
+#[test]
+fn replace_card_keeps_typing_in_the_side_it_leaves_out() {
+    let mut value = set_value(&[("c1", "Osmosis", "Water moves")]);
+    value[0]["children"][0]["image"] = json!({ "assetId": "a1" });
+    let (doc, client) = room(&value);
+    // The agent inspected "Osmosis" / "Water moves"; then a person typed.
+    face(&client, "c1", "back").insert(&mut client.transact_mut(), 11, " in");
+    let typed = diff(&client, &doc);
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&typed).unwrap())
+        .unwrap();
+    let replace = |front: &str| DocumentCommand::ReplaceCard {
+        card_id: "c1".into(),
+        front: Some(front.into()),
+        back: None,
+        expected_front: Some("Osmosis".into()),
+        expected_back: None,
     };
-    face(&doc, "c1", "front").insert(&mut doc.transact_mut(), 0, "x");
-    match Kind::Flashcards.verify_guards(&doc.transact(), &outcome.guards) {
-        Err(EditError::Edit { message, .. }) => assert!(message.contains("changed")),
-        other => panic!("expected stale, got {other:?}"),
+    Kind::Flashcards
+        .apply_commands(&mut doc.transact_mut(), &[replace("Osmosis (cells)")])
+        .unwrap();
+    let after = cards(&doc);
+    assert_eq!(
+        (after[0].front.as_str(), after[0].back.as_str()),
+        ("Osmosis (cells)", "Water moves in")
+    );
+    assert_eq!(after[0].image.as_deref(), Some("a1"));
+
+    let stale = Kind::Flashcards.apply_commands(
+        &mut doc.transact_mut(),
+        &[DocumentCommand::ReplaceCard {
+            card_id: "c1".into(),
+            front: None,
+            back: Some("Water crosses".into()),
+            expected_front: None,
+            expected_back: Some("Water moves".into()),
+        }],
+    );
+    match stale {
+        Err(notes::edit::EditError::Edit {
+            code: notes::edit::EditErrorCode::StaleTarget,
+            details: Some(details),
+            ..
+        }) => assert_eq!(
+            details,
+            json!({ "block": {
+                "id": "c1",
+                "text": notes::edit::card_text("Osmosis (cells)", "Water moves in"),
+                "type": "flashcard",
+            } })
+        ),
+        other => panic!("expected a stale refusal, got {other:?}"),
     }
+    // Sent again, the first command's expected front is stale too.
+    let again = Kind::Flashcards.apply_commands(&mut doc.transact_mut(), &[replace("x")]);
+    assert!(
+        matches!(
+            again,
+            Err(notes::edit::EditError::Edit {
+                code: notes::edit::EditErrorCode::StaleTarget,
+                ..
+            })
+        ),
+        "{again:?}"
+    );
+}
+
+/// A card's front and back are separate targets (Epo 2026-10-22): the front
+/// changes after the agent's inspection, and a back-only replace_card still
+/// lands, even carrying the front it inspected, which only a front it
+/// replaced would be held to. The front keeps the typing. Fails if the
+/// other side's expectation or text makes the edit stale.
+#[test]
+fn typing_on_the_front_never_makes_a_back_only_replace_card_stale() {
+    let (doc, client) = room(&set_value(&[("c1", "Osmosis", "Water moves")]));
+    face(&client, "c1", "front").insert(&mut client.transact_mut(), 7, " (cells)");
+    let typed = diff(&client, &doc);
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&typed).unwrap())
+        .unwrap();
+    Kind::Flashcards
+        .apply_commands(
+            &mut doc.transact_mut(),
+            &[DocumentCommand::ReplaceCard {
+                card_id: "c1".into(),
+                front: None,
+                back: Some("Water crosses a membrane".into()),
+                expected_front: Some("Osmosis".into()),
+                expected_back: Some("Water moves".into()),
+            }],
+        )
+        .unwrap();
+    let after = cards(&doc);
+    assert_eq!(
+        (after[0].front.as_str(), after[0].back.as_str()),
+        ("Osmosis (cells)", "Water crosses a membrane")
+    );
+}
+
+/// A card's sides as inspect prints them (JSON, Epo 2026-10-21) read back
+/// exactly: a side holding a quote, a backslash and a line break, parsed from
+/// the inspection, is an expectation the live card meets, so the agent's
+/// replace_card is not refused as stale (review r1 L5).
+#[test]
+fn a_card_with_a_quote_and_a_line_break_round_trips_through_inspect() {
+    let front = r#"Who said "osmosis"?"#;
+    let back = "Pfeffer, 1877\nC:\\notes";
+    let (doc, _) = room(&set_value(&[("c1", front, back)]));
+    let value = Kind::Flashcards.value(&doc.transact());
+    let plate = Doc::with_options(ydoc::doc_options(5));
+    plate
+        .transact_mut()
+        .apply_update(Update::decode_v1(&notes::slate_yjs::state_from_value(&value, 0)).unwrap())
+        .unwrap();
+    let inspected = notes::edit::inspect_material(&plate.transact()).unwrap();
+    let card = &inspected[0].children.as_ref().unwrap()[0];
+    let sides: Value = serde_json::from_str(&card.text).unwrap();
+    assert_eq!(
+        (sides["front"].as_str(), sides["back"].as_str()),
+        (Some(front), Some(back))
+    );
+    Kind::Flashcards
+        .apply_commands(
+            &mut doc.transact_mut(),
+            &[DocumentCommand::ReplaceCard {
+                card_id: "c1".into(),
+                front: Some(r#"Who named "osmosis"?"#.into()),
+                back: Some("Pfeffer\n1877".into()),
+                expected_front: sides["front"].as_str().map(Into::into),
+                expected_back: sides["back"].as_str().map(Into::into),
+            }],
+        )
+        .unwrap();
+    let after = cards(&doc);
+    assert_eq!(
+        (after[0].front.as_str(), after[0].back.as_str()),
+        (r#"Who named "osmosis"?"#, "Pfeffer\n1877")
+    );
 }
 
 #[test]
