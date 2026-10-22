@@ -82,14 +82,12 @@ it('keeps one row until the file loads and the status beside the name', () => {
   }
 });
 
-/** Notes and other non-Office files show the status label beside its icon
- * from md up, and the icon alone below md with the label in the tooltip;
- * Office files keep the icon (Epo 2026-10-22). */
-it('labels the save status from md up outside Office', () => {
-  const label = (html: string) => SAVE_LABEL.exec(html)?.[1];
-  const note = label(render(false, 'material'));
-  expect(note?.split(' ')).toEqual(
-    expect.arrayContaining(['sr-only', 'md:not-sr-only'])
-  );
-  expect(label(render(true))?.split(' ')).toEqual(['sr-only']);
+/** Every file's header shows the status label beside its icon from md up,
+ * and the icon alone below md with the label in the tooltip (Epo
+ * 2026-10-22): notes and Office files alike. */
+it('labels the save status from md up', () => {
+  for (const html of [render(false, 'material'), render(true)])
+    expect(SAVE_LABEL.exec(html)?.[1]?.split(' ')).toEqual(
+      expect.arrayContaining(['sr-only', 'md:not-sr-only'])
+    );
 });

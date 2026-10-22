@@ -20,7 +20,6 @@ import {
   type OfficeLocale,
   type OfficeMode,
   type OfficeNotice,
-  type OfficePosition,
   type OfficeRuntimePayload,
   type OfficeZoom,
 } from '@/features/files/officeProtocol';
@@ -126,7 +125,6 @@ function OfficeRuntime() {
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
   const positionerRef = useRef<OfficePositioner | null>(null);
-  const pausedAtRef = useRef<OfficePosition | null>(null);
   const thumbnailerRef = useRef<OfficeThumbnailer | null>(null);
   // Whether a local edit may change the capture; every edit without one.
   const captureScopeRef = useRef<OfficeCaptureScope | null>(null);
@@ -539,8 +537,7 @@ function OfficeRuntime() {
       if (message.type === 'position-request' && revisionRef.current !== null) {
         post({
           id: message.id,
-          position:
-            pausedAtRef.current ?? positionerRef.current?.read() ?? null,
+          position: positionerRef.current?.read() ?? null,
           revision: revisionRef.current,
           type: 'position',
         });
@@ -563,13 +560,7 @@ function OfficeRuntime() {
       }
       if (message.type === 'set-capabilities') {
         canEditRef.current = message.canEdit;
-        const pausing = !pausedRef.current && pausedFor(message.canEdit);
         pausedRef.current = pausedFor(message.canEdit);
-        // Where the reader was as the pause began, for a room swap: going
-        // read-only scrolls the DOCX editor to its caret.
-        if (pausing)
-          pausedAtRef.current = positionerRef.current?.read() ?? null;
-        else if (!pausedRef.current) pausedAtRef.current = null;
         sendMenus();
         if (pausedRef.current) await flush();
         // The latest pause state: a message that came during the flush set it.

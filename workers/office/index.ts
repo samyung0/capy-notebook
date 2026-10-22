@@ -55,6 +55,10 @@ export default {
     ) {
       return new Response(null, { headers, status: 404 });
     }
+    // The frame's document asks for an agent cluster of its own origin, so
+    // desktop browsers run Office work in its own process (Epo 2026-10-22).
+    if (url.pathname === '/office-runtime.html')
+      headers.set('Origin-Agent-Cluster', '?1');
     const type = PRECOMPRESSED.get(
       url.pathname.slice(url.pathname.lastIndexOf('.') + 1)
     );

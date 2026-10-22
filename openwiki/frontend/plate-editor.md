@@ -985,10 +985,10 @@ Collaboration unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
-Outside Office (notes, quizzes, flashcards, diagrams, text and other files on
-the one-row header) the label also shows beside the icon from md up (Epo
+Every file's header (notes, quizzes, flashcards, diagrams, text, Office and
+other files) also shows the label beside the icon from md up (Epo
 2026-10-22; `EditorSaveStatus` `labelFromMd`: one span, screen-reader text
-below md and visible from md); Office's two-row header keeps the icon alone.
+below md and visible from md).
 Pending work preserves Connecting, Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 

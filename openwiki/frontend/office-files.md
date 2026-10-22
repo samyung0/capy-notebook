@@ -412,10 +412,12 @@ scroll offset, the first body paragraph showing at the top by `w14:paraId`
 (its fragment by first line, from the page mirrors' `data-para-id`) with its
 distance below the top edge, and the selection by paragraph id and offset;
 XLSX the sheet by id and the selected cells; PPTX the slide. Yrs positions are
-not used, since the new epoch has new ones. A paused frame answers with where
-its reader was as the pause began (the runtime reads it before going
-read-only, since the DOCX editor going read-only scrolls to its caret). The
-DOCX editor sets the selection first, waits two frames for the caret's own
+not used, since the new epoch has new ones. BetterOffice going read-only and
+a document's first frame never move the view (Epo 2026-10-22; fork
+`layoutPassOrigin`, `shouldScrollCaretIntoView`): a layout pass nobody
+scheduled is laid out as a peer's and a session's first caret pass never
+scrolls, so the paused view (the maintenance pause's too) stays where its
+reader is and answers from there. The DOCX editor sets the selection first, waits two frames for the caret's own
 scroll into view, then sets the scroll offset and, a frame later, puts that
 paragraph back at its height. The new slot then loses its hidden classes (the
 frame is never moved, which would reload it) and the replaced view unmounts. A hidden
@@ -1980,7 +1982,10 @@ contains a compromised document engine without relying on the sandbox's
 same-origin escape-prone combination on the application origin. The engines
 are single-threaded; an iframe alone does not enable `SharedArrayBuffer`. If
 threaded WASM is introduced later, configure isolation headers on this runtime
-origin without isolating the SPA. The iframes also get
+origin without isolating the SPA. The frame's document (`/office-runtime.html`,
+`workers/office/index.ts`) sends `Origin-Agent-Cluster: ?1` (Epo 2026-10-22),
+so desktop browsers key its agent cluster by origin and can run Office work in
+its own process, although the runtime origin shares the app's site. The iframes also get
 `allow="clipboard-read; clipboard-write; fullscreen"` (`officeRuntimeConfig.ts`,
 next to `sandbox`) so the editors' right-click Cut, Copy and Paste reach the
 clipboard (Paste shows the browser's permission prompt once) and PPTX Present

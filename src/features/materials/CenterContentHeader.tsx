@@ -137,8 +137,7 @@ export const EditorStatusStoreContext = createContext<EditorStatusStore | null>(
  * name on the top row at every width (Epo 2026-10-20), its label in the
  * tooltip, held open with the slowed line while an open waits on the open
  * budget; `labelled` (a dialog's footer) writes the label beside the icon,
- * and `labelFromMd` (notes and other non-Office files, Epo 2026-10-22) from
- * md up. */
+ * and `labelFromMd` (every file's header, Epo 2026-10-22) from md up. */
 export function EditorSaveStatus({
   labelled = false,
   labelFromMd = false,
@@ -549,7 +548,7 @@ export function Header({
   const status = (
     <>
       <OfflineStatus />
-      <EditorSaveStatus labelFromMd={!office} store={editorStatus} />
+      <EditorSaveStatus labelFromMd store={editorStatus} />
       {!compact && <WorkspaceStatusButton />}
     </>
   );

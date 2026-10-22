@@ -200,27 +200,25 @@ test('a refused update keeps its edits for copying after the swap', async ({
   await expect(page.locator('[data-note-mount]')).toHaveCount(1);
 });
 
-test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
-  page,
-}) => {
-  test.setTimeout(300_000);
-  const fileId = 'bio-office-docx';
-  await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
+const DOCX = 'bio-office-docx';
+
+/** The DOCX editor's scroll box in a view slot's frame. */
+const docxPane = (page: Page, view: string) =>
+  page
+    .frameLocator(`[data-office-view="${view}"] iframe`)
+    .locator('.docx-editor__scroll-container');
+
+/** Opens the DOCX for editing, saved, with the reader on page 4 (its canvas
+ * exists once the reader nears it) and the caret left on page 1. */
+async function openDocxOnPage4(page: Page) {
+  await page.goto(`/workspaces/ws_bio?file=${DOCX}&mode=edit`);
   await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 120_000 });
   await saveOffice(page, 'docx');
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'saved');
-  const old = await page
-    .locator('[data-office-view="live"] iframe')
-    .elementHandle();
-  // The reader is on page 4 (its canvas exists once the reader nears it).
-  const pane = (view: string) =>
-    page
-      .frameLocator(`[data-office-view="${view}"] iframe`)
-      .locator('.docx-editor__scroll-container');
   await expect
     .poll(
       () =>
-        pane('live').evaluate((node) => {
+        docxPane(page, 'live').evaluate((node) => {
           const fourth = node.querySelector('canvas[data-page-index="3"]');
           if (!fourth) {
             node.scrollTop += node.clientHeight;
@@ -235,6 +233,38 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
       { timeout: 60_000 }
     )
     .toBe(true);
+  return docxPane(page, 'live').evaluate((node) => node.scrollTop);
+}
+
+// BetterOffice going read-only never moves the view (Epo 2026-10-22): the
+// caret stays on page 1 and the reader on page 4.
+test('a DOCX maintenance pause keeps the reader where they are', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const before = await openDocxOnPage4(page);
+  await page.evaluate(async (id) => {
+    const path = '/src/mocks/collaboration.ts';
+    const { announceSourcePaused } = await import(path);
+    announceSourcePaused(id);
+  }, DOCX);
+  await expect(page.getByText(m.source_edit_paused())).toBeVisible();
+  // The read-only switch lays the pages out again.
+  await page.waitForTimeout(2000);
+  expect(await docxPane(page, 'live').evaluate((node) => node.scrollTop)).toBe(
+    before
+  );
+});
+
+test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await openDocxOnPage4(page);
+  const old = await page
+    .locator('[data-office-view="live"] iframe')
+    .elementHandle();
+  const pane = (view: string) => docxPane(page, view);
 
   await page.evaluate(async (id) => {
     const collaboration = '/src/mocks/collaboration.ts';
@@ -242,7 +272,7 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
     const { announceSourceEpoch } = await import(collaboration);
     const { advanceScenarioSource } = await import(fixtures);
     announceSourceEpoch(id, advanceScenarioSource(id));
-  }, fileId);
+  }, DOCX);
   // The paused view stays while the next one opens the new epoch hidden.
   await expect(page.locator('[data-office-view="replaced"]')).toBeVisible();
   const next = page.locator('[data-office-view="next"] iframe');
