@@ -130,9 +130,9 @@ const blocks = async (api: APIRequestContext, id: string) =>
 type Sheet = { id: string; name: string; usedRange: string };
 type Cell = { address: string; input: string; value: string };
 type Paragraph = { id: string; text: string };
-/** An Office source as the agent reads it: DOCX paragraphs (their text as
- * value) and PPTX shapes, or the cells of an XLSX's first sheet (by address,
- * their input as value). */
+/** An Office source as the agent reads it: DOCX paragraphs and each PPTX
+ * slide's paragraphs (their text as value), or the cells of an XLSX's first
+ * sheet (by address, their input as value). */
 async function entries(
   api: APIRequestContext,
   id: string,
@@ -152,9 +152,29 @@ async function entries(
       value: paragraph.text,
     }));
   }
-  if (format === 'pptx')
-    return (await inspect<{ entries: Entry[] }>(api, target, { count: 200 }))
-      .entries;
+  if (format === 'pptx') {
+    // Each slide's paragraphs, positioned by slide and shape.
+    const deck = await inspect<{ scoped: { slides: { number: number }[] } }>(
+      api,
+      target,
+      { count: 200 }
+    );
+    const slides = await Promise.all(
+      deck.scoped.slides.map(({ number }) =>
+        inspect<{
+          scoped: { paragraphs: (Paragraph & { shape: string })[] };
+        }>(api, target, { count: 200, slide: number })
+      )
+    );
+    return slides.flatMap((read, i) =>
+      read.scoped.paragraphs.map((paragraph) => ({
+        id: paragraph.id,
+        label: '',
+        position: `${i + 1}/${paragraph.shape}`,
+        value: paragraph.text,
+      }))
+    );
+  }
   const listed = await inspect<{ scoped: { sheets: Sheet[] } }>(
     api,
     target,
