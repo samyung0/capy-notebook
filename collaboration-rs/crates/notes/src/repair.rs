@@ -89,8 +89,10 @@ pub fn repair(txn: &mut TransactionMut, kind: &str) -> Vec<&'static str> {
 
 /// A note (a kind that requires no element) whose root holds no block gets
 /// `{"type":"p","id":…,"children":[{"text":""}]}`, with an id of its own. Two writers each deleting
-/// one of the last two blocks leave it so, and no single update shows it.
-fn emptied(txn: &mut TransactionMut, kind: &str) -> bool {
+/// one of the last two blocks leave it so, and no single update shows it; an
+/// agent edit removing the last block gets it in its own transaction (Epo
+/// 2026-10-21). Whether it added one.
+pub fn emptied(txn: &mut TransactionMut, kind: &str) -> bool {
     if !catalog::material_kind(kind).is_some_and(|kind| kind.requires.is_none()) {
         return false;
     }

@@ -88,7 +88,7 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   repaired instead of refused (Epo 2026-10-19, `notes::repair`): an element's
   `text` key and the obsolete `suggestion` keys are removed right after the
   update goes in, and a note left with no block gets an empty paragraph, on
-  entry; two top-level blocks given one `id` (checking it on entry would read
+  entry (an agent edit's in its own transaction, Epo 2026-10-21); two top-level blocks given one `id` (checking it on entry would read
   every top-level id per update that makes a block, about 10,000 lookups per
   Enter in a near-limit note) get a fresh id for the later one at save. The
   parity test (`tests/admission_parity.rs`, from the seeded rooms and from a

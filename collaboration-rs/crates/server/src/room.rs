@@ -1685,6 +1685,20 @@ impl Room {
             return;
         };
         let ydoc::undo::Reverted { update, next: back } = reverted;
+        // An Undo or Redo that leaves a note with no block gets its empty
+        // paragraph, the repair every writer gets (Epo 2026-10-22), in a
+        // transaction of its own: the step's reverse holds only the revert,
+        // so a Redo neither fails nor takes the paragraph out.
+        let repaired = match &self.kind {
+            Kindly::Note(note) if note.model == crate::model::Model::Note => {
+                let kind = note.kind.clone();
+                tokio::task::block_in_place(|| {
+                    let mut txn = doc.transact_mut();
+                    notes::repair::emptied(&mut txn, &kind).then(|| ydoc::committed_update(txn))
+                })
+            }
+            _ => None,
+        };
         if let Kindly::Note(note) = &self.kind {
             let (model, kind, previous, peer) = (
                 note.model,
@@ -1696,6 +1710,9 @@ impl Room {
                 tokio::task::block_in_place(|| validate(&doc, model, &kind, previous, peer))
             {
                 self.broadcast_update(None, update);
+                if let Some(repaired) = repaired {
+                    self.broadcast_update(None, repaired);
+                }
                 let restored = back.and_then(|back| {
                     tokio::task::block_in_place(|| ydoc::undo::revert(&doc, back))
                 });
@@ -1760,6 +1777,9 @@ impl Room {
         }
         self.content_changed();
         self.broadcast_update(None, update);
+        if let Some(repaired) = repaired {
+            self.broadcast_update(None, repaired);
+        }
         self.app.agent_steps.revert(&step, &self.name);
         self.agent_reverted.insert(step, next.clone());
         // Its reverse (the same edit's other side) is kept only when its

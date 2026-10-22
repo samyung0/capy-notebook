@@ -3390,7 +3390,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Shares the message's 16 images with `capture_page` and `resolve_source_change`. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); at most 16 images per message with `capture_knowledge_page` and `resolve_source_change`; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard). Optional `sources` is its made-from line, stored as names (Chat agent workflow, `generate_material` above); nothing is refused for its sources but their bounds. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
-| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
+| `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), or text-source lines, paged by `start`/`count`; an Office source is refused (`unsupported_operation`) with one sentence naming `inspect_office_document`, `edit_office_document` and `read_skill("office_building")`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it); a chart, plot or graph prints its block as compact JSON without a graph's drawn SVG, summed up past 1,500 characters as its type, kind, title, first 12 labels and series names (`tools._figure_view`), an interactive block its caption, a Mermaid block its source as its text and its caption apart (Epo 2026-10-22), and a flashcard its sides as `{"back":…,"front":…}` (`edit::card_text`; Epo 2026-10-21) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, optional `model_answer` and `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id` and `sources`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt, with an Undo ref when a loaded room took the edit. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance. Text sources only among files: an Office source is refused (`unsupported_operation`) naming `edit_office_document` |
@@ -3565,7 +3565,13 @@ read's paragraph styles. Version 36 (2026-10-21) creates Word files, makes
 `insert_table`, `delete_table`, `format_text` and `set_alignment`, reads
 headers, footers and notes with lists, table cells and `locked` marks, and
 lists in its description the engine's per-call limits (one table, a
-limit per command kind), the rest returned unapplied. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+limit per command kind), the rest returned unapplied. Version 37
+(2026-10-22) drops `set_mermaid` (a mindmap's or diagram's Mermaid block
+changes through `replace_block`, expecting its source), lets
+`edit_document` remove or replace any note block, media included, keeps a
+rewritten block's caption and width (a diagram's theme too; a swapped
+picture brings its own), and gives `replace_card`
+`expected_front` and `expected_back`. Go and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3749,8 +3755,14 @@ playground's write stubs run the same code.
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,
 `replace_card`, `add_card`, `remove_card`, `replace_question`, `add_question`,
-`remove_question`, `set_mermaid` for Plate materials; `replace_text` for
-text sources) and applied by the collaboration service on an isolated Y.Doc.
+`remove_question` for Plate materials; `replace_text` for text sources) and
+applied by the collaboration service on an isolated Y.Doc. A mindmap or
+diagram takes `replace_block` only: its one Mermaid block is rewritten from a
+```` ```mermaid ```` fence with a new id, like a note's block (Epo 2026-10-21,
+`set_mermaid` removed), expecting the source and keeping the caption and
+width (Epo 2026-10-22, below). Go refuses (`invalid_input`) markdown that converts to anything but
+that one mermaid block, and library figures for these kinds, since their
+editor and viewer draw only the mermaid block (review r1 M1).
 `edit_office_document` commands go through the same route with `office: true`
 and Go's `normalizeOfficeCommands` (Office tools, below). The agent's `edit_document` schema offers
 `remove_question` but not `add_question` or `replace_question`, which only the
@@ -3759,9 +3771,19 @@ question tools send; inspecting a quiz lists `remove_question` and names
 `textOperations` for a text source), and a command refused for its target's
 kind names it the same way: "replace_text does not apply to a quiz;
 supported: remove_question, (add or replace questions with add_questions)"
-(`kindRefusal`, Epo 2026-10-21). A `replace_card` keeps the side it is not sent
-and the card's image, from the set's stored document (`ExtractFlashcards`; a
-card the set does not hold needs both sides). `insert_markdown` after block
+(`kindRefusal`, Epo 2026-10-21). A `replace_card` sends Rust only the sides it
+replaces, each with what it expects there (`expected_front` with `front`,
+`expected_back` with `back`, else `invalid_input` from Go); the items crate
+reads the card from the set as the live room holds it, so a side left out and
+the card's image keep typing made since the inspection, and a side it replaces
+whose text moved on refuses as `stale_target` with the card's sides as they
+read now; the sides are separate targets, so only a replaced side is held to
+its expected text and typing on the other side never makes the edit stale
+(Epo 2026-10-22)
+(`DocumentCommand::ReplaceCard`, `items::flashcards::apply_commands`; Epo
+2026-10-21, the stored set the gateway filled sides from lagged typing).
+The pipeline keeps a blank `expected_front` or `expected_back` beside a sent
+side (`contract.drop_blanks`): an empty side is an expectation. `insert_markdown` after block
 `"end"` appends after the note's last block: no block holds that id, so the
 collaboration server lands it at the end (the gone-anchor rule, 2026-10-09)
 and the pipeline leaves that relocation out of the receipt. The receipt of a
@@ -3814,8 +3836,21 @@ that it took the step (`ServiceEdit.taken`), the server stores
 which never sets the ref). An edit of a file or material no room has loaded
 gets no Undo: nothing opens or holds a room for it, and its receipt shows
 none. A room that loaded after the edit committed already holds its items and
-takes no step either. An edit may
-not remove or replace a block holding media.
+takes no step either. An edit may remove or replace any note block, media
+included (an image, a placed library figure, audio, a YouTube video; Epo
+2026-10-21): the next projection trashes an asset no block references, like a
+person's deletion, and the Undo's children pass and projection restore it. It
+inserts no media but a library figure (`inserts_media`). An edit that removes
+a note's last block gets one empty paragraph in its own transaction
+(`repair::emptied` in `compute`), so no editor sees the note empty and its
+Undo takes the paragraph out again. An agent Undo or Redo that would leave a
+note with no block (a person deleted the rest meanwhile) gets the paragraph
+too, in a transaction of its own outside the step's reverse, so the chat Undo
+succeeds and a Redo neither fails nor takes the paragraph out (Epo 2026-10-22,
+`agent_undo` in `room.rs`). Only notes: a mindmap or diagram takes
+`replace_block` alone, whose blocks are never empty, and the store's check
+refuses one left without its Mermaid block; items keep their own rules
+(`remove_card` keeps a set's last card, `remove_question` may empty a quiz).
 `inspect_document` reads what the editors see (Epo 2026-10-13): the
 stored state with this replica's live room merged in, a quiz's keys room
 too, as an edit reads it (`inspect_material` in
@@ -3864,7 +3899,10 @@ counts both sides:
   before the edit) and an XLSX value or grid: its bytes times `CONTENT` (3);
 - an insert (a replacement text, inserted blocks, a card or question): its
   text or JSON times `CONTENT`, plus a `PIECE` (160 bytes) for each run or
-  block it splits at either end;
+  block it splits at either end. A `replace_block` rewrite also writes the
+  old block's caption and width (`keep_caption`), part of the replaced block
+  already counted, so the Redo stays under the estimate (a long caption kept
+  on a small new block measures 3.0 in the server's `edits.rs` ratio test);
 - formatting (XLSX `format_cells`): a `PIECE` per cell in its range;
 - XLSX structure: a `PIECE` per inserted or deleted row or column (a delete
   writes an axis change; the cells stay in Yjs), a new sheet's name and 4
@@ -4159,7 +4197,27 @@ inverse is not used.
 A block's text, as `inspect_document` shows it and as every expected text
 (`replace_text`, `remove_block`, `replace_block`) matches it, is its
 flattened text with inline math written `$tex$` and display math `$$tex$$`
-(`block_text` in `collaboration-rs/crates/notes/src/edit.rs`). `replace_text` replaces
+(`block_text` in `collaboration-rs/crates/notes/src/edit.rs`). Agent edits
+never change a block's caption and a stale check never compares one (Epo
+2026-10-22): a Mermaid block's text is its source, its caption printed apart
+(`properties.caption`), and `replace_text` on it is refused, since its text
+leaf is the caption. A Mermaid block inside a container (a callout, a column)
+reads as its source in the container's text too, and a `replace_text` span
+reaching into it is refused like one over math (review r2 L1). An image's,
+audio's, video's or interactive block's caption is an attribute outside the
+text. In a `replace_block`, the replacement's first block of the replaced
+one's type is that block rewritten, whatever else the markdown adds beside
+it (review r2 M1): it takes the old block's caption (a Mermaid block's
+caption element, another's `caption`), `width` and a Mermaid block's `theme`
+as they read at the edit, over any the agent's markdown gave
+(`keep_caption`). A rewrite that shows a different picture, file or video
+(another `assetId`, or `provider`/`videoId`) is a new block instead and keeps
+its own caption, so a swapped-in library figure carries its printed credit
+(Epo 2026-10-22, refining the caption rule). Inspect prints a
+Mermaid source without showing its edge whitespace, so the pipeline maps an
+expectation matching a shown source, edge whitespace aside, to the stored one,
+from the inspection or a stale refusal (`_stored_expectation`, as for a quiz
+fence view; review r2 L3). `replace_text` replaces
 plain text only: a span over math is refused (`invalid_input`) with a pointer
 to `replace_block`, which rewrites the whole block from note markdown and keeps
 its place, Undo putting the original back there. The headless editor every
@@ -4175,8 +4233,9 @@ passes through unchanged and the pipeline gives the model only
 `stale_target` from `replace_text`, `remove_block` or `replace_block` carries
 the block's current text (shown up to 2,000 characters), as does every other
 refused `replace_text` span (an expected text occurring more than once, an
-empty or overlong one; 2026-10-14), a stale `set_mermaid` carries the source
-the diagram holds as its block's text, and an id that is gone carries the
+empty or overlong one; 2026-10-14), a stale `replace_card` carries the card
+as inspect shows it (`type: "flashcard"`, its sides as JSON), and an id that
+is gone carries the
 material's first 60 blocks with an 80-character preview and the total, as
 does an edit of a material rebuilt since it was read (its room schema moved,
 `edit::listing`). A text source's expected text that occurs more than once
