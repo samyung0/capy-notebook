@@ -4128,8 +4128,15 @@ format, which `limits.rs` reads (`include_str!`) and Go's `cmd/openapi
 (`agenttools/office_limits.go`; `pnpm gen:openapi` passes the vendor path),
 so description and engine cannot drift. A DOCX call reads each story's
 paragraphs once into an index (`ParaIndex` in `docx/agent.rs`) that
-`touched`, apply and the targets' lookup share; it follows the call's own
-replacements and formats, and any other commit drops it (review r2 L9).
+`touched`, apply and the targets' lookup share (review r2 L9). Every
+command keeps it in step: a replacement moves the paragraphs after it, a
+format moves none, and the other commands read again only the paragraphs
+they changed, from the paragraph mark before them; a commit no command
+followed (an Undo) drops it. docx-edit keeps each story's segment index in
+step the same way for every edit, the agent's or a person's
+(`segments.rs`, `follow_commit`), so no command reads a whole story again
+(speed round 2026-10-22: 50 commands of each type take 0.9 to 1.6 s on
+10,000 paragraphs and 0.2 to 0.35 s on 2,000).
 It holds 50 commands and, per
 format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
