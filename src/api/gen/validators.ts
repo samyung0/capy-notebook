@@ -3230,6 +3230,7 @@ export const CloneMaterialBody = zod.object({
 
 export const CloneMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "audioMaxBytes": zod.int(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
@@ -3494,6 +3495,7 @@ export const CreateEmbeddedMaterialBody = zod.object({
 
 export const CreateEmbeddedMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "audioMaxBytes": zod.int(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
@@ -3674,6 +3676,7 @@ export const UpdateMaterialSharingBody = zod.object({
 
 export const UpdateMaterialSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "audioMaxBytes": zod.int(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
@@ -6730,6 +6733,7 @@ export const CreateMaterialBody = zod.object({
 
 export const CreateMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "audioMaxBytes": zod.int(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
