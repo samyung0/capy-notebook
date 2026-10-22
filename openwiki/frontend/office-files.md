@@ -1982,10 +1982,7 @@ contains a compromised document engine without relying on the sandbox's
 same-origin escape-prone combination on the application origin. The engines
 are single-threaded; an iframe alone does not enable `SharedArrayBuffer`. If
 threaded WASM is introduced later, configure isolation headers on this runtime
-origin without isolating the SPA. The frame's document (`/office-runtime.html`,
-`workers/office/index.ts`) sends `Origin-Agent-Cluster: ?1` (Epo 2026-10-22),
-so desktop browsers key its agent cluster by origin and can run Office work in
-its own process, although the runtime origin shares the app's site. The iframes also get
+origin without isolating the SPA. The iframes also get
 `allow="clipboard-read; clipboard-write; fullscreen"` (`officeRuntimeConfig.ts`,
 next to `sandbox`) so the editors' right-click Cut, Copy and Paste reach the
 clipboard (Paste shows the browser's permission prompt once) and PPTX Present

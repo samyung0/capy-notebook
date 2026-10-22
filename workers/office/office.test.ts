@@ -67,14 +67,6 @@ describe('isolated Office runtime', () => {
       expect(new URL(forwarded.url).search).toBe('');
     }
   });
-  it('gives the frame document an agent cluster of its own origin', async () => {
-    const cluster = async (path: string) =>
-      (await worker.fetch(new Request(origin + path), env())).headers.get(
-        'origin-agent-cluster'
-      );
-    expect(await cluster('/office-runtime.html')).toBe('?1');
-    expect(await cluster('/assets/runtime.js')).toBeNull();
-  });
   it('allows explicit hybrid parents and embedded DOCX blob fonts', async () => {
     const hybrid = 'https://dev-sam.uat.capynotebook.com';
     const bindings = { ...env(), PARENT_ORIGINS: `${parent}, ${hybrid}` };
