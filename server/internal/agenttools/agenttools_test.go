@@ -286,3 +286,26 @@ func TestExpandedQuestionsAreValid(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Marshal fills set_shape_text's and add_text_box's paragraph bounds and the
+// contract's officeShapeText from the engine's limits.json (review L2).
+func TestMarshalTakesTheShapeTextBoundsFromTheEngine(t *testing.T) {
+	table := []byte(`{"commands":50,"shapeText":{"paragraphs":7,"characters":1234},` +
+		`"formats":{"pptx":[{"count":"slides added","limit":20,"commands":["add_slide"]}]}}`)
+	out, err := Marshal(table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract struct {
+		OfficeShapeText ShapeText `json:"officeShapeText"`
+	}
+	if err := json.Unmarshal(out, &contract); err != nil || contract.OfficeShapeText != (ShapeText{7, 1234}) {
+		t.Fatalf("officeShapeText = %+v, %v", contract.OfficeShapeText, err)
+	}
+	text := string(out)
+	if strings.Count(text, `"maxItems": 7`) != 2 ||
+		strings.Count(text, "At most 7 paragraphs and 1,234 characters together.") != 2 ||
+		strings.Contains(text, shapeTextKey) || strings.Contains(text, "{shape") {
+		t.Fatal("the shape text bounds are not filled in")
+	}
+}

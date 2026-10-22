@@ -319,6 +319,9 @@ type Contract struct {
 	// MediaBlocks are the JSON Schemas add_question_media checks its media
 	// against; the model is not shown them.
 	MediaBlocks map[string]any `json:"mediaBlocks"`
+	// OfficeShapeText is the engine's per-shape text bound, which Marshal
+	// adds for the office_building skill.
+	OfficeShapeText *ShapeText `json:"officeShapeText,omitempty"`
 }
 
 func Export() Contract {
@@ -348,15 +351,17 @@ func Export() Contract {
 // edit_office_document's description ending with the Office engine's
 // per-call limits from officeLimits (the file at OfficeLimitsPath).
 func Marshal(officeLimits []byte) ([]byte, error) {
-	sentence, err := officeLimitsSentence(officeLimits)
+	limits, err := parseOfficeLimits(officeLimits)
 	if err != nil {
 		return nil, err
 	}
 	contract := Export()
+	contract.OfficeShapeText = &limits.ShapeText
 	for i := range contract.Tools {
 		if contract.Tools[i].Name == "edit_office_document" {
 			contract.Tools[i].Description = strings.Replace(contract.Tools[i].Description,
-				"(Marshal adds the engine's per-call limits.)", sentence, 1)
+				"(Marshal adds the engine's per-call limits.)", officeLimitsSentence(limits), 1)
+			withShapeText(contract.Tools[i].InputSchema, limits.ShapeText)
 		}
 	}
 	out, err := json.MarshalIndent(contract, "", "  ")
@@ -537,6 +542,13 @@ func officeCommandSchema() map[string]any {
 	after := str("The body paragraph it follows; several inserts after one paragraph keep their order. Omit to add it at the end of the document.")
 	flag := map[string]any{"type": "boolean"}
 	slideID := str("A slide's id from inspect_office_document.")
+	// A shape's text, bounded by the engine's limits.json (Marshal).
+	shapeText := func(desc string) map[string]any {
+		return map[string]any{
+			"type": "array", "minItems": 1, shapeTextKey: true, "items": map[string]any{"type": "string"},
+			"description": desc + " At most " + shapeParagraphs + " paragraphs and " + shapeCharacters + " characters together.",
+		}
+	}
 	points := map[string]any{"type": "number", "minimum": 0, "description": "Points from the slide's left or top edge."}
 	return map[string]any{
 		"oneOf": []any{
@@ -648,10 +660,7 @@ func officeCommandSchema() map[string]any {
 			variant("set_shape_text", "PPTX: replace a shape's whole text; its paragraphs keep their level and bullet, added ones continue the last.", map[string]any{
 				"shape_id":      str("The shape's id from inspect_office_document's slide read."),
 				"expected_text": map[string]any{"type": "string", "description": "The shape's whole text as the slide read shows it, its paragraphs joined by line breaks."},
-				"paragraphs": map[string]any{
-					"type": "array", "minItems": 1, "maxItems": 50, "items": map[string]any{"type": "string"},
-					"description": `The new text, one string a paragraph without line breaks, at most 5,000 characters together; [""] empties the shape.`,
-				},
+				"paragraphs":    shapeText(`The new text, one string a paragraph without line breaks; [""] empties the shape.`),
 			}, "shape_id", "expected_text", "paragraphs"),
 			variant("add_slide", "PPTX: add a slide with its layout's title and text placeholders, empty, right after after_slide or right before before_slide (at most one), last with neither.", map[string]any{
 				"after_slide":  slideID,
@@ -660,7 +669,7 @@ func officeCommandSchema() map[string]any {
 			}),
 			variant("delete_slide", "PPTX: delete a slide, never the deck's only one.", map[string]any{
 				"slide_id":      slideID,
-				"expected_text": map[string]any{"type": "string", "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order; blank lines and the spaces around a line are not compared."},
+				"expected_text": map[string]any{"type": "string", "description": "The slide's text as its slide read shows it: every paragraph, one a line, in shape order, then its speaker notes as the read shows them (cut marker included); blank lines and the spaces around a line are not compared."},
 			}, "slide_id", "expected_text"),
 			variant("move_slide", "PPTX: move a slide right after after_slide or right before before_slide (exactly one).", map[string]any{
 				"slide_id":     slideID,
@@ -668,12 +677,9 @@ func officeCommandSchema() map[string]any {
 				"before_slide": slideID,
 			}, "slide_id"),
 			variant("add_text_box", "PPTX: add a text box to a slide, its box in points from the slide's top left corner, inside the slide.", map[string]any{
-				"slide_id": slideID,
-				"paragraphs": map[string]any{
-					"type": "array", "minItems": 1, "maxItems": 50, "items": map[string]any{"type": "string"},
-					"description": "The text, one string a paragraph without line breaks, at most 5,000 characters together.",
-				},
-				"x": points, "y": points,
+				"slide_id":   slideID,
+				"paragraphs": shapeText("The text, one string a paragraph without line breaks."),
+				"x":          points, "y": points,
 				"w": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Width in points."},
 				"h": map[string]any{"type": "number", "exclusiveMinimum": 0, "description": "Height in points."},
 			}, "slide_id", "paragraphs", "x", "y", "w", "h"),
@@ -1158,15 +1164,16 @@ func Definitions() []Definition {
 				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
 				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
 				"only; the first page also lists the file's paragraph styles. " +
-				"PPTX: without slide, count slides from start with their layouts and shapes (id, kind, " +
-				"first line), the first page also listing the deck's layouts; with slide, that slide's " +
-				"shapes and count of its paragraphs from start with their target ids.",
+				"PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, " +
+				"first line), the first page also listing the deck's layouts; with slide, count of that " +
+				"slide's shapes and paragraphs from start, each shape followed by its paragraphs with their " +
+				"target ids, the first page also giving the slide's speaker notes.",
 			InputSchema: obj(map[string]any{
 				"file_id": str(""),
 				"sheet":   str("XLSX: the sheet's id or name."),
 				"range":   str(`XLSX: an A1 range on that sheet, like "A1:H40".`),
-				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first paragraph; counting from 0."},
-				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX, PPTX: paragraphs or slides to read."},
+				"start":   map[string]any{"type": "integer", "minimum": 0, "default": 0, "description": "DOCX: first paragraph; PPTX: first slide, or with slide its first shape or paragraph; counting from 0."},
+				"count":   map[string]any{"type": "integer", "minimum": 1, "maximum": 200, "default": 60, "description": "DOCX: paragraphs to read; PPTX: slides, or with slide shapes and paragraphs."},
 				"slide":   map[string]any{"type": "integer", "minimum": 1, "description": "PPTX: one slide's number, from 1."},
 			}, "file_id"),
 			Concurrency:        "read",

@@ -5200,6 +5200,7 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                                 },
                                 {"id": "slide:0:256:shape:1", "kind": "picture"},
                             ],
+                            "moreShapes": 3,
                         }
                     ],
                     "total": 12,
@@ -5226,6 +5227,7 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                             "id": "ppt/slideLayouts/slideLayout2.xml",
                             "name": "Blank",
                         },
+                        "notes": "Greet the room.\nThen the demo.",
                     },
                     "slides": 12,
                     "shapes": [
@@ -5265,8 +5267,8 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                             "column": 1,
                         },
                     ],
-                    "total": 3,
-                    "nextStart": 2,
+                    "total": 6,
+                    "nextStart": 5,
                 },
             },
         ]
@@ -5340,14 +5342,15 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             (
                 "slide size 960 x 540 points; slides as N. [id] (layout), each shape as "
                 "[id] kind (placeholder): its first line of text (… when longer); read "
-                "one slide by its number for its paragraphs:"
+                "one slide by its number for all its shapes and its paragraphs:"
             ),
             source_block(
                 "layouts as [id] name: [ppt/slideLayouts/slideLayout1.xml] Title Slide, "
                 "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
                 "1. [slide:0:256] (Title Slide)\n"
                 "  [slide:0:256:shape:0] text (ctrTitle placeholder): Cells\n"
-                "  [slide:0:256:shape:1] picture"
+                "  [slide:0:256:shape:1] picture\n"
+                "  … and 3 more shapes"
             ),
             "(next start = 1 of 12 slides)",
         ]
@@ -5360,11 +5363,13 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
             (
                 'slide size 960 x 540 points; shapes as [id] kind "name" (marks) at x, y '
                 "size w x h points from the top left corner (shapes in a group show no "
-                "box), each followed by its paragraphs as [id] (level, table cell) text:"
+                "box), each followed by its paragraphs as [id] (level, table cell) text; "
+                "a page counts shapes and paragraphs:"
             ),
             source_block(
                 "slide 2 of 12 [slide:1:257], layout "
                 "[ppt/slideLayouts/slideLayout2.xml] Blank\n"
+                "speaker notes:\nGreet the room.\nThen the demo.\n"
                 '[slide:1:257:shape:0] text "Title 1" (title placeholder) at 36, 20.5 '
                 "size 888 x 90\n"
                 "  [para:story:slide:1:257:shape:0:0:0] Cells\n"
@@ -5374,7 +5379,7 @@ async def test_inspect_office_document_renders_sheets_cells_and_paragraphs(
                 '[slide:1:257:shape:2] text "Equation" (equation, not editable) at 36, '
                 "400 size 100 x 30"
             ),
-            "(next start = 2 of 3 paragraphs)",
+            "(next start = 5 of 6 shapes and paragraphs)",
         ]
     )
 
@@ -5419,6 +5424,59 @@ async def test_a_long_pptx_read_shows_the_slides_that_fit_and_where_to_go_on(
     assert text.endswith(
         "</source>\n(page cut at the tool output limit; "
         f"next start = {len(shown)} of 60 slides)"
+    )
+
+
+async def test_a_long_slide_read_shows_the_shapes_that_fit_and_where_to_go_on(
+    monkeypatch,
+):
+    """A slide page over the tool output limit, its notes at the cap, is cut
+    between its shapes and paragraphs, its next start the first not shown; a
+    page that begins inside a shape names the shape its first paragraphs
+    continue (review M1)."""
+    shapes = [
+        {"id": f"s:{i}", "kind": "text", "name": "Box " * 10, "box": [0, 0, 72, 36]}
+        for i in range(1, 100)
+    ]
+    paragraphs = [{"id": "p:0:0", "shape": "s:0", "text": "word " * 400}] + [
+        {"id": f"p:{i}:0", "shape": f"s:{i}", "text": "word " * 400}
+        for i in range(1, 100)
+    ]
+    body = {
+        "format": "pptx",
+        "title": "deck.pptx",
+        "scoped": {
+            "width": 720.0,
+            "height": 540.0,
+            # Notes at the cap and its marker (Epo 2026-10-22).
+            "slide": {
+                "id": "slide:0:256",
+                "number": 1,
+                "notes": "n" * 2_000 + "… [notes cut: 9 more characters]",
+            },
+            "slides": 1,
+            "shapes": shapes,
+            "paragraphs": paragraphs,
+            "total": 1201,
+            "nextStart": 600,
+        },
+    }
+    ctx = _office_ctx(monkeypatch, post=lambda url, **_: _JsonResp(body))
+    text = (
+        await tools.run(
+            "inspect_office_document",
+            {"file_id": "f_1", "slide": 1, "start": 401, "count": 199, "_tool_call_id": "c"},
+            ctx,
+        )
+    ).text()
+    assert estimate_tokens(text) <= tools.TOOL_RESULT_MAX_TOKENS
+    assert "slide 1 of 1 [slide:0:256]\nspeaker notes:\nnnn" in text
+    assert "… [notes cut: 9 more characters]\n[s:0] continued:\n  [p:0:0] word" in text
+    shown = len(re.findall(r"^\[s:\d+\] text|^  \[p:", text, re.MULTILINE))
+    assert 0 < shown < 199
+    assert text.endswith(
+        "</source>\n(slide cut at the tool output limit; "
+        f"next start = {401 + shown} of 1201 shapes and paragraphs)"
     )
 
 

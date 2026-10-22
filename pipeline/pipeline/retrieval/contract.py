@@ -43,6 +43,9 @@ DEFINITIONS: dict[str, dict[str, Any]] = {t["name"]: t for t in CONTRACT["tools"
 FORMATS: dict[str, str] = CONTRACT["formats"]
 # The chart and plot schemas add_question_media checks media against.
 MEDIA_BLOCKS: dict[str, dict[str, Any]] = CONTRACT["mediaBlocks"]
+# The Office engine's bound on the text one PPTX command writes into a shape
+# (its limits.json, through gen:openapi; review L2).
+OFFICE_SHAPE_TEXT: dict[str, int] = CONTRACT["officeShapeText"]
 # Tools whose handlers check every argument themselves, naming each problem at
 # once with its path, and save the valid questions of a call
 # (retrieval/questions.py).

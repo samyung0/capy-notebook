@@ -3887,8 +3887,14 @@ counts both sides:
   deleted table's embed and cell stories whole (with the tables in its
   cells), a deleted sheet's key in the sheet order, the text and marks of
   the shape a PPTX `set_shape_text` rewrites, and a deleted slide whole
-  (its entry, its shapes and their stories, its comments); a command whose
-  Undo only deletes what it wrote measures nothing. `undo_cost::office`
+  (its entry and notes, its shapes and their stories, its comments, read
+  from that slide alone); a command whose Undo only deletes what it wrote
+  measures nothing. Two PPTX commands add, read after they apply, what
+  they wrote, which their Redo re-creates and the command alone cannot
+  size (the Editor 2026-10-22): `add_slide` the slide whole (its layout's
+  placeholders; review H1) and `set_shape_text` the shape's story whole
+  (each paragraph takes its runs' formatting, a start and an end marker a
+  key; review M3). `undo_cost::office`
   takes those bytes times `CONTENT` and an `ITEM` (33 bytes: the most the
   fixtures sent beyond content was 22 bytes an item, plus half again) an
   item, plus what the command writes itself: a replacement's text and 3
@@ -3901,15 +3907,15 @@ counts both sides:
   splits), `insert_table` its cells' text, 3 `PIECE`s a cell and 8;
   `set_shape_text` its paragraphs' text and 2 items a paragraph plus 2,
   `add_text_box` the same and 12 `PIECE`s (the shape entry), `move_slide`
-  the slide's id and 2 items, `delete_slide` 1 item, `add_slide` its layout's path and 48 `PIECE`s
-  (the slide entry and five text placeholders, Comparison's: the command
-  does not say how many its layout gives, so a Blank slide's estimate is 35
-  times what it sends; 20 slides a call are 154 KB, far under the cap, and
-  the calibration checks it without the ceiling). On the
-  fixtures (lesson.docx and .pptx, paragraphs of 5-character runs and of
-  one run a character, 1x1 to 10x10 tables, a Blank and a Comparison slide
-  added) every other DOCX and PPTX command over-estimates 1.4 to 7.4 times, and the calibration fails one past 10
-  times (`CEILING`), so an ordinary 50-command call keeps its Undo.
+  the slide's id and 2 items, `delete_slide` 1 item, `add_slide` its
+  layout's path and 1 item (its id in the slide order). On the fixtures
+  (lesson.docx and .pptx, paragraphs of 5-character runs and of one run a
+  character, 1x1 to 50x10 tables, a slide on each of lesson.pptx's 11
+  layouts and on a layout of nine text placeholders with 200-character
+  names, 50 short paragraphs over a run of six formats) every DOCX and PPTX
+  command over-estimates 1.4 to 7.4 times, and the calibration fails one
+  past 10 times (`CEILING`), so an ordinary 50-command call keeps its
+  Undo.
 
 A new command adds its rule there; both matches are exhaustive, so it does
 not compile without one. The factors were
@@ -4099,8 +4105,10 @@ Slides (Epo 2026-10-20, phase 3): `set_shape_text {shape_id,
 expected_text, paragraphs}` replaces a shape's whole text, `expected_text`
 being its paragraphs joined by line breaks (`stale_target` with
 `details.block {type: "shape", text}` when it differs) and `paragraphs`
-the new text, 1 to 50 strings without line breaks, at most 5,000
-characters together; the paragraphs it keeps keep their properties (level,
+the new text, strings without line breaks within `limits.json`'s
+`shapeText` (50 paragraphs and 5,000 characters, as for `add_text_box`;
+`cmd/openapi` writes them into both schemas and into the contract's
+`officeShapeText`, which the office_building skill reads; review L2); the paragraphs it keeps keep their properties (level,
 bullet, alignment) and take their first run's formatting, added ones
 continue the last, and fewer ones join into the last kept one. A table's
 cells are refused (they are edited by paragraph), as are a shape with no
@@ -4122,10 +4130,12 @@ layout, so its new slides are empty and `add_text_box {slide_id,
 paragraphs, x, y, w, h}` puts text on them: a text box at a box in points
 from the slide's top left corner, refused unless it lies on the slide
 with a positive size. `delete_slide {slide_id, expected_text}` names the
-slide's text, every paragraph one a line in the read's shape order,
-compared without blank lines and the spaces around a line
+slide's text, every paragraph one a line in the read's shape order, then
+its speaker notes as the slide read shows them, cut marker included (Epo
+2026-10-22), compared without blank lines and the spaces around a line
 (`stale_target` with `details.block {type: "slide", text}` in that
-form), and never deletes a deck's only slide; `move_slide {slide_id,
+form), so notes edited after the read make it stale, and never deletes a
+deck's only slide; `move_slide {slide_id,
 after_slide | before_slide}` takes exactly one anchor. A PPTX
 `format_text` takes what DOCX's does but `highlight` (refused), writing
 the run's `b`, `i`, `u` (`sng`/`none`), `strike`
@@ -4133,6 +4143,26 @@ the run's `b`, `i`, `u` (`sng`/`none`), `strike`
 `set_alignment` writes `algn` (`l`, `ctr`, `r`, `just`). New slides and
 shapes get ids the call cannot know, so the agent reads again before
 filling them.
+
+The PPTX read (`inspect_scoped` in `pptx/agent.rs`) reads the slides it
+shows (`slide_scope`), never the whole deck. Without `slide` it pages the
+slides, each with its layout name and its first 20 shapes (id, kind,
+placeholder type, first line) and `moreShapes`, the count of the rest; the
+first page lists the deck's layouts. With `slide` it pages that slide's
+shapes and paragraphs together (review M1: a slide of hundreds of shapes
+pages like its text): `start` and `count` count both, each shape (name,
+placeholder type, box in points unless in a group) followed by its
+paragraphs, and `nextStart` names the first one not shown. Its first page
+also gives the slide's speaker notes, at most `limits.json`'s
+`slideNotes` characters (2,000; people's own notes input takes 4,000, the
+Editor's build) with `… [notes cut: N more characters]` after them (Epo
+2026-10-22). The retrieval service renders the notes and every shape and
+paragraph inside the source fence and cuts a page at the tool output
+limit between shapes and paragraphs, naming the next start; a page that
+begins inside a shape names the shape its first paragraphs continue. A
+slide's paragraph id never changes story, so a call keeps its paragraph
+lookup across slide and shape commands and reads the deck again only
+when it misses an id (review L5).
 
 The other DOCX commands (Epo 2026-10-20, phase 2) edit through docx-edit's
 own ops in one session per call and set a paragraph's style id and direct
@@ -4188,16 +4218,21 @@ format, XLSX 10,000 cells written (a range's area for `set_range` and
 `format_cells`, 1 for `set_cell`, a row or column delete's `expected`
 cells), 1,000 inserted rows and columns and 5 sheets added, renamed or
 deleted; DOCX 20 text replacements, 20 inserted and 20 deleted
-paragraphs, 400 table cells inserted or deleted, 30 formatted spans and 200
-paragraphs given a list or an alignment; PPTX 20 text replacements and 20
-inserted and 20 deleted paragraphs. `apply_commands` and `create` apply
+paragraphs, 400 inserted table cells, 5 deleted tables (a table of any
+size counts one; Epo 2026-10-22), 30 formatted spans and 200 paragraphs
+given a list or an alignment; PPTX 20 text replacements, 20 inserted and
+20 deleted paragraphs, 30 formatted spans, 200 paragraphs given an
+alignment, 500 paragraphs and 50,000 characters of shape and text box
+text, 20 slides added, 20 deleted, 50 moved and 20 text boxes added. `apply_commands` and `create` apply
 the commands up to the first that would pass a limit and end the result's
 notice with `Not applied: the commands at indexes N to M (counting from 0),
 past the limit of … a call; send them in another call.` (after a create
 command the indexes start at 1, the agent's call counting it); a first
 command alone past one is refused as `invalid_input`. The retrieval service
 counts nothing: its result passes the receipt's notice through. Measured at
-each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`.
+each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`,
+`bench_pptx.py` (a 60-slide deck) and `bench_pptx500.py` (50 commands of
+each PPTX type on a 500-slide deck, against 10 s).
 
 Undo (Epo 2026-10-20): every Office command, structural ones included
 (`format_cells`, `add_sheet`, `delete_sheet`, row and column inserts and

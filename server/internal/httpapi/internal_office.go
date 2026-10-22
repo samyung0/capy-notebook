@@ -234,10 +234,13 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			}
 			normalized = map[string]any{"shapeId": c.ShapeID, "expectedText": c.ExpectedText, "paragraphs": texts}
 		case "add_slide", "move_slide":
+			// add_slide names a layout, move_slide its slide.
+			fields := map[string]string{"afterSlide": c.AfterSlide, "beforeSlide": c.BeforeSlide, "layout": c.Layout}
+			if c.Type == "move_slide" {
+				fields = map[string]string{"afterSlide": c.AfterSlide, "beforeSlide": c.BeforeSlide, "slideId": c.SlideID}
+			}
 			normalized = map[string]any{}
-			for key, value := range map[string]string{
-				"slideId": c.SlideID, "afterSlide": c.AfterSlide, "beforeSlide": c.BeforeSlide, "layout": c.Layout,
-			} {
+			for key, value := range fields {
 				if value != "" {
 					normalized[key] = value
 				}

@@ -68,6 +68,8 @@ func TestNormalizeOfficeCommands(t *testing.T) {
 		{"pptx", `{"type":"add_slide","after_slide":"slide:0:256","layout":"ppt/slideLayouts/slideLayout2.xml"}`,
 			`{"afterSlide":"slide:0:256","layout":"ppt/slideLayouts/slideLayout2.xml","type":"add_slide"}`},
 		{"pptx", `{"type":"add_slide"}`, `{"type":"add_slide"}`},
+		// A slide_id the model adds to add_slide does not reach the engine (review L3).
+		{"pptx", `{"type":"add_slide","slide_id":"slide:0:256"}`, `{"type":"add_slide"}`},
 		{"pptx", `{"type":"delete_slide","slide_id":"slide:1:257","expected_text":"Title\nBody"}`,
 			`{"expectedText":"Title\nBody","slideId":"slide:1:257","type":"delete_slide"}`},
 		{"pptx", `{"type":"move_slide","slide_id":"slide:1:257","before_slide":"slide:0:256"}`,

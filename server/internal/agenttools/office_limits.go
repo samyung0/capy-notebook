@@ -15,22 +15,71 @@ import (
 const OfficeLimitsPath = "vendor/betteroffice/crates/office-service/limits.json"
 
 type officeLimitTable struct {
-	Commands int `json:"commands"`
-	Formats  map[string][]struct {
+	Commands  int       `json:"commands"`
+	ShapeText ShapeText `json:"shapeText"`
+	Formats   map[string][]struct {
 		Count string `json:"count"`
 		Limit int    `json:"limit"`
 	} `json:"formats"`
 }
 
-// officeLimitsSentence is the description's sentence for the table.
-func officeLimitsSentence(table []byte) (string, error) {
+// ShapeText bounds the text one PPTX command writes into one shape (the
+// engine's limits.json; review L2): Marshal writes it into set_shape_text's
+// and add_text_box's schemas and the contract, where the office_building
+// skill reads it.
+type ShapeText struct {
+	Paragraphs int `json:"paragraphs"`
+	Characters int `json:"characters"`
+}
+
+// shapeTextKey marks a schema whose maxItems and description Marshal fills
+// from ShapeText; the description's shapeParagraphs and shapeCharacters
+// tokens become its numbers.
+const (
+	shapeTextKey    = "x-shape-text"
+	shapeParagraphs = "{shape paragraphs}"
+	shapeCharacters = "{shape characters}"
+)
+
+// parseOfficeLimits reads the engine's table.
+func parseOfficeLimits(table []byte) (officeLimitTable, error) {
 	var limits officeLimitTable
 	if err := json.Unmarshal(table, &limits); err != nil {
-		return "", fmt.Errorf("office limits: %w", err)
+		return limits, fmt.Errorf("office limits: %w", err)
 	}
 	if limits.Commands <= 0 || len(limits.Formats) == 0 {
-		return "", fmt.Errorf("office limits: no commands or formats")
+		return limits, fmt.Errorf("office limits: no commands or formats")
 	}
+	if limits.ShapeText.Paragraphs <= 0 || limits.ShapeText.Characters <= 0 {
+		return limits, fmt.Errorf("office limits: no shapeText bounds")
+	}
+	return limits, nil
+}
+
+// withShapeText fills the schemas shapeTextKey marks under node.
+func withShapeText(node any, bounds ShapeText) {
+	switch n := node.(type) {
+	case map[string]any:
+		if _, ok := n[shapeTextKey]; ok {
+			delete(n, shapeTextKey)
+			n["maxItems"] = bounds.Paragraphs
+			if desc, ok := n["description"].(string); ok {
+				desc = strings.ReplaceAll(desc, shapeParagraphs, thousands(bounds.Paragraphs))
+				n["description"] = strings.ReplaceAll(desc, shapeCharacters, thousands(bounds.Characters))
+			}
+		}
+		for _, value := range n {
+			withShapeText(value, bounds)
+		}
+	case []any:
+		for _, value := range n {
+			withShapeText(value, bounds)
+		}
+	}
+}
+
+// officeLimitsSentence is the description's sentence for the table.
+func officeLimitsSentence(limits officeLimitTable) string {
 	formats := make([]string, 0, len(limits.Formats))
 	for format := range limits.Formats {
 		formats = append(formats, format)
@@ -46,7 +95,7 @@ func officeLimitsSentence(table []byte) (string, error) {
 	}
 	return fmt.Sprintf("A call applies at most %s commands and, per format, %s. Commands apply in order up "+
 		"to the first that would pass a limit; the rest come back unapplied, by index, to send in another call.",
-		thousands(limits.Commands), strings.Join(parts, "; ")), nil
+		thousands(limits.Commands), strings.Join(parts, "; "))
 }
 
 // thousands writes 10000 as 10,000.
