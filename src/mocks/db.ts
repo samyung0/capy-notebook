@@ -73,7 +73,14 @@ import {
   EDITOR_WORKSPACE_ID,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
+import {
+  nearLimitCards,
+  nearLimitFlowchart,
+  nearLimitMindmap,
+  nearLimitQuestions,
+} from './nearLimits';
 import { seedNotes } from './noteContent';
+import { bioNearLimitNotes } from './noteContent/bio';
 import { embeddedSeeds, equation } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
 import { biologyOfficeFixtures } from './officeFixtures';
@@ -2647,6 +2654,60 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
     })
   );
 }
+
+/* ---------------- near-limit fixtures ---------------- */
+// Every embed at its limits (mocks/nearLimits.ts), seeded last so they sit at
+// the bottom of Biology 101's tree and out of Recent Files, under the rows
+// specs click. The diagrams take seconds to draw.
+const nearLimitSet = nearLimitCards('fc_near');
+for (const card of nearLimitSet)
+  flashcardCards[card.id] = { materialId: 'dk_bio_near' };
+for (const [id, kind, title, value] of [
+  ...bioNearLimitNotes.map(
+    (note) => [note.id, 'note', note.title, note.value] as const
+  ),
+  [
+    'mat_bio_near_diagram',
+    'diagram',
+    'Near-limit diagram',
+    [mermaidNode(nearLimitFlowchart())],
+  ],
+  [
+    'mat_bio_near_mindmap',
+    'mindmap',
+    'Near-limit mindmap',
+    [mermaidNode(nearLimitMindmap())],
+  ],
+  [
+    'qz_bio_near',
+    'quiz',
+    'Near-limit quiz',
+    [quizNode({ questions: nearLimitQuestions('qz_near') }, 'qz_bio_near')],
+  ],
+  [
+    'dk_bio_near',
+    'flashcards',
+    'Near-limit flashcards',
+    [flashcardsNode(nearLimitSet, 'dk_bio_near')],
+  ],
+] as const)
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument(value as MaterialValue),
+      createdAt: days(30),
+      id,
+      kind,
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title,
+      workspaceId: 'ws_bio',
+      workspaceName: 'Biology 101',
+    })
+  );
 
 /* Embedded quiz and flashcard rows referenced from the note fixtures. */
 for (const seed of embeddedSeeds) {
