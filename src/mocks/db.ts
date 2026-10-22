@@ -1893,6 +1893,7 @@ type MaterialMetrics = 'contentBytes' | 'maxDepth' | 'nodeCount';
 
 /** Wire fields with an obvious default for authored content. */
 type MaterialDefaults =
+  | 'audioMaxBytes'
   | 'imageMaxBytes'
   | 'isOwner'
   | 'position'
@@ -1923,6 +1924,7 @@ export function makeMaterial(draft: MaterialDraft): Material {
     nodeCount: 0,
   };
   return {
+    audioMaxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
     imageMaxBytes: PLAN_LIMITS.free.imageMaxBytes,
     isOwner: true,
     position: nextContentPosition(draft.workspaceId, draft.chapterId),

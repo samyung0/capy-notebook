@@ -61,6 +61,43 @@ const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
   { data: { workspaceName: 'Bio' }, kind: 'workspace_member_removed' },
 ];
 
+// Files the user removed from the transfer panel are reported as removed,
+// never as failed (Epo 2026-10-22).
+it.each([
+  [
+    'upload',
+    { done: 2, failed: 0, removed: 1 },
+    m.notification_system_source_uploaded_removed_body({
+      done: 2,
+      removed: 1,
+      workspaceName: 'Bio',
+    }),
+  ],
+  [
+    'import',
+    { done: 2, failed: 1, removed: 1 },
+    m.notification_system_source_imported_failed_removed_body({
+      done: 2,
+      failed: 1,
+      removed: 1,
+      workspaceName: 'Bio',
+    }),
+  ],
+])('reports removed files of an %s batch', (source, counts, body) => {
+  const html = renderToStaticMarkup(
+    <NotificationItem
+      notification={{
+        at: '2026-10-06T00:00:00Z',
+        data: { code: 'source_batch', source, ...counts },
+        id: 'n',
+        kind: 'system',
+        workspaceName: 'Bio',
+      }}
+    />
+  );
+  expect(html).toContain(body);
+});
+
 it.each(sent)('renders copy for $kind $data.code', (item) => {
   const html = renderToStaticMarkup(
     <NotificationItem

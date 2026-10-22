@@ -188,7 +188,9 @@ describe('upload batch limits', () => {
     const wait = vi.fn().mockResolvedValue(undefined);
 
     await expect(withUploadRetry(reserve, wait)).rejects.toBe(error);
-    expect(reserve).toHaveBeenCalledTimes(3);
+    // Only the last attempt hears that its 429 will not be retried, so it
+    // gives its ticket back as failed.
+    expect(reserve.mock.calls).toEqual([[true], [true], [false]]);
     expect(wait.mock.calls).toEqual([[2000], [2000]]);
   });
 });

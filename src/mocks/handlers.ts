@@ -2350,6 +2350,11 @@ export const handlers = [
   http.post('/api/workspaces/:id/sources/uploads/tickets', () =>
     HttpResponse.json({ position: 0, ticketId: 'utk_mock' }, { status: 201 })
   ),
+  // A file removed before it was sent counts in its batch; mocks keep none.
+  http.post(
+    '/api/workspaces/:id/sources/batches/:batchId/removed',
+    () => new HttpResponse(null, { status: 204 })
+  ),
   // Mirrors the streamed upload: one multipart request, metadata then file.
   http.post(
     '/api/workspaces/:id/sources/uploads',

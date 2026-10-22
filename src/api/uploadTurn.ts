@@ -1,4 +1,4 @@
-import { api } from './client';
+import { api, isApiError } from './client';
 
 /** A gateway upload ticket's answer: its place in line, 0 once its turn has
  * come. */
@@ -7,8 +7,16 @@ interface UploadTurn {
   ticketId: string;
 }
 
-/** Uploads through the gateway's line (Epo 2026-10-22): the gateway runs 32
- * uploads at once and lines up the rest. The ticket request carries the
+/** The abort reason of an upload the user removed (removeSourceTransfer):
+ * its ticket is given back as removed, so its batch counts it as removed. */
+export const uploadRemoved = new DOMException(
+  'The upload was removed.',
+  'AbortError'
+);
+
+/** Uploads through the gateway's line (Epo 2026-10-22): the gateway runs
+ * uploads while their declared sizes fit its budget and lines up the rest.
+ * The ticket request carries the
  * upload's metadata, which the upload must repeat, so a refused upload never
  * waits; a full line refuses it as busy (`upload_queue_full`). While the
  * ticket waits, each long poll answers once its place changes, and `onQueued`
@@ -24,14 +32,23 @@ export async function uploadWithTicket<T>(
   {
     onQueued,
     signal,
-  }: { onQueued?: (position: number) => void; signal?: AbortSignal } = {}
+    willRetry,
+  }: {
+    onQueued?: (position: number) => void;
+    signal?: AbortSignal;
+    /** The caller retries a 429 with a new ticket (withUploadRetry). */
+    willRetry?: boolean;
+  } = {}
 ): Promise<T> {
-  let turn = await api.post<UploadTurn>(`${uploadPath}/tickets`, metadata, {
-    signal,
-  });
+  if (signal?.aborted) throw signal.reason;
+  // The ticket request is not aborted: a ticket the gateway issued is given
+  // back once it answers (below), so the caller always knows, by `onQueued`,
+  // whether the gateway holds one.
+  let turn = await api.post<UploadTurn>(`${uploadPath}/tickets`, metadata);
   const ticket = `/uploads/tickets/${encodeURIComponent(turn.ticketId)}`;
   try {
     onQueued?.(turn.position);
+    if (signal?.aborted) throw signal.reason;
     while (turn.position > 0) {
       turn = await api.get<UploadTurn>(`${ticket}?position=${turn.position}`, {
         signal,
@@ -43,8 +60,14 @@ export async function uploadWithTicket<T>(
     );
   } catch (error) {
     // A ticket left behind would hold its place, or its turn, until the turn
-    // passed; a failed give-back only leaves it to that.
-    await api.del(ticket).catch(() => undefined);
+    // passed; a failed give-back only leaves it to that. A 429 the caller
+    // retries leaves the file to the retry's ticket, a file the user removed
+    // counts as removed in its batch, and any other give-up as failed.
+    let reason = '';
+    if (willRetry && isApiError(error) && error.status === 429)
+      reason = '?reason=retry';
+    else if (signal?.reason === uploadRemoved) reason = '?reason=removed';
+    await api.del(ticket + reason).catch(() => undefined);
     throw error;
   }
 }
