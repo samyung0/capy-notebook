@@ -7,6 +7,7 @@ DELETE FROM attempts WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_oth
 DELETE FROM review_log WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM review_states WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM study_progress WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
+DELETE FROM study_plans WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM workspace_study WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM materials WHERE created_by IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');
 DELETE FROM workspace_members WHERE user_id IN ('u_owner', 'u_editor', 'u_viewer', 'u_other');

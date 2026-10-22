@@ -571,7 +571,8 @@ async def test_pre_byte_failure_retries_then_succeeds(monkeypatch):
     )
     assert out.text == "ok"
     assert api.creates == 2
-    assert abandoned["n"] == 0
+    # The failed first attempt closes at once; the second settles.
+    assert abandoned["n"] == 1
     assert settled["n"] == 1
 
 
@@ -601,7 +602,8 @@ async def test_after_byte_failure_does_not_retry_even_without_client_sse(
             [{"role": "user", "content": "q"}], model=_chat_spec()
         )
     assert api.creates == 1
-    assert abandoned["n"] == 0
+    # It sent no usage, so it closes unbilled.
+    assert abandoned["n"] == 1
     assert settled["n"] == 0
 
 

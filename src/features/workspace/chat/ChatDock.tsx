@@ -38,8 +38,7 @@ const SETTLE_MS = 600;
 
 /**
  * Chat on the file page below lg. Below md, and on Office files at any width,
- * a round button morphs into a one-line field (the Files panel plus's
- * morph); from md the field shows itself. Focusing the field leaves the page
+ * a round button morphs into a one-line field; from md the field shows itself. Focusing the field leaves the page
  * as it is (the keyboard overlays it, see useKeyboardHeight); sending is the
  * caller's (it opens the chat page).
  */
@@ -76,7 +75,7 @@ export function ChatDock({
   const [size, setSize] = useState({ height: BUTTON, width: BUTTON });
 
   // The field lays out at the row's full width even while the surface is a
-  // button, so its height is known before it opens (as Menu's morph).
+  // button, so its height is known before it opens.
   const fieldBox = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const row = rowRef.current;

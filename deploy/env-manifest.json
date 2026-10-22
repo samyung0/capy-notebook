@@ -605,7 +605,13 @@
     },
     "OPENROUTER_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "local", "ops"]
+      "targets": [
+        "coolify",
+        "ingest-production",
+        "ingest-queue",
+        "local",
+        "ops"
+      ]
     },
     "OPS_ACCESS_DISABLED": {
       "kind": "variable",

@@ -3,21 +3,20 @@ import {
   DEFAULT_PAGE_FRAME,
   dotColor,
   FRAME_PRESETS,
-  frameStops,
+  frameColors,
+  mixColor,
   pageFrameStyle,
   STRENGTH_MAX,
   sanitizePageFrame,
+  shuffleFrame,
 } from './pageFrame';
-
-const TEXTURE_OVER_GRADIENT = /^url\(".+"\), linear-gradient\(180deg/;
 
 describe('sanitizePageFrame', () => {
   it('keeps a valid frame', () => {
     const frame = {
       colours: 'custom',
       dots: [{ x: 0.2, y: 0.4 }],
-      grain: 0.1,
-      pattern: 'waves',
+      pattern: 'mesh',
       strength: 0.5,
     };
     expect(sanitizePageFrame(frame)).toEqual(frame);
@@ -28,7 +27,6 @@ describe('sanitizePageFrame', () => {
       sanitizePageFrame({
         colours: 'neon',
         dots: [{ x: 2, y: 0 }, 'red'],
-        grain: -1,
         pattern: 'stripes',
         strength: 1,
       })
@@ -42,15 +40,19 @@ describe('sanitizePageFrame', () => {
   });
 });
 
-describe('frameStops', () => {
-  it('uses the preset, or three stops from one to three custom colours', () => {
-    expect(frameStops({ ...DEFAULT_PAGE_FRAME, colours: 'sea' })).toEqual(
-      FRAME_PRESETS.sea
-    );
+describe('frameColors', () => {
+  it('draws a preset as approved at its own strength', () => {
+    const { stops, strength } = FRAME_PRESETS.sea;
+    expect(
+      frameColors({ ...DEFAULT_PAGE_FRAME, colours: 'sea', strength })
+    ).toEqual(stops.map((s) => mixColor(s, '#ffffff', 0.25 * 0.75)));
+  });
+
+  it('gives three colours for one to three custom colours', () => {
     for (const n of [1, 2, 3]) {
       const dots = DEFAULT_PAGE_FRAME.dots.slice(0, n);
       expect(
-        frameStops({ ...DEFAULT_PAGE_FRAME, colours: 'custom', dots })
+        frameColors({ ...DEFAULT_PAGE_FRAME, colours: 'custom', dots })
       ).toHaveLength(3);
     }
   });
@@ -61,17 +63,24 @@ describe('frameStops', () => {
   });
 });
 
+describe('shuffleFrame', () => {
+  it('keeps the pattern and number of colours as custom colours', () => {
+    const frame = { ...DEFAULT_PAGE_FRAME, pattern: 'glow' as const };
+    const shuffled = shuffleFrame(frame);
+    expect(shuffled).toMatchObject({ colours: 'custom', pattern: 'glow' });
+    expect(shuffled.dots).toHaveLength(frame.dots.length);
+    expect(shuffled.strength).toBeLessThanOrEqual(STRENGTH_MAX);
+  });
+});
+
 describe('pageFrameStyle', () => {
   it('draws nothing for None', () => {
     expect(pageFrameStyle(DEFAULT_PAGE_FRAME)).toBeNull();
   });
 
-  it('gives a textured pattern its texture over the gradient', () => {
-    const style = pageFrameStyle({ ...DEFAULT_PAGE_FRAME, pattern: 'painted' });
-    expect(style?.['--page-frame-image']).toMatch(TEXTURE_OVER_GRADIENT);
-    expect(style?.['--page-frame-blend']).toBe('overlay, normal');
-    expect(style?.['--page-frame-grain']).toBe(
-      String(DEFAULT_PAGE_FRAME.grain)
-    );
+  it('draws the pattern from the registered colour properties', () => {
+    const style = pageFrameStyle({ ...DEFAULT_PAGE_FRAME, pattern: 'arc' });
+    expect(style?.['--page-frame-a']).toBe(frameColors(DEFAULT_PAGE_FRAME)[0]);
+    expect(style?.['--page-frame-image']).toContain('var(--page-frame-c)');
   });
 });

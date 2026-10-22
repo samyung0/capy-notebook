@@ -51,7 +51,11 @@ export function LiveStatus({
       role="status"
       title={compact ? shown.label() : undefined}
     >
-      <Icon className={cn(compact ? 'size-4.5' : 'size-4')} name={shown.icon} />
+      {/* Lifted 1px to Fustat's cap band, level with the label. */}
+      <Icon
+        className={cn(compact ? 'size-4.5' : 'size-4 -translate-y-px')}
+        name={shown.icon}
+      />
       <span className={cn(compact && 'sr-only')}>{shown.label()}</span>
     </span>
   );

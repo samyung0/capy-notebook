@@ -75,12 +75,9 @@ function DropdownMenuTrigger({
 
 function DropdownMenuContent({
   className,
-  animationClassName = 'motion-anchored-popup',
   sideOffset = 4,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content> & {
-  animationClassName?: string;
-}) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   const open = React.useContext(MenuOpenContext);
   const held = useEditorHeld();
   const scope = useDropdownMenuScope();
@@ -90,8 +87,7 @@ function DropdownMenuContent({
         {...scope}
         aria-hidden={!open || undefined}
         className={cn(
-          'z-50 min-w-40 overflow-hidden rounded-card border border-overlay-line bg-overlay p-1 text-fg shadow-pop outline-none',
-          animationClassName,
+          'motion-anchored-popup z-50 min-w-40 overflow-hidden rounded-card border border-overlay-line bg-overlay p-1 text-fg shadow-pop outline-none',
           className
         )}
         data-slot="dropdown-menu-content"

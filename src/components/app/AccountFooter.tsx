@@ -15,7 +15,8 @@ import { SearchDialog } from './SearchDialog';
 
 /** The foot of the workspace's left panel, which replaces the top inset bar
  * there: the members, you first with the unread dot, your avatar opening the
- * menu of workspace and account items; Search and Workspace settings beside. */
+ * menu of workspace and account items; Search and, for managers, Workspace
+ * settings beside. */
 export function AccountFooter({
   className,
   items,
@@ -29,7 +30,8 @@ export function AccountFooter({
   items: MenuItem[];
   /** You hold a membership row: only members may read the roster. */
   member: boolean;
-  onOpenSettings: () => void;
+  /** Omitted for roles without workspace settings. */
+  onOpenSettings?: () => void;
   workspaceId: string;
   workspaceName: string;
 }) {
@@ -67,9 +69,11 @@ export function AccountFooter({
       <ToolbarButton label={m.nav_search()} onClick={() => setSearchOpen(true)}>
         <Icon name="search" />
       </ToolbarButton>
-      <ToolbarButton label={m.workspace_settings()} onClick={onOpenSettings}>
-        <Icon name="settings" />
-      </ToolbarButton>
+      {onOpenSettings && (
+        <ToolbarButton label={m.workspace_settings()} onClick={onOpenSettings}>
+          <Icon name="settings" />
+        </ToolbarButton>
+      )}
       <SearchDialog open={searchOpen} setOpen={setSearchOpen} />
     </div>
   );
