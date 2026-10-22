@@ -85,6 +85,8 @@ function measure(text: string, font: Font) {
     ascent: metrics.fontBoundingBoxAscent,
     descent: metrics.fontBoundingBoxDescent,
     /** Where the ink ends, in whole pixels (an SVG text's box takes it). */
+    inkAscent: metrics.actualBoundingBoxAscent,
+    inkDescent: metrics.actualBoundingBoxDescent,
     inkLeft: metrics.actualBoundingBoxLeft,
     inkRight: metrics.actualBoundingBoxRight,
     width: Math.ceil(metrics.width * 64) / 64,
@@ -618,7 +620,9 @@ function textBox(element: Element): Box {
     const text = rendered(line.textContent);
     if (!text) continue;
     const metrics = measure(text, font);
-    // Anchored by its advance; the box also takes ink past either end.
+    // Anchored by its advance; the box also takes ink past either end, and
+    // above or below the font's box (Linux fonts' ascent and descent can sit
+    // inside their tallest glyphs, as Excalifont's do).
     const start =
       x -
       (anchor === 'middle'
@@ -628,11 +632,12 @@ function textBox(element: Element): Box {
           : 0);
     const left = start - Math.max(0, metrics.inkLeft);
     const baseline = y + baselineShift(line, font, metrics);
+    const above = Math.max(metrics.ascent, metrics.inkAscent);
     boxes.push({
-      height: metrics.ascent + metrics.descent,
+      height: above + Math.max(metrics.descent, metrics.inkDescent),
       width: start + Math.max(metrics.width, metrics.inkRight) - left,
       x: left,
-      y: baseline - metrics.ascent,
+      y: baseline - above,
     });
   }
   return union(boxes);
