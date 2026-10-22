@@ -128,7 +128,9 @@ test('a card blanked while retyped keeps its place in a study session', async ({
     await openWorkspaceMaterial(ownerPage, workspaceId, setId);
     await editorPage.goto(`/flashcards/${setId}`);
     const first = m.flashcards_card_position({ position: 1, total: 3 });
-    await expect(editorPage.getByText(first)).toBeVisible();
+    await expect(
+      editorPage.getByRole('progressbar', { exact: true, name: first })
+    ).toBeVisible();
     await expect(
       editorPage.getByText('Osmosis', { exact: true })
     ).toBeVisible();
@@ -144,7 +146,9 @@ test('a card blanked while retyped keeps its place in a study session', async ({
       0
     );
     await expect(editorPage.getByText('Golgi', { exact: true })).toHaveCount(0);
-    await expect(editorPage.getByText(first)).toBeVisible();
+    await expect(
+      editorPage.getByRole('progressbar', { exact: true, name: first })
+    ).toBeVisible();
     await dialog
       .getByRole('textbox', { name: m.editor_card_front() })
       .fill('Osmosis, retyped');
@@ -154,7 +158,9 @@ test('a card blanked while retyped keeps its place in a study session', async ({
     await expect(
       editorPage.getByText('Osmosis, retyped', { exact: true })
     ).toBeVisible();
-    await expect(editorPage.getByText(first)).toBeVisible();
+    await expect(
+      editorPage.getByRole('progressbar', { exact: true, name: first })
+    ).toBeVisible();
 
     // Three ratings end the session: the card did not come back at its end.
     const showAnswer = editorPage.getByRole('button', {

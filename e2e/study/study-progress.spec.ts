@@ -283,12 +283,14 @@ test.describe('study progress', () => {
       ownerPage.getByRole('heading', { exact: true, name: next.title })
     ).toBeVisible();
 
-    // Reading it moves Continue on to the item after it.
+    // Reading it moves Continue on to the item after it, back on the Study
+    // page the open note took the centre from.
     await ownerPage.getByRole('button', { name: m.study_mark_read() }).click();
-    await expect(upNext.getByText(later.title, { exact: true })).toBeVisible();
     await expect(
       ownerPage.getByRole('button', { name: m.study_mark_unread() })
     ).toBeVisible();
+    await ownerPage.goto(`/workspaces/${ws.id}?study=true`);
+    await expect(upNext.getByText(later.title, { exact: true })).toBeVisible();
   });
 
   test('quizzes and flashcard sets go started and done, Continue skips the done ones, and Learning counts them', async ({
@@ -463,7 +465,10 @@ test.describe('study progress', () => {
       )
     );
     await expect(
-      ownerPage.getByText(m.flashcards_card_position({ position: 1, total: 5 }))
+      ownerPage.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position: 1, total: 5 }),
+      })
     ).toBeVisible();
   });
 
@@ -561,7 +566,10 @@ test.describe('study progress', () => {
       )
     );
     await expect(
-      ownerPage.getByText(m.flashcards_card_position({ position: 1, total: 2 }))
+      ownerPage.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position: 1, total: 2 }),
+      })
     ).toBeVisible();
 
     const ratings: Record<string, unknown>[] = [];
@@ -586,7 +594,10 @@ test.describe('study progress', () => {
 
     await expect(ownerPage.getByText(prompt)).toBeVisible();
     await expect(
-      ownerPage.getByText(m.flashcards_card_position({ position: 2, total: 2 }))
+      ownerPage.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position: 2, total: 2 }),
+      })
     ).toBeVisible();
     // The question arrives answer-free; Check returns its key and rates it.
     await ownerPage

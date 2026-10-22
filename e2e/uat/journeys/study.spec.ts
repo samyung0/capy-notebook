@@ -243,7 +243,10 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
     new RegExp(`/learning/review/${workspaceId}\\?.*from=workspace`)
   );
   await expect(
-    page.getByText(m.flashcards_card_position({ position: 1, total: 2 }))
+    page.getByRole('progressbar', {
+      exact: true,
+      name: m.flashcards_card_position({ position: 1, total: 2 }),
+    })
   ).toBeVisible();
   const showAnswer = page.getByRole('button', {
     name: m.flashcards_show_answer(),
@@ -254,7 +257,10 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   });
   for (let position = 1; position <= 2; position++) {
     await expect(
-      page.getByText(m.flashcards_card_position({ position, total: 2 }))
+      page.getByRole('progressbar', {
+        exact: true,
+        name: m.flashcards_card_position({ position, total: 2 }),
+      })
     ).toBeVisible();
     await expect(showAnswer.or(check)).toBeVisible();
     if (await showAnswer.isVisible()) {
