@@ -276,13 +276,12 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			// A page of its paragraphs, the first with the file's paragraph
 			// styles (Epo 2026-10-21).
 			query = &store.OfficeQuery{Start: max(req.Office.Start, 0), Count: pageCount(req.Office.Count)}
-		case format == "pptx" && req.Office.Slide > 0:
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
-				"code": "unsupported_operation", "message": "Reading one slide is not available yet; read the deck's shapes with start and count.",
-			})
-			return
-		case req.Office != nil:
-			req.Start, req.Count = max(req.Office.Start, 0), pageCount(req.Office.Count)
+		case format == "pptx":
+			// A page of its slides, the first with the deck's layouts, or one
+			// slide's shapes and a page of its paragraphs (Epo 2026-10-20).
+			query = &store.OfficeQuery{
+				Slide: max(req.Office.Slide, 0), Start: max(req.Office.Start, 0), Count: pageCount(req.Office.Count),
+			}
 		}
 		inspection, err := a.s.InspectSourceDocument(ctx, req.UserID, req.Target.ID, query)
 		if err != nil {
@@ -304,21 +303,13 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 			// The pipeline's DOCX page names its commands in the tool's
 			// description, so no supportedOperations (review r2 L7).
 			body["scoped"] = inspection.Scoped
-		case inspection.Format == "text":
+		default:
 			lines := textLines(deref(inspection.Text))
 			total := len(lines)
 			end := min(req.Start+req.Count, total)
 			body["lines"] = lines[min(req.Start, total):end]
 			body["total"], body["nextStart"] = total, nextStart(end, total)
 			body["supportedOperations"] = textOperations
-		default:
-			// PPTX reads as its paragraph entries until the engine's scoped
-			// read lands.
-			total := len(inspection.Entries)
-			end := min(req.Start+req.Count, total)
-			body["entries"] = inspection.Entries[min(req.Start, total):end]
-			body["total"], body["nextStart"] = total, nextStart(end, total)
-			body["supportedOperations"] = paragraphCommands
 		}
 		writeJSON(w, http.StatusOK, body)
 	default:
@@ -372,8 +363,7 @@ func utf16Len(s string) int {
 	return n
 }
 
-// textOperations are the edit commands a text source supports; a PPTX one
-// supports paragraphCommands.
+// textOperations are the edit commands a text source supports.
 var textOperations = []string{"replace_text"}
 
 // materialOperations are the edit commands a material kind supports: the
