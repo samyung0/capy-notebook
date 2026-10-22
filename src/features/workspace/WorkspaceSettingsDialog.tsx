@@ -1,15 +1,12 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { qk } from '@/api/client';
 import {
   useDeleteWorkspace,
-  useResetWorkspaceStudy,
-  useSetWorkspaceStudyEnabled,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
-  workspaceStudyQuery,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
@@ -18,11 +15,9 @@ import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
-import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
-import { canManageWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
@@ -46,33 +41,22 @@ export function WorkspaceSettingsDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  // A viewer may only change their own study progress: the dialog shows just
-  // Others (Track progress) and Danger (Reset).
-  const manage = canManageWorkspaceSettings(workspace);
+  // Only managers open settings; Others and Danger show when they hold a row.
+  const others = workspace.canClone;
+  const danger = workspace.capabilities.canManageMembers;
   const allowed = (value: SettingsTab) =>
-    manage || value === 'others' || value === 'danger';
+    (value !== 'others' || others) && (value !== 'danger' || danger);
   const [ownTab, setOwnTab] = useState<SettingsTab>(
-    allowed(initialTab) ? initialTab : 'others'
+    allowed(initialTab) ? initialTab : 'general'
   );
   const requested = controlledTab ?? ownTab;
   // While it fades out the URL has no tab: keep showing the last one.
   const lastTab = useRef<SettingsTab>('general');
-  if (open) lastTab.current = allowed(requested) ? requested : 'others';
+  if (open) lastTab.current = allowed(requested) ? requested : 'general';
   const tab = lastTab.current;
   const setTab = (value: SettingsTab) =>
     onTabChange ? onTabChange(value) : setOwnTab(value);
-  // Track progress is the requester's own switch, read while open.
-  const { data: study } = useQuery({
-    ...workspaceStudyQuery(workspace.id),
-    enabled: open,
-  });
-  const { isPending: savingStudy, mutate: setStudyEnabled } =
-    useSetWorkspaceStudyEnabled(workspace.id);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
-  const { mutate: resetStudy, isPending: resetting } = useResetWorkspaceStudy(
-    workspace.id
-  );
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { mutateAsync: update } = useUpdateWorkspace();
@@ -107,20 +91,22 @@ export function WorkspaceSettingsDialog({
         className="dialog-tabs-bleed w-auto whitespace-nowrap sm:mt-2.5"
         onChange={(value) => setTab(value as SettingsTab)}
         tabs={[
-          ...(manage
+          { label: m.workspace_general(), value: 'general' },
+          { label: m.workspace_sharing(), value: 'sharing' },
+          { label: m.workspace_indexing(), value: 'indexing' },
+          { label: m.workspace_stats_title(), value: 'statistics' },
+          ...(others
+            ? [{ label: m.workspace_tab_others(), value: 'others' }]
+            : []),
+          ...(danger
             ? [
-                { label: m.workspace_general(), value: 'general' },
-                { label: m.workspace_sharing(), value: 'sharing' },
-                { label: m.workspace_indexing(), value: 'indexing' },
-                { label: m.workspace_stats_title(), value: 'statistics' },
+                {
+                  label: m.workspace_tab_danger(),
+                  tone: 'danger' as const,
+                  value: 'danger',
+                },
               ]
             : []),
-          { label: m.workspace_tab_others(), value: 'others' },
-          {
-            label: m.workspace_tab_danger(),
-            tone: 'danger' as const,
-            value: 'danger',
-          },
         ]}
         value={tab}
       />
@@ -197,31 +183,18 @@ export function WorkspaceSettingsDialog({
         {tab === 'others' && (
           <div className="flex flex-col gap-6">
             <SettingRow
-              hint={m.workspace_track_progress_hint()}
-              title={m.study_track_progress()}
+              hint={m.workspace_clone_hint()}
+              title={m.action_clone_workspace()}
             >
-              <Switch
-                aria-label={m.study_track_progress()}
-                checked={!!study?.enabled}
-                disabled={!study || savingStudy}
-                onCheckedChange={(checked) => setStudyEnabled(checked)}
-              />
-            </SettingRow>
-            {manage && workspace.canClone && (
-              <SettingRow
-                hint={m.workspace_clone_hint()}
-                title={m.action_clone_workspace()}
+              <Button
+                iconLeft="clone"
+                onClick={() => setCloneOpen(true)}
+                rounded="large"
+                variant="outline"
               >
-                <Button
-                  iconLeft="clone"
-                  onClick={() => setCloneOpen(true)}
-                  rounded="large"
-                  variant="outline"
-                >
-                  {m.action_clone()}
-                </Button>
-              </SettingRow>
-            )}
+                {m.action_clone()}
+              </Button>
+            </SettingRow>
             <CloneWorkspaceDialog
               open={cloneOpen}
               setOpen={setCloneOpen}
@@ -232,45 +205,22 @@ export function WorkspaceSettingsDialog({
         {tab === 'danger' && (
           <DangerZone>
             <SettingRow
-              hint={m.study_reset_hint()}
-              title={m.study_reset_title()}
+              hint={m.workspace_delete_hint()}
+              title={m.workspace_delete_action()}
             >
               <Button
-                disabled={resetting}
-                onClick={() => setConfirmReset(true)}
+                disabled={deleting}
+                iconLeft="trash"
+                onClick={() => setConfirmDelete(true)}
                 rounded="large"
-                variant="danger-light"
+                variant="danger"
               >
-                {m.study_reset()}
+                {m.action_delete()}
               </Button>
             </SettingRow>
-            {workspace.capabilities.canManageMembers && (
-              <SettingRow
-                hint={m.workspace_delete_hint()}
-                title={m.workspace_delete_action()}
-              >
-                <Button
-                  disabled={deleting}
-                  iconLeft="trash"
-                  onClick={() => setConfirmDelete(true)}
-                  rounded="large"
-                  variant="danger"
-                >
-                  {m.action_delete()}
-                </Button>
-              </SettingRow>
-            )}
           </DangerZone>
         )}
       </div>
-      <ConfirmDialog
-        body={m.study_reset_confirm_body()}
-        confirmLabel={m.study_reset()}
-        onClose={() => setConfirmReset(false)}
-        onConfirm={() => resetStudy()}
-        open={confirmReset}
-        title={m.study_reset_confirm_title()}
-      />
       <ConfirmDialog
         body={m.workspace_delete_confirm_body()}
         confirmLabel={m.trash_delete_forever()}

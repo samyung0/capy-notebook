@@ -3,10 +3,8 @@ import type { PastReview, ReviewAnswer, ReviewResult } from '@/api/types';
 import { SortMenu, type SortOption } from '@/components/app/ListToolbar';
 import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
-import {
-  ResultCardGrid,
-  ResultCardTile,
-} from '@/features/flashcards/FlashcardResult';
+import { CardGrid } from '@/features/flashcards/CardView';
+import { ResultCardTile } from '@/features/flashcards/FlashcardResult';
 import { TextView } from '@/features/questions/TextView';
 import type { QuestionBlock, TextBlock } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
@@ -201,7 +199,7 @@ export function ReviewResultBody({
           title={cardsLabel}
         >
           {(shown) => (
-            <ResultCardGrid>
+            <CardGrid>
               {shown.map(({ item, n }) => (
                 <ResultCardTile
                   card={{ back: item.back ?? '', front: item.front ?? '' }}
@@ -210,7 +208,7 @@ export function ReviewResultBody({
                   ratings={[item.rating]}
                 />
               ))}
-            </ResultCardGrid>
+            </CardGrid>
           )}
         </SortedSection>
       )}

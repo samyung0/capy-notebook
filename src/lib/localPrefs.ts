@@ -13,6 +13,8 @@ export const PREF_KEYS = {
   filesView: 'capy.files.view',
   /** The opened workspace's left panel (chats and files) is open. */
   leftPanel: 'capy.workspace.leftPanel',
+  /** The view the left panel shows: Chats, Files or Study. */
+  leftView: 'capy.workspace.leftView',
   /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
   mapFinishPlayed: 'capy.map.finishPlayed',
   openChapters: (workspaceId: string) =>
@@ -20,6 +22,8 @@ export const PREF_KEYS = {
   recentsView: 'capy.recents.view',
   /** The opened workspace's right panel (Files, Chat, Study) is open. */
   rightPanel: 'capy.workspace.rightPanel',
+  /** The view the right panel shows: Files, Chat or Study. */
+  rightView: 'capy.workspace.rightView',
   sort: (list: SortedList) => `capy.sort.${list}`,
 } as const;
 

@@ -1,5 +1,4 @@
 import { type ReactNode, useState } from 'react';
-import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { RatingTiles } from '@/features/study/RatingTiles';
 import { m } from '@/i18n';
@@ -7,10 +6,13 @@ import { cn } from '@/lib/cn';
 import type { SrsRating } from '@/lib/srs';
 import { CardBackFace, CardFront } from './CardView';
 
-/* The card on its stack, shared by flashcard study (study page, shared page,
-   note embed), the review session and Quick review. Compact is the note
-   embed's shorter card; panel is Quick review's, visibly smaller still (narrower,
-   shorter, smaller front text) so it sits clear of the study panel's sides. */
+/* The study card, shared by flashcard study (study page, shared page, note
+   embed), the review session and Quick review. Its front reads the card's
+   chapter where the page shows it nowhere else, the text and "Click to
+   flip". Compact is the
+   note embed's shorter card; panel is Quick review's, visibly smaller still
+   (narrower, shorter, smaller front text) so it sits clear of the study
+   panel's sides. */
 
 export type CardStackSize = 'large' | 'compact' | 'panel';
 
@@ -45,12 +47,16 @@ export type CardStackState = ReturnType<typeof useCardStack>;
 
 export function CardStack({
   card,
+  label,
   onRate,
   rated,
   size,
   stack,
 }: {
   card: FlashcardContent;
+  /** The front's label: the card's chapter, where the page names it
+   * nowhere else. */
+  label?: string;
   onRate: (rating: SrsRating) => void;
   /** A card shown again after it was rated: its ratings are read only. */
   rated?: SrsRating;
@@ -58,27 +64,13 @@ export function CardStack({
   stack: CardStackState;
 }) {
   const { flipped, leaving, setFlipped, setLeaving, turn } = stack;
-  const compact = size !== 'large';
   return (
     <div
       className={cn(
         'relative',
-        compact ? 'pt-5' : 'pt-6',
         size === 'panel' && 'mx-auto w-full max-w-[360px]'
       )}
     >
-      <div
-        className={cn(
-          'absolute top-0 rounded-card-lg bg-solid-accent-1/20',
-          compact ? 'inset-x-8 h-10' : 'inset-x-12 h-15'
-        )}
-      />
-      <div
-        className={cn(
-          'absolute rounded-card-lg bg-solid-accent-1/40',
-          compact ? 'inset-x-4 top-2.5 h-10' : 'inset-x-6 top-3 h-15'
-        )}
-      />
       <StudyCard
         card={card}
         className={cn(
@@ -89,6 +81,7 @@ export function CardStack({
         )}
         flipped={flipped}
         key={turn.n}
+        label={label}
         onFlip={() => setFlipped((f) => !f)}
         onRate={onRate}
         rated={rated}
@@ -99,12 +92,12 @@ export function CardStack({
           card={leaving.card}
           className={cn(
             // Its ratings stay put instead of rising in again.
-            'motion-safe:motion-card-swipe-out pointer-events-none absolute inset-x-0 motion-reduce:hidden [&_button]:[animation:none]',
-            compact ? 'top-5' : 'top-6'
+            'motion-safe:motion-card-swipe-out pointer-events-none absolute inset-x-0 top-0 motion-reduce:hidden [&_button]:[animation:none]'
           )}
           flipped={leaving.flipped}
           inert
           key={`leaving-${turn.n}`}
+          label={label}
           onAnimationEnd={() => setLeaving(null)}
           size={size}
         />
@@ -121,6 +114,7 @@ function StudyCard({
   className,
   flipped,
   inert,
+  label,
   onAnimationEnd,
   onFlip,
   onRate,
@@ -133,6 +127,7 @@ function StudyCard({
   rated?: SrsRating;
   /** The copy swiping away: shown only, never focused or clicked. */
   inert?: boolean;
+  label?: string;
   onAnimationEnd?: () => void;
   onFlip?: () => void;
   onRate?: (rating: SrsRating) => void;
@@ -153,7 +148,18 @@ function StudyCard({
     back ? (
       <CardBackFace card={card} className="flex-1" size={size} />
     ) : (
-      <CardFront card={card} className={cn('flex-1', padding)} size={size} />
+      <div
+        className={cn(
+          'flex flex-1 flex-col items-center justify-center text-center text-fg-muted',
+          compact ? 'gap-2 text-sm' : 'gap-4',
+          size === 'panel' && 'gap-1.5 text-xs',
+          padding
+        )}
+      >
+        {label && <span className="line-clamp-1">{label}</span>}
+        <CardFront card={card} className="text-fg" size={size} />
+        <span>{m.flashcards_click_to_flip()}</span>
+      </div>
     );
   return (
     <div
@@ -176,7 +182,8 @@ function StudyCard({
         }
         className={cn(
           // Inset ring: the card's overflow clips an outer one to a bar.
-          'relative flex min-h-0 w-full flex-1 flex-col overflow-auto rounded-t-card-lg focus-visible:ring-inset',
+          // No scrollbar: the ratings arriving with a flip briefly overflow it.
+          'relative flex min-h-0 w-full flex-1 flex-col overflow-auto rounded-t-card-lg [scrollbar-width:none] focus-visible:ring-inset [&::-webkit-scrollbar]:hidden',
           !flipped && 'rounded-b-card-lg'
         )}
         onClick={onFlip}
@@ -193,16 +200,6 @@ function StudyCard({
         >
           {face(flipped)}
         </div>
-        {!flipped && (
-          <Icon
-            className={cn(
-              'absolute text-fg-muted opacity-60',
-              compact ? 'bottom-3' : 'bottom-4'
-            )}
-            name="refresh"
-            size={compact ? 16 : 20}
-          />
-        )}
       </button>
       {flipped && (
         <div className={cn(compact ? 'px-3 pb-3' : 'px-4 pb-4')}>

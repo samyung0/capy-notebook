@@ -38,6 +38,10 @@ const inputContainerVariants = cva(
       variant: {
         light:
           'border border-line bg-field focus-within:border-action-accent has-[input[aria-invalid=true]]:border-solid-error',
+        // A soft fill, darker on hover, darkest while focused or filled
+        // (hovering keeps the darkest).
+        search:
+          'rounded-button bg-fg/5 transition-[background-color] duration-(--motion-duration-quick) ease-(--motion-ease-smooth-out) focus-within:bg-fg/12 has-[input:not(:placeholder-shown)]:bg-fg/12 hover:not-focus-within:has-[input:placeholder-shown]:bg-fg/8',
         transparent: '',
         underline:
           'border-line border-b focus-within:border-action-accent has-[input[aria-invalid=true]]:border-solid-error',

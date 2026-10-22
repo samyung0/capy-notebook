@@ -55,6 +55,23 @@ type pastReviewsOutput struct {
 type learningProgressOutput struct {
 	Body store.LearningProgress
 }
+type studyPlansOutput struct {
+	Body store.StudyPlans
+}
+type studyPlanOutput struct {
+	Body store.StudyPlan
+}
+type createStudyPlanInput struct {
+	ID   string `path:"id"`
+	Body apimodel.CreateStudyPlanReq
+}
+type studyPlanIDInput struct {
+	ID string `path:"id" format:"uuid"`
+}
+type updateStudyPlanInput struct {
+	ID   string `path:"id" format:"uuid"`
+	Body apimodel.UpdateStudyPlanReq
+}
 type studyEnabledInput struct {
 	ID   string `path:"id"`
 	Body apimodel.SetStudyEnabledReq
@@ -72,10 +89,6 @@ type reviewCheckInput struct {
 type gradedQuestionOutput struct {
 	Body apimodel.GradedQuestion
 }
-type studyDefaultInput struct {
-	Body apimodel.SetStudyEnabledReq
-}
-
 type studyPreferencesInput struct {
 	Body store.StudyPreferences
 }
@@ -84,7 +97,12 @@ func (a *api) registerStudy(api huma.API) {
 	const tag = "Study"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study", "getWorkspaceStudy", tag, "Study progress in a workspace", http.StatusOK, a.getWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/attempts", "getWorkspaceAttempts", tag, "Each quiz's and set's attempt count and latest attempts", http.StatusOK, a.getWorkspaceAttempts)
-	reg(api, http.MethodPut, "/api/workspaces/{id}/study/enabled", "setWorkspaceStudy", tag, "Turn study progress on or off in a workspace", http.StatusNoContent, a.setWorkspaceStudy)
+	reg(api, http.MethodPut, "/api/workspaces/{id}/study/enabled", "setWorkspaceStudy", tag, "Show or hide study progress in a workspace", http.StatusNoContent, a.setWorkspaceStudy)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/study/plans", "listWorkspacePlans", tag, "Plans kept in a workspace, then plans elsewhere with a step in it", http.StatusOK, a.listWorkspacePlans)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/study/plans", "createStudyPlan", tag, "Add an empty study plan to a workspace", http.StatusCreated, a.createStudyPlan)
+	reg(api, http.MethodPatch, "/api/study/plans/{id}", "updateStudyPlan", tag, "Rename a study plan or replace its steps", http.StatusNoContent, a.updateStudyPlan)
+	reg(api, http.MethodDelete, "/api/study/plans/{id}", "deleteStudyPlan", tag, "Delete a study plan", http.StatusNoContent, a.deleteStudyPlan)
+	reg(api, http.MethodGet, "/api/learning/plans", "listLearningPlans", tag, "Every study plan of the user", http.StatusOK, a.listLearningPlans)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/study/items", "setStudyItem", tag, "Mark a file or material read, unread or removed", http.StatusNoContent, a.setStudyItem)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/study/reset", "resetWorkspaceStudy", tag, "Clear study progress in a workspace", http.StatusNoContent, a.resetWorkspaceStudy)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/review", "getWorkspaceReview", tag, "A new review session: a suggestion's items, or the whole workspace's", http.StatusOK, a.getWorkspaceReview)
@@ -96,7 +114,6 @@ func (a *api) registerStudy(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
 	reg(api, http.MethodGet, "/api/review/overview", "getReviewOverview", tag, "Learning's Review tab: suggested reviews, sessions to continue, every workspace", http.StatusOK, a.getReviewOverview)
 	reg(api, http.MethodGet, "/api/learning/progress", "getLearningProgress", tag, "Learning's Progress tab: workspaces in progress and finished, the leading one's items", http.StatusOK, a.getLearningProgress)
-	reg(api, http.MethodPatch, "/api/me/study-progress", "setStudyProgressDefault", tag, "Default study progress setting", http.StatusNoContent, a.setStudyProgressDefault)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
 }
 
@@ -275,14 +292,75 @@ func sessionAnswer(ref *apimodel.ReviewSessionRef) *store.SessionAnswer {
 
 type learningProgressInput struct {
 	Lead string `query:"lead" doc:"A listed workspace whose map to return instead of the most recently studied one"`
+	All  bool   `query:"all" doc:"Also list workspaces hiding study progress, marked hidden"`
 }
 
 func (a *api) getLearningProgress(ctx context.Context, in *learningProgressInput) (*learningProgressOutput, error) {
-	res, err := a.s.LearningProgress(ctx, userID(ctx), in.Lead)
+	res, err := a.s.LearningProgress(ctx, userID(ctx), in.Lead, in.All)
 	if err != nil {
 		return nil, hErr(err)
 	}
 	return &learningProgressOutput{Body: res}, nil
+}
+
+func (a *api) listWorkspacePlans(ctx context.Context, in *workspaceIDInput) (*studyPlansOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.WorkspacePlans(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &studyPlansOutput{Body: res}, nil
+}
+
+func (a *api) listLearningPlans(ctx context.Context, _ *struct{}) (*studyPlansOutput, error) {
+	res, err := a.s.LearningPlans(ctx, userID(ctx))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &studyPlansOutput{Body: res}, nil
+}
+
+// Plans are private, so any reader of the parent workspace may keep them.
+func (a *api) createStudyPlan(ctx context.Context, in *createStudyPlanInput) (*studyPlanOutput, error) {
+	if err := a.requireStudyWrite(ctx, in.ID); err != nil {
+		return nil, err
+	}
+	res, err := a.s.CreateStudyPlan(ctx, userID(ctx), in.ID, strings.TrimSpace(string(in.Body.Name)))
+	if errors.Is(err, store.ErrStudyPlanCap) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &studyPlanOutput{Body: res}, nil
+}
+
+func (a *api) updateStudyPlan(ctx context.Context, in *updateStudyPlanInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	var name *string
+	if in.Body.Name != nil {
+		n := strings.TrimSpace(string(*in.Body.Name))
+		if n == "" {
+			return nil, huma.Error422UnprocessableEntity("a plan needs a name")
+		}
+		name = &n
+	}
+	err := a.s.UpdateStudyPlan(ctx, userID(ctx), in.ID, name, in.Body.Steps)
+	if errors.Is(err, store.ErrStudyPlanStep) {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	return &Empty{}, hErr(err)
+}
+
+func (a *api) deleteStudyPlan(ctx context.Context, in *studyPlanIDInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	return &Empty{}, hErr(a.s.DeleteStudyPlan(ctx, userID(ctx), in.ID))
 }
 
 func (a *api) rateReviewItem(ctx context.Context, in *reviewRatingInput) (*Empty, error) {
@@ -359,13 +437,6 @@ func (a *api) setStudyPreferences(ctx context.Context, in *studyPreferencesInput
 		return nil, err
 	}
 	return &Empty{}, hErr(a.s.SetStudyPreferences(ctx, userID(ctx), in.Body))
-}
-
-func (a *api) setStudyProgressDefault(ctx context.Context, in *studyDefaultInput) (*Empty, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
-		return nil, err
-	}
-	return &Empty{}, hErr(a.s.SetStudyProgressDefault(ctx, userID(ctx), in.Body.Enabled))
 }
 
 // requireStudyWrite allows any reader of the workspace whose account can sign in.

@@ -357,7 +357,10 @@ export const qk = {
   integrations: ['integrations'] as const,
   invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
+  learningPlans: ['learning', 'plans'] as const,
   learningProgress: ['learning', 'progress'] as const,
+  /** Everything under Learning: progress and plans. */
+  learningRoot: ['learning'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
@@ -386,6 +389,7 @@ export const qk = {
   study: (wsId: string) => ['workspace', wsId, 'study'] as const,
   studyAttempts: (wsId: string) =>
     ['workspace', wsId, 'study', 'attempts'] as const,
+  studyPlans: (wsId: string) => ['workspace', wsId, 'study', 'plans'] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,

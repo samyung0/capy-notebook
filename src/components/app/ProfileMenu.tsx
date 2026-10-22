@@ -1,11 +1,12 @@
 import { useClerk } from '@clerk/react';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe } from '@/api/hooks';
 import { Avatar } from '@/components/ui/Avatar';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
+import { IconButton } from '@/components/ui/IconButton';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -40,6 +41,59 @@ export function ProfileMenu(props: ProfileMenuProps) {
 function ClerkProfileMenu(props: ProfileMenuProps) {
   const { signOut } = useClerk();
   return <ProfileMenuInner onLogout={() => void signOut()} {...props} />;
+}
+
+/** The phone nav drawer's foot: avatar and name linking to account settings,
+ * and a log out button, no menu. */
+export function ProfileRow({ onNavigate }: { onNavigate?: () => void }) {
+  if (!CLERK_ACTIVE) return <ProfileRowInner onNavigate={onNavigate} />;
+  return <ClerkProfileRow onNavigate={onNavigate} />;
+}
+
+function ClerkProfileRow({ onNavigate }: { onNavigate?: () => void }) {
+  const { signOut } = useClerk();
+  return (
+    <ProfileRowInner onLogout={() => void signOut()} onNavigate={onNavigate} />
+  );
+}
+
+function ProfileRowInner({
+  onLogout,
+  onNavigate,
+}: {
+  onLogout?: () => void;
+  onNavigate?: () => void;
+}) {
+  const { data: me, isPending } = useMe({ errorBoundary: false });
+  return (
+    <div className="flex h-9 w-full items-center gap-1">
+      <Link
+        aria-label={m.settings_tab_account()}
+        className={cn(
+          BASE_BUTTON_STYLE,
+          'h-full min-w-0 flex-1 justify-start gap-2.5 px-2 text-fg hover:bg-page-hover'
+        )}
+        onClick={onNavigate}
+        preload="intent"
+        search={{ tab: 'account' }}
+        to="/settings"
+      >
+        <ProfileIdentity
+          avatarUrl={me?.avatarUrl}
+          name={me?.name}
+          pending={isPending}
+        />
+      </Link>
+      <IconButton
+        className="shrink-0"
+        icon="logout"
+        label={m.profile_menu_logout()}
+        onClick={onLogout}
+        size="sm"
+        variant="danger-light"
+      />
+    </div>
+  );
 }
 
 /** `dot` marks unread notifications on the avatar trigger. */
@@ -162,27 +216,41 @@ function ProfileRowButton({
       type="button"
       {...props}
     >
-      {pending ? (
-        <Skeleton className="size-6.5 shrink-0 rounded-full" />
-      ) : (
-        <Avatar
-          aria-hidden
-          className="size-6.5 shrink-0 text-[10.4px]"
-          name={name}
-          src={avatarUrl}
-        />
-      )}
-      {pending ? (
-        <Skeleton className="h-4 min-w-0 flex-1" />
-      ) : (
-        <span
-          className="t-body min-w-0 flex-1 translate-y-px truncate text-left font-bold leading-none"
-          data-label
-          title={name}
-        >
-          {name ?? '—'}
-        </span>
-      )}
+      <ProfileIdentity avatarUrl={avatarUrl} name={name} pending={pending} />
     </button>
+  );
+}
+
+/** Your avatar and name in a profile row. */
+function ProfileIdentity({
+  avatarUrl,
+  name,
+  pending,
+}: {
+  avatarUrl?: string;
+  name?: string;
+  pending: boolean;
+}) {
+  return pending ? (
+    <>
+      <Skeleton className="size-6.5 shrink-0 rounded-full" />
+      <Skeleton className="h-4 min-w-0 flex-1" />
+    </>
+  ) : (
+    <>
+      <Avatar
+        aria-hidden
+        className="size-6.5 shrink-0 text-[10.4px]"
+        name={name}
+        src={avatarUrl}
+      />
+      <span
+        className="t-body min-w-0 flex-1 translate-y-px truncate text-left font-bold leading-none"
+        data-label
+        title={name}
+      >
+        {name ?? '—'}
+      </span>
+    </>
   );
 }

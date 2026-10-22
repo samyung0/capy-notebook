@@ -2038,6 +2038,8 @@ def _ingest_provider_metadata(
         metadata["reasoningTokens"] = usage.reasoning_tokens
     if usage.anomaly:
         metadata["cacheAnomaly"] = usage.anomaly
+    if usage.served_by:
+        metadata["servedBy"] = usage.served_by
     if (
         kind in {"llm", "embedding"}
         and not usage.input_tokens

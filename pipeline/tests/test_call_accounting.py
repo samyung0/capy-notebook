@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
+from pathlib import Path
 
 import pytest
 
@@ -687,3 +689,120 @@ async def test_a_cancelled_admission_is_undone_without_delaying_the_cancel(
         assert registered and accounting._background == set()
     finally:
         accounting.reset(token)
+
+
+def _record_call_lifecycle(monkeypatch) -> list[tuple]:
+    """Bind a chat session and record each call's open, settle, abandon and
+    release in order, with no database or gateway."""
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    events: list[tuple] = []
+
+    async def open_call(call_id, **_kwargs):
+        events.append(("open", call_id))
+
+    async def abandon_call(call_id, _exc=None):
+        events.append(("abandon", call_id))
+
+    async def release_call(call_id):
+        events.append(("release", call_id))
+
+    async def post_settlement(payload, **_kwargs):
+        events.append(("settle", payload))
+        return {}
+
+    monkeypatch.setattr(accounting, "open_call", open_call)
+    monkeypatch.setattr(accounting, "abandon_call", abandon_call)
+    monkeypatch.setattr(accounting, "release_call", release_call)
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    monkeypatch.setattr(models.obs, "record_normalized", lambda *a, **k: None)
+    return events
+
+
+async def test_a_stream_failing_after_its_usage_bills_that_usage(monkeypatch):
+    """A stream that sent its usage before failing settles that usage at once
+    (abandoning would bill nothing) and frees its lease."""
+    events = _record_call_lifecycle(monkeypatch)
+
+    async def stream(*_args, **_kwargs):
+        yield {
+            "choices": [{"index": 0, "delta": {"content": "Hel"}}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 2},
+        }
+        raise TimeoutError("provider stream went silent for 15 s after it started")
+
+    monkeypatch.setattr(models.elitellm, "stream", stream)
+    token = accounting.bind("cr_1")
+    try:
+        with pytest.raises(TimeoutError):
+            await models.stream_agent_response(
+                [{"role": "user", "content": "hi"}], model=_spec()
+            )
+    finally:
+        accounting.reset(token)
+
+    call_id = events[0][1]
+    assert [event[0] for event in events] == ["open", "settle", "release"]
+    payload = events[1][1]
+    assert (payload["callId"], payload["inputTokens"], payload["outputTokens"]) == (
+        call_id,
+        11,
+        2,
+    )
+    assert events[2] == ("release", call_id)
+
+
+async def test_openrouter_serving_provider_is_recorded_as_served_by(monkeypatch):
+    """OpenRouter names the provider that served the call on every response;
+    it reaches usage_events.metadata as servedBy, from the gateway receipt
+    (streamed chat) and from ingest's local settlement (whole responses)."""
+    import httpx
+    import yaml
+
+    from pipeline import registry
+    from pipeline.elitellm import client as transport
+    from pipeline.retrieval.usage_extract import response_usage
+    from pipeline.store import db
+
+    cassette = Path(__file__).parent / "cassettes/replay/zai__glm_5_3_flash.yaml"
+    recorded = yaml.safe_load(cassette.read_text())["interactions"][0]["response"]
+    body = recorded["body"]["string"].encode()
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _r: httpx.Response(200, content=body))
+    )
+    monkeypatch.setattr(transport, "_client", lambda: client)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    registry.bind_request_llm(paid_by="platform", thinking="max")
+    events = _record_call_lifecycle(monkeypatch)
+    glm = _spec(
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        byok_enabled=False,
+        thinking_levels=("low", "high", "max"),
+        default_thinking="max",
+    )
+    token = accounting.bind("cr_glm")
+    try:
+        await models.stream_agent_response(
+            [{"role": "user", "content": "hi"}], model=glm
+        )
+    finally:
+        accounting.reset(token)
+        await client.aclose()
+
+    settle = next(event[1] for event in events if event[0] == "settle")
+    assert settle["servedBy"] == "DigitalOcean"
+    assert settle["inputTokens"] == 171
+
+    final_chunk = next(
+        line[5:]
+        for line in recorded["body"]["string"].splitlines()
+        if line.startswith("data:") and '"usage"' in line
+    )
+    usage = response_usage(json.loads(final_chunk), provider="zai")
+    metadata = db._ingest_provider_metadata(
+        "pc_1", "ingest_summary", "llm", usage, "user"
+    )
+    assert metadata["servedBy"] == "DigitalOcean"
+    # Direct providers carry no such field and record nothing.
+    assert response_usage(json.loads(final_chunk), provider="deepseek").served_by == ""

@@ -149,6 +149,7 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 		Provider:    "deepseek",
 		Model:       "deepseek-v4-flash",
 		InputTokens: 1,
+		ServedBy:    "DigitalOcean",
 	}
 	if _, err := s.SettleProviderCall(ctx, sessionID, first); !errors.Is(
 		err,
@@ -164,19 +165,23 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 	if !settlement.CreditsExhausted || !settlement.TerminalCallAllowed {
 		t.Fatalf("first settlement = %#v", settlement)
 	}
-	var callThinking, eventThinking string
+	var callThinking, eventThinking, servedBy string
 	if err := s.pool.QueryRow(ctx,
 		`SELECT thinking FROM provider_calls WHERE id=$1`, first.CallID,
 	).Scan(&callThinking); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.pool.QueryRow(ctx,
-		`SELECT thinking FROM usage_events WHERE provider_call_id=$1`, first.CallID,
-	).Scan(&eventThinking); err != nil {
+		`SELECT thinking, COALESCE(metadata->>'servedBy', '') FROM usage_events WHERE provider_call_id=$1`,
+		first.CallID,
+	).Scan(&eventThinking, &servedBy); err != nil {
 		t.Fatal(err)
 	}
 	if callThinking != models.ThinkingHigh || eventThinking != models.ThinkingHigh {
 		t.Fatalf("call thinking = %q, event thinking = %q", callThinking, eventThinking)
+	}
+	if servedBy != "DigitalOcean" {
+		t.Fatalf("event servedBy = %q", servedBy)
 	}
 	balance := mustBalance(t, s, userID)
 	used := balance.UsedMicros
