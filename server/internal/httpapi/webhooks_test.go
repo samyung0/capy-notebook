@@ -247,6 +247,8 @@ func (f *fakeStore) ArmReload(_ context.Context, userID string) error {
 	return nil
 }
 
+func (f *fakeStore) ForgetCreditCheckout(context.Context, string) error { return nil }
+
 func (f *fakeStore) ReloadRetryUnwanted(context.Context, string) (bool, error) {
 	return f.reloadRetryUnwanted, nil
 }

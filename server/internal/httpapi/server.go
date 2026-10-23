@@ -120,9 +120,14 @@ type api struct {
 	stripeSetupMethod   func(string) (store.PaymentMethod, error)
 	stripeVoidInvoice   func(string) error
 	stripeReloadOutcome func(string) (billing.ReloadResult, error)
-	streamMu            sync.Mutex
-	streamByUser        map[string]int
-	streamTotal         int
+	// Credit Checkout and portal sessions, replaced by tests.
+	stripeTopUpCheckout  func(customerID, userID string, amountCents int64, successURL, cancelURL string) (billing.CheckoutSession, error)
+	stripeMethodCheckout func(customerID, userID, successURL, cancelURL string) (billing.CheckoutSession, error)
+	stripePortal         func(customerID, returnURL, cancelSubscriptionID string) (string, error)
+	invoices             invoiceCache
+	streamMu             sync.Mutex
+	streamByUser         map[string]int
+	streamTotal          int
 	// uploads admits the gateway uploads (upload_queue.go).
 	uploads *uploadQueue
 	// undos run the requests for one chat Undo step one at a time
@@ -173,7 +178,11 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeSetupMethod:   billing.SetupPaymentMethod,
 		stripeVoidInvoice:   billing.VoidInvoice,
 		stripeReloadOutcome: billing.ReloadOutcome,
-		streamByUser:        make(map[string]int),
+
+		stripeTopUpCheckout:  billing.CreateTopUpCheckout,
+		stripeMethodCheckout: billing.CreateReloadMethodCheckout,
+		stripePortal:         billing.CreatePortalSession,
+		streamByUser:         make(map[string]int),
 	}
 	a.uploads = newUploadQueue(func(batch string, removed bool) {
 		if removed {

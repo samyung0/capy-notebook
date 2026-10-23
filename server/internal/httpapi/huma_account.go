@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	clerkuser "github.com/clerk/clerk-sdk-go/v2/user"
@@ -15,6 +16,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -370,8 +372,44 @@ func (a *api) listUsageEvents(ctx context.Context, in *usageEventsInput) (*usage
 	return &usageEventsOutput{Body: page}, nil
 }
 
-// listInvoices reads Stripe live; a user who never checked out has no
-// customer and so no invoices.
+// invoiceCacheTTL is how long a customer's invoice list is served without
+// asking Stripe again.
+const invoiceCacheTTL = time.Minute
+
+// invoiceCache holds recent invoice lists by Stripe customer.
+type invoiceCache struct {
+	mu      sync.Mutex
+	entries map[string]cachedInvoices
+}
+
+type cachedInvoices struct {
+	items []apimodel.Invoice
+	until time.Time
+}
+
+func (c *invoiceCache) get(customerID string, now time.Time) ([]apimodel.Invoice, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[customerID]
+	return entry.items, ok && now.Before(entry.until)
+}
+
+func (c *invoiceCache) put(customerID string, items []apimodel.Invoice, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.entries == nil {
+		c.entries = map[string]cachedInvoices{}
+	}
+	for id, entry := range c.entries {
+		if !now.Before(entry.until) {
+			delete(c.entries, id)
+		}
+	}
+	c.entries[customerID] = cachedInvoices{items: items, until: now.Add(invoiceCacheTTL)}
+}
+
+// listInvoices reads Stripe at most once a minute per customer; a user who
+// never checked out has no customer and so no invoices.
 func (a *api) listInvoices(ctx context.Context, _ *struct{}) (*invoicesOutput, error) {
 	out := &invoicesOutput{Body: apimodel.InvoiceList{Items: []apimodel.Invoice{}}}
 	customerID, err := a.s.GetStripeCustomerID(ctx, userID(ctx))
@@ -381,13 +419,27 @@ func (a *api) listInvoices(ctx context.Context, _ *struct{}) (*invoicesOutput, e
 	if customerID == "" {
 		return out, nil
 	}
+	if items, ok := a.invoices.get(customerID, time.Now()); ok {
+		out.Body.Items = items
+		return out, nil
+	}
 	invoices, err := a.stripeInvoices(customerID)
 	if err != nil {
 		log.Printf("list invoices: stripe lookup for %s: %v", customerID, err)
 		return nil, huma.Error503ServiceUnavailable("cannot load invoices from Stripe right now; try again shortly")
 	}
 	out.Body.Items = invoicesFromStripe(invoices)
+	a.invoices.put(customerID, out.Body.Items, time.Now())
 	return out, nil
+}
+
+// stripeSessionAllowed takes one of the user's Stripe session creations
+// (ratelimit StripeSession, 10 an hour) before Stripe is called.
+func (a *api) stripeSessionAllowed(ctx context.Context) error {
+	if ok, _, _ := a.limiter.Allow(ctx, "stripe-session:user:"+userID(ctx), a.limiter.Config().StripeSession); !ok {
+		return limitError("checkout_limit", "too many billing pages were opened this hour; try again later")
+	}
+	return nil
 }
 
 func invoicesFromStripe(invoices []*stripe.Invoice) []apimodel.Invoice {
@@ -447,6 +499,10 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 	priceID := billing.PriceForTier(in.Body.PlanTier, a.cfg.StripePricePro)
 	if priceID == "" {
 		return nil, huma.Error503ServiceUnavailable("stripe price not configured")
+	}
+	// Counted before the reservation, which a refusal would otherwise strand.
+	if err := a.stripeSessionAllowed(ctx); err != nil {
+		return nil, err
 	}
 	customerID, err := a.s.GetStripeCustomerID(ctx, uid)
 	if err != nil {
@@ -626,11 +682,37 @@ func (a *api) billingTopUp(ctx context.Context, in *topUpInput) (*urlOutput, err
 	}
 	// The webhook's billing event updates the tab once the top-up is credited.
 	returnURL := a.cfg.AppURL + "/billing?tab=subscription"
-	url, err := billing.CreateTopUpCheckout(customerID, uid, in.Body.AmountCents, returnURL, returnURL)
+	return a.creditCheckout(ctx, billing.KindTopUp, in.Body.AmountCents, func() (billing.CheckoutSession, error) {
+		return a.stripeTopUpCheckout(customerID, uid, in.Body.AmountCents, returnURL, returnURL)
+	})
+}
+
+// creditCheckout hands out the user's open credit Checkout of kind and
+// amountCents, or opens a new one within the session count and keeps it for
+// reuse.
+func (a *api) creditCheckout(
+	ctx context.Context, kind string, amountCents int64, open func() (billing.CheckoutSession, error),
+) (*urlOutput, error) {
+	uid := userID(ctx)
+	url, err := a.s.OpenCreditCheckout(ctx, uid, kind, amountCents)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+	if url != "" {
+		return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+	}
+	if err := a.stripeSessionAllowed(ctx); err != nil {
+		return nil, err
+	}
+	session, err := open()
+	if err != nil {
+		return nil, hErr(err)
+	}
+	// Unrecorded, the page still works; it is just not reused.
+	if err := a.s.RecordCreditCheckout(ctx, uid, kind, amountCents, session.ID, session.URL, session.ExpiresAt); err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "credit_checkout_record"})
+	}
+	return &urlOutput{Body: apimodel.URLResp{URL: session.URL}}, nil
 }
 
 func (a *api) billingPaymentMethod(ctx context.Context, _ *struct{}) (*urlOutput, error) {
@@ -643,11 +725,9 @@ func (a *api) billingPaymentMethod(ctx context.Context, _ *struct{}) (*urlOutput
 		return nil, hErr(err)
 	}
 	returnURL := a.cfg.AppURL + "/billing?tab=subscription"
-	url, err := billing.CreateReloadMethodCheckout(customerID, uid, returnURL+"&reload=method", returnURL)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+	return a.creditCheckout(ctx, billing.KindReloadMethod, 0, func() (billing.CheckoutSession, error) {
+		return a.stripeMethodCheckout(customerID, uid, returnURL+"&reload=method", returnURL)
+	})
 }
 
 func (a *api) setAutoReload(ctx context.Context, in *autoReloadInput) (*autoReloadOutput, error) {
@@ -704,7 +784,10 @@ func (a *api) portal(ctx context.Context, cancelSubscriptionID string) (*urlOutp
 	if customerID == "" {
 		return nil, huma.Error400BadRequest("no billing account")
 	}
-	url, err := billing.CreatePortalSession(
+	if err := a.stripeSessionAllowed(ctx); err != nil {
+		return nil, err
+	}
+	url, err := a.stripePortal(
 		customerID, a.cfg.AppURL+"/billing?tab=subscription", cancelSubscriptionID,
 	)
 	if err != nil {

@@ -20,3 +20,15 @@ CREATE TABLE invite_usage (
   invites integer NOT NULL CHECK (invites >= 0),
   PRIMARY KEY (day, user_id)
 );
+
+-- A user's open top-up and card Checkout pages, reused instead of a new
+-- Stripe session per click; a completed one is dropped by its webhook.
+CREATE TABLE credit_checkouts (
+  user_id      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind         text NOT NULL CHECK (kind IN ('topup','reload_method')),
+  amount_cents bigint NOT NULL CHECK (amount_cents >= 0),
+  session_id   text NOT NULL UNIQUE,
+  url          text NOT NULL,
+  expires_at   timestamptz NOT NULL,
+  PRIMARY KEY (user_id, kind)
+);

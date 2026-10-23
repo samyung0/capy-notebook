@@ -49,6 +49,7 @@ type webhookStore interface {
 	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
 	ReloadRetryUnwanted(ctx context.Context, invoiceID string) (bool, error)
 	ArmReload(ctx context.Context, userID string) error
+	ForgetCreditCheckout(ctx context.Context, sessionID string) error
 }
 
 var errStripeSubscriptionNotReady = errors.New("stripe subscription mapping is not ready")
@@ -614,6 +615,10 @@ func (a *api) creditCheckoutCompleted(
 	}
 	if err := a.wh.AssociateWebhookEvent(ctx, "stripe", eventID, claim, userID); err != nil {
 		return false, err
+	}
+	// A finished page is never handed out again.
+	if err := a.wh.ForgetCreditCheckout(ctx, sess.ID); err != nil {
+		return true, err
 	}
 	if kind == billing.KindReloadMethod {
 		if sess.SetupIntent == nil {
