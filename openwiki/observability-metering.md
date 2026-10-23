@@ -1068,7 +1068,9 @@ LLM and embedding calls. Audio transcription is the non-token exception:
 `pipeline/pipeline/ingest/source_text.py` opens its `audio` call under its own
 12-task gate and settles measured seconds through `accounting.settle_units`
 (ingest sessions only), which writes `units` / `unit` on the call and its
-usage event. Any new provider path must go through one of these boundaries or
+usage event. Chat voice input is the gateway's own provider call: Go opens
+it (`OpenProviderCall`) and settles its seconds through `SettleProviderCall`
+(below). Any new provider path must go through one of these boundaries or
 open and settle its own metered call explicitly, or it is invisible and
 silently free.
 
@@ -1294,8 +1296,31 @@ pays for its audio once (a later call on the same session, after a lost cache,
 settles at zero). `GET /api/source-upload-policy` also returns
 `audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
 dialog shows the estimate from the length the browser reads, and the worker's
-measured duration remains authoritative. `CreditsForAudioSeconds` in Go holds
-the same math for voice input.
+measured duration remains authoritative.
+
+Chat voice input (`server/internal/httpapi/voice.go`,
+[agentic-retrieval.md](agentic-retrieval.md#chat-voice-input)) is charged by
+the gateway. Before the call it opens a `chat` session with
+`BeginReservedSession`, which admits like any interactive request and then
+holds the two-minute maximum (`CreditsForAudioSeconds(120,
+voice_input_second)`, 2 credits at version 1) in the session's and the
+user's `reserved_micros`, so the hold counts against every other gate while
+the call runs. It opens one `audio` provider call (`alibaba`,
+`qwen-audio-3.1-asr-flash`, purpose `transcription`). On a transcript it
+closes the session, which takes the hold back, and then settles
+ceil(`end_time` / 1000) seconds through `SettleProviderCall` (a closed
+session still takes the receipt of a call opened under it, and the spend's
+own check sees the user's credits rather than the hold): kind `audio` with
+`units` and `unit = 'seconds'`, priced at the `voice_input_second` rate
+active when it settles, with the provider's token counts on the call. The
+pipeline's receipt endpoint sends no units, so it cannot settle audio.
+A provider 429 or failure, a span past 125 s, blank text or a browser that
+left abandons the call uncharged (`AbandonProviderCall`, with the provider
+status and code, or the request's own reason) and releases the session. A
+call is settled once by its id; a settle that fails leaves the call open
+until the sweep abandons it at its receipt deadline, so a voice input is
+under-charged, never charged twice. Alibaba also bills tokens; those stay
+telemetry like every other provider price.
 
 ### Source refreshes and maintenance republishes
 
@@ -1495,8 +1520,11 @@ import routes) carry a tighter budget on top of the general one, and so do the
 browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 20; a working client sends a few an hour) and browser thumbnail captures
 (`/api/files/{id}/thumbnail`, 60/hour per user, beside the handler's one per
-file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Credits remain the money bound;
-these limits only stop abuse patterns.
+file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Chat voice
+input (`/api/workspaces/{id}/voice-transcriptions`) has its own class, 60/hour
+with burst 6 (`ai_rate_limited` when spent): a few recordings a minute from a
+person talking, apart from the chat allowance the turns they send then use.
+Credits remain the money bound; these limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.

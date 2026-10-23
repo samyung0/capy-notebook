@@ -2984,6 +2984,70 @@ keep their size. `useKeyboardHeight` sets `--keyboard-inset` to the height the
 keyboard covers; the dock's field and the chat page's bottom padding add it, so
 only the composer lifts above the keyboard.
 
+### Chat voice input
+
+The chat composer (`ChatPanel`, not the one-line `ChatDock`) has a bordered
+mic button left of Send where the browser has `MediaRecorder` and
+`getUserMedia` (`chat/VoiceInput.tsx`, logic in `chat/voiceRecording.ts`);
+elsewhere it is not shown. Decisions: human/agentic-retrieval.md 2026-10-23.
+
+- **Recording.** The button toggles one recording: Opus in WebM or Ogg where
+  `MediaRecorder.isTypeSupported` says so, else Safari's AAC in MP4, asked for
+  at 32 kb/s. While it records, the elapsed time and the limit show beside it
+  (`0:42 / 2:00`) and the button turns into Stop; it stops by itself at
+  `VOICE_INPUT_MAX_SECONDS` (120, `fieldlimits.VoiceInputSeconds`, generated
+  into `src/api/limits.generated.ts`). The microphone's tracks stop whenever
+  a recording ends; a recording is dropped when the questions block takes
+  the composer's place or the chat goes.
+- **Transcription.** The clip goes as the raw body of
+  `POST /api/workspaces/{id}/voice-transcriptions` with its own
+  `Content-Type` (`useTranscribeVoice`, no toast); a spinner holds the button
+  meanwhile. The answer's `text` is inserted at the composer's caret, over a
+  selection, spaced from neighbouring words except beside CJK (appended
+  while the questions block hides the composer). Nothing is sent: the user
+  edits and sends as usual, under the usual 5,000-character limit.
+- **Errors** show under the composer (`data-error-surface="inline"`) until
+  the next recording: a blocked or missing microphone, busy (any 429), over
+  two minutes, no speech heard, or could not transcribe; credits and account
+  refusals keep their usual copy. Nothing retries; the user records again.
+
+The gateway (`server/internal/httpapi/voice.go`) lets anyone who may chat in
+the workspace transcribe (the chat stream's `WorkspaceEffectiveRole` check;
+others get 404). It takes `audio/webm`, `audio/ogg` or `audio/mp4` (other
+types 415 `voice_format_unsupported`) and at most 2 MiB, read for at most
+60 s; Huma stops reading at the limit and answers 413. Without
+`ALIBABA_MODELSTUDIO_KEY` and `_URL` it answers 503 `voice_unavailable`.
+It then:
+
+1. Reads the context: the workspace title and its 20 newest sources' names
+   (`Workspace: …
+Sources: a, b`), cut to 1,000 characters.
+2. Holds the two-minute maximum of the caller's credits (120 s at
+   `voice_input_second`) in a `chat` session (`BeginReservedSession`) and
+   opens an `audio` provider call (`alibaba`, `qwen-audio-3.1-asr-flash`,
+   purpose `transcription`, receipt window 2 minutes).
+3. Calls Model Studio once (`server/internal/alibaba`):
+   `{host}/api/v1/services/aigc/multimodal-generation/generation` with
+   `X-DashScope-SSE: disable`, the context as an `input_text` message, then
+   the clip as an `input_audio` data URI, and `format` (`webm`, `ogg`,
+   `mp4`), `sample_rate: "16000"`, `keep_dialect: true`. `{host}` is
+   `ALIBABA_MODELSTUDIO_URL` without `/compatible-mode/v1`.
+4. Answers from the top-level `sentence`: a span (`end_time`) past 125 s is
+   422 `voice_too_long` and blank text is 422 `voice_no_speech`, both with no
+   text. The API image has no audio duration parser, so the 2 MiB limit and
+   this span are the server's two-minute check.
+5. Closes the session, which frees the hold, then settles ceil(`end_time`
+   / 1000) seconds on the call, so the spend is checked against the user's
+   credits rather than its own hold; then answers `{text}`.
+
+Alibaba's 429 is a 429 `transcription_busy` and any other failure a 502
+`transcription_failed` (reported to Sentry with the status and provider code
+only); either abandons the call uncharged and frees the hold, as do the 422s
+and a request the browser left. The audio is never stored, and no log line,
+error or Sentry event carries the audio, the transcript or the key. Credits
+and the rate class are in
+[observability-metering.md](observability-metering.md).
+
 ### Build flow and the Library switch
 
 Curate mode, a thread flag fixed at creation (`conversations.curate`), was

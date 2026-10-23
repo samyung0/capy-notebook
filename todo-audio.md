@@ -162,22 +162,24 @@ Config and docs:
 
 ## Part B: voice input (Flash)
 
-- [ ] Chat composer mic button: hold or toggle to record with MediaRecorder
-      (Opus in Chrome/Firefox, AAC in Safari), a visible 2-minute countdown,
-      stop at 2:00.
-- [ ] Go endpoint (workspace-scoped, e.g.
-      `POST /api/workspaces/{id}/transcriptions`): accepts the clip (size
-      bound from 2 minutes of Opus/AAC), checks duration, reserves credits,
-      calls Flash with `keep_dialect` and workspace context, settles
-      `voice_input_second`, returns `{text}`. No retries; a 429 or provider
-      error returns an error the composer shows inline, and the user records
-      again.
-- [ ] Per-user rate limit on the endpoint (the existing limiter).
-- [ ] The text is inserted into the composer for editing; nothing is sent
+- [x] Chat composer mic button: toggle to record with MediaRecorder
+      (Opus in Chrome/Firefox, AAC in Safari, 32 kb/s), elapsed time against
+      2:00, stop at 2:00 (`chat/VoiceInput.tsx`, `chat/voiceRecording.ts`).
+- [x] Go endpoint `POST /api/workspaces/{id}/voice-transcriptions`
+      (`httpapi/voice.go`, client `internal/alibaba`): WebM/Ogg/MP4 raw body
+      up to 2 MiB; the 2-minute cap is the size limit plus the provider's
+      `end_time` (over 125 s refused, no text, no charge; the API image has
+      no duration parser); holds 120 s of `voice_input_second`, settles
+      ceil(seconds) once, abandons and releases on any failure. No retries:
+      429 `transcription_busy`, 502 `transcription_failed`.
+- [x] Per-user rate limit on the endpoint: its own `voice` class, 60/hour,
+      burst 6.
+- [x] The text is inserted into the composer for editing; nothing is sent
       automatically. The audio is not stored.
-- [ ] i18n strings (paraglide), mic permission denied state, 360 px layout.
-- [ ] Tests: endpoint validation and settlement with a fake provider; the
-      composer's record-insert flow in Vitest.
+- [x] i18n strings (paraglide), mic permission denied state, 360 px layout.
+- [x] Tests: endpoint validation and settlement with a fake provider
+      (`voice_test.go`, database: CI), the client (`asr_test.go`); the
+      composer's record-insert flow in Vitest (`VoiceInput.test.tsx`).
 
 ## Open
 
