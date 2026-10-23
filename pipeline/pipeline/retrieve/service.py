@@ -30,6 +30,7 @@ from ..retrieval import (
     compact,
     contract,
     library,
+    limits,
     models,
     pending,
     scripted,
@@ -472,9 +473,30 @@ async def _chat_events(req: ChatStreamReq):
             accounting.reset(accounting_token)
 
 
+def _take_request_slot() -> None:
+    """Admit a chat or generate request, or answer the existing 503
+    provider_busy with Retry-After when the process is full."""
+    if not limits.REQUEST_SLOTS.take():
+        raise elitellm.ProviderBusy(
+            "the retrieval service is at its request limit",
+            retry_after=accounting.BUSY_RETRY_AFTER_S,
+        )
+
+
+class _SlotStream(StreamingResponse):
+    """Holds its request slot until the stream ends, however it ends."""
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            limits.REQUEST_SLOTS.release()
+
+
 @app.post("/chat/stream")
 async def chat_stream(req: ChatStreamReq):
-    return StreamingResponse(
+    _take_request_slot()
+    return _SlotStream(
         _chat_events(req),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -491,15 +513,19 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
     The usage envelope is attached here rather than inside each workflow so
     every generate kind reports it the same way.
     """
-    accounting_token = _bind_accounting(req.spendSessionId)
+    _take_request_slot()
     try:
-        payload = await _generate(req)
-        usage = obs.current_usage()
-        if usage is not None and not usage.is_empty():
-            payload["usage"] = usage.as_dict()
-        return payload
+        accounting_token = _bind_accounting(req.spendSessionId)
+        try:
+            payload = await _generate(req)
+            usage = obs.current_usage()
+            if usage is not None and not usage.is_empty():
+                payload["usage"] = usage.as_dict()
+            return payload
+        finally:
+            _reset_accounting(accounting_token)
     finally:
-        _reset_accounting(accounting_token)
+        limits.REQUEST_SLOTS.release()
 
 
 async def _generate(req: GenerateReq) -> dict[str, Any]:

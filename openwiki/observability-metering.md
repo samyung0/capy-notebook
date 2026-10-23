@@ -1518,6 +1518,12 @@ non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a r
 sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
+The retrieval process bounds itself behind those per-user caps (Epo
+2026-10-24): at most 32 chat and generate requests at once, past which it
+answers the existing 503 `provider_busy` with `Retry-After`; deck scripts,
+renders and captures on a pool of two threads of their own; one Office capture
+at a time ([agentic-retrieval.md](agentic-retrieval.md#process-capacity)).
+
 **Per-model outbound concurrency** bounds what reaches a provider.
 `model_capacities` stores `concurrency_total` and `interactive_reserve` per
 provider/model, independently of versioned `model_configs`. Ops exposes

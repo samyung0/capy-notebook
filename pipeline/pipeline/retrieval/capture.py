@@ -16,7 +16,6 @@ knowledge-base bucket and keyed in the same cache by its object key.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import io
@@ -35,11 +34,12 @@ import requests
 
 from ..config import cfg
 from ..store import blobstore
-from . import store
+from . import limits, store
 
 log = logging.getLogger("capy.retrieval.capture")
 
 JPEG_QUALITY = 80
+OFFICE_BUSY = "the Office converter is busy; try this capture again later"
 
 
 class CaptureUnavailable(Exception):
@@ -120,7 +120,7 @@ async def pdf_path(workspace_id: str, file_id: str) -> Path:
         os.utime(target)
         return target
     max_bytes = int(row.get("size_bytes") or 0)
-    await asyncio.to_thread(_download, blob, target, max_bytes)
+    await limits.render_thread(_download, blob, target, max_bytes)
     return target
 
 
@@ -135,7 +135,7 @@ async def knowledge_pdf_path(object_key: str, max_bytes: int) -> Path:
     if target.is_file():
         os.utime(target)
         return target
-    await asyncio.to_thread(
+    await limits.render_thread(
         _download, object_key, target, max_bytes, blobstore.library_download_file
     )
     return target
@@ -145,7 +145,7 @@ async def render_knowledge(
     object_key: str, max_bytes: int, page: int, bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     pdf = await knowledge_pdf_path(object_key, max_bytes)
-    return await asyncio.to_thread(render, pdf, page, bbox, max_edge)
+    return await limits.render_thread(render, pdf, page, bbox, max_edge)
 
 
 def _office_capture(
@@ -301,7 +301,7 @@ async def render_file(
             raise CaptureUnavailable(
                 "the source has no stored bytes", "unavailable_target"
             )
-        return await asyncio.to_thread(_image_capture, row, page, bbox, max_edge)
+        return await limits.render_thread(_image_capture, row, page, bbox, max_edge)
     office_format = {"doc": "docx", "sheet": "xlsx", "slides": "pptx"}.get(
         row.get("kind")
     )
@@ -314,15 +314,22 @@ async def render_file(
             raise CaptureUnavailable(
                 "the source has no stored bytes", "unavailable_target"
             )
-        return await asyncio.to_thread(
-            _office_capture,
-            {**row, "name": f"source.{office_format}"},
-            page,
-            bbox,
-            max_edge,
-        )
+        # The parser's queue is ingest's too: past the process's Office
+        # capture slots the call answers busy instead of queueing there.
+        if not limits.OFFICE_CAPTURE_SLOTS.take():
+            raise CaptureUnavailable(OFFICE_BUSY, "unavailable_target")
+        try:
+            return await limits.render_thread(
+                _office_capture,
+                {**row, "name": f"source.{office_format}"},
+                page,
+                bbox,
+                max_edge,
+            )
+        finally:
+            limits.OFFICE_CAPTURE_SLOTS.release()
     pdf = await pdf_path(workspace_id, file_id)
-    return await asyncio.to_thread(render, pdf, page, bbox, max_edge)
+    return await limits.render_thread(render, pdf, page, bbox, max_edge)
 
 
 # --------------------------------------------------------------------- render

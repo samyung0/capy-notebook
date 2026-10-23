@@ -8,9 +8,57 @@ input counts are measurements. The pinned model input budget bounds each call.
 
 from __future__ import annotations
 
+import asyncio
+import contextvars
+import functools
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from ..config import cfg
+
+T = TypeVar("T")
+
+
+class Slots:
+    """A process-wide cap on running work. ``take`` answers at once instead of
+    queueing; every successful take is paired with one ``release``. Used from
+    the event loop only."""
+
+    def __init__(self, size: int) -> None:
+        self.size = size
+        self.used = 0
+
+    def take(self) -> bool:
+        if self.used >= self.size:
+            return False
+        self.used += 1
+        return True
+
+    def release(self) -> None:
+        self.used -= 1
+
+
+# The retrieval service is one uvicorn process (Epo 2026-10-24, rate-limit
+# audit; openwiki/agentic-retrieval.md "Process capacity"): chat and generate
+# requests running at once, past which a request answers provider_busy;
+REQUEST_SLOTS = Slots(32)
+# Office captures in flight to the parser, whose queue ingest shares;
+OFFICE_CAPTURE_SLOTS = Slots(1)
+# and threads for deck scripts, page renders and capture downloads, so they
+# never hold the default executor every model call's admission runs on. Two
+# also bound the memory of side-by-side image decodes (about 1 GiB each at
+# Pillow's pixel limit).
+RENDER_THREADS = 2
+_render_pool = ThreadPoolExecutor(RENDER_THREADS, thread_name_prefix="capy-render")
+
+
+async def render_thread(fn: Callable[..., T], /, *args: object) -> T:
+    """``asyncio.to_thread`` on the render pool."""
+    call = functools.partial(contextvars.copy_context().run, fn, *args)
+    return await asyncio.get_running_loop().run_in_executor(_render_pool, call)
+
 
 # Every turn: at most this many tool calls in one response.
 TOOLS_PER_RESPONSE = 4

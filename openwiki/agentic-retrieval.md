@@ -2811,6 +2811,46 @@ kind or index state, and agent creates no longer return `invalid_scope` or
 `files.scope_file_names` (migration `0100`), not exposed by the API; a file
 copy (single or workspace clone) keeps them as a material copy does.
 
+### Process capacity
+
+The retrieval service is one uvicorn process for chat, generate and the editor
+AI routes, so it bounds its own work (Epo 2026-10-24, rate-limit audit M13;
+`retrieval/limits.py`):
+
+- **Requests.** At most 32 `/chat/stream` and `/generate` requests run at once
+  (`REQUEST_SLOTS`). Past that a request is answered before any work with the
+  existing 503 `provider_busy` (`retryAfterSeconds` and `Retry-After` 5 s),
+  which Go maps to the same retryable error as a busy model. A stream holds
+  its slot until its response ends however it ends
+  (`service._SlotStream`). The Go limits come first: 5 open chat sessions per
+  user and the AI route class.
+- **Render pool.** Deck scripts (the checker and exporter), page renders,
+  image and Office captures and capture downloads run on two threads of their
+  own (`render_thread`), never on the default executor, where every model
+  call's accounting admission and settlement run: a slow export or a large
+  decode queues behind its own kind and never delays another user's next
+  model call. Two threads also bound side-by-side image decodes, about 1 GiB
+  each at Pillow's pixel limit.
+- **Office captures.** One at a time per process (`OFFICE_CAPTURE_SLOTS`; see
+  `capture_page` under Tools).
+
+The numbers come from a local measurement of the real provider-call path
+(accounting admission, the model gate and settlement against Postgres, the
+provider stream faked) on four cores with the deployed pools (sync 4, async 8)
+and an 8-thread default executor, as on the 4-vCPU production host. What limits
+the process is its event loop: measuring a request's context costs about 0.5 ms
+of loop time per 1,000 characters (41 ms at 80,000, 0.4 s at a 250,000-token
+history), and every model call pays it. At 32 turns making a model call every
+3 s with 80,000-character requests, admission's p95 was 1.0 s and turns took
+1.4 times their unloaded length; at 64, 2.3 s and 1.7 times; at 128, 4.3 s and
+2.6 times; no request failed. A sync pool of 8 instead of 4 lowered the p95
+only above 32 turns (0.34 s against 0.77 s at 64), so the pools keep their
+defaults. Real responses take longer than 3 s, so 32 leaves headroom except for
+many full-length histories at once. Eight 24-second blocking jobs on the
+default executor, as parallel deck exports were, held every admission for
+their whole length (p95 24 s); on the render pool admission was unaffected
+(p95 0.12 s).
+
 ### How a turn's work is saved
 
 However a turn ends, its assistant row keeps the tool calls that finished
@@ -3466,6 +3506,11 @@ source, verify its size/hash, then send it to the parser's authenticated
 `/capture_page` route. That route shares the bounded parser FIFO and hard deadline,
 converts temporarily with LibreOffice and returns only JPEG. It runs no ODL parse
 and creates no parse receipt. Temporary Office bytes are removed after the request.
+The retrieval process sends one Office capture at a time (Epo 2026-10-24,
+`limits.OFFICE_CAPTURE_SLOTS`), so captures never take more than one of the
+parser's slots from ingest: a capture while another runs is refused with "the
+Office converter is busy; try this capture again later" (`unavailable_target`,
+as a parser 429 surfaces) and the turn continues.
 Image captures download the published bytes the same way and normalise them
 with Pillow (EXIF orientation, crop to the box, shrunk to the max edge, alpha
 flattened on white, first frame only, Pillow's decompression-bomb limit bounding the
