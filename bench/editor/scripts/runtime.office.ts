@@ -1665,31 +1665,34 @@ for (const fixture of FIXTURES) {
           origin,
         });
       await placeCaret(page, frame, fixture);
+      // The peer's block one row on (pasted(row + 1, col)), so every cell the
+      // paste covers changes.
       await frame.evaluate(
         ({ cols, rows }) => {
           const lines = [];
           for (let row = 0; row < rows; row += 1)
             lines.push(
               Array.from({ length: cols }, (_, col) =>
-                String((row * 7 + col) % 97)
+                String(((row + 1) * 7 + col) % 97)
               ).join('\t')
             );
           return navigator.clipboard.writeText(lines.join('\n'));
         },
         PASTE
       );
-      // The paste selects what it pasted; its last cell shows its value.
+      // The paste selects what it pasted and keeps its top-left cell active,
+      // so the formula bar shows that cell's new value.
       const localPaste = await timeLocal(
         page,
         frame,
         () => page.keyboard.press('ControlOrMeta+v'),
         'keydown',
-        pasted(PASTE.rows - 1, PASTE.cols - 1)
+        pasted(1, 0)
       );
       // One row above the fixture's cell, which the paste filled.
       await placeCaret(page, frame, fixture);
       await expect(frame.getByTestId('xlsx-formula-input')).toHaveValue(
-        pasted(0, 0),
+        pasted(1, 0),
         { timeout: 60_000 }
       );
       const { version } = await page.evaluate(

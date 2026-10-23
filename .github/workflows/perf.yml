@@ -271,6 +271,8 @@ jobs:
           if-no-files-found: ignore
           name: collaboration-stress-results
           path: bench/collaboration/.results/
+          # `.results` is a dot directory, which upload-artifact skips by default.
+          include-hidden-files: true
           retention-days: 90
 
   # Measures what UAT serves, not this checkout: Lighthouse runs against the
