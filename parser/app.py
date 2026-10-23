@@ -988,6 +988,13 @@ _artifact_tasks_lock = asyncio.Lock()
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if not PARSER_TOKEN:
         raise RuntimeError("PARSER_TOKEN must be set")
+    # The pipeline's secret floor (pipeline/config.py), checked unless
+    # APP_ENV is local development or e2e.
+    if len(PARSER_TOKEN) < 32 and os.environ.get("APP_ENV") not in {
+        "development",
+        "e2e",
+    }:
+        raise RuntimeError("PARSER_TOKEN must be at least 32 characters")
     capy_sandbox.make_undumpable()
     # A deployed host without Landlock ABI 6 refuses here; local runs say so.
     if not capy_sandbox.landlock_available():

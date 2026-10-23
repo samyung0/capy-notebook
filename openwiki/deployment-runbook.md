@@ -1283,6 +1283,15 @@ infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
 
+Every pipeline process (retrieval, the ingest, parse and import workers) refuses
+to start with a `PIPELINE_SECRET` or `PARSER_TOKEN` set shorter than 32
+characters, and the parser with a shorter `PARSER_TOKEN`, unless `APP_ENV` is
+`development` or `e2e`; a missing `APP_ENV` is checked (`pipeline/config.py`
+`secret`, `parser/app.py`; Epo 2026-10-24, the gateway's own rule). UAT, the
+shared non-production parser and production all run with `APP_ENV=production`,
+so their values must be at least 32 characters (`openssl rand -hex 32`) before a
+release with this rule deploys; local development keeps `dev-pipeline-secret`.
+
 Retry scheduling lives on the `jobs` row (three attempts, 30 s doubling
 backoff, `CAPY_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
 attempt lease only fences stale callbacks: a retryable failure releases it before
@@ -2400,7 +2409,8 @@ the host:
   at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
   same user, can neither trace it nor read its memory or environment. It holds
   `PARSER_TOKEN` in a constant, removes it from its environment at import,
-  before any child starts, and refuses to start, or a request, without one;
+  before any child starts, and refuses to start, or a request, without one
+  (or to start with one under 32 characters outside development and e2e);
   its children run under the decoder sandbox (§7.5). The
   playbook also sets `kernel.yama.ptrace_scope=1`
   (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own

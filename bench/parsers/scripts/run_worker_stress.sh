@@ -59,7 +59,7 @@ for copy_number in 1 2 3 4; do
     -v "$spool:/var/lib/capy-parse"
     -v "$bench_root/bench/parsers/scripts/bench_worker_job.py:/bench_worker_job.py:ro"
     -e PARSER_URL=http://127.0.0.1:8090/file_parse
-    -e PARSER_TOKEN=worker-stress-token
+    -e PARSER_TOKEN=worker-stress-token-for-local-bench-runs
     -e RELEASE_SHA="$release_sha"
     -e CAPY_PARSE_METHOD="$method"
     -e CAPY_PARSE_SHARED_DIR=/var/lib/capy-parse
