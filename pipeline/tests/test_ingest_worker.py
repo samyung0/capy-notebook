@@ -19,6 +19,16 @@ from pipeline.ingest import worker
 from pipeline.parse import parser_client
 
 
+def test_audio_job_timeout_adds_the_transcription_budget():
+    audio_job = {
+        "type": "ingest",
+        "payload": {"processingPlan": {"route": ingest_plan.AUDIO_TRANSCRIPTION}},
+    }
+
+    assert worker._job_timeout(audio_job, 1_200) == 1_200 + 900
+    assert worker._job_timeout({"type": "ingest", "payload": {}}, 1_200) == 1_200
+
+
 def test_source_refresh_publishes_only_its_ready_event(monkeypatch):
     events: list[str] = []
     monkeypatch.setattr(

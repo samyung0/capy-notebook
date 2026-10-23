@@ -2064,11 +2064,15 @@ def settle_ingest_provider_call(
     model_version: int,
     usage: Any,
     credit_micros: int,
+    units: int = 0,
+    unit: str = "tokens",
 ) -> str:
     """Atomically apply one post-paid ingest provider attempt.
 
     A ``system`` session (the maintenance republish) records the usage at
-    zero credits against its actor.
+    zero credits against its actor. A job pays for its audio once: a retry
+    that transcribes again (its cached transcript was lost) records the
+    seconds at zero credits.
     """
     cur.execute(
         """
@@ -2090,6 +2094,18 @@ def settle_ingest_provider_call(
     ) = reservation
     if paid_by == "system":
         credit_micros = 0
+    if kind == "audio":
+        cur.execute(
+            """
+            SELECT 1 FROM provider_calls
+             WHERE reservation_id = %s AND id <> %s AND kind = 'audio'
+               AND status = 'applied' AND credit_micros > 0
+             LIMIT 1
+            """,
+            (session_id, call_id),
+        )
+        if cur.fetchone() is not None:
+            credit_micros = 0
     if surface != "ingest" or reservation_status not in {
         "open",
         "settled",
@@ -2105,7 +2121,7 @@ def settle_ingest_provider_call(
                receipt_deadline_at <= now(), provider, model,
                input_tokens, output_tokens, cached_read_tokens,
                cache_write_tokens, reasoning_tokens, cache_anomaly,
-               credit_micros
+               units, unit, credit_micros
           FROM provider_calls
          WHERE id = %s FOR UPDATE
         """,
@@ -2139,6 +2155,8 @@ def settle_ingest_provider_call(
             usage.cache_write_tokens,
             usage.reasoning_tokens,
             usage.anomaly,
+            units,
+            unit,
             credit_micros,
         )
         expected_event = (
@@ -2153,8 +2171,8 @@ def settle_ingest_provider_call(
             model_version,
             usage.input_tokens,
             usage.output_tokens,
-            0,
-            "tokens",
+            units,
+            unit,
             credit_micros,
             _ingest_provider_metadata(call_id, purpose, kind, usage, paid_by),
         )
@@ -2201,7 +2219,8 @@ def settle_ingest_provider_call(
         model_version=model_version,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
-        unit="tokens",
+        units=units,
+        unit=unit,
         credit_micros=credit_micros,
         reservation_id=session_id,
         provider_call_id=call_id,
@@ -2215,7 +2234,7 @@ def settle_ingest_provider_call(
           input_tokens = %s, output_tokens = %s,
           cached_read_tokens = %s, cache_write_tokens = %s,
           reasoning_tokens = %s, cache_anomaly = %s,
-          credit_micros = %s,
+          units = %s, unit = %s, credit_micros = %s,
           received_at = now(), applied_at = now()
         WHERE id = %s AND reservation_id = %s AND status = 'open'
         """,
@@ -2228,6 +2247,8 @@ def settle_ingest_provider_call(
             usage.cache_write_tokens,
             usage.reasoning_tokens,
             usage.anomaly,
+            units,
+            unit,
             credit_micros,
             call_id,
             session_id,

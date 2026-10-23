@@ -33,6 +33,8 @@ KIND_EMBEDDING = "embedding"
 # A search rerank: zero credits like a query embedding, labeled with the
 # reranker row it called.
 KIND_RERANK = "rerank"
+# Transcribed seconds, priced per second by a resource rate.
+KIND_AUDIO = "audio"
 
 PURPOSE_AGENT = "agent"
 PURPOSE_TERMINAL = "terminal"
@@ -274,6 +276,7 @@ async def open_call(
     model: str = "",
     deadline: float | None = None,
     capacity: tuple[str, int] | None = None,
+    provider_timeout_s: float | None = None,
 ) -> None:
     """Insert the pending row before the provider HTTP call.
 
@@ -281,7 +284,10 @@ async def open_call(
     database cannot prove the stub exists, so it must not call the provider.
     A gated model takes its capacity lease in the same transaction as the row;
     while the gate is full this polls until ``deadline`` (a monotonic instant)
-    and then raises ProviderBusy without inserting anything.
+    and then raises ProviderBusy without inserting anything. A call with no
+    catalog model is gated only by its own ``capacity``. ``provider_timeout_s``
+    replaces the mode's provider timeout for a call that runs longer (an
+    audio transcription task); the receipt window and lease follow it.
     """
     state = current()
     if state is None:
@@ -294,19 +300,22 @@ async def open_call(
     if spec is not None:
         provider = provider or spec.provider_slug
         model = model or spec.model_slug
-    if state.settlement_mode == "ingest":
-        provider_timeout_s = cfg.ingest_provider_timeout_s
-    else:
-        # Interactive streams are bounded by the backstop, not the idle timer.
-        provider_timeout_s = cfg.interactive_stream_max_s
+    if provider_timeout_s is None:
+        provider_timeout_s = (
+            cfg.ingest_provider_timeout_s
+            if state.settlement_mode == "ingest"
+            # Interactive streams are bounded by the backstop, not the idle timer.
+            else cfg.interactive_stream_max_s
+        )
     receipt_timeout_s = (
         max(1, math.ceil(provider_timeout_s)) + _RECEIPT_SETTLEMENT_GRACE_S
     )
-    admission_mode = (
-        state.settlement_mode
-        if spec is not None and registry.current_request_llm().paid_by != "user"
-        else None
+    gated = (
+        capacity is not None
+        if spec is None
+        else registry.current_request_llm().paid_by != "user"
     )
+    admission_mode = state.settlement_mode if gated else None
     while True:
         admission = asyncio.ensure_future(
             asyncio.to_thread(
@@ -628,6 +637,44 @@ def _finish_background_settlement(task: asyncio.Task[Any]) -> None:
         )
 
 
+async def settle_units(
+    *,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    units: int,
+    unit: str,
+    credit_micros: int,
+) -> None:
+    """Settle an ingest call measured in non-token units (audio seconds) at
+    the credits the caller priced from its snapshotted rate."""
+    state = current()
+    if state is None:
+        return
+    if state.settlement_mode != "ingest":
+        raise AccountingError("unit settlement is ingest-only")
+    if units < 0 or not unit or credit_micros < 0:
+        raise AccountingError("provider units and credits must be non-negative")
+    await _finish_known_receipt(
+        _retry_local_settlement(
+            _settle_ingest_units_sync,
+            state.session_id,
+            call_id,
+            kind,
+            purpose,
+            provider,
+            model,
+            units,
+            unit,
+            credit_micros,
+            deadline=state.receipt_deadlines.get(call_id),
+        )
+    )
+    state.settled_calls += 1
+
+
 async def _retry_local_settlement(
     function: Any,
     *args: Any,
@@ -734,6 +781,43 @@ def _settle_ingest_call_sync(
                 model_version=spec.version,
                 usage=usage,
                 credit_micros=credit_micros,
+            )
+        conn.commit()
+        if result == "expired":
+            raise db.ProviderReceiptExpired("provider receipt deadline elapsed")
+
+
+def _settle_ingest_units_sync(
+    session_id: str,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    units: int,
+    unit: str,
+    credit_micros: int,
+) -> None:
+    from ..store import db
+
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            result = db.settle_ingest_provider_call(
+                cur,
+                session_id=session_id,
+                call_id=call_id,
+                kind=kind,
+                purpose=purpose,
+                thinking="",
+                provider=provider,
+                model=model,
+                catalog_provider_slug="",
+                catalog_model_slug="",
+                model_version=0,
+                usage=NormalizedUsage(),
+                credit_micros=credit_micros,
+                units=units,
+                unit=unit,
             )
         conn.commit()
         if result == "expired":

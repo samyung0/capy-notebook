@@ -61,7 +61,12 @@ from ..jobs import (
 )
 from ..parse import caption_cache, parser_client
 from ..retrieval import accounting, indexing, models, store
-from ..retrieval.chunking import CHUNKER_VERSION, Chunk, chunk_markdown
+from ..retrieval.chunking import (
+    CHUNKER_VERSION,
+    Chunk,
+    chunk_markdown,
+    chunk_transcript,
+)
 from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
@@ -73,6 +78,8 @@ log = logging.getLogger("capy.worker")
 
 _RESOURCE_DIGITAL_PAGE = "digital_parse_page"
 _RESOURCE_VLM_PAGE = "vlm_ingest_page"
+# Read only by an audio job, which fails explicitly without it (_rate).
+_RESOURCE_AUDIO_SECOND = "audio_transcription_second"
 _REQUIRED_RESOURCE_RATES = {
     _RESOURCE_DIGITAL_PAGE,
     _RESOURCE_VLM_PAGE,
@@ -145,6 +152,19 @@ def _rate(resource_key: str) -> dict:
     if version <= 0 or micros < 0:
         raise TerminalError(f"ingest payload has invalid {resource_key} rate")
     return {**rate, "version": version, "creditMicrosPerUnit": micros}
+
+
+def _job_timeout(job: dict, default: int) -> int:
+    """An audio ingest gets its transcription task's budget on top of the
+    ordinary one, which still covers download, indexing and the summary."""
+    payload = job.get("payload") or {}
+    plan = payload.get("processingPlan") or {}
+    if (
+        job.get("type") == "ingest"
+        and plan.get("route") == ingest_plan.AUDIO_TRANSCRIPTION
+    ):
+        return default + source_text.FILETRANS_TIMEOUT_S
+    return default
 
 
 # ----------------------------------------------------------- sync DB helpers
@@ -869,6 +889,16 @@ def _read_name(file_id: str) -> str:
         return db.file_name(cur, file_id)
 
 
+def _audio_context(workspace_id: str, name: str) -> str:
+    """The text sent ahead of a recording so names come out right: the
+    workspace's title and the file's name."""
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT name FROM workspaces WHERE id=%s", (workspace_id,))
+        row = cur.fetchone()
+    title = str(row[0]) if row else ""
+    return f"Workspace: {title}\nFile: {name}"
+
+
 def _account_allows_ingest(file_id: str, payload: dict, check_credits: bool) -> bool:
     """Stage gate: owner lifecycle/storage, actor lifecycle, optionally credits.
 
@@ -1207,6 +1237,8 @@ def _pipeline_identity(
         direct = f"direct:tabular:{cfg.tabular_text_version}"
     elif processing_plan.route == ingest_plan.IMAGE_CAPTION:
         direct = "direct:image"
+    elif processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION:
+        direct = "direct:filetrans"
     else:
         direct = ""
     if direct:
@@ -1547,6 +1579,7 @@ async def _chunks_for(
 
     direct = {
         ingest_plan.IMAGE_CAPTION: "image",
+        ingest_plan.AUDIO_TRANSCRIPTION: "audio",
         ingest_plan.DELIMITED_TEXT: "tabular",
     }.get(processing_plan.route)
     if direct:
@@ -1562,7 +1595,7 @@ async def _chunks_for(
         _publish_progress(
             ws,
             file_id,
-            "captioning" if direct == "image" else "indexing",
+            {"image": "captioning", "audio": "transcribing"}.get(direct, "indexing"),
             20,
             status="processing",
         )
@@ -1589,6 +1622,21 @@ async def _chunks_for(
                 figures_captioned=0 if caption_cached else 1,
                 figures_applied=1,
             )
+        elif direct == "audio":
+            if not local_path:
+                raise RetryableError("local audio source is missing")
+            _set_stage("audio_transcription")
+            (
+                sentences,
+                derived_key,
+                derived_size,
+            ) = await source_text.transcribe_audio_source(
+                local_path=local_path,
+                source_sha256=source_sha256,
+                blob_path=str(payload["blobPath"]),
+                context=await asyncio.to_thread(_audio_context, ws, name),
+                second_rate_micros=_rate(_RESOURCE_AUDIO_SECOND)["creditMicrosPerUnit"],
+            )
         else:
             if not local_path:
                 raise RetryableError("local delimited source is missing")
@@ -1612,6 +1660,8 @@ async def _chunks_for(
                     str(payload.get("actorUserId") or ""),
                 )
         _publish_progress(ws, file_id, "indexing", 50, status="processing")
+        if direct == "audio":
+            return chunk_transcript(sentences), [], None
         if direct == "tabular":
             # Every row carries its own headers, so a table chunks with no
             # overlap: a carried row would only repeat in the next chunk.
@@ -1875,7 +1925,9 @@ async def _process_ingest_job_bound(job: dict) -> None:
             int(payload["sourceRevision"]),
             str(payload.get("sourceETag") or ""),
             str(payload.get("actorUserId") or ""),
-            "waiting for parser capacity",
+            "waiting for provider capacity"
+            if processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION
+            else "waiting for parser capacity",
             YIELD_BACKOFF_S,
             "capacity_wait",
         )
@@ -2767,7 +2819,7 @@ async def main_async(job_type: str = "ingest") -> None:
                 heartbeat.start()
                 restart_after_failure = False
                 try:
-                    async with asyncio.timeout(policy.timeout_s):
+                    async with asyncio.timeout(_job_timeout(job, policy.timeout_s)):
                         await job_task
                     if claim_lost.is_set():
                         log.info("job %s stopped after losing its claim", job["id"])

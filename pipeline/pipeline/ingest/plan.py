@@ -15,6 +15,7 @@ STORE_ONLY = "store_only"
 RAW_TEXT = "raw_text"
 DELIMITED_TEXT = "delimited_text"
 IMAGE_CAPTION = "image_caption"
+AUDIO_TRANSCRIPTION = "audio_transcription"
 DOCUMENT_PARSE = "document_parse"
 
 ROUTES = frozenset(
@@ -23,6 +24,7 @@ ROUTES = frozenset(
         RAW_TEXT,
         DELIMITED_TEXT,
         IMAGE_CAPTION,
+        AUDIO_TRANSCRIPTION,
         DOCUMENT_PARSE,
     }
 )
@@ -49,28 +51,17 @@ _IMAGE_FORMATS = frozenset(
         "ico",
     }
 )
-# Legacy Office and audio files are kept as uploaded and never ingested.
-_STORE_ONLY_FORMATS = frozenset(
-    {
-        "",
-        "doc",
-        "ppt",
-        "xls",
-        "mp3",
-        "wav",
-        "m4a",
-        "ogg",
-        "flac",
-        "aac",
-        "webm",
-        "mp4",
-        "mpeg",
-        "mpga",
-        "opus",
-    }
+_AUDIO_FORMATS = frozenset(
+    {"mp3", "wav", "m4a", "ogg", "flac", "aac", "webm", "mp4", "mpeg", "mpga", "opus"}
 )
+# Legacy Office files are kept as uploaded and never ingested.
+_STORE_ONLY_FORMATS = frozenset({"", "doc", "ppt", "xls"})
 _RESERVED_FORMATS = (
-    _DOCUMENT_FORMATS | _DELIMITED_FORMATS | _IMAGE_FORMATS | _STORE_ONLY_FORMATS
+    _DOCUMENT_FORMATS
+    | _DELIMITED_FORMATS
+    | _IMAGE_FORMATS
+    | _AUDIO_FORMATS
+    | _STORE_ONLY_FORMATS
 )
 
 
@@ -130,6 +121,18 @@ def _expected_contract(route: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
                 "generate_derivatives",
             ),
             (*_DIRECT_RESOURCES, "vision_model", "object_storage_write"),
+        )
+    if route == AUDIO_TRANSCRIPTION:
+        return (
+            (
+                "fetch_source",
+                "transcribe_audio",
+                "persist_derived_text",
+                "chunk",
+                "index",
+                "generate_derivatives",
+            ),
+            (*_DIRECT_RESOURCES, "audio_transcription", "object_storage_write"),
         )
 
     stages = ["fetch_source", "parse_document"]
@@ -197,6 +200,8 @@ def require(value: Any) -> ProcessingPlan:
         raise TerminalError("delimited processing plan has an unsupported format")
     if route == IMAGE_CAPTION and format_name not in _IMAGE_FORMATS:
         raise TerminalError("image processing plan has an unsupported format")
+    if route == AUDIO_TRANSCRIPTION and format_name not in _AUDIO_FORMATS:
+        raise TerminalError("audio processing plan has an unsupported format")
     if route == STORE_ONLY and format_name not in _STORE_ONLY_FORMATS:
         raise TerminalError("store-only processing plan has an unsupported format")
     if route == RAW_TEXT and format_name not in _RAW_TEXT_FORMATS:

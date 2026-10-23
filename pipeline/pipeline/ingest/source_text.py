@@ -1,8 +1,9 @@
 """Worker-side derived text for non-document source files.
 
-Images and delimited tables need searchable text but do not belong in the
-document parser. The worker already owns the source download, so it derives
-that text locally; image captions are cached by the server-computed source SHA.
+Images, audio and delimited tables need searchable text but do not belong in
+the document parser. The worker already owns the source download, so it
+derives that text locally; image captions and audio transcripts are cached by
+the server-computed source SHA.
 """
 
 from __future__ import annotations
@@ -10,16 +11,31 @@ from __future__ import annotations
 import asyncio
 import base64
 import csv
+import json
+import logging
+import math
 import mimetypes
 import re
-from collections.abc import Iterator
+import subprocess
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
+import httpx
+import requests
+
+from .. import elitellm
 from ..config import cfg
-from ..jobs import InputLimitError, RetryableError
+from ..generated.limits import AUDIO_MAX_DURATION_SECONDS
+from ..jobs import CapacityWait, InputLimitError, RetryableError, TerminalError
 from ..prompts.captioning import IMAGE_PROMPT
+from ..retrieval import accounting
 from ..retrieval.chunking import estimate_tokens
+from ..store import blobstore, db
 from . import decode
+
+log = logging.getLogger("capy.worker.source_text")
 
 # csv.reader streams rows, but it builds a whole row before its width can be
 # read: one 30 MiB row of short fields peaks above 500 MiB, and the widest row
@@ -181,3 +197,331 @@ def tabular_text(path: str, name: str) -> str:
     # A blank line between rows makes each row its own paragraph, so the
     # chunker packs whole rows and never splits one table-sized block.
     return "\n\n".join(parts)
+
+
+# ------------------------------------------------------------------ audio
+#
+# Uploaded audio goes to Alibaba Model Studio's Filetrans: an async task that
+# fetches the source through a presigned link, which this attempt submits and
+# polls to the end. Nothing about the task outlives the attempt; a retried
+# attempt submits again. Log lines and error messages name statuses and
+# provider error codes only, never transcript text or the signed link.
+
+FILETRANS_MODEL = "qwen-audio-3.1-asr-flash-filetrans"
+# At most this many tasks in flight across every ingest worker; a full gate
+# re-pends the job without spending an attempt.
+FILETRANS_CAPACITY = ("filetrans", 12)
+# One task's wall budget: submit, poll, read the result. The source link lives
+# as long, since nothing waits for the task after it.
+FILETRANS_TIMEOUT_S = 15 * 60
+_FILETRANS_POLL_S = 2.0
+_FILETRANS_REQUEST_TIMEOUT_S = 30.0
+
+
+class FiletransError(Exception):
+    """A Filetrans answer without a transcript, named by its HTTP status or
+    the task's error code."""
+
+    def __init__(self, reason: int | str) -> None:
+        super().__init__(f"audio transcription failed ({reason})")
+        if isinstance(reason, int):
+            self.status_code = reason
+
+
+class FiletransRetryableError(FiletransError, RetryableError):
+    pass
+
+
+class FiletransTerminalError(FiletransError, TerminalError):
+    pass
+
+
+class FiletransNotConfiguredError(TerminalError):
+    """Configuration stopped the request before Alibaba could receive it."""
+
+    provider_not_called = True
+
+
+def audio_artifact_key(source_sha256: str) -> str:
+    return f"derived-text/{source_sha256}/qwen-audio-3.1-filetrans.json"
+
+
+def _load_artifact(key: str) -> dict[str, Any] | None:
+    try:
+        raw = blobstore.read_bytes(key)
+    except Exception:
+        # Only a reuse cache: the local source can still be transcribed.
+        log.warning("could not read derived-text cache %s", key, exc_info=True)
+        return None
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict) or not value.get("sentences"):
+        return None
+    return value
+
+
+def _save_artifact(key: str, payload: dict[str, Any]) -> int | None:
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+    try:
+        blobstore.write_bytes(key, data, "application/json")
+    except Exception:
+        # The transcript in memory still indexes this file; a retry of this
+        # job transcribes again at no charge (see settle_ingest_provider_call).
+        log.warning("could not write derived-text cache %s", key, exc_info=True)
+        return None
+    return len(data)
+
+
+@asynccontextmanager
+async def _source_lock(identity: str) -> AsyncIterator[None]:
+    """One producer per source SHA: an identical upload on another worker
+    waits, then reads the finished transcript."""
+    connection = None
+    try:
+        while connection is None:
+            connection = await db.try_source_artifact_lock_async(identity)
+            if connection is None:
+                await asyncio.sleep(max(0.1, cfg.poll_interval))
+        yield
+    finally:
+        if connection is not None:
+            await asyncio.to_thread(
+                db.release_source_artifact_lock, connection, identity
+            )
+
+
+def audio_duration_seconds(path: Path) -> float:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=30,
+        )
+        duration = float(result.stdout.strip())
+    except (FileNotFoundError, subprocess.SubprocessError, ValueError) as exc:
+        raise TerminalError("audio duration could not be read") from exc
+    if not math.isfinite(duration) or duration <= 0:
+        raise TerminalError("audio duration could not be read")
+    return duration
+
+
+def _raise_for_status(response: httpx.Response) -> None:
+    status = response.status_code
+    if status < 400:
+        return
+    if status in (408, 429) or status >= 500:
+        raise FiletransRetryableError(status)
+    raise FiletransTerminalError(status)
+
+
+def _json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        value = response.json()
+    except ValueError:
+        value = None
+    if not isinstance(value, dict):
+        raise FiletransRetryableError("invalid response")
+    return value
+
+
+def _sentences(transcript: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every channel's sentences in time order, whitespace collapsed so a
+    sentence stays one line of chunk text."""
+    sentences = []
+    for track in transcript.get("transcripts") or []:
+        for sentence in track.get("sentences") or []:
+            text = " ".join(str(sentence.get("text") or "").split())
+            if not text:
+                continue
+            speaker = sentence.get("speaker_id")
+            sentences.append(
+                {
+                    "start_ms": int(sentence["begin_time"]),
+                    "end_ms": int(sentence["end_time"]),
+                    "speaker": speaker if isinstance(speaker, int) else None,
+                    "text": text,
+                }
+            )
+    sentences.sort(key=lambda sentence: sentence["start_ms"])
+    return sentences
+
+
+async def _filetrans(source_url: str, context: str) -> list[dict[str, Any]]:
+    """Run one Filetrans task to its end and return its sentences.
+
+    A 408, 429 or 5xx answer, or a task that failed for another reason, is
+    retryable (the ingest job's one retry submits again); any other refused
+    request, or a file the task could not fetch or decode (``InvalidFile.*``),
+    is terminal.
+    """
+    if not cfg.alibaba_modelstudio_key or not cfg.alibaba_modelstudio_url:
+        raise FiletransNotConfiguredError("audio transcription is not configured")
+    host = cfg.alibaba_modelstudio_url.rstrip("/").removesuffix("/compatible-mode/v1")
+    auth = {"Authorization": f"Bearer {cfg.alibaba_modelstudio_key}"}
+    body = {
+        "model": FILETRANS_MODEL,
+        "input": {
+            "file_urls": [source_url],
+            "context": [
+                {"role": "user", "content": [{"type": "input_text", "text": context}]}
+            ],
+        },
+        "parameters": {
+            "channel_id": [0],
+            "keep_dialect": True,
+            "diarization_enabled": True,
+        },
+    }
+    async with httpx.AsyncClient(timeout=_FILETRANS_REQUEST_TIMEOUT_S) as client:
+        response = await client.post(
+            f"{host}/api/v1/services/audio/asr/transcription",
+            headers={**auth, "X-DashScope-Async": "enable"},
+            json=body,
+        )
+        _raise_for_status(response)
+        task_id = str((_json(response).get("output") or {}).get("task_id") or "")
+        if not task_id:
+            raise FiletransRetryableError("no task id")
+        while True:
+            await asyncio.sleep(_FILETRANS_POLL_S)
+            response = await client.get(f"{host}/api/v1/tasks/{task_id}", headers=auth)
+            _raise_for_status(response)
+            output = _json(response).get("output") or {}
+            status = output.get("task_status")
+            if status in ("SUCCEEDED", "FAILED"):
+                break
+    result = (output.get("results") or [{}])[0]
+    url = result.get("transcription_url")
+    if status == "FAILED" or result.get("subtask_status") == "FAILED" or not url:
+        code = str(result.get("code") or output.get("code") or "task failed")[:80]
+        if code.startswith("InvalidFile"):
+            raise FiletransTerminalError(code)
+        raise FiletransRetryableError(code)
+    transcript = await asyncio.to_thread(_download_transcript, str(url))
+    try:
+        return _sentences(transcript)
+    except (KeyError, TypeError, ValueError):
+        raise FiletransRetryableError("invalid transcript") from None
+
+
+def _download_transcript(url: str) -> dict[str, Any]:
+    """The result JSON behind Alibaba's signed link, which takes no API key.
+
+    Fetched with requests, which logs no URL at INFO as httpx does, and with
+    the cause dropped from errors, whose text would carry the link.
+    """
+    try:
+        response = requests.get(url, timeout=_FILETRANS_REQUEST_TIMEOUT_S)
+    except requests.RequestException:
+        raise FiletransRetryableError("transcript download failed") from None
+    if response.status_code >= 400:
+        raise FiletransRetryableError(response.status_code)
+    try:
+        value = response.json()
+    except ValueError:
+        value = None
+    if not isinstance(value, dict):
+        raise FiletransRetryableError("invalid transcript")
+    return value
+
+
+async def transcribe_audio_source(
+    *,
+    local_path: str,
+    source_sha256: str,
+    blob_path: str,
+    context: str,
+    second_rate_micros: int,
+) -> tuple[list[dict[str, Any]], str, int]:
+    """The source's transcript sentences, its cache key and the key's size.
+
+    A cached transcript of the same bytes is reused. Otherwise the measured
+    duration is checked against the two-hour limit, one Filetrans task runs
+    under the 12-task gate, and only a usable transcript is charged: whole
+    seconds of the measured duration at the job's snapshotted rate.
+    """
+    key = audio_artifact_key(source_sha256)
+    async with _source_lock(f"filetrans:{source_sha256}"):
+        cached = await asyncio.to_thread(_load_artifact, key)
+        if cached:
+            size = len(
+                json.dumps(cached, ensure_ascii=False, separators=(",", ":")).encode()
+            )
+            return list(cached["sentences"]), key, size
+
+        duration = await asyncio.to_thread(audio_duration_seconds, Path(local_path))
+        if duration > AUDIO_MAX_DURATION_SECONDS:
+            raise InputLimitError(
+                "audio_duration_limit", "audio is longer than the two-hour limit"
+            )
+        seconds = math.ceil(duration)
+        # Read-only, this one object, and no longer than the task may run.
+        source_url = await asyncio.to_thread(
+            blobstore.presign_get, blob_path, FILETRANS_TIMEOUT_S
+        )
+        call_id = accounting.new_call_id()
+        try:
+            await accounting.open_call(
+                call_id,
+                kind=accounting.KIND_AUDIO,
+                purpose="transcription",
+                provider="alibaba",
+                model=FILETRANS_MODEL,
+                capacity=FILETRANS_CAPACITY,
+                provider_timeout_s=FILETRANS_TIMEOUT_S,
+            )
+        except elitellm.ProviderBusy as exc:
+            raise CapacityWait("audio transcription tasks are at their cap") from exc
+        try:
+            try:
+                async with asyncio.timeout(FILETRANS_TIMEOUT_S):
+                    sentences = await _filetrans(source_url, context)
+            except (TimeoutError, httpx.TransportError) as exc:
+                raise RetryableError(
+                    "audio transcription is temporarily unavailable"
+                ) from exc
+            if not sentences:
+                raise TerminalError("audio has no speech to transcribe")
+            await accounting.settle_units(
+                call_id=call_id,
+                kind=accounting.KIND_AUDIO,
+                purpose="transcription",
+                provider="alibaba",
+                model=FILETRANS_MODEL,
+                units=seconds,
+                unit="seconds",
+                credit_micros=seconds * second_rate_micros,
+            )
+        except (asyncio.CancelledError, accounting.SettlementError):
+            # Cancelled: the task may still run, so the call stays open for
+            # its receipt window. A settlement error leaves it to the sweep.
+            raise
+        except BaseException as exc:
+            await accounting.abandon_call(call_id, exc)
+            raise
+        finally:
+            await accounting.release_call(call_id)
+
+        payload = {
+            "kind": "audio_transcript",
+            "model": FILETRANS_MODEL,
+            "durationSeconds": duration,
+            "sentences": sentences,
+        }
+        size = await asyncio.to_thread(_save_artifact, key, payload)
+        return sentences, key if size is not None else "", size or 0

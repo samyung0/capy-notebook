@@ -19,7 +19,7 @@ from .. import registry
 from ..config import cfg
 from ..prompts.sources import source_block
 from . import models, store
-from .chunking import search_query_terms
+from .chunking import AUDIO_SPACE, search_query_terms
 from .lang import UND
 
 log = logging.getLogger("capy.search")
@@ -97,6 +97,11 @@ class Passage:
                 else f"pp.{self.page_start}–{self.page_end}"
             )
             parts.append(span)
+        sentences = self.transcript_regions()
+        if sentences:
+            parts.append(
+                f"{_clock(sentences[0]['start_ms'])}–{_clock(sentences[-1]['end_ms'])}"
+            )
         header = " › ".join(parts)
         # This warns about text extraction. Visual facts require capture even
         # when the text-layer agreement score is high.
@@ -105,13 +110,35 @@ class Passage:
             header += f" [extraction confidence {self.confidence:.2f}: {reasons}]"
         return header
 
+    def transcript_regions(self) -> list[dict[str, Any]]:
+        """A transcript passage's sentence spans, one per line of its text;
+        empty for any other passage."""
+        return [r for r in self.regions if r.get("space") == AUDIO_SPACE]
+
+    def reading_text(self) -> str:
+        """The text as the model reads it. Search saw a transcript's sentences
+        alone; here each speaker's turn opens with its time and speaker."""
+        regions = self.transcript_regions()
+        lines = self.text.split("\n")
+        if not regions or len(regions) != len(lines):
+            return self.text
+        read: list[str] = []
+        speaker: object = object()
+        for region, line in zip(regions, lines, strict=True):
+            if region.get("speaker") != speaker:
+                speaker = region.get("speaker")
+                who = "" if speaker is None else f" · Speaker {int(speaker) + 1}"
+                line = f"[{_clock(region['start_ms'])}{who}] {line}"
+            read.append(line)
+        return "\n".join(read)
+
     def as_context(self, index: int, unindexed: int = 0) -> str:
         """The passage as the model reads it. ``unindexed``: its document's
         edits not in the index yet, named on a line of their own just above
         the passage (outside its source block, which holds only source data),
         so the agent reads the document before answering from a passage that
         may be out of date (Epo 2026-10-20). No edit text."""
-        block = source_block(f"[{index}] {self.location()}\n{self.text}")
+        block = source_block(f"[{index}] {self.location()}\n{self.reading_text()}")
         if not unindexed:
             return block
         edits = f"{unindexed} edit{'s' if unindexed > 1 else ''}"
@@ -137,6 +164,15 @@ class Passage:
         if self.regions:
             citation["regions"] = self.regions[:12]
         return citation
+
+
+def _clock(ms: int) -> str:
+    """A recording position as m:ss, or h:mm:ss past the first hour."""
+    minutes, seconds = divmod(int(ms) // 1000, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
 
 
 @dataclass

@@ -865,6 +865,86 @@ def test_ingest_provider_receipt_expires_even_before_sweeper(workspace):
         conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
 
 
+def test_a_job_pays_for_its_audio_seconds_once(workspace):
+    """Two transcriptions in one ingest session (a retry whose cached
+    transcript was lost) both record their seconds; only the first is charged,
+    and replaying it is a duplicate at its original credits."""
+    import psycopg
+
+    file_id = workspace.add_file("lecture.mp3")
+    first, second = (f"pc_{secrets.token_hex(6)}" for _ in range(2))
+    receipt = {
+        "kind": "audio",
+        "purpose": "transcription",
+        "thinking": "",
+        "provider": "alibaba",
+        "model": "qwen-audio-3.1-asr-flash-filetrans",
+        "catalog_provider_slug": "",
+        "catalog_model_slug": "",
+        "model_version": 0,
+        "usage": NormalizedUsage(),
+        "credit_micros": 61 * 16_667,
+        "units": 61,
+        "unit": "seconds",
+    }
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        for call_id in (first, second):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                call_id,
+                "audio",
+                "transcription",
+                "",
+                job_attempt_id=attempt_id,
+            )
+            assert (
+                db.settle_ingest_provider_call(
+                    cur, session_id=reservation_id, call_id=call_id, **receipt
+                )
+                == "applied"
+            )
+        assert (
+            db.settle_ingest_provider_call(
+                cur, session_id=reservation_id, call_id=first, **receipt
+            )
+            == "duplicate"
+        )
+        conn.commit()
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        events = {
+            row[0]: row[1:]
+            for row in conn.execute(
+                """SELECT provider_call_id, kind, units, unit, credit_micros
+                   FROM usage_events WHERE reservation_id=%s""",
+                (reservation_id,),
+            ).fetchall()
+        }
+        assert events == {
+            first: ("audio", 61, "seconds", 1_016_687),
+            second: ("audio", 61, "seconds", 0),
+        }
+        calls = conn.execute(
+            """SELECT units, unit, credit_micros FROM provider_calls
+               WHERE reservation_id=%s ORDER BY credit_micros DESC""",
+            (reservation_id,),
+        ).fetchall()
+        assert calls == [(61, "seconds", 1_016_687), (61, "seconds", 0)]
+        conn.execute(
+            "DELETE FROM usage_events WHERE reservation_id=%s", (reservation_id,)
+        )
+        conn.execute("DELETE FROM provider_sessions WHERE id=%s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id=%s", (job_id,))
+
+
 def test_provider_call_open_enforces_terminal_slot_and_idempotency(workspace):
     import psycopg
 
