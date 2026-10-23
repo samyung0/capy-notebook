@@ -12,7 +12,12 @@ import {
 // These tests run without a browser DOM: the page pass (forPage) gets
 // linkedom's document and a sanitizer that only parses, since what they check
 // is the worker's life, not sanitizing (mermaid-safety.spec.ts covers that).
-const { document } = parseHTML('<!doctype html><html><body></body></html>');
+const { document, HTMLCanvasElement } = parseHTML(
+  '<!doctype html><html><body></body></html>'
+);
+// genericFaces probes a 2D canvas; linkedom's would load node-canvas, which
+// takes seconds on a busy machine, and these tests measure no text.
+HTMLCanvasElement.prototype.getContext = () => null;
 vi.mock('dompurify', () => ({
   default: {
     sanitize(svg: string) {
