@@ -8,9 +8,9 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
 )
 
-// getSourceImportContent proxies one selected provider object into the browser
-// analysis worker. Provider credentials stay server-side, and the response is
-// bounded by the caller's source upload limit.
+// getSourceImportContent streams one selected provider object into the
+// browser analysis worker. Provider credentials stay server-side, and the
+// response is bounded by the caller's source upload limit.
 func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 	workspaceID := id(r)
 	if !a.assertWS(w, r, workspaceID) {
@@ -41,7 +41,8 @@ func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	data, _, err := integrations.DownloadImportFile(
+	out := &analysisContent{w: w}
+	_, err = integrations.DownloadImportFile(
 		r.Context(),
 		provider,
 		token,
@@ -50,7 +51,13 @@ func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 			DriveID: strings.TrimSpace(r.URL.Query().Get("driveId")),
 		},
 		maxBytes,
+		out,
 	)
+	if err != nil && out.started {
+		// Part of the object is out: end the response as failed, never as a
+		// complete, truncated file.
+		panic(http.ErrAbortHandler)
+	}
 	if err != nil {
 		switch {
 		case errors.Is(err, integrations.ErrImportFileTooLarge):
@@ -65,17 +72,28 @@ func (a *api) getSourceImportContent(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// This endpoint is a byte pipe for the analysis worker, not a browser
-	// preview. Never reflect a provider-controlled HTML/SVG content type from the
-	// application origin.
-	writeSourceAnalysisContent(w, data)
+	if !out.started {
+		_, _ = out.Write(nil)
+	}
 }
 
-func writeSourceAnalysisContent(w http.ResponseWriter, data []byte) {
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.Header().Set("Content-Disposition", `attachment; filename="source-analysis.bin"`)
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+// analysisContent answers with the object's bytes as they arrive, its headers
+// sent with the first write. This endpoint is a byte pipe for the analysis
+// worker, not a browser preview: it never reflects a provider-controlled
+// HTML/SVG content type from the application origin.
+type analysisContent struct {
+	w       http.ResponseWriter
+	started bool
+}
+
+func (c *analysisContent) Write(p []byte) (int, error) {
+	if !c.started {
+		c.started = true
+		c.w.Header().Set("Cache-Control", "private, no-store")
+		c.w.Header().Set("Content-Disposition", `attachment; filename="source-analysis.bin"`)
+		c.w.Header().Set("Content-Type", "application/octet-stream")
+		c.w.Header().Set("X-Content-Type-Options", "nosniff")
+		c.w.WriteHeader(http.StatusOK)
+	}
+	return c.w.Write(p)
 }

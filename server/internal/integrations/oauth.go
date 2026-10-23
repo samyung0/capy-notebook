@@ -334,15 +334,18 @@ type ImportFileMetadata struct {
 	ExportMIME  string
 }
 
-// DownloadImportFile retrieves one provider object for browser-side analysis.
-// The caller supplies the workspace upload cap so an export with no metadata
-// size cannot make the gateway buffer an unbounded response.
+// DownloadImportFile streams one provider object into dst for browser-side
+// analysis and returns its content type; the gateway never holds the whole
+// object. The caller supplies the workspace upload cap: an object past it
+// stops with ErrImportFileTooLarge, after part of it may have reached dst when
+// the provider named no size.
 func DownloadImportFile(
 	ctx context.Context,
 	provider, accessToken string,
 	ref ImportRef,
 	maxBytes int64,
-) ([]byte, string, error) {
+	dst io.Writer,
+) (string, error) {
 	var (
 		meta ImportFileMetadata
 		err  error
@@ -353,13 +356,13 @@ func DownloadImportFile(
 	case ProviderMicrosoft:
 		meta, err = GetMicrosoftFileMetadata(ctx, accessToken, ref.ID, ref.DriveID)
 	default:
-		return nil, "", ErrImportFileUnavailable
+		return "", ErrImportFileUnavailable
 	}
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
 	if maxBytes < 0 || (meta.Size != nil && *meta.Size > maxBytes) {
-		return nil, "", ErrImportFileTooLarge
+		return "", ErrImportFileTooLarge
 	}
 
 	downloadURL := meta.DownloadURL
@@ -367,44 +370,43 @@ func DownloadImportFile(
 		downloadURL = GoogleDownloadURL(ref.ID, meta.ExportMIME)
 	}
 	if err := validateImportDownloadURL(ctx, downloadURL); err != nil {
-		return nil, "", err
+		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
 	if provider == ProviderGoogle {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 	resp, err := importDownloadClient().Do(req)
 	if err != nil {
-		return nil, "", classifyImportRequestError(ctx, err)
+		return "", classifyImportRequestError(ctx, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		if err != nil {
-			return nil, "", classifyImportRequestError(ctx, err)
+			return "", classifyImportRequestError(ctx, err)
 		}
-		return nil, "", providerMetadataStatusError(
+		return "", providerMetadataStatusError(
 			provider,
 			resp.StatusCode,
 			provider == ProviderGoogle && resp.StatusCode == http.StatusForbidden &&
 				googleRateLimitResponse(body),
 		)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
-	if err != nil {
-		return nil, "", classifyImportRequestError(ctx, err)
-	}
-	if int64(len(data)) > maxBytes {
-		return nil, "", ErrImportFileTooLarge
-	}
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	if contentType == "" {
 		contentType = meta.MIMEType
 	}
-	return data, contentType, nil
+	if _, err := io.Copy(dst, io.LimitReader(resp.Body, maxBytes)); err != nil {
+		return "", classifyImportRequestError(ctx, err)
+	}
+	if n, _ := io.ReadFull(resp.Body, make([]byte, 1)); n > 0 {
+		return "", ErrImportFileTooLarge
+	}
+	return contentType, nil
 }
 
 func GoogleExportMaxBytes() int64 { return googleExportMaxBytes }
@@ -599,49 +601,6 @@ func MicrosoftItemURL(driveID, itemID string) string {
 	return "https://graph.microsoft.com/v1.0/drives/" + url.PathEscape(driveID) + "/items/" + item
 }
 
-func DownloadMicrosoftFile(accessToken, itemID, driveID string) ([]byte, string, error) {
-	base := MicrosoftItemURL(driveID, itemID)
-	metaReq, err := http.NewRequest(http.MethodGet, base+"?select=name", nil)
-	if err != nil {
-		return nil, "", err
-	}
-	metaReq.Header.Set("Authorization", "Bearer "+accessToken)
-	metaResp, err := http.DefaultClient.Do(metaReq)
-	if err != nil {
-		return nil, "", err
-	}
-	defer metaResp.Body.Close()
-	if metaResp.StatusCode >= 400 {
-		body, _ := io.ReadAll(metaResp.Body)
-		return nil, "", fmt.Errorf("onedrive metadata: %s", string(body))
-	}
-	var meta struct {
-		Name string `json:"name"`
-	}
-	if err := json.NewDecoder(metaResp.Body).Decode(&meta); err != nil {
-		return nil, "", err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, base+"/content", nil)
-	if err != nil {
-		return nil, "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", err
-	}
-	if resp.StatusCode >= 400 {
-		return nil, "", fmt.Errorf("onedrive download: %s", string(data))
-	}
-	return data, meta.Name, nil
-}
-
 func GetMicrosoftDrive(ctx context.Context, accessToken string) (MicrosoftDrive, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://graph.microsoft.com/v1.0/me/drive?select=id,driveType,webUrl", nil)
 	if err != nil {
@@ -653,7 +612,7 @@ func GetMicrosoftDrive(ctx context.Context, accessToken string) (MicrosoftDrive,
 		return MicrosoftDrive{}, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err != nil {
 		return MicrosoftDrive{}, err
 	}

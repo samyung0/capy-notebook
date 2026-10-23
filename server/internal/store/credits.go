@@ -51,9 +51,10 @@ var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
 // unknown kind or thinking level, negative usage); retrying it fails the same way.
 var ErrInvalidProviderCall = errors.New("invalid provider call")
 
-// ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
-// Worst-case overshoot is this many in-flight settlements. BYOK does not take
-// a lease. Ingest uses ConcurrentIngestLeases instead.
+// ConcurrentLLMLeases caps open model sessions per actor, platform-paid and
+// BYOK alike (BYOK still uses platform retrieval and embeddings). Worst-case
+// overshoot is this many in-flight settlements. Ingest uses
+// ConcurrentIngestLeases instead.
 const ConcurrentLLMLeases = 5
 
 // ConcurrentIngestLeases caps pending+running parse/ingest pipelines per actor.
@@ -469,17 +470,17 @@ func (s *Store) BeginProviderSession(
 		if err := admit(ctx, tx, usage); err != nil {
 			return "", err
 		}
-		var open int64
-		if err := tx.QueryRow(ctx, `
-			SELECT count(*) FROM provider_sessions
-			 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-			   AND surface <> $2 AND paid_by = $3`,
-			actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
-			return "", err
-		}
-		if open >= ConcurrentLLMLeases {
-			return "", ErrTooManyLLMLeases
-		}
+	}
+	var open int64
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM provider_sessions
+		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+		   AND surface <> $2`,
+		actorUserID, SurfaceIngest).Scan(&open); err != nil {
+		return "", err
+	}
+	if open >= ConcurrentLLMLeases {
+		return "", ErrTooManyLLMLeases
 	}
 
 	id := uid("cr")

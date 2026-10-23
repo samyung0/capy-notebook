@@ -31,6 +31,7 @@ const (
 	classIntegration
 	classIncident
 	classThumbnail
+	classBankComment
 )
 
 // aiSuffixes are the model-backed routes. Matching by suffix rather than exact
@@ -102,6 +103,9 @@ func classify(method, path string) class {
 	}
 	if strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/thumbnail") {
 		return classThumbnail
+	}
+	if strings.HasPrefix(path, "/api/bank/questions/") && strings.HasSuffix(path, "/comments") {
+		return classBankComment
 	}
 	// Clerk Backend API callers: the connected providers, picker tokens and
 	// disconnects, and a profile save (which reads the Clerk photo).
@@ -235,6 +239,8 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 				ok = l.take(w, r, "incident:"+subject, l.cfg.Incident, "rate_limited", false)
 			case classThumbnail:
 				ok = l.take(w, r, "thumbnail:"+subject, l.cfg.Thumbnail, "rate_limited", false)
+			case classBankComment:
+				ok = l.take(w, r, "bank-comment:"+subject, l.cfg.BankComment, "rate_limited", false)
 			}
 			if ok {
 				next.ServeHTTP(w, r)

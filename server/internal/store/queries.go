@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/cover"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -70,9 +71,21 @@ type LabelPatch struct {
 
 /* --------------------------------------------------------------- me / shell */
 
+// searchSectionLimit bounds each section a global search reads.
+const searchSectionLimit = 50
+
+// likeEscaper keeps LIKE's wildcards in a search literal.
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// containsPattern is a LIKE pattern matching q anywhere, case-folded, with
+// q's own % and _ matched literally.
+func containsPattern(q string) string {
+	return "%" + likeEscaper.Replace(strings.ToLower(q)) + "%"
+}
+
 func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, error) {
 	out := []SearchResult{}
-	like := "%" + strings.ToLower(q) + "%"
+	like := containsPattern(q)
 
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id,
 			COALESCE((SELECT array_agg(t.name) FROM entity_tags et JOIN tags t ON t.id=et.tag_id
@@ -83,7 +96,8 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND (lower(w.name) LIKE $1
 			OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id
-				WHERE et.workspace_id=w.id AND lower(t.name) LIKE $1))`, like, userID)
+				WHERE et.workspace_id=w.id AND lower(t.name) LIKE $1))
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +119,8 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		JOIN users owner ON owner.id=w.user_id
 		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
+			AND f.trashed_at IS NULL AND lower(f.name) LIKE $1
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +135,8 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT id, title, COALESCE(location,'') FROM events WHERE user_id=$2 AND lower(title) LIKE $1`, like, userID)
+	rows, err = s.pool.Query(ctx, `SELECT id, title, COALESCE(location,'') FROM events WHERE user_id=$2 AND lower(title) LIKE $1
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +156,8 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
 		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
-			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1`, like, userID)
+			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +171,8 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT id, name FROM canvases WHERE user_id=$2 AND lower(name) LIKE $1`, like, userID)
+	rows, err = s.pool.Query(ctx, `SELECT id, name FROM canvases WHERE user_id=$2 AND lower(name) LIKE $1
+		LIMIT `+strconv.Itoa(searchSectionLimit), like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +260,7 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag stri
 	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL AND w.id IN (SELECT id FROM workspaces WHERE user_id=$1 UNION ALL SELECT workspace_id FROM workspace_members WHERE user_id=$1)"
 	args := []any{userID}
 	if q != "" {
-		args = append(args, "%"+strings.ToLower(q)+"%")
+		args = append(args, containsPattern(q))
 		n := len(args)
 		sb += fmt.Sprintf(" AND (lower(w.name) LIKE $%d OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id AND lower(t.name) LIKE $%d))", n, n)
 	}
