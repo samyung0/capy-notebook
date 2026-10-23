@@ -162,6 +162,42 @@ def test_the_deploy_user_may_run_one_root_script_and_has_no_docker_access() -> N
     ).items()
 
 
+def test_the_deploy_command_reads_the_wireguard_address_from_a_root_file() -> None:
+    """Security regression (Epo 2026-10-23): the deploy command allows private
+    binds only on the address the playbook writes, root-owned, in the deploy
+    tag; the deploy's env file cannot move it."""
+    play = _play("app-host")
+    address = _copied(play, "/etc/capy/private-bind-address")
+    (folder,) = [
+        task
+        for task in _tasks(play, "ansible.builtin.file")
+        if task["ansible.builtin.file"]["path"] == "/etc/capy"
+    ]
+    (task,) = [
+        task
+        for task in _tasks(play, "ansible.builtin.copy")
+        if task["ansible.builtin.copy"]["dest"] == "/etc/capy/private-bind-address"
+    ]
+
+    assert (
+        address["content"]
+        == "{{ app_wireguard_address | regex_replace('/.*$', '') }}\n"
+    )
+    assert (address["owner"], address["group"], address["mode"]) == (
+        "root",
+        "root",
+        "0644",
+    )
+    assert (
+        folder["ansible.builtin.file"]["owner"],
+        folder["ansible.builtin.file"]["mode"],
+    ) == (
+        "root",
+        "0755",
+    )
+    assert "deploy" in task["tags"] and "deploy" in folder["tags"]
+
+
 def test_the_app_host_drops_every_new_public_connection_into_containers() -> None:
     # Human decision (Epo 2026-10-20, human/deployment-runbook.md): every port
     # and protocol, not a list of published ports.

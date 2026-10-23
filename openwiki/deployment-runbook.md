@@ -514,7 +514,10 @@ per deploy and starts the API with `MIGRATE=false`.
    name. It then checks the Compose configuration without printing it,
    requires Compose's resolved images (`config --images`) to be exactly the
    verified digests plus the digest-pinned images `compose.yml` names
-   (Postgres, Redis), pulls the app images only (`migrate server collaboration retrieval`, or `ops`),
+   (Postgres, Redis), requires every port Compose resolves as published
+   (`config --format json`) to bind `127.0.0.1` or the host's WireGuard
+   address from `/etc/capy/private-bind-address` (Epo 2026-10-23), pulls the
+   app images only (`migrate server collaboration retrieval`, or `ops`),
    deletes the login and the token, and checks that every image is present at
    its digest with the deploy SHA's revision label. Nothing has changed up to
    here.
@@ -564,6 +567,7 @@ schema changes are new forward-only files.
 | Path or name | What |
 | --- | --- |
 | `/usr/local/sbin/capy-app-deploy` | the deploy command, root `0755`, installed by the app-host playbook's `deploy` tag (re-run it after changing the script) |
+| `/etc/capy/private-bind-address` | root `0644`, the WireGuard address, written by the `deploy` tag; the only address besides `127.0.0.1` a release may publish on |
 | `/opt/capy` | root `0700`; `app/` and `ops/` each hold `releases/<sha>/{compose.yml,stack.env}` (root `0600`, the newest 3 kept), `current` and `.lock` |
 | `capy-deploy` | system user, no password, in no group (so not `docker`); home `/var/lib/capy-deploy`, root-owned |
 | `/var/lib/capy-deploy/.ssh/authorized_keys` | root-owned, one line: `restrict,from="127.0.0.1,::1",command="/usr/bin/sudo -n /usr/local/sbin/capy-app-deploy" <key>` |
@@ -595,7 +599,13 @@ prune cron.
 
 1. Make a key: `ssh-keygen -t ed25519 -N '' -C capy-deploy-github-<env> -f capy-deploy-<env>`.
    Put the public half in the app-host inventory as `app_deploy_ssh_public_key`
-   and run `ansible-playbook playbook.yml --tags deploy`.
+   and run `ansible-playbook playbook.yml --tags deploy`. The tag also writes
+   `/etc/capy/private-bind-address` (root `0644`), the host's WireGuard
+   address from `app_wireguard_address` without its prefix: the deploy
+   command refuses a release that publishes a port on anything but
+   `127.0.0.1` and that address (Epo 2026-10-23). Check that
+   `cat /etc/capy/private-bind-address` prints it; re-run the tag after
+   changing the WireGuard address.
 2. In the host's tunnel, add the SSH hostname (`uat-deploy.capynotebook.com`,
    or `deploy.capynotebook.com` for production) with service
    `ssh://127.0.0.1:22`, and a self-hosted Access application on it whose only
