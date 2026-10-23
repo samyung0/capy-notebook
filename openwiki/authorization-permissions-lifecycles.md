@@ -405,7 +405,10 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   last send is refused with 429 `invite_recently_sent` (no new token, no
   email). Both apply the same way to every address, with or without an
   account, so they tell the inviter nothing (Epo 2026-10-24, rate-limit audit
-  M8; `server/internal/store/collaboration.go`).
+  M8; `server/internal/store/collaboration.go`). Inviting someone the owner
+  already sees in the roster (a current member's user id, the owner's own id
+  or email) sends nothing, so it skips both and answers as before; a member
+  typed by email is counted like any address.
 - The emailed invite link's token is minted when the email is sent
   (`MintInviteLink`), so no raw token is ever stored: the outbox payload holds
   only the invite id and the current token hash, and each send rotates the

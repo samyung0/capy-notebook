@@ -272,25 +272,38 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 	if err := status.Err(); err != nil {
 		return nil, false, err
 	}
-	var recent bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_invites
-		WHERE workspace_id=$1 AND lower(email)=lower($2)
-			AND accepted_at IS NULL AND revoked_at IS NULL AND created_at > $3)`,
-		wsID, identifier, now.Add(-inviteResendCooldown)).Scan(&recent); err != nil {
+	// The owner's own id or email, or a current member's user id, names someone
+	// the owner already sees in the roster: such an invite sends nothing, so it
+	// skips the resend wait and the daily count. An email that reaches a member
+	// is counted like any other address, so the answer discloses no account.
+	var known bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_members
+			WHERE workspace_id=$1 AND user_id=$2)
+		OR EXISTS (SELECT 1 FROM users WHERE id=$3 AND (id=$2 OR lower(email)=lower($2)))`,
+		wsID, identifier, ownerID).Scan(&known); err != nil {
 		return nil, false, err
 	}
-	if recent {
-		return nil, false, ErrInviteRecentlySent
-	}
-	counted, err := tx.Exec(ctx, `INSERT INTO invite_usage (day, user_id, invites)
-		VALUES ((now() AT TIME ZONE 'UTC')::date, $1, 1)
-		ON CONFLICT (day, user_id) DO UPDATE SET invites=invite_usage.invites+1
-		WHERE invite_usage.invites < $2::int`, invitedBy, InvitesPerOwnerPerDay)
-	if err != nil {
-		return nil, false, err
-	}
-	if counted.RowsAffected() == 0 {
-		return nil, false, ErrInviteLimit
+	if !known {
+		var recent bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workspace_invites
+			WHERE workspace_id=$1 AND lower(email)=lower($2)
+				AND accepted_at IS NULL AND revoked_at IS NULL AND created_at > $3)`,
+			wsID, identifier, now.Add(-inviteResendCooldown)).Scan(&recent); err != nil {
+			return nil, false, err
+		}
+		if recent {
+			return nil, false, ErrInviteRecentlySent
+		}
+		counted, err := tx.Exec(ctx, `INSERT INTO invite_usage (day, user_id, invites)
+			VALUES ((now() AT TIME ZONE 'UTC')::date, $1, 1)
+			ON CONFLICT (day, user_id) DO UPDATE SET invites=invite_usage.invites+1
+			WHERE invite_usage.invites < $2::int`, invitedBy, InvitesPerOwnerPerDay)
+		if err != nil {
+			return nil, false, err
+		}
+		if counted.RowsAffected() == 0 {
+			return nil, false, ErrInviteLimit
+		}
 	}
 
 	var inviteID, invitedUserID, workspaceName, inviteEmail, locale, inviterName string
