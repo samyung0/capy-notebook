@@ -16,6 +16,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
+	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -226,6 +227,8 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 	eventUserID := identity.UserID
 	if strings.HasPrefix(evt.Type, "user.") {
 		eventUserID = identity.ID
+		// A linked or unlinked account shows at once, not after the cache.
+		integrations.ForgetClerkUser(eventUserID)
 	}
 	claimUserID := eventUserID
 	if strings.HasPrefix(evt.Type, "user.") {
