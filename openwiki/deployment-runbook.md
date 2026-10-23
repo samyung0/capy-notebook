@@ -1894,7 +1894,8 @@ those services start.
    `production` environment needs `OPENROUTER_API_KEY` before a production
    deploy, since the renderer writes an empty key without it. Uploaded audio
    needs `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
-   (variable, the workspace's `…/compatible-mode/v1` URL) from an Alibaba
+   (variable, the workspace's `…/compatible-mode/v1` URL with no trailing
+   slash; the pipeline refuses to start with any other ending) from an Alibaba
    Model Studio workspace in Singapore (`ap-southeast-1`), with the key
    restricted to the `qwen-audio-3.1-asr-flash*` models. Both reach the
    production worker and each environment's queue workers (manifest targets

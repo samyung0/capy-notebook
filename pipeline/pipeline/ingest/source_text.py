@@ -26,7 +26,7 @@ import httpx
 import requests
 
 from .. import elitellm
-from ..config import cfg
+from ..config import MODELSTUDIO_BASE_PATH, cfg
 from ..generated.limits import AUDIO_MAX_DURATION_SECONDS
 from ..jobs import CapacityWait, InputLimitError, RetryableError, TerminalError
 from ..prompts.captioning import IMAGE_PROMPT
@@ -251,12 +251,6 @@ class FiletransTerminalError(FiletransError, TerminalError):
     pass
 
 
-class FiletransNotConfiguredError(TerminalError):
-    """Configuration stopped the request before Alibaba could receive it."""
-
-    provider_not_called = True
-
-
 def audio_artifact_key(source_sha256: str) -> str:
     return f"derived-text/{source_sha256}/qwen-audio-3.1-filetrans.json"
 
@@ -376,9 +370,7 @@ async def _filetrans(source_url: str, context: str) -> list[dict[str, Any]]:
     poll that gets a 408, 429, 5xx or no answer polls again: only the wall
     budget around this call ends the wait.
     """
-    if not cfg.alibaba_modelstudio_key or not cfg.alibaba_modelstudio_url:
-        raise FiletransNotConfiguredError("audio transcription is not configured")
-    host = cfg.alibaba_modelstudio_url.rstrip("/").removesuffix("/compatible-mode/v1")
+    host = cfg.alibaba_modelstudio_url.removesuffix(MODELSTUDIO_BASE_PATH)
     auth = {"Authorization": f"Bearer {cfg.alibaba_modelstudio_key}"}
     body = {
         "model": FILETRANS_MODEL,
@@ -516,15 +508,13 @@ async def transcribe_audio_source(
             )
             return list(cached["sentences"]), key, size
 
+        if not cfg.alibaba_modelstudio_key:
+            raise TerminalError("audio transcription is not configured")
         duration = await asyncio.to_thread(audio_duration_seconds, Path(local_path))
         if duration > AUDIO_MAX_DURATION_SECONDS:
             raise InputLimitError(
                 "audio_duration_limit", "audio is longer than the two-hour limit"
             )
-        # Read-only, this one object, and no longer than the task may run.
-        source_url = await asyncio.to_thread(
-            blobstore.presign_get, blob_path, FILETRANS_TIMEOUT_S
-        )
         call_id = accounting.new_call_id()
         try:
             await accounting.open_call(
@@ -538,14 +528,28 @@ async def transcribe_audio_source(
             )
         except elitellm.ProviderBusy as exc:
             raise CapacityWait("audio transcription tasks are at their cap") from exc
+        # Whether a submitted task may still be running at Alibaba (timed
+        # out, cancelled, or a submit whose answer was lost): its lease then
+        # stays until the receipt window ends, so the tasks running there
+        # stay within the gate.
+        running = False
         try:
+            # Read-only, this one object, and no longer than the task may run.
+            source_url = await asyncio.to_thread(
+                blobstore.presign_get, blob_path, FILETRANS_TIMEOUT_S
+            )
+            running = True
             try:
                 async with asyncio.timeout(FILETRANS_TIMEOUT_S):
                     sentences = await _filetrans(source_url, context)
+            except FiletransError:
+                running = False
+                raise
             except (TimeoutError, httpx.TransportError) as exc:
                 raise RetryableError(
                     "audio transcription is temporarily unavailable"
                 ) from exc
+            running = False
             if not sentences:
                 raise TerminalError("audio has no speech to transcribe")
             # Where the speech ends is a floor under the measured length (an
@@ -575,7 +579,8 @@ async def transcribe_audio_source(
             await accounting.abandon_call(call_id, exc)
             raise
         finally:
-            await accounting.release_call(call_id)
+            if not running:
+                await accounting.release_call(call_id)
 
         payload = {
             "kind": "audio_transcript",

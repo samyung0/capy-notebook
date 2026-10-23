@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from pipeline import elitellm, jobs
+from pipeline import config, elitellm, jobs
 from pipeline.ingest import source_text
 from pipeline.jobs import TerminalError
 from pipeline.parse import caption_cache
@@ -422,14 +422,15 @@ def _audio_flow(monkeypatch, *, duration: float = 60.2, transcribe=None):
     def write(key, data, _content_type):
         cache[key] = bytes(data)
 
+    def presign(key, expires):
+        events.append(("presign", key, expires))
+        return f"signed:{key}:{expires}"
+
+    monkeypatch.setattr(source_text.cfg, "alibaba_modelstudio_key", "test-key")
     monkeypatch.setattr(source_text, "_source_lock", no_lock)
     monkeypatch.setattr(source_text.blobstore, "read_bytes", cache.get)
     monkeypatch.setattr(source_text.blobstore, "write_bytes", write)
-    monkeypatch.setattr(
-        source_text.blobstore,
-        "presign_get",
-        lambda key, expires: f"signed:{key}:{expires}",
-    )
+    monkeypatch.setattr(source_text.blobstore, "presign_get", presign)
     monkeypatch.setattr(source_text, "audio_duration_seconds", lambda _path: duration)
     monkeypatch.setattr(source_text, "_filetrans", filetrans)
     monkeypatch.setattr(source_text.accounting, "open_call", open_call)
@@ -458,10 +459,12 @@ async def test_audio_settles_whole_seconds_once_then_reads_the_cache(monkeypatch
 
     assert again == (sentences, key, size) and size > 0
     assert key == f"derived-text/{'ab' * 32}/qwen-audio-3.1-filetrans.json"
-    # One task under the 12-task gate, its source link living as long as the
-    # task may run, charged ceil(60.2) seconds; the cached rerun calls nothing.
+    # One task under the 12-task gate, its source link signed once admitted
+    # and living as long as the task may run, charged ceil(60.2) seconds; the
+    # cached rerun calls nothing.
     assert events == [
         ("open", ("filetrans", 12), 900),
+        ("presign", "sources/lecture.mp3", 900),
         ("task", "signed:sources/lecture.mp3:900"),
         ("settle", 61, "seconds", 61 * 16_667),
         ("release",),
@@ -478,7 +481,13 @@ async def test_a_failed_audio_task_is_abandoned_uncharged_and_uncached(monkeypat
     with pytest.raises(source_text.FiletransRetryableError):
         await _transcribe()
 
-    assert [event[0] for event in events] == ["open", "task", "abandon", "release"]
+    assert [event[0] for event in events] == [
+        "open",
+        "presign",
+        "task",
+        "abandon",
+        "release",
+    ]
     key = source_text.audio_artifact_key("ab" * 32)
     assert source_text.blobstore.read_bytes(key) is None
 
@@ -519,7 +528,13 @@ async def test_speech_past_two_hours_is_the_index_limit_uncharged(monkeypatch):
         await _transcribe()
 
     assert limit.value.code == "audio_duration_limit"
-    assert [event[0] for event in events] == ["open", "task", "abandon", "release"]
+    assert [event[0] for event in events] == [
+        "open",
+        "presign",
+        "task",
+        "abandon",
+        "release",
+    ]
     key = source_text.audio_artifact_key("ab" * 32)
     assert source_text.blobstore.read_bytes(key) is None
 
@@ -600,6 +615,64 @@ def test_a_file_without_an_audio_stream_has_no_duration(tmp_path):
 
     with pytest.raises(TerminalError, match="duration could not be read"):
         source_text.audio_duration_seconds(source)
+
+
+@pytest.mark.asyncio
+async def test_a_task_that_may_still_run_keeps_its_lease(monkeypatch):
+    """A timed-out or cancelled task may still run at Alibaba: its lease is
+    left to expire with the receipt window, not freed."""
+
+    def timed_out():
+        raise TimeoutError
+
+    events = _audio_flow(monkeypatch, transcribe=timed_out)
+    with pytest.raises(jobs.RetryableError):
+        await _transcribe()
+    assert [event[0] for event in events] == ["open", "presign", "task", "abandon"]
+
+    started = asyncio.Event()
+
+    async def running(_url, _context):
+        started.set()
+        await asyncio.Event().wait()
+
+    events = _audio_flow(monkeypatch)
+    monkeypatch.setattr(source_text, "_filetrans", running)
+    attempt = asyncio.ensure_future(_transcribe())
+    await started.wait()
+    attempt.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await attempt
+    assert [event[0] for event in events] == ["open", "presign"]
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_transcription_fails_before_measuring(monkeypatch):
+    events = _audio_flow(monkeypatch)
+    monkeypatch.setattr(source_text.cfg, "alibaba_modelstudio_key", "")
+
+    def measure(_path):
+        raise AssertionError("measured without a provider to send to")
+
+    monkeypatch.setattr(source_text, "audio_duration_seconds", measure)
+
+    with pytest.raises(TerminalError, match="not configured"):
+        await _transcribe()
+    assert events == []
+
+
+def test_the_model_studio_url_must_name_the_compatible_mode_base() -> None:
+    config.require_modelstudio_url("")
+    config.require_modelstudio_url(
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    )
+    for url in [
+        "https://dashscope-intl.aliyuncs.com",
+        "https://dashscope-intl.aliyuncs.com/api/v1",
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/",
+    ]:
+        with pytest.raises(ValueError, match="compatible-mode/v1"):
+            config.require_modelstudio_url(url)
 
 
 @pytest.mark.asyncio

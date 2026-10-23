@@ -288,6 +288,20 @@ require_all_or_none(
     },
 )
 
+# The workspace's OpenAI-compatible base; the task API is the same host
+# without this path.
+MODELSTUDIO_BASE_PATH = "/compatible-mode/v1"
+
+
+def require_modelstudio_url(url: str) -> None:
+    if url and not url.endswith(MODELSTUDIO_BASE_PATH):
+        raise ValueError(
+            f"ALIBABA_MODELSTUDIO_URL must end with {MODELSTUDIO_BASE_PATH}"
+        )
+
+
+require_modelstudio_url(cfg.alibaba_modelstudio_url)
+
 require_all_or_none(
     "KNOWLEDGE_BASE_B2_*",
     {

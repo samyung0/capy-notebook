@@ -1318,7 +1318,9 @@ session advisory lock (`filetrans:<sha>`), so identical uploads on two workers
 make one provider task while the other waits and reads the result. A cached
 transcript (`derived-text/<sha>/qwen-audio-3.1-filetrans.json`, registered as
 `derived_text` in `artifact_cache`, sentences with times and speakers) is
-reused with no task and no charge. Otherwise, in one ingest attempt:
+reused with no task and no charge. Otherwise, in one ingest attempt (a
+worker without `ALIBABA_MODELSTUDIO_*` fails the file at once, before any of
+it):
 
 1. ffmpeg measures the downloaded source under the decoder sandbox's policy
    (`decode.audio_seconds`, deployment-runbook §7.5): it copies every packet
@@ -1328,21 +1330,22 @@ reused with no task and no charge. Otherwise, in one ingest attempt:
    is measured all the same. An MP4 edit list still applies, as in playback.
    Over two hours is the `audio_duration_limit` index limit, before any task
    or charge; a file ffmpeg cannot read fails at once.
-2. The worker signs a GET link for that one source object, valid as long as
-   the task's wall budget (15 minutes); it is the only way the task reads the
-   audio.
-3. The call opens its `provider_calls` row (kind `audio`) under its own gate:
+2. The call opens its `provider_calls` row (kind `audio`) under its own gate:
    at most 12 tasks in flight across every ingest worker
    (`provider_capacity_leases`, key `filetrans`, one unit a task). A full gate
    is a `CapacityWait`: the job re-pends without spending an attempt and the
    file stays pending ("waiting for provider capacity"). The receipt window
    and lease last the wall budget plus the five-minute grace, and the ingest
    job's timeout grows by the same budget.
+3. Once admitted, the worker signs a GET link for that one source object,
+   valid as long as the task's wall budget (15 minutes); it is the only way
+   the task reads the audio.
 4. The task is submitted to `{host}/api/v1/services/audio/asr/transcription`
    (`X-DashScope-Async: enable`) with the link, `channel_id: [0]`,
    `keep_dialect: true` (Cantonese stays as spoken), `diarization_enabled:
    true`, and one `input_text` context message naming the workspace and the
-   file. `{host}` is `ALIBABA_MODELSTUDIO_URL` without `/compatible-mode/v1`.
+   file. `{host}` is `ALIBABA_MODELSTUDIO_URL` without `/compatible-mode/v1`;
+   the pipeline refuses to start with a URL not ending in that path.
    The attempt polls `{host}/api/v1/tasks/{id}`, first after 2 s, each wait
    half again as long as the last up to 10 s, and logs each poll's request
    at DEBUG only (the submit stays at INFO). It then reads the result JSON
@@ -1374,7 +1377,11 @@ retry submits a new task, and a second failure fails the file. Any other refused
 request and `InvalidFile.*` (a link the task could not fetch, a file it could
 not decode) fail at once, as does a recording with no speech. Every failed
 call is abandoned uncharged; a cancelled one stays open for its receipt
-window. Log lines and errors name HTTP statuses and provider error codes only,
+window. The gate's lease is freed once Alibaba has answered for the task (a
+transcript, a failed or refused task); a task that may still be running there
+(timed out, cancelled, or a submit whose answer was lost) keeps its lease
+until the receipt window ends, so the tasks running at Alibaba stay within
+the gate. Log lines and errors name HTTP statuses and provider error codes only,
 never transcript text or a signed link.
 
 Transcript chunks (`retrieval/chunking.py` `chunk_transcript`) hold whole
@@ -5195,7 +5202,7 @@ current chunk, with full coverage in the large-document reduction path.
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The default is the OpenRouter DeepSeek V4.1 Flash 1017 pin, held on InferenceNet then Cloudflare with reasoning off; the ZAI GLM-5.3-Flash row (served through OpenRouter) captions at `reasoning: {effort: "low"}`. |
 | VLM page-read gates | `CAPY_VLM_PAGE_CAPACITY`, `CAPY_VLM_PAGES_PER_JOB` | Page reads in flight across every ingest worker (the `vlm_page` lease) and within one job. Production 64 and 40 (a production input; the production ingest Compose sets them), UAT and local 20 and 10 (fixed in their Compose files; also the code's fallback). The per-job limit must be between 1 and the overall one or the worker refuses to start. |
-| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none; unset fails an audio ingest terminally); its two-hour cap, 12-task gate and 15-minute task budget are code constants. |
+| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION`, `ALIBABA_MODELSTUDIO_KEY`, `ALIBABA_MODELSTUDIO_URL` | Image decoding is capped at 100M pixels. Audio transcription needs both Alibaba values (all or none, and the URL ending in `/compatible-mode/v1`, checked at startup; unset fails an audio ingest terminally); its two-hour cap, 12-task gate and 15-minute task budget are code constants. |
 | UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure (which leaves the descriptor pending only when the file has no published descriptor to keep, Q4) and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
 | UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. Scripted reads are cached under the marker and the token, so a file whose name repeats an earlier run's reads from the cache and writes no usage row: give each run a fresh token. `[uat-fail-pages]` wins when both apply. |
 | UAT scripted tool turns | `RETRIEVAL_UAT_SCRIPTED_TOOLS` | UAT only, exactly `true` or unset; a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`, and the renderer refuses it outside `uat`. With it on, a chat message starting `[uat-scripted-tools]` followed by JSON steps (`retrieval/scripted.py`) replaces the model's responses: each step's tool calls still run through `tools.run` with the role's operations, contract validation and the skills gate, and a string step is the answer. With it off the marker is plain text. The UAT chat journey uses it so tool coverage is deterministic and free. |
