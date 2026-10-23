@@ -40,6 +40,7 @@ from ..retrieval.agent import (
     CLIENT_ERROR,
     CLIENT_ERROR_CODE,
     ClientDrop,
+    close_cut_edits,
     run_agent,
     with_turn_state,
 )
@@ -464,6 +465,8 @@ async def _chat_events(req: ChatStreamReq):
         log.exception("chat stream failed")
         event = obs.reported_event(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE), exc)
         if not client.dropped:
+            for frame in close_cut_edits(ctx):
+                yield _sse(frame)
             yield _sse(with_turn_state(event, ctx))
     finally:
         if _running.get(turn_id) is client:

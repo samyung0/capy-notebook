@@ -1614,6 +1614,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   a collected unit, as Yjs does; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to
   14 and `MIN_SOURCE` to 14; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 13 -> 14, source 13 -> 14".
+  The Office agent's short paragraph ids and malformed-id refusals (pin
+  faacf7887: a DOCX paraId alone names its one paragraph, and a malformed
+  slide, shape, paragraph or table id is refused as malformed, showing the
+  read's form; Epo 2026-10-24, Q222 and Q223) raised `CLIENT_PROTOCOL` to 15
+  and `MIN_SOURCE` to 15; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 14 -> 15, source 14 -> 15".
 
 #### When to bump
 

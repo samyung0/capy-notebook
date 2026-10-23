@@ -275,6 +275,37 @@ export function stepTitle(
   }
 }
 
+/** The commands a finished call left unapplied: an Office edit the engine
+ * cut at a per-call limit that no later edit of its file in the turn
+ * followed (Epo 2026-10-23, Q171). */
+function notApplied(tool: ToolBlock): number {
+  return tool.outcome && tool.applied !== undefined && tool.total !== undefined
+    ? tool.total - tool.applied
+    : 0;
+}
+
+/** A running call's progress after its sentence: "30 of 32". */
+export function stepProgress(
+  tool: ToolBlock,
+  state: StepState
+): string | undefined {
+  if (
+    state === 'running' &&
+    tool.applied !== undefined &&
+    tool.total !== undefined
+  )
+    return m.chat_step_progress({ applied: tool.applied, total: tool.total });
+}
+
+/** A finished call's warning icon text: "2 commands not applied". */
+export function unappliedWarning(tool: ToolBlock): string | undefined {
+  const left = notApplied(tool);
+  if (left <= 0) return;
+  return left === 1
+    ? m.chat_step_not_applied_one()
+    : m.chat_step_not_applied({ count: left });
+}
+
 export function groupTitle(name: string, count: number): string {
   return (COPY[name] ?? OTHER).group(count);
 }
@@ -362,7 +393,13 @@ export function buildTrace({
     first = false;
     since = time(tool.endedAt ?? tool.startedAt);
 
-    const state = stepState(tool, tool === lastOpen, stopped);
+    // A call reporting progress runs until its outcome, even while a later
+    // one runs: a cut Office edit waits for the next edit of its file.
+    const state = stepState(
+      tool,
+      tool === lastOpen || (live && tool.total !== undefined),
+      stopped
+    );
     const effects = tool.effects ?? [];
     if (receipts && effects.length) {
       if (effects.some((effect) => isCreated(tool, effect))) {
@@ -379,6 +416,7 @@ export function buildTrace({
       }
       if (
         state === 'done' &&
+        !notApplied(tool) &&
         effects.every((effect) => created.has(effect.resource.id))
       )
         continue;
