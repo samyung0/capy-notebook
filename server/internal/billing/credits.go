@@ -2,11 +2,8 @@ package billing
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/stripe/stripe-go/v82"
@@ -123,11 +120,6 @@ func PaymentMethodInfo(pm *stripe.PaymentMethod) store.PaymentMethod {
 		if pm.Card.Fingerprint != "" {
 			out.CardKey = "card:" + pm.Card.Fingerprint
 		}
-	}
-	// Link exposes no card fingerprint; its account's email stands in, hashed.
-	if pm.Link != nil && pm.Link.Email != "" {
-		sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(pm.Link.Email))))
-		out.CardKey = "link:" + hex.EncodeToString(sum[:])
 	}
 	return out
 }

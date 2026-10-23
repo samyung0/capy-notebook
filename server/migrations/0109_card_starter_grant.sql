@@ -3,8 +3,7 @@
 ALTER TABLE user_credits ALTER COLUMN purchased_micros SET DEFAULT 0;
 
 -- One starter grant per account and per card. card_key is Stripe's card
--- fingerprint, or a hash of the Link account's email; nothing else about the
--- card is kept here. Rows outlive an account purge, so the same card cannot
+-- fingerprint; nothing else about the card is kept here. Rows outlive an account purge, so the same card cannot
 -- claim the grant again on a new account.
 CREATE TABLE starter_grants (
   user_id    text PRIMARY KEY REFERENCES users(id),

@@ -58,9 +58,9 @@ type PaymentMethod struct {
 	Last4    string `json:"last4,omitempty"`
 	ExpMonth int    `json:"expMonth,omitempty"`
 	ExpYear  int    `json:"expYear,omitempty"`
-	// CardKey identifies the card behind it for the starter grant: Stripe's
-	// card fingerprint, or a hash of the Link email. It is never stored with
-	// the method.
+	// CardKey identifies a card for the starter grant: Stripe's card
+	// fingerprint, empty for any other method (Link earns none). It is never
+	// stored with the method.
 	CardKey string `json:"-"`
 }
 

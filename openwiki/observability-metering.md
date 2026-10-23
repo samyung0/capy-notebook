@@ -834,8 +834,9 @@ Checkout (Add a card), a paid top-up and a Pro subscription Checkout (its
 subscription's default payment method). It inserts into `starter_grants`
 (migration 0109), keyed once per account and once per card key, and adds the
 credits in the same transaction, so a replayed or concurrent event adds
-nothing. The card key is Stripe's card fingerprint, or a hash of a Link
-method's email; no other card data is stored there. Rows are kept when an
+nothing. The card key is Stripe's card fingerprint; no other card data is
+stored there. Only a card earns the grant: a Link method has no fingerprint
+and earns none, and nothing derived from its email is kept (Epo 2026-10-24). Rows are kept when an
 account is purged, so a recreated account cannot claim the same card again.
 `CreditSettings.starterAvailable` drives the offer on the Subscription tab.
 
