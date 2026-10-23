@@ -1457,10 +1457,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   naming the read's id; UAT 2026-10-22) raised `CLIENT_PROTOCOL` to 11 and
   `MIN_SOURCE` to 11; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 10 -> 11, source 10 -> 11".
-  The room swap (pin 36c5fcaec: BetterOffice going read-only and a document's
-  first frame keep the view, reader actions still bring the caret into view,
-  a peer's change never does; Epo 2026-10-22, 2026-10-23) raised `CLIENT_PROTOCOL` to 12 and `MIN_SOURCE` to 12;
-  `MIN_MATERIAL` stays 7. Its deploy request names
+  The Office agent's short table id and format_text's `text` (pin
+  337896d27: delete_table takes `body:t0` naming one table, format_text names
+  its span `text`; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to 12 and
+  `MIN_SOURCE` to 12; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 11 -> 12, source 11 -> 12".
 
 #### When to bump

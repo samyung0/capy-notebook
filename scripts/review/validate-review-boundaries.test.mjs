@@ -38,6 +38,25 @@ test('a scheduled workflow is rejected', () => {
   );
 });
 
+test('only audit.yml may be scheduled, and it still may not run a scanner', () => {
+  const daily = 'on:\n  push:\n  schedule:\n    - cron: "17 3 * * *"\n';
+  assert.doesNotThrow(() =>
+    validateWorkflowIsDeterministic(daily, 'audit.yml')
+  );
+  assert.throws(
+    () => validateWorkflowIsDeterministic(daily, 'ci.yml'),
+    SCHEDULED
+  );
+  assert.throws(
+    () =>
+      validateWorkflowIsDeterministic(
+        `${daily}# scripts/review/strix-scan.sh\n`,
+        'audit.yml'
+      ),
+    RUNS_LOCALLY
+  );
+});
+
 test('a workflow that runs an agent scanner is rejected', () => {
   assert.throws(
     () =>

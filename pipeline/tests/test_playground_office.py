@@ -172,7 +172,7 @@ async def test_a_created_word_file_reads_back_and_a_stale_delete_shows_the_parag
     bold = {
         "type": "format_text",
         "target_id": method,
-        "expected_text": "Method",
+        "text": "Method",
         "bold": True,
     }
     limited = await tools.run(
