@@ -300,8 +300,8 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    depends on how the origin is reached — see the option you picked.
 
 > **Both the SPA and the API must be proxied.** Proxying only the SPA leaves
-> `api.capynotebook.com` publicly resolvable, which is where the rate limiting, the WAF,
-> and the origin's anonymity actually matter.
+> `api.capynotebook.com` publicly resolvable, which is where the WAF, the edge rate
+> limiting rule (§2) and the origin's anonymity actually matter.
 
 ### 1.0.1 UAT API routing without Workers
 
@@ -1103,10 +1103,12 @@ not in Capy (Epo 2026-10-21). On the production instance, and the same on UAT
 
 ## 2. Cloudflare — rules
 
-The zone's WAF custom rules, cache rules and response header transform rules
-are code. One zone holds production and UAT, and
+The zone's WAF custom rules, rate limiting rules, cache rules and response
+header transform rules are code. One zone holds production and UAT, and
 [`deploy/cloudflare/rules.json`](../deploy/cloudflare/rules.json) lists every
-rule of those three phases for both environments.
+rule of those four phases for both environments. Applying the file to the
+live zone is a deploy step: a commit that changes it is live only once someone
+runs the apply below (then `--check`).
 `scripts/deploy/cloudflare_rules.py` applies the file or checks the zone
 against it:
 
@@ -1146,20 +1148,55 @@ for phase in http_request_firewall_custom http_ratelimit http_request_cache_sett
 done
 ```
 
-**No edge rate limiting rule yet.** The zone is on the Free plan, where a
-rate limiting rule may match only the path (no host), counts per IP over 10 s
-and blocks for 10 s, and the zone gets one rule. Production and UAT share the
-zone and their paths, so a production-only limit cannot be written; it needs
-the Pro plan (host in the expression, blocks up to an hour, two rules). Until
-then the gateway's limits are the only ones. When the rule is added it goes in
-the file's `http_ratelimit` phase and must leave `/webhooks/` out: Stripe and
-Clerk burst deliveries and retries from small sets of IPs, and rate limiting
-them can lose subscription or identity events.
+**Rate limiting rule** (`capy_public_api_rate_limit`, Epo 2026-10-24). The
+zone is on the Free plan, where a rate limiting rule may match only the path
+(no host), counts per IP (with the data centre, `cf.colo.id`) over 10 s and
+blocks for 10 s, and the zone gets one rule. The one rule covers
+`/api/public/` on every host of both environments: 100 requests in 10 s from
+one address, then blocked for 10 s. `/api/public/` is the costliest path a
+signed-out caller reaches (grading calls Jev; a public note read is up to
+about 2 MiB). The gateway already holds a signed-out address to 60 a minute,
+so the rule fires only on traffic Go would refuse anyway and never on a class
+behind one NAT before Go's limit; it stops floods before the tunnel and
+Redis. The site Worker's own reads of `/api/public/` reach the origin without
+passing the zone's rate-limit phase (a same-zone subrequest, the Worker has no
+`global_fetch_strictly_public`), so they are not counted against one address;
+Go counts them per share token instead
+([observability-metering.md](observability-metering.md#6-rate-limiting)).
+Everything else has no edge limit. A production-only or wider limit needs the
+Pro plan (host in the expression, blocks up to an hour, two rules). The rule
+must leave `/webhooks/` out: Stripe and Clerk burst deliveries and retries
+from small sets of IPs, and rate limiting them can lose subscription or
+identity events.
 
-**WAF custom rule** (`capy_webhooks_skip_security`): requests under
-`/webhooks/` on the API hosts (`api`, `uat-api`) skip every security rule (the remaining custom rules, rate
-limiting, managed rules, Super Bot Fight Mode, and Zone Lockdown, User Agent
-Blocking, Browser Integrity Check, Hotlink Protection and Security Level).
+**WAF custom rules.** `capy_block_internal_paths` blocks `/api/internal/` and
+`/internal/` on every public host of both environments (`api`, `uat-api`,
+`app`, `app.uat`, `uat`, `collab`, `uat-collab`). Nothing legitimate reaches
+them through Cloudflare: retrieval and collaboration call the gateway on the
+Docker network, the ingest hosts over WireGuard (`GATEWAY_URL` on the private
+address), and the local lane over its private routes. A caller that needs an
+internal route through a public host is a configuration error to fix, not a
+rule to widen.
+
+`capy_webhooks_skip_security`: requests under `/webhooks/` on the API hosts
+(`api`, `uat-api`) from Stripe's or Svix's published webhook addresses skip
+every security rule (the remaining custom rules, rate limiting, managed rules,
+Super Bot Fight Mode, and Zone Lockdown, User Agent Blocking, Browser
+Integrity Check, Hotlink Protection and Security Level). Clerk delivers its
+webhooks through Svix, and its docs link Svix's whole list, so every region
+is listed. A webhook from any other address gets the zone's ordinary rules.
+The addresses come from:
+
+- Stripe: <https://stripe.com/files/ips/ips_webhooks.json> (`WEBHOOKS`)
+- Svix: <https://docs.svix.com/webhook-ips.json> (every region's list)
+
+Refresh them when either provider announces a change, and at least every
+quarter: fetch both files, replace the `ip.src in {...}` set at the end of
+the rule's expression with their union (addresses and CIDRs separated by
+spaces), run `python3 scripts/deploy/test_cloudflare_rules.py`, commit, and
+apply. A provider address missing from the set shows up as challenged or
+blocked webhook deliveries in the provider's dashboard and in Security →
+Events.
 
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.

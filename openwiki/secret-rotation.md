@@ -85,7 +85,10 @@ Yearly.
 
 Both sides read the same value, so they switch together and requests in
 between fail. Deploy the affected targets back to back; the ingest queue
-retries what fails.
+retries what fails. Outside `APP_ENV=development` and `e2e`, the gateway
+refuses to start with a `PIPELINE_SECRET` (when set) or a
+`COLLABORATION_SECRET` shorter than 32 characters (`openssl rand -hex 32`
+gives 64); the dev defaults are shorter and work only locally.
 
 | Key                                                                             | Both sides                                           | Notes                                                                                            |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |

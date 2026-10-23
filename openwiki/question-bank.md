@@ -473,7 +473,8 @@ malformed question loses fields instead of failing the read.
 | `GET /api/quizzes/{id}` | anyone who can read the quiz, owners and editors included | none |
 | `GET /api/quizzes/{id}/edit` | whoever may edit it (`assertMaterialOwner`, the content-edit check); others 404 | full |
 | `GET /api/materials/{id}` for a quiz | readers; the workspace view (`materialdoc.LearnerQuiz`) | none |
-| `GET /api/explore/quizzes`, `GET /api/public/quizzes/{token}` | anyone; signed-out visitors | none |
+| `GET /api/explore/quizzes` | anyone; pages of 50 read from the stored preview: a question count, no questions | none |
+| `GET /api/public/quizzes/{token}` | signed-out visitors | none |
 | `GET /api/workspaces/{id}/review` | workspace readers; question items | none |
 | `GET /api/bank/questions/{id}`, `GET /api/bank/questions?ids=` | bank readers, editors included (View mode); `editor` still reports the grant | none |
 | `GET /api/bank/questions/{id}/edit` | bank editors on an editable bank; others 404 | full |

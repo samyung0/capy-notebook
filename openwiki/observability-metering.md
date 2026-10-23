@@ -696,19 +696,30 @@ output, so grading is **recorded, never charged**: signed-in requests write one
 `POST /api/questions/computation-check` writes one per check. Attempt points
 stay on the quiz snapshot for the taker and are not a trusted score.
 
+A signed-in user's open parts are capped at 2,000 per UTC day
+(`grading_usage`, `store.SignedInGradingPartsPerDay`), shared by quiz
+attempts, review checks, bank checks and computation checks (one part each).
+Parts are reserved before any Jev call and stay counted when grading fails;
+past the cap the API answers 429 `grading_limit` and closed-only attempts are
+still graded.
+
 Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
-UTC day, salted client-IP hash (HMAC with `SHARE_LINK_SECRET`) and the random
-id the browser keeps in IndexedDB. Parts are counted before any Jev call and
-stay counted when grading fails. Caps: 300 graded parts per IP hash per day
-(generous because a classroom shares one IP) and 50,000 per day overall; over
-either, the API answers 429 `anonymous_grading_limit` and the page asks the
-visitor to sign in. The local id is reporting only, because the client
-chooses it. Rows older than 30 days are pruned by the API's maintenance loop.
-No browser fingerprinting is used. `/api/public/*` stays in the default
-anonymous class (60/minute per IP) rather than the AI class, whose 15/minute
-burst would stop a classroom sharing one IP. Same-zone Worker subrequests carry the
-visitor's IP in `CF-Connecting-IP`; this needs checking on UAT before the
-per-IP cap is relied on.
+UTC day, salted client-address hash (HMAC with `SHARE_LINK_SECRET`; an IPv6
+address by its /64), shared item (the quiz, or the note holding an embedded
+quiz) and the random id the browser keeps in IndexedDB. The share token is
+verified before the body is read. Parts are counted before any Jev call and
+stay counted when grading fails. Caps: 300 graded parts per address hash per
+day (generous because a classroom shares one IP), 2,000 per shared item per
+day and 50,000 per day overall; over any, the API answers 429
+`anonymous_grading_limit` and the page asks the visitor to sign in. The local
+id is reporting only, because the client chooses it. Rows older than 30 days
+are pruned by the API's maintenance loop. No browser fingerprinting is used.
+The visitor's grading post goes straight to `/api/public/.../grade`, so it
+carries the visitor's own address and takes the anonymous class (60/minute
+per address) rather than the AI class, whose 15/minute burst would stop a
+classroom sharing one IP. The site Worker's own reads of `/api/public/`
+carry no visitor address (a same-zone Worker subrequest reaches the origin
+without one); they are signed and counted per share token (§6).
 
 Ingest and captioning are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.
@@ -1442,9 +1453,16 @@ Three layers, each doing what the ones below it cannot:
 
 | Layer | Sees | Handles |
 | --- | --- | --- |
-| Cloudflare | IP, path | volumetric floods, before origin bandwidth is spent |
-| Go middleware | Clerk identity, plan, route class | per-user semantic limits |
+| Cloudflare | IP, path | one rate limiting rule (Free plan): `/api/public/`, 100 requests in 10 s per address, then blocked for 10 s; the WAF blocks internal paths on the public hosts ([deployment-runbook.md](deployment-runbook.md#2-cloudflare--rules)) |
+| Go middleware | Clerk identity, plan, route class | per-user semantic limits, and per address for signed-out callers |
 | Credits ledger | measured cost | spend, in money rather than requests |
+
+Everything but `/api/public/` reaches the gateway with no edge limit: chat,
+uploads, the collaboration host and the webhooks are bounded in Go (or the
+Rust collaboration server) or not at all. The site Worker's own reads of
+`/api/public/` skip the zone's rate-limit phase (a same-zone subrequest goes
+straight to the origin), so the edge counts each visitor once, by the
+request they send.
 
 The collaboration server limits its own writers apart: each user's SYNC,
 awareness and query messages, over every socket and draft send, take from an
@@ -1462,8 +1480,9 @@ limits hold across replicas — the in-process counters it replaces only ever
 worked with one.
 
 **Route classes** (`middleware.go`): request cost across this API varies by four
-orders of magnitude. Listing workspaces touches one index. A chat turn is
-capped at 12 planning responses and 12 accepted tool calls. Provider completion,
+orders of magnitude. Listing workspaces touches one index. A chat turn gets
+12 responses before its first write, 4 tool calls per response and 160 per
+turn (`pipeline/pipeline/retrieval/limits.py`). Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
 (`/chat/stream`, `/generate`, `/ai/command`, signed-in quiz `/grade` and
 `/computation-check`) are 200/hour with burst 15, plus
@@ -1478,12 +1497,46 @@ browser's editing incident reports (`/api/edit-incidents`, 60/hour with burst
 file per 60 s; [thumbnails.md](thumbnails.md#browser-captures)). Credits remain the money bound;
 these limits only stop abuse patterns.
 
+The rate-limit audit (Epo 2026-10-24) added these classes:
+
+| Class | Routes | Limit | Key |
+| --- | --- | --- | --- |
+| Integration | `/api/integrations*` and `PATCH /api/me` (each reads Clerk, whose Backend API limit the whole instance shares) | 30/minute | user |
+| Bank comment | `POST /api/bank/questions/{id}/comments` (each sends an email) | 30/hour, burst 10 | user |
+| Stripe session | subscription Checkout, top-up, card setup, portal, portal cancel (`checkout_limit`) | 10/hour | user |
+| Share page | the site Worker's signed reads of `/api/public/` | 300/minute | share token |
+
+The Integration class counts by method and path; the limiter never reads a
+body. Import routes take the upload and the integration budgets. Clerk's
+OAuth tokens and connected providers are kept in process for 3 minutes per
+user (a token never within a minute of its expiry, and not at all without
+one); a disconnect and every Clerk `user.*` webhook drop the user's entries.
+Stripe Checkout pages for the same top-up amount or card setup are handed out
+again while they have 5 minutes left, and invoice lists are cached for 60 s.
+
+**Signed share reads.** The site Worker signs each read of `/api/public/` with
+`X-Capy-Share-Read: {unix}.{base64url HMAC-SHA256(SHARE_LINK_SECRET,
+"share-read:v1:{unix}:{path}")}` (`workers/site/shareRead.ts`). On a GET or
+HEAD whose header verifies within a minute of the gateway's clock, the
+request takes the share-page class keyed by its share token instead of the
+anonymous class keyed by address (`ratelimit.shareReadToken`). An unsigned,
+forged or stale header is an anonymous read. Workers Cache entries are
+unchanged (each query string keeps its own).
+
+Signed-out callers are keyed by `CF-Connecting-IP`, an IPv6 address by its
+/64 (`obs.ClientAddress`). `Retry-After` is rounded up, so a client that
+waits exactly that long gets through.
+
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.
 They authenticate by signature and both providers apply their own delivery rate.
+At the edge they skip the security rules only from the providers' published
+addresses.
 
 The secret-authenticated service routes `/api/internal/*` and
-`/internal/collaboration/*` also bypass the user/IP limiter. Collaboration
+`/internal/collaboration/*` also bypass the user/IP limiter. Their callers
+use the private network; on the public hosts the edge blocks both paths
+([deployment-runbook.md](deployment-runbook.md#2-cloudflare--rules)). Collaboration
 bootstrap, access checks, saves, publication and note projection share a service
 IP and must not consume one anonymous caller's 60/minute allowance. Their
 service-secret checks, per-file authorization and ingest admission gates still
@@ -1514,8 +1567,9 @@ large answer:
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone
 still allows arbitrary parallel spend. `BeginProviderSession` counts open
-non-ingest leases in Postgres (cap 5). A replica that dies mid-stream leaves a row the
-sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
+non-ingest model sessions in Postgres (cap 5), platform-paid and BYOK alike
+(a BYOK turn still runs platform retrieval and embeddings). A replica that
+dies mid-stream leaves a row the sweeper releases after 30 minutes. Ingest
 concurrency is the separate cap of 20 above, not this one.
 
 **Per-model outbound concurrency** bounds what reaches a provider.
@@ -1579,8 +1633,23 @@ provider and model for the selected range; the pre-call row carries
 the provider and model so abandoned attempts are attributable. A gate
 refusal writes no call row and is not counted.
 
-**Redis failures fail open.** A limiter outage must not become an API outage;
-the edge still bounds the blast radius.
+**Redis failures fail open, except AI and uploads.** While the limiter's
+Redis errors, the AI and upload classes (and the import routes, which take
+the upload bucket) answer 503 `rate_limit_unavailable` with
+`Retry-After: 5`: those are the classes whose requests spend money or GPU
+after the answer. Every other class lets the request through, since a
+limiter outage must not become an API outage; the edge covers only
+`/api/public/`.
+
+**Server timeouts.** The gateway's `http.Server` reads a request's headers and
+body within 1 minute, writes an answer within 5 minutes and closes idle
+connections after 2 minutes (`httpapi.NewServer`). A chat stream, an
+AI command, the event stream and an allowed upload extend their own
+deadlines once admitted (`extendDeadlines`). The chat stream body is capped
+at 128 KiB before it is decoded (413 `query_too_long`).
+
+**Request logs.** A 5xx whose client went away first is logged at WARN, not
+ERROR, so aborted streams do not page.
 
 Disabled under `APP_ENV=e2e`, where Playwright drives hundreds of requests per
 second through a handful of fixed users.

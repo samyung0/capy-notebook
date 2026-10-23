@@ -13,11 +13,13 @@ identity, not a chatty session.
 
 What already covers a *different* attack (leave it alone):
 
-- Cloudflare IP rate limit on `api.abcd.com` (volumetric floods). Do not enable
-  Bot Fight Mode — it cannot skip `/webhooks/` and will challenge Stripe/Clerk
+- One Cloudflare rate limiting rule (Free plan): `/api/public/`, per IP over
+  10 s (`deploy/cloudflare/rules.json`); nothing else is limited at the edge.
+  Do not enable Bot Fight Mode — it cannot skip `/webhooks/` and will challenge Stripe/Clerk
   deliveries. See `openwiki/deployment-runbook.md` §2.
-- Go GCRA: per-user AI / upload / general classes, plus 3 concurrent chat
-  streams. Fail-open if Redis is down.
+- Go GCRA: per-user AI / upload / general classes, plus 5 concurrent model
+  sessions per actor (BYOK included). AI and upload refuse while Redis is
+  down; the other classes fail open.
 - Credits reserve/settle, keyed by actor.
 - Upload class exists because ingest GPU is spent *after* the HTTP call
   returns; the worker itself is not rate-limited.
@@ -63,8 +65,8 @@ What to do, in order of leverage
 
    Once credits gate spend, the AI hourly cap can be looser (the billing
    revamp’s 200/hr + short 15/min window). Keep upload tighter than chat —
-   one request is minutes of L4, billed after the fact. Keep 3 concurrent
-   streams. Do not flatten AI / upload / general into one bucket; request
+   one request is minutes of L4, billed after the fact. Keep 5 concurrent
+   sessions. Do not flatten AI / upload / general into one bucket; request
    cost still varies by orders of magnitude.
 
 5. Device fingerprint (web analog of Cursor’s machine id)

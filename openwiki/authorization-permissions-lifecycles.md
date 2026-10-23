@@ -400,6 +400,12 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   own expiry or Cancel. Migration 0101 cleared the pending invites stored
   before it, since they held the resolved account email rather than the typed
   address.
+- An owner sends at most 50 invites per UTC day, new rows and resends alike
+  (429 `invite_limit`), and typing an address again within 10 minutes of its
+  last send is refused with 429 `invite_recently_sent` (no new token, no
+  email). Both apply the same way to every address, with or without an
+  account, so they tell the inviter nothing (Epo 2026-10-24, rate-limit audit
+  M8; `server/internal/store/collaboration.go`).
 - The emailed invite link's token is minted when the email is sent
   (`MintInviteLink`), so no raw token is ever stored: the outbox payload holds
   only the invite id and the current token hash, and each send rotates the
@@ -500,6 +506,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Only the workspace owner
   can delete another user's comment or discussion.
+- A note holds at most 500 live comments: each discussion's opening comment
+  and every reply, a deleted comment or discussion freeing its place (409
+  `comment_limit`). A comment's JSON is at most 32 KiB (422), well above the
+  3,000-character box (rate-limit audit M9, `server/internal/store/row_caps.go`).
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
   awareness to or from them and sends them no comment relays (Epo 2026-10-10)
@@ -888,6 +898,11 @@ sets stays allowed.
 Planner, preference, credential, attempt, and canvas writes recheck account
 lifecycle under the user-row lock in the mutation transaction rather than
 relying only on middleware admission.
+These rows sit outside storage, so their counts are capped (rate-limit audit
+M9 and H6, `server/internal/store/row_caps.go`): 5,000 schedule events per
+user (409 `event_limit`) and 100 thinking canvases per user (409
+`canvas_limit`), each canvas's stored scene at most 512 KiB (413
+`canvas_too_large`). The canvas list returns names and dates, never scenes.
 
 Source: [schedule lifecycle gates](../server/internal/httpapi/huma_schedule.go#L47).
 
@@ -1674,7 +1689,9 @@ transfer use the collaboration eviction/outbox and processing fences.
 
 Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify
-another actor's marks. Clones and downloads do not include them, and
+another actor's marks. One actor holds at most 2,000 annotations per file (409
+`annotation_limit`); the count is per actor, so nobody's marks can block
+another reader's. Clones and downloads do not include them, and
 `PurgeUser` deletes the actor's marks at account purge.
 
 Image-caption reuse checks current containing files. Private workspace reuse
