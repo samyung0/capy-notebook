@@ -9,7 +9,8 @@
 //! origin; one the current document dropped moves to the key's current value.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
+use std::ops::Range;
 use std::sync::Arc;
 
 use yrs::block::{ClientID, Item, ItemContent, UpdateParent};
@@ -18,7 +19,7 @@ use yrs::updates::decoder::Decode;
 use yrs::{Doc, ID, IdSet, ReadTxn, Transact, Update, UpdateBlock};
 
 use crate::write::{self, ContentRef, Out};
-use crate::{ParentRef, Refused, View, parent_ref};
+use crate::{Merged, Own, ParentRef, Refused, View, parent_ref};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum Anchor {
@@ -69,21 +70,66 @@ impl Piece<'_> {
     }
 }
 
+/// A delete set's ranges per client, sorted and joined.
+struct Ranges(HashMap<ClientID, Vec<Range<u32>>>);
+
+impl Ranges {
+    fn of(set: &IdSet) -> Ranges {
+        let mut out: HashMap<ClientID, Vec<Range<u32>>> = HashMap::new();
+        for (client, ranges) in set.iter() {
+            out.entry(*client)
+                .or_default()
+                .extend(ranges.iter().cloned());
+        }
+        for v in out.values_mut() {
+            v.sort_by_key(|r| r.start);
+            let mut joined: Vec<Range<u32>> = Vec::with_capacity(v.len());
+            for r in v.drain(..) {
+                match joined.last_mut() {
+                    Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+                    _ => joined.push(r),
+                }
+            }
+            *v = joined;
+        }
+        Ranges(out)
+    }
+
+    /// The parts of `clocks` of `client` the set holds, in order.
+    fn within(
+        &self,
+        client: &ClientID,
+        clocks: Range<u32>,
+    ) -> impl Iterator<Item = Range<u32>> + '_ {
+        let v = self.0.get(client).map(Vec::as_slice).unwrap_or(&[]);
+        let first = v.partition_point(|r| r.end <= clocks.start);
+        v[first..]
+            .iter()
+            .take_while(move |r| r.start < clocks.end)
+            .map(move |r| r.start.max(clocks.start)..r.end.min(clocks.end))
+    }
+
+    fn count(&self, client: &ClientID, clocks: Range<u32>) -> u32 {
+        self.within(client, clocks).map(|r| r.end - r.start).sum()
+    }
+}
+
 pub fn stable_left(
     update: &[u8],
     current: &Doc,
     view: &View,
-    own: &HashMap<ID, Option<ID>>,
+    own: &Own,
     author: Option<ClientID>,
-) -> Result<Vec<u8>, Refused> {
+) -> Result<Merged, Refused> {
     let txn = current.transact();
     let store = txn.store();
     let held = txn.state_vector();
     // Each client's first unit the room lacked.
-    let new_from = |c: &ClientID| view.dropped.get(c).copied().unwrap_or_else(|| held.get(c));
+    let new_from = |c: &ClientID| held.get(c);
     let kept = |id: &ID| id.clock < held.get(&id.client) && !view.is_removed(id);
     let decoded = Update::decode_v1(update).map_err(|error| Refused::Decode(error.to_string()))?;
     let ds = decoded.delete_set();
+    let deleted = Ranges::of(ds);
 
     // The update's new structs, cut where the sender's order breaks a run.
     let mut news: Vec<Piece> = Vec::new();
@@ -98,18 +144,13 @@ pub fn stable_left(
                 return Err(Refused::Unheld);
             }
             let mut start = 0;
-            for off in 1..n {
-                let prev = ID::new(c, k + off - 1);
-                if let Some(left) = own.get(&ID::new(c, k + off))
-                    && *left != Some(prev)
-                {
-                    news.push(Piece {
-                        item,
-                        start,
-                        end: off - 1,
-                    });
-                    start = off;
-                }
+            for cut in own.breaks(c, k + 1..k + n) {
+                news.push(Piece {
+                    item,
+                    start,
+                    end: cut - k - 1,
+                });
+                start = cut - k;
             }
             news.push(Piece {
                 item,
@@ -141,34 +182,55 @@ pub fn stable_left(
     // next to it.
     let new_gc = |id: &ID| id.clock >= new_from(&id.client) && struct_of(id).is_none();
 
-    let dead: Vec<bool> = news
-        .iter()
-        .map(|p| {
-            matches!(p.item.content(), ItemContent::Deleted(_))
-                || (0..p.len()).all(|o| ds.contains(&ID::new(p.id().client, p.id().clock + o)))
-        })
-        .collect();
-    // Resolve every new piece once its new dependencies are resolved.
+    // A piece's units the tab still shows.
+    let shown = |p: &Piece| {
+        if matches!(p.item.content(), ItemContent::Deleted(_)) {
+            0
+        } else {
+            let at = p.id().clock;
+            p.len() - deleted.count(&p.id().client, at..at + p.len())
+        }
+    };
+    let dead: Vec<bool> = news.iter().map(|p| shown(p) == 0).collect();
+    // Every piece names its origins and its explicit parent; it is resolved
+    // once the new pieces among them are (a worklist, not passes).
+    let explicit_of = |piece: &Piece| -> Option<ParentRef> {
+        if piece.start > 0 {
+            return None;
+        }
+        match piece.item.update_parent() {
+            UpdateParent::Root(n) => Some(ParentRef::Root(n.clone())),
+            UpdateParent::Item(p) => Some(ParentRef::Item(*p)),
+            _ => None,
+        }
+    };
+    let mut waiting: Vec<usize> = vec![0; news.len()];
+    let mut users: Vec<Vec<usize>> = vec![Vec::new(); news.len()];
+    for (i, piece) in news.iter().enumerate() {
+        let mut on: Vec<usize> = [piece.origin(), piece.item.right_origin().copied()]
+            .into_iter()
+            .flatten()
+            .chain(match explicit_of(piece) {
+                Some(ParentRef::Item(p)) => Some(p),
+                _ => None,
+            })
+            .filter_map(|id| struct_of(&id))
+            .filter(|&d| d != i)
+            .collect();
+        on.sort_unstable();
+        on.dedup();
+        waiting[i] = on.len();
+        for d in on {
+            users[d].push(i);
+        }
+    }
+    let mut ready: VecDeque<usize> = (0..news.len()).filter(|&i| waiting[i] == 0).collect();
     let mut res: Vec<Option<Res>> = vec![None; news.len()];
-    loop {
-        let mut open = false;
-        let mut progressed = false;
-        for i in 0..news.len() {
-            if res[i].is_some() {
-                continue;
-            }
-            open = true;
+    while let Some(i) = ready.pop_front() {
+        {
             let piece = news[i];
             let it = piece.item;
-            let explicit = if piece.start > 0 {
-                None
-            } else {
-                match it.update_parent() {
-                    UpdateParent::Root(n) => Some(ParentRef::Root(n.clone())),
-                    UpdateParent::Item(p) => Some(ParentRef::Item(*p)),
-                    _ => None,
-                }
-            };
+            let explicit = explicit_of(&piece);
             let origin = piece.origin();
             let right = it.right_origin().copied();
             let refs: Vec<ID> = [origin, right]
@@ -179,13 +241,6 @@ pub fn stable_left(
                     _ => None,
                 })
                 .collect();
-            if refs
-                .iter()
-                .filter_map(&struct_of)
-                .any(|d| d != i && res[d].is_none())
-            {
-                continue;
-            }
             let of = |id: &ID| struct_of(id).and_then(|d| res[d].clone());
             let dropped = |id: &ID| new_gc(id) || matches!(of(id), Some(Res::Drop));
             let resolved = (|| -> Result<Res, Refused> {
@@ -285,38 +340,21 @@ pub fn stable_left(
                 Ok(Res::List { list, anchor })
             })()?;
             res[i] = Some(resolved);
-            progressed = true;
         }
-        if !open {
-            break;
+        for &u in &users[i] {
+            waiting[u] -= 1;
+            if waiting[u] == 0 {
+                ready.push_back(u);
+            }
         }
-        if !progressed {
-            return Err(Refused::Unheld);
-        }
+    }
+    // A piece left over names itself through others.
+    if res.iter().any(Option::is_none) {
+        return Err(Refused::Unheld);
     }
     let res: Vec<Res> = res.into_iter().flatten().collect();
     let live = |i: usize| !dead[i] && !matches!(res[i], Res::Drop);
 
-    // The sender's document order of its new units (own-left chains).
-    let mut succ: HashMap<ID, ID> = HashMap::new();
-    let mut heads: Vec<ID> = Vec::new();
-    for (u, prev) in own {
-        match prev {
-            Some(p) => {
-                succ.insert(*p, *u);
-            }
-            None => heads.push(*u),
-        }
-    }
-    heads.sort_by_key(|h| (h.client.get(), h.clock));
-    let mut pos: HashMap<ID, usize> = HashMap::new();
-    for h in heads {
-        let mut cur = Some(h);
-        while let Some(u) = cur {
-            pos.insert(u, pos.len());
-            cur = succ.get(&u).copied();
-        }
-    }
     // Typing's rule for merged runs: a gap after a tombstone moves to the end
     // of its deleted run. A run landing inside a deleted run would turn its
     // interior into edges on tabs that still hold units the room discarded,
@@ -344,8 +382,8 @@ pub fn stable_left(
     let mut groups: HashMap<(ParentRef, Anchor), Vec<usize>> = HashMap::new();
     for i in 0..news.len() {
         if let (true, Res::List { list, anchor }) = (live(i), &res[i]) {
-            if !pos.contains_key(&news[i].id()) {
-                return Err(Refused::Shape("the own-left map lacks a unit"));
+            if own.order(&news[i].id()).is_none() {
+                return Err(Refused::Shape("the own order lacks a unit"));
             }
             groups
                 .entry((list.clone(), snap(anchor)))
@@ -354,7 +392,7 @@ pub fn stable_left(
         }
     }
     for g in groups.values_mut() {
-        g.sort_by_key(|&i| pos[&news[i].id()]);
+        g.sort_by_key(|&i| own.order(&news[i].id()));
     }
 
     // Rank the live new pieces: same-client clock order, a new parent first.
@@ -429,11 +467,11 @@ pub fn stable_left(
     lists.dedup();
     let mut placed_groups = 0usize;
     for list in lists {
-        let anchors: HashSet<ID> = groups
+        let anchors: BTreeSet<(u64, u32)> = groups
             .keys()
             .filter(|(l, _)| *l == list)
             .filter_map(|(_, a)| match a {
-                Anchor::After(u) => Some(*u),
+                Anchor::After(u) => Some((u.client.get(), u.clock)),
                 Anchor::Start => None,
             })
             .collect();
@@ -467,13 +505,15 @@ pub fn stable_left(
                 // anchor may be a tombstone.
                 let (c, k, n) = (item.id().client, item.id().clock, item.len());
                 let mut start = k;
-                for clock in k..k + n {
+                let hits: Vec<u32> = anchors
+                    .range((c.get(), k)..(c.get(), k + n))
+                    .map(|&(_, clock)| clock)
+                    .collect();
+                for clock in hits {
                     let u = ID::new(c, clock);
-                    if anchors.contains(&u) {
-                        marks.push((ID::new(c, start), u, None));
-                        push_group(Anchor::After(u), &mut marks);
-                        start = clock + 1;
-                    }
+                    marks.push((ID::new(c, start), u, None));
+                    push_group(Anchor::After(u), &mut marks);
+                    start = clock + 1;
                 }
                 if start < k + n {
                     marks.push((ID::new(c, start), ID::new(c, k + n - 1), None));
@@ -502,20 +542,40 @@ pub fn stable_left(
         return Err(Refused::Shape("an anchor is missing from its list"));
     }
 
+    // The tab's deletions of held units the room did not collect.
+    let mut deletes = IdSet::new();
+    for (client, ranges) in &deleted.0 {
+        for r in ranges {
+            let to = r.end.min(new_from(client));
+            if r.start < to {
+                deletes.insert(ID::new(*client, r.start), to - r.start);
+            }
+        }
+    }
+    deletes.diff_with(&view.removed);
+    // What the tab shows that no update holds: pieces dropped for a block the
+    // current document lacks.
+    let mut dropped: u32 = 0;
+    for (i, piece) in news.iter().enumerate() {
+        if !dead[i] && matches!(res[i], Res::Drop) {
+            dropped = dropped.saturating_add(shown(piece));
+        }
+    }
+
     if let Some(author) = author {
-        return reauthored(&Placed {
+        return reauthored(Placed {
             author,
             from: held.get(&author),
             news: &news,
             res: &res,
             live: &live,
+            shown: &shown,
             rank: &rank,
             origin_of: &origin_of,
             right_of: &right_of,
             struct_of: &struct_of,
-            kept: &kept,
-            new_from: &new_from,
-            deletes: ds,
+            deletes,
+            dropped,
         });
     }
 
@@ -525,13 +585,9 @@ pub fn stable_left(
                 out: Out,
                 len: u32,
                 sections: &mut BTreeMap<ClientID, (u32, Vec<Out>)>| {
-        let from = new_from(&client);
         let section = sections
             .entry(client)
-            .or_insert_with(|| match view.held_from(&client) {
-                Some(0) if from > 0 => (0, vec![Out::Gc(from)]),
-                _ => (from, Vec::new()),
-            });
+            .or_insert_with(|| (new_from(&client), Vec::new()));
         match out {
             Out::Gc(_) => write::push_gc(&mut section.1, len),
             item => section.1.push(item),
@@ -590,23 +646,20 @@ pub fn stable_left(
             i = struct_of(&ID::new(client, p.id().clock + p.len())).ok_or(Refused::Unheld)?;
         }
     }
-    let mut deletes = IdSet::new();
-    for (client, ranges) in ds.iter() {
-        for r in ranges.iter() {
-            for clock in r.start..r.end {
-                let id = ID::new(*client, clock);
-                let keep = if clock < new_from(client) {
-                    kept(&id)
-                } else {
-                    struct_of(&id).is_some_and(live)
-                };
-                if keep {
-                    deletes.insert(id, 1);
+    // And its deletions of its own written units.
+    for (client, pieces) in &index {
+        for &(start, len, i) in pieces {
+            if live(i) {
+                for r in deleted.within(client, start..start + len) {
+                    deletes.insert(ID::new(*client, r.start), r.end - r.start);
                 }
             }
         }
     }
-    write::update(sections, &deletes)
+    Ok(Merged {
+        update: write::update(sections, &deletes)?,
+        dropped,
+    })
 }
 
 /// What `stable_left` worked out, for writing it under a new client id.
@@ -617,20 +670,24 @@ struct Placed<'a, 'p> {
     news: &'a [Piece<'p>],
     res: &'a [Res],
     live: &'a dyn Fn(usize) -> bool,
+    shown: &'a dyn Fn(&Piece) -> u32,
     rank: &'a HashMap<usize, usize>,
     origin_of: &'a HashMap<usize, ID>,
     right_of: &'a HashMap<usize, ID>,
     struct_of: &'a dyn Fn(&ID) -> Option<usize>,
-    kept: &'a dyn Fn(&ID) -> bool,
-    new_from: &'a dyn Fn(&ClientID) -> u32,
-    deletes: &'a IdSet,
+    /// The tab's deletions of held units (no new unit needs one: loading the
+    /// old document split its items at every deletion, so a new unit it
+    /// deleted is in a dead piece, which is not written).
+    deletes: IdSet,
+    /// What the placement dropped already.
+    dropped: u32,
 }
 
 /// The placed live pieces as new units of `author`, each after every new
 /// piece it names (its origins, its parent, a map value's origin). A piece
-/// naming one that is not written (deleted in the tab, under a dropped
-/// parent) is not written either: nothing of it shows in the tab.
-fn reauthored(p: &Placed) -> Result<Vec<u8>, Refused> {
+/// naming one that is not written (deleted in the tab, or dropped) is not
+/// written either, and what of it the tab shows counts as dropped.
+fn reauthored(p: Placed) -> Result<Merged, Refused> {
     let named = |i: usize| -> Vec<ID> {
         let mut ids: Vec<ID> = Vec::new();
         ids.extend(p.origin_of.get(&i));
@@ -682,10 +739,12 @@ fn reauthored(p: &Placed) -> Result<Vec<u8>, Refused> {
     let mut order: Vec<usize> = Vec::new();
     let mut next = p.from;
     let mut seen = 0usize;
+    let mut dropped = p.dropped;
     while let Some(Reverse((_, i))) = ready.pop() {
         seen += 1;
         if unwritten.contains(&i) || deps[&i].iter().any(|d| unwritten.contains(d)) {
             unwritten.insert(i);
+            dropped = dropped.saturating_add((p.shown)(&p.news[i]));
         } else {
             at.insert(i, next);
             next += p.news[i].len();
@@ -748,21 +807,10 @@ fn reauthored(p: &Placed) -> Result<Vec<u8>, Refused> {
             content,
         });
     }
-    // The tab's deletions of held units. A new unit it deleted is in a dead
-    // piece (loading the old document split its items at every deletion),
-    // which is not written.
-    let mut deletes = IdSet::new();
-    for (client, ranges) in p.deletes.iter() {
-        for r in ranges.iter() {
-            for clock in r.start..r.end.min((p.new_from)(client)) {
-                let id = ID::new(*client, clock);
-                if (p.kept)(&id) {
-                    deletes.insert(id, 1);
-                }
-            }
-        }
-    }
     let mut sections = BTreeMap::new();
     sections.insert(p.author, (p.from, structs));
-    write::update(sections, &deletes)
+    Ok(Merged {
+        update: write::update(sections, &p.deletes)?,
+        dropped,
+    })
 }

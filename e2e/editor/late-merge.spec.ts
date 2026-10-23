@@ -59,6 +59,49 @@ async function peerAppends(page: Page, text: string) {
   }, text);
 }
 
+/** The scenario room's text now (null while no room is open). */
+function roomText(page: Page) {
+  return page.evaluate(
+    async ({ path, value }) => {
+      const { mockNoteRoomText } = await import(path);
+      return mockNoteRoomText(value) as string | null;
+    },
+    { path: MOCK, value: MATERIAL }
+  );
+}
+
+/** Every late merge's request waits in the page until the test calls
+ * `releaseLateMerge` (never, for a merge that must run out of time). */
+async function holdMerges(page: Page) {
+  await page.addInitScript(() => {
+    const Native = window.Worker;
+    window.Worker = class extends Native {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes('lateMerge.worker')) return;
+        const post = this.postMessage.bind(this);
+        this.postMessage = (...args: Parameters<Worker['postMessage']>) => {
+          Object.assign(window, { releaseLateMerge: () => post(...args) });
+        };
+      }
+    };
+  });
+}
+
+/** Once the new session joined, its room lacks the offline words: the
+ * stored late rows wait for the merge, never applied raw. */
+async function roomLacksOfflineWords(page: Page) {
+  await expect.poll(() => roomText(page), { timeout: 30_000 }).not.toBeNull();
+  await page.waitForTimeout(1000);
+  expect(await roomText(page)).not.toContain(OFFLINE.trim());
+}
+
+function mergeHeld(page: Page) {
+  return page.waitForFunction(() => 'releaseLateMerge' in window, undefined, {
+    timeout: 30_000,
+  });
+}
+
 async function peerLeaves(page: Page) {
   await page.evaluate(() => {
     const { latePeer } = window as unknown as {
@@ -163,24 +206,7 @@ test('a reload during the merge keeps the edits: the reloaded editor merges its 
   page,
 }) => {
   test.setTimeout(120_000);
-  // The merge's request waits in the page until the test releases it.
-  await page.addInitScript(() => {
-    const Native = window.Worker;
-    window.Worker = class extends Native {
-      constructor(url: string | URL, options?: WorkerOptions) {
-        super(url, options);
-        if (!String(url).includes('lateMerge.worker')) return;
-        const post = this.postMessage.bind(this);
-        this.postMessage = (...args: Parameters<Worker['postMessage']>) => {
-          Object.assign(window, { releaseLateMerge: () => post(...args) });
-        };
-      }
-    };
-  });
-  const held = () =>
-    page.waitForFunction(() => 'releaseLateMerge' in window, undefined, {
-      timeout: 30_000,
-    });
+  await holdMerges(page);
   await page.goto(note);
   const live = page.locator('[data-note-mount="live"]');
   await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
@@ -202,14 +228,20 @@ test('a reload during the merge keeps the edits: the reloaded editor merges its 
   await peerLeaves(page);
   await lateSessions(page, MATERIAL);
   await setReachable(page, true);
-  await held();
-  // Past the checkpoint debounce: no receipt may have dropped the row.
+  await roomLacksOfflineWords(page);
+  await mergeHeld(page);
+  // A peer edits while the merge waits; past the checkpoint debounce no
+  // receipt may have dropped the row.
+  await joinPeer(page);
+  await peerAppends(page, 'A block typed during the merge.');
   await page.waitForTimeout(2500);
 
   // The reloaded page joins (a new session); only the stored late row holds
-  // the words, and it is merged, never applied raw.
+  // the words, and it is merged, never applied raw: the room lacks them
+  // while the merge waits.
   await page.reload();
-  await held();
+  await roomLacksOfflineWords(page);
+  await mergeHeld(page);
   await page.evaluate(() =>
     (window as unknown as { releaseLateMerge: () => void }).releaseLateMerge()
   );
@@ -221,4 +253,36 @@ test('a reload during the merge keeps the edits: the reloaded editor merges its 
   const text = await editor.innerText();
   expect(text.split(OFFLINE.trim()).length - 1).toBe(1);
   expect(text.split(seed).length - 1).toBe(1);
+});
+
+test('a merge past its deadline keeps the edits read-only for copying', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await holdMerges(page);
+  await page.goto(note);
+  const live = page.locator('[data-note-mount="live"]');
+  await expect(live.locator('[contenteditable="true"]')).toContainText(seed, {
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  await setReachable(page, false);
+  await live.locator('[contenteditable="true"]').click();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(OFFLINE);
+  await lateSessions(page, MATERIAL);
+  await setReachable(page, true);
+  // The merge never answers: 10 s after it started the tab stops it.
+  await mergeHeld(page);
+  await expect(page.getByTestId('note-recovery')).toContainText(
+    OFFLINE.trim(),
+    { timeout: 30_000 }
+  );
+  await expect(
+    page.locator('[data-testid="save-banner"][data-kind="refused"]')
+  ).toBeVisible();
+  await lateSessions(page, null);
 });

@@ -1062,6 +1062,12 @@ export function discardMockMaterialRoom(materialId: string) {
  * from now on each answers its next join `collaboration-late`, and a new
  * session joins as usual (`every`: a new one is late too, which the late path
  * takes for a failure); null ends it. */
+/** The text the open room of a note holds now (null when none is open),
+ * for e2e checks of what reached the room. */
+export function mockNoteRoomText(materialId: string): string | null {
+  const room = rooms.get(mockMaterialRoom(materialId));
+  return room ? room.document.get('content', Y.XmlText).toString() : null;
+}
 export function lateSessions(materialId: string | null, every = false) {
   if (materialId) lateMaterials.set(materialId, every ? 'every' : 'joined');
   else lateMaterials.clear();

@@ -445,7 +445,12 @@ export class ItemRoom {
     });
     for (;;) {
       if (this.destroyed) return false;
-      const { current, recovery } = draftGroups(rows, this.room);
+      // Item rooms have no late merge: late rows open read-only for copying,
+      // never applied raw.
+      const { current, recovery } = draftGroups(
+        rows.map((row) => (row.late ? { ...row, refused: true } : row)),
+        this.room
+      );
       if (recovery.length) {
         const doc = recoveryDocument(recovery);
         if (doc) {

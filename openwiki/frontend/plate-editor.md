@@ -2138,14 +2138,18 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   document and every restored row are the old document, the synced one the
   current, and `mergeLate` (`src/features/collaboration/lateMerge`) runs the
   merge in a worker that is gone afterwards. Neither the worker nor the WASM is
-  in the main bundle; they load only here. The update is applied as this
-  session's edit (sent, stored, its receipt covering the restored rows); then
-  the note paints and swaps in. Until then the editor is not shown and asks
-  for no receipt, so a reload during the merge still finds the stored rows.
-- **Failure is explicit**: a failed merge, or a late answer to the new
-  session, keeps the old document as one refused row, shown read-only for
-  copying after the remount (the `refused` banner), and goes to Sentry
-  (`late-merge`). The stored rows stay until then; no edit is dropped.
+  in the main bundle; they load only here, and not at all when the old
+  document holds nothing the current one lacks (no unit past its clocks, no
+  deletion it has not made). The update is applied as this session's edit
+  (sent, stored, its receipt covering the restored rows); then the note paints
+  and swaps in. Until then the editor is not shown, its toolbar is inert and
+  it asks for no receipt, so a reload during the merge still finds the stored
+  rows, and they never reach the room raw.
+- **Failure is explicit**: a failed merge, one that has not answered 10 s
+  after it started (`LATE_MERGE_DEADLINE_MS`: the worker is stopped), or a late
+  answer to the new session keeps the old document as one refused row, shown
+  read-only for copying after the remount (the `refused` banner), and goes to
+  Sentry (`late-merge`). The stored rows stay until then; no edit is dropped.
 - **Stored drafts**: a sweep answered `late` marks the group's rows `late`.
   Sweeps never send them, and an editor opening with any late row merges every
   restored row the same way instead of applying them.
@@ -2156,8 +2160,13 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   end of its deleted run (as typing does), and a map value written over a
   collected one follows the key's current value. Every item keeps the tab's
   id. Units the current document holds are skipped, so sending or merging
-  again is a no-op, and the browser passes no acknowledged base: the
+  again is a no-op; what it holds is what the room acknowledged, since the
   collection keeps every client's clock. Text the tab never saw is a tie.
+  Every walk goes by ranges, so a deleted item or GC struct claiming any
+  length (the room admits one) costs what its bytes cost. Each merge also
+  counts the units the tab shows that it dropped: those in a block the
+  current document no longer holds. A merge under the tab's own ids applies
+  without them; whether it also keeps them for copying is open.
 - **Re-authored** (`reauthor`; `mergeLate(old, current, author)`): unsent
   edits under a client id the room never assigned (made before the tab had
   one) or no longer holds are refused as they are (Developer Epo,
@@ -2165,18 +2174,27 @@ compiled to WASM, into one ordinary update the room admits like any edit.
   the same placement writes them as new edits under the session's assigned
   id, from the first clock the current document lacks for it. New ids on
   every run make this mode not repeat-safe: the caller runs it once per
-  group of stored edits and drops them once the send is acknowledged.
-  Edits older than 7 days get the copy-only notice instead. The editor
-  takes this path once the client-id binding's refusal names such edits;
-  until then only the merge and its worker carry it.
+  group of stored edits and replaces those rows with the applied update at
+  once (a reload before the receipt then resends fixed ids instead of
+  re-authoring again). A re-authored merge that dropped units also keeps the
+  old document as one refused row, for copying. The editor takes this path
+  once the client-id binding's refusal names such edits; until then only the
+  merge and its worker carry it.
+- **Expiry**: unsent edits older than 7 days get the copy-only notice instead
+  (Developer Epo, 2026-10-24); the late path reads its rows through the same
+  draft groups, so the expiry covers late rows once it lands with the session
+  bookkeeping.
 - **Build**: `scripts/build-late-merge.mjs`, run by `office:prepare`, builds
   the crate with wasm-pack (profile `late-merge-wasm`: no unwinding, no debug
   info) on the workspace's yrs, which is the pinned fork's, into the gitignored
   `src/features/collaboration/lateMerge/generated/`. A fingerprint of the
-  crate, the fork's yrs, `Cargo.lock`, the script and the toolchain skips it
-  when nothing changed, and CI keeps it in the `cache-betteroffice` cache.
-- Notes take the late path. Item rooms and source rooms retry a late refusal
-  like any other.
+  crate, the workspace's cargo config and manifests, the fork's yrs, the
+  script and the toolchain skips it when nothing changed (a missing tool
+  fails it), and CI keeps it in the `cache-betteroffice` cache under a key of
+  the same files.
+- Notes take the late path. Item rooms have none: their late rows open
+  read-only for copying and are never applied raw, and they and source rooms
+  retry a late refusal like any other.
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from

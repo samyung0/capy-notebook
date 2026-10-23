@@ -17,10 +17,15 @@
 //! or no longer holds are refused as they are, so the same placement writes
 //! them as new edits under the tab's newly assigned id. Their ids are new on
 //! every run, so this mode is not repeat-safe: the caller runs it once per
-//! group of stored edits and keeps the result instead.
+//! group of stored edits and replaces those rows with the result at once.
 //!
-//! The browser runs this in a worker, compiled to WASM on the server's own
-//! yrs (the fork's patched copy) by `scripts/build-late-merge.mjs`.
+//! Each merge also counts what it could not place: units the tab shows
+//! inside a block the current document no longer holds.
+//!
+//! Every walk goes by ranges, so a struct claiming millions of deleted units
+//! costs what its bytes cost. The browser runs this in a worker, compiled to
+//! WASM on the server's own yrs (the fork's patched copy) by
+//! `scripts/build-late-merge.mjs`.
 
 mod place;
 mod write;
@@ -28,7 +33,8 @@ mod write;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 use yrs::block::{ClientID, ItemContent, ItemPtr};
@@ -39,7 +45,7 @@ use yrs::{Doc, ID, IdSet, ReadTxn, StateVector, Transact, Update};
 /// Why a merge gave no update. The tab keeps its edits and says so.
 #[derive(Debug, thiserror::Error)]
 pub enum Refused {
-    #[error("not a Yjs document or state vector: {0}")]
+    #[error("not a Yjs document: {0}")]
     Decode(String),
     /// The unsent edits name units neither document holds.
     #[error("the unsent edits need units neither document holds")]
@@ -49,39 +55,37 @@ pub enum Refused {
     Shape(&'static str),
 }
 
+/// A merge's update and what it left out.
+#[derive(Debug)]
+pub struct Merged {
+    /// One v1 update: apply it to the current document and send it.
+    pub update: Vec<u8>,
+    /// Units the tab shows that the update lacks: they sat in a block the
+    /// current document no longer holds.
+    pub dropped: u32,
+}
+
 /// The tab's unsent edits as one v1 update against `current`, under their
-/// own ids. `old`: the tab's document as a v1 state; `base`: the encoded
-/// state vector it knows the room acknowledged (empty for none); `current`:
-/// the room's document as fetched, a v1 state.
-pub fn merge(old: &[u8], base: &[u8], current: &[u8]) -> Result<Vec<u8>, Refused> {
-    unsent(old, base, current, None)
+/// own ids. `old`: the tab's document as a v1 state; `current`: the room's
+/// document as fetched, a v1 state. What `current` holds is what the room
+/// acknowledged: the collection keeps every client's clock.
+pub fn merge(old: &[u8], current: &[u8]) -> Result<Merged, Refused> {
+    unsent(old, current, None)
 }
 
 /// `merge`, with every unsent unit written as a new one under `author` (the
 /// tab's newly assigned client id), from the first clock `current` lacks
 /// for it. Not repeat-safe: a second run writes the edits again.
-pub fn reauthor(old: &[u8], base: &[u8], current: &[u8], author: u64) -> Result<Vec<u8>, Refused> {
-    unsent(old, base, current, Some(ClientID::new(author)))
+pub fn reauthor(old: &[u8], current: &[u8], author: u64) -> Result<Merged, Refused> {
+    unsent(old, current, Some(ClientID::new(author)))
 }
 
-fn unsent(
-    old: &[u8],
-    base: &[u8],
-    current: &[u8],
-    author: Option<ClientID>,
-) -> Result<Vec<u8>, Refused> {
-    let mut base = if base.is_empty() {
-        StateVector::default()
-    } else {
-        StateVector::decode_v1(base).map_err(|error| Refused::Decode(error.to_string()))?
-    };
+fn unsent(old: &[u8], current: &[u8], author: Option<ClientID>) -> Result<Merged, Refused> {
     let (old, current) = (load(old)?, load(current)?);
-    // The room acknowledged at least what it holds now. The collection keeps
-    // every client's clock, so its state vector covers the rest too.
-    base.merge(current.transact().state_vector());
-    let update = old.transact().encode_state_as_update_v1(&base);
-    let own = own_left(&old, &base);
-    let view = view(&old, &base, &current);
+    let held = current.transact().state_vector();
+    let update = old.transact().encode_state_as_update_v1(&held);
+    let own = Own::of(&old, &held);
+    let view = view(&old, &current);
     place::stable_left(&update, &current, &view, &own, author)
 }
 
@@ -121,24 +125,16 @@ struct Redirect {
 
 /// The tab's view of what the current document dropped (collected).
 struct View {
-    /// Units the room had (below the base) that the current document does
-    /// not hold as items.
+    /// Units below both documents' clocks that the current document holds as
+    /// GC.
     removed: IdSet,
     /// Removed units that sat in a list or a key's chain the old document
-    /// places: block start -> (length, redirect). Children of a removed type
+    /// places: range start -> (length, redirect). Children of a removed type
     /// have no place.
     redirects: BTreeMap<(u64, u32), (u32, Redirect)>,
-    /// Clients the current document lacks altogether, with the clock the
-    /// room had.
-    dropped: HashMap<ClientID, u32>,
 }
 
 impl View {
-    /// Where an update's section for `client` starts: 0 for a dropped one.
-    fn held_from(&self, client: &ClientID) -> Option<u32> {
-        self.dropped.get(client).map(|_| 0)
-    }
-
     fn redirect(&self, id: &ID) -> Option<&Redirect> {
         let (&(client, start), (len, redirect)) = self
             .redirects
@@ -156,35 +152,24 @@ impl View {
 /// that the current document no longer holds maps to its nearest held unit
 /// on the left in the old document's list (and a map value to its key's
 /// current value). No server map is needed: text the tab never saw is a tie.
-fn view(old: &Doc, base: &StateVector, current: &Doc) -> View {
+fn view(old: &Doc, current: &Doc) -> View {
     let ntxn = current.transact();
     let nsv = ntxn.state_vector();
-    let held = |id: &ID| -> bool {
-        id.clock < nsv.get(&id.client)
-            && ntxn
-                .store()
-                .blocks_in(&id.client, id.clock..id.clock + 1)
-                .next()
-                .and_then(|(_, item)| item)
-                .is_some()
-    };
     let otxn = old.transact();
     let osv = otxn.state_vector();
     let mut removed = IdSet::new();
-    let mut dropped: HashMap<ClientID, u32> = HashMap::new();
     for (c, k) in osv.iter() {
-        let upto = base.get(c).min(*k);
-        if upto > 0 && !nsv.contains_client(c) {
-            dropped.insert(*c, upto);
+        let upto = nsv.get(c).min(*k);
+        if upto == 0 {
+            continue;
         }
-        for clock in 0..upto {
-            let u = ID::new(*c, clock);
-            if !held(&u) {
-                removed.insert(u, 1);
+        for (range, item) in ntxn.store().blocks_in(c, 0..upto) {
+            let end = (range.clock + range.len).min(upto);
+            if item.is_none() && range.clock < end {
+                removed.insert(ID::new(*c, range.clock), end - range.clock);
             }
         }
     }
-    let gone = |u: &ID| removed.contains(u);
     let mut redirects: BTreeMap<(u64, u32), (u32, Redirect)> = BTreeMap::new();
     let mut roots: Vec<String> = otxn.root_refs().map(|(name, _)| name.to_string()).collect();
     roots.sort();
@@ -196,7 +181,7 @@ fn view(old: &Doc, base: &StateVector, current: &Doc) -> View {
         let parent = parent_ref(branch);
         // A list whose parent the current document dropped has no place.
         if let ParentRef::Item(p) = &parent
-            && gone(p)
+            && removed.contains(p)
         {
             continue;
         }
@@ -209,20 +194,31 @@ fn view(old: &Doc, base: &StateVector, current: &Doc) -> View {
             }
             next = item.right();
         }
-        // The nearest held unit on the left, as the walk goes.
+        // The nearest held unit on the left, as the walk goes: each item's
+        // ranges are held (an item in the current document), removed (GC
+        // there) or new (past its clock).
         let mut left = None;
         for item in &items {
-            for offset in 0..item.len() {
-                let u = ID::new(item.id().client, item.id().clock + offset);
-                if held(&u) {
-                    left = Some(u);
-                } else if gone(&u) {
+            let (c, k) = (item.id().client, item.id().clock);
+            let end = (k + item.len()).min(nsv.get(&c));
+            if k >= end {
+                continue;
+            }
+            for (range, block) in ntxn.store().blocks_in(&c, k..end) {
+                let from = range.clock.max(k);
+                let to = (range.clock + range.len).min(end);
+                if from >= to {
+                    continue;
+                }
+                if block.is_some() {
+                    left = Some(ID::new(c, to - 1));
+                } else {
                     let redirect = Redirect {
                         left,
                         parent: parent.clone(),
                         key: None,
                     };
-                    redirects.insert((u.client.get(), u.clock), (1, redirect));
+                    redirects.insert((c.get(), from), (to - from, redirect));
                 }
             }
         }
@@ -233,7 +229,7 @@ fn view(old: &Doc, base: &StateVector, current: &Doc) -> View {
                 if let ItemContent::Type(inner) = item.content() {
                     stack.push(BranchPtr::from(inner.as_ref()));
                 }
-                if gone(item.id()) {
+                if removed.contains(item.id()) {
                     let redirect = Redirect {
                         left: head,
                         parent: parent.clone(),
@@ -248,11 +244,7 @@ fn view(old: &Doc, base: &StateVector, current: &Doc) -> View {
             }
         }
     }
-    View {
-        removed,
-        redirects,
-        dropped,
-    }
+    View { removed, redirects }
 }
 
 /// The key's value in the current document, if it holds the parent.
@@ -280,36 +272,67 @@ fn current_head(txn: &impl ReadTxn, parent: &ParentRef, key: &Arc<str>) -> Optio
         .map(|(_, item)| item.last_id())
 }
 
-/// The sender's own-left map: for every unit of `doc` that `base` lacks
-/// (the unsent edits), the nearest such unit to its left in the same list,
-/// none at the head. Map values get no entry.
-fn own_left(doc: &Doc, base: &StateVector) -> HashMap<ID, Option<ID>> {
-    let txn = doc.transact();
-    let mut out = HashMap::new();
-    let mut stack: Vec<BranchPtr> = txn
-        .root_refs()
-        .filter_map(|(name, _)| BranchID::get_root(&txn, name))
-        .collect();
-    while let Some(branch) = stack.pop() {
-        let mut last: Option<ID> = None;
-        let mut next = branch.start();
-        while let Some(item) = next {
-            next = item.right();
-            let (c, k, n) = (item.id().client, item.id().clock, item.len());
-            for clock in base.get(&c).max(k)..k + n {
-                let unit = ID::new(c, clock);
-                out.insert(unit, last);
-                last = Some(unit);
+/// The sender's own order of its unsent list units: per list, the runs of
+/// units the current document lacks, in document order. A run's first unit
+/// has the previous run's last unit on its left (none at the list's head);
+/// every other unit has the unit before it. Map values are in no run.
+struct Own {
+    /// Run start -> (length, the first unit's left, the run's place in the
+    /// walk).
+    runs: BTreeMap<(u64, u32), (u32, Option<ID>, usize)>,
+}
+
+impl Own {
+    fn of(doc: &Doc, held: &StateVector) -> Own {
+        let txn = doc.transact();
+        let mut runs = BTreeMap::new();
+        let mut stack: Vec<BranchPtr> = txn
+            .root_refs()
+            .filter_map(|(name, _)| BranchID::get_root(&txn, name))
+            .collect();
+        while let Some(branch) = stack.pop() {
+            let mut last: Option<ID> = None;
+            let mut next = branch.start();
+            while let Some(item) = next {
+                next = item.right();
+                let (c, k, n) = (item.id().client, item.id().clock, item.len());
+                let from = held.get(&c).max(k);
+                if from < k + n {
+                    let place = runs.len();
+                    runs.insert((c.get(), from), (k + n - from, last, place));
+                    last = Some(ID::new(c, k + n - 1));
+                }
+                if let ItemContent::Type(inner) = item.content() {
+                    stack.push(BranchPtr::from(inner.as_ref()));
+                }
             }
-            if let ItemContent::Type(inner) = item.content() {
-                stack.push(BranchPtr::from(inner.as_ref()));
+            for (_, item) in branch.map_items() {
+                if let ItemContent::Type(inner) = item.content() {
+                    stack.push(BranchPtr::from(inner.as_ref()));
+                }
             }
         }
-        for (_, item) in branch.map_items() {
-            if let ItemContent::Type(inner) = item.content() {
-                stack.push(BranchPtr::from(inner.as_ref()));
-            }
-        }
+        Own { runs }
     }
-    out
+
+    /// Clocks of `client` in `clocks` whose left is not the unit before.
+    fn breaks(&self, client: ClientID, clocks: Range<u32>) -> Vec<u32> {
+        self.runs
+            .range((client.get(), clocks.start)..(client.get(), clocks.end))
+            .filter(|&(&(_, start), &(_, left, _))| {
+                start == 0 || left != Some(ID::new(client, start - 1))
+            })
+            .map(|(&(_, start), _)| start)
+            .collect()
+    }
+
+    /// A unit's place in the sender's document order, comparable within one
+    /// list: (its run's place in the walk, its offset in the run).
+    fn order(&self, id: &ID) -> Option<(usize, u32)> {
+        let (&(client, start), &(len, _, place)) = self
+            .runs
+            .range(..=(id.client.get(), id.clock))
+            .next_back()?;
+        (client == id.client.get() && id.clock < start + len).then_some((place, id.clock - start))
+    }
 }

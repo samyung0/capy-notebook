@@ -5,16 +5,15 @@
 //! window of the oldest state a counted tab acknowledged (now when none is),
 //! keeping what counted sessions deleted. A tab some collection did not
 //! count since its last sync takes the late path: it merges its unsent edits
-//! (with no base, as the browser does) against S's document, S takes the
-//! update, and the tab goes on with a new document and client id. Every tab
+//! against S's document, S takes the update, and the tab goes on with a new
+//! document and client id. Every tab
 //! has a twin in a reference room R that never collects.
 //!
 //! Per seed: every replica converges with nothing pending, every collected
 //! state loads to the value collected, no merge is refused, and a merge from
 //! equal states (S = R, tab = twin) never adds or loses a text character
 //! (ties may order them differently). Sending the merged update again, or
-//! merging again, changes nothing, and the tab's acknowledged base gives the
-//! same bytes as none.
+//! merging again, changes nothing.
 //!
 //! Each late merge is also run re-authored under the tab's next client id
 //! (edits under an id the room does not hold): that update holds structs
@@ -31,7 +30,6 @@ use serde_json::Value;
 use support::collect::collect;
 use support::note::{Note, edit, sync};
 use support::rng::Rng;
-use yrs::updates::encoder::Encode;
 use yrs::{ID, IdSet, ReadTxn, StateVector, Transact};
 
 #[derive(PartialEq, Clone, Copy)]
@@ -47,8 +45,6 @@ struct Tab {
     st: St,
     /// S's state vector and delete set at the tab's last sync.
     seen: (StateVector, IdSet, usize),
-    /// What the tab held at its last sync.
-    base: StateVector,
     /// A collection ran without counting this tab since its last sync.
     excluded: bool,
     /// What this tab's session deleted.
@@ -158,13 +154,11 @@ impl World {
         let mut r = Note::load(c, &format!("c{c}-"), &self.r.state());
         r.next_id = g.next_id;
         let seen = self.snapshot();
-        let base = g.doc.transact().state_vector();
         self.tabs.push(Tab {
             g,
             r,
             st: St::Online,
             seen,
-            base,
             excluded: false,
             held: IdSet::new(),
         });
@@ -214,14 +208,15 @@ impl World {
             let comparable = self.s.value() == self.r.value() && tab.g.value() == tab.r.value();
             let (old, current) = (tab.g.state(), self.s.state());
             // Re-authored under the id the new session gets below.
-            let reauthored = late_merge::reauthor(&old, &[], &current, self.next_client);
-            match late_merge::merge(&old, &[], &current) {
-                Ok(update) => {
+            let reauthored = late_merge::reauthor(&old, &current, self.next_client);
+            match late_merge::merge(&old, &current) {
+                Ok(merged) => {
+                    let update = merged.update;
                     match &reauthored {
                         Ok(reauthored) => {
                             let mut copy = Note::load(u64::from(u32::MAX), "x", &current);
-                            copy.receive(reauthored);
-                            let foreign = ydoc::decode(reauthored).is_ok_and(|u| {
+                            copy.receive(&reauthored.update);
+                            let foreign = ydoc::decode(&reauthored.update).is_ok_and(|u| {
                                 u.blocks().any(|b| match b {
                                     yrs::UpdateBlock::Item(item) => {
                                         item.id().client.get() != self.next_client
@@ -242,25 +237,19 @@ impl World {
                             .refused
                             .push(format!("seed {seed}: re-authored: {error}")),
                     }
-                    let based = late_merge::merge(&old, &tab.base.encode_v1(), &current);
-                    if based.as_ref().ok() != Some(&update) {
-                        tally
-                            .failures
-                            .push(format!("seed {seed}: the base changed the merge"));
-                    }
                     self.s.receive(&update);
                     // Sent again, or merged again after the room took it: no change.
                     let taken = self.s.state();
                     self.s.receive(&update);
-                    let again = late_merge::merge(&old, &[], &taken);
+                    let again = late_merge::merge(&old, &taken);
                     match &again {
-                        Ok(again) => self.s.receive(again),
+                        Ok(again) => self.s.receive(&again.update),
                         Err(error) => tally
                             .failures
                             .push(format!("seed {seed}: a second merge was refused: {error}")),
                     }
                     let carried = again.as_ref().is_ok_and(|again| {
-                        ydoc::decode(again).is_ok_and(|u| u.blocks().next().is_some())
+                        ydoc::decode(&again.update).is_ok_and(|u| u.blocks().next().is_some())
                     });
                     if self.s.state() != taken || carried {
                         tally
@@ -296,7 +285,6 @@ impl World {
         tab.st = St::Online;
         tab.excluded = false;
         tab.seen = seen;
-        tab.base = tab.g.doc.transact().state_vector();
     }
 }
 
@@ -360,9 +348,7 @@ fn run(seed: u64, tally: &mut Tally) {
                     for k in 0..world.tabs.len() {
                         if world.tabs[k].st == St::Online {
                             let seen = world.snapshot();
-                            let tab = &mut world.tabs[k];
-                            tab.seen = seen;
-                            tab.base = tab.g.doc.transact().state_vector();
+                            world.tabs[k].seen = seen;
                         }
                     }
                 }

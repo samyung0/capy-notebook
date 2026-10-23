@@ -35,8 +35,10 @@ const FILES = [
   'late_merge_bg.wasm',
   'late_merge_bg.wasm.d.ts',
 ];
-// What the emitted WASM depends on, besides the toolchain.
+// What the emitted WASM depends on, besides the toolchain. The CI cache key
+// (.github/actions/cache-betteroffice) names the same files.
 const INPUTS = [
+  'collaboration-rs/.cargo/config.toml',
   'collaboration-rs/Cargo.toml',
   'collaboration-rs/Cargo.lock',
   'collaboration-rs/crates/late-merge/Cargo.toml',
@@ -74,6 +76,9 @@ async function hashPath(hash, relative) {
     await hashPath(hash, path.posix.join(relative, entry.name));
 }
 
+// The toolchain's versions are part of the key, so a machine without
+// rustc, wasm-pack or wasm-opt fails here (and with it office:prepare) even
+// when its generated files are current: it fails closed.
 async function fingerprint() {
   const hash = createHash('sha256');
   const rustc = spawnSync('rustc', ['-vV'], { encoding: 'utf8' });

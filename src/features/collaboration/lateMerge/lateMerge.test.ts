@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { beforeAll, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { initSync } from './generated/late_merge.js';
+import { holdsUnsent } from './lateMerge';
 import { mergeRequest } from './lateMerge.worker';
 
 /** The sample the native merge is held to (collaboration-rs late-merge
@@ -36,6 +37,7 @@ it('merges in the worker to exactly the bytes the native merge gives', async () 
   if (!('merged' in reply)) throw new Error(reply.error);
   const merged = new Uint8Array(reply.merged);
   expect(merged).toEqual(sample('merged'));
+  expect(reply.dropped).toBe(0);
   // Yjs takes the update whole: nothing waits for a unit it lacks.
   const doc = new Y.Doc();
   Y.applyUpdate(doc, current);
@@ -76,4 +78,30 @@ it('answers what is not a Yjs document with the reason, not a throw', async () =
   expect(reply).toEqual({
     error: expect.stringContaining('not a Yjs document'),
   });
+});
+
+it('needs no merge when the old document holds nothing the current one lacks', () => {
+  const doc = new Y.Doc();
+  doc.getText('t').insert(0, 'abc');
+  const same = Y.encodeStateAsUpdate(doc);
+  expect(holdsUnsent(same, doc)).toBe(false);
+  const tab = (edit: (text: Y.Text) => void) => {
+    const copy = new Y.Doc();
+    Y.applyUpdate(copy, same);
+    edit(copy.getText('t'));
+    return Y.encodeStateAsUpdate(copy);
+  };
+  expect(
+    holdsUnsent(
+      tab((text) => text.insert(3, 'd')),
+      doc
+    )
+  ).toBe(true);
+  // A deletion alone is an edit to merge too.
+  expect(
+    holdsUnsent(
+      tab((text) => text.delete(1, 1)),
+      doc
+    )
+  ).toBe(true);
 });

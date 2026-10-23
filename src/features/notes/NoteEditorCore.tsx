@@ -41,7 +41,10 @@ import {
   CollaborationHold,
   EditorHoldScope,
 } from '@/features/collaboration/CollaborationHold';
-import { mergeLate } from '@/features/collaboration/lateMerge/lateMerge';
+import {
+  holdsUnsent,
+  mergeLate,
+} from '@/features/collaboration/lateMerge/lateMerge';
 import { NoteSeat, NoteSeatContext } from '@/features/collaboration/noteSeat';
 import '@/features/collaboration/platePlugin';
 import {
@@ -770,7 +773,8 @@ export function NoteEditorCore({
   // until then (no edit is dropped silently).
   const failLate = useRef((_old: Uint8Array, _error: unknown) => {});
   failLate.current = (old, error) => {
-    if (rejected.current) return;
+    // A mount the swap set aside leaves the rows to the next one.
+    if (rejected.current || stale.current) return;
     rejected.current = true;
     stale.current = true;
     captureException(error, { tags: { component: 'late-merge' } });
@@ -783,22 +787,27 @@ export function NoteEditorCore({
   };
   // Once synced, the old document's unsent edits are merged in a worker and
   // applied as one edit of this session (sent, stored, its receipt covering
-  // the restored rows); then the note paints, and the swap shows it.
+  // the restored rows); then the note paints, and the swap shows it. With
+  // nothing unsent the worker never loads; the receipt still clears the rows.
   const mergeStarted = useRef(false);
   const mergeNow = useRef(() => {});
   mergeNow.current = () => {
     if (!lateDocument || mergeStarted.current) return;
     mergeStarted.current = true;
-    void mergeLate(lateDocument, Y.encodeStateAsUpdate(ydoc)).then(
-      (merged) => {
+    const merged = holdsUnsent(lateDocument, ydoc)
+      ? mergeLate(lateDocument, Y.encodeStateAsUpdate(ydoc))
+      : Promise.resolve(null);
+    // `dropped` (units in a block the room no longer holds) waits on a
+    // decision for merges under the tab's own ids.
+    merged
+      .then((result) => {
         if (rejected.current || stale.current) return;
-        Y.applyUpdate(ydoc, merged, LATE_ORIGIN);
+        if (result) Y.applyUpdate(ydoc, result.merged, LATE_ORIGIN);
         setLateMerging(false);
         unsavedChanges.current = true;
         saveNow.current();
-      },
-      (error: unknown) => failLate.current(lateDocument, error)
-    );
+      })
+      .catch((error: unknown) => failLate.current(lateDocument, error));
   };
 
   useEffect(
@@ -1456,7 +1465,8 @@ export function NoteEditorCore({
   // Offline past the bound, refused as outdated, or paused for a swap:
   // nothing may edit until reconnect, reload or the next editor. A paused
   // editor's content stops edits without Slate's readOnly (pauseEdits).
-  const locked = offlineLimit || outdated || phase === 'paused';
+  // A late merge in flight: no local edit before its update is applied.
+  const locked = offlineLimit || outdated || phase === 'paused' || lateMerging;
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>

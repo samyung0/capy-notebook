@@ -71,7 +71,7 @@ fn collected_units(old: &[u8], current: &[u8]) -> usize {
 fn the_native_merge_gives_the_samples_bytes() {
     if std::env::var_os("LATE_MERGE_WRITE_SAMPLE").is_some() {
         let (old, current) = sample();
-        let merged = late_merge::merge(&old, &[], &current).unwrap();
+        let merged = late_merge::merge(&old, &current).unwrap().update;
         std::fs::create_dir_all(fixture("")).unwrap();
         std::fs::write(fixture("sample-old.bin"), &old).unwrap();
         std::fs::write(fixture("sample-current.bin"), &current).unwrap();
@@ -83,7 +83,7 @@ fn the_native_merge_gives_the_samples_bytes() {
         collected_units(&old, &current) > 0,
         "the sample exercises collected units"
     );
-    let merged = late_merge::merge(&old, &[], &current).unwrap();
+    let merged = late_merge::merge(&old, &current).unwrap().update;
     assert_eq!(merged, std::fs::read(fixture("sample-merged.bin")).unwrap());
     // The merged document holds the tab's text.
     let mut room = Note::load(9, "y", &current);

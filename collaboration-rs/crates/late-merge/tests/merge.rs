@@ -1,18 +1,22 @@
 //! The late merge on small hand-made documents: where a run lands next to
 //! collected units, the snap to the end of a deleted run, the tab's own ids,
 //! held units skipped, a map value on a collected origin, repeats, refusals,
-//! and the re-authored mode (the same places under a newly assigned id).
+//! the re-authored mode (the same places under a newly assigned id), what a
+//! merge drops, and the cost of structs claiming near-maximal lengths.
 #![allow(clippy::unwrap_used)] // Tests panic on a broken case.
 
 mod support;
 
+use std::time::Duration;
+
 use support::collect::collect;
 use yrs::block::ClientID;
+use yrs::encoding::write::Write;
 use yrs::updates::decoder::Decode;
-use yrs::updates::encoder::Encode;
+use yrs::updates::encoder::{Encoder, EncoderV1};
 use yrs::{
-    Any, Doc, GetString, ID, IdSet, Map, Out, ReadTxn, StateVector, Text, Transact, Update,
-    UpdateBlock,
+    Any, Array, Doc, GetString, ID, IdSet, Map, Out, ReadTxn, StateVector, Text, TextPrelim,
+    Transact, Update, UpdateBlock,
 };
 
 fn id(client: u64, clock: u32) -> ID {
@@ -112,14 +116,18 @@ fn a_run_after_a_collected_unit_lands_at_the_end_of_its_deleted_run() {
         current.transact().store().get_item(&b).is_none(),
         "b is collected"
     );
-    let update = late_merge::merge(&state(&tab), &[], &state(&current)).unwrap();
+    let update = late_merge::merge(&state(&tab), &state(&current))
+        .unwrap()
+        .update;
     // After a (b's nearest held left neighbour), snapped past the deleted
     // run to after c, before R.
     let (c, r) = (id(5, 0), id(1, 1));
     assert_eq!(items(&update), vec![(id(2, 0), Some(c), Some(r))]);
     // Re-authored under the tab's new id 9: the same place.
     let fresh = collected(&room);
-    let reauthored = late_merge::reauthor(&state(&tab), &[], &state(&fresh), 9).unwrap();
+    let reauthored = late_merge::reauthor(&state(&tab), &state(&fresh), 9)
+        .unwrap()
+        .update;
     assert_eq!(items(&reauthored), vec![(id(9, 0), Some(c), Some(r))]);
     apply(&fresh, &reauthored);
     assert_eq!(text(&fresh), "LXR");
@@ -134,7 +142,9 @@ fn the_merged_update_keeps_the_tabs_own_ids() {
     t.insert(&mut tab.transact_mut(), 1, "hello ");
     t.insert(&mut tab.transact_mut(), 0, "> ");
     let current = collected(&room);
-    let update = late_merge::merge(&state(&tab), &[], &state(&current)).unwrap();
+    let update = late_merge::merge(&state(&tab), &state(&current))
+        .unwrap()
+        .update;
     let mut ids: Vec<ID> = items(&update).into_iter().map(|(id, _, _)| id).collect();
     ids.sort_by_key(|id| id.clock);
     assert_eq!(ids, vec![id(2, 0), id(2, 6)]);
@@ -148,12 +158,14 @@ fn sending_again_or_merging_again_changes_nothing() {
     tab.get_or_insert_text("t")
         .insert(&mut tab.transact_mut(), 3, "X");
     let current = collected(&room);
-    let update = late_merge::merge(&state(&tab), &[], &state(&current)).unwrap();
+    let update = late_merge::merge(&state(&tab), &state(&current))
+        .unwrap()
+        .update;
     apply(&current, &update);
     let taken = state(&current);
     apply(&current, &update);
     assert_eq!(state(&current), taken);
-    let again = late_merge::merge(&state(&tab), &[], &taken).unwrap();
+    let again = late_merge::merge(&state(&tab), &taken).unwrap().update;
     assert!(items(&again).is_empty(), "a second merge sends no item");
     apply(&current, &again);
     assert_eq!(state(&current), taken);
@@ -171,8 +183,9 @@ fn units_the_room_already_holds_are_skipped() {
     // The room stored X; the tab never heard (its acknowledgement was lost).
     sync(&tab, &room);
     t.insert(&mut tab.transact_mut(), 2, "Y");
-    let acknowledged = StateVector::from_iter([(ClientID::new(1), 2)]).encode_v1();
-    let update = late_merge::merge(&state(&tab), &acknowledged, &state(&room)).unwrap();
+    let update = late_merge::merge(&state(&tab), &state(&room))
+        .unwrap()
+        .update;
     assert_eq!(
         items(&update),
         vec![(id(2, 1), Some(id(2, 0)), Some(id(1, 1)))]
@@ -204,9 +217,13 @@ fn a_map_value_over_a_collected_one_follows_the_keys_current_value() {
     set(6, 4);
     let current = collected(&room);
     assert!(current.transact().store().get_item(&id(4, 0)).is_none());
-    let update = late_merge::merge(&state(&tab), &[], &state(&current)).unwrap();
+    let update = late_merge::merge(&state(&tab), &state(&current))
+        .unwrap()
+        .update;
     assert_eq!(items(&update), vec![(id(2, 0), Some(id(6, 0)), None)]);
-    let reauthored = late_merge::reauthor(&state(&tab), &[], &state(&current), 9).unwrap();
+    let reauthored = late_merge::reauthor(&state(&tab), &state(&current), 9)
+        .unwrap()
+        .update;
     assert_eq!(items(&reauthored), vec![(id(9, 0), Some(id(6, 0)), None)]);
     apply(&current, &update);
     let value = current.get_or_insert_map("m").get(&current.transact(), "k");
@@ -240,10 +257,14 @@ fn edits_under_an_unassigned_id_refused_as_they_are_go_in_reauthored() {
     t.remove_range(&mut tab.transact_mut(), 3, 2);
     assert_eq!(text(&tab), "aXY");
     let assigned = [1, 9];
-    let as_is = late_merge::merge(&state(&tab), &[], &state(&room)).unwrap();
+    let as_is = late_merge::merge(&state(&tab), &state(&room))
+        .unwrap()
+        .update;
     assert!(refused_as_is(&as_is, &room, &assigned));
     // Its newly assigned id is 9: the same edits, all of them under it.
-    let reauthored = late_merge::reauthor(&state(&tab), &[], &state(&room), 9).unwrap();
+    let reauthored = late_merge::reauthor(&state(&tab), &state(&room), 9)
+        .unwrap()
+        .update;
     assert!(!refused_as_is(&reauthored, &room, &assigned));
     assert!(
         items(&reauthored)
@@ -259,14 +280,106 @@ fn edits_under_an_unassigned_id_refused_as_they_are_go_in_reauthored() {
 fn input_that_is_not_yjs_is_refused() {
     let (room, _) = room_and_tab();
     let good = state(&room);
-    for (old, base, current) in [
-        (&b"not yjs"[..], &[][..], &good[..]),
-        (&good[..], &[0xff, 0xff][..], &good[..]),
-        (&good[..], &[][..], &b"\x05"[..]),
-    ] {
+    for (old, current) in [(&b"not yjs"[..], &good[..]), (&good[..], &b"\x05"[..])] {
         assert!(matches!(
-            late_merge::merge(old, base, current),
+            late_merge::merge(old, current),
             Err(late_merge::Refused::Decode(_))
         ));
     }
+}
+
+/// One struct of `client` at clock 0 claiming `len` units, as a collaborator
+/// may plant it (the room admits it): a deleted item at the head of the
+/// text `t`, or a GC struct.
+fn planted(client: u64, len: u32, deleted_item: bool) -> Vec<u8> {
+    let mut enc = EncoderV1::new();
+    enc.write_var(1u32);
+    enc.write_var(1u32);
+    enc.write_client(ClientID::new(client));
+    enc.write_var(0u32);
+    if deleted_item {
+        // Content 1 (deleted), no origins: the parent is named.
+        enc.write_info(1);
+        enc.write_parent_info(true);
+        enc.write_string("t");
+    } else {
+        enc.write_info(0);
+    }
+    enc.write_len(len);
+    // No delete set.
+    enc.write_var(0u32);
+    enc.to_vec()
+}
+
+/// `work` finishes within `seconds`, or the test fails then.
+fn in_time<T: Send + 'static>(seconds: u64, work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (done, answer) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = done.send(work());
+    });
+    answer
+        .recv_timeout(Duration::from_secs(seconds))
+        .expect("the merge finishes in time")
+}
+
+#[test]
+fn structs_claiming_near_maximal_lengths_cost_what_their_bytes_cost() {
+    const HUGE: u32 = u32::MAX - 1;
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "LR");
+    // Planted in the room by collaborators: a deleted item and a GC struct.
+    apply(&room, &planted(7, HUGE, true));
+    apply(&room, &planted(8, HUGE, false));
+    let tab = doc(2);
+    sync(&room, &tab);
+    tab.get_or_insert_text("t")
+        .insert(&mut tab.transact_mut(), 1, "X");
+    // And unsent in the tab's own document (a hand-made draft).
+    apply(&tab, &planted(9, HUGE, true));
+    apply(&tab, &planted(10, HUGE, false));
+    let (old, current) = (state(&tab), state(&room));
+    let (merged, reauthored) = in_time(10, move || {
+        (
+            late_merge::merge(&old, &current).unwrap(),
+            late_merge::reauthor(&old, &current, 11).unwrap(),
+        )
+    });
+    let (l, r) = (id(1, 0), id(1, 1));
+    assert_eq!(items(&merged.update), vec![(id(2, 0), Some(l), Some(r))]);
+    assert_eq!(
+        items(&reauthored.update),
+        vec![(id(11, 0), Some(l), Some(r))]
+    );
+    assert_eq!((merged.dropped, reauthored.dropped), (0, 0));
+    apply(&room, &merged.update);
+    assert_eq!(text(&room), "LXR");
+}
+
+#[test]
+fn text_typed_into_a_collected_block_is_dropped_and_counted() {
+    let room = doc(1);
+    let a = room.get_or_insert_array("a");
+    a.insert(&mut room.transact_mut(), 0, "p1");
+    a.insert(&mut room.transact_mut(), 1, "p2");
+    // The block between, named by neither neighbour.
+    a.insert(&mut room.transact_mut(), 1, TextPrelim::new("abc"));
+    let tab = doc(2);
+    sync(&room, &tab);
+    {
+        let a = tab.get_or_insert_array("a");
+        let Some(Out::YText(block)) = a.get(&tab.transact(), 1) else {
+            panic!("the block is a text");
+        };
+        block.insert(&mut tab.transact_mut(), 3, "XY");
+    }
+    // The room deletes all three; the collection discards the block.
+    a.remove_range(&mut room.transact_mut(), 0, 3);
+    let current = collected(&room);
+    let merged = late_merge::merge(&state(&tab), &state(&current)).unwrap();
+    assert_eq!(merged.dropped, 2);
+    assert!(items(&merged.update).is_empty());
+    let reauthored = late_merge::reauthor(&state(&tab), &state(&current), 9).unwrap();
+    assert_eq!(reauthored.dropped, 2);
+    assert!(items(&reauthored.update).is_empty());
 }

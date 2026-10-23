@@ -254,6 +254,18 @@ it('opens stored refused edits in recovery until Reload', async () => {
   room.destroy();
 });
 
+// Item rooms have no late merge (in-place GC): stored late edits open
+// read-only for copying and are never applied raw.
+it('opens stored late edits in recovery, never applying them raw', async () => {
+  vi.mocked(applyDrafts).mockClear();
+  drafts.rows = [{ late: true, lineage: 'material:q:schema:1' }];
+  const { room } = await started();
+  expect(providers).toHaveLength(0);
+  expect(applyDrafts).not.toHaveBeenCalled();
+  expect(room.getSnapshot().recovery?.refused).toBe(true);
+  room.destroy();
+});
+
 it('takes the readers lists from quiz-items messages', async () => {
   const room = new ItemRoom('q');
   await room.start();

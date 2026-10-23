@@ -15,12 +15,11 @@ export interface MergeRequest {
   old: ArrayBuffer;
 }
 
-export type MergeReply = { merged: ArrayBuffer } | { error: string };
-
-/** No base: the room's collection keeps every client's clock, so the units
- * the fetched document holds are what the room acknowledged, and the merge
- * skips them. */
-const NO_BASE = new Uint8Array();
+/** `dropped`: units the tab shows that the update lacks (they sat in a
+ * block the current document no longer holds). */
+export type MergeReply =
+  | { dropped: number; merged: ArrayBuffer }
+  | { error: string };
 
 /** One merge; the WASM loads on the first (a no-op once loaded). */
 export async function mergeRequest({
@@ -31,11 +30,14 @@ export async function mergeRequest({
   try {
     await init();
     const [from, to] = [new Uint8Array(old), new Uint8Array(current)];
-    const merged =
-      author === undefined
-        ? merge(from, NO_BASE, to)
-        : reauthor(from, NO_BASE, to, author);
-    return { merged: merged.slice().buffer };
+    const result =
+      author === undefined ? merge(from, to) : reauthor(from, to, author);
+    const reply = {
+      dropped: result.dropped,
+      merged: result.update.slice().buffer,
+    };
+    result.free();
+    return reply;
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
