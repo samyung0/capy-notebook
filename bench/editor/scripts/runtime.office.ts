@@ -17,6 +17,7 @@ import type {
   OfficeReadyTimings,
 } from '../../../src/features/files/officeProtocol';
 import { PERF_WORKSPACE_ID } from '../../../src/mocks/perfSeed';
+import { showPanelView } from '../../../e2e/helpers/panelView';
 import { m } from '../../../e2e/i18n';
 import { cdpSession, percentile, reportMetrics } from './metrics';
 
@@ -689,9 +690,7 @@ async function openWorkspace(page: Page) {
   await installHostProbe(page);
   await installWasmProbe(page);
   await page.goto(`/workspaces/${PERF_WORKSPACE_ID}`);
-  await page
-    .getByRole('tab', { exact: true, name: m.workspace_tab_files() })
-    .click();
+  await showPanelView(page, m.workspace_tab_files());
 }
 
 /** Click a file in the tree; for an Office file, wait for its `ready`. */

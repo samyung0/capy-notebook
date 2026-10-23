@@ -479,6 +479,8 @@ First dispatch has nothing to diff. That is expected. After that, GHA-vs-GHA
 only. Do not check in a laptop JSON.
 
 You can dispatch from any branch. Baselines are not automatically `main`.
+`share_pages` is the exception: its `uat` environment admits only `main`, so
+on another branch GitHub rejects that job before it starts.
 
 ## What the relative table includes
 

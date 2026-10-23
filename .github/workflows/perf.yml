@@ -235,6 +235,9 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
+      # The near-limit note is built by the app's own code, which imports the
+      # compiled messages (Vite compiles them for the app; nothing does here).
+      - run: pnpm email:compile
       # Exit 1: a failed check (convergence, lost updates, server errors);
       # exit 2: only the provisional latency budget missed.
       - name: Run collaboration stress test
