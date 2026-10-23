@@ -1596,6 +1596,7 @@ export function useUploadSource(wsId: string) {
       parseMode,
       estimatedCreditMicros,
       pageCount,
+      durationSeconds,
       batchId,
       batchTotal,
       onQueued,
@@ -1622,6 +1623,9 @@ export function useUploadSource(wsId: string) {
       /** The analysed page count of a fast-parse document; the gateway
        * refuses one past the policy's maxPages. */
       pageCount?: number;
+      /** An audio file's length as the browser read it, in whole seconds;
+       * the gateway refuses one past the policy's audioMaxDurationSeconds. */
+      durationSeconds?: number;
       /** The upload's place in the gateway's line while it waits, 0 once
        * its turn comes (uploadWithTicket). */
       onQueued?: (position: number) => void;
@@ -1636,6 +1640,7 @@ export function useUploadSource(wsId: string) {
         chapterId: chapterId ?? null,
         chapterName: chapterName ?? null,
         contentType: file.type || 'application/octet-stream',
+        durationSeconds: durationSeconds || undefined,
         estimatedCreditMicros: estimatedCreditMicros || undefined,
         kind,
         name: file.name,

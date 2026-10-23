@@ -68,6 +68,7 @@ interface TransferRequest {
 }
 
 export interface LocalTransferRequest extends TransferRequest {
+  durationSeconds?: number;
   estimatedCreditMicros: number;
   file: File;
   pageCount?: number;
@@ -345,6 +346,7 @@ export function startSourceTransfer(start: StartTransfer) {
                 batchTotal: requests.length,
                 chapterId: request.chapterId,
                 chapterName: request.chapterName,
+                durationSeconds: request.durationSeconds,
                 estimatedCreditMicros: request.estimatedCreditMicros,
                 file: request.file,
                 kind: request.kind,

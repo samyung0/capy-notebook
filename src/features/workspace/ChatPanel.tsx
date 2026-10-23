@@ -30,6 +30,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
+import { audioStartMs, formatClock } from '@/features/files/citationRegions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
@@ -48,9 +49,12 @@ import type { TabAction } from './PanelTabRow';
 import { toChatMessage, useChatStream } from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
 
-/** Page label for a citation, absent for sources with no page model (txt/md
- * and anything stored without parsing). */
+/** Page label for a citation, or a transcript passage's start time; absent
+ * for sources with no page model (txt/md and anything stored without
+ * parsing). */
 function pageLabel(c: Citation): string | null {
+  const start = audioStartMs(c.regions);
+  if (start !== undefined) return formatClock(start);
   if (!c.pageStart) return null;
   return c.pageEnd && c.pageEnd !== c.pageStart
     ? `pp. ${c.pageStart}–${c.pageEnd}`
