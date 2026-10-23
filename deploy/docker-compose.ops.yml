@@ -1,10 +1,12 @@
 # Independent Ops stack (Compose project `capy-ops`) on the app host, deployed
 # by Deploy Ops through the same deploy command as the main stack. The main
 # stack owns Postgres and migrations; Ops joins its `capy` network and reaches
-# the database as `db`. The image is built per environment (deploy-ops.yml).
+# the database as `db`. The image is built per environment (deploy-ops.yml)
+# and runs by digest (CAPY_OPS_IMAGE); the host runs this file only when its
+# sha256 matches that image's compose label.
 services:
   ops:
-    image: ghcr.io/samyung0/capy-ops:${RELEASE_SHA:?set RELEASE_SHA}-${SENTRY_ENVIRONMENT:?set SENTRY_ENVIRONMENT}
+    image: ${CAPY_OPS_IMAGE:?set CAPY_OPS_IMAGE}
     environment:
       APP_ENV: production
       RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA}

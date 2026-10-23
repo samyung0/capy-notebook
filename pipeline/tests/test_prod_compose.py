@@ -63,25 +63,24 @@ def test_collaboration_runs_without_capabilities_or_privilege_gain(
 
 
 APP_IMAGES = {
-    "migrate": "capy-server",
-    "server": "capy-server",
-    "reconcile": "capy-server",
-    "collaboration": "capy-collaboration",
-    "retrieval": "capy-pipeline",
+    "migrate": "CAPY_SERVER_IMAGE",
+    "server": "CAPY_SERVER_IMAGE",
+    "reconcile": "CAPY_SERVER_IMAGE",
+    "collaboration": "CAPY_COLLABORATION_IMAGE",
+    "retrieval": "CAPY_PIPELINE_IMAGE",
 }
 
 
 def test_app_services_run_the_ci_images_of_the_release() -> None:
     """The host never builds (Coolify removal, Epo 2026-10-23): every app
-    service runs the GHCR image CI built for RELEASE_SHA, the same value the
-    services report, and Postgres and Redis are pinned by digest."""
+    service runs the image the deploy job names by digest in stack.env (the
+    host checks it is CI's, labelled with RELEASE_SHA; review M2), and
+    Postgres and Redis are pinned by digest."""
     text = COMPOSE.read_text(encoding="utf-8")
     services = yaml.safe_load(text)["services"]
 
-    for name, image in APP_IMAGES.items():
-        assert services[name]["image"] == (
-            f"ghcr.io/samyung0/{image}:${{RELEASE_SHA:?set RELEASE_SHA}}"
-        ), name
+    for name, variable in APP_IMAGES.items():
+        assert services[name]["image"] == f"${{{variable}:?set {variable}}}", name
     assert not [name for name, service in services.items() if "build" in service]
     assert "SOURCE_COMMIT" not in text
     for name in ("db", "capy-redis"):

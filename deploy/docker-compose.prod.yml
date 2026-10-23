@@ -2,9 +2,11 @@
 #
 # The deploy job sends this file and the rendered stack.env to the app host's
 # deploy command (scripts/deploy/app-host-deploy.sh), which runs it as Compose
-# project `capy` with the GHCR images CI built for RELEASE_SHA; see
-# openwiki/deployment-runbook.md §1.1, which also has root's commands for
-# redeploying a kept release by hand.
+# project `capy` with the GHCR images CI built for RELEASE_SHA, by digest
+# (CAPY_*_IMAGE, added by the deploy job). The host runs this file only when
+# its sha256 matches the label CI put on that SHA's capy-server image, so edit
+# it only through a commit; see openwiki/deployment-runbook.md §1.1, which
+# also has root's commands for redeploying a kept release by hand.
 #
 # Differences from docker-compose.yml:
 # - APP_ENV=production, no demo seed, AUTH_DISABLED off
@@ -19,7 +21,7 @@
 
 x-observability: &observability
   APP_ENV: production
-  # The same value tags the images, so the reported release is the image's.
+  # The host checks every image's revision label against this value.
   RELEASE_SHA: ${RELEASE_SHA:?set RELEASE_SHA}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
   # The Sentry environment tag. Empty falls back to APP_ENV in code; UAT sets
@@ -75,7 +77,7 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: ghcr.io/samyung0/capy-server:${RELEASE_SHA:?set RELEASE_SHA}
+    image: ${CAPY_SERVER_IMAGE:?set CAPY_SERVER_IMAGE}
     entrypoint: ["/migrate"]
     environment:
       DATABASE_URL: *database-url
@@ -85,7 +87,7 @@ services:
     restart: "no"
 
   server:
-    image: ghcr.io/samyung0/capy-server:${RELEASE_SHA:?set RELEASE_SHA}
+    image: ${CAPY_SERVER_IMAGE:?set CAPY_SERVER_IMAGE}
     environment:
       <<: [*observability, *b2]
       DATABASE_URL: *database-url
@@ -164,7 +166,7 @@ services:
     restart: unless-stopped
 
   collaboration:
-    image: ghcr.io/samyung0/capy-collaboration:${RELEASE_SHA:?set RELEASE_SHA}
+    image: ${CAPY_COLLABORATION_IMAGE:?set CAPY_COLLABORATION_IMAGE}
     environment:
       <<: *observability
       API_URL: http://server:8080
@@ -240,7 +242,7 @@ services:
     restart: unless-stopped
 
   retrieval:
-    image: ghcr.io/samyung0/capy-pipeline:${RELEASE_SHA:?set RELEASE_SHA}
+    image: ${CAPY_PIPELINE_IMAGE:?set CAPY_PIPELINE_IMAGE}
     environment:
       <<: [*observability, *b2]
       DATABASE_URL: *database-url
@@ -308,7 +310,7 @@ services:
   reconcile:
     profiles:
       - reconcile
-    image: ghcr.io/samyung0/capy-server:${RELEASE_SHA:?set RELEASE_SHA}
+    image: ${CAPY_SERVER_IMAGE:?set CAPY_SERVER_IMAGE}
     entrypoint: ["/app/reconcile"]
     environment:
       DATABASE_URL: *database-url
