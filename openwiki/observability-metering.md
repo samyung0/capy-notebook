@@ -946,7 +946,9 @@ begin(session)  →  provider call  →  settle(call id, measured usage)
 A current session reserves 0 credits in `provider_sessions.reserved_micros`.
 The column records the session's contribution when a future workflow takes an
 estimated credit hold. Platform
-chat, generate and editor share `ConcurrentLLMLeases` (5). The gate is
+chat, generate and editor share `ConcurrentLLMLeases` (5); a chat voice
+clip's reserved session (`reserved_micros` above zero) neither takes nor
+counts as one, since its hold bounds it. The gate is
 `used + reserved >= limit` plus that cap, the same check as
 `AssertCreditsAvailable`. BYOK chat has a session for idempotent usage events
 but does not consume a concurrency slot and skips the platform used+reserved
@@ -1322,20 +1324,25 @@ the gateway. Before the call it opens a `chat` session with
 holds the two-minute maximum (`CreditsForAudioSeconds(120,
 voice_input_second)`, 2 credits at version 1) in the session's and the
 user's `reserved_micros`, so the hold counts against every other gate while
-the call runs. It opens one `audio` provider call (`alibaba`,
+the call runs. It takes none of the five concurrent LLM leases: open chat
+streams never refuse a clip, and a clip never refuses a stream. It opens one
+`audio` provider call (`alibaba`,
 `qwen-audio-3.1-asr-flash`, purpose `transcription`). On a transcript it
 closes the session, which takes the hold back, and then settles
-ceil(`end_time` / 1000) seconds through `SettleProviderCall` (a closed
+ceil(`end_time` / 1000) seconds, at most the 120 held, through
+`SettleProviderCall` (a closed
 session still takes the receipt of a call opened under it, and the spend's
 own check sees the user's credits rather than the hold): kind `audio` with
 `units` and `unit = 'seconds'`, priced at the `voice_input_second` rate
 active when it settles, with the provider's token counts on the call. The
 pipeline's receipt endpoint sends no units, so it cannot settle audio.
-A provider 429 or failure, a span past 125 s, blank text or a browser that
-left abandons the call uncharged (`AbandonProviderCall`, with the provider
-status and code, or the request's own reason) and releases the session. A
-call is settled once by its id; a settle that fails leaves the call open
-until the sweep abandons it at its receipt deadline, so a voice input is
+A provider 429 or failure, text with no `end_time` (no length to charge), a
+span past 125 s, blank text or a browser that left abandons the call
+uncharged (`AbandonProviderCall`, with the provider status and code, or the
+request's own reason) and releases the session. A call is settled once by
+its id; a settle that fails still answers the text and leaves the call to
+end uncharged (a receipt past its window abandons it as `receipt_timeout`,
+any other failure leaves it open until the sweep does), so a voice input is
 under-charged, never charged twice. Alibaba also bills tokens; those stay
 telemetry like every other provider price.
 
@@ -1396,7 +1403,10 @@ whole-host CPU/memory separate from per-worker cgroups and page billing.
 
 Every queue claim opens `ingest_job_attempts` in the same transaction as the
 claim. Terminal success, retry, capacity wait, supersession, and failure close
-that exact row. The lease reaper closes rows abandoned by a dead worker as
+that exact row; an audio job re-pending to poll its transcription task again
+closes it as `transcription_poll`, with no error category, and counts as
+queued (`jobs.queued_at`, the oldest-queued figures) only once its poll is
+due. The lease reaper closes rows abandoned by a dead worker as
 `lease_expired`. An exhausted parse or ingest lease also closes its credit
 reservation and source-fenced file state in that transaction. Capacity waits
 may decrement the visible

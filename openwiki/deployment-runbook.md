@@ -147,7 +147,9 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
    (variable) also reach the app target for chat voice input, which the API
    calls itself (the same Singapore workspace and key as uploaded audio,
-   below); without both, voice input answers 503 `voice_unavailable`. Both app environments use exact Worker Routes in `wrangler.jsonc`,
+   below); without both, voice input answers 503 `voice_unavailable`, and
+   with only one, or a URL not ending in `/compatible-mode/v1`, the API
+   refuses to start. Both app environments use exact Worker Routes in `wrangler.jsonc`,
    with DNS pointing at their tunnel. Do not attach either app as a Worker
    Custom Domain; that would replace the tunnel destination. The apex and
    `www` remain reserved for the future public site, whose implementation is

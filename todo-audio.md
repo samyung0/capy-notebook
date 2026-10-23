@@ -207,6 +207,26 @@ Review fixes (2026-10-24):
       by crashes and ordinary errors. The 15-minute in-claim poll and the
       job-timeout extension are gone.
 
+Second review fixes (2026-10-24):
+- [x] A task whose call ran out unpolled (host down past the hour) but is
+      younger than 12 h is polled: running or succeeded, it takes a new
+      call and gate lease (or waits for a slot), stores the new `callId`
+      and settles once; only a 404 or a task past 12 h is lost.
+- [x] A 404 poll is a lost task (provider failure); any other 4xx ends the
+      call and frees the lease before failing the file.
+- [x] The worker polls a stored task before it fetches, hashes or looks up
+      the source (`source_text.poll_task`); the source is taken only once
+      the task succeeded. The same-bytes wait comes before the length is
+      measured.
+- [x] Poll re-pends are their own attempt outcome, `transcription_poll`
+      (0109 adds it to the status check), and count as queued from their
+      due time, not as queue latency.
+- [x] Failed reads of the result link are counted (`downloadFailures`);
+      the fifth is a provider failure.
+- [x] A cached transcript ends this job's own open call uncharged.
+- [ ] Waiting on Epo: freeing a cancelled job's gate slot, and a length
+      check for imported (Drive/OneDrive) audio.
+
 ## Part B: voice input (Flash)
 
 - [x] Chat composer mic button: toggle to record with MediaRecorder
@@ -219,16 +239,28 @@ Review fixes (2026-10-24):
       up to 2 MiB; the 2-minute cap is the size limit plus the provider's
       `end_time` (over 125 s refused, no text, no charge; the API image has
       no duration parser); holds 120 s of `voice_input_second`, settles
-      ceil(seconds) once, abandons and releases on any failure. No retries:
-      429 `transcription_busy`, 502 `transcription_failed`.
+      ceil(seconds) once, at most the 120 held, abandons and releases on
+      any failure. Text with `end_time` missing or not above zero is 502
+      `transcription_failed`, uncharged (Flash's `usage` carries tokens,
+      not seconds, so there is no second length to fall back on). No
+      retries: 429 `transcription_busy`, 502 `transcription_failed`.
+- [x] Startup: the API refuses to start with only one of
+      `ALIBABA_MODELSTUDIO_KEY` / `_URL`, or a URL not ending in
+      `/compatible-mode/v1` (the pipeline's rule).
+- [x] The voice session (a reserved session) takes none of the five
+      concurrent LLM leases.
 - [x] Per-user rate limit on the endpoint: its own `voice` class, 60/hour,
       burst 6.
 - [x] The text is inserted into the composer for editing; nothing is sent
-      automatically. The audio is not stored.
+      automatically. The audio is not stored. Korean is spaced from the
+      words beside it; Chinese and Japanese are not.
+- [x] A recorder that fails to start releases the microphone and its
+      two-minute timer.
 - [x] i18n strings (paraglide), mic permission denied state, 360 px layout.
 - [x] Tests: endpoint validation and settlement with a fake provider
-      (`voice_test.go`, database: CI), the client (`asr_test.go`); the
-      composer's record-insert flow in Vitest (`VoiceInput.test.tsx`).
+      (`voice_test.go`, database: CI, including a caller that leaves and a
+      receipt refused after the session closed), the client (`asr_test.go`);
+      the composer's record-insert flow in Vitest (`VoiceInput.test.tsx`).
 
 ## Open
 
@@ -241,4 +273,5 @@ Review fixes (2026-10-24):
 - Migration number: 0109 on the branch, renumbered at landing.
 - Live checks from the ingest host: ffmpeg under the decoder sandbox in the
   deployed image, the result link's host shape and the `speaker_id` field
-  on a real Singapore task.
+  on a real Singapore task. From the app host: that a Flash answer carries
+  `sentence.end_time` for every container the recorder sends.
