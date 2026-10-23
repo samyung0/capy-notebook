@@ -109,6 +109,8 @@ interface LoadedFile {
   imageMaxBytes?: number;
   initialUpdate?: Uint8Array;
   revision: number;
+  /** A DOCX edit load's id for the editor's layout worker (Q219). */
+  workerClientId?: number;
   /** Where the viewer or editor opens; the format's default without. */
   zoom?: OfficeZoom;
 }
@@ -350,9 +352,16 @@ function OfficeRuntime() {
             cursors,
             initialUpdate: file.initialUpdate,
             onReplica: reportReplica,
+            workerClientId: file.workerClientId,
           }
         : null,
-    [cursors, file?.clientId, file?.initialUpdate, reportReplica]
+    [
+      cursors,
+      file?.clientId,
+      file?.initialUpdate,
+      file?.workerClientId,
+      reportReplica,
+    ]
   );
   // An inserted image over the payer's plan cap, or over what the room may
   // still grow by, is shrunk first, and one older Office apps cannot open is
@@ -473,6 +482,7 @@ function OfficeRuntime() {
             ? new Uint8Array(message.collaboration.initialUpdate)
             : undefined,
           revision: message.revision,
+          workerClientId: message.collaboration?.workerClientId,
           zoom:
             message.zoom ??
             (message.format === 'docx' && compactRef.current

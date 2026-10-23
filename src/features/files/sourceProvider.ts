@@ -28,6 +28,8 @@ export interface SourceProvider {
   sendStateless(payload: string): void;
   /** The shared socket: still 'connected' when the server closed only this room. */
   socketStatus?: string;
+  /** A DOCX session's id for its editor's layout worker (Q219). */
+  workerClientId?: number;
 }
 
 export interface SourceProviderConfig {

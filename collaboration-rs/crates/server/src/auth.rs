@@ -49,6 +49,10 @@ pub struct Claims {
     pub room: String,
     pub schema: i64,
     pub sub: String,
+    /// A DOCX editing session's second id, for the editor's resident layout
+    /// worker (Q219): the join that stores `client_id` stores it too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_client_id: Option<u64>,
 }
 
 /// Who a channel is: the token's user and access, and when it expires.
@@ -59,7 +63,11 @@ pub struct Context {
     pub token_id: String,
     pub user_id: String,
     /// The client id the token offers (none in a test's server context).
-    pub client_id: Option<u64>,
+    /// Yjs ids are u32 (`verify` refuses larger), which keeps a channel's
+    /// state small.
+    pub client_id: Option<u32>,
+    /// The worker id a DOCX write token offers beside it (Q219).
+    pub worker_client_id: Option<u32>,
     /// A viewer (no editing role) reads only and has no presence: it neither
     /// sends nor hears awareness (Epo 2026-10-10). Set at join from the
     /// material's access, never from the token.
@@ -87,7 +95,10 @@ impl From<&Claims> for Context {
             expires_at: claims.exp,
             token_id: claims.jti.clone(),
             user_id: claims.sub.clone(),
-            client_id: claims.client_id,
+            client_id: claims.client_id.and_then(|id| u32::try_from(id).ok()),
+            worker_client_id: claims
+                .worker_client_id
+                .and_then(|id| u32::try_from(id).ok()),
             viewer: false,
             parent: claims.parent.clone(),
             identity: Box::new(Identity {
@@ -263,9 +274,13 @@ pub fn verify(token: &str, secret: &str, room: &str, now: i64) -> Result<Claims,
         || claims.jti.is_empty()
         || claims.iat > now + 30
         || claims.exp <= now
+        || [claims.client_id, claims.worker_client_id]
+            .into_iter()
+            .flatten()
+            .any(|id| id == 0 || id > u64::from(u32::MAX))
         || claims
-            .client_id
-            .is_some_and(|id| id == 0 || id > u64::from(u32::MAX))
+            .worker_client_id
+            .is_some_and(|worker| claims.client_id.is_none_or(|id| id == worker))
     {
         return Err(TokenError::Claims);
     }
@@ -298,6 +313,7 @@ pub fn claims_for(room: &str, user: &str, access: Access, now: i64, seconds: i64
         room: room.into(),
         schema: RoomName::parse(room).map(|name| name.number()).unwrap_or(0),
         sub: user.into(),
+        worker_client_id: None,
     }
 }
 

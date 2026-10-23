@@ -47,6 +47,19 @@ describe('office host protocol', () => {
           collaboration: { ...edit.collaboration, clientId },
         })
       ).toBe(false);
+    // A DOCX editor's layout worker id, when sent, is an id too (Q219).
+    for (const [workerClientId, valid] of [
+      [9, true],
+      [0, false],
+      [1.5, false],
+    ] as const)
+      expect(
+        isOfficeHostMessage({
+          ...edit,
+          ...limits,
+          collaboration: { ...edit.collaboration, workerClientId },
+        })
+      ).toBe(valid);
     // An editor always knows the payer's image cap and the room's growth
     // budget, which may be spent (0).
     for (const imageMaxBytes of [undefined, 0, -1, 1.5, '2097152'])

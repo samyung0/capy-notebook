@@ -8,7 +8,9 @@
 //! an update's structs past what the room holds only under ids of the
 //! writer's user (any of them: stored drafts of earlier sessions too). The
 //! server's own writes (markers, agent edits, repairs, Undo, children passes)
-//! go under the room's client and never through admission.
+//! go under the room's client and never through admission. A DOCX editing
+//! session is offered a second id for its editor's resident layout worker
+//! (`workerClientId`, Q219), stored by the same join.
 
 use std::collections::HashMap;
 
@@ -94,7 +96,10 @@ impl ClientIds {
     /// a writer's is stored before the channel joins; a reader's binds for
     /// the channel's life only (its awareness), since it never writes. An id
     /// offered again, even to its own user, is refused: two Y.Docs on one id
-    /// would write over each other's clocks.
+    /// would write over each other's clocks. A write token's worker id
+    /// (DOCX) follows the same rule and is stored by the join that stores
+    /// the session's id; a reconnect, whose session id is stored already,
+    /// stores none.
     pub async fn bind(
         &mut self,
         db: &Pool,
@@ -105,7 +110,7 @@ impl ClientIds {
         let Some(client) = declared else {
             return Err(REFUSED_REASON.into());
         };
-        let offered = context.client_id == Some(client);
+        let offered = context.client_id.map(u64::from) == Some(client);
         match self.owners.get(&client) {
             Some(owner) if *owner == context.user_id && !offered => return Ok(client),
             Some(_) => return Err(REFUSED_REASON.into()),
@@ -115,23 +120,28 @@ impl ClientIds {
             return Err(REFUSED_REASON.into());
         }
         if context.access == Access::Write {
-            self.record(db, client, &context.user_id).await?;
+            let worker = context.worker_client_id.map(u64::from);
+            if worker.is_some_and(|id| self.owners.contains_key(&id) || taken(id)) {
+                return Err(REFUSED_REASON.into());
+            }
+            let ids: Vec<u64> = [Some(client), worker].into_iter().flatten().collect();
+            self.record(db, &ids, &context.user_id).await?;
         }
         Ok(client)
     }
 
-    /// Stores `client` as `user`'s. A row already there (another server
+    /// Stores `clients` as `user`'s. A row already there (another server
     /// process stored it first) refuses.
-    async fn record(&mut self, db: &Pool, client: u64, user: &str) -> Result<(), String> {
+    async fn record(&mut self, db: &Pool, clients: &[u64], user: &str) -> Result<(), String> {
         let connection = db.get().await.map_err(|error| error.to_string())?;
-        let id = client as i64;
+        let ids: Vec<i64> = clients.iter().map(|&id| id as i64).collect();
         let stored = match &self.document {
             Document::Material { material_id, keys } => {
                 connection
                     .execute(
                         "INSERT INTO material_yjs_client_ids (material_id, document, client_id, user_id)
-                         VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
-                        &[material_id, &document_name(*keys), &id, &user],
+                         SELECT $1, $2, unnest($3::bigint[]), $4 ON CONFLICT DO NOTHING",
+                        &[material_id, &document_name(*keys), &ids, &user],
                     )
                     .await
             }
@@ -139,17 +149,19 @@ impl ClientIds {
                 connection
                     .execute(
                         "INSERT INTO source_document_client_ids (file_id, client_id, user_id)
-                         VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
-                        &[file_id, &id, &user],
+                         SELECT $1, unnest($2::bigint[]), $3 ON CONFLICT DO NOTHING",
+                        &[file_id, &ids, &user],
                     )
                     .await
             }
         }
         .map_err(|error| error.to_string())?;
-        if stored == 0 {
+        if stored != clients.len() as u64 {
             return Err(REFUSED_REASON.into());
         }
-        self.owners.insert(client, user.to_owned());
+        for &client in clients {
+            self.owners.insert(client, user.to_owned());
+        }
         Ok(())
     }
 }

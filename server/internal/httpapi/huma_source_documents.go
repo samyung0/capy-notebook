@@ -259,6 +259,11 @@ func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborat
 		return nil, hErr(err)
 	}
 	claims := newCollaborationClaims(userID(ctx), session.Room, session.Access, me.Name, me.AvatarURL, randID("collab"), int(session.Epoch))
+	// A DOCX editor's resident layout worker writes under an id of its own
+	// (Q219).
+	if session.Format == "docx" && session.Access == "write" {
+		claims.WorkerClientID = newClientID(claims.ClientID)
+	}
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
 		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}

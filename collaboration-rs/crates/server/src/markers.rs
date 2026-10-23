@@ -324,6 +324,7 @@ mod tests {
             token_id: "t".into(),
             user_id: user.into(),
             client_id: None,
+            worker_client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),

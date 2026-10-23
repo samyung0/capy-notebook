@@ -111,14 +111,19 @@ const clientIdOf = (name: string) =>
 const PADDING = /[=]+$/;
 
 /** A token as the API mints one, as far as the client reads it: its claims
- * offer a client id (Q213). */
-function token(name: string, clientId = clientIdOf(name)) {
+ * offer a client id (Q213) and, for a DOCX session, its layout worker's
+ * (Q219). */
+function token(
+  name: string,
+  clientId = clientIdOf(name),
+  workerClientId?: number
+) {
   const part = (value: object) =>
     btoa(JSON.stringify(value))
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(PADDING, '');
-  return `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ clientId, sub: name })}.sig`;
+  return `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ clientId, sub: name, workerClientId })}.sig`;
 }
 
 async function joined(
@@ -239,13 +244,13 @@ it('reports a refusal with its reason and rejoins on the same socket', async () 
  * channel); from then on it keeps that id for life, naming it in every JOIN
  * whatever the token offers, so the server binds the same id and the Undo
  * stack survives. */
-it('takes the token client id until a writable join binds it, then keeps it', async () => {
+it('takes the token client ids until a writable join binds them, then keeps them', async () => {
   const tokens = [
-    token('first'),
-    token('second'),
-    token('third'),
-    token('again', clientIdOf('second')),
-    token('fourth'),
+    token('first', clientIdOf('first'), 11),
+    token('second', clientIdOf('second'), 22),
+    token('third', clientIdOf('third'), 33),
+    token('again', clientIdOf('second'), 44),
+    token('fourth', clientIdOf('fourth'), 55),
   ];
   const { document, join, provider, socket } = await joined({
     token: async () => tokens.shift()!,
@@ -269,6 +274,7 @@ it('takes the token client id until a writable join binds it, then keeps it', as
   const [second] = socket.take(MessageKind.Join);
   expect(declared(second.payload)).toBe(clientIdOf('second'));
   expect(document.clientID).toBe(clientIdOf('second'));
+  expect(provider.workerClientId).toBe(22);
   socket.deliver(message(second.channel, MessageKind.Joined, Uint8Array.of(1)));
   document.getText('content').insert(0, 'typed');
   // Bound: a reconnect names the kept id with a fresh token, and a refusal
@@ -292,6 +298,8 @@ it('takes the token client id until a writable join binds it, then keeps it', as
   }
   expect(document.clientID).toBe(clientIdOf('second'));
   expect(provider.awareness.clientID).toBe(clientIdOf('second'));
+  // The DOCX layout worker's id (Q219) is kept with the document's.
+  expect(provider.workerClientId).toBe(22);
 });
 
 it('keeps taking token ids while its joins are read-only', async () => {

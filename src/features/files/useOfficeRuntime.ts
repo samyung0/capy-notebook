@@ -443,6 +443,7 @@ export function useOfficeRuntime({
             clientId: source.doc!.clientID,
             epoch: source.session!.epoch,
             initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
+            workerClientId: source.workerClientId,
           }
         : undefined;
     const imageMaxBytes =
@@ -500,6 +501,7 @@ export function useOfficeRuntime({
     source.bytes,
     source.synced,
     source.status,
+    source.workerClientId,
     viewBytes,
     canEdit,
     file.name,

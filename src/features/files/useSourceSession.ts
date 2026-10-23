@@ -297,6 +297,8 @@ export function useSourceSession(
     null
   );
   const [synced, setSynced] = useState(false);
+  // The id the room stored for a DOCX editor's layout worker (Q219).
+  const [workerClientId, setWorkerClientId] = useState<number>();
   const runtime = useRef<{
     provider: SourceProvider;
     checkpoint: (flush?: boolean) => void;
@@ -995,6 +997,7 @@ export function useSourceSession(
             if (!everSynced) officeMark('synced');
             everSynced = true;
             void show();
+            setWorkerClientId(provider?.workerClientId);
             setSynced(true);
             checkpoint(true);
           }
@@ -1146,5 +1149,6 @@ export function useSourceSession(
     status: status === 'saved' && bufferDirty ? ('saving' as const) : status,
     synced,
     unavailable,
+    workerClientId,
   };
 }

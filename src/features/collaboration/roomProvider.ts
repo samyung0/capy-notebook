@@ -21,7 +21,7 @@ import {
   SyncKind,
   syncMessage,
   text,
-  tokenClientId,
+  tokenClientIds,
 } from './protocol';
 import { type ChannelHandler, CollabSocket } from './socket';
 
@@ -143,6 +143,9 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private noteSeat: NoteSeat | null = null;
   /** The client id a writable JOINED bound: kept for the document's life. */
   private bound = false;
+  /** A DOCX session's second id, for its editor's resident layout worker
+   * (Q219): taken with the document's and kept with it. */
+  workerClientId: number | undefined;
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
@@ -467,7 +470,9 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     }
     if (!this.bound) {
       try {
-        this.adopt(tokenClientId(token));
+        const ids = tokenClientIds(token);
+        this.adopt(ids.clientId);
+        this.workerClientId = ids.workerClientId;
       } catch (error) {
         this.endChannel();
         throw error;

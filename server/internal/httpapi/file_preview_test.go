@@ -3,6 +3,8 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -348,5 +350,57 @@ func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 	}
 	if body := session("?view=true"); strings.Contains(body, "thumbnailStale") {
 		t.Fatalf("view read carries the stale card: %s", body)
+	}
+}
+
+// Q219: a DOCX editing session's token offers a second client id, for the
+// editor's resident layout worker, other than its own; an XLSX one offers
+// none.
+func TestDocxSourceTokenOffersAWorkerClientID(t *testing.T) {
+	ctx := context.Background()
+	st := openAccessTestStoreForPreview(t)
+	memory := blob.NewMemory()
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled:        true,
+		E2EAuth:             true,
+		E2ESecret:           "e2e-test-secret",
+		E2EUserIDs:          []string{"u_owner"},
+		CollaborationSecret: "collab-test-secret",
+	})
+	workspace, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Worker ids", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), "u_owner", workspace.ID) })
+	claims := func(name string) map[string]any {
+		t.Helper()
+		file, err := uploadSource(ctx, st, workspace.ID, "u_owner", name, 100, "sources/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := memory.Put("sources/"+name, bytes.NewReader([]byte("PK-source"))); err != nil {
+			t.Fatal(err)
+		}
+		rec := doReq(t, handler, http.MethodPost, "/api/files/"+file.ID+"/collaboration-token", "u_owner", nil)
+		var body struct {
+			Token string `json:"token"`
+		}
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &body) != nil {
+			t.Fatalf("%s token = %d body=%s", name, rec.Code, rec.Body.String())
+		}
+		parts := strings.Split(body.Token, ".")
+		var out map[string]any
+		payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+		if err != nil || json.Unmarshal(payload, &out) != nil {
+			t.Fatalf("%s claims: %v", name, err)
+		}
+		return out
+	}
+	docx := claims("report.docx")
+	if worker, _ := docx["workerClientId"].(float64); worker == 0 || worker == docx["clientId"] {
+		t.Fatalf("docx claims = %v", docx)
+	}
+	if xlsx := claims("book.xlsx"); xlsx["workerClientId"] != nil {
+		t.Fatalf("xlsx claims = %v", xlsx)
 	}
 }

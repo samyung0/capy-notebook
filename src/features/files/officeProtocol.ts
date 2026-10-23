@@ -130,6 +130,9 @@ export type OfficeHostMessage =
         clientId: number;
         epoch: number;
         initialUpdate: ArrayBuffer;
+        /** A DOCX session's id for the editor's resident layout worker
+         * (Q219). */
+        workerClientId?: number;
       };
       /**
        * Edit mode only: the plan image cap of the account paying for the
@@ -759,6 +762,8 @@ function isCollaboration(value: unknown): boolean {
   return (
     isCount(candidate.clientId) &&
     candidate.clientId > 0 &&
+    (candidate.workerClientId === undefined ||
+      (isCount(candidate.workerClientId) && candidate.workerClientId > 0)) &&
     isCount(candidate.epoch) &&
     candidate.initialUpdate instanceof ArrayBuffer
   );

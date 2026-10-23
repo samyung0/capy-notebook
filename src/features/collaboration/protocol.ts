@@ -199,27 +199,36 @@ export function joinPayload(
   return writer.done();
 }
 
-/** The Yjs client id a collaboration token offers (its `clientId` claim,
- * which Go mints fresh per token). A token without one is refused here: the
- * server would refuse its JOIN anyway. */
-export function tokenClientId(token: string): number {
+const isClientId = (value: unknown): value is number =>
+  typeof value === 'number' &&
+  Number.isInteger(value) &&
+  value >= 1 &&
+  value <= 0xff_ff_ff_ff;
+
+/** The Yjs client ids a collaboration token offers, which Go mints fresh
+ * per token: the session's (`clientId`, Q213) and, on a DOCX write token,
+ * its editor's resident layout worker's (`workerClientId`, Q219). A token
+ * without a valid id is refused here: the server would refuse its JOIN
+ * anyway. */
+export function tokenClientIds(token: string): {
+  clientId: number;
+  workerClientId?: number;
+} {
   const payload = token.split('.')[1] ?? '';
-  let claims: { clientId?: unknown } = {};
+  let claims: { clientId?: unknown; workerClientId?: unknown } = {};
   try {
     const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    claims = JSON.parse(atob(base64)) as { clientId?: unknown };
+    claims = JSON.parse(atob(base64)) as typeof claims;
   } catch {
     // Not a token the API minted; refused below.
   }
-  const { clientId } = claims;
+  const { clientId, workerClientId } = claims;
   if (
-    typeof clientId !== 'number' ||
-    !Number.isInteger(clientId) ||
-    clientId < 1 ||
-    clientId > 0xff_ff_ff_ff
+    !isClientId(clientId) ||
+    !(workerClientId === undefined || isClientId(workerClientId))
   )
     throw new Error('The collaboration token offers no client id');
-  return clientId;
+  return { clientId, workerClientId };
 }
 
 export const closedPayload = (code: number, reason: string) =>

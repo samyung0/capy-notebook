@@ -1367,6 +1367,16 @@ Office and text files).
   unrecorded id must be the one the token offers and held by nothing in the
   room (its state or a live channel). A write JOIN records it before JOINED;
   a read JOIN binds it in memory for the channel's life.
+- **A DOCX session's worker id** (Q219, Epo 2026-10-23). The DOCX editor
+  lays out and applies typing in a resident worker, a yrs document of its
+  own, so a DOCX write token also offers `workerClientId` (Go mints it only
+  for DOCX write tokens, other than the session's id). The JOIN that records
+  the session's id records the worker id with it, under the same rule; a
+  reconnect's token offers another, which nothing records. The provider keeps
+  the worker id with its document's (`RoomProvider.workerClientId`), the
+  source session hands it to the edit `load`, and the fork's resident worker
+  writes under it (`workerClientId` in the DOCX editor's collaboration
+  options) instead of a random id.
 - **The record.** `material_yjs_client_ids` (material, document `content` or
   `keys`, id) and `source_document_client_ids` (file, id), each row naming
   the user and deleted with its document or user (migration 0109). A room
@@ -1527,7 +1537,8 @@ design, option d), and the nudge's release file on 2026-10-17.
   `CLIENT_PROTOCOL` to 13 and `MIN_SOURCE` to 13; `MIN_MATERIAL` stays 7. Its
   deploy request names "client protocol 12 -> 13, source 12 -> 13".
   The client-id binding (Q213: every JOIN names its Y.Doc's client id after
-  the protocol, Office protocol 13) raised `CLIENT_PROTOCOL` to 15 and both
+  the protocol, Office protocol 13; pin 77a787ab7: the DOCX layout worker
+  writes under its assigned id, Q219) raised `CLIENT_PROTOCOL` to 15 and both
   minimums to 15. Its deploy request names "client protocol 14 -> 15,
   material and source minimums -> 15".
 

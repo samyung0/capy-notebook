@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -42,6 +43,11 @@ type collaborationClaims struct {
 	// under an id only from that user. Fresh per token, never 0 (the DOCX
 	// seed's client).
 	ClientID uint32 `json:"clientId"`
+	// WorkerClientID is the second id a DOCX editing session is offered, for
+	// its resident layout worker, which writes as a Yjs peer of its own (Epo
+	// 2026-10-23, Q219). The join that binds ClientID records it to the same
+	// user. Only on DOCX write tokens.
+	WorkerClientID uint32 `json:"workerClientId,omitempty"`
 }
 
 // maxClaimAvatarURL bounds the avatar a token carries; a longer one (none
@@ -86,12 +92,13 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 	}
 }
 
-// newClientID draws a Yjs client id: a random uint32 other than 0.
-func newClientID() uint32 {
+// newClientID draws a Yjs client id: a random uint32 other than 0 and other
+// than any id in taken.
+func newClientID(taken ...uint32) uint32 {
 	var b [4]byte
 	for {
 		_, _ = rand.Read(b[:])
-		if id := binary.BigEndian.Uint32(b[:]); id != 0 {
+		if id := binary.BigEndian.Uint32(b[:]); id != 0 && !slices.Contains(taken, id) {
 			return id
 		}
 	}

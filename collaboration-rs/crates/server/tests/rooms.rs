@@ -203,6 +203,15 @@ fn token_offering(room: &str, user: &str, access: &str, client: u64) -> String {
     sign_claims(&claims)
 }
 
+/// A write token offering `client` and, for a DOCX session's resident
+/// layout worker, `worker` (Q219).
+fn token_with_worker(room: &str, user: &str, client: u64, worker: u64) -> String {
+    let mut claims = token_claims(room, user, "write", 300);
+    claims["clientId"] = client.into();
+    claims["workerClientId"] = worker.into();
+    sign_claims(&claims)
+}
+
 fn token_claims(room: &str, user: &str, access: &str, ttl: i64) -> serde_json::Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -5154,6 +5163,83 @@ async fn a_source_room_refuses_an_update_under_an_unassigned_client_id() {
     assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
     assert!(
         reader.settle(|c| source_text(c) == "base").await,
+        "{}",
+        source_text(&reader)
+    );
+}
+
+/// `client`'s source text with `text` typed at its start under `id`, as an
+/// update over `client`'s state.
+fn typed_as(client: &Client, id: u64, text: &str) -> Vec<u8> {
+    let doc = Doc::with_options(ydoc::doc_options(id));
+    let state = client
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    doc.get_or_insert_text("source")
+        .insert(&mut doc.transact_mut(), 0, text);
+    doc.transact()
+        .encode_state_as_update_v1(&client.doc.transact().state_vector())
+}
+
+/// Security regression (Q219, Epo 2026-10-23): a DOCX session's second id,
+/// for its editor's resident layout worker, is stored by the join that
+/// stores the session's own, so the worker's edits land; a reconnect's token
+/// offers another worker id, which nothing stores, and an edit under it is
+/// refused. Fails if the worker id is not stored with the session's (every
+/// DOCX keystroke refused) or if any token's worker id is.
+#[tokio::test]
+async fn a_sessions_worker_client_id_is_stored_with_its_own_and_only_then() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let (client_id, worker) = (fresh_client_id(), fresh_client_id());
+    let mut client = Client::open(server.port).await;
+    let first = token_with_worker(&room, &user, client_id, worker);
+    assert_eq!(client.joined(&room, &first).await, 1);
+    assert!(client.settle(|c| source_text(c) == "base").await);
+    assert_eq!(client.id(), client_id);
+    let edit = typed_as(&client, worker, "w-");
+    client
+        .doc
+        .transact_mut()
+        .apply_update(Update::decode_v1(&edit).expect("edit"))
+        .expect("apply");
+    client.send(5, &sync(2, &edit)).await;
+    client
+        .until(6)
+        .await
+        .expect("the worker's edit is acknowledged");
+    // A reconnect: the stored session id with a fresh token and worker id.
+    client.channel += 1;
+    client.inbox.clear();
+    let later = fresh_client_id();
+    let rejoin = token_with_worker(&room, &user, fresh_client_id(), later);
+    client
+        .send(
+            0,
+            &join_payload_as(&room, &rejoin, Some(client_protocol()), client_id),
+        )
+        .await;
+    assert!(client.until(1).await.is_some(), "the reconnect joins");
+    client
+        .send(5, &sync(2, &typed_as(&client, later, "x-")))
+        .await;
+    let closed = client.until(4).await.expect("the channel closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("client id"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        reader.settle(|c| source_text(c) == "w-base").await,
         "{}",
         source_text(&reader)
     );

@@ -16,6 +16,9 @@ export interface OfficeCollaboration {
   cursors: CursorChannel;
   initialUpdate: Uint8Array;
   onReplica: (replica: OfficeReplica | null) => void;
+  /** DOCX: the id the room assigned the editor's resident layout worker
+   * (Q219). */
+  workerClientId?: number;
 }
 export type OfficeExporter = () => Promise<Uint8Array>;
 

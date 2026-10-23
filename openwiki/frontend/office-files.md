@@ -449,7 +449,8 @@ for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL. An
 edit `load` names the session's Yjs client id (`collaboration.clientId`,
 Office protocol 13), the one the room assigned the parent's Y.Doc, and the
-replica writes under it; the parent applies the replica's updates as its own
+replica writes under it; a DOCX load also names its resident layout worker's
+(`collaboration.workerClientId`, Q219), which the worker writes under; the parent applies the replica's updates as its own
 (`applyOwnUpdate`), since the room admits a session's changes only under its
 assigned id ([plate-editor](plate-editor.md#client-ids)).
 Cursors cross the same way: the editor's own goes to the room's awareness and
