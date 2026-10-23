@@ -22,7 +22,7 @@ importers:
     dependencies:
       "@ai-sdk/react":
         specifier: ^4.0.16
-        version: 4.0.61(react@19.2.8)(zod@4.4.3)
+        version: 4.0.61(react@19.2.8)(zod@4.6.7)
       "@azure/msal-browser":
         specifier: ^5.19.0
         version: 5.19.0
@@ -55,7 +55,7 @@ importers:
         version: 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       "@hookform/resolvers":
         specifier: ^5.4.0
-        version: 5.7.1(@sinclair/typebox@0.31.30)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.85.0(react@19.2.8))(valibot@1.4.2(typescript@7.0.2))(zod@4.4.3)
+        version: 5.7.1(@sinclair/typebox@0.31.30)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.85.0(react@19.2.8))(valibot@1.4.2(typescript@7.0.2))(zod@4.6.7)
       "@hugeicons/core-free-icons":
         specifier: ^4.3.5
         version: 4.3.5
@@ -67,13 +67,13 @@ importers:
         version: 4.4.1
       "@openuidev/lang-core":
         specifier: 0.3.0
-        version: 0.3.0(zod@4.4.3)
+        version: 0.3.0(zod@4.6.7)
       "@openuidev/react-lang":
         specifier: 0.3.0
-        version: 0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)
+        version: 0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.6.7)
       "@platejs/ai":
         specifier: ^53.3.0
-        version: 53.3.3(@ai-sdk/react@4.0.61(react@19.2.8)(zod@4.4.3))(ai@7.0.58(zod@4.4.3))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(typescript@7.0.2)
+        version: 53.3.3(@ai-sdk/react@4.0.61(react@19.2.8)(zod@4.6.7))(ai@7.0.58(zod@4.6.7))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(typescript@7.0.2)
       "@platejs/autoformat":
         specifier: ^53.0.0
         version: 53.0.0(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))
@@ -184,7 +184,7 @@ importers:
         version: 1.167.1(@tanstack/react-router@1.170.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(@tanstack/router-core@1.171.19)(csstype@3.2.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       ai:
         specifier: ^7.0.15
-        version: 7.0.58(zod@4.4.3)
+        version: 7.0.58(zod@4.6.7)
       buffer:
         specifier: 6.0.3
         version: 6.0.3
@@ -321,8 +321,8 @@ importers:
         specifier: ^13.6.31
         version: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.6
+        version: 4.6.7
       zustand:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.18)(immer@10.2.0)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
@@ -344,7 +344,7 @@ importers:
         version: 1.62.1
       "@scalar/api-reference":
         specifier: 1.64.1
-        version: 1.64.1(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.4.3)
+        version: 1.64.1(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.6.7)
       "@sentry/vite-plugin":
         specifier: ^5.4.0
         version: 5.4.0(rollup@4.62.4)(supports-color@10.2.2)
@@ -389,7 +389,7 @@ importers:
         version: 2.15.0(@types/node@26.2.0)(typescript@7.0.2)
       orval:
         specifier: ^8.31.0
-        version: 8.43.0(@tanstack/react-query@5.101.4(react@19.2.8))(msw@2.15.0(@types/node@26.2.0)(typescript@7.0.2))(prettier@3.9.6)(swr@2.5.0(react@19.2.8))(typedoc-plugin-markdown@4.12.0(typedoc@0.28.20(typescript@7.0.2)))(typedoc@0.28.20(typescript@7.0.2))(typescript@7.0.2)(zod@4.4.3)
+        version: 8.43.0(@tanstack/react-query@5.101.4(react@19.2.8))(msw@2.15.0(@types/node@26.2.0)(typescript@7.0.2))(prettier@3.9.6)(swr@2.5.0(react@19.2.8))(typedoc-plugin-markdown@4.12.0(typedoc@0.28.20(typescript@7.0.2)))(typedoc@0.28.20(typescript@7.0.2))(typescript@7.0.2)(zod@4.6.7)
       postal-mime:
         specifier: 2.7.6
         version: 2.7.6
@@ -499,8 +499,8 @@ importers:
         specifier: ^2.9.0
         version: 2.9.0
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.6
+        version: 4.6.7
       zustand:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.18)(immer@10.2.0)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))
@@ -512,7 +512,7 @@ importers:
         version: 6.13.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@hookform/resolvers":
         specifier: ^5.4.0
-        version: 5.7.1(@sinclair/typebox@0.31.30)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.85.0(react@19.2.8))(valibot@1.4.2(typescript@7.0.2))(zod@4.4.3)
+        version: 5.7.1(@sinclair/typebox@0.31.30)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.85.0(react@19.2.8))(valibot@1.4.2(typescript@7.0.2))(zod@4.6.7)
       "@radix-ui/react-alert-dialog":
         specifier: ^1.1.23
         version: 1.1.23(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -580,8 +580,8 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.6
+        version: 4.6.7
     devDependencies:
       "@tailwindcss/vite":
         specifier: ^4.0.0
@@ -2880,6 +2880,7 @@ packages:
         integrity: sha512-GuYQQT7QD2EeO8lcZLRQzcbOyhqAzL+6WWTKTU9mSUBYBazkEDl+VrQcXQhbB08OWM9anD1aHleVadzulpOaUQ==,
       }
     engines: { node: ^18.19.0 || >=20.6.0 }
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       "@opentelemetry/api": ">=1.3.0 <1.10.0"
 
@@ -13193,16 +13194,10 @@ packages:
         integrity: sha512-Hh0dbQM+FVlUaYUbpYkZNUvdKxTNcSNvTGzkQKYShltnX+LRHEp2eYvC2Zm43eU8Np+CBZuoNR2i+seCYzzAyg==,
       }
 
-  zod@4.4.3:
+  zod@4.6.7:
     resolution:
       {
-        integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==,
-      }
-
-  zod@4.6.5:
-    resolution:
-      {
-        integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==,
+        integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==,
       }
 
   zustand-x@6.2.1:
@@ -13241,42 +13236,42 @@ packages:
       }
 
 snapshots:
-  "@ai-sdk/gateway@3.0.13(zod@4.4.3)":
+  "@ai-sdk/gateway@3.0.13(zod@4.6.7)":
     dependencies:
       "@ai-sdk/provider": 3.0.2
-      "@ai-sdk/provider-utils": 4.0.5(zod@4.4.3)
+      "@ai-sdk/provider-utils": 4.0.5(zod@4.6.7)
       "@vercel/oidc": 3.1.0
-      zod: 4.4.3
+      zod: 4.6.7
 
-  "@ai-sdk/gateway@4.0.46(zod@4.4.3)":
+  "@ai-sdk/gateway@4.0.46(zod@4.6.7)":
     dependencies:
       "@ai-sdk/provider": 4.0.7
-      "@ai-sdk/provider-utils": 5.0.25(zod@4.4.3)
+      "@ai-sdk/provider-utils": 5.0.25(zod@4.6.7)
       "@vercel/oidc": 3.2.0
-      zod: 4.4.3
+      zod: 4.6.7
 
-  "@ai-sdk/mcp@2.0.29(zod@4.4.3)":
+  "@ai-sdk/mcp@2.0.29(zod@4.6.7)":
     dependencies:
       "@ai-sdk/provider": 4.0.7
-      "@ai-sdk/provider-utils": 5.0.25(zod@4.4.3)
+      "@ai-sdk/provider-utils": 5.0.25(zod@4.6.7)
       pkce-challenge: 5.0.1
-      zod: 4.4.3
+      zod: 4.6.7
 
-  "@ai-sdk/provider-utils@4.0.5(zod@4.4.3)":
+  "@ai-sdk/provider-utils@4.0.5(zod@4.6.7)":
     dependencies:
       "@ai-sdk/provider": 3.0.2
       "@standard-schema/spec": 1.1.0
       eventsource-parser: 3.1.0
-      zod: 4.4.3
+      zod: 4.6.7
 
-  "@ai-sdk/provider-utils@5.0.25(zod@4.4.3)":
+  "@ai-sdk/provider-utils@5.0.25(zod@4.6.7)":
     dependencies:
       "@ai-sdk/provider": 4.0.7
       "@standard-schema/spec": 1.1.0
       "@workflow/serde": 4.1.0
       eventsource-parser: 3.1.0
       undici: 7.29.1
-      zod: 4.4.3
+      zod: 4.6.7
 
   "@ai-sdk/provider@3.0.2":
     dependencies:
@@ -13286,22 +13281,22 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  "@ai-sdk/react@4.0.61(react@19.2.8)(zod@4.4.3)":
+  "@ai-sdk/react@4.0.61(react@19.2.8)(zod@4.6.7)":
     dependencies:
-      "@ai-sdk/mcp": 2.0.29(zod@4.4.3)
+      "@ai-sdk/mcp": 2.0.29(zod@4.6.7)
       "@ai-sdk/provider": 4.0.7
-      "@ai-sdk/provider-utils": 5.0.25(zod@4.4.3)
-      ai: 7.0.58(zod@4.4.3)
+      "@ai-sdk/provider-utils": 5.0.25(zod@4.6.7)
+      ai: 7.0.58(zod@4.6.7)
       react: 19.2.8
       swr: 2.5.0(react@19.2.8)
       throttleit: 2.1.0
     transitivePeerDependencies:
       - zod
 
-  "@ai-sdk/vue@3.0.33(vue@3.5.42(typescript@7.0.2))(zod@4.4.3)":
+  "@ai-sdk/vue@3.0.33(vue@3.5.42(typescript@7.0.2))(zod@4.6.7)":
     dependencies:
-      "@ai-sdk/provider-utils": 4.0.5(zod@4.4.3)
-      ai: 6.0.33(zod@4.4.3)
+      "@ai-sdk/provider-utils": 4.0.5(zod@4.6.7)
+      ai: 6.0.33(zod@4.6.7)
       swrv: 1.2.0(vue@3.5.42(typescript@7.0.2))
       vue: 3.5.42(typescript@7.0.2)
     transitivePeerDependencies:
@@ -14061,7 +14056,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  "@hookform/resolvers@5.7.1(@sinclair/typebox@0.31.30)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.85.0(react@19.2.8))(valibot@1.4.2(typescript@7.0.2))(zod@4.4.3)":
+  "@hookform/resolvers@5.7.1(@sinclair/typebox@0.31.30)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.85.0(react@19.2.8))(valibot@1.4.2(typescript@7.0.2))(zod@4.6.7)":
     dependencies:
       "@standard-schema/utils": 0.3.0
       react-hook-form: 7.85.0(react@19.2.8)
@@ -14070,7 +14065,7 @@ snapshots:
       "@standard-schema/spec": 1.1.0
       ajv: 8.20.0
       valibot: 1.4.2(typescript@7.0.2)
-      zod: 4.4.3
+      zod: 4.6.7
 
   "@hugeicons/core-free-icons@4.3.5": {}
 
@@ -14503,29 +14498,29 @@ snapshots:
 
   "@opentelemetry/semantic-conventions@1.43.0": {}
 
-  "@openuidev/devtools@0.2.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)":
+  "@openuidev/devtools@0.2.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.6.7))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)":
     dependencies:
       "@openuidev/observability": 0.0.4
       lucide-react: 0.575.0(react@19.2.8)
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
     optionalDependencies:
-      "@openuidev/react-lang": 0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)
+      "@openuidev/react-lang": 0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.6.7)
 
-  "@openuidev/lang-core@0.3.0(zod@4.4.3)":
+  "@openuidev/lang-core@0.3.0(zod@4.6.7)":
     dependencies:
       ci-info: 4.4.0
-      zod: 4.4.3
+      zod: 4.6.7
 
   "@openuidev/observability@0.0.4": {}
 
-  "@openuidev/react-lang@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)":
+  "@openuidev/react-lang@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.6.7)":
     dependencies:
-      "@openuidev/devtools": 0.2.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      "@openuidev/lang-core": 0.3.0(zod@4.4.3)
+      "@openuidev/devtools": 0.2.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@0.3.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.6.7))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      "@openuidev/lang-core": 0.3.0(zod@4.6.7)
       "@openuidev/observability": 0.0.4
       react: 19.2.8
-      zod: 4.4.3
+      zod: 4.6.7
     optionalDependencies:
       react-dom: 19.2.8(react@19.2.8)
 
@@ -14568,10 +14563,10 @@ snapshots:
       - "@faker-js/faker"
       - "@modelcontextprotocol/server"
 
-  "@orval/hono@8.43.0(typescript@7.0.2)(zod@4.4.3)":
+  "@orval/hono@8.43.0(typescript@7.0.2)(zod@4.6.7)":
     dependencies:
       "@orval/core": 8.43.0
-      "@orval/zod": 8.43.0(zod@4.4.3)
+      "@orval/zod": 8.43.0(zod@4.6.7)
     optionalDependencies:
       typescript: 7.0.2
     transitivePeerDependencies:
@@ -14579,11 +14574,11 @@ snapshots:
       - "@modelcontextprotocol/server"
       - zod
 
-  "@orval/mcp@8.43.0(zod@4.4.3)":
+  "@orval/mcp@8.43.0(zod@4.6.7)":
     dependencies:
       "@orval/core": 8.43.0
       "@orval/fetch": 8.43.0
-      "@orval/zod": 8.43.0(zod@4.4.3)
+      "@orval/zod": 8.43.0(zod@4.6.7)
     transitivePeerDependencies:
       - "@faker-js/faker"
       - zod
@@ -14632,12 +14627,12 @@ snapshots:
       - "@faker-js/faker"
       - "@modelcontextprotocol/server"
 
-  "@orval/zod@8.43.0(zod@4.4.3)":
+  "@orval/zod@8.43.0(zod@4.6.7)":
     dependencies:
       "@orval/core": 8.43.0
       jsesc: 3.1.0
     optionalDependencies:
-      zod: 4.4.3
+      zod: 4.6.7
     transitivePeerDependencies:
       - "@faker-js/faker"
       - "@modelcontextprotocol/server"
@@ -14649,7 +14644,7 @@ snapshots:
 
   "@phosphor-icons/core@2.1.1": {}
 
-  "@platejs/ai@53.3.3(@ai-sdk/react@4.0.61(react@19.2.8)(zod@4.4.3))(ai@7.0.58(zod@4.4.3))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(typescript@7.0.2)":
+  "@platejs/ai@53.3.3(@ai-sdk/react@4.0.61(react@19.2.8)(zod@4.6.7))(ai@7.0.58(zod@4.6.7))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(typescript@7.0.2)":
     dependencies:
       "@platejs/markdown": 53.3.3(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(supports-color@10.2.2)(typescript@7.0.2)
       "@platejs/selection": 53.1.6(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -14662,8 +14657,8 @@ snapshots:
       react-compiler-runtime: 1.0.0(react@19.2.8)
       react-dom: 19.2.8(react@19.2.8)
     optionalDependencies:
-      "@ai-sdk/react": 4.0.61(react@19.2.8)(zod@4.4.3)
-      ai: 7.0.58(zod@4.4.3)
+      "@ai-sdk/react": 4.0.61(react@19.2.8)(zod@4.6.7)
+      ai: 7.0.58(zod@4.6.7)
     transitivePeerDependencies:
       - supports-color
       - typescript
@@ -15975,9 +15970,9 @@ snapshots:
   "@rollup/rollup-win32-x64-msvc@4.62.4":
     optional: true
 
-  "@scalar/agent-chat@0.12.24(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.4.3)":
+  "@scalar/agent-chat@0.12.24(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.6.7)":
     dependencies:
-      "@ai-sdk/vue": 3.0.33(vue@3.5.42(typescript@7.0.2))(zod@4.4.3)
+      "@ai-sdk/vue": 3.0.33(vue@3.5.42(typescript@7.0.2))(zod@4.6.7)
       "@scalar/api-client": 3.15.0(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)
       "@scalar/components": 0.27.11(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)
       "@scalar/helpers": 0.10.0
@@ -15991,7 +15986,7 @@ snapshots:
       "@scalar/validation": 0.6.2
       "@scalar/workspace-store": 0.56.1(typescript@7.0.2)
       "@vueuse/core": 13.9.0(vue@3.5.42(typescript@7.0.2))
-      ai: 6.0.33(zod@4.4.3)
+      ai: 6.0.33(zod@4.6.7)
       js-base64: 3.9.2
       neverpanic: 0.0.8
       truncate-json: 3.0.1
@@ -16044,7 +16039,7 @@ snapshots:
       set-cookie-parser: 3.1.0
       vue: 3.5.42(typescript@7.0.2)
       yaml: 2.9.0
-      zod: 4.4.3
+      zod: 4.6.7
     transitivePeerDependencies:
       - "@vue/composition-api"
       - async-validator
@@ -16061,10 +16056,10 @@ snapshots:
       - typescript
       - universal-cookie
 
-  "@scalar/api-reference@1.64.1(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.4.3)":
+  "@scalar/api-reference@1.64.1(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.6.7)":
     dependencies:
       "@headlessui/vue": 1.7.23(vue@3.5.42(typescript@7.0.2))
-      "@scalar/agent-chat": 0.12.24(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.4.3)
+      "@scalar/agent-chat": 0.12.24(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)(zod@4.6.7)
       "@scalar/api-client": 3.15.0(idb-keyval@6.3.0)(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)
       "@scalar/blocks": 0.1.10(supports-color@10.2.2)(tailwindcss@4.3.3)(typescript@7.0.2)
       "@scalar/code-highlight": 0.4.3(supports-color@10.2.2)
@@ -16295,14 +16290,14 @@ snapshots:
       "@scalar/helpers": 0.10.0
       nanoid: 5.1.16
       type-fest: 5.8.0
-      zod: 4.4.3
+      zod: 4.6.7
 
   "@scalar/types@0.24.0":
     dependencies:
       "@scalar/helpers": 0.16.4
       nanoid: 5.1.16
       type-fest: 5.8.0
-      zod: 4.6.5
+      zod: 4.6.7
 
   "@scalar/use-codemirror@0.14.14(typescript@7.0.2)":
     dependencies:
@@ -17318,20 +17313,20 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  ai@6.0.33(zod@4.4.3):
+  ai@6.0.33(zod@4.6.7):
     dependencies:
-      "@ai-sdk/gateway": 3.0.13(zod@4.4.3)
+      "@ai-sdk/gateway": 3.0.13(zod@4.6.7)
       "@ai-sdk/provider": 3.0.2
-      "@ai-sdk/provider-utils": 4.0.5(zod@4.4.3)
+      "@ai-sdk/provider-utils": 4.0.5(zod@4.6.7)
       "@opentelemetry/api": 1.9.0
-      zod: 4.4.3
+      zod: 4.6.7
 
-  ai@7.0.58(zod@4.4.3):
+  ai@7.0.58(zod@4.6.7):
     dependencies:
-      "@ai-sdk/gateway": 4.0.46(zod@4.4.3)
+      "@ai-sdk/gateway": 4.0.46(zod@4.6.7)
       "@ai-sdk/provider": 4.0.7
-      "@ai-sdk/provider-utils": 5.0.25(zod@4.4.3)
-      zod: 4.4.3
+      "@ai-sdk/provider-utils": 5.0.25(zod@4.6.7)
+      zod: 4.6.7
 
   ajv-draft-04@1.0.0(ajv@8.20.0):
     optionalDependencies:
@@ -17552,7 +17547,7 @@ snapshots:
     dependencies:
       devtools-protocol: 0.0.1696802
       mitt: 3.0.1
-      zod: 4.6.5
+      zod: 4.6.7
 
   ci-info@4.4.0: {}
 
@@ -19899,7 +19894,7 @@ snapshots:
 
   orderedmap@2.1.1: {}
 
-  orval@8.43.0(@tanstack/react-query@5.101.4(react@19.2.8))(msw@2.15.0(@types/node@26.2.0)(typescript@7.0.2))(prettier@3.9.6)(swr@2.5.0(react@19.2.8))(typedoc-plugin-markdown@4.12.0(typedoc@0.28.20(typescript@7.0.2)))(typedoc@0.28.20(typescript@7.0.2))(typescript@7.0.2)(zod@4.4.3):
+  orval@8.43.0(@tanstack/react-query@5.101.4(react@19.2.8))(msw@2.15.0(@types/node@26.2.0)(typescript@7.0.2))(prettier@3.9.6)(swr@2.5.0(react@19.2.8))(typedoc-plugin-markdown@4.12.0(typedoc@0.28.20(typescript@7.0.2)))(typedoc@0.28.20(typescript@7.0.2))(typescript@7.0.2)(zod@4.6.7):
     dependencies:
       "@commander-js/extra-typings": 15.0.0(commander@15.0.0)
       "@orval/angular": 8.43.0
@@ -19907,14 +19902,14 @@ snapshots:
       "@orval/core": 8.43.0
       "@orval/effect": 8.43.0
       "@orval/fetch": 8.43.0
-      "@orval/hono": 8.43.0(typescript@7.0.2)(zod@4.4.3)
-      "@orval/mcp": 8.43.0(zod@4.4.3)
+      "@orval/hono": 8.43.0(typescript@7.0.2)(zod@4.6.7)
+      "@orval/mcp": 8.43.0(zod@4.6.7)
       "@orval/mock": 8.43.0(msw@2.15.0(@types/node@26.2.0)(typescript@7.0.2))
       "@orval/pinia-colada": 8.43.0
       "@orval/query": 8.43.0(@tanstack/react-query@5.101.4(react@19.2.8))
       "@orval/solid-start": 8.43.0
       "@orval/swr": 8.43.0(swr@2.5.0(react@19.2.8))
-      "@orval/zod": 8.43.0(zod@4.4.3)
+      "@orval/zod": 8.43.0(zod@4.6.7)
       "@scalar/json-magic": 0.15.7
       "@scalar/openapi-parser": 0.29.15
       "@scalar/openapi-types": 0.9.7
@@ -21207,7 +21202,7 @@ snapshots:
       jsonc-parser: 3.3.1
       nypm: 0.6.9
       yaml: 2.9.0
-      zod: 4.4.3
+      zod: 4.6.7
     transitivePeerDependencies:
       - eslint
       - supports-color
@@ -21705,9 +21700,7 @@ snapshots:
     dependencies:
       media-played-ranges-mixin: 0.1.0
 
-  zod@4.4.3: {}
-
-  zod@4.6.5: {}
+  zod@4.6.7: {}
 
   zustand-x@6.2.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(zustand@5.0.14(@types/react@19.2.18)(immer@10.2.0)(react@19.2.8)(use-sync-external-store@1.6.0(react@19.2.8))):
     dependencies:
