@@ -130,16 +130,16 @@ func TestMigrateRejectsEditedChecksum(t *testing.T) {
 	}
 }
 
-// The page-rate, default-pin and VLM page-rate files are the forward
-// migrations that write seed state; re-applying their bodies must leave the
-// database as it is.
+// The page-rate, default-pin, VLM page-rate and audio-rate files are the
+// forward migrations that write seed state; re-applying their bodies must
+// leave the database as it is.
 func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql"} {
+	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql", "0110_audio_transcription.sql"} {
 		body, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -166,6 +166,15 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 		}
 		if version != want || micros != 1_000_000 {
 			t.Fatalf("%s active row = v%d %d micros, want v%d 1000000", key, version, micros, want)
+		}
+	}
+	// One credit a minute for both audio keys.
+	for _, key := range []string{"audio_transcription_second", "voice_input_second"} {
+		var micros int64
+		if err := s.pool.QueryRow(ctx,
+			`SELECT credit_micros_per_unit FROM resource_credit_rates WHERE resource_key=$1 AND active`, key,
+		).Scan(&micros); err != nil || micros != 16_667 {
+			t.Fatalf("%s active rate = %d (%v), want 16667", key, micros, err)
 		}
 	}
 	var captionActive int

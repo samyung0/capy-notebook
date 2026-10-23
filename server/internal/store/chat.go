@@ -156,11 +156,16 @@ type ConversationPrompt struct {
 // Region locates one source block inside its page. Stored and shipped ahead of
 // the highlight overlay that will consume it; Space names the coordinate
 // convention ('page-1000-topleft': origin top-left, both axes scaled to
-// 0..1000) so a renderer never has to infer it.
+// 0..1000) so a renderer never has to infer it. An audio transcript's region
+// ('audio-ms') is one sentence's span in the recording instead, with its
+// speaker when the transcript has speaker labels; its page is 0.
 type Region struct {
-	Page  int       `json:"page"`
-	BBox  []float64 `json:"bbox"`
-	Space string    `json:"space"`
+	Page    int       `json:"page"`
+	BBox    []float64 `json:"bbox"`
+	Space   string    `json:"space"`
+	StartMs *int64    `json:"start_ms,omitempty"`
+	EndMs   *int64    `json:"end_ms,omitempty"`
+	Speaker *int      `json:"speaker,omitempty"`
 }
 
 // msgMetadata is the on-disk (jsonb) shape of a message's metadata column.

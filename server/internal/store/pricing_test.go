@@ -57,3 +57,12 @@ func TestEmbeddingRatesFailsWithoutRegistry(t *testing.T) {
 		t.Fatal("nil registry must fail")
 	}
 }
+
+func TestCreditsForAudioSecondsChargesWholeSeconds(t *testing.T) {
+	if got := CreditsForAudioSeconds(61, 16_667); got != 1_016_687 {
+		t.Fatalf("61 audio seconds = %d, want 1016687", got)
+	}
+	if got := CreditsForAudioSeconds(-1, 16_667); got != 0 {
+		t.Fatalf("negative audio seconds = %d, want 0", got)
+	}
+}

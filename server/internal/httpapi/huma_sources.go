@@ -107,6 +107,7 @@ func (a *api) getSourceUploadPolicy(
 	rates, err := a.s.ActiveResourceRates(ctx, []string{
 		store.ResourceDigitalParsePage,
 		store.ResourceVLMIngestPage,
+		store.ResourceAudioSecond,
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -124,6 +125,8 @@ func (a *api) getSourceUploadPolicy(
 			AllowNoExtension:             true,
 			DigitalParsePageCreditMicros: rates[store.ResourceDigitalParsePage].CreditMicrosPerUnit,
 			VLMIngestPageCreditMicros:    rates[store.ResourceVLMIngestPage].CreditMicrosPerUnit,
+			AudioSecondCreditMicros:      rates[store.ResourceAudioSecond].CreditMicrosPerUnit,
+			AudioMaxDurationSeconds:      sourceupload.AudioMaxDurationSeconds,
 		},
 	}, nil
 }
@@ -355,7 +358,7 @@ func (a *api) checkSourceUpload(
 ) (name, chapterName string, err error) {
 	// The bounds the JSON schema applied when the metadata was its own request.
 	if !batchIDPattern.MatchString(body.BatchID) || body.BatchTotal < 1 || body.BatchTotal > 10000 ||
-		body.EstimatedCreditMicros < 0 ||
+		body.EstimatedCreditMicros < 0 || body.DurationSeconds < 0 ||
 		utf8.RuneCountInString(string(body.Name)) > fieldlimits.FileName ||
 		utf8.RuneCountInString(string(body.ChapterName)) > fieldlimits.ChapterName {
 		return "", "", huma.Error422UnprocessableEntity("validation failed")
@@ -383,6 +386,9 @@ func (a *api) checkSourceUpload(
 	}
 	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
 		return "", "", err
+	}
+	if body.DurationSeconds > sourceupload.AudioMaxDurationSeconds {
+		return "", "", huma.Error400BadRequest(fmt.Sprintf("audio uploads are at most %d hours", sourceupload.AudioMaxDurationSeconds/3600))
 	}
 	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {

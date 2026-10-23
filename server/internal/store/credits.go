@@ -216,6 +216,7 @@ const (
 	KindLLM       = "llm"
 	KindEmbedding = "embedding"
 	KindRerank    = "rerank" // zero credits like a query embedding, labeled with the reranker row called
+	KindAudio     = "audio"  // transcribed seconds, priced per second by resource rate
 	KindParse     = "parse"
 	KindEmail     = "email"
 )

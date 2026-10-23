@@ -343,6 +343,34 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 	}
 }
 
+// Audio the browser read as longer than two hours is refused before its
+// bytes are stored; the worker checks the measured duration again.
+func TestUploadPolicyServesAudioLimitAndUploadEnforcesIt(t *testing.T) {
+	fx := openBilling(t)
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)
+	var policy apimodel.SourceUploadPolicy
+	if err := json.Unmarshal(rec.Body.Bytes(), &policy); err != nil {
+		t.Fatal(err)
+	}
+	if policy.AudioMaxDurationSeconds != 7200 || policy.AudioSecondCreditMicros != 16_667 {
+		t.Fatalf("audio policy: %d s at %d micros", policy.AudioMaxDurationSeconds, policy.AudioSecondCreditMicros)
+	}
+	upload := func(seconds int) *httptest.ResponseRecorder {
+		return postUpload(t, fx.handler,
+			"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, map[string]any{
+				"name": "lecture.mp3", "kind": "audio", "sizeBytes": 1024, "contentType": "audio/mpeg",
+				"durationSeconds": seconds, "batchId": fx.workspaceID, "batchTotal": 2,
+			}, "audio/mpeg", make([]byte, 1024))
+	}
+	if over := upload(7201); over.Code != http.StatusBadRequest ||
+		!strings.Contains(over.Body.String(), "at most 2 hours") {
+		t.Fatalf("audio over the limit: %d %s", over.Code, over.Body.String())
+	}
+	if ok := upload(7200); ok.Code != http.StatusCreated {
+		t.Fatalf("audio at the limit: %d %s", ok.Code, ok.Body.String())
+	}
+}
+
 // The material response carries the editor caps of the material's payer, its
 // owner, whoever reads it (Epo 2026-10-22: the browser checks a note image or
 // audio against them before it uploads): a Free co-editor of a Pro owner's

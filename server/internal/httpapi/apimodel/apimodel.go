@@ -185,6 +185,8 @@ type SourceUploadPolicy struct {
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
 	VLMIngestPageCreditMicros    int64                         `json:"vlmIngestPageCreditMicros"`
+	AudioSecondCreditMicros      int64                         `json:"audioSecondCreditMicros"`
+	AudioMaxDurationSeconds      int                           `json:"audioMaxDurationSeconds"`
 }
 
 type Material struct {
