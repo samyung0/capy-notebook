@@ -1752,6 +1752,8 @@ components:
         spentThisMonthCents:
           format: int64
           type: integer
+        starterAvailable:
+          type: boolean
       required:
         - autoReload
         - reloadAmountCents
@@ -1759,6 +1761,7 @@ components:
         - paymentMethodInstant
         - spentThisMonthCents
         - reload
+        - starterAvailable
       type: object
     Customization:
       additionalProperties: false

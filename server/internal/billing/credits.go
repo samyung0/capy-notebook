@@ -2,8 +2,11 @@ package billing
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/stripe/stripe-go/v82"
@@ -14,6 +17,7 @@ import (
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/setupintent"
+	"github.com/stripe/stripe-go/v82/subscription"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -116,8 +120,28 @@ func PaymentMethodInfo(pm *stripe.PaymentMethod) store.PaymentMethod {
 		out.Last4 = pm.Card.Last4
 		out.ExpMonth = int(pm.Card.ExpMonth)
 		out.ExpYear = int(pm.Card.ExpYear)
+		if pm.Card.Fingerprint != "" {
+			out.CardKey = "card:" + pm.Card.Fingerprint
+		}
+	}
+	// Link exposes no card fingerprint; its account's email stands in, hashed.
+	if pm.Link != nil && pm.Link.Email != "" {
+		sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(pm.Link.Email))))
+		out.CardKey = "link:" + hex.EncodeToString(sum[:])
 	}
 	return out
+}
+
+// SubscriptionPaymentMethod reads the card a subscription Checkout saved as
+// the subscription's default; empty when it saved none.
+func SubscriptionPaymentMethod(subscriptionID string) (store.PaymentMethod, error) {
+	params := &stripe.SubscriptionParams{}
+	params.AddExpand("default_payment_method")
+	sub, err := subscription.Get(subscriptionID, params)
+	if err != nil || sub.DefaultPaymentMethod == nil {
+		return store.PaymentMethod{}, err
+	}
+	return PaymentMethodInfo(sub.DefaultPaymentMethod), nil
 }
 
 // TopUpPaymentMethod reads the payment method a paid top-up used.

@@ -58,6 +58,10 @@ type PaymentMethod struct {
 	Last4    string `json:"last4,omitempty"`
 	ExpMonth int    `json:"expMonth,omitempty"`
 	ExpYear  int    `json:"expYear,omitempty"`
+	// CardKey identifies the card behind it for the starter grant: Stripe's
+	// card fingerprint, or a hash of the Link email. It is never stored with
+	// the method.
+	CardKey string `json:"-"`
 }
 
 // Instant methods confirm at once; auto-reload accepts only these.
@@ -86,6 +90,9 @@ type CreditSettings struct {
 	SpendingLimitCents  *int64      `json:"spendingLimitCents,omitempty"`
 	SpentThisMonthCents int64       `json:"spentThisMonthCents"`
 	Reload              ReloadState `json:"reload"`
+	// StarterAvailable: the account has not had its starter credits, which its
+	// first saved card adds.
+	StarterAvailable bool `json:"starterAvailable"`
 }
 
 func utcMonthStart() time.Time { return monthStart() }
@@ -111,14 +118,16 @@ func (s *Store) CreditSettings(ctx context.Context, userID string) (CreditSettin
 	err := s.pool.QueryRow(ctx, `
 		SELECT auto_reload_enabled, reload_amount_cents, reload_threshold_micros,
 		       reload_pm_id, reload_pm_type, reload_pm_brand, reload_pm_last4,
-		       reload_pm_exp_month, reload_pm_exp_year, spending_limit_cents, reload_skipped_at
+		       reload_pm_exp_month, reload_pm_exp_year, spending_limit_cents, reload_skipped_at,
+		       NOT EXISTS (SELECT 1 FROM starter_grants g WHERE g.user_id = $1)
 		FROM user_credits WHERE user_id = $1`, userID).Scan(
 		&out.AutoReload, &out.ReloadAmountCents, &out.ReloadThresholdMicros,
 		&pmID, &pmType, &pmBrand, &pmLast4, &pmExpMonth, &pmExpYear,
-		&out.SpendingLimitCents, &skippedAt)
+		&out.SpendingLimitCents, &skippedAt, &out.StarterAvailable)
 	if isNoRows(err) {
-		// No counter row yet: the column defaults.
+		// No counter row yet: the column defaults, and no grant (it writes one).
 		out.ReloadAmountCents = 1000
+		out.StarterAvailable = true
 		return out, nil
 	}
 	if err != nil {
@@ -238,6 +247,29 @@ func (s *Store) SavePaymentMethod(ctx context.Context, userID string, pm Payment
 		WHERE user_id = $1 AND (NOT $8 OR reload_pm_id IS NULL)`,
 		userID, pm.ID, pm.Type, pm.Brand, pm.Last4, expMonth, expYear, onlyIfNone)
 	return err
+}
+
+// GrantStarterCredits adds the one-off starter credits for a saved card. Each
+// account and each card key gets them once; the unique keys of starter_grants
+// decide, so a replayed or concurrent event grants nothing more.
+func (s *Store) GrantStarterCredits(ctx context.Context, userID, cardKey string) (bool, error) {
+	if cardKey == "" {
+		return false, nil
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `INSERT INTO starter_grants (user_id, card_key) VALUES ($1, $2)
+		ON CONFLICT DO NOTHING`, userID, cardKey)
+	if err != nil || tag.RowsAffected() == 0 {
+		return false, err
+	}
+	if err := addPurchasedTx(ctx, tx, userID, StarterGrantMicros); err != nil {
+		return false, err
+	}
+	return true, tx.Commit(ctx)
 }
 
 // CheckTopUpLimit refuses a top-up that would pass the monthly spending limit.
