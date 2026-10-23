@@ -1,0 +1,168 @@
+name: Audit
+
+# Known vulnerabilities, on every push and again each day, so an advisory
+# published against an unchanged lockfile or base image still fails a run
+# (a failed scheduled run emails the repository's watchers).
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # One job per ecosystem. An advisory that has to wait goes on that
+  # ecosystem's commented ignore list, with the reason:
+  # collaboration-rs/deny.toml, server/govulncheck-ignore.txt,
+  # pnpm-workspace.yaml's auditConfig and pip-audit-ignore.txt.
+  audit_rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-deny@0.20.2
+      - run: cargo deny check advisories
+        working-directory: collaboration-rs
+
+  audit_go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          # go.mod's exact go version, the one server/Dockerfile and
+          # ops/Dockerfile build with.
+          go-version-file: server/go.mod
+      # Fails on a called vulnerability (one whose trace reaches a function)
+      # that the ignore list does not name, and on a listed one no longer
+      # reported, so a fixed entry leaves the list with its fix.
+      - working-directory: server
+        run: |
+          set -euo pipefail
+          go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 -format json ./... > "$RUNNER_TEMP/govulncheck.json"
+          jq -r 'select(.finding.trace[0].function) | .finding.osv' "$RUNNER_TEMP/govulncheck.json" | sort -u > "$RUNNER_TEMP/found"
+          sed -n 's/^\(GO-[0-9]*-[0-9]*\).*/\1/p' govulncheck-ignore.txt | sort -u > "$RUNNER_TEMP/ignored"
+          new=$(comm -23 "$RUNNER_TEMP/found" "$RUNNER_TEMP/ignored")
+          stale=$(comm -13 "$RUNNER_TEMP/found" "$RUNNER_TEMP/ignored")
+          echo "govulncheck: $(wc -l < "$RUNNER_TEMP/found") called, $(wc -l < "$RUNNER_TEMP/ignored") on the ignore list"
+          for id in $new; do echo "::error::$id https://pkg.go.dev/vuln/$id"; done
+          for id in $stale; do echo "::error::$id is no longer reported; drop it from server/govulncheck-ignore.txt"; done
+          [ -z "$new$stale" ]
+
+  # The pipeline's runtime set from uv.lock (no dev group or test extra, as
+  # the images install it), the parser's and ppt-master's hashed requirements.
+  # Ignore list: pip-audit-ignore.txt, one advisory id per line with its reason.
+  audit_python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: |
+          set -euo pipefail
+          uv export --quiet --frozen --no-hashes --no-dev --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/uv-requirements.txt"
+          ignored=$(awk '!/^#/ && NF { print "--ignore-vuln", $1 }' pip-audit-ignore.txt)
+          for file in "$RUNNER_TEMP/uv-requirements.txt" parser/requirements.txt pipeline/ppt-master-requirements.txt; do
+            echo "== $file"
+            # shellcheck disable=SC2086 # one flag per listed id
+            uvx pip-audit==2.10.1 --no-deps --disable-pip --progress-spinner off $ignored -r "$file"
+          done
+
+  audit_pnpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: pnpm audit --prod
+
+  # OS packages in the images we deploy; the jobs above cover the language
+  # dependencies. Daily and on dispatch only, since it builds every image.
+  # A fixed HIGH or CRITICAL advisory fails; one that has to wait goes in
+  # .trivyignore with its reason. Trivy runs as its image pinned by digest,
+  # not trivy-action, whose tags were rewritten in March 2026 (CVE-2026-33634).
+  scan_images:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {
+              name: server,
+              context: server,
+              file: server/Dockerfile,
+              submodules: false,
+            }
+          - { name: ops, context: ., file: ops/Dockerfile, submodules: false }
+          - {
+              name: collaboration,
+              context: .,
+              file: collaboration-rs/Dockerfile,
+              submodules: recursive,
+            }
+          - {
+              name: pipeline,
+              context: .,
+              file: pipeline/Dockerfile,
+              submodules: false,
+            }
+          - {
+              name: parser,
+              context: .,
+              file: parser/Dockerfile,
+              submodules: false,
+            }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          submodules: ${{ matrix.submodules }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          tags: capy-scan-${{ matrix.name }}:local
+          # The parser image refuses a build without a 40-hex revision.
+          build-args: RELEASE_SHA=${{ github.sha }}
+          # Uncached: the repository's Actions cache is full, and daily image
+          # caches would evict the BetterOffice cache every CI run needs.
+          load: true
+      - env:
+          IMAGE: capy-scan-${{ matrix.name }}:local
+        run: scripts/ci/trivy-image.sh "$IMAGE"
+
+  # The upstream images the production Compose file runs as they are
+  # (Postgres, Redis), read from the file so a bumped tag is what gets scanned.
+  scan_upstream_images:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: |
+          set -euo pipefail
+          images=$(sed -n 's/^ *image: *\([^$ ]*\)$/\1/p' deploy/docker-compose.prod.yml | sort -u)
+          [ -n "$images" ]
+          status=0
+          for image in $images; do
+            docker pull --quiet "$image"
+            scripts/ci/trivy-image.sh "$image" || status=1
+          done
+          exit "$status"
