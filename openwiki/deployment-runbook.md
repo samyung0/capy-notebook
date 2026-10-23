@@ -1837,7 +1837,18 @@ those services start.
    and `pnpm env:check` fail with "unknown configuration keys: ZAI_API_KEY":
    delete the line, and put the OpenRouter key in `OPENROUTER_API_KEY`. The
    `production` environment needs `OPENROUTER_API_KEY` before a production
-   deploy, since the renderer writes an empty key without it. Those calls
+   deploy, since the renderer writes an empty key without it. Uploaded audio
+   needs `ALIBABA_MODELSTUDIO_KEY` (secret) and `ALIBABA_MODELSTUDIO_URL`
+   (variable, the workspace's `…/compatible-mode/v1` URL) from an Alibaba
+   Model Studio workspace in Singapore (`ap-southeast-1`), with the key
+   restricted to the `qwen-audio-3.1-asr-flash*` models. Both reach the
+   production worker and each environment's queue workers (manifest targets
+   `ingest-production`, `ingest-queue`); set both or neither, and without them
+   an audio upload fails terminally. The worker hands Alibaba a 15-minute
+   signed GET link for the one source object, so nothing else needs bucket
+   access. Check the workspace's Filetrans quota before launch: the worker
+   runs at most 12 tasks across all workers, and Flash answered 429 from
+   about 20 requests in flight. Those calls
    happen on this ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The

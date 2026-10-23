@@ -459,6 +459,10 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   links carry no overrides ([thumbnails.md](thumbnails.md)). The e2e stack's
   blob server answers its links the same way. The bank's public figures are
   not presigned and keep their server-detected type.
+- The ingest worker signs one other read link: a GET for the one audio source
+  object it is transcribing, valid for the 15-minute task budget, handed only
+  to that Alibaba Filetrans task. It is never stored, logged or shown; a
+  retried attempt signs a new one ([agentic-retrieval.md](agentic-retrieval.md)).
 
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
@@ -1315,7 +1319,7 @@ Physical deletion is coordinated through `pending_blob_deletions`, a durable
 database outbox. Reference-count triggers cover source objects, parsed objects,
 editor assets, upload-session paths, source collaboration bases and refresh candidates,
 and file thumbnails (`files.thumbnail_key`: a new capture releases the old key;
-[thumbnails.md](thumbnails.md)). Image-caption payloads are owned by `image_caption_associations`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
+[thumbnails.md](thumbnails.md)). Image-caption payloads are owned by `image_caption_associations`; audio transcripts (`derived-text/<sha>/…`) use `artifact_cache`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
 foreign-key cascades, so deleting a file, deleting a workspace, or purging an
 account all reach the same cleanup path without relying on an HTTP handler to
 enumerate bucket keys.

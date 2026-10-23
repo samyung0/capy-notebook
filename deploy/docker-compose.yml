@@ -27,8 +27,8 @@
 # Shared by every process that reports errors. LOG_FORMAT / LOG_LEVEL are
 # omitted on purpose: an empty string from compose interpolation would override
 # the code defaults (text in development, json otherwise).
-x-observability: &observability
-  # This stack is local development; the e2e and prod files name their own.
+x-observability:
+  &observability # This stack is local development; the e2e and prod files name their own.
   APP_ENV: development
   RELEASE_SHA: ${RELEASE_SHA:-}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
@@ -290,6 +290,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Uploaded audio: Alibaba Model Studio Filetrans.
+      ALIBABA_MODELSTUDIO_KEY: ${ALIBABA_MODELSTUDIO_KEY:-}
+      ALIBABA_MODELSTUDIO_URL: ${ALIBABA_MODELSTUDIO_URL:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       CAPY_CAPTION_MAX_EDGE: ${CAPY_CAPTION_MAX_EDGE:-1280}
       CAPY_IMAGE_MAX_PIXELS: ${CAPY_IMAGE_MAX_PIXELS:-100000000}

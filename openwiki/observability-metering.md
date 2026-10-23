@@ -318,10 +318,10 @@ Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
 file over a documented limit (page or scanned-page count, figures and table
-rows, image pixels, CSV/TSV columns per row or searchable text) fails the job
-with the limit's attempt `error_code` (`page_limit`, `scanned_page_limit`,
-`element_limit`, `image_pixel_limit`,
-`tabular_column_limit`, `tabular_text_limit`) and logs at
+rows, image pixels, audio duration, CSV/TSV columns per row or searchable text)
+fails the job with the limit's attempt `error_code` (`page_limit`,
+`scanned_page_limit`, `element_limit`, `image_pixel_limit`,
+`audio_duration_limit`, `tabular_column_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in
 [agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of
@@ -796,7 +796,7 @@ month by `surface`, which the Usage tab draws as one credit bar coloured by area
 faint at the end. `GET /api/usage/events` keyset-pages the actor's `usage_events`
 rows newest first (`before` cursor from the previous page's `next`, 20 rows at
 most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`,
-`parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
+`audio`, `parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
 tokens and credits. It does not use a separate analytics table and does not show
 USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe
 invoices live for the Subscription tab (a user with no Stripe customer gets an
@@ -957,7 +957,8 @@ That exact call id remains settleable against a `settled` or `released` session
 until its `receipt_deadline_at`. Python sets the deadline from the longest a
 call can legitimately run, plus five minutes: the interactive stream backstop
 (`CAPY_INTERACTIVE_STREAM_MAX_S`, 10 minutes) for every interactive call, the
-ingest provider timeout (120 s) for ingest; direct SQL callers get the
+ingest provider timeout (120 s) for ingest, and the 15-minute task budget for
+an audio transcription (`open_call(provider_timeout_s=…)`); direct SQL callers get the
 column's default 12-hour-five-minute window. The additional five minutes are
 receipt-only settlement grace.
 
@@ -1063,8 +1064,13 @@ response as an error rather than finalizing a partial stream as complete.
 ### Where tokens are captured
 
 `pipeline/pipeline/retrieval/models.py` is the single boundary for token-reporting
-LLM and embedding calls. Any new provider path must go through it or open and
-settle its own metered call explicitly, or it is invisible and silently free.
+LLM and embedding calls. Audio transcription is the non-token exception:
+`pipeline/pipeline/ingest/source_text.py` opens its `audio` call under its own
+12-task gate and settles measured seconds through `accounting.settle_units`
+(ingest sessions only), which writes `units` / `unit` on the call and its
+usage event. Any new provider path must go through one of these boundaries or
+open and settle its own metered call explicitly, or it is invisible and
+silently free.
 
 A contextvar accumulator (`obs.Usage`) still aggregates request telemetry.
 Chat, generate and editor bind a `RequestAccounting` context when the
@@ -1277,6 +1283,20 @@ waiting in the queue; the parse event's metadata carries both snapshots
 (`digitalPageRate`, `vlmPageRate`). Standalone image captions bill their
 tokens only.
 
+Audio is priced per second. `audio_transcription_second` (uploads) and
+`voice_input_second` (chat voice input) are both 16,667 microcredits a second,
+one credit a minute (version 1, `0110_audio_transcription.sql`, Epo's proposal
+of 2026-10-23 at two to three times the standard markup because transcription
+capacity is capped). An upload's charge is whole seconds of the worker's
+`ffprobe` duration (ceil) at the job's snapshotted rate, settled only when the
+transcript has sentences; a failed, retried or empty task is free, and a job
+pays for its audio once (a later call on the same session, after a lost cache,
+settles at zero). `GET /api/source-upload-policy` also returns
+`audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
+dialog shows the estimate from the length the browser reads, and the worker's
+measured duration remains authoritative. `CreditsForAudioSeconds` in Go holds
+the same math for voice input.
+
 ### Source refreshes and maintenance republishes
 
 The page fee applies to a file's first parse only; parsing runs on the
@@ -1353,7 +1373,7 @@ primary database and can add optional column-limited read DSNs for UAT/local.
 ### Pricing is policy
 
 Token work is priced from the resolved `model_configs` row. Non-token policy
-(digital and VLM pages, and email) is versioned in
+(digital and VLM pages, audio seconds, and email) is versioned in
 `resource_credit_rates`; `figure_caption_call` rows remain for history but none
 is active. The Ops usage page edits these
 rates by inserting a new active version and recording an operator audit event.
