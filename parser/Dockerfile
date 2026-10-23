@@ -1,6 +1,6 @@
 # CapyMain (parser/java) compiled against the pinned ODL jar; the runtime image
 # keeps a JRE only.
-FROM python:3.12.14-slim-bookworm@sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579 AS odl-entry
+FROM python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70 AS odl-entry
 COPY parser/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openjdk-17-jdk-headless \
@@ -12,7 +12,7 @@ RUN sed -n '/^opendataloader-pdf==/,/^    # via/p' /build/requirements.txt \
 COPY parser/java/CapyMain.java parser/java/build.sh /build/java/
 RUN sh /build/java/build.sh /build/capy-odl.jar
 
-FROM python:3.12.14-slim-bookworm@sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579
+FROM python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
