@@ -267,11 +267,13 @@ export function ChatPanel({
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const dockFieldRef = useRef<HTMLTextAreaElement>(null);
 
-  // A transcript goes where the caret is (over a selection), or at the end
-  // while the questions hide the composer; it is never sent by itself.
+  // A transcript goes where the caret is (over a selection) in the field on
+  // screen, the dock's or the composer's, or at the end while the questions
+  // hide the composer; it is never sent by itself.
   function insertVoice(transcript: string) {
-    const field = fieldRef.current;
+    const field = dock && !pageOpen ? dockFieldRef.current : fieldRef.current;
     if (!field) {
       setText(
         (value) =>
@@ -307,8 +309,13 @@ export function ChatPanel({
         : [],
     [last, streaming, dismissedId]
   );
-  // The questions take the composer's place, and a recording stops with it.
-  const voice = useVoiceInput(workspaceId, insertVoice, questions.length === 0);
+  // The questions take the composer's place, and a recording stops with it;
+  // the dock on the file has no questions.
+  const voice = useVoiceInput(
+    workspaceId,
+    insertVoice,
+    (!!dock && !pageOpen) || questions.length === 0
+  );
 
   // Seed local state when a previously-saved conversation is opened.
   useEffect(() => {
@@ -669,6 +676,7 @@ export function ChatPanel({
                 }
               : undefined
           }
+          fieldRef={dockFieldRef}
           office={dock.office}
           onOpenHistory={() => {
             withViewTransition(() => {
@@ -682,6 +690,7 @@ export function ChatPanel({
           overLimit={overLimit}
           sendDisabled={!text.trim() || overLimit}
           text={text}
+          voice={voice}
         />
       )}
     </div>

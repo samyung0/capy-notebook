@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { type MouseEventHandler, useEffect, useRef, useState } from 'react';
 import { useTranscribeVoice } from '@/api/hooks';
 import { Spinner } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
@@ -102,33 +102,46 @@ export function useVoiceInput(
   };
 }
 
-/** The bordered mic button, with the elapsed time and the limit while it
- * records and a spinner while the clip is transcribed. */
+/** The time a recording has run against the limit, with a pulsing dot. */
+export function VoiceElapsed({ elapsedMs }: { elapsedMs: number }) {
+  return (
+    <span
+      className="t-meta flex items-center gap-1.5 whitespace-nowrap text-fg-muted"
+      data-voice-elapsed
+    >
+      <span
+        aria-hidden
+        className="size-2 rounded-full bg-solid-error motion-safe:animate-pulse"
+      />
+      {m.voice_elapsed({
+        elapsed: formatClock(elapsedMs),
+        limit: formatClock(VOICE_MAX_MS),
+      })}
+    </span>
+  );
+}
+
+/** The bordered mic button, with the elapsed time beside it while it records
+ * (unless the caller shows VoiceElapsed elsewhere) and a spinner while the
+ * clip is transcribed; the full composer and the chat dock both show it. */
 export function VoiceButton({
   phase,
   elapsedMs,
   onToggle,
-}: Pick<VoiceInput, 'phase' | 'elapsedMs'> & { onToggle: () => void }) {
+  onMouseDown,
+  elapsed = true,
+}: Pick<VoiceInput, 'phase' | 'elapsedMs'> & {
+  onToggle: () => void;
+  /** The dock keeps its field focused through a tap, as its Send does. */
+  onMouseDown?: MouseEventHandler<HTMLButtonElement>;
+  /** False where the elapsed time has its own line (the dock). */
+  elapsed?: boolean;
+}) {
   const recording = phase === 'recording';
   const busy = phase === 'starting' || phase === 'pending';
-  const elapsed = m.voice_elapsed({
-    elapsed: formatClock(elapsedMs),
-    limit: formatClock(VOICE_MAX_MS),
-  });
   return (
-    <>
-      {recording && (
-        <span
-          className="t-meta flex items-center gap-1.5 whitespace-nowrap text-fg-muted"
-          data-voice-elapsed
-        >
-          <span
-            aria-hidden
-            className="size-2 rounded-full bg-solid-error motion-safe:animate-pulse"
-          />
-          {elapsed}
-        </span>
-      )}
+    <span className="flex shrink-0 items-center gap-2">
+      {recording && elapsed && <VoiceElapsed elapsedMs={elapsedMs} />}
       <IconButton
         aria-pressed={recording}
         // 9px keeps the bordered button as tall as Send beside it.
@@ -147,12 +160,13 @@ export function VoiceButton({
               : m.voice_record()
         }
         onClick={onToggle}
+        onMouseDown={onMouseDown}
         size="sm"
         tooltip
         variant="outline"
       >
         {busy && <Spinner className="absolute size-4" />}
       </IconButton>
-    </>
+    </span>
   );
 }

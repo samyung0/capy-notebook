@@ -164,7 +164,9 @@ Config and docs:
 
 - [x] Chat composer mic button: toggle to record with MediaRecorder
       (Opus in Chrome/Firefox, AAC in Safari, 32 kb/s), elapsed time against
-      2:00, stop at 2:00 (`chat/VoiceInput.tsx`, `chat/voiceRecording.ts`).
+      2:00, stop at 2:00 (`chat/VoiceInput.tsx`, `chat/voiceRecording.ts`);
+      the file page's chat dock has the same button left of Send (Epo
+      2026-10-24).
 - [x] Go endpoint `POST /api/workspaces/{id}/voice-transcriptions`
       (`httpapi/voice.go`, client `internal/alibaba`): WebM/Ogg/MP4 raw body
       up to 2 MiB; the 2-minute cap is the size limit plus the provider's

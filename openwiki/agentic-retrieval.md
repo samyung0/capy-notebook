@@ -2957,7 +2957,8 @@ Below 1260px the workspace has no panels and `ChatPanel` takes `dock`
 (`WorkspaceOpen`): it lays an overlay on the viewer holding the chat page and,
 while that is closed, `ChatDock` (`chat/ChatDock.tsx`). Phones, and Office
 files at every width, get a 52px round button at the bottom right that morphs
-into a one-line field (history clock on the left, send on the right) and
+into a one-line field (history clock on the left, voice input and send on
+the right, [Chat voice input](#chat-voice-input)) and
 focuses it in the same tap, so the keyboard opens; wider screens show the
 field itself. The morph copies the Files panel's floating plus
 (`motion-chat-dock` in `motion.css`): one surface anchored bottom right
@@ -2986,10 +2987,12 @@ only the composer lifts above the keyboard.
 
 ### Chat voice input
 
-The chat composer (`ChatPanel`, not the one-line `ChatDock`) has a bordered
-mic button left of Send where the browser has `MediaRecorder` and
-`getUserMedia` (`chat/VoiceInput.tsx`, logic in `chat/voiceRecording.ts`);
-elsewhere it is not shown. Decisions: human/agentic-retrieval.md 2026-10-23.
+The chat composer (`ChatPanel`) and the one-line dock on file pages below lg
+(`ChatDock`) have a bordered mic button left of Send where the browser has
+`MediaRecorder` and `getUserMedia` (`chat/VoiceInput.tsx`, logic in
+`chat/voiceRecording.ts`); elsewhere it is not shown. Both show one
+`useVoiceInput` in `ChatPanel`, so a recording carries over between the dock
+and the chat page. Decisions: human/agentic-retrieval.md 2026-10-23.
 
 - **Recording.** The button toggles one recording: Opus in WebM or Ogg where
   `MediaRecorder.isTypeSupported` says so, else Safari's AAC in MP4, asked for
@@ -3010,6 +3013,12 @@ elsewhere it is not shown. Decisions: human/agentic-retrieval.md 2026-10-23.
   the next recording: a blocked or missing microphone, busy (any 429), over
   two minutes, no speech heard, or could not transcribe; credits and account
   refusals keep their usual copy. Nothing retries; the user records again.
+- **In the dock** the mic sits between the field and Send and, like Send,
+  keeps the field focused through a tap. The field stays open while a
+  recording runs or is transcribed (scrolling and blur do not fold it, and a
+  recording started on the chat page opens it), the transcript lands at the
+  dock field's caret, and an error shows inside the dock above the field,
+  which grows to fit it.
 
 The gateway (`server/internal/httpapi/voice.go`) lets anyone who may chat in
 the workspace transcribe (the chat stream's `WorkspaceEffectiveRole` check;
