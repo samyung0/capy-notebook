@@ -387,7 +387,10 @@ request's events with the caller's `trace_id`, and a source rebuild's (which
 runs outside any request, on a room unload or the sweep) with its `file_id`. Go, Python, and collaboration exclude request
 bodies and internal authentication headers from Sentry because requests carry
 note content, prompts, and service credentials. Python stack locals are also
-excluded.
+excluded. The pipeline's `before_breadcrumb` (`obs._before_breadcrumb`) keeps
+an outgoing HTTP request's breadcrumb (http.client, so requests, and httpx)
+and httpx's own request log line without the URL's query or fragment, where a
+signed link such as a transcript's result link carries its signature.
 
 Chat and generate fail with `ai_unavailable` when retrieval is unreachable;
 they do not invent a local answer. Ops fallbacks that keep the response
