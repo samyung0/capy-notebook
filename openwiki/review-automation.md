@@ -102,7 +102,8 @@ when it was unavailable or not run, and a clean report without a scan is
 ## Boundary contract
 
 `scripts/review/validate-review-boundaries.mjs` runs in `ci.yml` and fails
-when any workflow declares `schedule` or contains a scanner invocation
+when any workflow other than `audit.yml` declares `schedule`, when any
+workflow contains a scanner invocation
 (`strix-scan.sh`, `strix-agent`, `codex-security-scan.sh`, `codex exec`), when
 `uat-quality.yml` or `perf.yml` stops being both dispatchable and callable,
 when `deploy-uat.yml` has any trigger besides `workflow_dispatch`, or when
