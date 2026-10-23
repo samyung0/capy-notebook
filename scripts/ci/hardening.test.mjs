@@ -147,6 +147,45 @@ test('the SPA build job renders only the build values; the deploy job renders th
   assert.deepEqual(renders(jobs.deploy), ['render']);
 });
 
+// The jobs that build and push the deploy images: the job's own token pushes,
+// so nothing in them names a secret, and their build arguments are these
+// public values only (security regression: no secrets in images or build args).
+const IMAGE_JOBS = [
+  ['.github/workflows/deploy-environment.yml', 'images', ['RELEASE_SHA']],
+  [
+    '.github/workflows/deploy-ops.yml',
+    'image',
+    [
+      'VITE_CLERK_PUBLISHABLE_KEY',
+      'VITE_SENTRY_DSN',
+      'VITE_APP_ENV',
+      'VITE_RELEASE_SHA',
+    ],
+  ],
+];
+const MATRIX_BUILD_ARGS = `${EXPRESSION} matrix.build-args }}`;
+
+test('the image jobs name no secret and pass only allow-listed build arguments', () => {
+  for (const [file, name, allowed] of IMAGE_JOBS) {
+    const job = parse(read(file)).jobs[name];
+    const where = `${file}: ${name}`;
+    assert(!SECRET.test(JSON.stringify(job)), where);
+    const lines = [
+      ...(job.strategy?.matrix?.include ?? []).map(
+        (entry) => entry['build-args'] ?? ''
+      ),
+      ...job.steps.map((step) => step.with?.['build-args'] ?? ''),
+    ]
+      .flatMap((value) => value.split('\n'))
+      .map((line) => line.trim())
+      .filter((line) => line && line !== MATRIX_BUILD_ARGS);
+    assert(lines.length > 0, where);
+    for (const line of lines) {
+      assert(allowed.includes(line.split('=')[0]), `${where}: ${line}`);
+    }
+  }
+});
+
 test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies, on every push and daily', () => {
   const audit = parse(read('.github/workflows/audit.yml'));
   assert.deepEqual(
