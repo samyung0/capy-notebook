@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import shutil
 import struct
@@ -263,6 +265,50 @@ async def test_filetrans_submits_polls_and_reads_the_transcript(filetrans) -> No
     assert all(poll[2]["Authorization"] == "Bearer test-key" for poll in polls)
     # The result link is Alibaba's own signed URL: no API key goes with it.
     assert result_path == "/result.json" and "Authorization" not in result_headers
+
+
+_SUBMIT = ("POST", "/api/v1/services/audio/asr/transcription")
+
+
+@pytest.mark.asyncio
+async def test_a_transient_poll_error_keeps_polling_the_same_task(
+    filetrans, caplog
+) -> None:
+    caplog.set_level(logging.INFO)
+    filetrans.polls = [
+        (200, {"output": {"task_status": "RUNNING"}}),
+        (503, {}),
+        (429, {"code": "Throttling"}),
+        filetrans.succeeded(),
+    ]
+    spoken = {"begin_time": 0, "end_time": 900, "text": "Hello."}
+    filetrans.transcript = (200, {"transcripts": [{"sentences": [spoken]}]})
+
+    sentences = await source_text._filetrans(_SOURCE_URL, "context")
+
+    assert [sentence["text"] for sentence in sentences] == ["Hello."]
+    # One task: the poll errors spent no retry and submitted nothing new.
+    assert [request[:2] for request in filetrans.requests].count(_SUBMIT) == 1
+    assert filetrans.polls == []
+    # The submit is logged at INFO, each poll only at DEBUG.
+    logged = [record.getMessage() for record in caplog.records]
+    assert any("/api/v1/services/audio/asr/transcription" in line for line in logged)
+    assert not any("/api/v1/tasks/" in line for line in logged)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["CANCELED", "UNKNOWN", None])
+async def test_a_task_in_any_other_state_ends_the_poll_at_once(
+    filetrans, state
+) -> None:
+    filetrans.polls = [(200, {"output": {"task_status": state}})]
+
+    async with asyncio.timeout(10):
+        with pytest.raises(source_text.FiletransRetryableError):
+            await source_text._filetrans(_SOURCE_URL, "context")
+
+    assert filetrans.polls == []
+    assert [request[:2] for request in filetrans.requests].count(_SUBMIT) == 1
 
 
 def _failed(code: str, subtask: bool = False) -> tuple[int, dict]:

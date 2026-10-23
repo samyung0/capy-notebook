@@ -1343,9 +1343,11 @@ reused with no task and no charge. Otherwise, in one ingest attempt:
    `keep_dialect: true` (Cantonese stays as spoken), `diarization_enabled:
    true`, and one `input_text` context message naming the workspace and the
    file. `{host}` is `ALIBABA_MODELSTUDIO_URL` without `/compatible-mode/v1`.
-   The attempt polls `{host}/api/v1/tasks/{id}` every 2 s, then reads the
-   result JSON from the task's `transcription_url` (Alibaba's own signed link,
-   fetched without the API key and without logging its URL).
+   The attempt polls `{host}/api/v1/tasks/{id}`, first after 2 s, each wait
+   half again as long as the last up to 10 s, and logs each poll's request
+   at DEBUG only (the submit stays at INFO). It then reads the result JSON
+   from the task's `transcription_url` (Alibaba's own signed link, fetched
+   without the API key and without logging its URL).
 5. Only a transcript with sentences is charged: whole seconds (ceil) of the
    measured duration or the last sentence's end, whichever is later, at the
    job's snapshotted `audio_transcription_second` rate, settled locally on the
@@ -1356,10 +1358,14 @@ reused with no task and no charge. Otherwise, in one ingest attempt:
    whose cached transcript was lost) records its seconds at zero credits.
    Then the transcript is cached (best effort, as below).
 
-Nothing about the task is stored between attempts. A 408, 429 or 5xx answer,
-a transport error, a task that failed for any reason but `InvalidFile.*`, or a
-task still running at the wall budget is retryable: the ingest job's one retry
-submits a new task, and a second failure fails the file. Any other refused
+Nothing about the task is stored between attempts. While a task runs, a poll
+answered 408, 429 or 5xx, or not answered, polls again: only the wall budget
+ends the wait, so a passing error never abandons a running task. A 408, 429 or
+5xx answer to the submit, a transport error on it, a task that failed for any
+reason but `InvalidFile.*`, a task in any state but `PENDING`, `RUNNING`,
+`SUCCEEDED` or `FAILED` (`CANCELED`, `UNKNOWN`; it ends the poll at once), or
+a task still running at the wall budget is retryable: the ingest job's one
+retry submits a new task, and a second failure fails the file. Any other refused
 request and `InvalidFile.*` (a link the task could not fetch, a file it could
 not decode) fail at once, as does a recording with no speech. Every failed
 call is abandoned uncharged; a cancelled one stays open for its receipt

@@ -213,8 +213,23 @@ FILETRANS_CAPACITY = ("filetrans", 12)
 # One task's wall budget: submit, poll, read the result. The source link lives
 # as long, since nothing waits for the task after it.
 FILETRANS_TIMEOUT_S = 15 * 60
+# The first poll's wait, growing by half after each poll up to the maximum.
 _FILETRANS_POLL_S = 2.0
+_FILETRANS_POLL_MAX_S = 10.0
 _FILETRANS_REQUEST_TIMEOUT_S = 30.0
+
+
+class _PollsAtDebug(logging.Filter):
+    """httpx logs every request at INFO; a task poll goes out at DEBUG."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if "/api/v1/tasks/" not in record.getMessage():
+            return True
+        record.levelno, record.levelname = logging.DEBUG, "DEBUG"
+        return logging.getLogger("httpx").isEnabledFor(logging.DEBUG)
+
+
+logging.getLogger("httpx").addFilter(_PollsAtDebug())
 
 
 class FiletransError(Exception):
@@ -305,11 +320,15 @@ def audio_duration_seconds(path: Path) -> float:
     return duration
 
 
+def _transient(status: int) -> bool:
+    return status in (408, 429) or status >= 500
+
+
 def _raise_for_status(response: httpx.Response) -> None:
     status = response.status_code
     if status < 400:
         return
-    if status in (408, 429) or status >= 500:
+    if _transient(status):
         raise FiletransRetryableError(status)
     raise FiletransTerminalError(status)
 
@@ -349,10 +368,12 @@ def _sentences(transcript: dict[str, Any]) -> list[dict[str, Any]]:
 async def _filetrans(source_url: str, context: str) -> list[dict[str, Any]]:
     """Run one Filetrans task to its end and return its sentences.
 
-    A 408, 429 or 5xx answer, or a task that failed for another reason, is
-    retryable (the ingest job's one retry submits again); any other refused
-    request, or a file the task could not fetch or decode (``InvalidFile.*``),
-    is terminal.
+    A 408, 429 or 5xx answer to the submit, or a task that ended without a
+    transcript for another reason, is retryable (the ingest job's one retry
+    submits again); any other refused request, or a file the task could not
+    fetch or decode (``InvalidFile.*``), is terminal. While the task runs, a
+    poll that gets a 408, 429, 5xx or no answer polls again: only the wall
+    budget around this call ends the wait.
     """
     if not cfg.alibaba_modelstudio_key or not cfg.alibaba_modelstudio_url:
         raise FiletransNotConfiguredError("audio transcription is not configured")
@@ -382,14 +403,27 @@ async def _filetrans(source_url: str, context: str) -> list[dict[str, Any]]:
         task_id = str((_json(response).get("output") or {}).get("task_id") or "")
         if not task_id:
             raise FiletransRetryableError("no task id")
+        delay = _FILETRANS_POLL_S
         while True:
-            await asyncio.sleep(_FILETRANS_POLL_S)
-            response = await client.get(f"{host}/api/v1/tasks/{task_id}", headers=auth)
+            await asyncio.sleep(delay)
+            delay = min(delay * 1.5, _FILETRANS_POLL_MAX_S)
+            try:
+                response = await client.get(
+                    f"{host}/api/v1/tasks/{task_id}", headers=auth
+                )
+            except httpx.TransportError:
+                continue
+            if _transient(response.status_code):
+                continue
             _raise_for_status(response)
             output = _json(response).get("output") or {}
             status = output.get("task_status")
-            if status in ("SUCCEEDED", "FAILED"):
+            if status not in ("PENDING", "RUNNING"):
                 break
+    if status not in ("SUCCEEDED", "FAILED"):
+        # CANCELED, UNKNOWN or a state this code does not know: over, with
+        # no transcript.
+        raise FiletransRetryableError(f"task {status}"[:80])
     result = (output.get("results") or [{}])[0]
     url = result.get("transcription_url")
     if status == "FAILED" or result.get("subtask_status") == "FAILED" or not url:
