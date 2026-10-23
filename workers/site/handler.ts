@@ -1,6 +1,7 @@
 import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import type { ShareKind } from '../../src/share/state';
 import { handlePublicRequest, SHARED_CACHE } from './public';
+import { SHARE_READ_HEADER, shareReadHeader } from './shareRead';
 import { pageClasses, usedCss } from './usedCss';
 
 type SharePagePieces = ReturnType<
@@ -316,9 +317,16 @@ export async function handleSiteRequest(
         kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token));
       if (!(kind && id)) return failure(404);
       const apiStart = Date.now();
+      const path = `/api/public/${kind}/${token}`;
       const upstream = await fetcher(
-        new Request(`${apiOrigin}/api/public/${kind}/${token}`, {
-          headers: { Accept: 'application/json' },
+        new Request(`${apiOrigin}${path}`, {
+          headers: {
+            Accept: 'application/json',
+            [SHARE_READ_HEADER]: await shareReadHeader(
+              env.SHARE_LINK_SECRET,
+              path
+            ),
+          },
           redirect: 'manual',
           signal: AbortSignal.timeout(10_000),
         })
@@ -398,9 +406,16 @@ export async function handleSiteRequest(
     // The API takes the token, not the bare id (it verifies it again).
     const token = url.pathname.slice('/w/'.length);
     const apiStart = Date.now();
+    const path = `/api/public/workspaces/${token}/summary`;
     const upstream = await fetcher(
-      new Request(`${apiOrigin}/api/public/workspaces/${token}/summary`, {
-        headers: { Accept: 'application/json' },
+      new Request(`${apiOrigin}${path}`, {
+        headers: {
+          Accept: 'application/json',
+          [SHARE_READ_HEADER]: await shareReadHeader(
+            env.SHARE_LINK_SECRET,
+            path
+          ),
+        },
         redirect: 'manual',
         signal: AbortSignal.timeout(10_000),
       })

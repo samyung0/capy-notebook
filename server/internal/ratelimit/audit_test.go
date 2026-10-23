@@ -156,6 +156,16 @@ func TestShareReadsHaveTheirOwnBucketPerToken(t *testing.T) {
 	}
 }
 
+// The site Worker signs this same vector (workers/site/shareRead.test.ts).
+func TestShareReadHeaderMatchesTheWorker(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/public/quizzes/mat_0123456789.abc", nil)
+	r.Header.Set(ShareReadHeader, "1700000000.MHKSRYRDFEWQHrCPoR1XqkymJTrqaynfXU9zZNXv9Bs")
+	token, ok := shareReadToken(r, []byte("dev-share-link-secret-0123456789abcdef"), time.Unix(1700000000, 0))
+	if !ok || token != "mat_0123456789.abc" {
+		t.Fatalf("token %q (%v), want the Worker's header to verify", token, ok)
+	}
+}
+
 // TestBankCommentEmailsAreCapped (security regression: rate-limit audit L7).
 // Each bank comment sends an email; past a burst of 10 the next is refused,
 // while other bank routes and discussion comments pass.
