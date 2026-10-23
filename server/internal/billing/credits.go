@@ -14,6 +14,7 @@ import (
 	"github.com/stripe/stripe-go/v82/paymentintent"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/setupintent"
+	"github.com/stripe/stripe-go/v82/subscription"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -116,8 +117,23 @@ func PaymentMethodInfo(pm *stripe.PaymentMethod) store.PaymentMethod {
 		out.Last4 = pm.Card.Last4
 		out.ExpMonth = int(pm.Card.ExpMonth)
 		out.ExpYear = int(pm.Card.ExpYear)
+		if pm.Card.Fingerprint != "" {
+			out.CardKey = "card:" + pm.Card.Fingerprint
+		}
 	}
 	return out
+}
+
+// SubscriptionPaymentMethod reads the card a subscription Checkout saved as
+// the subscription's default; empty when it saved none.
+func SubscriptionPaymentMethod(subscriptionID string) (store.PaymentMethod, error) {
+	params := &stripe.SubscriptionParams{}
+	params.AddExpand("default_payment_method")
+	sub, err := subscription.Get(subscriptionID, params)
+	if err != nil || sub.DefaultPaymentMethod == nil {
+		return store.PaymentMethod{}, err
+	}
+	return PaymentMethodInfo(sub.DefaultPaymentMethod), nil
 }
 
 // TopUpPaymentMethod reads the payment method a paid top-up used.

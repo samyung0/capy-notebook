@@ -69,8 +69,8 @@ func chatQueryTooLong(text string) bool {
 
 // pipeChatEvent is one event line from the Python retrieval service.
 // Type is one of: phase | block_start | block_delta | block_end | tool_start |
-// tool_end | citations | checkpoint | turn_checkpoint | pending_sources | done |
-// error.
+// tool_progress | tool_end | citations | checkpoint | turn_checkpoint |
+// pending_sources | done | error.
 type pipeChatEvent struct {
 	Type              string                      `json:"type"`
 	SentryEventID     string                      `json:"sentryEventId,omitempty"`
@@ -88,6 +88,8 @@ type pipeChatEvent struct {
 	Effects           []agenttools.ResourceEffect `json:"effects,omitempty"`
 	StartedAt         string                      `json:"startedAt,omitempty"` // tool_start
 	EndedAt           string                      `json:"endedAt,omitempty"`   // tool_end
+	Applied           *int                        `json:"applied,omitempty"`   // tool_progress; tool_end with commands unapplied
+	Total             *int                        `json:"total,omitempty"`     // pointers so 0 survives
 	Citations         []store.Citation            `json:"citations,omitempty"`
 	Version           int                         `json:"version,omitempty"`
 	TokenCount        int                         `json:"tokenCount,omitempty"`

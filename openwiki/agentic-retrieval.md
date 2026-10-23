@@ -2722,8 +2722,15 @@ current pending changes applied. Embedded source instructions remain untrusted.
    start another planning step.
 9. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
-   `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
-   answer's own list), `done` | `error`. A `capture_page` activity block carries
+   `tool_start` / `tool_progress` / `tool_end`, versioned `citations`
+   (`final: true` on the answer's own list), `done` | `error`.
+   `tool_progress {callId, applied, total}` says how many of a running
+   call's commands are applied, out of how many; a call may send any number
+   between its start and end (Epo 2026-10-23, Q171: the frame later
+   debounced edits reuse). Today only an Office edit the engine cut at a
+   per-call limit sends one (Office tools, below), and its `tool_end` comes
+   later; a `tool_end` carries `applied` and `total` only for a call that
+   ended with commands unapplied, and the stored tool block keeps them. A `capture_page` activity block carries
    `capture: {page, bbox, bytes}` so the frontend can show "Looked at page 4".
    A tool row's `detail` is a human label at most 240 characters long
    (`agent._describe`, 2026-10-15): the file or material title for
@@ -2762,7 +2769,11 @@ current pending changes applied. Embedded source instructions remain untrusted.
    running, past tense when done, "Couldn't …" in the error colour with the
    `toolErrorMessage` reason below on failure, muted with a question icon for
    `outcome_unknown`, "Stopped while …" after a stop. The running row is the
-   newest tool without an outcome while the message streams; only its icon
+   newest tool without an outcome while the message streams, and any tool
+   that sent `tool_progress` runs until its outcome too, its count ("30 of
+   32", `chat_step_progress`) muted after the sentence on the sentence's
+   baseline (both `self-baseline`, the icon centred; Epo 2026-10-24); only
+   its icon
    moves (no title shimmer), and reduced motion stops it. Thinking rows come
    from gaps of 400ms or more between steps (the tool blocks'
    `startedAt`/`endedAt` and the message's `createdAt`); a live "Thinking" row
@@ -2788,7 +2799,14 @@ current pending changes applied. Embedded source instructions remain untrusted.
    edit without an Undo ref (no loaded room took it, its Undo would be too
    large to send, or a reload after its room unloaded) keeps its strip without
    the button; a reopened conversation shows created files without Undo or
-   Redo (Epo 2026-10-20).
+   Redo (Epo 2026-10-20). A cut Office edit (Office tools, below) gets its
+   receipt when its row closes, as a plain edit's after the next edit of its
+   file, or, when the turn left commands unapplied, with a small warning
+   icon after the sentence (the app's `alert` icon in the warning tint,
+   focusable like the question editor's `IssueIcon`) whose Tooltip and
+   label say "N commands not applied" (`chat_step_not_applied`; Epo
+   2026-10-24), hidden while the edit is undone; its Undo and Redo are any
+   edit's (Epo 2026-10-23, Q171).
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
@@ -3165,7 +3183,8 @@ build, and the knowledge library is one more source while the switch is on.
   final tools-off response, reported as `stall` and logged with the count of
   writes landed. Each of the first two errored writes raises that threshold
   by two, to at most nine. Empty nonterminal responses count as stalls. The
-  loop counts landed writes itself from the `tool_end` outcomes; nothing about
+  loop counts landed writes itself from each call's activity block outcome
+  (a cut Office edit's `tool_end` may come in a later batch); nothing about
   the budget is stored. When the next response is the last with tools (the
   planning cap's second to last, or the stall guard one response short), every
   tool result of the current response ends with `agent.LAST_TOOLS_NOTICE`: the
@@ -4192,23 +4211,33 @@ A DOCX target id is `<story>:paragraph:<paraId>`. A file without
 read `body:paragraph:body:p9`; they stay while the room lives, and an export
 gives the paragraphs it rewrites hex paraIds, which a reopened file keeps. In
 UAT (2026-10-22) the agent sent the bare paraId (`body:p9`, and `body:t0` for
-a table) after reading; every command now refuses an id that is not one as
-`unavailable_target`, naming the read's id when it is a paragraph's bare
-paraId (a table's slot `body:t0`: the table's id; a story id such as a cell's
-`body:t0:r0c0`: its first paragraph's) and telling the agent to copy ids whole from a read (`DocxSession::split`
-in `docx/agent.rs`), and an insert's anchor gets that refusal before the
-body-only one. In the 2026-10-23 playground check the agent still sent
-`body:t0` for a table, so `delete_table`, the one command that takes a
-table, also takes a table's short id `<story>:t<n>` (Epo 2026-10-23): the
-slot its cells' stories name (`body:t0` for cell `body:t0:r0c0`), which
-cell stories carry whether or not the file has `w14:paraId`. It stands for
-the read's id of the story's one table with a cell in that slot; naming
-none, or several (a row added to a table names its cells from the table's
-place, docx-edit `table_base`, so a table inserted before another can
-share a slot with its new rows), it is refused like a paragraph command's
-short id, naming each table's read id. The same rule in `split` gives the
-paragraph commands' refusal its table id; paragraph ids still need their
-full form.
+a table) after reading, and in the MiniMax probe (2026-10-23) it sent
+`body:p6` first in 12 of 15 DOCX edits. A short paragraph id, the paraId
+alone, stands for the one paragraph of its story it names (Epo 2026-10-24,
+Q222): a seeded paraId names its story (`body:p9`; a cell's
+`body:t0:r0c0:p0`), any other paraId alone a body paragraph. `delete_table`,
+the one command that takes a table, also takes a table's short id
+`<story>:t<n>` (Epo 2026-10-23): the slot its cells' stories name (`body:t0`
+for cell `body:t0:r0c0`), which cell stories carry whether or not the file
+has `w14:paraId`. It stands for the read's id of the story's one table with
+a cell in that slot. A short id naming several is refused as
+`unavailable_target`, naming each one's read id: two people splitting one
+paragraph at once leave its paraId on both first halves until the editor
+renames them (the whole id names the first), and a row added to a table
+names its cells from the table's place (docx-edit `table_base`), so a table
+inserted before another can share a slot with its new rows. A table's short
+id naming no table of a story that exists, and a deleted table's whole id
+(its cell's story went with it), are `the table is no longer in the
+document`; a whole paragraph id the story no longer holds is `the paragraph
+is no longer in the document`. Any other id is malformed (Epo 2026-10-24,
+Q223; the probe sent `t0` to `delete_table`): `invalid_input` saying it is a
+malformed DOCX paragraph or table id, then the read's id for what it names (a
+table's slot in a paragraph command: the table's id; a story id such as a
+cell's `body:t0:r0c0`: its first paragraph's), else the body's first
+paragraph's id (a table command: the body's first table's short and read
+ids), and telling the agent to copy ids whole from a read
+(`DocxSession::split` in `docx/agent.rs`, `malformed_id` in `common.rs`); an
+insert's anchor gets that refusal before the body-only one.
 
 Retries (Epo 2026-10-20, review finding 3): the retrieval service posts an
 Office edit again under the same operation id when its 10 s timeout passes
@@ -4277,6 +4306,22 @@ the run's `b`, `i`, `u` (`sng`/`none`), `strike`
 `set_alignment` writes `algn` (`l`, `ctr`, `r`, `just`). New slides and
 shapes get ids the call cannot know, so the agent reads again before
 filling them.
+
+PPTX ids (pptx-edit's seed and `next_id`): a slide's is
+`slide:<index>:<sldId>` from the file or `slide:<client>:<counter>` for one
+added since; a shape's `<slide id>:shape:<path>` on one of the file's slides
+(`2.0` in a group) or `shape:<client>:<counter>`; a paragraph's
+`para:story:<shape id>:0:<n>` (a table cell's
+`para:story:<shape id>:table:<row>:<column>:<n>`) or
+`para:<client>:<counter>`. An id of that form the deck does not hold is
+`unavailable_target` ("slide … is no longer in the deck", "the shape is no
+longer in the deck", "the paragraph is no longer in the deck"). Any other id
+(the MiniMax probe sent a slide's `259`, shapes' `14945076102458:1`,
+`slide:14945076102458:0:shape:1` and `Google Shape;71;p16`) is
+`invalid_input` saying it is a malformed slide, shape or PPTX paragraph id,
+with the deck's first slide id or the first shape or paragraph id a read
+shows (Epo 2026-10-24, Q223; `slide_index`, `shape_story` and
+`paragraph_refusal` in `pptx/agent.rs`).
 
 The PPTX read (`inspect_scoped` in `pptx/agent.rs`) reads the slides it
 shows (`slide_scope`), never the whole deck. Without `slide` it pages the
@@ -4372,7 +4417,23 @@ notice with `Not applied: the commands at indexes N to M (counting from 0),
 past the limit of … a call; send them in another call.` (after a create
 command the indexes start at 1, the agent's call counting it); a first
 command alone past one is refused as `invalid_input`. The retrieval service
-counts nothing: its result passes the receipt's notice through. Measured at
+counts nothing: its result passes the receipt's notice through, and it reads
+the notice's N as the commands applied of the call's commands
+(`ToolResult.progress`, `tools._NOT_APPLIED`). Such a cut call's chat row
+stays in progress (Epo 2026-10-23, Q171): `agent._office_frames` sends
+`tool_progress {applied: N, total}` instead of its `tool_end` and keeps its
+activity block, which holds the counts as the state a turn ending now
+leaves (checkpoints save it so), in `ToolContext.cut_edits` by file id. The
+turn's next `edit_office_document` that lands on the same file (a create's
+file included; a refused or failed one does not count; an unrelated edit of
+that file closes it early, accepted) sends its own frames, then the cut
+call's `tool_end` as a plain success, counts dropped from its block. A cut
+call no later edit followed closes before the turn's `done` or `error`
+(`agent.close_cut_edits`, also on `service.py`'s generic failure) with
+`applied` and `total` on its `tool_end` and block, so the row ends with a
+warning icon saying how many commands were not applied, live and after a
+reload. A stop sends nothing
+more: the saved block keeps its counts. Measured at
 each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`,
 `bench_pptx.py` (a 60-slide deck) and `bench_pptx500.py` (50 commands of
 each PPTX type on a 500-slide deck, against 10 s).

@@ -905,7 +905,8 @@ export const GetBillingResponse = zod.object({
   "reloadAmountCents": zod.int(),
   "reloadThresholdMicros": zod.int(),
   "spendingLimitCents": zod.int().optional(),
-  "spentThisMonthCents": zod.int()
+  "spentThisMonthCents": zod.int(),
+  "starterAvailable": zod.boolean()
 }),
   "creditsCarriedMicros": zod.int(),
   "creditsLimitMicros": zod.int(),
@@ -1220,6 +1221,7 @@ export const ListMessagesParams = zod.object({
 
 export const ListMessagesResponseItem = zod.object({
   "activity": zod.array(zod.object({
+  "applied": zod.int().optional(),
   "callId": zod.string().optional(),
   "capture": zod.object({
   "bbox": zod.array(zod.int()).nullable(),
@@ -1261,7 +1263,8 @@ export const ListMessagesResponseItem = zod.object({
   "name": zod.string().optional(),
   "outcome": zod.enum(['succeeded', 'refused', 'failed', 'cancelled', 'outcome_unknown']).optional(),
   "startedAt": zod.iso.datetime({"offset":true}).optional(),
-  "text": zod.string().optional()
+  "text": zod.string().optional(),
+  "total": zod.int().optional()
 })).nullish(),
   "citations": zod.array(zod.object({
   "chunkId": zod.string().optional(),

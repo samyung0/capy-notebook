@@ -317,6 +317,9 @@ async def run_agent(
             client=client,
             script=script,
         ):
+            if event["type"] in ("done", "error"):
+                for frame in close_cut_edits(ctx):
+                    yield frame
             if event["type"] == "error":
                 with_turn_state(event, ctx)
             ended = ended or event["type"] in ("done", "error")
@@ -856,16 +859,16 @@ async def _run_turn(
                     if event.get("type") == "_tool_message":
                         continue
                     if event.get("type") == "activity":
-                        activity.append(event["block"])
+                        # Counted by block: a cut Office edit's tool_end
+                        # comes in a later batch, or at the turn's end.
+                        block = event["block"]
+                        activity.append(block)
+                        if block["callId"] in write_calls:
+                            if block["outcome"] == "succeeded":
+                                writes += 1
+                            else:
+                                write_errors += 1
                         continue
-                    if (
-                        event.get("type") == "tool_end"
-                        and event.get("callId") in write_calls
-                    ):
-                        if event.get("outcome") == "succeeded":
-                            writes += 1
-                        else:
-                            write_errors += 1
                     yield event
             except pending.SourceChanged as exc:
                 yield _with_usage(events.error(str(exc), exc.code))
@@ -1244,6 +1247,53 @@ def _tool_end(call: ToolCall, result: ToolResult, run: _Run) -> dict[str, Any]:
     )
 
 
+def _office_frames(
+    ctx: ToolContext,
+    name: str,
+    result: ToolResult,
+    end: dict[str, Any],
+    block: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """A call's closing frames. An Office edit the engine cut at a per-call
+    limit sends tool_progress instead and its row stays in progress, its block
+    keeping the counts a turn ending now leaves it with; the turn's next
+    landed edit of the same file closes it as done after its own frames (Epo
+    2026-10-23, Q171)."""
+    if name != "edit_office_document" or not result.effects:
+        return [end]
+    file_id = str((result.effects[0].get("resource") or {}).get("id") or "")
+    earlier = ctx.cut_edits.pop(file_id, None)
+    frames = [end]
+    if result.progress:
+        block["applied"], block["total"] = result.progress
+        ctx.cut_edits[file_id] = block
+        frames = [events.tool_progress(block["callId"], *result.progress)]
+    if earlier:
+        del earlier["applied"], earlier["total"]
+        frames.append(_closing_end(earlier))
+    return frames
+
+
+def _closing_end(block: dict[str, Any]) -> dict[str, Any]:
+    """The tool_end of a cut Office edit, as its block stands."""
+    return events.tool_end(
+        block["callId"],
+        block["outcome"],
+        effects=block.get("effects"),
+        ended_at=block["endedAt"],
+        applied=block.get("applied"),
+        total=block.get("total"),
+    )
+
+
+def close_cut_edits(ctx: ToolContext) -> list[dict[str, Any]]:
+    """At the turn's end, the Office edits still cut close with their counts:
+    the rows show the commands not applied."""
+    frames = [_closing_end(block) for block in ctx.cut_edits.values()]
+    ctx.cut_edits.clear()
+    return frames
+
+
 async def _run_tools(
     calls: list[ToolCall],
     ctx: ToolContext,
@@ -1316,9 +1366,11 @@ async def _run_tools(
         results.append((call, result))
         run = runs[call_id]
         _keep_evidence(call, result)
+        end = _tool_end(call, result, run)
+        block = _activity(call, name, run, result, ctx)
         return [
-            _tool_end(call, result, run),
-            {"type": "activity", "block": _activity(call, name, run, result, ctx)},
+            *_office_frames(ctx, name, result, end, block),
+            {"type": "activity", "block": block},
         ]
 
     if work:
