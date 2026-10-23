@@ -1171,7 +1171,7 @@ Seven limits are checked on the real content during ingest. A file over one is
 not failed: the worker raises `InputLimitError(code)`, the job and its attempt
 fail with that `error_code` (logged at info, no Sentry event), and the file
 ends `ready`, `indexed=false`, with `files.index_limit` set to the code
-(migrations `0072`, `0081`, `0089`, `0110`). It opens, downloads, edits and clones like any file; only
+(migrations `0072`, `0081`, `0089`, `0109`). It opens, downloads, edits and clones like any file; only
 search, chat and generate skip it. The file banner and the upload panel say it
 is too large to index (`files_not_indexed_too_large`; for `element_limit`,
 `files_not_indexed_too_many_elements`, and the upload panel also raises one

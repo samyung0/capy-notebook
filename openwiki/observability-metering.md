@@ -1285,7 +1285,7 @@ tokens only.
 
 Audio is priced per second. `audio_transcription_second` (uploads) and
 `voice_input_second` (chat voice input) are both 16,667 microcredits a second,
-one credit a minute (version 1, `0110_audio_transcription.sql`, Epo's proposal
+one credit a minute (version 1, `0109_audio_transcription.sql`, Epo's proposal
 of 2026-10-23 at two to three times the standard markup because transcription
 capacity is capped). An upload's charge is whole seconds of the worker's
 `ffprobe` duration (ceil) at the job's snapshotted rate, settled only when the

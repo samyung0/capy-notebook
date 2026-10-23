@@ -139,7 +139,7 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql", "0110_audio_transcription.sql"} {
+	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql", "0109_audio_transcription.sql"} {
 		body, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
