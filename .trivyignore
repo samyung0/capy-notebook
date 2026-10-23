@@ -1,0 +1,4 @@
+# OS-package advisories the image scan (.github/workflows/audit.yml,
+# scripts/ci/trivy-image.sh) skips: one CVE id per line, with a comment
+# saying why it has to wait and which image. Prefer bumping the base image;
+# drop an entry once its fix lands.

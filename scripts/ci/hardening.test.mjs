@@ -2,8 +2,8 @@
 // third-party actions pinned by commit, a limited token per workflow, no token
 // left in git config after checkout, no expression expanded inside a run
 // script, secrets only on the steps that use them and each by name, a
-// vulnerability job per ecosystem, and no workers.dev or preview URL for any
-// Worker.
+// vulnerability job per ecosystem on every push and daily, an image scan, and
+// no workers.dev or preview URL for any Worker.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -147,18 +147,34 @@ test('the SPA build job renders only the build values; the deploy job renders th
   assert.deepEqual(renders(jobs.deploy), ['render']);
 });
 
-test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies', () => {
-  const steps = Object.values(parse(read('.github/workflows/ci.yml')).jobs)
-    .filter((job) => !job['continue-on-error'])
-    .flatMap((job) => job.steps)
-    .filter((step) => !step['continue-on-error'])
-    .map((step) => step.run ?? '');
+test('CI fails on known vulnerabilities in the Rust, Go, pnpm and Python dependencies, on every push and daily', () => {
+  const audit = parse(read('.github/workflows/audit.yml'));
+  assert.deepEqual(
+    ['push', 'pull_request', 'schedule'].filter(
+      (event) => !(event in audit.on)
+    ),
+    []
+  );
+  const jobs = Object.values(audit.jobs).filter(
+    (job) => !job['continue-on-error']
+  );
+  const runs = (selected) =>
+    selected
+      .flatMap((job) => job.steps)
+      .filter((step) => !step['continue-on-error'])
+      .map((step) => step.run ?? '');
+  // The ecosystem audits run on every event, not only the schedule.
+  const everyEvent = runs(jobs.filter((job) => job.if === undefined));
   for (const command of AUDITS) {
     assert(
-      steps.some((run) => command.test(run)),
+      everyEvent.some((run) => command.test(run)),
       String(command)
     );
   }
+  assert(
+    runs(jobs).some((run) => run.includes('scripts/ci/trivy-image.sh')),
+    'image scan'
+  );
 });
 
 test('no Worker publishes a workers.dev or preview URL, with or without --env', () => {
