@@ -108,3 +108,4 @@
 - Developer Epo decided (2026-10-23) losing Coolify's alerts is accepted on UAT (failed deploys show as failed runs); before production launch, an external uptime monitor on the API and collaboration health endpoints and an app-host view in Ops (disk, memory, swap, container restarts); Epo may build a small Discord bot for alerts later.
 - Developer Epo decided (2026-10-23) production's unused public web ports close now, independent of the Coolify removal.
 - Developer Epo decided (2026-10-23) the app database gets a nightly pg_dump to B2 before launch, as the library database does, planned separately from the Coolify removal.
+- Developer Epo decided (2026-10-23) every AI provider key (Anthropic, OpenAI, DeepSeek, DeepInfra, OpenRouter, Jev) carries a hard monthly spending cap set in its provider dashboard, so a leaked key has a bounded cost.
