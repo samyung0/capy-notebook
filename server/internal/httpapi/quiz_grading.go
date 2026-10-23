@@ -147,9 +147,34 @@ func (a *api) grade(ctx context.Context, plan gradePlan) ([]map[string]any, floa
 	return graded, correct, total, usage, nil
 }
 
-// gradeSignedIn grades for a signed-in learner and records Jev's usage,
-// uncharged. A failed usage write must not discard grades the learner waited for.
+// gradingLimitError is the refusal past the signed-in daily part cap.
+func gradingLimitError() error {
+	return &huma.ErrorModel{
+		Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
+		Detail: "today's grading limit is reached; it resets at midnight UTC", Errors: []*huma.ErrorDetail{{Message: "grading_limit"}},
+	}
+}
+
+// reserveGrading counts parts against the signed-in user's daily cap before
+// any Jev call.
+func (a *api) reserveGrading(ctx context.Context, parts int) error {
+	if err := a.s.ReserveGrading(ctx, userID(ctx), parts); errors.Is(err, store.ErrGradingLimit) {
+		return gradingLimitError()
+	} else if err != nil {
+		return hErr(err)
+	}
+	return nil
+}
+
+// gradeSignedIn grades for a signed-in learner under the daily part cap and
+// records Jev's usage, uncharged. A failed usage write must not discard
+// grades the learner waited for.
 func (a *api) gradeSignedIn(ctx context.Context, plan gradePlan, workspaceID string, metadata map[string]any) ([]map[string]any, float64, float64, error) {
+	if len(plan.open) > 0 {
+		if err := a.reserveGrading(ctx, len(plan.open)); err != nil {
+			return nil, 0, 0, err
+		}
+	}
 	graded, correct, total, usage, err := a.grade(ctx, plan)
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})
@@ -201,11 +226,16 @@ type gradedQuizOutput struct {
 // for a quiz embedded in a shared note, POST
 // /api/public/notes/{token}/quizzes/{quizId}/grade, reached directly, not
 // through the site Worker. Nothing is stored; the daily caps key on the client
-// IP and count only the open parts Jev grades.
+// address (an IPv6 /64) and the shared item, and count only the open parts Jev
+// grades. A forged token is refused before the body is read.
 func (a *api) registerAnonymousGrading(api huma.API) {
 	clientIP := huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		if _, ok := a.s.VerifyShareToken(ctx.Param("token")); !ok {
+			_ = huma.WriteErr(api, ctx, http.StatusNotFound, "not found")
+			return
+		}
 		r, _ := humachi.Unwrap(ctx)
-		next(huma.WithValue(ctx, clientIPKey{}, obs.ClientIP(r)))
+		next(huma.WithValue(ctx, clientIPKey{}, obs.ClientAddress(r)))
 	}}
 	huma.Register(api, huma.Operation{
 		OperationID: "gradeAnonymousQuiz", Method: http.MethodPost, Path: "/api/public/quizzes/{token}/grade",
@@ -234,7 +264,7 @@ func (a *api) gradeAnonymousQuiz(ctx context.Context, in *gradeAnonymousQuizInpu
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, quiz.Questions, in.Body)
+	return a.gradeAnonymous(ctx, id, quiz.Questions, in.Body)
 }
 
 // gradeAnonymousNoteQuiz grades a quiz the shared note embeds and references;
@@ -248,12 +278,12 @@ func (a *api) gradeAnonymousNoteQuiz(ctx context.Context, in *gradeAnonymousNote
 	if err != nil {
 		return nil, storedContentError(ctx, id, err)
 	}
-	return a.gradeAnonymous(ctx, stored, in.Body)
+	return a.gradeAnonymous(ctx, id, stored, in.Body)
 }
 
 // gradeAnonymous grades a signed-out attempt against the stored questions
-// under the anonymous daily caps.
-func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuizOutput, error) {
+// under the anonymous daily caps; linkID is the shared item.
+func (a *api) gradeAnonymous(ctx context.Context, linkID string, stored json.RawMessage, body apimodel.GradeAnonymousQuizReq) (*gradedQuizOutput, error) {
 	qs, err := decodeStoredQuestions(stored)
 	if err != nil {
 		return nil, hErr(err)
@@ -269,7 +299,7 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 		}
 		ip, _ := ctx.Value(clientIPKey{}).(string)
 		ipHash = a.s.AnonymousIPHash(ip)
-		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
+		if err := a.s.ReserveAnonymousGrading(ctx, ipHash, linkID, body.LocalID, len(plan.open)); errors.Is(err, store.ErrAnonymousGradingLimit) {
 			return nil, &huma.ErrorModel{
 				Status: http.StatusTooManyRequests, Title: http.StatusText(http.StatusTooManyRequests),
 				Detail: "sign in to keep grading open answers today", Errors: []*huma.ErrorDetail{{Message: "anonymous_grading_limit"}},
@@ -287,7 +317,7 @@ func (a *api) gradeAnonymous(ctx context.Context, stored json.RawMessage, body a
 		return nil, huma.Error422UnprocessableEntity("there are no questions to grade")
 	}
 	if len(plan.open) > 0 {
-		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
+		if err := a.s.RecordAnonymousGradingUsage(ctx, ipHash, linkID, body.LocalID, usage.InputTokens, jev.CostMicroUSD(usage.InputTokens)); err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"surface": "anonymous_quiz"})
 		}
 	}
@@ -333,6 +363,9 @@ func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheck
 			continue
 		}
 		items, _ := questions.MarkItems(p)
+		if err := a.reserveGrading(ctx, 1); err != nil {
+			return nil, err
+		}
 		probability, usage, err := a.jev.RequiresComputation(ctx, questions.GradingText(in.Body.Question, i), items)
 		if err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})

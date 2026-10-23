@@ -449,7 +449,7 @@ func main() {
 			if err := st.PruneUploadSessions(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune upload sessions: %v", err)
 			}
-			if err := st.PruneAnonymousGradingUsage(ctx); err != nil && ctx.Err() == nil {
+			if err := st.PruneGradingUsage(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune anonymous grading usage: %v", err)
 			}
 			if err := st.PruneEditIncidents(ctx); err != nil && ctx.Err() == nil {
