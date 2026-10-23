@@ -1188,7 +1188,7 @@ Indexing tab lists the change as failed.
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
 | `element_limit` | Image placements, vector paint operators (PDF); table rows, pictures, shapes (DOCX/PPTX) | `odl/elements.py`: 250,000 placements a file and 40,000 a page, 2,000,000 paints; 2,000 each in Office | No |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
-| `audio_duration_limit` | `ffprobe` duration of an audio upload, before any provider task | 2 hours (`sourceupload.AudioMaxDurationSeconds`, generated into `pipeline/generated/limits.py`), the provider's limit with speaker labels | The browser reads the length and blocks submit past the policy's `audioMaxDurationSeconds`; the upload request refuses a claimed `durationSeconds` past it. Imports and unreadable lengths are only checked by the worker. |
+| `audio_duration_limit` | Length of an audio upload measured from its packets (ffmpeg in the decoder sandbox), before any provider task; also where the returned transcript's speech ends | 2 hours (`sourceupload.AudioMaxDurationSeconds`, generated into `pipeline/generated/limits.py`), the provider's limit with speaker labels | The browser reads the length and blocks submit past the policy's `audioMaxDurationSeconds`; the upload request refuses a claimed `durationSeconds` past it. Imports and unreadable lengths are only checked by the worker. |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
 | `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |
 
@@ -1320,8 +1320,14 @@ transcript (`derived-text/<sha>/qwen-audio-3.1-filetrans.json`, registered as
 `derived_text` in `artifact_cache`, sentences with times and speakers) is
 reused with no task and no charge. Otherwise, in one ingest attempt:
 
-1. `ffprobe` measures the downloaded source; over two hours is the
-   `audio_duration_limit` index limit, before any task or charge.
+1. ffmpeg measures the downloaded source under the decoder sandbox's policy
+   (`decode.audio_seconds`, deployment-runbook §7.5): it copies every packet
+   of the first audio stream to the null muxer, nothing decoded, and reports
+   where the last one ends, so a WebM with no duration in its header (what
+   browser recorders write) or an MP4 whose header boxes name a shorter one
+   is measured all the same. An MP4 edit list still applies, as in playback.
+   Over two hours is the `audio_duration_limit` index limit, before any task
+   or charge; a file ffmpeg cannot read fails at once.
 2. The worker signs a GET link for that one source object, valid as long as
    the task's wall budget (15 minutes); it is the only way the task reads the
    audio.
@@ -1340,9 +1346,12 @@ reused with no task and no charge. Otherwise, in one ingest attempt:
    The attempt polls `{host}/api/v1/tasks/{id}` every 2 s, then reads the
    result JSON from the task's `transcription_url` (Alibaba's own signed link,
    fetched without the API key and without logging its URL).
-5. Only a transcript with sentences is charged: whole seconds of the measured
-   duration (ceil) at the job's snapshotted `audio_transcription_second` rate,
-   settled locally on the ingest session with `units` / `unit = 'seconds'`.
+5. Only a transcript with sentences is charged: whole seconds (ceil) of the
+   measured duration or the last sentence's end, whichever is later, at the
+   job's snapshotted `audio_transcription_second` rate, settled locally on the
+   ingest session with `units` / `unit = 'seconds'`. A transcript whose speech
+   ends past two hours is the `audio_duration_limit` index limit instead:
+   nothing is charged or cached, though the provider task ran.
    A job pays for its audio once: a later call on the same session (a retry
    whose cached transcript was lost) records its seconds at zero credits.
    Then the transcript is cached (best effort, as below).

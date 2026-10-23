@@ -2476,11 +2476,12 @@ child confines itself right after its `setsid`.
 | Parse child (persistent) | the API's, without `PARSER_TOKEN` | 2 GiB soft address space | none (600 s per document) | 256 | 512 MiB | `setsid` | reads its code, the system trees and Java's jars; writes its slot folder |
 | LibreOffice (`soffice.bin`) | `PATH`, `LANG`, `HOME` and `TMPDIR` (its job folder), `MALLOC_ARENA_MAX=2` | the parse child's, inherited | 180 s | 256 | 256 MiB | `setsid`, `setpgid`, new processes | reads the system trees; writes its job folder, its IPC pipe included |
 | Java (OpenDataLoader) | `PATH`, `HOME`, `LANG`, `MALLOC_ARENA_MAX=2`; `-XX:ActiveProcessorCount` from the container's CPU quota | 2 GiB data, address space lifted | 2,400 s behind the 600 s deadline | 256 | 512 MiB | `setsid`, `setpgid`, new processes | reads the system trees, its jars and its PDF; writes its output folder |
-| Ingest decode helper (`pipeline/ingest/decode.py`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
+| Ingest decode helper (`pipeline/ingest/decode.py`), and ffmpeg measuring an audio upload (`decode.audio_seconds`) | `PYTHONPATH` | 768 MiB data | 120 s, 120 s deadline | 64 | 0 (answers on a pipe, at most 32 MiB; ffmpeg's progress report at most 1 MiB) | `setsid`, `setpgid`, new processes | reads its code and its one input file |
 
 Core dumps are off for all of them. The ingest worker never imports MuPDF or
 Pillow: PDF page text and heading evidence, image captions and card thumbnails
-all come from the helper. The helper has no network through seccomp; the
+all come from the helper, and an audio upload's length from ffmpeg under the
+helper's policy. The helper has no network through seccomp; the
 worker's uid gets no nftables rule, which would cut the worker's own traffic.
 The parser's uid-10001 rule (§7.4) stays as its outer layer. The sandboxed JVM
 reads neither `/sys` nor `/proc`, so the parser reads the container's CPU quota

@@ -16,7 +16,6 @@ import logging
 import math
 import mimetypes
 import re
-import subprocess
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -295,27 +294,13 @@ async def _source_lock(identity: str) -> AsyncIterator[None]:
 
 
 def audio_duration_seconds(path: Path) -> float:
+    """The source's length from its packets, read by ffmpeg in the decoder
+    sandbox (ingest/decode.py)."""
     try:
-        result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(path),
-            ],
-            capture_output=True,
-            check=True,
-            text=True,
-            timeout=30,
-        )
-        duration = float(result.stdout.strip())
-    except (FileNotFoundError, subprocess.SubprocessError, ValueError) as exc:
+        duration = decode.audio_seconds(path)
+    except decode.DecodeFailed as exc:
         raise TerminalError("audio duration could not be read") from exc
-    if not math.isfinite(duration) or duration <= 0:
+    if duration <= 0:
         raise TerminalError("audio duration could not be read")
     return duration
 
@@ -453,7 +438,8 @@ async def transcribe_audio_source(
     A cached transcript of the same bytes is reused. Otherwise the measured
     duration is checked against the two-hour limit, one Filetrans task runs
     under the 12-task gate, and only a usable transcript is charged: whole
-    seconds of the measured duration at the job's snapshotted rate.
+    seconds of the measured duration or the last sentence's end, whichever
+    is later, at the job's snapshotted rate.
     """
     key = audio_artifact_key(source_sha256)
     async with _source_lock(f"filetrans:{source_sha256}"):
@@ -469,7 +455,6 @@ async def transcribe_audio_source(
             raise InputLimitError(
                 "audio_duration_limit", "audio is longer than the two-hour limit"
             )
-        seconds = math.ceil(duration)
         # Read-only, this one object, and no longer than the task may run.
         source_url = await asyncio.to_thread(
             blobstore.presign_get, blob_path, FILETRANS_TIMEOUT_S
@@ -497,6 +482,15 @@ async def transcribe_audio_source(
                 ) from exc
             if not sentences:
                 raise TerminalError("audio has no speech to transcribe")
+            # Where the speech ends is a floor under the measured length (an
+            # edit list can shorten what ffmpeg reads; the provider may not
+            # apply it). Speech past two hours is the same limit, uncharged.
+            spoken = max(sentence["end_ms"] for sentence in sentences) / 1000
+            if spoken > AUDIO_MAX_DURATION_SECONDS:
+                raise InputLimitError(
+                    "audio_duration_limit", "audio is longer than the two-hour limit"
+                )
+            seconds = math.ceil(max(duration, spoken))
             await accounting.settle_units(
                 call_id=call_id,
                 kind=accounting.KIND_AUDIO,

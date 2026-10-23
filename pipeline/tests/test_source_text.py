@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import struct
+import subprocess
 import threading
 from contextlib import asynccontextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -401,6 +406,114 @@ async def test_audio_over_two_hours_is_an_index_limit_before_any_task(monkeypatc
 
     assert limit.value.code == "audio_duration_limit"
     assert events == []
+
+
+@pytest.mark.asyncio
+async def test_speech_past_the_measured_length_is_billed_to_its_end(monkeypatch):
+    def long_speech():
+        return [{"start_ms": 0, "end_ms": 90_400, "speaker": 0, "text": "Hello."}]
+
+    events = _audio_flow(monkeypatch, transcribe=long_speech)
+
+    await _transcribe()
+
+    # Measured 60.2 s, speech ends at 90.4 s: 91 seconds are charged.
+    assert ("settle", 91, "seconds", 91 * 16_667) in events
+
+
+@pytest.mark.asyncio
+async def test_speech_past_two_hours_is_the_index_limit_uncharged(monkeypatch):
+    def past_the_limit():
+        end = (2 * 60 * 60 + 1) * 1000
+        return [{"start_ms": 0, "end_ms": end, "speaker": 0, "text": "Hello."}]
+
+    events = _audio_flow(monkeypatch, transcribe=past_the_limit)
+
+    with pytest.raises(jobs.InputLimitError) as limit:
+        await _transcribe()
+
+    assert limit.value.code == "audio_duration_limit"
+    assert [event[0] for event in events] == ["open", "task", "abandon", "release"]
+    key = source_text.audio_artifact_key("ab" * 32)
+    assert source_text.blobstore.read_bytes(key) is None
+
+
+# The pipeline image installs ffmpeg, and so does CI; elsewhere these skip.
+needs_ffmpeg = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None and "CI" not in os.environ,
+    reason="ffmpeg is not installed",
+)
+
+
+def _ffmpeg(*args: str) -> None:
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-y", *args], check=True, timeout=60
+    )
+
+
+def _header_seconds(path: Path) -> str:
+    """What ffprobe reads from the container's header."""
+    return subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration"]
+        + ["-of", "default=nw=1:nk=1", str(path)],
+        capture_output=True,
+        check=True,
+        text=True,
+        timeout=60,
+    ).stdout.strip()
+
+
+def _shorten_header(path: Path, factor: int) -> None:
+    """Divide the duration in an MP4's mvhd, tkhd and mdhd boxes (version
+    0) by ``factor``, leaving every sample in place."""
+    data = bytearray(path.read_bytes())
+    offsets = {b"mvhd": 16, b"tkhd": 20, b"mdhd": 16}
+
+    def walk(start: int, end: int) -> None:
+        while start + 8 <= end:
+            size, kind = struct.unpack(">I4s", data[start : start + 8])
+            if kind in (b"moov", b"trak", b"mdia"):
+                walk(start + 8, start + size)
+            elif kind in offsets:
+                assert data[start + 8] == 0, "version 0 box expected"
+                at = start + 8 + offsets[kind]
+                (duration,) = struct.unpack(">I", data[at : at + 4])
+                data[at : at + 4] = struct.pack(">I", duration // factor)
+            start += size
+
+    walk(0, len(data))
+    path.write_bytes(data)
+
+
+@needs_ffmpeg
+def test_a_recording_without_a_duration_is_measured_from_its_packets(tmp_path):
+    """A browser recorder's WebM names no duration in its header."""
+    source = tmp_path / "recording.webm"
+    _ffmpeg(
+        "-f", "lavfi", "-i", "sine=duration=30", "-c:a", "libopus",
+        "-f", "webm", "-live", "1", str(source),
+    )  # fmt: skip
+
+    assert _header_seconds(source) == "N/A"
+    assert 29.9 < source_text.audio_duration_seconds(source) < 30.1
+
+
+@needs_ffmpeg
+def test_an_mp4_header_naming_a_shorter_duration_is_not_believed(tmp_path):
+    source = tmp_path / "lecture.m4a"
+    _ffmpeg("-f", "lavfi", "-i", "sine=duration=30", "-c:a", "aac", str(source))
+    _shorten_header(source, 60)
+
+    assert float(_header_seconds(source)) < 1
+    assert 29.9 < source_text.audio_duration_seconds(source) < 30.1
+
+
+def test_a_file_without_an_audio_stream_has_no_duration(tmp_path):
+    source = tmp_path / "notes.mp3"
+    source.write_bytes(b"not audio at all")
+
+    with pytest.raises(TerminalError, match="duration could not be read"):
+        source_text.audio_duration_seconds(source)
 
 
 @pytest.mark.asyncio

@@ -1287,9 +1287,12 @@ Audio is priced per second. `audio_transcription_second` (uploads) and
 `voice_input_second` (chat voice input) are both 16,667 microcredits a second,
 one credit a minute (version 1, `0109_audio_transcription.sql`, Epo's proposal
 of 2026-10-23 at two to three times the standard markup because transcription
-capacity is capped). An upload's charge is whole seconds of the worker's
-`ffprobe` duration (ceil) at the job's snapshotted rate, settled only when the
-transcript has sentences; a failed, retried or empty task is free, and a job
+capacity is capped). An upload's charge is whole seconds (ceil) of the
+worker's measured duration (ffmpeg reading every packet, not the container
+header) or the last sentence's end, whichever is later, at the job's
+snapshotted rate, settled only when the transcript has sentences; a failed,
+retried or empty task is free, as is a transcript whose speech ends past two
+hours (`audio_duration_limit`), and a job
 pays for its audio once (a later call on the same session, after a lost cache,
 settles at zero). `GET /api/source-upload-policy` also returns
 `audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
