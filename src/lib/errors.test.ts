@@ -50,6 +50,23 @@ describe('frontend error normalization', () => {
     expect(errorCopy(error, 'fallback')).toBe(m.error_upload_ticket_gone());
   });
 
+  it.each([
+    ['canvas_limit', 409, m.error_canvas_limit_title()],
+    ['canvas_too_large', 413, m.error_canvas_too_large_title()],
+    ['grading_limit', 429, m.error_grading_limit_title()],
+    ['invite_recently_sent', 429, m.error_invite_recently_sent_title()],
+    ['invite_limit', 429, m.error_invite_limit_title()],
+    ['comment_limit', 409, m.error_comment_limit_title()],
+    ['annotation_limit', 409, m.error_annotation_limit_title()],
+    ['event_limit', 409, m.error_event_limit_title()],
+    ['checkout_limit', 429, m.error_checkout_limit_title()],
+    ['rate_limit_unavailable', 503, m.error_rate_limit_unavailable_title()],
+  ] as const)('names the %s refusal', (code, status, title) => {
+    const error = new ApiError(status, 'Refused', undefined, { code });
+    expect(describeError(error).title).toBe(title);
+    expect(unexpectedErrorId(error)).toBeNull();
+  });
+
   it('explains captured source changes as a manually retryable request', () => {
     const error = new ApiError(409, 'Conflict', undefined, {
       code: 'source_changed',

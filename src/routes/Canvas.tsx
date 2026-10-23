@@ -1,5 +1,6 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
+import { isApiError } from '@/api/client';
 import { useCanvas, useSaveCanvas } from '@/api/hooks';
 import { PagePanel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -10,6 +11,7 @@ import {
   useAccountFrozen,
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { describeError } from '@/lib/errors';
 import { waitsForConnection } from '@/lib/online';
 
 const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
@@ -18,7 +20,11 @@ export default function Canvas() {
   const params = useParams({ strict: false });
   const canvasId = (params as { canvasId: string }).canvasId;
   const { data: canvas, fetchStatus, isLoading } = useCanvas(canvasId);
-  const { isPending: saveIsPending, mutate: save } = useSaveCanvas(canvasId);
+  const {
+    error: saveError,
+    isPending: saveIsPending,
+    mutate: save,
+  } = useSaveCanvas(canvasId);
   const frozen = useAccountFrozen();
 
   return (
@@ -32,8 +38,17 @@ export default function Canvas() {
           <Icon name="chevronLeft" size={20} />
         </Link>
         <p className="t-subtitle flex-1">{canvas?.name ?? 'Canvas'}</p>
-        {saveIsPending && (
+        {saveIsPending ? (
           <p className="t-meta text-fg-muted">{m.canvas_saving()}</p>
+        ) : (
+          saveError && (
+            <p className="t-meta text-tint-error-fg" role="alert">
+              {/* A body past the gateway's cap answers 413 without a code. */}
+              {isApiError(saveError) && saveError.status === 413
+                ? m.error_canvas_too_large_body()
+                : describeError(saveError).title}
+            </p>
+          )
         )}
         <AccountStatusButton />
       </div>
