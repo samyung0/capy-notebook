@@ -473,6 +473,7 @@ export function NoteEditorCore({
   restored,
   phase = 'live',
   onPainted,
+  joinStartedAt,
   onEditorStatusChange,
   onPresenceChange,
   onDocumentRejected,
@@ -485,6 +486,9 @@ export function NoteEditorCore({
   phase?: NoteEditorPhase;
   /** Its content first painted (once). */
   onPainted?: (view: NoteView) => void;
+  /** When this mount's join began: its token request, or the mount for a
+   * new mount of the same room (`NoteEditor`). */
+  joinStartedAt?: number;
   material: Material;
   allowExternalAssets: boolean;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
@@ -554,6 +558,7 @@ export function NoteEditorCore({
   // Synced now: checkpoint requests wait for it.
   const roomSynced = useRef(false);
   const reconnector = useRef<RoomReconnector | null>(null);
+  const joinStart = useRef(joinStartedAt);
   // The token request that failed, if one did: the provider only reports its
   // own "Failed to get token" text.
   const tokenError = useRef<unknown>(null);
@@ -1139,8 +1144,9 @@ export function NoteEditorCore({
           : roomProvider(editor)?.provider,
     });
     reconnector.current = current;
-    // The join's own 30 s, until the first sync (Epo 2026-10-23).
-    current.started();
+    // The join's 30 s from its token request, until the first sync (Epo
+    // 2026-10-23).
+    current.started(joinStart.current);
     return () => {
       current.dispose();
       if (reconnector.current === current) reconnector.current = null;

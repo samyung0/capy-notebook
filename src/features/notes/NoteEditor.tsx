@@ -56,6 +56,7 @@ import {
   type NoteOfflineState,
 } from './NoteEditorCore';
 import { type NoteDrafts, NoteRecovery, useNoteDrafts } from './NoteRecovery';
+import { RECONNECT_GRACE_MS } from './roomConnection';
 import {
   captureNotePosition,
   copyPausedView,
@@ -248,11 +249,34 @@ function CollaborativeNoteEditor({
   const {
     data: collaborationTokenData,
     error: collaborationTokenError,
+    fetchStatus: collaborationTokenFetchStatus,
     isPending: collaborationTokenIsPending,
     refetch: refetchCollaborationToken,
   } = useMaterialCollaborationToken(material.id, true, {
     errorBoundary: false,
   });
+  // A note's join starts at its token request, first open or reload, or at
+  // a new mount of the same room, and has 30 s from then (Epo 2026-10-23):
+  // the editor's room watch counts from this start, and a first open whose
+  // token has not answered by then shows the connection error.
+  const tokenFetching = collaborationTokenFetchStatus === 'fetching';
+  const joinStart = useRef(Date.now());
+  const [tokenAttempt, setTokenAttempt] = useState(0);
+  const [tokenTimedOut, setTokenTimedOut] = useState(false);
+  useEffect(() => {
+    if (tokenFetching) joinStart.current = Date.now();
+  }, [tokenFetching]);
+  useEffect(() => {
+    joinStart.current = Date.now();
+  }, [editorGeneration]);
+  useEffect(() => {
+    if (collaborationTokenData || !tokenFetching) return;
+    const timer = setTimeout(
+      () => setTokenTimedOut(true),
+      Math.max(0, joinStart.current + RECONNECT_GRACE_MS - Date.now())
+    );
+    return () => clearTimeout(timer);
+  }, [collaborationTokenData, tokenFetching, tokenAttempt]);
   // Offline past the bound this device may hold, or refused as outdated:
   // every editing control (toolbar, palette, block actions) stands down with
   // the content.
@@ -345,6 +369,21 @@ function CollaborativeNoteEditor({
       />
     );
 
+  // A first open's token never answered within the join's 30 s.
+  if (tokenTimedOut && !collaborationTokenData)
+    return (
+      <FileError
+        icon="error"
+        message={m.editor_collab_unavailable()}
+        onRetry={() => {
+          joinStart.current = Date.now();
+          setTokenTimedOut(false);
+          setTokenAttempt((value) => value + 1);
+          void refetchCollaborationToken();
+        }}
+      />
+    );
+
   if (meIsPending || discussionsIsPending || collaborationTokenIsPending) {
     return <FileLoading />;
   }
@@ -399,6 +438,7 @@ function CollaborativeNoteEditor({
         currentUserId={meData.id}
         discussions={discussionsData ?? NO_DISCUSSIONS}
         draftKey={storedKey}
+        joinStartedAt={joinStart.current}
         material={material}
         onDocumentRejected={onDocumentRejected}
         onEditorStatusChange={onEditorStatusChange}

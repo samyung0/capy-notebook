@@ -608,6 +608,18 @@ export function setCollaborationSlowed(value: boolean) {
   window.dispatchEvent(new Event(REACHABILITY));
 }
 
+// A note whose collaboration-token requests hang (the join's 30 s, Epo
+// 2026-10-23); kept across page loads, so a first open starts held.
+const TOKENS_HELD = 'capy.mock.collaboration.tokensHeld';
+
+export function holdNoteTokens(materialId: string | null) {
+  if (materialId) sessionStorage.setItem(TOKENS_HELD, materialId);
+  else sessionStorage.removeItem(TOKENS_HELD);
+}
+
+export const noteTokenHeld = (materialId: string) =>
+  browser && sessionStorage.getItem(TOKENS_HELD) === materialId;
+
 // A note's current room schema, as the service's material_yjs_documents
 // row names it (1 until a room moves).
 const SCHEMA = 'capy.scenario.schema.';

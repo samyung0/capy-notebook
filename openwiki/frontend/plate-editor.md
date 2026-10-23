@@ -1029,10 +1029,16 @@ and anything else (an expired token, a room being reset or compacted) is
 retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
 sync it turns the status red). A join, first or after a reload, has the same
-30 s from its start (`roomReconnector`'s `started`, Epo 2026-10-23): one not
+30 s from its start, which is its collaboration-token request (or the new
+mount, for a new mount of the same room; Epo 2026-10-23): `NoteEditor` keeps
+that start and the editor's `roomReconnector` counts from it (`started(at)`).
+A first open whose token has not answered by then shows the collaboration
+unavailable panel with Retry instead of loading for ever; an editor not
 synced by then, a JOIN never answered on the open socket included, turns the
-status red, and after a reload that failing editor replaces the paused one;
-a slowed open and offline wait. A failed first token request shows the panel for its status (not found,
+status red, and after a reload that failing editor replaces the paused one.
+A slowed open and offline wait. A reload pauses only once its new token has
+answered, so a reload whose token hangs keeps the editor on screen as it
+is. A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry). A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether

@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
 import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
 import { m } from '../i18n';
 import { openEditorNote } from './helpers';
@@ -165,6 +165,29 @@ test("a note reload whose JOIN is never answered ends at the join's 30 s", async
   await expect(paused).toBeVisible();
   await expect(paused).toHaveCount(0, { timeout: 60_000 });
   await expect(saveState(page)).toHaveAttribute('data-save-state', 'error');
+});
+
+// A note's join starts at its token request (Epo 2026-10-23): a first open
+// whose token never answers ends in the connection error 30 s on, not a
+// loading pane for ever.
+test("a first open whose token request hangs ends at the join's 30 s", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(`/workspaces/${EDITOR_WORKSPACE_ID}`);
+  await page.evaluate(async (id) => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdNoteTokens } = await import(path);
+    holdNoteTokens(id);
+  }, EDITOR_NOTE.id);
+  await page.goto(
+    `/workspaces/${EDITOR_WORKSPACE_ID}?material=${EDITOR_NOTE.id}&mode=edit`
+  );
+  const failed = page.getByText(m.editor_collab_unavailable());
+  await page.waitForTimeout(15_000);
+  await expect(failed).toHaveCount(0);
+  await expect(failed).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-note-mount]')).toHaveCount(0);
 });
 
 test.describe('on a phone', () => {

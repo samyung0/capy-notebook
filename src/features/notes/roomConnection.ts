@@ -108,15 +108,20 @@ export function roomReconnector({
   let disposed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let stuck: ReturnType<typeof setTimeout> | undefined;
-  const watch = () => {
+  // `from`: when the wait began, earlier than now for a note's join (its
+  // token request came before the editor).
+  const watch = (from = Date.now()) => {
     if (stuck || disposed) return;
-    stuck = setTimeout(() => {
-      stuck = undefined;
-      if (disposed) return;
-      // Offline has its own status; keep waiting for the network instead.
-      if (navigator.onLine) onStuck();
-      else watch();
-    }, RECONNECT_GRACE_MS);
+    stuck = setTimeout(
+      () => {
+        stuck = undefined;
+        if (disposed) return;
+        // Offline has its own status; keep waiting for the network instead.
+        if (navigator.onLine) onStuck();
+        else watch();
+      },
+      Math.max(0, from + RECONNECT_GRACE_MS - Date.now())
+    );
   };
   const rejoin = (current: ReconnectableProvider) => {
     retry = undefined;
@@ -147,7 +152,7 @@ export function roomReconnector({
       stuck = undefined;
     },
     /** The socket dropped; the websocket provider retries by itself. */
-    disconnected: watch,
+    disconnected: () => watch(),
     dispose() {
       disposed = true;
       clearTimeout(retry);
@@ -161,11 +166,12 @@ export function roomReconnector({
       clearTimeout(stuck);
       stuck = undefined;
     },
-    /** A join started, first or after a reload (Epo 2026-10-23): one watch
-     * over all of it (a JOIN never answered, a hung session request, a view
-     * never ready), ended by `connected`; a slowed open clears it and
-     * offline keeps waiting. */
-    started: watch,
+    /** A join started (at `at`, now by default), first or after a reload
+     * (Epo 2026-10-23): one watch over all of it (a note's token request, a
+     * JOIN never answered, a hung session request, a view never ready),
+     * ended by `connected`; a slowed open clears it and offline keeps
+     * waiting. */
+    started: (at?: number) => watch(at),
   };
 }
 
