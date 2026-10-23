@@ -509,9 +509,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Only the workspace owner
   can delete another user's comment or discussion.
-- A note holds at most 500 live comments: each discussion's opening comment
-  and every reply, a deleted comment or discussion freeing its place (409
-  `comment_limit`). A comment's JSON is at most 32 KiB (422), well above the
+- A note holds at most 500 comments in its open discussions: each
+  discussion's opening comment and every reply, deleted ones included (a
+  deleted comment keeps its row in the thread, so deleting frees no place;
+  deleting a whole discussion does) (409 `comment_limit`). A comment's JSON is at most 32 KiB (422), well above the
   3,000-character box (rate-limit audit M9, `server/internal/store/row_caps.go`).
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
@@ -1695,9 +1696,9 @@ transfer use the collaboration eviction/outbox and processing fences.
 
 Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify
-another actor's marks. One actor holds at most 2,000 annotations per file (409
-`annotation_limit`); the count is per actor, so nobody's marks can block
-another reader's. Clones and downloads do not include them, and
+another actor's marks. A file holds at most 2,000 annotations across all
+authors (409 `annotation_limit`), as decided; at the cap, a reader learns
+only that the file is full, never whose marks fill it. Clones and downloads do not include them, and
 `PurgeUser` deletes the actor's marks at account purge.
 
 Image-caption reuse checks current containing files. Private workspace reuse
