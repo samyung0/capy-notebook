@@ -176,6 +176,23 @@ impl<'a, T: ReadTxn> Bound<'a, T> {
     /// Where each new item lands. An item without a parent takes its
     /// origin's, else its right origin's.
     fn place_of(&self, start: &'a Item, places: &mut HashMap<ID, Place>) -> Place {
+        // Place an item that overlaps the room's held clock, or sits next to a
+        // collected unit, where yrs integrates it (phase 0 review).
+        match self.decoded.landing(self.txn.store(), &self.state, start) {
+            ydoc::Landing::Gone => return Place::Gone,
+            ydoc::Landing::At(id) => {
+                return match self.held_item(&id).and_then(|held| {
+                    held.parent_branch().map(|parent| Place::At {
+                        key: held.parent_sub().cloned(),
+                        parent: Target::Held(parent),
+                    })
+                }) {
+                    Some(place) => place,
+                    None => Place::Unknown,
+                };
+            }
+            ydoc::Landing::Chain => {}
+        }
         let mut chain = Vec::new();
         let mut item = start;
         let found = loop {

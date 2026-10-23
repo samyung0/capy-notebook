@@ -7,7 +7,7 @@
     },
     "ANTHROPIC_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
+      "targets": ["app", "ingest-production", "ingest-queue", "ops"]
     },
     "API_URL": {
       "kind": "variable",
@@ -17,10 +17,31 @@
       "kind": "variable",
       "targets": ["local"]
     },
+    "APP_HOST_ACCESS_CLIENT_ID": {
+      "kind": "secret",
+      "targets": ["workflow"]
+    },
+    "APP_HOST_ACCESS_CLIENT_SECRET": {
+      "kind": "secret",
+      "targets": ["workflow"]
+    },
+    "APP_HOST_KNOWN_HOSTS": {
+      "kind": "secret",
+      "targets": ["workflow"]
+    },
+    "APP_HOST_SSH_HOSTNAME": {
+      "kind": "variable",
+      "targets": ["workflow"],
+      "required_for": ["workflow"]
+    },
+    "APP_HOST_SSH_PRIVATE_KEY": {
+      "kind": "secret",
+      "targets": ["workflow"]
+    },
     "APP_URL": {
       "kind": "variable",
-      "targets": ["coolify", "workflow"],
-      "required_for": ["coolify", "workflow"]
+      "targets": ["app", "workflow"],
+      "required_for": ["app", "workflow"]
     },
     "AUTH_DISABLED": {
       "kind": "variable",
@@ -28,80 +49,80 @@
     },
     "B2_APP_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
-      "required_for": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["app", "ingest-production", "ingest-queue", "quality"],
+      "required_for": ["app", "ingest-production", "ingest-queue"]
     },
     "B2_BUCKET": {
       "kind": "variable",
       "targets": [
-        "coolify",
+        "app",
         "ingest-production",
         "ingest-queue",
         "quality",
         "build"
       ],
-      "required_for": ["coolify", "ingest-production", "ingest-queue"]
+      "required_for": ["app", "ingest-production", "ingest-queue"]
     },
     "B2_ENDPOINT": {
       "kind": "variable",
       "targets": [
-        "coolify",
+        "app",
         "ingest-production",
         "ingest-queue",
         "quality",
         "build"
       ],
-      "required_for": ["coolify", "ingest-production", "ingest-queue"]
+      "required_for": ["app", "ingest-production", "ingest-queue"]
     },
     "B2_FORCE_PATH_STYLE": {
       "kind": "variable",
-      "targets": ["coolify", "build"]
+      "targets": ["app", "build"]
     },
     "B2_KEY_ID": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
-      "required_for": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["app", "ingest-production", "ingest-queue", "quality"],
+      "required_for": ["app", "ingest-production", "ingest-queue"]
     },
     "B2_LINK_TTL": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "B2_PRESIGN_TTL": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "B2_REGION": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
-      "required_for": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["app", "ingest-production", "ingest-queue", "quality"],
+      "required_for": ["app", "ingest-production", "ingest-queue"]
     },
-    "BANK_DATABASE_URL": { "kind": "secret", "targets": ["coolify", "local"] },
-    "BANK_EDITOR_DATABASE_URL": { "kind": "secret", "targets": ["coolify"] },
+    "BANK_DATABASE_URL": { "kind": "secret", "targets": ["app", "local"] },
+    "BANK_EDITOR_DATABASE_URL": { "kind": "secret", "targets": ["app"] },
     "BANK_OWNER_DATABASE_URL": { "kind": "secret", "targets": ["local"] },
-    "BANK_ASSETS_URL": { "kind": "variable", "targets": ["coolify", "local"] },
+    "BANK_ASSETS_URL": { "kind": "variable", "targets": ["app", "local"] },
     "BANK_COMMENT_EMAIL": {
       "kind": "variable",
-      "targets": ["coolify", "local"]
+      "targets": ["app", "local"]
     },
     "BANK_PUBLIC_B2_ENDPOINT": {
       "kind": "variable",
-      "targets": ["coolify", "local"]
+      "targets": ["app", "local"]
     },
     "BANK_PUBLIC_B2_REGION": {
       "kind": "variable",
-      "targets": ["coolify", "local"]
+      "targets": ["app", "local"]
     },
     "BANK_PUBLIC_B2_BUCKET": {
       "kind": "variable",
-      "targets": ["coolify", "local"]
+      "targets": ["app", "local"]
     },
     "BANK_PUBLIC_B2_KEY_ID": {
       "kind": "secret",
-      "targets": ["coolify", "local"]
+      "targets": ["app", "local"]
     },
     "BANK_PUBLIC_B2_APP_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "local"]
+      "targets": ["app", "local"]
     },
     "BANK_PRIVATE_B2_ENDPOINT": { "kind": "variable", "targets": ["local"] },
     "BANK_PRIVATE_B2_REGION": { "kind": "variable", "targets": ["local"] },
@@ -111,7 +132,7 @@
     "BYOK_ENABLED": { "kind": "variable", "targets": ["local"] },
     "CAPY_CAPTION_CACHE_TTL_DAYS": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-shared"]
+      "targets": ["app", "ingest-production", "ingest-shared"]
     },
     "CAPY_CAPTION_MAX_EDGE": {
       "kind": "variable",
@@ -251,11 +272,11 @@
     },
     "CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "CAPY_INTERACTIVE_STREAM_MAX_S": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "CAPY_OFFICE_CONVERT_TIMEOUT": {
       "kind": "variable",
@@ -267,7 +288,7 @@
     },
     "CAPY_PARSER": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "CAPY_PARSER_JVM_MAX_HEAP": {
       "kind": "variable",
@@ -323,13 +344,13 @@
     },
     "CAPY_PARSE_MAX_PAGES": {
       "kind": "variable",
-      "targets": ["coolify", "local", "ingest-production", "ingest-shared"],
-      "required_for": ["coolify", "ingest-production", "ingest-shared"]
+      "targets": ["app", "local", "ingest-production", "ingest-shared"],
+      "required_for": ["app", "ingest-production", "ingest-shared"]
     },
     "CAPY_PARSE_OCR_PAGE_CAP": {
       "kind": "variable",
-      "targets": ["coolify", "local", "ingest-production", "ingest-shared"],
-      "required_for": ["coolify", "ingest-production", "ingest-shared"]
+      "targets": ["app", "local", "ingest-production", "ingest-shared"],
+      "required_for": ["app", "ingest-production", "ingest-shared"]
     },
     "CAPY_PARSE_QUEUE_DEPTH": {
       "kind": "variable",
@@ -353,7 +374,7 @@
     },
     "CAPY_PRIVATE_BIND_ADDRESS": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "CAPY_TABULAR_TEXT_VERSION": {
       "kind": "variable",
@@ -374,22 +395,22 @@
     },
     "CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
-      "targets": ["workflow", "ops", "quality"],
-      "required_for": ["ops"]
+      "targets": ["workflow", "quality"],
+      "required_for": ["workflow"]
     },
     "CLERK_SECRET_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ops", "quality"],
-      "required_for": ["coolify", "ops"]
+      "targets": ["app", "ops", "quality"],
+      "required_for": ["app", "ops"]
     },
     "CLERK_WEBHOOK_SECRET": {
       "kind": "secret",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
+      "targets": ["app"],
+      "required_for": ["app"]
     },
     "CLOUDFLARE_ACCOUNT_ID": {
       "kind": "variable",
-      "targets": ["coolify", "workflow"]
+      "targets": ["app", "workflow"]
     },
     "CLOUDFLARE_API_TOKEN": {
       "kind": "secret",
@@ -397,7 +418,7 @@
     },
     "CLOUDFLARE_EMAIL_TOKEN": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "CLOUDFLARE_TUNNEL_ID": {
       "kind": "variable",
@@ -405,7 +426,7 @@
     },
     "COLLABORATION_ALLOWED_ORIGINS": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "COLLABORATION_INTERNAL_URL": {
       "kind": "variable",
@@ -413,43 +434,23 @@
     },
     "COLLABORATION_SECRET": {
       "kind": "secret",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
+      "targets": ["app"],
+      "required_for": ["app"]
     },
     "COLLABORATION_UAT_PUBLICATION_HOLD": {
       "kind": "variable",
-      "targets": ["coolify"],
+      "targets": ["app"],
       "environments": ["uat"]
     },
     "COLLABORATION_URL": {
       "kind": "variable",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
-    },
-    "COMPOSE_PROFILES": {
-      "kind": "variable",
-      "targets": ["coolify"]
-    },
-    "COOLIFY_API_TOKEN": {
-      "kind": "secret",
-      "targets": ["workflow"]
-    },
-    "COOLIFY_API_URL": {
-      "kind": "variable",
-      "targets": ["workflow"]
-    },
-    "COOLIFY_OPS_RESOURCE_UUID": {
-      "kind": "variable",
-      "targets": ["workflow"]
-    },
-    "COOLIFY_RESOURCE_UUID": {
-      "kind": "variable",
-      "targets": ["workflow"]
+      "targets": ["app"],
+      "required_for": ["app"]
     },
     "CORS_ALLOWED_ORIGINS": {
       "kind": "variable",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
+      "targets": ["app"],
+      "required_for": ["app"]
     },
     "DATABASE_URL": {
       "kind": "secret",
@@ -457,11 +458,11 @@
     },
     "DEEPINFRA_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
+      "targets": ["app", "ingest-production", "ingest-queue", "ops"]
     },
     "DEEPSEEK_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
+      "targets": ["app", "ingest-production", "ingest-queue", "ops"]
     },
     "DEPLOYMENT_API_URL": {
       "kind": "variable",
@@ -489,23 +490,23 @@
     },
     "EMAIL_BACKEND": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "EMAIL_FROM": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "EMAIL_REPLY_TO": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "EMAIL_UNSUBSCRIBE_SECRET": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "EMBEDDING_DIM": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-shared"]
+      "targets": ["app", "ingest-production", "ingest-shared"]
     },
     "EMBED_PAGES_PROJECT": {
       "kind": "variable",
@@ -548,38 +549,38 @@
     },
     "JEV_TYPESAFE_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
+      "targets": ["app"],
+      "required_for": ["app"]
     },
     "KNOWLEDGE_BASE_B2_APP_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "local"],
-      "required_for": ["coolify"]
+      "targets": ["app", "local"],
+      "required_for": ["app"]
     },
     "KNOWLEDGE_BASE_B2_BUCKET": {
       "kind": "variable",
-      "targets": ["coolify", "local"],
-      "required_for": ["coolify"]
+      "targets": ["app", "local"],
+      "required_for": ["app"]
     },
     "KNOWLEDGE_BASE_B2_ENDPOINT": {
       "kind": "variable",
-      "targets": ["coolify", "local"],
-      "required_for": ["coolify"]
+      "targets": ["app", "local"],
+      "required_for": ["app"]
     },
     "KNOWLEDGE_BASE_B2_KEY_ID": {
       "kind": "secret",
-      "targets": ["coolify", "local"],
-      "required_for": ["coolify"]
+      "targets": ["app", "local"],
+      "required_for": ["app"]
     },
     "KNOWLEDGE_BASE_B2_REGION": {
       "kind": "variable",
-      "targets": ["coolify", "local"],
-      "required_for": ["coolify"]
+      "targets": ["app", "local"],
+      "required_for": ["app"]
     },
     "LIBRARY_DATABASE_URL": {
       "kind": "secret",
-      "targets": ["coolify", "local"],
-      "required_for": ["coolify"]
+      "targets": ["app", "local"],
+      "required_for": ["app"]
     },
     "LLM_API_KEY": {
       "kind": "variable",
@@ -587,8 +588,8 @@
     },
     "LLM_CREDENTIALS_KEY": {
       "kind": "secret",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
+      "targets": ["app"],
+      "required_for": ["app"]
     },
     "MIGRATE": {
       "kind": "variable",
@@ -601,17 +602,11 @@
     },
     "OPENAI_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
+      "targets": ["app", "ingest-production", "ingest-queue", "ops"]
     },
     "OPENROUTER_API_KEY": {
       "kind": "secret",
-      "targets": [
-        "coolify",
-        "ingest-production",
-        "ingest-queue",
-        "local",
-        "ops"
-      ]
+      "targets": ["app", "ingest-production", "ingest-queue", "local", "ops"]
     },
     "OPS_ACCESS_DISABLED": {
       "kind": "variable",
@@ -690,18 +685,18 @@
     },
     "PARSER_TOKEN": {
       "kind": "secret",
-      "targets": ["coolify", "local", "ingest-production", "ingest-shared"],
-      "required_for": ["coolify", "ingest-production", "ingest-shared"]
+      "targets": ["app", "local", "ingest-production", "ingest-shared"],
+      "required_for": ["app", "ingest-production", "ingest-shared"]
     },
     "PARSER_URL": {
       "kind": "variable",
-      "targets": ["local", "coolify"],
-      "required_for": ["coolify"]
+      "targets": ["local", "app"],
+      "required_for": ["app"]
     },
     "PIPELINE_SECRET": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue"],
-      "required_for": ["coolify", "ingest-production", "ingest-queue"]
+      "targets": ["app", "ingest-production", "ingest-queue"],
+      "required_for": ["app", "ingest-production", "ingest-queue"]
     },
     "PIPELINE_URL": {
       "kind": "variable",
@@ -709,12 +704,12 @@
     },
     "POSTGRES_PASSWORD": {
       "kind": "secret",
-      "targets": ["coolify"],
-      "required_for": ["coolify"]
+      "targets": ["app"],
+      "required_for": ["app"]
     },
     "RATE_LIMIT_AI_PER_HOUR": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "REDIS_URL": {
       "kind": "secret",
@@ -726,7 +721,7 @@
     },
     "RETRIEVAL_UAT_SCRIPTED_TOOLS": {
       "kind": "variable",
-      "targets": ["coolify"],
+      "targets": ["app"],
       "environments": ["uat"]
     },
     "SENTRY_AUTH_TOKEN": {
@@ -739,11 +734,11 @@
     },
     "SENTRY_DSN_COLLABORATION": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "SENTRY_DSN_GATEWAY": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "SENTRY_DSN_OPS": {
       "kind": "variable",
@@ -751,7 +746,7 @@
     },
     "SENTRY_DSN_RETRIEVAL": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "SENTRY_DSN_WORKER": {
       "kind": "variable",
@@ -759,7 +754,7 @@
     },
     "SENTRY_ENVIRONMENT": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ops"]
+      "targets": ["app", "ingest-production", "ops"]
     },
     "SENTRY_ORG": {
       "kind": "variable",
@@ -771,7 +766,7 @@
     },
     "SENTRY_TRACES_SAMPLE_RATE": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-shared", "ops"]
+      "targets": ["app", "ingest-production", "ingest-shared", "ops"]
     },
     "SENTRY_URL": {
       "kind": "variable",
@@ -779,24 +774,20 @@
     },
     "SHARE_LINK_SECRET": {
       "kind": "secret",
-      "targets": ["coolify", "workflow"],
-      "required_for": ["coolify", "workflow"]
-    },
-    "SOURCE_COMMIT": {
-      "kind": "variable",
-      "targets": ["local"]
+      "targets": ["app", "workflow"],
+      "required_for": ["app", "workflow"]
     },
     "STRIPE_PRICE_PRO": {
       "kind": "variable",
-      "targets": ["coolify", "quality"]
+      "targets": ["app", "quality"]
     },
     "STRIPE_SECRET_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "quality"]
+      "targets": ["app", "quality"]
     },
     "STRIPE_WEBHOOK_SECRET": {
       "kind": "secret",
-      "targets": ["coolify"]
+      "targets": ["app"]
     },
     "STRIX_LLM": {
       "kind": "variable",
@@ -1070,7 +1061,7 @@
     },
     "VITE_SENTRY_DSN_OPS": {
       "kind": "variable",
-      "targets": ["ops"]
+      "targets": ["workflow"]
     },
     "VITE_USE_MSW": {
       "kind": "variable",

@@ -1600,6 +1600,10 @@ design, option d), and the nudge's release file on 2026-10-17.
   into view, a peer's change never does; Epo 2026-10-22, 2026-10-23) raised
   `CLIENT_PROTOCOL` to 13 and `MIN_SOURCE` to 13; `MIN_MATERIAL` stays 7. Its
   deploy request names "client protocol 12 -> 13, source 12 -> 13".
+  Phase 0 of the tombstone work (pin 870dc1661: yrs collects an item next to
+  a collected unit, as Yjs does; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to
+  14 and `MIN_SOURCE` to 14; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 13 -> 14, source 13 -> 14".
 
 #### When to bump
 
