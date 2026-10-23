@@ -383,7 +383,8 @@ def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
 
     Round-robin by actor (Epo 2026-10-24, rate-limit audit): the job whose
     actor has the fewest jobs of this type running goes first, the oldest
-    among those, so one account's backlog never queues everyone else's.
+    among those, so one account's backlog never queues everyone else's. Jobs
+    without an ``actorUserId`` count as one shared actor.
     """
     cur.execute(
         """
@@ -396,11 +397,12 @@ def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
         WHERE id = (
             SELECT j.id FROM jobs j
             LEFT JOIN (
-                SELECT payload->>'actorUserId' AS actor, count(*) AS running
+                SELECT COALESCE(payload->>'actorUserId', '') AS actor,
+                       count(*) AS running
                 FROM jobs
                 WHERE status='running' AND type=%s
                 GROUP BY 1
-            ) r ON r.actor = j.payload->>'actorUserId'
+            ) r ON r.actor = COALESCE(j.payload->>'actorUserId', '')
             WHERE j.status='pending'
               AND j.type=%s
               AND (j.not_before IS NULL OR j.not_before <= now())

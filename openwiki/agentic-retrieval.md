@@ -238,7 +238,9 @@ Every queue consumer (`parse`, `ingest` and `import`) claims through
 of the due pending jobs of its type, the one whose `actorUserId` has the fewest
 jobs of that type `running` goes first, the oldest (`created_at`) among those,
 under `FOR UPDATE OF j SKIP LOCKED`, so concurrent workers still take different
-rows. One account's backlog therefore waits behind another account's newer
+rows. Jobs without an `actorUserId` count as one shared actor (every enqueue
+sets one; only an account purge strips it, after the deletion request has
+failed that account's pending and running jobs). One account's backlog therefore waits behind another account's newer
 upload instead of ahead of it; the per-actor cap of 20 open ingest sessions
 (Go) still bounds what each account has queued. A job re-pended for a busy
 provider or a full parser keeps its `created_at`, so it keeps its place among
