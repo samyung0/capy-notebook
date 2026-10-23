@@ -795,6 +795,8 @@ export function useSourceSession(
           tokenError = null;
           if (refusal === 'readOnly') replace('readOnly', true);
           else if (refusal === 'retry') reconnect.refused();
+          // The room holds this document's client id no more: no retry joins.
+          else if (refusal === 'rejected') refuse();
           else if (refusal === 'outdated') stale();
           else if (!cancelled) {
             cancelled = true;

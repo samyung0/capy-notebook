@@ -15,6 +15,10 @@ describe('roomRefusal', () => {
     expect(roomRefusal('collaboration-not-found')).toBe('notFound');
     expect(roomRefusal('collaboration-forbidden')).toBe('forbidden');
     expect(roomRefusal('collaboration-outdated')).toBe('outdated');
+    // A client id the room holds no more never joins again (Epo
+    // 2026-10-24); a clash on a fresh offer is retried.
+    expect(roomRefusal('collaboration-client-id-unheld')).toBe('rejected');
+    expect(roomRefusal('collaboration-client-id')).toBe('retry');
     expect(
       roomRefusal('Failed to get token', new ApiError(404, 'Not Found'))
     ).toBe('notFound');

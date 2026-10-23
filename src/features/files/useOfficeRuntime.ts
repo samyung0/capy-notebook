@@ -443,7 +443,8 @@ export function useOfficeRuntime({
             clientId: source.doc!.clientID,
             epoch: source.session!.epoch,
             initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
-            workerClientId: source.workerClientId,
+            workerClientId:
+              format === 'docx' ? source.workerClientId : undefined,
           }
         : undefined;
     const imageMaxBytes =
@@ -452,11 +453,17 @@ export function useOfficeRuntime({
       mode === 'edit' ? source.session!.growthBudgetBytes : undefined;
     initializedFrame.current = frameGeneration;
     // An Office edit session always names the payer's image cap and the
-    // room's growth budget; without them the editor cannot open, so it fails
-    // here instead of hanging.
+    // room's growth budget, and a DOCX one its layout worker's client id
+    // (Q219); without them the editor cannot open, so it fails here instead
+    // of hanging or writing under an id the room refuses.
     if (
       mode === 'edit' &&
-      !(imageMaxBytes && imageMaxBytes > 0 && growthBudgetBytes !== undefined)
+      (!(
+        imageMaxBytes &&
+        imageMaxBytes > 0 &&
+        growthBudgetBytes !== undefined
+      ) ||
+        (format === 'docx' && !source.workerClientId))
     ) {
       setError(m.error_file_body());
       return;

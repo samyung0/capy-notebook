@@ -423,6 +423,36 @@ mod tests {
         );
     }
 
+    /// Security regression (Q213, Q219): a token's client ids are Yjs ids
+    /// (1 to 2^32-1), and a worker id comes only beside a different
+    /// session id. Fails with any of these checks removed from `verify`.
+    #[test]
+    fn a_tokens_client_ids_are_yjs_ids_and_its_worker_id_its_own() {
+        let now = 1_800_000_000;
+        let verified = |client: Option<u64>, worker: Option<u64>| {
+            let mut claims = claims_for(ROOM, "u_1", Access::Write, now, 300);
+            claims.client_id = client;
+            claims.worker_client_id = worker;
+            verify(&mint("secret", &claims), "secret", ROOM, now).map(|_| ())
+        };
+        assert_eq!(verified(Some(7), Some(8)), Ok(()));
+        assert_eq!(verified(Some(u64::from(u32::MAX)), None), Ok(()));
+        for (client, worker) in [
+            (Some(0), None),
+            (Some(u64::from(u32::MAX) + 1), None),
+            (Some(7), Some(0)),
+            (Some(7), Some(u64::from(u32::MAX) + 1)),
+            (Some(7), Some(7)),
+            (None, Some(8)),
+        ] {
+            assert_eq!(
+                verified(client, worker),
+                Err(TokenError::Claims),
+                "{client:?} {worker:?}"
+            );
+        }
+    }
+
     #[test]
     fn the_service_secret_compares_whole() {
         assert!(secret_matches(Some("abc"), "abc"));

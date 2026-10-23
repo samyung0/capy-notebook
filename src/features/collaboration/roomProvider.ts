@@ -141,8 +141,12 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
   private destroyed = false;
   /** A note's room: the seat its embeds join inside. */
   private noteSeat: NoteSeat | null = null;
-  /** The client id a writable JOINED bound: kept for the document's life. */
+  /** The client id is kept for the document's life: a writable JOINED bound
+   * it, or the document wrote under a token's id (a read channel whose token
+   * turned writable, Q226 M1). */
   private bound = false;
+  /** The document took a token's client id. */
+  private adopted = false;
   /** A DOCX session's second id, for its editor's resident layout worker
    * (Q219): taken with the document's and kept with it. */
   workerClientId: number | undefined;
@@ -468,6 +472,12 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       this.endChannel();
       return;
     }
+    if (
+      !this.bound &&
+      this.adopted &&
+      Y.getState(this.document.store, this.document.clientID) > 0
+    )
+      this.bound = true;
     if (!this.bound) {
       try {
         const ids = tokenClientIds(token);
@@ -488,18 +498,14 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
     );
   }
 
-  /** Takes the client id a token offers, before the document's first write
-   * (Q213): the document and its presence go under it. A document that
-   * already wrote under its own id cannot change it. */
+  /** Takes the client id a token offers, before the document is bound
+   * (Q213): the document and its presence go under it. Edits made before
+   * stay under the id Yjs drew; the room refuses them as they are
+   * (`client_id`, Epo 2026-10-24) and never binds that id. */
   private adopt(clientId: number) {
     const { awareness, document } = this;
-    if (document.clientID !== clientId) {
-      if (Y.getState(document.store, document.clientID) > 0)
-        throw new Error(
-          'A collaboration document wrote before its client id was assigned'
-        );
-      document.clientID = clientId;
-    }
+    this.adopted = true;
+    document.clientID = clientId;
     if (awareness.clientID !== clientId) {
       const state = awareness.getLocalState();
       removeAwarenessStates(awareness, [awareness.clientID], this);
@@ -510,6 +516,7 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
 
   private joined(writable: boolean) {
     if (writable) this.bound = true;
+    this.assertBound();
     // A join after a timeout counts afresh from here, so waiters on the
     // unsynced count see it go to zero only after the resync.
     this.resetCounts();
@@ -600,8 +607,19 @@ export class RoomProvider implements ChannelHandler, SeatedRoom {
       return;
     }
     if (!this.isAuthenticated || this.paused) return;
+    this.assertBound();
     this.sendUpdate(SyncKind.Update, update);
   };
+
+  /** Once bound, the document writes under the id the room bound (Q226 L3).
+   * One Yjs moved to another id would have every change refused, so it stops
+   * here, explicitly. */
+  private assertBound() {
+    if (this.bound && this.document.clientID !== this.awareness.clientID) {
+      this.endChannel();
+      throw new Error('The collaboration document left its assigned client id');
+    }
+  }
 
   private readonly awarenessUpdate = (
     {

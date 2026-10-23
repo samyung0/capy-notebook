@@ -1330,6 +1330,46 @@ test.describe('agent writes to Office sources', () => {
       if (format === 'docx')
         for (const frame of frames)
           await expect(shownText(frame, format, typed).first()).toBeAttached();
+      // XLSX and PPTX: the second editor's typing, under the client id its
+      // join token assigned, reaches the first editor and the agent's read.
+      if (format === 'docx') return;
+      const line = 'Collaborator typed live.';
+      if (format === 'xlsx') {
+        await frames[1]
+          .getByRole('tab', { exact: true, name: 'Grades' })
+          .click();
+        const grid = frames[1].getByTestId('xlsx-scroll');
+        await grid.focus();
+        await grid.press('ControlOrMeta+Home');
+        // D1: right of the fixture's columns, empty.
+        for (let i = 0; i < 3; i++) await grid.press('ArrowRight');
+        const input = frames[1].getByTestId('xlsx-formula-input');
+        await input.fill(line);
+        await input.press('Enter');
+        await expect(shownText(frames[0], format, line).first()).toBeAttached({
+          timeout: 30_000,
+        });
+      } else {
+        // The first slide's top text box, at 1in,1in on its 10in x 7.5in slide.
+        const canvas = frames[1].getByTestId('pptx-slide-canvas');
+        const box = await canvas.boundingBox();
+        if (!box) throw new Error('the slide canvas takes no pointer');
+        await canvas.click({
+          clickCount: 3,
+          position: { x: box.width * 0.17, y: box.height * 0.155 },
+        });
+        await frames[1].getByRole('application').pressSequentially(line);
+        await showsSlide(0).toBe(false);
+      }
+      await expect
+        .poll(
+          async () =>
+            (await entries(anonymousApi, fileId, format)).map(
+              (entry) => entry.value
+            ),
+          { timeout: 30_000 }
+        )
+        .toContain(line);
     });
   }
 });

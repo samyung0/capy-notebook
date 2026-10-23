@@ -12,6 +12,11 @@ export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
  * Any other refusal is retried with a fresh token (roomConnection.ts). */
 export const COLLABORATION_NOT_FOUND_REASON = 'collaboration-not-found';
 export const COLLABORATION_FORBIDDEN_REASON = 'collaboration-forbidden';
+/** Refusal reason for a JOIN naming a client id the room holds for no user
+ * (a bound document's id cleared, Epo 2026-10-24): no retry joins, so the
+ * editor keeps its unsaved edits as refused and opens a new document. */
+export const COLLABORATION_CLIENT_ID_UNHELD_REASON =
+  'collaboration-client-id-unheld';
 /** Refusal reason for a client protocol its room family no longer (or not
  * yet) accepts: the editor stops and asks for a reload (the version gate). */
 export const COLLABORATION_OUTDATED_REASON = 'collaboration-outdated';
@@ -48,10 +53,11 @@ export type CollaborationEvent =
       metrics: MaterialDocumentStats | null;
       type: 'checkpoint-persisted';
     }
-  /** The room refused this editor's state for good (a limit, or an invalid
-   * document): the editor reloads the last saved version. */
+  /** The room refused this editor's state for good (a limit, an invalid
+   * document, or edits under a client id it did not assign, `client_id`):
+   * the editor reloads the last saved version. */
   | {
-      code: MaterialLimitCode | 'invalid_document';
+      code: MaterialLimitCode | 'invalid_document' | 'client_id';
       materialId: string;
       metrics: MaterialDocumentStats | null;
       room: string;
@@ -137,12 +143,16 @@ export function parseCollaborationEvent(
       if (
         !materialId ||
         typeof code !== 'string' ||
-        !(LIMIT_CODES.has(code) || code === 'invalid_document')
+        !(
+          LIMIT_CODES.has(code) ||
+          code === 'invalid_document' ||
+          code === 'client_id'
+        )
       ) {
         return null;
       }
       return {
-        code: code as MaterialLimitCode | 'invalid_document',
+        code: code as MaterialLimitCode | 'invalid_document' | 'client_id',
         materialId,
         metrics: readStats(raw.metrics),
         room: typeof raw.room === 'string' ? raw.room : '',

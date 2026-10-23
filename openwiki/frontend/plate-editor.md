@@ -1154,8 +1154,9 @@ account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
 file-missing or no-access panel, `collaboration-outdated` stops the editor
 for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
-and anything else (an expired token, a room being reset or compacted) is
-retried. A loss still unresolved after 30 s while
+`collaboration-client-id-unheld` refuses the document's edits and opens a new
+document (see [client ids](#client-ids)), and anything else (an expired token,
+a room being reset or compacted, a client-id clash) is retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
 sync it turns the status red). A join, first or after a reload, has the same
 30 s from its start, which is its collaboration-token request (or the new
@@ -1482,22 +1483,40 @@ Office and text files).
 
 - **Assignment.** Every collaboration token (material, keys and source
   rooms; read and write) offers a fresh random client id (its `clientId`
-  claim, 1 to 2^32-1, `newClientID` in
-  `server/internal/httpapi/collaboration_tokens.go`). A Y.Doc's
+  claim, 1 to 2^32-1 other than the fork's seed ids 0 and 1, `newClientID`
+  in `server/internal/httpapi/collaboration_tokens.go`). A Y.Doc's
   `RoomProvider` takes the id each JOIN's token offers until its first
-  writable JOINED, then keeps that id for the document's life and names it in
-  every JOIN, so a reconnect binds the same id and the Undo stack survives. A
-  read session never writes and keeps taking each token's id. A new id comes
-  only with a new Y.Doc (a new editor or item room, a room swap's renderer).
+  writable JOINED, or until the document wrote under a token's id (a read
+  channel whose token turned writable), then keeps that id for the document's
+  life and names it in every JOIN, so a reconnect binds the same id and the
+  Undo stack survives. A read session never writes and keeps taking each
+  token's id. A new id comes only with a new Y.Doc (a new editor or item
+  room, a room swap's renderer). Edits a document made before its first JOIN
+  stay under the id Yjs drew, and the room refuses them as they are (Epo
+  2026-10-24, see Refusal); a bound document whose `clientID` no longer
+  matches the bound id stops its channel with an error instead of sending
+  (Q226 L3).
 - **Binding** (`ClientIds::bind` in
   `collaboration-rs/crates/server/src/client_ids.rs`). A JOIN naming an id
   recorded to its user, other than the one its token offers, binds it. A JOIN
   naming an id recorded to another user, or a recorded id its token offers
   again, is refused as `collaboration-client-id` (two documents never share
-  an id); a bound document retries with a fresh token naming its id. An
+  an id); a bound document retries with a fresh token naming its id. A JOIN
+  naming an id its token does not offer that no user holds (a bound
+  document whose row was cleared) is refused as
+  `collaboration-client-id-unheld`: no retry binds it, so the editor keeps
+  the document's unsent edits as refused and opens a new document (a note or
+  item remounts, a source session goes to recovery; `roomRefusal` reads it
+  as `rejected`). An
   unrecorded id must be the one the token offers and held by nothing in the
-  room (its state or a live channel). A write JOIN records it before JOINED;
-  a read JOIN binds it in memory for the channel's life.
+  room: not in the document's history (its state vector, so an id whose row
+  was cleared is never anyone's again), not a live channel's, not the room's
+  own and not being recorded. A write JOIN records it before JOINED, off the
+  room's task: the joining channel waits for the insert while the room keeps
+  serving its other channels (Q226 M4). A read JOIN binds it in memory for
+  the channel's life; when its token turns writable the id is recorded the
+  same way, and the channel stays read-only until the insert commits (Q226
+  M1).
 - **A DOCX session's worker id** (Q219, Epo 2026-10-23). The DOCX editor
   lays out and applies typing in a resident worker, a yrs document of its
   own, so a DOCX write token also offers `workerClientId` (Go mints it only
@@ -1507,28 +1526,44 @@ Office and text files).
   the worker id with its document's (`RoomProvider.workerClientId`), the
   source session hands it to the edit `load`, and the fork's resident worker
   writes under it (`workerClientId` in the DOCX editor's collaboration
-  options) instead of a random id.
+  options) instead of a random id. A DOCX edit load without a worker id fails
+  explicitly (Q226 L4); other formats carry none.
 - **The record.** `material_yjs_client_ids` (material, document `content` or
   `keys`, id) and `source_document_client_ids` (file, id), each row naming
-  the user and deleted with its document or user (migration 0109). A room
-  loads its rows once and keeps them in memory: only a new Y.Doc's write JOIN
-  writes a row, and reconnects and update checks read no database. Ids never
-  enter the Yjs document, whose readers must not map ids to users.
+  the user (indexed) and deleted with its document and by the account purge
+  (migration 0109). A room loads its rows once and keeps them in memory: only
+  a new Y.Doc's write JOIN writes a row, and reconnects and update checks
+  read no database. A room's first accepted write under an id refreshes its
+  row's `last_write_at`, and each room load first deletes the document's rows
+  unwritten for 7 days: no scheduled job (Q226 M3). The server's own writers
+  (the room client, the edit scratch documents) take ids outside the recorded
+  set and the room's history (Q226 L2). Ids never enter the Yjs document,
+  whose readers must not map ids to users.
 - **Admission** (`client_ids::foreign`, after the marker check). Every block
   an update adds beyond the room's held clock for its client must be under an
   id recorded to the writer's user; any of the user's ids counts, so drafts
   of their earlier sessions still apply. Blocks at clocks the room holds pass
   as duplicates, and delete sets are not bound. Server-side writers (the room
   client, Office engine children, seeds) do not go through admission.
+- **Reserved copy ids** (Epo 2026-10-24, M5). Ids from 2^32 up to the PPTX
+  bootstrap id (2^53-1) are reserved for derived override-seed copies; no
+  session is assigned one. A source room admits structs under them from
+  members who may edit the file (`client_ids::RESERVED`); every other room
+  refuses them like any unassigned id.
 - **Refusal.** An update under another id goes the refused-on-entry way:
-  material rooms send `document-rejected` `invalid_document` (the editor keeps
-  its unsaved edits as a refused draft), source rooms `source-checkpoint-failed`
-  with `recoverable: false` (recovery), and a draft send answers `malformed`
-  (the group is marked refused, never sent again). Each is logged at warn and
-  recorded as the edit incident `save_refused`/`client_id`. So after the
-  server lost state a tab restores only its own user's unsaved edits; another
-  user's are lost (accepted, Q213). Drafts stored before the binding, under
-  ids nobody was assigned, are refused once and kept for copying.
+  material rooms send `document-rejected` with code `client_id` (the editor
+  keeps its unsaved edits as a refused draft), source rooms
+  `source-checkpoint-failed` with `recoverable: false` and code `client_id`
+  (recovery), and a draft send answers `malformed` (the group is marked
+  refused, never sent again). Each is logged at warn and recorded as the edit
+  incident `save_refused`/`client_id`. So after the server lost state a tab
+  restores only its own user's unsaved edits; another user's are lost
+  (accepted, Q213). Edits under an id the server never assigned (made before
+  the tab had one) or no longer holds are refused as they are, never bound;
+  re-applying them under the tab's id is the catch-up merge's (Epo
+  2026-10-24, `human/frontend/error-handling.md`), and until it lands they
+  open for copying. Drafts stored before the binding, under ids nobody was
+  assigned, are refused once and kept for copying.
 - **Awareness.** A channel's awareness entries are kept only under its bound
   id; entries under any other id are ignored.
 - **Browser writers.** Notes, items and text sources write under their

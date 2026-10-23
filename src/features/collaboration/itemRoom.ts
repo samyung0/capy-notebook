@@ -305,6 +305,11 @@ export class ItemRoom {
           this.outdated();
           return;
         }
+        // The room holds this document's client id no more: no retry joins.
+        if (refusal === 'rejected') {
+          this.refused();
+          return;
+        }
         if (reason.includes('collaboration room moved')) return;
         // Read-only now (a frozen account, a full owner, a demotion) or a
         // refusal the client retries: join again with a fresh token.

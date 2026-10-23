@@ -33,6 +33,7 @@ describe('office host protocol', () => {
         clientId: 7,
         epoch: 1,
         initialUpdate: new ArrayBuffer(2),
+        workerClientId: 9,
       },
       mode: 'edit',
     };
@@ -47,19 +48,28 @@ describe('office host protocol', () => {
           collaboration: { ...edit.collaboration, clientId },
         })
       ).toBe(false);
-    // A DOCX editor's layout worker id, when sent, is an id too (Q219).
-    for (const [workerClientId, valid] of [
-      [9, true],
-      [0, false],
-      [1.5, false],
-    ] as const)
+    // A DOCX edit names its layout worker's id (Q219), never leaving the
+    // worker to draw one (Q226 L4); other formats name none.
+    for (const workerClientId of [undefined, 0, 1.5])
       expect(
         isOfficeHostMessage({
           ...edit,
           ...limits,
           collaboration: { ...edit.collaboration, workerClientId },
         })
-      ).toBe(valid);
+      ).toBe(false);
+    const { workerClientId: _, ...withoutWorker } = edit.collaboration;
+    expect(
+      isOfficeHostMessage({
+        ...edit,
+        ...limits,
+        collaboration: withoutWorker,
+        format: 'xlsx',
+      })
+    ).toBe(true);
+    expect(isOfficeHostMessage({ ...edit, ...limits, format: 'xlsx' })).toBe(
+      false
+    );
     // An editor always knows the payer's image cap and the room's growth
     // budget, which may be spent (0).
     for (const imageMaxBytes of [undefined, 0, -1, 1.5, '2097152'])

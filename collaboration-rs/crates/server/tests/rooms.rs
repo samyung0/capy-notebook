@@ -2639,8 +2639,8 @@ async fn a_writer_cannot_write_under_another_writers_client_id() {
     let mut forger = Client::open(server.port).await;
     forger.joined(&room, &token(&room, &editor, "write")).await;
     assert!(forger.settle(|c| c.block_text() == "base-a").await);
-    // The victim's next edit is made but not sent yet; the forger writes at
-    // the same clocks under the victim's id.
+    // An update under another user's id is refused; the edit the id's own
+    // session made meanwhile lands.
     let pending = victim.typed("-b");
     let forgery = forged(&forger.doc, victim.doc.client_id().get(), "-forged");
     forger.send(5, &sync(2, &forgery)).await;
@@ -2651,7 +2651,7 @@ async fn a_writer_cannot_write_under_another_writers_client_id() {
         String::from_utf8_lossy(&closed)
     );
     let (rejected, _) = forger.stateless("document-rejected").await;
-    assert_eq!(rejected["code"], "invalid_document");
+    assert_eq!(rejected["code"], "client_id");
     victim.send(5, &sync(2, &pending)).await;
     victim.until(6).await.expect("ack");
     let mut reader = Client::open(server.port).await;
@@ -2660,6 +2660,365 @@ async fn a_writer_cannot_write_under_another_writers_client_id() {
         reader.settle(|c| c.block_text() == "base-a-b").await,
         "{}",
         reader.block_text()
+    );
+}
+
+/// Epo 2026-10-24 (L3): edits made before a document had its assigned id,
+/// under an id nobody was assigned, are refused as they are with the
+/// `client_id` code, and the room is not left stuck: another session of the
+/// user joins and writes. The id is never recorded, and a JOIN naming it
+/// hears `collaboration-client-id-unheld`, so no retry binds it. Fails if
+/// such edits are admitted or the refusal loses its code.
+#[tokio::test]
+async fn edits_under_an_unassigned_client_id_are_refused_with_their_own_code() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, room, mut early) = writer(&env, server.port, "base").await;
+    let unassigned = fresh_client_id();
+    early
+        .send(5, &sync(2, &forged(&early.doc, unassigned, "-early")))
+        .await;
+    let closed = early.until(4).await.expect("the channel closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("client id"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    let (rejected, _) = early.stateless("document-rejected").await;
+    assert_eq!(rejected["code"], "client_id");
+    let mut next = Client::open(server.port).await;
+    assert_eq!(next.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(next.settle(|c| c.block_text() == "base").await);
+    next.type_text("-next").await;
+    next.until(6).await.expect("the next session writes");
+    let rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_client_ids WHERE material_id=$1 AND client_id=$2",
+            &[&material_of(&room), &(unassigned as i64)],
+        )
+        .await
+        .expect("count")
+        .get(0);
+    assert_eq!(rows, 0, "an unassigned id is never recorded");
+    let mut retry = Client::open(server.port).await;
+    retry
+        .send(
+            0,
+            &join_payload_as(
+                &room,
+                &token(&room, &user, "write"),
+                Some(client_protocol()),
+                unassigned,
+            ),
+        )
+        .await;
+    let reason = text_payload(&retry.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-client-id-unheld");
+}
+
+/// Security regression (Q226, binding review M2): every JOIN guard of the
+/// client-id binding refuses: a JOIN naming an id stored as another user's,
+/// an id a live read channel holds, and a write token whose worker id is
+/// taken as `collaboration-client-id`, and an id its token does not offer
+/// that no user holds as `collaboration-client-id-unheld`. Fails if any of
+/// those guards is removed.
+#[tokio::test]
+async fn every_join_guard_refuses_a_client_id_it_may_not_bind() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let mut first = Client::open(server.port).await;
+    first.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(first.settle(|c| c.block_text() == "base").await);
+    first.type_text("-a").await;
+    first.until(6).await.expect("ack");
+    let owners = first.id();
+    let refused_as = async |payload: Vec<u8>, why: &str, expected: &str| {
+        let mut client = Client::open(server.port).await;
+        client.send(0, &payload).await;
+        let reason = text_payload(&client.until(2).await.expect(why));
+        assert_eq!(reason, expected, "{why}");
+    };
+    let refused = async |payload: Vec<u8>, why: &str| {
+        refused_as(payload, why, "collaboration-client-id").await
+    };
+    // Another user's stored id, named with the joiner's own fresh token.
+    let editors = token(&room, &editor, "write");
+    refused(
+        join_payload_as(&room, &editors, Some(client_protocol()), owners),
+        "another user's id",
+    )
+    .await;
+    // A free id other than the one the token offers.
+    refused_as(
+        join_payload_as(&room, &editors, Some(client_protocol()), fresh_client_id()),
+        "an id the token does not offer",
+        "collaboration-client-id-unheld",
+    )
+    .await;
+    // An id a live read channel holds, though a token offers it.
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(
+        reader.joined(&room, &token(&room, &editor, "read")).await,
+        0
+    );
+    let readers = reader.id();
+    refused(
+        join_payload_as(
+            &room,
+            &token_offering(&room, &editor, "write", readers),
+            Some(client_protocol()),
+            readers,
+        ),
+        "a read channel's id",
+    )
+    .await;
+    // A worker id that is taken (here the live read channel's).
+    let session = fresh_client_id();
+    refused(
+        join_payload_as(
+            &room,
+            &token_with_worker(&room, &owner, session, readers),
+            Some(client_protocol()),
+            session,
+        ),
+        "a taken worker id",
+    )
+    .await;
+}
+
+/// Security regression (Q226, binding review M1): a channel that joined
+/// with a read token and whose refreshed token is writable has its id
+/// stored as a writable join stores it, so its edits land and a reconnect
+/// naming the id joins. Fails if a refresh to write stores nothing: the
+/// first edit is refused as under an unassigned id.
+#[tokio::test]
+async fn a_channel_whose_token_turns_writable_stores_its_id_and_its_edits_land() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut client = Client::open(server.port).await;
+    assert_eq!(client.joined(&room, &token(&room, &user, "read")).await, 0);
+    assert!(client.settle(|c| source_text(c) == "base").await);
+    let id = client.id();
+    let mut refresh = Vec::new();
+    varbytes(&mut refresh, token(&room, &user, "write").as_bytes());
+    client.send(11, &refresh).await;
+    // The refresh and the id's store run before the edit.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let before = client.doc.transact().state_vector();
+    client
+        .doc
+        .get_or_insert_text("source")
+        .insert(&mut client.doc.transact_mut(), 0, "w-");
+    let edit = client.doc.transact().encode_state_as_update_v1(&before);
+    client.send(5, &sync(2, &edit)).await;
+    client.until(6).await.expect("the edit is acknowledged");
+    // A reconnect names the stored id with a fresh token.
+    client.channel += 1;
+    client.inbox.clear();
+    client
+        .send(
+            0,
+            &join_payload_as(
+                &room,
+                &token(&room, &user, "write"),
+                Some(client_protocol()),
+                id,
+            ),
+        )
+        .await;
+    assert_eq!(client.until(1).await.expect("the reconnect joins"), [1]);
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        reader.settle(|c| source_text(c) == "w-base").await,
+        "{}",
+        source_text(&reader)
+    );
+}
+
+/// Security regression (Q226, binding review M4): a new session's id is
+/// stored off the room's task, so while that insert waits on the database
+/// (held here by a table lock) the room's other members keep exchanging
+/// edits, and the session joins once the insert goes through. Fails if the
+/// room waits on the insert.
+#[tokio::test]
+async fn a_held_client_id_insert_stalls_only_its_joining_channel() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let mut a = Client::open(server.port).await;
+    a.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(a.settle(|c| c.block_text() == "base").await);
+    let mut b = Client::open(server.port).await;
+    b.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(b.settle(|c| c.block_text() == "base").await);
+    let lock = db(&env).await;
+    lock.batch_execute("BEGIN; LOCK TABLE material_yjs_client_ids IN SHARE MODE")
+        .await
+        .expect("lock");
+    let mut joining = Client::open(server.port).await;
+    joining.join(&room, &token(&room, &editor, "write")).await;
+    a.type_text("-a").await;
+    a.until(6).await.expect("ack while the insert waits");
+    assert!(
+        b.settle(|c| c.block_text() == "base-a").await,
+        "{}",
+        b.block_text()
+    );
+    lock.batch_execute("ROLLBACK").await.expect("unlock");
+    assert_eq!(
+        joining
+            .until(1)
+            .await
+            .expect("joins once the insert goes through"),
+        [1]
+    );
+}
+
+/// Security regression (Q226 M3, Epo 2026-10-24): a room's first write
+/// under an id refreshes its row's last write time, a room load clears rows
+/// unwritten for 7 days, and an id in the document's history is never
+/// assigned again though its row is gone. Fails if the first write leaves
+/// the row's time alone (a writing session's row would be cleared), if a
+/// load clears nothing, or if a cleared id can be bound.
+#[tokio::test]
+async fn unused_client_id_rows_clear_at_a_room_load_and_their_ids_stay_taken() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let material = material_of(&room).to_owned();
+    let pg = db(&env).await;
+    let age = async |id: u64| {
+        pg.execute(
+            "UPDATE material_yjs_client_ids SET last_write_at = now() - interval '8 days'
+             WHERE material_id=$1 AND client_id=$2",
+            &[&material, &(id as i64)],
+        )
+        .await
+        .expect("age the row");
+    };
+    let rows = async |id: u64| -> i64 {
+        pg.query_one(
+            "SELECT count(*) FROM material_yjs_client_ids WHERE material_id=$1 AND client_id=$2",
+            &[&material, &(id as i64)],
+        )
+        .await
+        .expect("count")
+        .get(0)
+    };
+    let reload = async || {
+        wait_unloaded(server.port).await;
+        let mut opener = Client::open(server.port).await;
+        opener.joined(&room, &token(&room, &editor, "read")).await;
+        assert!(opener.settle(|c| c.block_text().starts_with("base")).await);
+    };
+    // The owner's row, stored by its join, ages before its first write.
+    let mut first = Client::open(server.port).await;
+    first.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(first.settle(|c| c.block_text() == "base").await);
+    let id = first.id();
+    age(id).await;
+    first.type_text("-a").await;
+    first.until(6).await.expect("ack");
+    drop(first);
+    reload().await;
+    assert_eq!(
+        rows(id).await,
+        1,
+        "a row written to in its room's life is kept"
+    );
+    // Unwritten for 8 days: the next load clears it.
+    age(id).await;
+    reload().await;
+    assert_eq!(rows(id).await, 0, "a row unwritten for 7 days is cleared");
+    // Its id stays in the document's history: never assigned again.
+    let mut later = Client::open(server.port).await;
+    later
+        .send(
+            0,
+            &join_payload_as(
+                &room,
+                &token_offering(&room, &editor, "write", id),
+                Some(client_protocol()),
+                id,
+            ),
+        )
+        .await;
+    let reason = text_payload(&later.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-client-id");
+    // Its document's reconnect hears that no retry binds it.
+    let mut again = Client::open(server.port).await;
+    again
+        .send(
+            0,
+            &join_payload_as(
+                &room,
+                &token(&room, &owner, "write"),
+                Some(client_protocol()),
+                id,
+            ),
+        )
+        .await;
+    let reason = text_payload(&again.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-client-id-unheld");
+}
+
+/// A client id in the range reserved for override-seed copies (M5).
+const RESERVED_ID: u64 = (1 << 32) + 7;
+
+/// Security regression (Epo 2026-10-24, M5): structs under an id reserved
+/// for override-seed copies (2^32 up to the PPTX bootstrap id) are admitted
+/// from an editor of a source file; a read-only member's are refused, and a
+/// note room refuses them as under any unassigned id. Fails if a source room
+/// refuses reserved ids, or if any other room admits them.
+#[tokio::test]
+async fn reserved_copy_ids_are_admitted_only_from_a_source_files_editors() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "base").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut editor = Client::open(server.port).await;
+    assert_eq!(editor.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(editor.settle(|c| source_text(c) == "base").await);
+    editor
+        .send(5, &sync(2, &typed_as(&editor, RESERVED_ID, "r-")))
+        .await;
+    editor
+        .until(6)
+        .await
+        .expect("the copy's write is acknowledged");
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "read")).await, 0);
+    assert!(
+        reader.settle(|c| source_text(c) == "r-base").await,
+        "{}",
+        source_text(&reader)
+    );
+    reader
+        .send(5, &sync(2, &typed_as(&reader, RESERVED_ID + 1, "x-")))
+        .await;
+    let closed = reader.until(4).await.expect("a reader's write closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("read-only"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    // A note room: a reserved id is an unassigned one.
+    let (_, _, mut writer) = writer(&env, server.port, "note").await;
+    writer
+        .send(5, &sync(2, &forged(&writer.doc, RESERVED_ID, "-copy")))
+        .await;
+    let closed = writer.until(4).await.expect("the note refuses it");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("client id"),
+        "{}",
+        String::from_utf8_lossy(&closed)
     );
 }
 

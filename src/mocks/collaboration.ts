@@ -875,6 +875,8 @@ class MockCollaborationProvider implements UnifiedProvider {
  * saves without publishing; View reads it through the viewer's session. */
 class MockSourceProvider implements SourceProvider {
   readonly awareness: Awareness;
+  /** A DOCX editor's layout worker id (Q219): the mock room checks none. */
+  readonly workerClientId = crypto.getRandomValues(new Uint32Array(1))[0] || 2;
   // The in-page room applies updates synchronously.
   readonly hasUnsyncedChanges = false;
   isAuthenticated = true;

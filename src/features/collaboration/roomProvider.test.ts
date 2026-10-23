@@ -316,6 +316,65 @@ it('keeps taking token ids while its joins are read-only', async () => {
   expect(document.clientID).toBe(clientIdOf('read-2'));
 });
 
+it('takes the token id though it wrote before its first join', async () => {
+  // Epo 2026-10-24: the earlier edit stays under the id Yjs drew, which the
+  // room refuses as it is (`client_id`) and never binds.
+  const document = new Y.Doc();
+  const drawn = document.clientID;
+  document.getText('content').insert(0, 'early');
+  const provider = new RoomProvider({
+    document,
+    name: 'material:m1:schema:1',
+    token: async () => token('token-1'),
+    url: `wss://collab.test/${url++}`,
+  });
+  provider.connect();
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  socket.open();
+  await flush();
+  const [join] = socket.take(MessageKind.Join);
+  const reader = new Reader(join.payload);
+  reader.varString();
+  reader.varString();
+  reader.varUint();
+  expect(reader.varUint()).toBe(clientIdOf('token-1'));
+  expect(document.clientID).toBe(clientIdOf('token-1'));
+  expect(Y.getState(document.store, drawn)).toBe(5);
+});
+
+it('keeps the id a read channel wrote under once its token turned writable', async () => {
+  // Q226 M1: a refresh made the read channel writable and it wrote; the
+  // room stored its id, so a reconnect names that id.
+  const tokens = [token('read-1'), token('write-2')];
+  const { document, join, provider, socket } = await joined({
+    token: async () => tokens.shift()!,
+  });
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(0)));
+  document.getText('content').insert(0, 'typed');
+  provider.disconnect();
+  provider.connect();
+  await flush();
+  const [again] = socket.take(MessageKind.Join);
+  const reader = new Reader(again.payload);
+  reader.varString();
+  reader.varString();
+  reader.varUint();
+  expect(reader.varUint()).toBe(clientIdOf('read-1'));
+  expect(document.clientID).toBe(clientIdOf('read-1'));
+});
+
+it('stops explicitly when its document left the bound id', async () => {
+  // Q226 L3: every change under another id would be refused.
+  const { document, join, socket } = await joined();
+  socket.deliver(message(join.channel, MessageKind.Joined, Uint8Array.of(1)));
+  socket.take(MessageKind.Sync);
+  document.clientID += 1;
+  expect(() => document.getText('content').insert(0, 'typed')).toThrow(
+    'left its assigned client id'
+  );
+  expect(socket.take(MessageKind.Sync)).toHaveLength(0);
+});
+
 it('reports a closed room while the socket stays open for others', async () => {
   const { events, join, provider, socket } = await joined();
   const other = new RoomProvider({

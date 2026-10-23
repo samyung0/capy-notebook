@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"crypto/rand"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -36,6 +37,22 @@ func TestCollaborationClaimsCarryABoundedIdentity(t *testing.T) {
 // Security regression (Q213, Epo 2026-10-23): every token offers its own
 // Yjs client id, never 0 (the DOCX seed's client), so no two sessions are
 // handed the same id. Fails if the claim is missing or repeats.
+// Security regression (Epo 2026-10-24, M5): no session draws an id the fork
+// writes seeds under (the DOCX seed 0, a standalone PPTX 1). Fails if either
+// can be drawn.
+func TestNewClientIDSkipsTheForksSeedIDs(t *testing.T) {
+	draws := [][4]byte{{0, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 0, 5}}
+	t.Cleanup(func() { readRandom = rand.Read })
+	readRandom = func(b []byte) (int, error) {
+		next := draws[0]
+		draws = draws[1:]
+		return copy(b, next[:]), nil
+	}
+	if id := newClientID(); id != 5 {
+		t.Fatalf("drew client id %d", id)
+	}
+}
+
 func TestCollaborationClaimsOfferAFreshClientID(t *testing.T) {
 	seen := map[uint32]bool{}
 	for range 64 {

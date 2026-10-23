@@ -92,13 +92,22 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 	}
 }
 
-// newClientID draws a Yjs client id: a random uint32 other than 0 and other
-// than any id in taken.
+// forkClientIDs are the ids BetterOffice writes seeds under within the
+// uint32 range: the DOCX seed (0) and a standalone PPTX (1). No session
+// draws them (M5).
+var forkClientIDs = []uint32{0, 1}
+
+// readRandom is crypto/rand's reader; a test feeds fixed draws.
+var readRandom = rand.Read
+
+// newClientID draws a Yjs client id: a random uint32 other than the fork's
+// seed ids and any id in taken.
 func newClientID(taken ...uint32) uint32 {
 	var b [4]byte
 	for {
-		_, _ = rand.Read(b[:])
-		if id := binary.BigEndian.Uint32(b[:]); id != 0 && !slices.Contains(taken, id) {
+		_, _ = readRandom(b[:])
+		id := binary.BigEndian.Uint32(b[:])
+		if !slices.Contains(forkClientIDs, id) && !slices.Contains(taken, id) {
 			return id
 		}
 	}

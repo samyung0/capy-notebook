@@ -228,8 +228,12 @@ async fn join_room(
                     ..Refusal::plain(error)
                 });
             }
-            // The browser joins again with a fresh token (Q213).
-            Ok(Err(error)) if error == crate::client_ids::REFUSED_REASON => {
+            // The browser joins again with a fresh token (Q213), or, for an
+            // id the room holds no more, opens a new document.
+            Ok(Err(error))
+                if error == crate::client_ids::REFUSED_REASON
+                    || error == crate::client_ids::UNHELD_REASON =>
+            {
                 return Err(Refusal {
                     reason: error.clone(),
                     ..Refusal::plain(error)
