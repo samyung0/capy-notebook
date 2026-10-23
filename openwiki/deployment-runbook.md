@@ -3396,7 +3396,10 @@ third-party build code runs. `SENTRY_AUTH_TOKEN` stays in the build values
 config line on stdin, never as an argument. `scripts/ci/hardening.test.mjs`
 (in `pnpm test:deployment`) holds these rules.
 
-**Dependency vulnerabilities.** CI runs one job per ecosystem and fails on a
+**Dependency vulnerabilities.** `.github/workflows/audit.yml` runs on every
+push and pull request and again daily (03:17 UTC), so an advisory published
+against an unchanged lockfile still fails a run, and a failed scheduled run
+emails the repository's watchers. It runs one job per ecosystem and fails on a
 known advisory: `audit_rust` (`cargo deny check advisories` on
 `collaboration-rs`), `audit_go` (govulncheck on `server`, with the Go release
 the gateway and Ops images build with; it prints its counts and also fails on a
@@ -3409,6 +3412,19 @@ on that ecosystem's commented ignore list, with its reason:
 Prefer a version bump or a commented `overrides` entry (the developer's rule,
 2026-10-20); an advisory stays listed only when its fix breaks something, and
 the entry says what. Drop an entry when its fix lands.
+
+**Image scan.** The same workflow's daily run (and a manual dispatch) builds
+the five app images (server, ops, collaboration, pipeline, parser) and pulls
+the upstream images `deploy/docker-compose.prod.yml` runs as they are
+(Postgres, Redis), and scans their OS packages with Trivy
+(`scripts/ci/trivy-image.sh`, the `aquasec/trivy` image pinned by digest, not
+`trivy-action`). A fixed HIGH or CRITICAL advisory fails; the language
+dependencies are left to the jobs above. The usual fix is a newer base image
+digest. An advisory that has to wait goes in `.trivyignore` with its reason,
+or with `exp:YYYY-MM-DD` when an upstream rebuild is expected.
+
+**Secret rotation.** Which secrets to rotate, how often and in what order:
+`openwiki/secret-rotation.md`.
 
 **Go release.** `server/go.mod`'s `go` line names the exact Go release (1.26.10
 since 2026-10-21). `server/Dockerfile` and `ops/Dockerfile` pin the same

@@ -211,7 +211,7 @@ func NormalizeOfficeCommands(format string, raw []json.RawMessage) ([]json.RawMe
 			}
 			normalized = map[string]any{"id": c.ID, "expected": cells}
 		case "format_text":
-			normalized = map[string]any{"targetId": c.TargetID, "expectedText": c.ExpectedText}
+			normalized = map[string]any{"targetId": c.TargetID, "text": c.Text}
 			for key, set := range map[string]*bool{"bold": c.Bold, "italic": c.Italic, "underline": c.Underline, "strikethrough": c.Strikethrough} {
 				if set != nil {
 					normalized[key] = *set

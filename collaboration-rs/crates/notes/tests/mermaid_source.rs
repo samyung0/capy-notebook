@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken fixture.
 //! A Mermaid block's source as a text of strings (shape A, Epo 2026-10-10):
 //! the bootstrap writes it so, it reads as its string, typing and pastes
-//! stay on the bound while the size cap still refuses, crafted updates
+//! stay on the bound while the source cap still refuses, crafted updates
 //! putting a text anywhere else or anything but strings in it are refused
 //! within a bounded walk, and an agent's replace_block puts a new block
 //! whose source is a text again.
@@ -12,8 +12,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use common::AdmitBytes;
+use notes::catalog::MERMAID_SOURCE_MAX;
 use notes::edit::{self, DocumentCommand, EditError, EditErrorCode};
-use notes::limits::{Admission, LimitCode, MAX_CONTENT_BYTES, Refusal, Validator};
+use notes::limits::{Admission, LONG_SOURCE, Refusal, Validator};
 use notes::{plate, slate_yjs};
 use serde_json::{Value, json};
 use yrs::branch::BranchPtr;
@@ -127,14 +128,13 @@ fn a_bootstrapped_source_is_a_text_that_reads_as_its_string() {
     notes::material::assert_canonical(&value, "note").unwrap();
 }
 
-/// A keystroke and a 200,000-character paste into the source go in on the
-/// bound, with no copy of the room; a paste past the size cap is measured
-/// and refused.
+/// A keystroke and a 40,000-character paste into the source go in on the
+/// bound, with no copy of the room.
 #[test]
-fn typing_and_a_large_paste_stay_on_the_bound_and_the_cap_still_refuses() {
+fn typing_and_a_large_paste_stay_on_the_bound() {
     let room = room(&[mermaid(SOURCE), paragraph("text")]);
     let mut validator = validator(&room);
-    let exact = validator.exact_checks;
+    let copies = (validator.exact_checks, validator.media_copies);
     let key = edit(&room, 3, |peer| {
         let text = source(peer, 0);
         let end = text.len(&peer.transact());
@@ -145,31 +145,109 @@ fn typing_and_a_large_paste_stay_on_the_bound_and_the_cap_still_refuses() {
         Ok(Admission::Accepted)
     ));
     let paste = edit(&room, 4, |peer| {
-        source(peer, 0).insert(&mut peer.transact_mut(), 0, &"x".repeat(200_000));
+        source(peer, 0).insert(&mut peer.transact_mut(), 0, &"x".repeat(40_000));
     });
     let (result, steps) = admit(&mut validator, &room, &paste);
     assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
     assert!(steps <= 64 * structs(&paste), "{steps} steps");
-    assert_eq!(validator.exact_checks, exact, "the room was copied");
-    let over = edit(&room, 5, |peer| {
-        source(peer, 0).insert(
+    assert_eq!(
+        (validator.exact_checks, validator.media_copies),
+        copies,
+        "the room was copied"
+    );
+    assert_eq!(projected_source(&room).len(), 40_000 + SOURCE.len() + 10);
+}
+
+/// Security regression (Mermaid source cap, Epo 2026-10-22): a source past
+/// `MERMAID_SOURCE_MAX` UTF-16 units costs every reader's browser a render
+/// that never ends, so room admission refuses an update that takes one past
+/// it (typed, in a new block, or as a plain string) and the store refuses a
+/// document holding one; an astral character counts two, and a source
+/// rewritten whole at the cap goes in. Fails with the admission or the store
+/// check removed.
+#[test]
+fn a_source_past_the_catalog_cap_is_refused() {
+    let room = room(&[mermaid(SOURCE), paragraph("text")]);
+    let fill = MERMAID_SOURCE_MAX - SOURCE.len();
+    let typed = edit(&room, 3, |peer| {
+        source(peer, 0).insert(&mut peer.transact_mut(), 0, &"x".repeat(fill + 1));
+    });
+    let new_block = edit(&room, 4, |peer| {
+        let mut txn = peer.transact_mut();
+        let root = plate::content_root(&txn).unwrap();
+        let end = XmlTextRef::from(root).len(&txn);
+        let mut second = mermaid(&"y".repeat(MERMAID_SOURCE_MAX + 1));
+        second["id"] = json!("d2");
+        slate_yjs::insert_nodes(&mut txn, root, end, &[second]);
+    });
+    let plain = edit(&room, 5, |peer| {
+        block(peer, 0).insert_attribute(
             &mut peer.transact_mut(),
-            0,
-            &"y".repeat(MAX_CONTENT_BYTES as usize),
+            "source",
+            "z".repeat(MERMAID_SOURCE_MAX + 1),
         );
     });
-    let (result, _) = admit(&mut validator, &room, &over);
-    assert!(
-        matches!(
-            result,
-            Err(Refusal::Limit {
-                code: LimitCode::DocumentSizeExceeded,
-                ..
-            })
+    for (what, update, reason) in [
+        ("typed past the cap", typed, LONG_SOURCE),
+        ("a new block past the cap", new_block, LONG_SOURCE),
+        (
+            "a plain string past the cap",
+            plain,
+            "an element with a value it cannot hold",
         ),
-        "{result:?}"
+    ] {
+        let mut validator = validator(&room);
+        match admit(&mut validator, &room, &update).0 {
+            Err(Refusal::Content(refused)) => assert_eq!(refused, reason, "{what}"),
+            other => panic!("{what}: {other:?}"),
+        }
+    }
+    // Typed up to the cap (an astral character counting two), then
+    // rewritten whole at it: each goes in, and one more unit does not.
+    let mut validator = validator(&room);
+    let near = edit(&room, 6, |peer| {
+        source(peer, 0).insert(&mut peer.transact_mut(), 0, &"x".repeat(fill - 2));
+    });
+    let astral = edit(&room, 7, |peer| {
+        let text = source(peer, 0);
+        let end = text.len(&peer.transact());
+        text.insert(&mut peer.transact_mut(), end, "\u{1F600}");
+    });
+    for update in [near, astral] {
+        let (result, _) = admit(&mut validator, &room, &update);
+        assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+    }
+    let one_more = |client| {
+        edit(&room, client, |peer| {
+            source(peer, 0).insert(&mut peer.transact_mut(), 0, "x");
+        })
+    };
+    match admit(&mut validator, &room, &one_more(8)).0 {
+        Err(Refusal::Content(refused)) => assert_eq!(refused, LONG_SOURCE),
+        other => panic!("one past the cap: {other:?}"),
+    }
+    let rewrite = edit(&room, 9, |peer| {
+        let text = source(peer, 0);
+        let mut txn = peer.transact_mut();
+        let len = text.len(&txn);
+        text.remove_range(&mut txn, 0, len);
+        text.insert(&mut txn, 0, &"w".repeat(MERMAID_SOURCE_MAX));
+    });
+    let (result, _) = admit(&mut validator, &room, &rewrite);
+    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+    match admit(&mut validator, &room, &one_more(10)).0 {
+        Err(Refusal::Content(refused)) => assert_eq!(refused, LONG_SOURCE),
+        other => panic!("one past the cap after the rewrite: {other:?}"),
+    }
+    let value = plate::value(&room.transact()).unwrap();
+    notes::material::assert_canonical(&value, "note").unwrap();
+    let over = [mermaid(&"v".repeat(MERMAID_SOURCE_MAX + 1))];
+    assert_eq!(
+        notes::material::assert_canonical(&over, "note")
+            .unwrap_err()
+            .0,
+        format!("diagram source is over {MERMAID_SOURCE_MAX} characters")
     );
-    assert_eq!(projected_source(&room).len(), 200_000 + SOURCE.len() + 10);
 }
 
 /// Security regression (shape A's admit exception, Epo 2026-10-10: content

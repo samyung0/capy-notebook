@@ -719,7 +719,12 @@ export async function sharedNote(
         { timeout: 60_000 }
       )
       .toBeGreaterThanOrEqual(1); // HAVE_METADATA: the clip's duration is known
-    // Double-click preview: the image, the diagram (once drawn), chart and graph.
+    // Double-click preview: the image, the diagram (once drawn, which it is
+    // near the screen), chart and graph.
+    await page
+      .locator('[data-island="mermaid"]')
+      .first()
+      .scrollIntoViewIfNeeded();
     const previews = page.locator('[data-island] [data-media-preview]');
     await expect(previews).toHaveCount(4, { timeout: 60_000 });
     for (let index = 0; index < 4; index++)

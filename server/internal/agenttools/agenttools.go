@@ -127,7 +127,9 @@ import (
 // set_alignment take PPTX paragraphs too (Epo 2026-10-20); the slide read
 // pages shapes with paragraphs and gives the slide's speaker notes, which
 // delete_slide names (Epo 2026-10-22).
-const ContractVersion = 38
+// v39: format_text names its span text, not expected_text, and delete_table
+// takes a table's short id (body:t0) that names one table (Epo 2026-10-23).
+const ContractVersion = 39
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -649,7 +651,7 @@ func officeCommandSchema() map[string]any {
 			}, "id", "expected"),
 			variant("format_text", "DOCX, PPTX: format text inside one paragraph; fields left out stay as they are.", map[string]any{
 				"target_id":     paragraph,
-				"expected_text": str("The exact text to format as inspect_office_document shows it; must occur once in the paragraph."),
+				"text":          str("The exact text to format as inspect_office_document shows it; must occur once in the paragraph."),
 				"bold":          flag,
 				"italic":        flag,
 				"underline":     flag,
@@ -661,7 +663,7 @@ func officeCommandSchema() map[string]any {
 				}},
 				"font_size":   map[string]any{"type": "number", "minimum": 1, "maximum": 1638, "description": "Points."},
 				"font_family": str(`A font name, like "Arial".`),
-			}, "target_id", "expected_text"),
+			}, "target_id", "text"),
 			variant("set_alignment", "DOCX, PPTX: align one paragraph.", map[string]any{
 				"target_id": paragraph,
 				"alignment": map[string]any{"type": "string", "enum": []string{"left", "center", "right", "justify"}},

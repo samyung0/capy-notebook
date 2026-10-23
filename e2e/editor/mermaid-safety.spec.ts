@@ -30,10 +30,16 @@ test('diagrams that reference an outside resource load nothing from it', async (
   });
 
   await page.goto('/e2e/fixtures/mermaid-safety.html');
+  // Diagrams draw as they come near the screen: scroll down the gallery.
   await expect
-    .poll(() => page.evaluate(() => document.body.dataset.mermaidDone), {
-      timeout: 60_000,
-    })
+    .poll(
+      () =>
+        page.evaluate(() => {
+          window.scrollBy(0, 500);
+          return document.body.dataset.mermaidDone;
+        }),
+      { timeout: 60_000 }
+    )
     .toBe('true');
 
   // Positive control: an off-origin image added now does reach the route, so
@@ -48,6 +54,26 @@ test('diagrams that reference an outside resource load nothing from it', async (
   await page.waitForTimeout(500);
 
   expect(requested.filter((path) => path !== '/control.png')).toEqual([]);
+  // Security regression (review H1, r2 L6): every drawn diagram keeps one
+  // `<style>`, mermaid's own sheet on its root; a label's is gone.
+  await expect(
+    page.locator('[data-case="labelStyleImport"] svg')
+  ).toContainText('hi');
+  const sheets = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-case] .mermaid-render > svg')].map(
+      (root) => {
+        const styles = [...root.querySelectorAll('style')];
+        return {
+          name: root.closest('[data-case]')?.getAttribute('data-case'),
+          onRoot: styles.filter((style) => style.parentElement === root).length,
+          styles: styles.length,
+        };
+      }
+    )
+  );
+  expect(sheets.length).toBeGreaterThan(0);
+  for (const sheet of sheets)
+    expect(sheet, String(sheet.name)).toMatchObject({ onRoot: 1, styles: 1 });
 
   // Ordinary diagrams still draw their text.
   await expect(page.locator('[data-case="flowchart"] svg')).toContainText(
@@ -88,4 +114,64 @@ test('diagrams that reference an outside resource load nothing from it', async (
     );
     expect(link.href).not.toMatch(/javascript:/i);
   }
+});
+
+// The worker's DOMPurify parses with linkedom, so the page sanitizes its SVG
+// again with the browser's parser before inserting it (Epo 2026-10-22):
+// a worker answering scripts, handlers, images and a script link gets none
+// of them into the page, and its links still open in a new tab.
+// Security regression: fails with forPage's DOMPurify pass (Mermaid.tsx)
+// removed, with its removal of label stylesheets removed (review H1), or
+// with form controls allowed (review L6).
+test("the page sanitizes the worker's SVG before inserting it", async ({
+  page,
+  context,
+}) => {
+  const requested: string[] = [];
+  await context.route(`${REMOTE}/**`, (route) => {
+    requested.push(new URL(route.request().url()).pathname);
+    return route.abort();
+  });
+  await page.goto('/e2e/fixtures/mermaid-safety.html?worker=hostile');
+  await expect
+    .poll(() => page.evaluate(() => document.body.dataset.mermaidDone), {
+      timeout: 60_000,
+    })
+    .toBe('true');
+  const box = page.locator('[data-case="hostile"]');
+  await expect(box.locator('svg')).toContainText('hostile');
+  await page.waitForTimeout(500);
+  const found = await box.evaluate((element) => ({
+    controls: element.querySelectorAll('form, input, textarea, select, button')
+      .length,
+    handlers: [...element.querySelectorAll('*')].flatMap((node) =>
+      [...node.attributes]
+        .map((attribute) => attribute.name)
+        .filter((name) => name.startsWith('on'))
+    ),
+    links: [...element.querySelectorAll('a')].map((a) => ({
+      href: a.getAttribute('href') ?? '',
+      rel: a.getAttribute('rel') ?? '',
+      target: a.getAttribute('target'),
+    })),
+    loaders: element.querySelectorAll('script, img, image').length,
+    pwned: 'pwned' in window,
+    styles: element.querySelectorAll('style').length,
+  }));
+  expect(found.handlers).toEqual([]);
+  expect(found.loaders).toBe(0);
+  expect(found.pwned).toBe(false);
+  expect(found.styles).toBe(0);
+  expect(found.controls).toBe(0);
+  expect(requested).toEqual([]);
+  for (const link of found.links) {
+    expect(link.href).not.toMatch(/javascript:/i);
+    expect(link.target).toBe('_blank');
+    expect(link.rel.split(/\s+/)).toEqual(
+      expect.arrayContaining(['noopener', 'noreferrer'])
+    );
+  }
+  expect(found.links).toContainEqual(
+    expect.objectContaining({ href: 'https://offsite.test/hostile' })
+  );
 });

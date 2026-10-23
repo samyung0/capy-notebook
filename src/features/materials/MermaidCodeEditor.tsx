@@ -12,7 +12,6 @@ import {
   RangeSet,
   StateEffect,
   StateField,
-  type Text,
   Transaction,
 } from '@codemirror/state';
 import {
@@ -123,19 +122,17 @@ const indentKey = {
 };
 
 /** Refuses a typed, pasted or undone change that takes the source past
- * `maxBytes` of UTF-8 and grows it (`onRefused` hears of it); remote edits
- * carry no user event and always land. */
-export function byteBound(maxBytes: number, onRefused: () => void): Extension {
-  // Up to 3 bytes a UTF-16 unit: a short source needs no count.
-  const bytes = (doc: Text) =>
-    doc.length * 3 <= maxBytes
-      ? 0
-      : new TextEncoder().encode(doc.toString()).length;
+ * `maxLength` UTF-16 units (CodeMirror's length) and grows it (`onRefused`
+ * hears of it); remote edits carry no user event and always land. */
+export function lengthBound(
+  maxLength: number,
+  onRefused: () => void
+): Extension {
   return EditorState.transactionFilter.of((tr) => {
     if (!tr.docChanged || tr.annotation(Transaction.userEvent) === undefined)
       return tr;
-    const next = bytes(tr.newDoc);
-    if (next <= maxBytes || next <= bytes(tr.startState.doc)) return tr;
+    const next = tr.newDoc.length;
+    if (next <= maxLength || next <= tr.startState.doc.length) return tr;
     onRefused();
     return [];
   });
@@ -191,15 +188,15 @@ export function editorHistory(): {
  * follows others' edits; otherwise the parent owns the string and a `value`
  * that differs from what is typed replaces the document. `history` hands
  * Undo and Redo to a live item's history; without it the editor keeps its
- * own, which `onView` lets the caller drive. `maxBytes` refuses edits past
- * that many bytes (`byteBound`).
+ * own, which `onView` lets the caller drive. `maxLength` refuses edits past
+ * that many UTF-16 units (`lengthBound`).
  */
 export function MermaidCodeEditor({
   className,
   errorLine: line,
   history: itemHistory,
   label,
-  maxBytes,
+  maxLength,
   onChange,
   onRefused,
   onView,
@@ -211,7 +208,7 @@ export function MermaidCodeEditor({
   errorLine: number | null;
   history?: UndoTarget;
   label: string;
-  maxBytes?: number;
+  maxLength?: number;
   onChange: (value: string) => void;
   onRefused?: () => void;
   onView?: (view: EditorView | null) => void;
@@ -239,7 +236,7 @@ export function MermaidCodeEditor({
           ? [keymap.of([indentKey]), itemHistoryKeys(itemHistory)]
           : [history(), keymap.of([indentKey, ...historyKeymap])],
         text ? yTextSync(text, origin) : [],
-        maxBytes ? byteBound(maxBytes, () => onRefusedRef.current?.()) : [],
+        maxLength ? lengthBound(maxLength, () => onRefusedRef.current?.()) : [],
         errorLine,
         errorMarks,
         theme,

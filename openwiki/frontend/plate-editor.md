@@ -137,16 +137,17 @@ The interactive path is:
 CenterContent
 └── NoteEditor
     └── EditorRuntimeProvider
-        └── NoteEditorCore
-            └── Plate + YjsPlugin
-                └── CollaborationProvider
-                    ├── NoteToolbar
-                    ├── scroll box
-                    │   └── PlateContainer (relative)
-                    │       ├── PlateContent + link actions
-                    │       └── FloatingToolbar (edit only)
-                    ├── EditorCommandPalette
-                    └── AiMenu (edit only)
+        └── DndProvider (one for every editor it mounts)
+            └── NoteEditorCore (per room and generation: two in a room swap)
+                └── Plate + YjsPlugin
+                    └── CollaborationProvider
+                        ├── NoteToolbar
+                        ├── scroll box
+                        │   └── PlateContainer (relative)
+                        │       ├── PlateContent + link actions
+                        │       └── FloatingToolbar (edit only)
+                        ├── EditorCommandPalette
+                        └── AiMenu (edit only)
 ```
 
 `FloatingToolbar` shares the editor's positioned `PlateContainer`, following
@@ -636,19 +637,143 @@ settings (General tab, below Display size), so all viewers see the same
 theme. Server-created diagrams (generate, agent tools) carry no `theme` and
 draw in Linear Light until someone picks one. The block
 stores its preset as optional `theme` on the `mermaid` node, and the diagram
-sits on the preset's background with no border. `renderMermaid` queues renders,
-because `mermaid.initialize` is global: each render sets its own preset, and
-mermaid scopes the output CSS to the SVG id, so blocks in one note keep their
-own themes. Frontmatter config would scope too, but mermaid's sanitizer blanks
-font stacks containing hyphens. Hand Drawn gets per-diagram roughen filters
-after rendering.
+sits on the preset's background with no border. Renders run one at a time,
+because `mermaid.initialize` is global: each render sets its own preset
+(`drawMermaid` in `mermaidDraw.ts`), and mermaid scopes the output CSS to the
+SVG id, unique on the page, so blocks in one note keep their own themes.
+Frontmatter config would scope too, but mermaid's sanitizer blanks font stacks
+containing hyphens. Hand Drawn draws in Excalifont with plain strokes; its
+roughen filters are gone (Epo 2026-10-23): they never applied on the page,
+and in the worker their bounding-box region erased straight lines (sequence
+lifelines, messages, loop boxes) in Chromium and WebKit. `drawMermaid` also sets mermaid's top-level `fontFamily` to the
+theme's (mermaid's default ends in `;`, so the page used to drop it and
+measure some ER, class and sequence labels in the app's body font) and
+`handDrawnSeed: 1` (the class and ER shapes mermaid draws with rough.js came
+out different each time).
 
-A diagram loads nothing from outside the page. Mermaid draws into a host that
-is already in the document (it measures labels as it draws), so anything that
-would fetch does so while it draws; `renderMermaid` therefore makes the source
-inert before `mermaid.render`, not after (`mermaidSafety.ts`). It locks the
-`strict` security level, HTML labels keep no fetching element or attribute (a
-`dompurifyConfig` forbidding `img`, `image`, `source` and the like), and front
+**Rendering in a worker** (Epo 2026-10-22). mermaid.js runs in one dedicated
+module worker (`mermaid.worker.ts`) on a DOM shim (`mermaidShim.ts`): linkedom
+for the tree, and the geometry mermaid reads (`getBBox`,
+`getBoundingClientRect`, `getComputedTextLength`, client sizes) computed from
+attributes and OffscreenCanvas text metrics. The shim has no layout engine: a
+small cascade (inline styles, the diagram's own stylesheet with `!important`
+and specificity, presentation attributes) gives each element its font and
+side padding; an HTML label is laid out as mermaid's `createText` styles it
+(nowrap up to its max-width, then wrapped at its width, line height 1.5,
+inline widths rounded up to 1/64 px as Chromium does), in its text element's
+font, with a padded span's line kept and a block inside it splitting the
+line; an SVG text box collapses white space, takes a tspan's `dy` over its
+text's, and spans the ink past the advance (`actualBoundingBoxRight`). A
+worker has no font settings, so its `sans-serif` is another face: the page
+finds the faces its generic families draw in (`genericFaces` in
+`Mermaid.tsx`) and sends them with each draw; theme fonts load into the
+worker's `self.fonts`. The page sends one draw at a time
+(`renderMermaid`): a queued draw no caller wants when its turn comes is
+skipped (a newer source superseded it), and one already drawing finishes
+into the cache (Epo 2026-10-23). The worker posts `started` once everything
+the draw needs is in: mermaid, the theme preset and its fonts, the diagram
+type's code and its layout's (mermaid has no loader per type, so the worker
+draws the type's small source in `MERMAID_TYPES` once before its first
+diagram of that type), and KaTeX for a source with `$$` math. A draw still
+running 30 s after that (`MERMAID_RENDER_LIMIT_MS`) stops, the worker with
+it, and the block says "This diagram is too large to draw on this device."
+A worker that has not started 30 s after the request, any failure before
+`started` (a download: the worker tells it from a source error by where it
+happens, never by the error's message, which can echo the source; review r3
+L1, L5), the page's DOMPurify failing to load, or an error escaping the
+worker says "Diagrams couldn't load." and stops (Epo 2026-10-23, review r2
+M1/M2, r3 L3). A theme font that fails to load fails the draw the same way,
+and the next draw loads it again. Neither result is cached, nor is a
+missing worker: only failures the source causes are kept, so the next view
+draws again, in a new worker. The page sanitizes the worker's SVG (`forPage`: DOMPurify with
+mermaid's foreignObject setup, our forbid lists and no form controls, then
+every `<style>` but mermaid's root stylesheet removed, then `withSafeLinks`):
+DOMPurify finds no document implementation in linkedom, so mermaid's label
+pass does nothing in the worker and the page's pass is the sanitizer (review
+H1 and L6, Epo 2026-10-23). Each inserted copy makes every id the SVG
+defines its own (`ownIds`): the root id, which prefixes most ids and scopes
+the stylesheet, becomes the copy's, and every other defined id (the ids
+mermaid counts per worker, such as sankey gradients and sequence actors, and
+any id a label's HTML sets) takes the copy's id as a prefix, with every
+`url(#…)`, `href="#…"` and aria reference, so a block and its full-screen
+preview, or two drawings from different worker lifetimes, never share one,
+and no label can claim another diagram's ids (review L1, r2 L2, r3 L2). Drawn diagrams are cached in memory by theme and source (and
+width for a gantt chart, which spans its box), up to about 8 million
+characters of SVG in all (`CACHE_CHARS`, oldest dropped first), shared by
+the block, the full-screen preview, View/Edit and exports, so opening full
+screen or switching mode does not draw again. The worker ends after 60 s
+without a draw (`WORKER_IDLE_MS`); a warm-up extends that. A block draws once it comes within a
+screen of the viewport (`useNearScreen`), showing "Rendering diagram" until
+then; any mounted diagram starts the worker (which loads mermaid as it
+starts), the page's generic-face probe and DOMPurify at idle (`warmMermaid`,
+Epo 2026-10-23), so a diagram scrolled to later waits on neither.
+
+The worker draws only the types the geometry check covers (`MERMAID_TYPES` in
+`mermaidTypes.ts`, one source each in `e2e/fixtures/mermaid-sources.ts`, a
+unit test keeping the two equal; Epo 2026-10-23): every type mermaid 11.16.1
+registers, by detected id: architecture, block, c4, class and classDiagram
+(`classDiagram` and `classDiagram-v2`, one renderer), cynefin, er, eventmodeling, flowchart-v2 and
+flowchart-elk, gantt, gitGraph, info, ishikawa, journey, kanban, mindmap,
+packet, pie, quadrantChart, radar, railroad (plain, ABNF, EBNF and PEG),
+requirement, sankey, sequence, stateDiagram, swimlane, timeline, treemap,
+treeView, venn, wardley and xychart. A type mermaid does not ship (an add-on
+such as ZenUML) or misspells fails mermaid's own detection: "This diagram could
+not be drawn". A registered id outside the list, the renderer-v1 `flowchart`
+that a `defaultRenderer` directive picks, is unsupported: the worker refuses
+it before drawing (`mermaid.detectType` against mermaid's site config, which
+a diagram's directives never reach, review r2 H1) or after (by the drawn
+`diagramType`). `drawMermaid` clears mermaid's directives
+(`mermaidAPI.reset`) before it initializes, so no diagram's config reaches
+the next draw by any path, the image check's type detection included
+(review r3 M1). There is no main-thread drawing path. An unsupported type
+says "This diagram type isn't supported." and a browser without a 2D
+OffscreenCanvas (Safari before 16.4) or module workers (a `Worker` that never
+reads its `type` option) says "This browser can't draw diagrams.", both
+checked on the page (review r3 L4); every Mermaid error shows in
+`MermaidError` as a source error does, everywhere (block, preview, chat). A
+Word export writes a diagram that cannot be drawn, for any of these reasons,
+as its source in a code block, as Markdown export does (Epo 2026-10-23). The geometry check (`e2e/editor/mermaid-geometry.spec.ts`) draws
+each type in the worker and on the page (`drawMermaid`, then the same
+`forPage`) and compares the detected type and every element's numbers
+(positions, sizes, path points, transforms, the viewBox) within 1.5 px, in all
+five themes, so a mermaid upgrade or a shim change that moves anything fails
+CI. That exact check runs in Chromium, where Windows and Linux both match;
+only the timeline's title (font-size `4ex`) is about 1 px off, since canvas
+exposes no x-height. Firefox and WebKit lay text out a few pixels apart, so
+there the same spec (`e2e/editor/playwright.mermaid-engines.config.ts`, CI
+job `e2e_mermaid_engines`) lays both drawings out and checks every worker
+label with text against its box: an HTML label against its foreignObject,
+an SVG text against the drawing and the smallest rect, polygon or path whose
+box holds its centre (a node, a bar, a cell). A label may reach past its box
+by no more than the same label on that engine's own page drawing, plus 1 px,
+which keeps mermaid's own placements (info's version line and a radar's axis
+names past the drawing, a sequence `loop` tab), and no two labels may overlap
+more than there; labels pair up by their place in document order (Epo
+2026-10-23, review r3 M2). Info, radar, sankey and treeView have no box
+around any text (a version line, axis names around the web, names beside
+the bars, a tree drawn in lines), so their texts are checked against the
+drawing only, as are titles, axis ticks, legend entries and edge labels in
+other types. The check's first WebKit run found that WebKit does not pass a
+text's `dominant-baseline` down to its tspans, as Chromium, Firefox and the
+shim do: ishikawa causes drew about 4 px above their boxes there. Every
+drawing's stylesheet now says a tspan without its own inherits it
+(`TSPAN_BASELINE` in `mermaidDraw.ts`), which changes nothing in Chromium or
+Firefox.
+
+**Scale.** A block never shows a diagram below half its natural size
+(`MIN_SCALE`, Epo 2026-10-22): the SVG keeps a minimum width and height of
+half its viewBox, and the box (at most `min(70vh, 48rem)` tall) scrolls both
+ways instead, centred while it fits (`justify-center-safe`). Large diagrams
+stay inline SVG. The full-screen viewer fits the diagram and zooms to at
+least its natural size (`maxScale` = max(8, natural / fitted width),
+`MermaidPreview`).
+
+A diagram loads nothing from outside the page. In the worker nothing can
+fetch (linkedom loads nothing and there is no document), and `drawMermaid`
+makes the source inert before `mermaid.render` (`mermaidSafety.ts`). It locks the
+`strict` security level, keeps a `dompurifyConfig` forbidding `img`, `image`,
+`source`, `style` and the like (a no-op in the worker; `forPage` applies the
+same lists on the page), and front
 matter and `%%{init}%%` directives cannot turn `themeCSS`, a font stack or
 those keys back on (mermaid's own `secure` list, extended). Over that, the
 source drops what config cannot reach: a line naming a CSS image function
@@ -657,9 +782,7 @@ entities, and across mermaid's directive cuts) is blanked keeping its line
 number. That is any line containing `url(` or `image-set(`, so a label whose
 text writes `url(` loses its line too ("the URL (a link)", with a space, is
 kept). This filter, not the sanitiser, is what stops an inline `style` in a
-label from fetching: labels keep their inline styles, since mermaid sanitises
-its own icon SVGs (architecture icons) and math-label wrappers with the same
-config. An image node's `img` or a sequence actor's icon is removed when
+label from fetching: labels keep their inline styles. An image node's `img` or a sequence actor's icon is removed when
 mermaid's own parse says the diagram draws an image. A diagram that needed a
 removed part still draws, minus that part; one that still names or draws an
 image across lines after the pass is refused. Links stay clickable (`click …
@@ -668,12 +791,15 @@ href`, Epo 2026-10-15): after `mermaid.render`, every `<a>` in the SVG gets
 a new tab and cannot reach the Capy tab; mermaid's strict mode already leaves
 a `javascript:` target's anchor with no href. The one `renderMermaid` serves
 every surface — chat, note blocks, mindmap and diagram files, shared-page
-islands and the export rasteriser — so this covers them all. The app's
+islands and the export rasteriser — so this covers them all; a worker's SVG
+is sanitized on the page before any of it is inserted. The app's
 report-only image policy (deployment-runbook §2.4) is a backstop, not the fix.
 Preset fonts (Excalifont, vendored Latin subset in
 `src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through
-`FontFace` before the render, since mermaid measures labels while drawing; a
-failed font load draws in the fallback font. In edit mode the hover toolbar has
+`FontFace` into the worker's (or the page's) font set before the render,
+since mermaid measures labels while drawing; a failed font load draws in the
+fallback font. Inter, first in the Linear stacks, is not shipped: both
+threads fall through to the next installed face. In edit mode the hover toolbar has
 theme, caption, edit, copy and delete. A resized diagram stretches
 past its natural width. The
 caption is typed in a field under the diagram (at most 300 characters, a
@@ -688,10 +814,16 @@ preview in the block's theme (Tab indents by two spaces; deleting lives on the
 toolbar) and edits the block live: there is no Save or Cancel, it closes with
 its X or Esc, and its footer holds Undo, Redo (CodeMirror's own history; the
 note's Undo does not cover the dialog's typing) and the note's save status.
-An edit (typing, paste, Undo) that would take the source past the HTML embed
-source's 64 KB (UTF-8) is refused with that bound's message ("The snippet is
-over 64 KB."; `byteBound`), while other peers' edits and shrinking edits always
-land; these bounds are the browser's only.
+A source is capped at `MERMAID_SOURCE_MAX`, 50,000 UTF-16 units (mermaid's own
+`maxTextSize`), one embed-catalog limit on every layer (Epo 2026-10-22): an edit
+(typing, paste, Undo) in the dialog or a diagram file's editor that would take
+the source past it is refused with "This diagram is over 50,000 characters."
+(`lengthBound`), while other peers' edits and shrinking edits always land;
+`renderMermaid` refuses a longer source before drawing it with the same
+message, and mermaid's 500-edge limit ("Edge limit exceeded") says "This
+diagram has more than 500 links."; the browser's document check, Go's
+`materialdoc` and the collaboration server's store and room admission refuse
+a longer source ([embeds](../embeds.md)).
 The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
 view and history only, ~78 KB gzipped, loaded with the dialog or the editor,
 ligatures off) with line numbers; the line mermaid blames gets a tinted
@@ -988,6 +1120,10 @@ Collaboration unavailable; a live item's footer status uses the same icons.
 Office and text sources report the same states into the same slot
 (`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
 keyboard-accessible tooltips and the live status text for screen readers.
+Every file's header (notes, quizzes, flashcards, diagrams, text, Office and
+other files) also shows the label beside the icon from md up (Epo
+2026-10-22; `EditorSaveStatus` `labelFromMd`: one span, screen-reader text
+below md and visible from md).
 Pending work preserves Connecting, Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 
@@ -1023,7 +1159,24 @@ for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)
 and anything else (an expired token, a room being reset or compacted) is
 retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
-sync it turns the status red). A failed first token request shows the panel for its status (not found,
+sync it turns the status red). A join, first or after a reload, has the same
+30 s from its start, which is its collaboration-token request (or the new
+mount, for a new mount of the same room; Epo 2026-10-23): `NoteEditor` keeps
+that start and the editor's `roomReconnector` counts from it (`started(at)`).
+A first open whose token has not answered by then shows the collaboration
+unavailable panel with Retry instead of loading for ever; an editor not
+synced by then, a JOIN never answered on the open socket included, turns the
+status red, and after a reload that failing editor replaces the paused one.
+Item rooms (quizzes, flashcard sets, standalone diagrams and mindmaps) have
+the same 30 s from their token request (`ItemRoom.start`); one not synced by
+then goes offline, the room's connection error (Epo 2026-10-23).
+A slowed open and offline wait. A reload pauses only once its new token has
+answered, so a reload whose token hangs keeps the old editor on screen,
+unpaused and editable. With the real server the compaction evicted its room,
+so its own reconnect (whose token request hangs too) goes Offline at about
+30 s like any lost room, its edits kept on the device, and the swap runs
+once a token answers. The mock retires the old room without evicting it, so
+no e2e shows the Offline part. A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry). A member removed from the workspace gets
 the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
@@ -1438,6 +1591,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   naming the read's id; UAT 2026-10-22) raised `CLIENT_PROTOCOL` to 11 and
   `MIN_SOURCE` to 11; `MIN_MATERIAL` stays 7. Its deploy request names
   "client protocol 10 -> 11, source 10 -> 11".
+  The Office agent's short table id and format_text's `text` (pin
+  337896d27: delete_table takes `body:t0` naming one table, format_text names
+  its span `text`; Epo 2026-10-23) raised `CLIENT_PROTOCOL` to 12 and
+  `MIN_SOURCE` to 12; `MIN_MATERIAL` stays 7. Its deploy request names
+  "client protocol 11 -> 12, source 11 -> 12".
+  The room swap (pin 86237e2c1: BetterOffice going read-only and a
+  document's first frame keep the view, reader actions still bring the caret
+  into view, a peer's change never does; Epo 2026-10-22, 2026-10-23) raised
+  `CLIENT_PROTOCOL` to 13 and `MIN_SOURCE` to 13; `MIN_MATERIAL` stays 7. Its
+  deploy request names "client protocol 12 -> 13, source 12 -> 13".
 
 #### When to bump
 
@@ -1825,10 +1988,10 @@ else handled at save: a canonical repair, otherwise the room reset (Epo
 or structure rule, an update outside the document's shape) answers its writer
 alone with a `document-rejected` stateless message (a limit's code and metrics,
 else `invalid_document`, no eviction id), then closes that channel only: the
-socket stays, the client remounts on a fresh Y.Doc and a new channel on it
-(its old Y.Doc holds the refused structs, so no later edit of it could be
-placed) and keeps its unsaved edits as a refused draft, and co-editors and
-the room are untouched. Right after an admitted update goes in, the room
+socket stays, the client swaps to a new editor on a fresh Y.Doc and a new
+channel ([room swap](#room-swap); its old Y.Doc holds the refused structs, so
+no later edit of it could be placed) and keeps its unsaved edits as a refused
+draft, and co-editors and the room are untouched. Right after an admitted update goes in, the room
 repairs what a canonical form fixes cheaply, in one server transaction every
 editor gets in the same flush (`Model::repair_on_entry`,
 `notes::repair::on_entry`, `items::flashcards::repair`): an element's `text`
@@ -1859,12 +2022,14 @@ loaded would mean it never persists again. A structurally invalid snapshot no
 repair fixes is discarded the same way (`document-rejected` with code
 `invalid_document`), and an `authorization-revoked` eviction makes every editor
 drop its copy too. `NoteEditor` responds to a `document-rejected` (its writer's
-or the room's) by remounting `NoteEditorCore` under a new generation key, which
-reconnects onto the room's state (after a discard, the last durable state). Unsaved edits are kept as
-one refused draft first, so the remount shows them read-only for copying until
-Reload; a limit also shows the too-large toast, and only edits this device
-could not store end in the changes-undone toast. Invalidating the collaboration token alone is not enough, because
-an unchanged room string leaves the editor mounted on its forked document.
+or the room's) by swapping in a new `NoteEditorCore` under a new generation key
+([room swap](#room-swap)), which reconnects onto the room's state (after a
+discard, the last durable state). Unsaved edits are kept as one refused draft
+first, so what the swap brings in is the recovery view showing them read-only
+for copying until Reload; a limit also shows the too-large toast, and only
+edits this device could not store end in the changes-undone toast.
+Invalidating the collaboration token alone is not enough, because an unchanged
+room string leaves the editor mounted on its forked document.
 Failed-store retries use the same terminal path. If a queued snapshot later
 fails a document or quota limit, the server drops it, broadcasts the rejection
 when the room is still live, and discard-evicts the room back to durable Yjs
@@ -1887,6 +2052,61 @@ it syncs anything and opens copy-only recovery; item identities do not change,
 so comment anchors stay valid. A co-editor still connected
 during such a discard, with a few seconds of unsaved typing, lands in recovery
 too (Epo, 2026-10-04).
+
+### Room swap
+
+Developer Epo decided on 2026-10-22 that a room reload swaps renderers
+instead of remounting in place: a compaction or discard that moves the room
+to a new `room_schema` (the token names another room), a `document-rejected`
+(a new generation), and Reload from recovery. `NoteEditor` keys each renderer
+by room and generation (`useRoomSwap`, `roomSwap.ts`) and gives each
+`NoteEditorCore` a phase:
+
+- **Paused**: the one on screen once the note wants another room or
+  generation. It stops edits without Slate's readOnly, since readOnly
+  re-rendered every block and dropped the reader to the top: its model takes
+  only selection changes (`holdModel` wraps `editor.apply` and `tf.apply`,
+  so a portalled block menu, a column or figure resize, or an IME
+  composition the pause ends changes nothing), and `pauseEdits` turns the
+  editable root `contenteditable=false` and stops typing, paste, drops,
+  drags, right clicks and clicks on controls in the capture phase. Its
+  toolbar is inert, the palette and AI menu unmount, it leaves its room
+  (no reconnect), writes its unsaved edits as one whole document (its child
+  effect runs before `useNoteDrafts` reads the next room's drafts, so another
+  lineage's edits still open in recovery, as before) and reports nothing
+  more: no status, presence, banners or refusals. Reading, scrolling,
+  selecting, copying and links still work.
+- **Standby**: the next renderer (an editor, or `NoteRecovery` when stored
+  edits must show for copying) once the next room's stored edits are read.
+  It mounts `invisible absolute inset-0` and `inert` beside the paused one,
+  so its layout is real, connects and syncs, and its header status reads
+  Reconnecting (with a slowed open's line); `NoteEditor` reports Reconnecting
+  itself until then.
+- **Live**: after the standby renderer's first paint (`onPainted`, two
+  animation frames after its content rendered, an error state included) its
+  slot loses the hidden classes (the DOM is never moved), the paused one
+  unmounts, and the reader's place comes back by block id
+  (`captureNotePosition`/`restoreNotePosition`): first the selection by
+  top-level block id plus path and offset, with the focus when the editor
+  held it as it paused (`noteFocusAtPause`, read before the pause makes the
+  root non-editable and blurs it) and the reader has not focused something
+  else since, then the first top-level block under the scroll box's top
+  edge at the same offset (else the old scroll offset), last, so the
+  reading place wins over the caret. Yjs ids are never used: a compaction
+  gives the room new ones.
+
+A hidden tab swaps at once (no paused phase; a tab that hides meanwhile
+swaps then). A phone (below sm) holds one renderer: the paused view is
+copied as plain DOM (`copyPausedView`: nothing editable, no frames, Slate and
+block-id markers removed, its toolbar inert, scroll kept) over the editor
+remounting in place, which stays in standby under the copy until its first
+paint. The copy does not carry canvas bitmaps or shadow roots: charts and
+plots drawn to a canvas and math fields show blank in it until the swap. The
+path (beside, a phone's copy, or at once) is decided once per swap, when the
+next mount is ready, so a breakpoint crossing during the build keeps it. The banners of the paused editor's room (offline, delayed) go with it.
+All renderers share one react-dnd `DndProvider` in `NoteEditor`: two
+providers, each with an HTML5 backend, throw. `room-swap.spec.ts` covers the
+compaction, a hidden tab, a phone and a refused update.
 
 Connection admission, token refresh, and each durable store also re-read actor
 lifecycle, membership/share role, owner lifecycle, and quota state from
@@ -1914,9 +2134,12 @@ revoked user's update.
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.
 `MaterialBody` reads `sizeBytes` / `nodeCount` from the cached material list and
-shows `HeavyMaterialGate` when either passes `MATERIAL_RENDER_WARNING`, offering
-read-only (static `MaterialPreview`, no Yjs handshake and no editing plugins) or
-open-anyway. Absent list metadata always opens: the gate must never become a
+shows `HeavyMaterialGate` for a note when either passes
+`MATERIAL_RENDER_WARNING`, offering read-only (static `MaterialPreview`, no Yjs
+handshake and no editing plugins) or open-anyway. Notes only (Epo 2026-10-22,
+`heavyMaterial`): the gate spares a note's Plate editor, which a flashcard set
+or quiz has no copy of in View (a 1,400-card set is about 7,000 nodes), and a
+diagram draws in the Mermaid worker. Absent list metadata always opens: the gate must never become a
 door the reader cannot pass. Nothing downloads the document before the reader
 chooses: `GET /api/materials/{id}` carries the whole `content` envelope, so the
 viewer header takes the title and kind from the list entry and the capabilities
