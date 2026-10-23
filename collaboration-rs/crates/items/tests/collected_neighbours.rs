@@ -87,7 +87,21 @@ fn an_overlapping_item_is_checked_where_yrs_places_it() {
     // yrs trims it to the tail after client 2's own "z" in card A's back, where
     // a ContentAny is not plain text in a card face.
     let update = vec![
-        1, 1, 2, 0, 136, 7, collected as u8, 2, 119, 1, 113, 119, 1, 114, 0,
+        1,
+        1,
+        2,
+        0,
+        136,
+        7,
+        collected as u8,
+        2,
+        119,
+        1,
+        113,
+        119,
+        1,
+        114,
+        0,
     ];
     let decoded = Update::decode_v1(&update).unwrap();
     let incoming = Incoming::new(&decoded);

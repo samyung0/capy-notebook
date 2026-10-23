@@ -110,8 +110,14 @@ fn an_overlap_items_text_is_counted_where_yrs_places_it() {
     ydoc::apply(&room, update).unwrap();
     let txn = room.transact();
     assert_eq!(txn.state_vector().get(&ClientID::new(10)), 2);
-    let text = value(&txn)[0]["children"][0]["text"].as_str().unwrap().to_owned();
-    assert!(text.contains('Y'), "the tail lands in the paragraph: {text}");
+    let text = value(&txn)[0]["children"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        text.contains('Y'),
+        "the tail lands in the paragraph: {text}"
+    );
 }
 
 #[test]
@@ -122,7 +128,9 @@ fn an_overlap_items_non_text_content_is_refused() {
     // Either way the tail is non-text in a note text and is refused there.
     let rows: [&[u8]; 2] = [
         &[1, 1, 10, 0, 200, 1, 20, 1, 9, 2, 119, 1, 88, 119, 1, 89, 0],
-        &[1, 1, 10, 0, 136, 1, 2, 2, 119, 2, 115, 49, 119, 2, 122, 122, 0],
+        &[
+            1, 1, 10, 0, 136, 1, 2, 2, 119, 2, 115, 49, 119, 2, 122, 122, 0,
+        ],
     ];
     for u2 in rows {
         let room = note_room();
@@ -158,7 +166,12 @@ fn an_honest_merged_overlap_draft_is_admitted() {
     ydoc::apply(&room, update).unwrap();
     let txn = room.transact();
     assert_eq!(txn.state_vector().get(&ClientID::new(10)), 2);
-    assert!(value(&txn)[0]["children"][0]["text"].as_str().unwrap().contains('Y'));
+    assert!(
+        value(&txn)[0]["children"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains('Y')
+    );
 }
 
 #[test]
@@ -181,7 +194,10 @@ fn a_dependent_item_retried_after_its_dependency_is_collected() {
     {
         let txn = ordered.transact();
         assert!(txn.store().pending_update().is_none());
-        assert!(collected(&txn, 10) && collected(&txn, 11), "both collected in order");
+        assert!(
+            collected(&txn, 10) && collected(&txn, 11),
+            "both collected in order"
+        );
     }
     // Dependent first: it waits, then the dependency's arrival retries it.
     let reversed = note_room();
@@ -192,7 +208,17 @@ fn a_dependent_item_retried_after_its_dependency_is_collected() {
     );
     ydoc::apply(&reversed, ydoc::decode(dependency).unwrap()).unwrap();
     let txn = reversed.transact();
-    assert!(txn.store().pending_update().is_none(), "the retry clears pending");
-    assert!(collected(&txn, 10) && collected(&txn, 11), "both collected on retry");
-    assert_eq!(value(&txn), value(&ordered.transact()), "same as in-order delivery");
+    assert!(
+        txn.store().pending_update().is_none(),
+        "the retry clears pending"
+    );
+    assert!(
+        collected(&txn, 10) && collected(&txn, 11),
+        "both collected on retry"
+    );
+    assert_eq!(
+        value(&txn),
+        value(&ordered.transact()),
+        "same as in-order delivery"
+    );
 }
