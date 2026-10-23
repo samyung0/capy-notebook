@@ -450,7 +450,9 @@ func (s *Store) BeginProviderSession(
 // reserveMicros of the actor's credits until it settles, is released or
 // expires: for a call whose most it can cost is known before it runs (voice
 // input, at most two minutes). Admission is the usual gate; the hold then
-// counts against every later gate while the call runs.
+// counts against every later gate while the call runs. Bounded by its hold,
+// it neither takes nor counts as one of the ConcurrentLLMLeases (a zero hold,
+// at a zero rate, is an ordinary leased session).
 func (s *Store) BeginReservedSession(ctx context.Context, actorUserID, workspaceID, surface string, reserveMicros int64) (string, error) {
 	if reserveMicros < 0 {
 		return "", fmt.Errorf("negative reservation %d", reserveMicros)
@@ -497,16 +499,20 @@ func (s *Store) beginProviderSession(
 		if err := admit(ctx, tx, usage); err != nil {
 			return "", err
 		}
-		var open int64
-		if err := tx.QueryRow(ctx, `
-			SELECT count(*) FROM provider_sessions
-			 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-			   AND surface <> $2 AND paid_by = $3`,
-			actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
-			return "", err
-		}
-		if open >= ConcurrentLLMLeases {
-			return "", ErrTooManyLLMLeases
+		if reserveMicros == 0 {
+			// Reserved sessions (voice input) are left out: see
+			// BeginReservedSession.
+			var open int64
+			if err := tx.QueryRow(ctx, `
+				SELECT count(*) FROM provider_sessions
+				 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+				   AND surface <> $2 AND paid_by = $3 AND reserved_micros = 0`,
+				actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
+				return "", err
+			}
+			if open >= ConcurrentLLMLeases {
+				return "", ErrTooManyLLMLeases
+			}
 		}
 		// SettleCredits, ReleaseCredits and the expiry sweep take the hold
 		// back off the counter.

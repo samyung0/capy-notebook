@@ -24,7 +24,11 @@ func fake(t *testing.T, status int, body string) (*Client, *http.Request, *map[s
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
-	return New("sk-test", srv.URL+"/compatible-mode/v1/"), &got, &sent
+	c, err := New("sk-test", srv.URL+"/compatible-mode/v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, &got, &sent
 }
 
 // The request is the shape measured live on 2026-10-23: the native endpoint
@@ -65,6 +69,9 @@ func TestTranscribeErrorsNameStatusAndCodeOnly(t *testing.T) {
 		{http.StatusBadRequest, `{"code":"InvalidParameter","message":"secret words"}`, false, "status 400 InvalidParameter"},
 		{http.StatusInternalServerError, `{"code":"secret words","message":"x"}`, false, "status 500 unknown"},
 		{http.StatusOK, `{"output":{"text":"secret words"}}`, false, "status 200 invalid_response"},
+		// Text with no end, or an end at zero, has no length to cap or bill.
+		{http.StatusOK, `{"sentence":{"text":"secret words"}}`, false, "status 200 invalid_response"},
+		{http.StatusOK, `{"sentence":{"text":"secret words","end_time":0}}`, false, "status 200 invalid_response"},
 	}
 	for _, tc := range cases {
 		c, _, _ := fake(t, tc.status, tc.body)
@@ -77,13 +84,35 @@ func TestTranscribeErrorsNameStatusAndCodeOnly(t *testing.T) {
 	}
 }
 
+// No settings is a nil client that answers "not configured"; one of the
+// two, or a URL that is not the workspace's compatible-mode base, is an
+// error at startup.
 func TestUnconfiguredClientRefuses(t *testing.T) {
-	for _, c := range []*Client{New("", "https://example.test"), New("sk", "")} {
-		if c != nil {
-			t.Fatal("a client without key and URL must be nil")
+	c, err := New("", "")
+	if c != nil || err != nil {
+		t.Fatalf("no settings: %v %v", c, err)
+	}
+	if _, err := c.Transcribe(context.Background(), nil, "webm", "audio/webm", ""); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("nil client: %v", err)
+	}
+	for _, setting := range [][2]string{
+		{"", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"},
+		{"sk", ""},
+		{"sk", "https://dashscope-intl.aliyuncs.com"},
+		{"sk", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/"},
+	} {
+		if c, err := New(setting[0], setting[1]); c != nil || err == nil {
+			t.Errorf("%q: want a startup error", setting)
 		}
-		if _, err := c.Transcribe(context.Background(), nil, "webm", "audio/webm", ""); !errors.Is(err, ErrNotConfigured) {
-			t.Fatalf("nil client: %v", err)
-		}
+	}
+}
+
+// An answer with no speech has no end either: it is the clip's own case,
+// not an unreadable answer.
+func TestTranscribeSilenceIsEmptyText(t *testing.T) {
+	c, _, _ := fake(t, http.StatusOK, `{"sentence":{"text":" "}}`)
+	out, err := c.Transcribe(context.Background(), []byte{1}, "webm", "audio/webm", "")
+	if err != nil || strings.TrimSpace(out.Text) != "" || out.EndMs != 0 {
+		t.Fatalf("silence: %+v %v", out, err)
 	}
 }

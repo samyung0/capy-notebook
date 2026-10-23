@@ -295,6 +295,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	voice, err := alibaba.New(env("ALIBABA_MODELSTUDIO_KEY", ""), env("ALIBABA_MODELSTUDIO_URL", ""))
+	if err != nil {
+		log.Fatal(err)
+	}
 	for i := range e2eUserIDs {
 		e2eUserIDs[i] = strings.TrimSpace(e2eUserIDs[i])
 	}
@@ -502,7 +506,7 @@ func main() {
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,
 		Jev:                    jev.New(env("JEV_TYPESAFE_API_KEY", "")),
-		Voice:                  alibaba.New(env("ALIBABA_MODELSTUDIO_KEY", ""), env("ALIBABA_MODELSTUDIO_URL", "")),
+		Voice:                  voice,
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder

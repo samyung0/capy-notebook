@@ -33,7 +33,9 @@ const (
 	// voiceSpanLimitMs refuses a clip the provider heard as longer than the
 	// cap plus the recorder's stop margin. The API image has no audio
 	// duration parser, so the size limit and this span are the server's
-	// checks.
+	// checks; an answer with text but no span is refused as unreadable
+	// (alibaba.Transcribe). The margin is never charged: units stop at the
+	// two minutes the call holds.
 	voiceSpanLimitMs = (fieldlimits.VoiceInputSeconds + 5) * 1000
 	// The context message names the workspace and at most this many of its
 	// newest sources, cut to voiceContextMaxRunes.
@@ -78,8 +80,9 @@ func (a *api) registerVoice(api huma.API) {
 }
 
 // transcribeVoice holds the two-minute maximum of the caller's credits while
-// the call runs, then charges the seconds the provider heard (ceil) once, or
-// nothing when the call fails or the clip is refused.
+// the call runs, then charges the seconds the provider heard (ceil, at most
+// the two minutes held) once, or nothing when the call fails or the clip is
+// refused.
 func (a *api) transcribeVoice(ctx context.Context, in *voiceTranscriptionInput) (*voiceTranscriptionOutput, error) {
 	// Anyone who may chat in the workspace, the chat stream's own check.
 	if _, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), in.ID); err != nil {
@@ -159,7 +162,7 @@ func (a *api) transcribeVoice(ctx context.Context, in *voiceTranscriptionInput) 
 		CallID: callID, Kind: store.KindAudio, Purpose: voicePurpose,
 		Provider: voiceProvider, Model: alibaba.Model,
 		InputTokens: transcript.InputTokens, OutputTokens: transcript.OutputTokens,
-		Units: (transcript.EndMs + 999) / 1000, Unit: "seconds",
+		Units: min((transcript.EndMs+999)/1000, fieldlimits.VoiceInputSeconds), Unit: "seconds",
 	}); err != nil {
 		// The call stays open until the sweep abandons it at its receipt
 		// deadline: under-charged, never charged twice. The user still gets

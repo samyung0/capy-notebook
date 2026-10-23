@@ -38,6 +38,9 @@ type voiceFixture struct {
 	held *atomic.Int64
 	// sent is the last request body the provider received.
 	sent *map[string]any
+	// answer, when set, answers the provider's requests in place of the
+	// fixture's status and body.
+	answer *func(w http.ResponseWriter, r *http.Request)
 }
 
 // openVoice is a workspace with one source and a member, an outsider, and a
@@ -80,12 +83,17 @@ func openVoice(t *testing.T, status int, body string, configured bool) voiceFixt
 	var calls atomic.Int32
 	var held atomic.Int64
 	var sent map[string]any
+	var answer func(w http.ResponseWriter, r *http.Request)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		var reserved int64
 		_ = pool.QueryRow(r.Context(), `SELECT reserved_micros FROM user_credits WHERE user_id = $1`, memberID).Scan(&reserved)
 		held.Store(reserved)
 		_ = json.NewDecoder(r.Body).Decode(&sent)
+		if answer != nil {
+			answer(w, r)
+			return
+		}
 		w.WriteHeader(status)
 		_, _ = io.WriteString(w, body)
 	}))
@@ -96,12 +104,14 @@ func openVoice(t *testing.T, status int, body string, configured bool) voiceFixt
 		E2EUserIDs: []string{memberID, outsiderID},
 	}
 	if configured {
-		cfg.Voice = alibaba.New("sk-voice-test", srv.URL+"/compatible-mode/v1")
+		if cfg.Voice, err = alibaba.New("sk-voice-test", srv.URL+"/compatible-mode/v1"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return voiceFixture{
 		handler: httpapi.New(st, blob.NewMemory(), nil, nil, "docling", cfg),
 		pool:    pool, memberID: memberID, outsiderID: outsiderID, workspaceID: ws.ID,
-		calls: &calls, held: &held, sent: &sent,
+		calls: &calls, held: &held, sent: &sent, answer: &answer,
 	}
 }
 
@@ -248,7 +258,8 @@ func TestVoiceTranscriptionProviderFailureIsBadGateway(t *testing.T) {
 }
 
 // The server's two-minute check: a clip the provider heard past 125 s is
-// refused with no text and no charge, and so is one with no speech.
+// refused with no text and no charge, and so is one with no speech; one
+// inside the margin is charged at most the two minutes held.
 func TestVoiceTranscriptionRefusesOverTwoMinutesAndSilence(t *testing.T) {
 	long := openVoice(t, http.StatusOK, `{"sentence":{"text":"`+voiceSecretText+`","begin_time":0,"end_time":125001}}`, true)
 	rec := long.post(t, long.memberID, "audio/webm", []byte("long"))
@@ -258,6 +269,15 @@ func TestVoiceTranscriptionRefusesOverTwoMinutesAndSilence(t *testing.T) {
 	}
 	if got := long.ledger(t); got != (voiceLedger{abandoned: 1}) {
 		t.Fatalf("over the cap ledger %+v", got)
+	}
+	// Inside the recorder's stop margin: answered, charged the 120 s held.
+	margin := openVoice(t, http.StatusOK, `{"sentence":{"text":"`+voiceSecretText+`","begin_time":0,"end_time":124500}}`, true)
+	if rec := margin.post(t, margin.memberID, "audio/webm", []byte("margin")); rec.Code != http.StatusOK {
+		t.Fatalf("margin: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := margin.ledger(t); got != (voiceLedger{events: 1, credits: 120 * 16_667, units: 120, unit: "seconds",
+		applied: 1, used: 120 * 16_667}) {
+		t.Fatalf("margin ledger %+v", got)
 	}
 	silent := openVoice(t, http.StatusOK, `{"sentence":{"text":"  ","begin_time":0,"end_time":4000}}`, true)
 	if rec := silent.post(t, silent.memberID, "audio/webm", []byte("quiet")); rec.Code != http.StatusUnprocessableEntity ||
@@ -300,6 +320,74 @@ func TestVoiceTranscriptionRefusesBeforeTheProvider(t *testing.T) {
 		t.Fatalf("provider called %d/%d times", fx.calls.Load(), unconfigured.calls.Load())
 	}
 	if got := fx.ledger(t); got != (voiceLedger{}) {
+		t.Fatalf("ledger %+v", got)
+	}
+}
+
+// A caller that goes away while the provider works is charged nothing: the
+// call is abandoned as cancelled and the hold released.
+func TestVoiceTranscriptionCallerGoneChargesNothing(t *testing.T) {
+	fx := openVoice(t, http.StatusOK, heard, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	*fx.answer = func(_ http.ResponseWriter, r *http.Request) {
+		cancel()
+		// The gateway drops the provider request once its caller is gone.
+		<-r.Context().Done()
+	}
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/api/workspaces/"+fx.workspaceID+"/voice-transcriptions", bytes.NewReader([]byte("clip")))
+	req.Header.Set("Content-Type", "audio/webm")
+	req.Header.Set(auth.HeaderE2EUserID, fx.memberID)
+	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
+	rec := httptest.NewRecorder()
+	fx.handler.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "mitochondria") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := fx.ledger(t); got != (voiceLedger{abandoned: 1}) {
+		t.Fatalf("ledger %+v", got)
+	}
+	var category, code string
+	if err := fx.pool.QueryRow(context.Background(), `SELECT error_category, error_code FROM provider_calls
+		WHERE actor_user_id = $1`, fx.memberID).Scan(&category, &code); err != nil || category != "request" || code != "cancelled" {
+		t.Fatalf("abandoned as %s/%s (%v)", category, code, err)
+	}
+}
+
+// A receipt refused after the session closed (here the call's window ran out
+// while the provider answered) still answers the clip: the hold is freed,
+// nothing is charged, and the call ends uncharged.
+func TestVoiceTranscriptionRefusedReceiptStillAnswers(t *testing.T) {
+	fx := openVoice(t, http.StatusOK, heard, true)
+	*fx.answer = func(w http.ResponseWriter, r *http.Request) {
+		if _, err := fx.pool.Exec(r.Context(), `UPDATE provider_calls
+			SET opened_at = now() - interval '3 minutes',
+			    receipt_deadline_at = now() - interval '1 second'
+			WHERE actor_user_id = $1 AND status = 'open'`, fx.memberID); err != nil {
+			t.Error(err)
+		}
+		_, _ = io.WriteString(w, heard)
+	}
+	rec := fx.post(t, fx.memberID, "audio/webm", []byte("clip"))
+	var out struct{ Text string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); rec.Code != http.StatusOK || err != nil || out.Text != voiceSecretText {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := fx.ledger(t); got != (voiceLedger{abandoned: 1}) {
+		t.Fatalf("ledger %+v", got)
+	}
+}
+
+// Text with no end cannot be capped or charged: a 502, uncharged.
+func TestVoiceTranscriptionWithoutAnEndIsBadGateway(t *testing.T) {
+	fx := openVoice(t, http.StatusOK, `{"sentence":{"text":"`+voiceSecretText+`"}}`, true)
+	rec := fx.post(t, fx.memberID, "audio/webm", []byte("clip"))
+	if rec.Code != http.StatusBadGateway || voiceCode(t, rec) != "transcription_failed" ||
+		strings.Contains(rec.Body.String(), "mitochondria") {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := fx.ledger(t); got != (voiceLedger{abandoned: 1}) {
 		t.Fatalf("ledger %+v", got)
 	}
 }

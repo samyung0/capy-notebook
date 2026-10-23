@@ -21,13 +21,16 @@ import (
 const (
 	Model = "qwen-audio-3.1-asr-flash"
 	path  = "/api/v1/services/aigc/multimodal-generation/generation"
+	// basePath ends the workspace's OpenAI-compatible URL; the native API is
+	// the same host without it.
+	basePath = "/compatible-mode/v1"
 	// A two-minute clip answers in seconds; this only bounds a stuck call.
 	requestTimeout = 60 * time.Second
 	// A transcript of the sync model's five-minute input cap fits easily.
 	responseMaxBytes = 1 << 20
 )
 
-// ErrNotConfigured is a client without a key or URL.
+// ErrNotConfigured is the nil client New returns when neither setting is set.
 var ErrNotConfigured = errors.New("voice transcription is not configured")
 
 // ErrBusy is Alibaba's 429 (Throttling.*). Nothing retries it.
@@ -54,15 +57,22 @@ type Client struct {
 	http     *http.Client
 }
 
-// New returns nil unless both are set, so a missing setting answers "not
-// configured" instead of calling something else. url is the workspace's
-// .../compatible-mode/v1 URL; the native API sits on the same host.
-func New(key, url string) *Client {
-	if key == "" || url == "" {
-		return nil
+// New returns nil when neither is set: voice input then answers "not
+// configured". Only one of them, or a url that is not the workspace's
+// .../compatible-mode/v1 URL, is an error the API refuses to start on (the
+// pipeline's rule for the same settings).
+func New(key, url string) (*Client, error) {
+	if key == "" && url == "" {
+		return nil, nil
 	}
-	host := strings.TrimSuffix(strings.TrimRight(url, "/"), "/compatible-mode/v1")
-	return &Client{key: key, endpoint: host + path, http: &http.Client{Timeout: requestTimeout}}
+	if key == "" || url == "" {
+		return nil, errors.New("ALIBABA_MODELSTUDIO_KEY and ALIBABA_MODELSTUDIO_URL must be set together")
+	}
+	if !strings.HasSuffix(url, basePath) {
+		return nil, fmt.Errorf("ALIBABA_MODELSTUDIO_URL must end with %s", basePath)
+	}
+	endpoint := strings.TrimSuffix(url, basePath) + path
+	return &Client{key: key, endpoint: endpoint, http: &http.Client{Timeout: requestTimeout}}, nil
 }
 
 // Transcript is one clip's text. EndMs is where the recognised span ends,
@@ -144,7 +154,9 @@ func (c *Client) Transcribe(ctx context.Context, audio []byte, format, mediaType
 	if res.StatusCode != http.StatusOK {
 		return Transcript{}, &Error{Status: res.StatusCode, Code: providerCode(out.Code)}
 	}
-	if decodeErr != nil || out.Sentence == nil {
+	// Text without where it ends has no length to cap or charge.
+	if decodeErr != nil || out.Sentence == nil ||
+		strings.TrimSpace(out.Sentence.Text) != "" && out.Sentence.EndTime <= 0 {
 		return Transcript{}, &Error{Status: res.StatusCode, Code: "invalid_response"}
 	}
 	return Transcript{
