@@ -538,7 +538,7 @@
   "source_analysis_summary_images": "Estimated: {text} text pages · {ocr} scanned pages · {images} images · about {cost} credits",
   "source_analysis_summary_images_only": "Estimated: {images} images · about {cost} credits",
   "source_audio_reading_duration": "Reading audio length…",
-  "source_audio_estimate_unavailable": "Audio length unreadable here; it is checked during processing.",
+  "source_audio_length_unreadable": "{name} was not added: its length could not be read, so its cost can't be estimated.",
   "source_audio_estimate": "About {minutes} min · about {cost} credits",
   "source_audio_too_long": "Audio must be {hours} hours or shorter.",
   "source_upload_too_many": "This workspace can take {count} more files.",

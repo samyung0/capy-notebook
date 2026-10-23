@@ -1302,7 +1302,10 @@ settles at zero; the user's Retry of a job that lost its cache and then failed
 later is a new job and pays again, a rare case). `GET /api/source-upload-policy` also returns
 `audioSecondCreditMicros` and `audioMaxDurationSeconds` (7,200); the upload
 dialog shows the estimate from the length the browser reads, and the worker's
-measured duration remains authoritative. `CreditsForAudioSeconds` in Go holds
+measured duration remains authoritative. A file whose length the browser
+cannot read is refused before upload (no estimate is possible), and the upload
+request requires `durationSeconds` for audio, so the credit-estimate gate
+always has a number. `CreditsForAudioSeconds` in Go holds
 the same math for voice input.
 
 ### Source refreshes and maintenance republishes

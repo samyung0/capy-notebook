@@ -387,6 +387,11 @@ func (a *api) checkSourceUpload(
 	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
 		return "", "", err
 	}
+	// The credit estimate needs an audio file's length: the browser refuses a
+	// file it cannot read one for, and so does the server.
+	if body.Kind == string(store.FileAudio) && body.DurationSeconds == 0 {
+		return "", "", huma.Error400BadRequest("audio uploads need their duration")
+	}
 	if body.DurationSeconds > sourceupload.AudioMaxDurationSeconds {
 		return "", "", huma.Error400BadRequest(fmt.Sprintf("audio uploads are at most %d hours", sourceupload.AudioMaxDurationSeconds/3600))
 	}

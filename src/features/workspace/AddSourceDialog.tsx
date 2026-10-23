@@ -77,7 +77,7 @@ import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
-import { readAudioDuration } from './audioDuration';
+import { audioLengthOrRefuse } from './audioDuration';
 import {
   ChapterSelect,
   chapterByName,
@@ -152,8 +152,8 @@ export interface PendingSource {
   analysisStatus: SourceAnalysisStatus;
   /** Set while the browser reads a local audio file's length. */
   audioDurationPending?: boolean;
-  /** The length the browser read; null when it could not read one. */
-  audioDurationSeconds?: number | null;
+  /** The length the browser read. A file it cannot read is refused. */
+  audioDurationSeconds?: number;
   chapterId: string | null;
   chapterName: string | null;
   contentType: string;
@@ -508,11 +508,15 @@ function useSourceBatch(
     (source: PendingSource) => {
       enqueueAnalysis(source);
       if (source.kind === 'audio' && source.file) {
-        void readAudioDuration(source.file).then((duration) =>
-          patchSource(source.key, {
-            audioDurationPending: false,
-            audioDurationSeconds: duration,
-          })
+        void audioLengthOrRefuse(source.file).then((duration) =>
+          duration == null
+            ? setSources((current) =>
+                current.filter((item) => item.key !== source.key)
+              )
+            : patchSource(source.key, {
+                audioDurationPending: false,
+                audioDurationSeconds: duration,
+              })
         );
       }
     },
@@ -578,15 +582,14 @@ function useSourceBatch(
   };
 }
 
-/** What an audio row says about its length: still reading, unreadable (the
- * worker measures it), over the limit, or its minutes and expected cost. */
+/** What an audio row says about its length: still reading, over the limit,
+ * or its minutes and expected cost. */
 function audioDurationNote(
   source: PendingSource,
   policy: SourceUploadPolicy
 ): string {
-  if (source.audioDurationPending) return m.source_audio_reading_duration();
-  if (source.audioDurationSeconds == null) {
-    return m.source_audio_estimate_unavailable();
+  if (source.audioDurationPending || source.audioDurationSeconds == null) {
+    return m.source_audio_reading_duration();
   }
   if (audioTooLong(source, policy)) {
     return m.source_audio_too_long({

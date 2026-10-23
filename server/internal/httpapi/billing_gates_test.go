@@ -343,8 +343,9 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 	}
 }
 
-// Audio the browser read as longer than two hours is refused before its
-// bytes are stored; the worker checks the measured duration again.
+// Audio the browser read as longer than two hours, or with no length read
+// (no credit estimate is possible), is refused before its bytes are stored;
+// the worker checks the measured duration again.
 func TestUploadPolicyServesAudioLimitAndUploadEnforcesIt(t *testing.T) {
 	fx := openBilling(t)
 	rec := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)
@@ -361,6 +362,10 @@ func TestUploadPolicyServesAudioLimitAndUploadEnforcesIt(t *testing.T) {
 				"name": "lecture.mp3", "kind": "audio", "sizeBytes": 1024, "contentType": "audio/mpeg",
 				"durationSeconds": seconds, "batchId": fx.workspaceID, "batchTotal": 2,
 			}, "audio/mpeg", make([]byte, 1024))
+	}
+	if missing := upload(0); missing.Code != http.StatusBadRequest ||
+		!strings.Contains(missing.Body.String(), "need their duration") {
+		t.Fatalf("audio without a duration: %d %s", missing.Code, missing.Body.String())
 	}
 	if over := upload(7201); over.Code != http.StatusBadRequest ||
 		!strings.Contains(over.Body.String(), "at most 2 hours") {

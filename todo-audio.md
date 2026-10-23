@@ -187,6 +187,10 @@ Review fixes (2026-10-24):
       cache and a later failure pays again.
 - [x] `KindAudio`, `CreditsForAudioSeconds` and the `voice_input_second`
       row stay for Part B, which lands on this branch before main.
+- [x] Unknown length (Epo 2026-10-24, "block"): a file whose length the
+      browser cannot read (5 s, zero, or Infinity after seeking past the
+      end) is refused with a toast naming it; the upload request requires
+      `durationSeconds` for audio.
 
 ## Part B: voice input (Flash)
 
@@ -217,8 +221,6 @@ Review fixes (2026-10-24):
   audio can hold every replica; a smaller gate or a separate audio worker
   (Epo). The gate is per environment database; whether the prod and UAT
   keys share one Alibaba workspace quota.
-- When the browser cannot read a length, the dialog uploads with no
-  estimate and the worker measures (Epo's sign-off, then `human/`).
 - A recording with no speech fails the file today; failed or ready and
   unindexed (Epo).
 - Migration number: 0109 on the branch, renumbered at landing.

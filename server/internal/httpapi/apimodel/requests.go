@@ -287,8 +287,9 @@ type CreateSourceUploadReq struct {
 	// PageCount is the browser's page count for a fast-parse document; a
 	// count past the upload policy's maxPages is refused.
 	PageCount int `json:"pageCount,omitempty" minimum:"0"`
-	// DurationSeconds is the browser's reading of an audio file's length; a
-	// duration past the upload policy's audioMaxDurationSeconds is refused.
+	// DurationSeconds is the browser's reading of an audio file's length,
+	// required for audio; a duration past the upload policy's
+	// audioMaxDurationSeconds is refused.
 	DurationSeconds int `json:"durationSeconds,omitempty" minimum:"0"`
 	// BatchID names the upload (one AddSourceDialog submission) this file
 	// belongs to; its notification fires once BatchTotal files settle.

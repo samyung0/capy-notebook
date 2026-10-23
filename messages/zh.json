@@ -538,7 +538,7 @@
   "source_analysis_summary_images": "估算：{text} 页文本 · {ocr} 页扫描 · {images} 张图片 · 约 {cost} 积分",
   "source_analysis_summary_images_only": "估算：{images} 张图片 · 约 {cost} 积分",
   "source_audio_reading_duration": "正在读取音频时长…",
-  "source_audio_estimate_unavailable": "无法在此读取音频时长；处理时会再检查。",
+  "source_audio_length_unreadable": "未添加 {name}：无法读取音频时长，因此无法估算积分。",
   "source_audio_estimate": "约 {minutes} 分钟 · 约 {cost} 积分",
   "source_audio_too_long": "音频时长不能超过 {hours} 小时。",
   "source_upload_too_many": "此工作区还能再放入 {count} 个文件。",
