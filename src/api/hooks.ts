@@ -145,6 +145,7 @@ import type {
   UsageEventParams,
   UsageReport,
   User,
+  VoiceTranscription,
   WireMessage,
   Workspace,
   WorkspaceCollaborator,
@@ -1736,6 +1737,19 @@ export const messagesQuery = (convId: string | null) =>
   });
 export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
   useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });
+
+/** Transcribes a chat voice recording for the composer; it shows failures
+ * inline, and the user records again (nothing retries). */
+export function useTranscribeVoice(wsId: string) {
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (clip: Blob) =>
+      api.postBlob<VoiceTranscription>(
+        `/workspaces/${wsId}/voice-transcriptions`,
+        clip
+      ),
+  });
+}
 
 export const useArchivedConversations = (
   wsId: string,

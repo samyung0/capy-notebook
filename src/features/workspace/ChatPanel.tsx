@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { chatTurn, LIBRARY_DEFAULT } from '@/api/chatStream';
 import { useConversations, useMe, useMessages } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
@@ -45,6 +46,8 @@ import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
 import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
+import { useVoiceInput, VoiceButton } from './chat/VoiceInput';
+import { insertTranscript } from './chat/voiceRecording';
 import type { TabAction } from './PanelTabRow';
 import { toChatMessage, useChatStream } from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
@@ -263,6 +266,29 @@ export function ChatPanel({
   const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+
+  // A transcript goes where the caret is (over a selection), or at the end
+  // while the questions hide the composer; it is never sent by itself.
+  function insertVoice(transcript: string) {
+    const field = fieldRef.current;
+    if (!field) {
+      setText(
+        (value) =>
+          insertTranscript(value, transcript, value.length, value.length).value
+      );
+      return;
+    }
+    const inserted = insertTranscript(
+      field.value,
+      transcript,
+      field.selectionStart,
+      field.selectionEnd
+    );
+    flushSync(() => setText(inserted.value));
+    field.focus({ preventScroll: true });
+    field.setSelectionRange(inserted.caret, inserted.caret);
+  }
 
   const lightPair = userColorPairDark(color);
 
@@ -281,6 +307,8 @@ export function ChatPanel({
         : [],
     [last, streaming, dismissedId]
   );
+  // The questions take the composer's place, and a recording stops with it.
+  const voice = useVoiceInput(workspaceId, insertVoice, questions.length === 0);
 
   // Seed local state when a previously-saved conversation is opened.
   useEffect(() => {
@@ -450,90 +478,112 @@ export function ChatPanel({
             questions={questions}
           />
         ) : (
-          <div
-            className={cn(
-              'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
-            )}
-          >
-            <Textarea
-              aria-invalid={overLimit || undefined}
-              aria-label={m.chat_placeholder()}
+          <>
+            <div
               className={cn(
-                // 16px on phones, which zoom the page into smaller fields.
-                'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0 max-sm:text-base'
+                'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
               )}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                // The chosen send key sends; the other one adds a new line.
-                // An IME's Enter confirms its candidate and never sends.
-                if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
-                if (e.shiftKey !== (sendKey === 'shift_enter')) return;
-                e.preventDefault();
-                submit();
-              }}
-              placeholder={m.chat_placeholder()}
-              rows={2}
-              value={text}
-            />
-            <div className="flex items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-pressed={library}
-                      className={cn(
-                        'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
-                        library &&
-                          'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
-                      )}
-                      iconLeft="book"
-                      onClick={() => setLibrary((value) => !value)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {m.chat_library()}
-                    </Button>
-                  }
-                />
-                <TooltipContent>{m.chat_library_hint()}</TooltipContent>
-              </Tooltip>
-              <span className="ml-auto" />
-              <CharCount max={CHAT_CHARACTER_LIMIT} value={textLength(text)} />
-              <IconButton
-                className="p-2.5"
-                disabled={!streaming && overLimit}
-                icon="send"
-                iconClassName={cn(
-                  'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
-                  streaming
-                    ? 'scale-25 opacity-0 blur-[2px]'
-                    : 'scale-100 opacity-100 blur-none'
+            >
+              <Textarea
+                aria-invalid={overLimit || undefined}
+                aria-label={m.chat_placeholder()}
+                className={cn(
+                  // 16px on phones, which zoom the page into smaller fields.
+                  'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0 max-sm:text-base'
                 )}
-                label={streaming ? m.chat_stop() : m.chat_send()}
-                onClick={streaming ? stop : submit}
-                size="sm"
-                variant={streaming ? 'ghost' : 'accent'}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    'pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  // The chosen send key sends; the other one adds a new line.
+                  // An IME's Enter confirms its candidate and never sends.
+                  if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+                  if (e.shiftKey !== (sendKey === 'shift_enter')) return;
+                  e.preventDefault();
+                  submit();
+                }}
+                placeholder={m.chat_placeholder()}
+                ref={fieldRef}
+                rows={2}
+                value={text}
+              />
+              <div className="flex items-center gap-2">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-pressed={library}
+                        className={cn(
+                          'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
+                          library &&
+                            'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
+                        )}
+                        iconLeft="book"
+                        onClick={() => setLibrary((value) => !value)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {m.chat_library()}
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{m.chat_library_hint()}</TooltipContent>
+                </Tooltip>
+                <span className="ml-auto" />
+                <CharCount
+                  max={CHAT_CHARACTER_LIMIT}
+                  value={textLength(text)}
+                />
+                {voice.supported && (
+                  <VoiceButton
+                    elapsedMs={voice.elapsedMs}
+                    onToggle={voice.toggle}
+                    phase={voice.phase}
+                  />
+                )}
+                <IconButton
+                  className="p-2.5"
+                  disabled={!streaming && overLimit}
+                  icon="send"
+                  iconClassName={cn(
+                    'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
                     streaming
-                      ? 'scale-100 opacity-100 blur-none'
-                      : 'scale-25 opacity-0 blur-[2px]'
+                      ? 'scale-25 opacity-0 blur-[2px]'
+                      : 'scale-100 opacity-100 blur-none'
                   )}
+                  label={streaming ? m.chat_stop() : m.chat_send()}
+                  onClick={streaming ? stop : submit}
+                  size="sm"
+                  variant={streaming ? 'ghost' : 'accent'}
                 >
-                  {/* Flush with the send button's bottom-right edge, not centred in its padding */}
-                  <span className="translate-0.5 grid size-6.5 place-items-center rounded-full border-2 border-action-accent">
-                    <Icon
-                      className="size-3 fill-current text-action-accent"
-                      name="stop"
-                    />
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                      streaming
+                        ? 'scale-100 opacity-100 blur-none'
+                        : 'scale-25 opacity-0 blur-[2px]'
+                    )}
+                  >
+                    {/* Flush with the send button's bottom-right edge, not centred in its padding */}
+                    <span className="translate-0.5 grid size-6.5 place-items-center rounded-full border-2 border-action-accent">
+                      <Icon
+                        className="size-3 fill-current text-action-accent"
+                        name="stop"
+                      />
+                    </span>
                   </span>
-                </span>
-              </IconButton>
+                </IconButton>
+              </div>
             </div>
-          </div>
+            {voice.error && (
+              <p
+                className="mt-2 px-1 text-sm text-tint-error-fg"
+                data-error-surface="inline"
+                role="alert"
+              >
+                {voice.error}
+              </p>
+            )}
+          </>
         )}
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
         <p className="mt-2 text-center text-[11px] text-fg-muted">
