@@ -96,6 +96,22 @@ def test_the_app_host_opens_ssh_and_wireguard_before_enabling_ufw() -> None:
     assert max(ssh, wireguard) < enable
 
 
+def test_the_app_host_allows_only_ssh_wireguard_and_the_ingest_host_in() -> None:
+    """Security regression (Coolify removal): no rule lets Docker networks or
+    anything else reach the host; Coolify's Docker-networks rule is deleted."""
+    allowed = [
+        rule.get("comment")
+        for rule in _ufw(_play("app-host"))
+        if rule.get("rule") == "allow" and not rule.get("delete")
+    ]
+
+    assert allowed == [
+        "SSH, key-only",
+        "Capy Notebook ingest-host private service link",
+        "Capy Notebook ingest-host private app service",
+    ]
+
+
 def _copied(play: dict, dest: str) -> dict:
     (task,) = [
         task["ansible.builtin.copy"]

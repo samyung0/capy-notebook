@@ -858,7 +858,7 @@ leaves named volumes alone), the build cache (`docker builder prune -af`),
 every env value), the `coolify` key in root's `authorized_keys`, the
 `/etc/cron.d/capy-prune-app-images` and
 `/usr/local/sbin/capy-prune-app-images.sh` files, the ufw "Docker networks to
-the host" rule (it served only Coolify's Sentinel), the `uat-coolify`
+the host" rule (re-run the app-host playbook's `firewall` tag), the `uat-coolify`
 hostname with its DNS record and Access application, and in GitHub the
 `COOLIFY_*` values and the Coolify deploy key.
 
@@ -1454,9 +1454,8 @@ denying inbound by default and allowing outbound. What stays reachable:
 - WireGuard on UDP 51820, from the ingest host's public address only.
 - Loopback and established traffic (ufw's built-in rules). `cloudflared` only
   connects out, and reaches sshd and the ports the stack publishes on
-  `127.0.0.1`.
-- Until Coolify is removed from the host, Docker networks to the host
-  (`10.0.0.0/16` and Coolify's IPv6 network), for Coolify's Sentinel only.
+  `127.0.0.1`. Nothing else: the playbook deletes the rule that let Docker
+  networks reach the host, which only Coolify's Sentinel needed.
 - The database, Redis and gateway published on the WireGuard address, which
   the ingest host reaches over the link (and GitHub runners through it, by SSH
   to the ingest host). Docker forwards published ports before ufw sees them,

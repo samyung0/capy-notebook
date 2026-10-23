@@ -25,8 +25,8 @@ ufw denies inbound traffic by default and keeps SSH on 22 open to all
 (restricting it is not decided). Loopback and established traffic pass, so
 `cloudflared`, which only connects out, still reaches sshd and the stack's
 ports published on `127.0.0.1` (gateway 8080, collaboration 1234, Ops 8082).
-Until Coolify is removed from the host, a rule also lets Docker networks reach
-the host, for Coolify's Sentinel only. Docker-published ports
+The playbook deletes the rule that let Docker networks reach the host, which
+only Coolify's Sentinel needed. Docker-published ports
 bypass ufw, so the playbook adds a `DOCKER-USER` drop to ufw's `after.rules`
 (IPv4) and `after6.rules` (IPv6) for every new connection from the public
 interface into a container, whatever the port or protocol. ufw reloads it at
