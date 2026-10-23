@@ -69,6 +69,9 @@ import type {
   Discussion,
   ErrorModel,
   Event,
+  ExploreFlashcardSetsParams,
+  ExploreQuizzesParams,
+  ExploreWorkspacesParams,
   File,
   FileLinks,
   FilePage,
@@ -125,9 +128,9 @@ import type {
   PastReviewsOutputBody,
   PendingWorkspaceInvite,
   ProjectMaterialReq,
-  PublicFlashcardSet,
-  PublicQuiz,
-  PublicWorkspace,
+  PublicFlashcardSetPage,
+  PublicQuizPage,
+  PublicWorkspacePage,
   PurgeTrashedParams,
   Quiz,
   RateReviewItemReq,
@@ -2737,7 +2740,7 @@ const res = await fetch(getUpdateEventUrl(id),
 
 
 export type exploreFlashcardSetsResponse200 = {
-  data: PublicFlashcardSet[]
+  data: PublicFlashcardSetPage
   status: 200
 }
 
@@ -2755,20 +2758,27 @@ export type exploreFlashcardSetsResponseError = (exploreFlashcardSetsResponseDef
 
 export type exploreFlashcardSetsResponse = (exploreFlashcardSetsResponseSuccess | exploreFlashcardSetsResponseError)
 
-export const getExploreFlashcardSetsUrl = () => {
+export const getExploreFlashcardSetsUrl = (params?: ExploreFlashcardSetsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/explore/flashcards`
+  return stringifiedParams.length > 0 ? `/api/explore/flashcards?${stringifiedParams}` : `/api/explore/flashcards`
 }
 
 /**
  * @summary Public flashcards
  */
-export const exploreFlashcardSets = async ( options?: RequestInit): Promise<exploreFlashcardSetsResponse> => {
+export const exploreFlashcardSets = async (params?: ExploreFlashcardSetsParams, options?: RequestInit): Promise<exploreFlashcardSetsResponse> => {
 
-  const res = await fetch(getExploreFlashcardSetsUrl(),
+  const res = await fetch(getExploreFlashcardSetsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2787,7 +2797,7 @@ export const exploreFlashcardSets = async ( options?: RequestInit): Promise<expl
 
 
 export type exploreQuizzesResponse200 = {
-  data: PublicQuiz[]
+  data: PublicQuizPage
   status: 200
 }
 
@@ -2805,20 +2815,27 @@ export type exploreQuizzesResponseError = (exploreQuizzesResponseDefault) & {
 
 export type exploreQuizzesResponse = (exploreQuizzesResponseSuccess | exploreQuizzesResponseError)
 
-export const getExploreQuizzesUrl = () => {
+export const getExploreQuizzesUrl = (params?: ExploreQuizzesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/explore/quizzes`
+  return stringifiedParams.length > 0 ? `/api/explore/quizzes?${stringifiedParams}` : `/api/explore/quizzes`
 }
 
 /**
  * @summary Public quizzes
  */
-export const exploreQuizzes = async ( options?: RequestInit): Promise<exploreQuizzesResponse> => {
+export const exploreQuizzes = async (params?: ExploreQuizzesParams, options?: RequestInit): Promise<exploreQuizzesResponse> => {
 
-  const res = await fetch(getExploreQuizzesUrl(),
+  const res = await fetch(getExploreQuizzesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2837,7 +2854,7 @@ export const exploreQuizzes = async ( options?: RequestInit): Promise<exploreQui
 
 
 export type exploreWorkspacesResponse200 = {
-  data: PublicWorkspace[]
+  data: PublicWorkspacePage
   status: 200
 }
 
@@ -2855,20 +2872,27 @@ export type exploreWorkspacesResponseError = (exploreWorkspacesResponseDefault) 
 
 export type exploreWorkspacesResponse = (exploreWorkspacesResponseSuccess | exploreWorkspacesResponseError)
 
-export const getExploreWorkspacesUrl = () => {
+export const getExploreWorkspacesUrl = (params?: ExploreWorkspacesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/explore/workspaces`
+  return stringifiedParams.length > 0 ? `/api/explore/workspaces?${stringifiedParams}` : `/api/explore/workspaces`
 }
 
 /**
  * @summary Public workspaces
  */
-export const exploreWorkspaces = async ( options?: RequestInit): Promise<exploreWorkspacesResponse> => {
+export const exploreWorkspaces = async (params?: ExploreWorkspacesParams, options?: RequestInit): Promise<exploreWorkspacesResponse> => {
 
-  const res = await fetch(getExploreWorkspacesUrl(),
+  const res = await fetch(getExploreWorkspacesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -8315,7 +8339,7 @@ export const getListCanvasesUrl = () => {
 }
 
 /**
- * @summary List thinking canvases
+ * @summary List thinking canvases (without scenes)
  */
 export const listCanvases = async ( options?: RequestInit): Promise<listCanvasesResponse> => {
 

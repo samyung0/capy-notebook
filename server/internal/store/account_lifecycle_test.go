@@ -592,7 +592,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if !slices.ContainsFunc(listed, func(item Workspace) bool { return item.ID == workspace.ID }) {
 		t.Fatalf("restored workspace missing from member listing: %#v", listed)
 	}
-	public, err := s.ListPublicWorkspaces(ctx, "")
+	public, _, err := s.ListPublicWorkspaces(ctx, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -901,7 +901,7 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 	if _, err := s.WorkspaceAccess(ctx, viewerID, workspace.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("direct shared access error=%v, want not found", err)
 	}
-	public, err := s.ListPublicWorkspaces(ctx, "")
+	public, _, err := s.ListPublicWorkspaces(ctx, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

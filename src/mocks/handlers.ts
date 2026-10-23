@@ -3280,18 +3280,18 @@ export const handlers = [
 
   /* ---------------- explore ---------------- */
   http.get('/api/explore/workspaces', async () =>
-    HttpResponse.json(db.publicWorkspaces)
+    HttpResponse.json({ items: db.publicWorkspaces })
   ),
   http.get('/api/explore/quizzes', async () =>
-    HttpResponse.json(
-      db.publicQuizzes.map((quiz) => ({
+    HttpResponse.json({
+      items: db.publicQuizzes.map(({ questions, ...quiz }) => ({
         ...quiz,
-        questions: quiz.questions.map(learnerView),
-      }))
-    )
+        questionCount: questions.length,
+      })),
+    })
   ),
   http.get('/api/explore/flashcards', async () =>
-    HttpResponse.json(db.publicFlashcardSets)
+    HttpResponse.json({ items: db.publicFlashcardSets })
   ),
 
   /* ---------------- billing ---------------- */

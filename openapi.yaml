@@ -4189,6 +4189,24 @@ components:
         - canEdit
         - canEditContent
       type: object
+    PublicFlashcardSetPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicFlashcardSetPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicFlashcardSet"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
+      type: object
     PublicQuiz:
       additionalProperties: false
       properties:
@@ -4196,62 +4214,43 @@ components:
           type: string
         canClone:
           type: boolean
-        canEdit:
-          type: boolean
-        canEditContent:
-          type: boolean
-        chapters:
-          items:
-            type: string
-          type: array
         clones:
           format: int64
           type: integer
-        createdAt:
-          format: date-time
-          type: string
         id:
           type: string
-        isOwner:
-          type: boolean
         name:
           type: string
-        parentMaterialId:
-          type: string
-        privacy:
-          $ref: "#/components/schemas/Privacy"
-        provenance:
-          $ref: "#/components/schemas/Provenance"
-        questions:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
-        revision:
+        questionCount:
           format: int64
           type: integer
-        sharePath:
-          type: string
         workspaceId:
           type: string
-        workspaceName:
-          type: string
       required:
-        - author
-        - clones
-        - canClone
-        - revision
         - id
         - name
         - workspaceId
-        - workspaceName
-        - chapters
-        - questions
-        - createdAt
-        - privacy
-        - isOwner
-        - canEdit
-        - canEditContent
+        - author
+        - clones
+        - canClone
+      type: object
+    PublicQuizPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicQuizPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicQuiz"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     PublicWorkspace:
       additionalProperties: false
@@ -4327,6 +4326,24 @@ components:
         - isOwner
         - capabilities
         - canClone
+      type: object
+    PublicWorkspacePage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PublicWorkspacePage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/PublicWorkspace"
+          type: array
+        nextCursor:
+          type: string
+      required:
+        - items
       type: object
     QuestionCredit:
       additionalProperties: false
@@ -8593,14 +8610,20 @@ paths:
   /api/explore/flashcards:
     get:
       operationId: exploreFlashcardSets
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicFlashcardSet"
-                type: array
+                $ref: "#/components/schemas/PublicFlashcardSetPage"
           description: OK
         default:
           content:
@@ -8614,14 +8637,20 @@ paths:
   /api/explore/quizzes:
     get:
       operationId: exploreQuizzes
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicQuiz"
-                type: array
+                $ref: "#/components/schemas/PublicQuizPage"
           description: OK
         default:
           content:
@@ -8635,14 +8664,20 @@ paths:
   /api/explore/workspaces:
     get:
       operationId: exploreWorkspaces
+      parameters:
+        - description: Opaque cursor from the previous page
+          explode: false
+          in: query
+          name: cursor
+          schema:
+            description: Opaque cursor from the previous page
+            type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PublicWorkspace"
-                type: array
+                $ref: "#/components/schemas/PublicWorkspacePage"
           description: OK
         default:
           content:
@@ -11287,7 +11322,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List thinking canvases
+      summary: List thinking canvases (without scenes)
       tags:
         - Thinking
     post:

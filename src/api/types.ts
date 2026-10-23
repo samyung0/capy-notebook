@@ -46,7 +46,6 @@ import type {
   MaterialListItem as GenMaterialListItem,
   MaterialPage as GenMaterialPage,
   Message as GenMessage,
-  PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
   ReviewAnswer as GenReviewAnswer,
@@ -134,7 +133,11 @@ export type {
   PaymentMethod,
   PendingWorkspaceInvite,
   PublicFlashcardSet,
+  PublicFlashcardSetPage,
+  PublicQuiz,
+  PublicQuizPage,
   PublicWorkspace,
+  PublicWorkspacePage,
   Ref as ModelRef,
   Region,
   ReloadState,
@@ -331,11 +334,6 @@ export type {
   ComputationCheckResp,
   GradeAnonymousQuizReq,
 } from './gen/model';
-/** An Explore quiz, answer-free. */
-export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
-  questions: LearnerQuestion[];
-};
-
 /** A card or question in a review session; questions are answer-free and
  * checked through POST /review/check. */
 export type ReviewItem = Omit<GenReviewItem, 'question'> & {

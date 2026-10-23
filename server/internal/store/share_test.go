@@ -657,7 +657,7 @@ func TestSuspendedOwnerHidesCloneSources(t *testing.T) {
 	if _, err := s.CloneMaterial(ctx, targetID, earlier.ID, CloneTarget{WorkspaceID: workspace.ID, Name: "Back"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("copy into a suspended owner's workspace = %v, want not found", err)
 	}
-	explore, err := s.ListPublicWorkspaces(ctx, targetID)
+	explore, _, err := s.ListPublicWorkspaces(ctx, targetID, "")
 	if err != nil || slices.ContainsFunc(explore, func(w PublicWorkspace) bool { return w.ID == workspace.ID }) {
 		t.Fatalf("explore = %v (%v), want the workspace left out", explore, err)
 	}

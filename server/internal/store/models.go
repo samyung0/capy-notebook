@@ -670,10 +670,15 @@ type PublicWorkspace struct {
 	Clones int    `json:"clones"`
 }
 
+// PublicQuiz is a quiz on Explore, read from its stored preview.
 type PublicQuiz struct {
-	Quiz
-	Author string `json:"author"`
-	Clones int    `json:"clones"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	WorkspaceID string `json:"workspaceId"`
+	// QuestionCount is the stored preview's; absent while the quiz has none.
+	QuestionCount *int   `json:"questionCount,omitempty"`
+	Author        string `json:"author"`
+	Clones        int    `json:"clones"`
 	// CanClone: the caller may copy it (CanCloneFrom; a standalone item, anyone).
 	CanClone bool `json:"canClone"`
 }

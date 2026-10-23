@@ -1464,7 +1464,13 @@ export const UpdateEventResponse = zod.object({
 /**
  * @summary Public flashcards
  */
-export const ExploreFlashcardSetsResponseItem = zod.object({
+export const ExploreFlashcardSetsQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ExploreFlashcardSetsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "author": zod.string(),
   "canClone": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -1527,96 +1533,54 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
+})),
+  "nextCursor": zod.string().optional()
 })
-export const ExploreFlashcardSetsResponse = zod.array(ExploreFlashcardSetsResponseItem)
 
 
 /**
  * @summary Public quizzes
  */
-export const ExploreQuizzesResponseItem = zod.object({
+export const ExploreQuizzesQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
+
+export const ExploreQuizzesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "author": zod.string(),
   "canClone": zod.boolean(),
-  "canEdit": zod.boolean(),
-  "canEditContent": zod.boolean(),
-  "chapters": zod.array(zod.string()),
   "clones": zod.int(),
-  "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
-  "isOwner": zod.boolean(),
   "name": zod.string(),
-  "parentMaterialId": zod.string().optional(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "provenance": zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
+  "questionCount": zod.int().optional(),
+  "workspaceId": zod.string()
 })),
-  "license": zod.string().optional(),
-  "questions": zod.record(zod.string(), zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-})).optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-}).optional(),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "revision": zod.int(),
-  "sharePath": zod.string().optional(),
-  "workspaceId": zod.string(),
-  "workspaceName": zod.string()
+  "nextCursor": zod.string().optional()
 })
-export const ExploreQuizzesResponse = zod.array(ExploreQuizzesResponseItem)
 
 
 /**
  * @summary Public workspaces
  */
-export const exploreWorkspacesResponseCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
-export const exploreWorkspacesResponseCoverLineMax = 40;
+export const ExploreWorkspacesQueryParams = zod.object({
+  "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
+})
 
-export const exploreWorkspacesResponseCoverSeedMax = 16;
+export const exploreWorkspacesResponseItemsItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const exploreWorkspacesResponseItemsItemCoverLineMax = 40;
+
+export const exploreWorkspacesResponseItemsItemCoverSeedMax = 16;
 
 
-export const exploreWorkspacesResponseCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
-export const exploreWorkspacesResponseTagsItemValueMax = 35;
+export const exploreWorkspacesResponseItemsItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
+export const exploreWorkspacesResponseItemsItemTagsItemValueMax = 35;
 
 
 
-export const ExploreWorkspacesResponseItem = zod.object({
+export const ExploreWorkspacesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "author": zod.string(),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -1629,11 +1593,11 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "chapterCount": zod.int(),
   "clones": zod.int(),
   "cover": zod.object({
-  "color": zod.string().regex(exploreWorkspacesResponseCoverColorRegExp),
+  "color": zod.string().regex(exploreWorkspacesResponseItemsItemCoverColorRegExp),
   "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
-  "line": zod.string().max(exploreWorkspacesResponseCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "line": zod.string().max(exploreWorkspacesResponseItemsItemCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
   "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
-  "seed": zod.string().max(exploreWorkspacesResponseCoverSeedMax).regex(exploreWorkspacesResponseCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "seed": zod.string().max(exploreWorkspacesResponseItemsItemCoverSeedMax).regex(exploreWorkspacesResponseItemsItemCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
   "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
 }).optional().describe('The card\'s cover art; absent means none'),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -1651,10 +1615,11 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "shareRole": zod.enum(['editor', 'viewer']),
   "tags": zod.array(zod.object({
   "id": zod.string(),
-  "value": zod.string().min(1).max(exploreWorkspacesResponseTagsItemValueMax)
+  "value": zod.string().min(1).max(exploreWorkspacesResponseItemsItemTagsItemValueMax)
 }))
+})),
+  "nextCursor": zod.string().optional()
 })
-export const ExploreWorkspacesResponse = zod.array(ExploreWorkspacesResponseItem)
 
 
 /**
@@ -5686,7 +5651,7 @@ export const UpdateTaskResponse = zod.object({
 
 
 /**
- * @summary List thinking canvases
+ * @summary List thinking canvases (without scenes)
  */
 export const ListCanvasesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),

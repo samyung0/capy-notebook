@@ -40,7 +40,7 @@ type cloneMaterialInput struct {
 	Body apimodel.CloneMaterialReq
 }
 type publicFlashcardSetsOutput struct {
-	Body []apimodel.PublicFlashcardSet `nullable:"false"`
+	Body apimodel.PublicFlashcardSetPage
 }
 
 func (a *api) registerShare(api huma.API) {
@@ -215,10 +215,12 @@ func (a *api) cloneMaterial(ctx context.Context, in *cloneMaterialInput) (*mater
 
 /* ------------------------------------------------------------------ explore */
 
-func (a *api) exploreFlashcardSets(ctx context.Context, _ *struct{}) (*publicFlashcardSetsOutput, error) {
-	res, err := a.s.ListPublicFlashcardSets(ctx, userID(ctx))
+func (a *api) exploreFlashcardSets(ctx context.Context, in *exploreInput) (*publicFlashcardSetsOutput, error) {
+	res, next, err := a.s.ListPublicFlashcardSets(ctx, userID(ctx), in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &publicFlashcardSetsOutput{Body: apimodel.FromPublicFlashcardSets(res)}, nil
+	return &publicFlashcardSetsOutput{Body: apimodel.PublicFlashcardSetPage{
+		Items: apimodel.FromPublicFlashcardSets(res), NextCursor: next,
+	}}, nil
 }

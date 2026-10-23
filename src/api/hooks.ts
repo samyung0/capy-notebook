@@ -96,9 +96,9 @@ import type {
   PendingWorkspaceInvite,
   PlanStepInput,
   Privacy,
-  PublicFlashcardSet,
-  PublicQuiz,
-  PublicWorkspace,
+  PublicFlashcardSetPage,
+  PublicQuizPage,
+  PublicWorkspacePage,
   Quiz,
   RateReviewItemReq,
   RequestAccountDeletionReq,
@@ -3048,30 +3048,43 @@ export function useSaveCanvas(id: string) {
 }
 
 /* ---------------- explore ---------------- */
-export const exploreWorkspacesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicWorkspace[]>('/explore/workspaces'),
-    queryKey: qk.exploreWorkspaces,
-  });
-export const useExploreWorkspaces = () => useQuery(exploreWorkspacesQuery());
+// Explore lists come 50 at a time, most cloned first.
+export const exploreWorkspacesQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicWorkspacePage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicWorkspacePage>(
+      `/explore/workspaces${listSearch({}, pageParam)}`
+    ),
+  queryKey: qk.exploreWorkspaces,
+});
+export const useExploreWorkspaces = () =>
+  useInfiniteQuery(exploreWorkspacesQuery());
 
-export const exploreQuizzesQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicQuiz[]>('/explore/quizzes'),
-    queryKey: qk.exploreQuizzes,
-  });
-export const useExploreQuizzes = () => useQuery(exploreQuizzesQuery());
+export const exploreQuizzesQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicQuizPage) => last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicQuizPage>(`/explore/quizzes${listSearch({}, pageParam)}`),
+  queryKey: qk.exploreQuizzes,
+});
+export const useExploreQuizzes = () => useInfiniteQuery(exploreQuizzesQuery());
 
-export const exploreFlashcardSetsQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<PublicFlashcardSet[]>('/explore/flashcards'),
-    queryKey: qk.exploreFlashcardSets,
-  });
+export const exploreFlashcardSetsQuery = () => ({
+  ...persisted,
+  getNextPageParam: (last: PublicFlashcardSetPage) =>
+    last.nextCursor || undefined,
+  initialPageParam: '',
+  queryFn: ({ pageParam }: { pageParam: string }) =>
+    api.get<PublicFlashcardSetPage>(
+      `/explore/flashcards${listSearch({}, pageParam)}`
+    ),
+  queryKey: qk.exploreFlashcardSets,
+});
 export const useExploreFlashcardSets = () =>
-  useQuery(exploreFlashcardSetsQuery());
+  useInfiniteQuery(exploreFlashcardSetsQuery());
 
 /* ---------------- sharing & cloning ---------------- */
 

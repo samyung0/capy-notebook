@@ -5,4 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PublicQuizQuestionsItem = {[key: string]: unknown};
+export type ExploreQuizzesParams = {
+/**
+ * Opaque cursor from the previous page
+ */
+cursor?: string;
+};

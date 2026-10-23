@@ -492,9 +492,9 @@ const appRoutes = [
           '/explore',
           () => import('@/routes/Explore'),
           ({ context: { queryClient: qc } }) => {
-            qc.prefetchQuery(exploreWorkspacesQuery());
-            qc.prefetchQuery(exploreQuizzesQuery());
-            qc.prefetchQuery(exploreFlashcardSetsQuery());
+            qc.prefetchInfiniteQuery(exploreWorkspacesQuery());
+            qc.prefetchInfiniteQuery(exploreQuizzesQuery());
+            qc.prefetchInfiniteQuery(exploreFlashcardSetsQuery());
           }
         ),
       ]

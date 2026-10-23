@@ -114,15 +114,15 @@ func TestLockedOwnerHidesWorkspaceContentFromMembers(t *testing.T) {
 			if err != nil || slices.ContainsFunc(materials.Items, func(m MaterialListItem) bool { return m.WorkspaceID == ws.ID }) {
 				t.Fatalf("member materials = %v (%v), want the owner's left out", materials.Items, err)
 			}
-			exploreWorkspaces, err := s.ListPublicWorkspaces(ctx, member)
+			exploreWorkspaces, _, err := s.ListPublicWorkspaces(ctx, member, "")
 			if err != nil || slices.ContainsFunc(exploreWorkspaces, func(w PublicWorkspace) bool { return w.ID == ws.ID }) {
 				t.Fatalf("explore workspaces = %v (%v), want the workspace left out", exploreWorkspaces, err)
 			}
-			exploreQuizzes, err := s.ListPublicQuizzes(ctx, member)
+			exploreQuizzes, _, err := s.ListPublicQuizzes(ctx, member, "")
 			if err != nil || slices.ContainsFunc(exploreQuizzes, func(q PublicQuiz) bool { return q.ID == quiz.ID }) {
 				t.Fatalf("explore quizzes = %v (%v), want the quiz left out", exploreQuizzes, err)
 			}
-			exploreCards, err := s.ListPublicFlashcardSets(ctx, member)
+			exploreCards, _, err := s.ListPublicFlashcardSets(ctx, member, "")
 			if err != nil || slices.ContainsFunc(exploreCards, func(c PublicFlashcardSet) bool { return c.ID == cards.ID }) {
 				t.Fatalf("explore flashcards = %v (%v), want the set left out", exploreCards, err)
 			}

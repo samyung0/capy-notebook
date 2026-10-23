@@ -113,11 +113,14 @@ type microsoftDriveOutput struct {
 type providerInput struct {
 	Provider string `path:"provider"`
 }
+type exploreInput struct {
+	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+}
 type publicWorkspacesOutput struct {
-	Body []apimodel.PublicWorkspace `nullable:"false"`
+	Body apimodel.PublicWorkspacePage
 }
 type publicQuizzesOutput struct {
-	Body []apimodel.PublicQuiz `nullable:"false"`
+	Body apimodel.PublicQuizPage
 }
 
 func (a *api) registerAccount(api huma.API) {
@@ -326,8 +329,8 @@ func (a *api) setNotificationPrefs(ctx context.Context, in *notificationPrefsInp
 	return &notificationPrefsOutput{Body: prefs}, nil
 }
 
-func (a *api) exploreWorkspaces(ctx context.Context, _ *struct{}) (*publicWorkspacesOutput, error) {
-	res, err := a.s.ListPublicWorkspaces(ctx, userID(ctx))
+func (a *api) exploreWorkspaces(ctx context.Context, in *exploreInput) (*publicWorkspacesOutput, error) {
+	res, next, err := a.s.ListPublicWorkspaces(ctx, userID(ctx), in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -335,15 +338,17 @@ func (a *api) exploreWorkspaces(ctx context.Context, _ *struct{}) (*publicWorksp
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &publicWorkspacesOutput{Body: apimodel.FromPublicWorkspaces(res, !actor.CanEdit())}, nil
+	return &publicWorkspacesOutput{Body: apimodel.PublicWorkspacePage{
+		Items: apimodel.FromPublicWorkspaces(res, !actor.CanEdit()), NextCursor: next,
+	}}, nil
 }
 
-func (a *api) exploreQuizzes(ctx context.Context, _ *struct{}) (*publicQuizzesOutput, error) {
-	res, err := a.s.ListPublicQuizzes(ctx, userID(ctx))
+func (a *api) exploreQuizzes(ctx context.Context, in *exploreInput) (*publicQuizzesOutput, error) {
+	res, next, err := a.s.ListPublicQuizzes(ctx, userID(ctx), in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &publicQuizzesOutput{Body: apimodel.FromPublicQuizzes(res)}, nil
+	return &publicQuizzesOutput{Body: apimodel.PublicQuizPage{Items: res, NextCursor: next}}, nil
 }
 
 func (a *api) getBilling(ctx context.Context, _ *struct{}) (*billingOutput, error) {
