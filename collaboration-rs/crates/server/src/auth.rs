@@ -31,6 +31,11 @@ pub struct Claims {
     pub aud: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+    /// The Yjs client id this token offers the session joining with it (Go
+    /// mints a fresh one per token, Q213): a session takes its first joined
+    /// token's id, and the room records it as the user's (`client_ids.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<u64>,
     pub exp: i64,
     pub iat: i64,
     pub iss: String,
@@ -53,6 +58,8 @@ pub struct Context {
     pub expires_at: i64,
     pub token_id: String,
     pub user_id: String,
+    /// The client id the token offers (none in a test's server context).
+    pub client_id: Option<u64>,
     /// A viewer (no editing role) reads only and has no presence: it neither
     /// sends nor hears awareness (Epo 2026-10-10). Set at join from the
     /// material's access, never from the token.
@@ -80,6 +87,7 @@ impl From<&Claims> for Context {
             expires_at: claims.exp,
             token_id: claims.jti.clone(),
             user_id: claims.sub.clone(),
+            client_id: claims.client_id,
             viewer: false,
             parent: claims.parent.clone(),
             identity: Box::new(Identity {
@@ -255,6 +263,9 @@ pub fn verify(token: &str, secret: &str, room: &str, now: i64) -> Result<Claims,
         || claims.jti.is_empty()
         || claims.iat > now + 30
         || claims.exp <= now
+        || claims
+            .client_id
+            .is_some_and(|id| id == 0 || id > u64::from(u32::MAX))
     {
         return Err(TokenError::Claims);
     }
@@ -277,6 +288,7 @@ pub fn claims_for(room: &str, user: &str, access: Access, now: i64, seconds: i64
         access,
         aud: "capy-collaboration".into(),
         avatar_url: None,
+        client_id: Some(uuid::Uuid::new_v4().as_u128() as u32 as u64 | 1),
         exp: now + seconds,
         iat: now,
         iss: "capy-api".into(),

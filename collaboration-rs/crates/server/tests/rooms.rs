@@ -196,6 +196,13 @@ fn identity_token(room: &str, user: &str, access: &str, name: &str) -> String {
     sign_claims(&claims)
 }
 
+/// A token offering the client id `client`.
+fn token_offering(room: &str, user: &str, access: &str, client: u64) -> String {
+    let mut claims = token_claims(room, user, access, 300);
+    claims["clientId"] = client.into();
+    sign_claims(&claims)
+}
+
 fn token_claims(room: &str, user: &str, access: &str, ttl: i64) -> serde_json::Value {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -207,9 +214,28 @@ fn token_claims(room: &str, user: &str, access: &str, ttl: i64) -> serde_json::V
         .and_then(|n| n.parse().ok())
         .unwrap_or(1);
     serde_json::json!({
-        "access": access, "aud": "capy-collaboration", "exp": now + ttl, "iat": now,
-        "iss": "capy-api", "jti": format!("t_{now}_{user}"), "room": room, "schema": schema, "sub": user,
+        "access": access, "aud": "capy-collaboration", "clientId": fresh_client_id(), "exp": now + ttl,
+        "iat": now, "iss": "capy-api", "jti": format!("t_{now}_{user}"), "room": room, "schema": schema,
+        "sub": user,
     })
+}
+
+/// A Yjs client id as Go mints one per token: random, 1..2^32.
+fn fresh_client_id() -> u64 {
+    u64::from(uuid::Uuid::new_v4().as_u128() as u32 | 1)
+}
+
+/// The client id a token offers (`clientId`); none for a junk token.
+fn token_client_id(token: &str) -> Option<u64> {
+    use base64::Engine;
+    let payload = token.split('.').nth(1)?;
+    let claims: serde_json::Value = serde_json::from_slice(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .ok()?,
+    )
+    .ok()?;
+    claims["clientId"].as_u64()
 }
 
 fn sign_claims(claims: &serde_json::Value) -> String {
@@ -276,14 +302,21 @@ fn protocol_constant(name: &str) -> u64 {
         .unwrap_or_else(|| panic!("{name} in protocol.rs"))
 }
 
-/// A JOIN's payload: the room, the token and the client protocol (none from
-/// a tab before the version gate).
+/// A JOIN's payload for a fresh session: the room, the token and the client
+/// protocol (none from a tab before the version gate), then the session's
+/// client id, the one the token offers (Q213).
 fn join_payload(room: &str, token: &str, protocol: Option<u64>) -> Vec<u8> {
+    join_payload_as(room, token, protocol, token_client_id(token).unwrap_or(0))
+}
+
+/// A JOIN's payload naming the session's client id `client`.
+fn join_payload_as(room: &str, token: &str, protocol: Option<u64>, client: u64) -> Vec<u8> {
     let mut payload = Vec::new();
     varbytes(&mut payload, room.as_bytes());
     varbytes(&mut payload, token.as_bytes());
     if let Some(protocol) = protocol {
         var(&mut payload, protocol);
+        var(&mut payload, client);
     }
     payload
 }
@@ -352,9 +385,35 @@ impl Client {
             .expect("send");
     }
 
+    /// Sends JOIN as a browser session does (Q213): a document that wrote
+    /// nothing yet takes the token's client id; one that wrote keeps its own.
     async fn join(&mut self, room: &str, token: &str) {
-        self.send(0, &join_payload(room, token, Some(client_protocol())))
-            .await;
+        let own = self.doc.client_id();
+        if self.doc.transact().state_vector().get(&own) == 0
+            && let Some(offered) = token_client_id(token)
+            && offered != own.get()
+        {
+            let state = self
+                .doc
+                .transact()
+                .encode_state_as_update_v1(&StateVector::default());
+            let doc = Doc::with_options(ydoc::doc_options(offered));
+            doc.transact_mut()
+                .apply_update(Update::decode_v1(&state).expect("state"))
+                .expect("apply");
+            self.doc = doc;
+        }
+        let client = self.doc.client_id().get();
+        self.send(
+            0,
+            &join_payload_as(room, token, Some(client_protocol()), client),
+        )
+        .await;
+    }
+
+    /// The session's client id (its document's).
+    fn id(&self) -> u64 {
+        self.doc.client_id().get()
     }
 
     /// Reads messages until one of `kind` arrives (applying syncs), or times out.
@@ -1209,30 +1268,36 @@ async fn a_writer_that_edits_the_contributor_markers_is_closed() {
     );
 }
 
+/// One struct under `client` (the writer's own id, from its first clock)
+/// after a unit no one holds: an update the room cannot place.
+fn unplaceable(client: u64) -> Vec<u8> {
+    use yrs::encoding::write::Write;
+    let mut update: Vec<u8> = Vec::new();
+    update.write_var(1u32);
+    update.write_var(1u32);
+    update.write_var(client);
+    update.write_var(0u32);
+    update.write_u8(0x80 | 4);
+    update.write_var(998u64);
+    update.write_var(3u32);
+    update.write_string("x");
+    update.write_var(0u32);
+    update
+}
+
 /// Security regression (edit-incidents REVIEW2 m-A): a client whose sync
 /// step 2 the room cannot place is closed after two tries, and the incident
 /// is written once per user and room, however often it reconnects.
 #[tokio::test]
 async fn an_unplaceable_step_2_is_recorded_once_per_user_and_room() {
-    use yrs::encoding::write::Write;
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "placed").await;
     let room = format!("material:{material}:schema:1");
-    // One struct after a unit no one holds.
-    let mut unplaceable: Vec<u8> = Vec::new();
-    unplaceable.write_var(1u32);
-    unplaceable.write_var(1u32);
-    unplaceable.write_var(999u64);
-    unplaceable.write_var(0u32);
-    unplaceable.write_u8(0x80 | 4);
-    unplaceable.write_var(998u64);
-    unplaceable.write_var(3u32);
-    unplaceable.write_string("x");
-    unplaceable.write_var(0u32);
     for _ in 0..3 {
         let mut client = Client::open(server.port).await;
         client.joined(&room, &token(&room, &user, "write")).await;
+        let unplaceable = unplaceable(client.id());
         for _ in 0..2 {
             client.send(5, &sync(1, &unplaceable)).await;
         }
@@ -1658,9 +1723,10 @@ async fn awareness_and_its_queries_take_from_the_users_allowance() {
     let Some(env) = env() else { return };
     let server = start_configured(&env, env.api.as_deref(), &SMALL_ALLOWANCE).await;
     let (_, _, mut presence) = writer(&env, server.port, "presence").await;
+    let id = presence.id();
     for clock in 1..=100 {
         presence
-            .send(7, &awareness_update(4242, clock, "{\"cursor\":1}"))
+            .send(7, &awareness_update(id, clock, "{\"cursor\":1}"))
             .await;
     }
     assert!(presence.timeout_notice().await > 0);
@@ -1998,16 +2064,34 @@ async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
         &[
             ("COLLABORATION_OPEN_BYTES", "300000"),
             ("COLLABORATION_OPEN_REFILL_SECONDS", "1000000"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "100"),
         ],
     )
     .await;
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
     let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
-    for id in 1..=4 {
-        client.send(7, &awareness_update(id, 1, &state)).await;
+    // Four sessions' presence (a channel writes only its session's id),
+    // joined while the room holds none.
+    let mut sessions = vec![(1, client.id())];
+    for channel in 2..=4 {
+        let session = token(&room, &user, "write");
+        client
+            .send_on(
+                channel,
+                0,
+                &join_payload(&room, &session, Some(client_protocol())),
+            )
+            .await;
+        assert!(client.until(1).await.is_some(), "channel {channel} joined");
+        sessions.push((channel, token_client_id(&session).expect("client id")));
+    }
+    for (channel, id) in sessions {
+        client
+            .send_on(channel, 7, &awareness_update(id, 1, &state))
+            .await;
     }
     let write = token(&room, &user, "write");
-    for channel in 2..=3 {
+    for channel in 5..=6 {
         client
             .send_on(
                 channel,
@@ -2038,7 +2122,7 @@ async fn the_awareness_sent_on_join_draws_on_the_open_budget() {
 /// Security regression (Epo 2026-10-20, rate-limit review r6 S-1): the
 /// awareness a JOIN sends counts against the open budget and, past the
 /// small-answer floor, waits like an awareness query. Two re-JOINs of a room
-/// holding about 480 KB of presence (two sockets of four ids) take a 300 KB
+/// holding about 480 KB of presence (eight sessions on another socket) take a 300 KB
 /// budget 360 KB past its floor (300 KB owed); the next re-JOIN joins but
 /// hears no awareness until the budget refills (100 KB a second), and its
 /// step 1, waiting with it, hears that the open is slowed (review r7 S-1).
@@ -2053,26 +2137,39 @@ async fn re_joins_past_the_floor_hear_no_awareness_until_the_budget_refills() {
         &[
             ("COLLABORATION_OPEN_BYTES", "300000"),
             ("COLLABORATION_OPEN_REFILL_SECONDS", "3"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "100"),
+            ("COLLABORATION_JOINED_PER_USER", "100"),
         ],
     )
     .await;
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
     let write = token(&room, &user, "write");
     let join = join_payload(&room, &write, Some(client_protocol()));
-    // A second presence socket, synced (so its channel serves) while the room
+    // A second socket of eight presence sessions (a channel writes only its
+    // session's id), its first synced (so its channels serve) while the room
     // holds none.
     let mut other = Client::open(server.port).await;
     other.joined(&room, &write).await;
     assert!(other.settle(|c| c.block_text() == "crowd").await);
-    let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
-    for id in 1..=4 {
-        client.send(7, &awareness_update(id, 1, &state)).await;
+    let mut sessions = vec![(1, other.id())];
+    for channel in 2..=8 {
+        let session = token(&room, &user, "write");
+        other
+            .send_on(
+                channel,
+                0,
+                &join_payload(&room, &session, Some(client_protocol())),
+            )
+            .await;
+        assert!(other.until(1).await.is_some(), "channel {channel} joined");
+        sessions.push((channel, token_client_id(&session).expect("client id")));
     }
-    // The other socket's four in one frame: once the first reaches this
-    // client, the room holds all eight.
+    let state = format!("{{\"n\":\"{}\"}}", "p".repeat(60_000));
+    // All eight in one frame: once the first reaches this client, the room
+    // holds all of them.
     let mut batch = Vec::new();
-    for id in 5..=8 {
-        batch.extend(frame(1, 7, &awareness_update(id, 1, &state)));
+    for (channel, id) in sessions {
+        batch.extend(frame(channel, 7, &awareness_update(id, 1, &state)));
     }
     other.ws.send(Ws::Binary(batch.into())).await.expect("send");
     assert!(client.heard_within(1, 7, Duration::from_secs(5)).await);
@@ -2319,78 +2416,222 @@ impl Client {
     }
 }
 
-/// Security regression (Epo 2026-10-19): an awareness client id is its
-/// user's. Another member neither overwrites nor removes it, and one channel
-/// keeps at most four ids. Fails if the room takes an entry for a client id
-/// another user's channel holds, or keeps every id a channel sends.
+/// Security regression (Q213, Epo 2026-10-23): a channel's awareness goes
+/// only under its own session's client id. Another member can neither claim
+/// that id before its session sends awareness (the id is visible in the
+/// document) nor remove it afterwards, nor write any other id. Fails if a
+/// channel may take an awareness client id no one holds: the claimer's state
+/// then shows under the victim's id and the victim's own entries are refused.
 #[tokio::test]
-async fn a_member_writes_only_its_own_awareness_client_ids_up_to_a_cap() {
+async fn a_member_writes_awareness_only_under_its_own_client_id() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (owner, editor, room) = shared_note(&env, "presence").await;
-    let mut mine = Client::open(server.port).await;
-    mine.joined(&room, &token(&room, &owner, "write")).await;
-    mine.send(7, &awareness_update(111, 1, "{\"name\":\"owner\"}"))
+    let mut victim = Client::open(server.port).await;
+    victim.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(victim.settle(|c| c.block_text() == "presence").await);
+    victim.type_text("!").await;
+    victim.until(6).await.expect("ack");
+    let victim_id = victim.doc.client_id().get();
+    let mut claimer = Client::open(server.port).await;
+    claimer.joined(&room, &token(&room, &editor, "write")).await;
+    let claimer_id = claimer.doc.client_id().get();
+    claimer
+        .send(7, &awareness_update(victim_id, 9, "{\"name\":\"claimer\"}"))
         .await;
-    let mut other = Client::open(server.port).await;
-    other.joined(&room, &token(&room, &editor, "write")).await;
-    other
-        .send(7, &awareness_update(111, 5, "{\"name\":\"other\"}"))
+    claimer
+        .send(7, &awareness_update(4242, 1, "{\"name\":\"stray\"}"))
         .await;
-    other.send(7, &awareness_update(111, 6, "null")).await;
-    for client in 201..=210 {
-        other
-            .send(7, &awareness_update(client, 1, "{\"name\":\"many\"}"))
-            .await;
-    }
-    let states = mine.awareness_states(1).await;
-    assert!(
-        states.contains(&(111, "{\"name\":\"owner\"}".to_owned())),
-        "{states:?}"
+    claimer
+        .send(7, &awareness_update(claimer_id, 1, "{\"name\":\"own\"}"))
+        .await;
+    // Ordered after the claimer's messages on the room's queue.
+    claimer.awareness_states(1).await;
+    victim
+        .send(7, &awareness_update(victim_id, 1, "{\"name\":\"victim\"}"))
+        .await;
+    victim.awareness_states(1).await;
+    claimer
+        .send(7, &awareness_update(victim_id, 10, "null"))
+        .await;
+    claimer.awareness_states(1).await;
+    let mut watcher = Client::open(server.port).await;
+    watcher.joined(&room, &token(&room, &owner, "write")).await;
+    let mut states = watcher.awareness_states(1).await;
+    states.sort();
+    let mut expected = vec![
+        (victim_id, "{\"name\":\"victim\"}".to_owned()),
+        (claimer_id, "{\"name\":\"own\"}".to_owned()),
+    ];
+    expected.sort();
+    assert_eq!(states, expected);
+}
+
+/// Security regression (Q213, in-place GC P1): a Y.Doc keeps its client id
+/// for life. Reconnecting with a fresh token it names its kept id, which
+/// binds unchanged, and its next edit lands. A token offering an id already
+/// assigned (here the kept one, which Go's random draw may repeat) is
+/// refused, the retry naming the kept id with another token joins, and a
+/// new Y.Doc offered that id is refused too. Fails if a reconnect needs a
+/// new id, or one id can bind a second time from a fresh offer (two Y.Docs
+/// would write over each other's clocks).
+#[tokio::test]
+async fn a_bound_session_keeps_its_client_id_and_no_id_is_assigned_twice() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "kept").await;
+    let room = format!("material:{material}:schema:1");
+    let mut session = Client::open(server.port).await;
+    session.joined(&room, &token(&room, &user, "write")).await;
+    assert!(session.settle(|c| c.block_text() == "kept").await);
+    session.type_text("-a").await;
+    session.until(6).await.expect("ack");
+    let kept = session.id();
+    // A reconnect: the same document on a new channel, a fresh token.
+    session.channel += 1;
+    session.inbox.clear();
+    assert_eq!(
+        session.joined(&room, &token(&room, &user, "write")).await,
+        1
     );
-    let many = states.iter().filter(|(client, _)| *client > 200).count();
-    assert_eq!(many, 4, "{states:?}");
+    assert_eq!(session.id(), kept);
+    session.type_text("-b").await;
+    session.until(6).await.expect("ack after the reconnect");
+    // A token offering the kept id again is refused; the retry names it.
+    session.channel += 1;
+    session.inbox.clear();
+    session
+        .join(&room, &token_offering(&room, &user, "write", kept))
+        .await;
+    let refused = text_payload(&session.until(2).await.expect("refused"));
+    assert_eq!(refused, "collaboration-client-id");
+    session.channel += 1;
+    assert_eq!(
+        session.joined(&room, &token(&room, &user, "write")).await,
+        1
+    );
+    session.type_text("-c").await;
+    session.until(6).await.expect("ack after the retry");
+    // A new document offered the same id never binds to it.
+    let mut fresh = Client::open(server.port).await;
+    fresh
+        .join(&room, &token_offering(&room, &user, "write", kept))
+        .await;
+    let refused = text_payload(&fresh.until(2).await.expect("refused"));
+    assert_eq!(refused, "collaboration-client-id");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        reader.settle(|c| c.block_text() == "kept-a-b-c").await,
+        "{}",
+        reader.block_text()
+    );
+}
+
+/// What a writer forging another writer's client id sends: `from`'s document
+/// with `text` appended to its first block under `client`, as an update over
+/// `from`'s state (so it starts at the room's held clock for `client`).
+fn forged(from: &Doc, client: u64, text: &str) -> Vec<u8> {
+    let doc = Doc::with_options(ydoc::doc_options(client));
+    let state = from
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    typed_into_note(text)(&doc);
+    doc.transact()
+        .encode_state_as_update_v1(&from.transact().state_vector())
+}
+
+/// Security regression (Q213, Epo 2026-10-23): an update under a client id
+/// the server did not assign to the writer's user is refused, so a writer
+/// cannot occupy another writer's next clocks. The victim's edit made at
+/// those clocks meanwhile still lands. Fails if a connection may write under
+/// any client id: the forged text integrates and the victim's edit is
+/// skipped as already held, silently.
+#[tokio::test]
+async fn a_writer_cannot_write_under_another_writers_client_id() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, room) = shared_note(&env, "base").await;
+    let mut victim = Client::open(server.port).await;
+    victim.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(victim.settle(|c| c.block_text() == "base").await);
+    victim.type_text("-a").await;
+    victim.until(6).await.expect("ack");
+    let mut forger = Client::open(server.port).await;
+    forger.joined(&room, &token(&room, &editor, "write")).await;
+    assert!(forger.settle(|c| c.block_text() == "base-a").await);
+    // The victim's next edit is made but not sent yet; the forger writes at
+    // the same clocks under the victim's id.
+    let pending = victim.typed("-b");
+    let forgery = forged(&forger.doc, victim.doc.client_id().get(), "-forged");
+    forger.send(5, &sync(2, &forgery)).await;
+    let closed = forger.until(4).await.expect("the forger's channel closes");
+    assert!(
+        String::from_utf8_lossy(&closed).contains("client id"),
+        "{}",
+        String::from_utf8_lossy(&closed)
+    );
+    let (rejected, _) = forger.stateless("document-rejected").await;
+    assert_eq!(rejected["code"], "invalid_document");
+    victim.send(5, &sync(2, &pending)).await;
+    victim.until(6).await.expect("ack");
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &token(&room, &owner, "write")).await;
+    assert!(
+        reader.settle(|c| c.block_text() == "base-a-b").await,
+        "{}",
+        reader.block_text()
+    );
 }
 
 /// Security regression (Epo 2026-10-19): a room keeps at most 256 awareness
-/// client ids: 65 channels of four ids each leave 256 in its states. A
-/// removed id counts until its removal went out (rate-limit review r3 S6),
-/// so adding and removing ids in a loop stays capped: a removal and a new id
-/// in one frame leave 255. Fails if the room keeps every id its members
-/// send, or counts only live ids.
+/// client ids: 257 sessions, each writing its own id, leave 256 in its
+/// states. A removed id counts until its removal went out (rate-limit review
+/// r3 S6): a removal and a new session's id in one frame leave 255. Fails if
+/// the room keeps every id its members send, or counts only live ids.
 #[tokio::test]
 async fn a_room_keeps_at_most_256_awareness_client_ids() {
     let Some(env) = env() else { return };
-    // One user's 66 channels, past the 22 joined documents a user holds and
+    // One user's 258 channels, past the 22 joined documents a user holds and
     // the 4 connections to one document.
     let server = start_configured(
         &env,
         env.api.as_deref(),
         &[
-            ("COLLABORATION_JOINED_PER_USER", "100"),
-            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "100"),
+            ("COLLABORATION_JOINED_PER_USER", "300"),
+            ("COLLABORATION_CONNECTIONS_PER_DOCUMENT", "300"),
         ],
     )
     .await;
     let (user, room, mut client) = writer(&env, server.port, "crowd").await;
-    let write = token(&room, &user, "write");
-    for channel in 2..=66u64 {
+    let mut sessions = vec![(1, client.id())];
+    for channel in 2..=258u64 {
+        let session = token(&room, &user, "write");
         client
             .send_on(
                 channel,
                 0,
-                &join_payload(&room, &write, Some(client_protocol())),
+                &join_payload(&room, &session, Some(client_protocol())),
             )
             .await;
         assert!(client.until(1).await.is_some(), "channel {channel} joined");
-        for id in 0..4 {
-            let entry = awareness_update(channel * 10 + id, 1, "{\"n\":1}");
-            client.send_on(channel, 7, &entry).await;
-        }
+        sessions.push((channel, token_client_id(&session).expect("client id")));
+    }
+    for (channel, id) in &sessions[..257] {
+        let entry = awareness_update(*id, 1, "{\"n\":1}");
+        client.send_on(*channel, 7, &entry).await;
     }
     assert_eq!(client.awareness_states(1).await.len(), 256);
-    let mut churn = frame(2, 7, &awareness_update(20, 2, "null"));
-    churn.extend(frame(2, 7, &awareness_update(9999, 1, "{\"n\":1}")));
+    let ((removed_channel, removed), (new_channel, new)) = (sessions[1], sessions[257]);
+    let mut churn = frame(removed_channel, 7, &awareness_update(removed, 2, "null"));
+    churn.extend(frame(
+        new_channel,
+        7,
+        &awareness_update(new, 1, "{\"n\":1}"),
+    ));
     client
         .ws
         .send(Ws::Binary(churn.into()))
@@ -6095,46 +6336,57 @@ async fn a_read_only_channel_names_no_uploads_in_presence() {
     writer.joined(&room, &token(&room, &user, "write")).await;
     viewer.joined(&room, &token(&room, &user, "read")).await;
     observer.joined(&room, &token(&room, &user, "write")).await;
+    let (viewer_id, writer_id) = (viewer.id(), writer.id());
+    // A channel writes only its session's id: each state goes once the one
+    // before it reached the observer.
     let state = r#"{"cursor":{"anchor":1},"uploads":["block-a"]}"#;
-    viewer.send(7, &awareness_update(9001, 1, state)).await;
-    let escaped = r#"{"cursor":null,"upl\u006fads":["block-b"]}"#;
-    viewer.send(7, &awareness_update(9003, 1, escaped)).await;
+    viewer.send(7, &awareness_update(viewer_id, 1, state)).await;
+    let from_viewer = observer.states_of(viewer_id, |_| true).await.remove(0);
+    let from_viewer: serde_json::Value = serde_json::from_str(&from_viewer).expect("json");
+    assert!(from_viewer.get("uploads").is_none(), "{from_viewer}");
+    assert_eq!(from_viewer["cursor"]["anchor"], 1);
+    let escaped = r#"{"cursor":null,"uploads":["block-b"]}"#;
+    viewer
+        .send(7, &awareness_update(viewer_id, 2, escaped))
+        .await;
+    let escaped_key = observer.states_of(viewer_id, |_| true).await.remove(0);
+    let escaped_key: serde_json::Value = serde_json::from_str(&escaped_key).expect("json");
+    assert!(escaped_key.get("uploads").is_none(), "{escaped_key}");
     // serde_json refuses an unpaired surrogate escape; JSON.parse takes it
-    // and would read the list (REVIEW5 R1b). Client 9005, sent after it on
-    // the same channel, marks that the room has handled it.
+    // and would read the list (REVIEW5 R1b). The empty state sent after it
+    // marks that the room has handled it.
     let unparsed = r#"{"cursor":null,"uploads":["block-c"],"x":"\ud800"}"#;
-    viewer.send(7, &awareness_update(9004, 1, unparsed)).await;
-    viewer.send(7, &awareness_update(9005, 1, "{}")).await;
-    writer.send(7, &awareness_update(9002, 1, state)).await;
-    let (mut from_viewer, mut from_writer, mut escaped_key) = (None, None, None);
-    let (mut unparsed_seen, mut marked) = (Vec::new(), false);
-    while from_viewer.is_none() || from_writer.is_none() || escaped_key.is_none() || !marked {
-        let payload = observer.until(7).await.expect("awareness");
-        for (client, state) in awareness_entries(&payload) {
-            if client == 9004 {
-                unparsed_seen.push(state);
-                continue;
-            }
-            let state: serde_json::Value = serde_json::from_str(&state).expect("json");
-            match client {
-                9001 => from_viewer = Some(state),
-                9002 => from_writer = Some(state),
-                9003 => escaped_key = Some(state),
-                9005 => marked = true,
-                _ => {}
+    viewer
+        .send(7, &awareness_update(viewer_id, 3, unparsed))
+        .await;
+    viewer.send(7, &awareness_update(viewer_id, 4, "{}")).await;
+    let mut seen = observer.states_of(viewer_id, |state| state == "{}").await;
+    seen.pop();
+    assert!(seen.iter().all(|state| state == "null"), "{seen:?}");
+    writer.send(7, &awareness_update(writer_id, 1, state)).await;
+    let from_writer = observer.states_of(writer_id, |_| true).await.remove(0);
+    let from_writer: serde_json::Value = serde_json::from_str(&from_writer).expect("json");
+    assert_eq!(from_writer["uploads"][0], "block-a");
+}
+
+impl Client {
+    /// The states the room sends for `client`, through the first `done`
+    /// accepts.
+    async fn states_of(&mut self, client: u64, done: impl Fn(&str) -> bool) -> Vec<String> {
+        let mut seen = Vec::new();
+        loop {
+            let payload = self.until(7).await.expect("awareness");
+            for (id, state) in awareness_entries(&payload) {
+                if id == client {
+                    let finished = done(&state);
+                    seen.push(state);
+                    if finished {
+                        return seen;
+                    }
+                }
             }
         }
     }
-    assert!(
-        unparsed_seen.iter().all(|state| state == "null"),
-        "{unparsed_seen:?}"
-    );
-    let from_viewer = from_viewer.unwrap();
-    assert!(from_viewer.get("uploads").is_none(), "{from_viewer}");
-    assert_eq!(from_viewer["cursor"]["anchor"], 1);
-    assert_eq!(from_writer.unwrap()["uploads"][0], "block-a");
-    let escaped_key = escaped_key.unwrap();
-    assert!(escaped_key.get("uploads").is_none(), "{escaped_key}");
 }
 
 impl Client {
@@ -6175,9 +6427,10 @@ async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
     desk.joined(&room, &identity_token(&room, &owner, "write", "Olive"))
         .await;
     // What its awareness claims is never its label.
+    let desk_id = desk.id();
     desk.send(
         7,
-        &awareness_update(501, 1, "{\"data\":{\"name\":\"Mallory\"}}"),
+        &awareness_update(desk_id, 1, "{\"data\":{\"name\":\"Mallory\"}}"),
     )
     .await;
     let mut ed = Client::open(server.port).await;
@@ -6198,12 +6451,12 @@ async fn the_rooms_presence_lists_editors_by_their_tokens_and_never_viewers() {
 
     let seen = ed
         .presence(|connections| {
-            connections.len() == 3 && connections.iter().any(|c| c["clients"][0] == 501)
+            connections.len() == 3 && connections.iter().any(|c| c["clients"][0] == desk_id)
         })
         .await;
     let desk_entry = seen
         .iter()
-        .find(|c| c["clients"][0] == 501)
+        .find(|c| c["clients"][0] == desk_id)
         .expect("the desk");
     assert_eq!(desk_entry["name"], "Olive");
     let names = |connections: &[serde_json::Value]| {
@@ -6410,13 +6663,12 @@ async fn an_embed_channel_is_listed_but_hears_no_presence() {
     }
 }
 
-/// Security regression (header-presence review S1): an awareness client id
-/// its user released stays theirs until the room's presence that no longer
-/// lists it went out, so another user's cursor is never drawn under the
-/// departed user's verified name. Another editor claims a departed editor's
-/// id again and again from the moment it leaves; an observer hears that
-/// claim only after a presence that no longer labels the id with the
-/// departed editor. Fails if a released id is free to another user at once.
+/// Security regression (header-presence review S1, Q213): an awareness
+/// client id its user released is never another user's, so another user's
+/// cursor is never drawn under the departed user's verified name. Another
+/// editor claims a departed editor's id again and again from the moment it
+/// leaves; the observer never hears the claim. Fails if a released id is
+/// free to another user.
 #[tokio::test]
 async fn a_released_client_id_is_never_drawn_under_its_users_name() {
     let Some(env) = env() else { return };
@@ -6436,58 +6688,52 @@ async fn a_released_client_id_is_never_drawn_under_its_users_name() {
     leaver
         .joined(&room, &identity_token(&room, &editor, "write", "Eddie"))
         .await;
+    let released = leaver.id();
     leaver
-        .send(7, &awareness_update(601, 1, "{\"by\":\"eddie\"}"))
+        .send(7, &awareness_update(released, 1, "{\"by\":\"eddie\"}"))
         .await;
     observer
         .presence(|connections| {
             connections
                 .iter()
-                .any(|c| c["clients"][0] == 601 && c["name"] == "Eddie")
+                .any(|c| c["clients"][0] == released && c["name"] == "Eddie")
         })
         .await;
-    // It leaves just after a presence, so the next may wait a second.
     leaver.ws.close(None).await.ok();
     drop(leaver);
     let claims = async {
         for clock in 10..50 {
             taker
-                .send(7, &awareness_update(601, clock, "{\"by\":\"mal\"}"))
+                .send(7, &awareness_update(released, clock, "{\"by\":\"mal\"}"))
                 .await;
             tokio::time::sleep(Duration::from_millis(40)).await;
         }
     };
     let watch = async {
-        // Who the observer's latest presence says holds 601.
-        let mut label = Some("Eddie".to_owned());
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-        loop {
-            for (_, kind, payload) in observer.raw_until(deadline).await {
-                if kind == 9 && text_payload(&payload).contains("room-presence") {
-                    let message: serde_json::Value =
-                        serde_json::from_str(&text_payload(&payload)).expect("json");
-                    label = message["connections"]
-                        .as_array()
-                        .expect("connections")
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        let mut claimed = false;
+        while let Ok(Some(Ok(message))) =
+            tokio::time::timeout_at(deadline, observer.ws.next()).await
+        {
+            let Ws::Binary(bytes) = message else { continue };
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = &bytes[at..at + len];
+                at += len;
+                claimed |= kind == 7
+                    && awareness_entries(payload)
                         .iter()
-                        .find(|c| {
-                            c["clients"]
-                                .as_array()
-                                .is_some_and(|ids| ids.iter().any(|id| id == 601))
-                        })
-                        .and_then(|c| c["name"].as_str().map(str::to_owned));
-                } else if kind == 7
-                    && awareness_entries(&payload)
-                        .iter()
-                        .any(|(client, state)| *client == 601 && state.contains("mal"))
-                {
-                    return label;
-                }
+                        .any(|(client, state)| *client == released && state.contains("mal"));
             }
         }
+        claimed
     };
-    let (_, label) = tokio::join!(claims, watch);
-    assert_ne!(label.as_deref(), Some("Eddie"));
+    let (_, claimed) = tokio::join!(claims, watch);
+    assert!(!claimed, "another user took a released client id");
 }
 
 impl Client {
@@ -6854,8 +7100,9 @@ async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
     editor
         .joined(&note_room, &token(&note_room, &owner, "write"))
         .await;
+    let editor_id = editor.id();
     editor
-        .send(7, &awareness_update(41, 1, r#"{"user":"owner"}"#))
+        .send(7, &awareness_update(editor_id, 1, r#"{"user":"owner"}"#))
         .await;
     let mut watcher = Client::open(server.port).await;
     assert_eq!(
@@ -6866,10 +7113,11 @@ async fn a_viewer_reads_a_notes_set_without_writes_or_presence() {
     );
     assert!(watcher.settle(|c| c.block_text() == "shared").await);
     editor
-        .send(7, &awareness_update(41, 2, r#"{"user":"owner2"}"#))
+        .send(7, &awareness_update(editor_id, 2, r#"{"user":"owner2"}"#))
         .await;
+    let watcher_id = watcher.id();
     watcher
-        .send(7, &awareness_update(42, 1, r#"{"user":"viewer"}"#))
+        .send(7, &awareness_update(watcher_id, 1, r#"{"user":"viewer"}"#))
         .await;
     watcher.send(8, &[]).await;
     assert!(!watcher.hears(7, 1500).await, "a viewer heard awareness");
@@ -7818,10 +8066,11 @@ async fn send_drafts_over(
 }
 
 /// What a closed tab's drafts hold: the document as `from` holds it, with
-/// `edit` made by a session of its own, merged into one update (the state row
+/// `edit` made after it by the same session (under its client id, which the
+/// room recorded when it joined, Q213), merged into one update (the state row
 /// and the updates after it).
 fn drafted(from: &Doc, edit: impl FnOnce(&Doc)) -> Vec<u8> {
-    let doc = Doc::with_options(ydoc::doc_options(0));
+    let doc = Doc::with_options(ydoc::doc_options(from.client_id().get()));
     let state = from
         .transact()
         .encode_state_as_update_v1(&StateVector::default());
@@ -7963,9 +8212,45 @@ async fn a_draft_send_loads_an_unloaded_room_which_unloads_after_its_store() {
 
 /// Refusals a draft send answers with their class; the browser keeps the
 /// rows, refused ones marked for the next open.
+/// Security regression (Q213): stored drafts under a client id nobody was
+/// assigned (a tab from before the binding, or a forged one) are refused as
+/// malformed, which the page marks refused (shown read-only at the next
+/// open) instead of sending them again, and the room keeps nothing of them.
+/// Fails if a draft send may write under any client id.
+#[tokio::test]
+async fn a_draft_under_a_client_id_nobody_was_assigned_is_refused() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let reader = synced(server.port, &room, &user, "base").await;
+    let stray = Doc::with_options(ydoc::doc_options(fresh_client_id()));
+    let state = reader
+        .doc
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    stray
+        .transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        drafted(&stray, typed_into_note(" stray")),
+    )
+    .await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (400, Some("malformed")),
+        "{answer}"
+    );
+    synced(server.port, &room, &user, "base").await;
+}
+
 #[tokio::test]
 async fn draft_sends_are_refused_with_their_class() {
-    use yrs::encoding::write::Write;
     let Some(env) = env() else { return };
     let server = start(&env).await;
     let (user, material) = note(&env, "base").await;
@@ -7987,17 +8272,7 @@ async fn draft_sends_are_refused_with_their_class() {
     );
 
     // Needs content the room does not hold (a channel would resync).
-    let mut unplaceable: Vec<u8> = Vec::new();
-    unplaceable.write_var(1u32);
-    unplaceable.write_var(1u32);
-    unplaceable.write_var(999u64);
-    unplaceable.write_var(0u32);
-    unplaceable.write_u8(0x80 | 4);
-    unplaceable.write_var(998u64);
-    unplaceable.write_var(3u32);
-    unplaceable.write_string("x");
-    unplaceable.write_var(0u32);
-    let (status, answer) = send(unplaceable).await;
+    let (status, answer) = send(unplaceable(reader.id())).await;
     assert_eq!(
         (status, answer["class"].as_str()),
         (409, Some("unheld")),

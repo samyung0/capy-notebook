@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -33,6 +35,13 @@ type collaborationClaims struct {
 	// collaboration server sends them to every co-editor.
 	Name      string `json:"name,omitempty"`
 	AvatarURL string `json:"avatarUrl,omitempty"`
+	// ClientID is the Yjs client id this token offers the editing session
+	// that joins with it (Epo 2026-10-23, Q213): a session takes the id of
+	// its first joined token and keeps it, and the collaboration server
+	// records which user each id was assigned to and admits document changes
+	// under an id only from that user. Fresh per token, never 0 (the DOCX
+	// seed's client).
+	ClientID uint32 `json:"clientId"`
 }
 
 // maxClaimAvatarURL bounds the avatar a token carries; a longer one (none
@@ -73,6 +82,18 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 		Schema:    schema,
 		Name:      fieldlimits.Clamp(claimName(name), fieldlimits.UserName),
 		AvatarURL: avatarURL,
+		ClientID:  newClientID(),
+	}
+}
+
+// newClientID draws a Yjs client id: a random uint32 other than 0.
+func newClientID() uint32 {
+	var b [4]byte
+	for {
+		_, _ = rand.Read(b[:])
+		if id := binary.BigEndian.Uint32(b[:]); id != 0 {
+			return id
+		}
 	}
 }
 

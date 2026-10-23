@@ -32,3 +32,17 @@ func TestCollaborationClaimsCarryABoundedIdentity(t *testing.T) {
 		t.Fatalf("unbounded avatar kept: %+v", long)
 	}
 }
+
+// Security regression (Q213, Epo 2026-10-23): every token offers its own
+// Yjs client id, never 0 (the DOCX seed's client), so no two sessions are
+// handed the same id. Fails if the claim is missing or repeats.
+func TestCollaborationClaimsOfferAFreshClientID(t *testing.T) {
+	seen := map[uint32]bool{}
+	for range 64 {
+		id := newCollaborationClaims("u_1", "material:m_1:schema:1", "write", "Ann", "", "collab_1", 1).ClientID
+		if id == 0 || seen[id] {
+			t.Fatalf("client id %d (seen before: %v)", id, seen[id])
+		}
+		seen[id] = true
+	}
+}

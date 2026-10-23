@@ -182,16 +182,20 @@ impl Refusal {
     }
 }
 
-type AuthResult = (u64, u64, Result<(RoomName, Context), Refusal>);
+/// An authentication answered: channel, attempt, and the room, the
+/// context and the session's client id from the JOIN, or the refusal.
+type AuthResult = (u64, u64, Result<(RoomName, Context, Option<u64>), Refusal>);
 /// A join's answer: channel, attempt, and the joined room or the refusal.
 type JoinResult = (u64, u64, RoomName, Context, Result<RoomHandle, Refusal>);
 
 /// Joins `name`'s room (loading it if need be). A room that just unloaded
 /// fails the send or the join: look up again once.
+#[allow(clippy::too_many_arguments)]
 async fn join_room(
     app: &Shared,
     name: &RoomName,
     context: &Context,
+    client: Option<u64>,
     key: (u64, u64),
     out: Outbox,
     socket: String,
@@ -206,6 +210,7 @@ async fn join_room(
         let join = RoomCmd::Join {
             key,
             context: context.clone(),
+            client,
             out: out.clone(),
             socket: socket.clone(),
             inside,
@@ -220,6 +225,13 @@ async fn join_room(
             Ok(Err(error)) if error == room::DISK_FULL => {
                 return Err(Refusal {
                     authentication: false,
+                    ..Refusal::plain(error)
+                });
+            }
+            // The browser joins again with a fresh token (Q213).
+            Ok(Err(error)) if error == crate::client_ids::REFUSED_REASON => {
+                return Err(Refusal {
+                    reason: error.clone(),
                     ..Refusal::plain(error)
                 });
             }
@@ -694,6 +706,7 @@ impl Connection {
                 room,
                 token,
                 protocol: client,
+                client: session,
                 parent,
             }) = protocol::decode_join(&message.payload)
             else {
@@ -753,7 +766,9 @@ impl Connection {
             }
             let (app, tx) = (self.app.clone(), self.auth_tx.clone());
             tokio::spawn(async move {
-                let result = authenticate(app, room, token, client).await;
+                let result = authenticate(app, room, token, client)
+                    .await
+                    .map(|(name, context)| (name, context, session));
                 let _ = tx.send((channel, attempt, result));
             });
             return true;
@@ -1048,12 +1063,12 @@ impl Connection {
         &mut self,
         channel: u64,
         attempt: u64,
-        result: Result<(RoomName, Context), Refusal>,
+        result: Result<(RoomName, Context, Option<u64>), Refusal>,
     ) {
         if !self.authenticating(channel, attempt) {
             return;
         }
-        let (name, context) = match result {
+        let (name, context, client) = match result {
             Ok(joined) => joined,
             Err(Refusal {
                 remaining: Some(remaining),
@@ -1126,7 +1141,7 @@ impl Connection {
             self.socket_id.clone(),
         );
         tokio::spawn(async move {
-            let result = join_room(&app, &name, &context, key, out, socket, inside).await;
+            let result = join_room(&app, &name, &context, client, key, out, socket, inside).await;
             if let Err(unsent) = tx.send((channel, attempt, name, context, result)) {
                 // The socket closed meanwhile: leave the room it joined.
                 if let (.., Ok(handle)) = unsent.0 {

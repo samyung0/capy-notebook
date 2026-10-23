@@ -323,6 +323,7 @@ mod tests {
             expires_at: i64::MAX,
             token_id: "t".into(),
             user_id: user.into(),
+            client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),

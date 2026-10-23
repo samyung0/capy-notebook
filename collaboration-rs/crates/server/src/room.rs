@@ -19,6 +19,7 @@ use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
 use crate::auth::{Access, Context, RoomName};
+use crate::client_ids::{self, ClientIds};
 use crate::drafts::{Class, Refused};
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::markers::{self, Contributor, Markers};
@@ -40,10 +41,8 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
-/// Awareness client ids one channel may hold, and a room (Epo 2026-10-19):
-/// an editor sends its document's one, a new one only when Yjs renews it.
-/// A new id past either is not kept.
-pub const MAX_CLIENTS_PER_MEMBER: usize = 4;
+/// Awareness client ids a room keeps (Epo 2026-10-19); a channel writes only
+/// its session's (Q213). A new id past the cap is not kept.
 pub const MAX_CLIENTS_PER_ROOM: usize = 256;
 /// Why a note room holding a block the embed catalog does not list refuses
 /// every writer (Epo 2026-10-13): the browser shows it for the
@@ -72,6 +71,8 @@ pub enum RoomCmd {
     Join {
         key: MemberKey,
         context: Context,
+        /// The session's client id the JOIN names (`client_ids.rs`).
+        client: Option<u64>,
         out: Outbox,
         socket: String,
         /// An embed's channel inside its note's (Epo 2026-10-20).
@@ -251,7 +252,10 @@ struct Member {
     socket: String,
     /// An embed's channel inside its note's: it hears no room presence.
     inside: bool,
-    /// Awareness client ids this channel sent.
+    /// The session's client id, bound at join (Q213): the only id its
+    /// awareness goes under.
+    client: u64,
+    /// Awareness client ids this channel holds (its session's, or none).
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
     unplaced: u32,
@@ -289,8 +293,6 @@ impl Drop for OpenTurn {
 struct AwarenessEntry {
     entry: awareness::Entry,
     owner: Option<MemberKey>,
-    /// The user whose channel set it: only their channels write it.
-    user: String,
 }
 
 /// A note room's own state.
@@ -437,6 +439,8 @@ pub struct Room {
     name: String,
     doc: Doc,
     members: HashMap<MemberKey, Member>,
+    /// Which user each client id was assigned to (Q213).
+    client_ids: ClientIds,
     awareness: HashMap<u64, AwarenessEntry>,
     changed_awareness: BTreeSet<u64>,
     /// Presence changed since it last went out; when it may go next.
@@ -551,11 +555,17 @@ impl From<String> for LoadError {
     }
 }
 
-async fn load(
-    app: &Shared,
-    name: &RoomName,
-    actor: &str,
-) -> Result<(Doc, Kindly, ydoc::Durable, Option<sources::LoadTimes>), LoadError> {
+/// What a load gives the room.
+type Loaded = (
+    Doc,
+    Kindly,
+    ydoc::Durable,
+    Option<sources::LoadTimes>,
+    ClientIds,
+);
+
+async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, LoadError> {
+    let client_ids = ClientIds::load(&app.db, name).await?;
     match name {
         RoomName::Material {
             material_id,
@@ -676,7 +686,7 @@ async fn load(
                 base_bytes,
                 folding: false,
             };
-            Ok((doc, Kindly::Note(Box::new(note)), durable, None))
+            Ok((doc, Kindly::Note(Box::new(note)), durable, None, client_ids))
         }
         RoomName::Source { .. } => {
             let room = name
@@ -746,6 +756,7 @@ async fn load(
                 Kindly::Source(Box::new(source)),
                 durable,
                 Some(loaded.times),
+                client_ids,
             ))
         }
     }
@@ -800,7 +811,7 @@ async fn run(
     let room_name = name.to_string();
     let started = Instant::now();
     let loaded = load(&app, &name, &actor).await;
-    let (doc, kind, durable, times) = match loaded {
+    let (doc, kind, durable, times, client_ids) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
             let error = match error {
@@ -846,6 +857,7 @@ async fn run(
         name: room_name,
         doc,
         members: HashMap::new(),
+        client_ids,
         awareness: HashMap::new(),
         changed_awareness: BTreeSet::new(),
         presence_dirty: false,
@@ -1036,12 +1048,25 @@ impl Room {
             RoomCmd::Join {
                 key,
                 context,
+                client,
                 out,
                 socket,
                 inside,
                 reply,
             } => {
-                let _ = reply.send(self.join(key, context, out, socket, inside));
+                let held = self.doc.transact().state_vector();
+                let bound: HashSet<u64> = self.members.values().map(|m| m.client).collect();
+                let taken =
+                    |id: u64| bound.contains(&id) || held.get(&yrs::block::ClientID::new(id)) > 0;
+                let bound = self
+                    .client_ids
+                    .bind(&self.app.db, &context, client, taken)
+                    .await;
+                let answer = match bound {
+                    Ok(client) => self.join(key, context, client, out, socket, inside),
+                    Err(reason) => Err(reason),
+                };
+                let _ = reply.send(answer);
             }
             RoomCmd::Leave(key) => self.leave(key),
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
@@ -1379,6 +1404,7 @@ impl Room {
             expires_at: i64::MAX,
             token_id: "children-pass".into(),
             user_id: actor.to_owned(),
+            client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),
@@ -1749,6 +1775,7 @@ impl Room {
             expires_at: i64::MAX,
             token_id: String::new(),
             user_id: actor.clone(),
+            client_id: None,
             viewer: false,
             parent: None,
             identity: Default::default(),
@@ -2204,6 +2231,7 @@ impl Room {
         &mut self,
         key: MemberKey,
         context: Context,
+        client: u64,
         out: Outbox,
         socket: String,
         inside: bool,
@@ -2240,6 +2268,7 @@ impl Room {
                 out,
                 socket,
                 inside,
+                client,
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
@@ -2406,12 +2435,9 @@ impl Room {
                 member.out.frame(frame.freeze());
             }
         }
-        // Removed clients are forgotten once their removal went out, or, while
-        // a presence is due, once it went out too (`send_presence`).
-        if !self.presence_dirty {
-            self.awareness
-                .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
-        }
+        // Removed clients are forgotten once their removal went out.
+        self.awareness
+            .retain(|_, state| !(state.entry.removed() && state.owner.is_none()));
     }
 
     fn broadcast_update(&mut self, sender: Option<MemberKey>, update: Vec<u8>) {
@@ -2614,6 +2640,12 @@ impl Room {
                 "client update changed collaboration metadata",
             );
         }
+        // A writer adds structs only under its user's client ids (Q213).
+        if let Some(client) = client_ids::foreign(&self.doc.transact(), &update, |id| {
+            self.client_ids.owned_by(id, &context.user_id)
+        }) {
+            return self.foreign_update_refused(context, client, bytes.len());
+        }
         // Admission and apply run off the runtime's workers while the room
         // waits, unless the update is a small edit of a few structs (REVIEW2
         // S1, REVIEW3 S1): a trial on a copy, a source's exact measure near
@@ -2813,6 +2845,48 @@ impl Room {
         self.broadcast_update(None, fix);
     }
 
+    /// An update with structs under a client id its writer's user was not
+    /// assigned: refused on entry, as an invalid document (a note or item:
+    /// the editor keeps its unsaved edits to copy and reloads) or an
+    /// unrecoverable source update (recovery). An honest editor sends one
+    /// only after the server lost unstored state its tab holds (Q213).
+    fn foreign_update_refused(&self, context: &Context, client: u64, bytes: usize) -> Outcome {
+        log(
+            Level::Warn,
+            "update under another user's client id refused",
+            json!({ "client": client, "room": self.name, "user_id": context.user_id }),
+        );
+        incidents::record(
+            &self.app,
+            vec![Incident {
+                cause: Cause::new(IncidentKind::SaveRefused, "client_id"),
+                room: self.name.clone(),
+                size_bytes: Some(bytes as u64),
+                user_id: Some(context.user_id.clone()),
+            }],
+        );
+        let payload = match &self.kind {
+            Kindly::Note(_) => json!({
+                "code": "invalid_document",
+                "materialId": self.material_id(),
+                "room": self.name,
+                "type": "document-rejected",
+            }),
+            Kindly::Source(source) => json!({
+                "checkpointIds": [],
+                "epoch": source.room.epoch,
+                "fileId": source.room.file_id,
+                "recoverable": false,
+                "type": "source-checkpoint-failed",
+            }),
+        };
+        Outcome::Refused {
+            payloads: vec![payload.to_string()],
+            reason: client_ids::FOREIGN_UPDATE.into(),
+            class: Class::Malformed,
+        }
+    }
+
     /// The writer's update was placed: its channel's unplaceable count and
     /// the step 2 incident's once-per-user mark start over.
     fn placed(&mut self, writer: Option<MemberKey>, context: &Context) {
@@ -2999,14 +3073,12 @@ impl Room {
         // A channel's ids name its cursors in the room's presence.
         let mut clients_changed = false;
         for entry in entries {
-            let current = self.awareness.get(&entry.client);
-            // A client id is its user's: another user's channel neither
-            // writes nor removes it (Epo 2026-10-19), nor takes it once it is
-            // released until the presence after that went out, since until
-            // then co-editors still label it with its user's name.
-            if current.is_some_and(|state| state.user != member.context.user_id) {
+            // A channel writes and removes only its session's client id
+            // (Q213), which no other user's channel can hold.
+            if entry.client != member.client {
                 continue;
             }
+            let current = self.awareness.get(&entry.client);
             // y-protocols: a newer clock wins; at the same clock a removal wins.
             let take = match current {
                 None => !entry.removed(),
@@ -3026,8 +3098,8 @@ impl Room {
             // removed in a loop stay capped too.
             if !entry.removed()
                 && held != Some(key)
-                && (member.clients.len() >= MAX_CLIENTS_PER_MEMBER
-                    || (current.is_none() && self.awareness.len() >= MAX_CLIENTS_PER_ROOM))
+                && current.is_none()
+                && self.awareness.len() >= MAX_CLIENTS_PER_ROOM
             {
                 continue;
             }
@@ -3044,7 +3116,6 @@ impl Room {
                 entry.client,
                 AwarenessEntry {
                     owner: (!entry.removed()).then_some(key),
-                    user: member.context.user_id.clone(),
                     entry,
                 },
             );
@@ -3122,12 +3193,6 @@ impl Room {
             );
             self.send(*key, Kind::Stateless, &protocol::text(&payload));
         }
-        // An id released before this presence, which no longer lists it, is
-        // free for anyone now that its removal went out too (`on_awareness`).
-        let unsent = &self.changed_awareness;
-        self.awareness.retain(|client, state| {
-            !(state.entry.removed() && state.owner.is_none()) || unsent.contains(client)
-        });
     }
 
     /// Sends the room's awareness states to a channel; returns their bytes.
