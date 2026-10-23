@@ -284,9 +284,8 @@ function notApplied(tool: ToolBlock): number {
     : 0;
 }
 
-/** What a row says after its sentence: "30 of 32" while the call's commands
- * apply, "2 commands not applied" once it ended with some left. */
-export function stepCount(
+/** A running call's progress after its sentence: "30 of 32". */
+export function stepProgress(
   tool: ToolBlock,
   state: StepState
 ): string | undefined {
@@ -296,8 +295,12 @@ export function stepCount(
     tool.total !== undefined
   )
     return m.chat_step_progress({ applied: tool.applied, total: tool.total });
+}
+
+/** A finished call's warning icon text: "2 commands not applied". */
+export function unappliedWarning(tool: ToolBlock): string | undefined {
   const left = notApplied(tool);
-  if (state !== 'done' || left <= 0) return;
+  if (left <= 0) return;
   return left === 1
     ? m.chat_step_not_applied_one()
     : m.chat_step_not_applied({ count: left });

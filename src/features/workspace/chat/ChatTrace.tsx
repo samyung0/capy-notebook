@@ -13,6 +13,11 @@ import type {
 import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
@@ -29,12 +34,13 @@ import {
   groupTitle,
   latestStep,
   type StepState,
-  stepCount,
+  stepProgress,
   stepTitle,
   THINKING_DELAY_MS,
   type ToolBlock,
   type TraceRow,
   toolIcon,
+  unappliedWarning,
   undoAction,
   undoRefused,
 } from './trace';
@@ -73,11 +79,12 @@ function useDelayed(on: boolean, ms: number) {
   return on && shown;
 }
 
-/** A row sentence with its label (file, query, page) emphasised. */
+/** A row sentence with its label (file, query, page) emphasised. It and an
+ * Aside after it share a baseline; the row's icons stay centred. */
 function Title({ text, label }: { text: string; label?: string }) {
   const at = label ? text.indexOf(label) : -1;
   return (
-    <span className="min-w-0 truncate">
+    <span className="min-w-0 self-baseline truncate">
       {at < 0 || !label ? (
         text
       ) : (
@@ -96,11 +103,34 @@ function Title({ text, label }: { text: string; label?: string }) {
 const ROW =
   'group/row flex w-fit min-w-0 max-w-full items-center gap-2 text-fg-muted text-sm data-[state=failed]:text-tint-error-fg';
 
-/** A row's muted words after its sentence: a count, a group's detail. */
+/** A row's muted words after its sentence, on the sentence's baseline: a
+ * count, a group's detail. */
 function Aside({ children }: { children?: string }) {
   return children ? (
-    <span className="shrink-0 text-[12.5px] opacity-80">{children}</span>
+    <span className="shrink-0 self-baseline text-[12.5px] opacity-80">
+      {children}
+    </span>
   ) : null;
+}
+
+/** A call that left commands unapplied: a warning icon whose tooltip says
+ * how many, focusable like the question editor's issue icon (Epo
+ * 2026-10-23, Q171). */
+function WarningIcon({ text }: { text?: string }) {
+  if (!text) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        aria-label={text}
+        className="inline-grid size-4 shrink-0 place-items-center rounded-button text-tint-warning-fg outline-none focus-visible:ring-2 focus-visible:ring-action"
+        render={<span role="img" />}
+        tabIndex={0}
+      >
+        <Icon className="size-3.5" name="alert" />
+      </TooltipTrigger>
+      <TooltipContent side="top">{text}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function StepRow({ tool, state }: { tool: ToolBlock; state: StepState }) {
@@ -122,7 +152,10 @@ function StepRow({ tool, state }: { tool: ToolBlock; state: StepState }) {
           />
         )}
         <Title label={title.label} text={title.text} />
-        <Aside>{stepCount(tool, state)}</Aside>
+        <Aside>{stepProgress(tool, state)}</Aside>
+        {state === 'done' ? (
+          <WarningIcon text={unappliedWarning(tool)} />
+        ) : null}
       </div>
       {failed || state === 'unknown' ? (
         <p
@@ -228,7 +261,7 @@ function ExpandRow({
         type="button"
       >
         {icon}
-        <span className="min-w-0 truncate">{title}</span>
+        <span className="min-w-0 self-baseline truncate">{title}</span>
         <Aside>{description}</Aside>
         <Icon
           className={cn(
@@ -349,14 +382,15 @@ function ReceiptRow({
   effect,
   handlers,
   deck = false,
-  note,
+  warning,
 }: {
   effect: ResourceEffect;
   handlers: UndoHandlers;
   /** create_deck: a source file whose title may carry no extension. */
   deck?: boolean;
-  /** The commands its call left unapplied, said while its edit stands. */
-  note?: string;
+  /** The commands its call left unapplied, warned of while its edit
+   * stands. */
+  warning?: string;
 }) {
   const { resource } = effect;
   const label = resource.title || resource.id;
@@ -390,9 +424,7 @@ function ReceiptRow({
         </span>
         {text.slice(at + label.length)}
       </span>
-      {note && !muted ? (
-        <span className="shrink-0 text-[12.5px] text-fg-muted">{note}</span>
-      ) : null}
+      {muted ? null : <WarningIcon text={warning} />}
       <span className="ml-auto flex shrink-0 items-center gap-2 pl-1">
         {hasUndo(effect) ? (
           <UndoButton effect={effect} handlers={handlers} />
@@ -468,7 +500,7 @@ function Row({
           deck={row.tool.name === 'create_deck'}
           effect={row.effect}
           handlers={handlers}
-          note={stepCount(row.tool, 'done')}
+          warning={unappliedWarning(row.tool)}
         />
       );
     case 'edited':
@@ -476,7 +508,7 @@ function Row({
         <ReceiptRow
           effect={row.effect}
           handlers={handlers}
-          note={stepCount(row.tool, 'done')}
+          warning={unappliedWarning(row.tool)}
         />
       );
   }

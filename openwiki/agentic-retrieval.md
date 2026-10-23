@@ -2755,7 +2755,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `outcome_unknown`, "Stopped while …" after a stop. The running row is the
    newest tool without an outcome while the message streams, and any tool
    that sent `tool_progress` runs until its outcome too, its count ("30 of
-   32", `chat_step_progress`) muted after the sentence; only its icon
+   32", `chat_step_progress`) muted after the sentence on the sentence's
+   baseline (both `self-baseline`, the icon centred; Epo 2026-10-24); only
+   its icon
    moves (no title shimmer), and reduced motion stops it. Thinking rows come
    from gaps of 400ms or more between steps (the tool blocks'
    `startedAt`/`endedAt` and the message's `createdAt`); a live "Thinking" row
@@ -2783,10 +2785,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    the button; a reopened conversation shows created files without Undo or
    Redo (Epo 2026-10-20). A cut Office edit (Office tools, below) gets its
    receipt when its row closes, as a plain edit's after the next edit of its
-   file, or with its "N commands not applied" (`chat_step_not_applied`)
-   muted after the sentence when the turn left them unapplied (hidden while
-   the edit is undone); its Undo and Redo are any edit's (Epo 2026-10-23,
-   Q171).
+   file, or, when the turn left commands unapplied, with a small warning
+   icon after the sentence (the app's `alert` icon in the warning tint,
+   focusable like the question editor's `IssueIcon`) whose Tooltip and
+   label say "N commands not applied" (`chat_step_not_applied`; Epo
+   2026-10-24), hidden while the edit is undone; its Undo and Redo are any
+   edit's (Epo 2026-10-23, Q171).
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
@@ -4339,8 +4343,9 @@ that file closes it early, accepted) sends its own frames, then the cut
 call's `tool_end` as a plain success, counts dropped from its block. A cut
 call no later edit followed closes before the turn's `done` or `error`
 (`agent.close_cut_edits`, also on `service.py`'s generic failure) with
-`applied` and `total` on its `tool_end` and block, so the row ends showing
-the commands not applied, live and after a reload. A stop sends nothing
+`applied` and `total` on its `tool_end` and block, so the row ends with a
+warning icon saying how many commands were not applied, live and after a
+reload. A stop sends nothing
 more: the saved block keeps its counts. Measured at
 each limit: the harness's `2026-10-20-office-agent/bench/bench_units.py`,
 `bench_pptx.py` (a 60-slide deck) and `bench_pptx500.py` (50 commands of

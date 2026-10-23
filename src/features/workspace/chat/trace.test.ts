@@ -6,10 +6,11 @@ import {
   foldSegments,
   foldTrace,
   latestStep,
-  stepCount,
+  stepProgress,
   stepTitle,
   type ToolBlock,
   toolIcon,
+  unappliedWarning,
   undoAction,
   undoRefused,
 } from './trace';
@@ -195,9 +196,9 @@ describe('an Office edit cut at a per-call limit (Epo 2026-10-23, Q171)', () => 
   const steps = (rows: ReturnType<typeof buildTrace>) =>
     rows.flatMap((row) =>
       row.type === 'step'
-        ? [[row.state, stepCount(row.tool, row.state)]]
+        ? [[row.state, stepProgress(row.tool, row.state)]]
         : row.type === 'edited'
-          ? [['edited', stepCount(row.tool, 'done')]]
+          ? [['edited', unappliedWarning(row.tool)]]
           : []
     );
 
@@ -237,7 +238,7 @@ describe('an Office edit cut at a per-call limit (Epo 2026-10-23, Q171)', () => 
     });
     expect(steps(rows)).toEqual([['edited', '2 commands not applied']]);
     const one = office('a', { applied: 31, total: 32 });
-    expect(stepCount(one, 'done')).toBe('1 command not applied');
+    expect(unappliedWarning(one)).toBe('1 command not applied');
   });
 
   it('keeps the count of an edit to a file the turn created', () => {

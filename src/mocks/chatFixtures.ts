@@ -418,7 +418,7 @@ export const chatFixtures = [
         tool: 'edit_office_document',
       },
     ],
-    hint: 'Biology 101: an Office edit cut at a per-call limit that the turn never follows up ends showing 2 commands not applied.',
+    hint: 'Biology 101: an Office edit cut at a per-call limit that the turn never follows up ends with a warning icon whose tooltip says 2 commands not applied.',
     id: 'chat-office-unapplied',
     label: 'Files: Office commands not applied',
     passages: [1],

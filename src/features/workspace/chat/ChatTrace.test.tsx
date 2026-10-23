@@ -82,39 +82,38 @@ it('closes it after the follow-up as a receipt like any edit', () => {
   expect(html).not.toContain('not applied');
 });
 
-it('ends showing the commands a turn left unapplied', () => {
-  const html = text(
-    render(
-      [
-        cut({
-          applied: 30,
-          effects: [edit('op_1')],
-          endedAt: at(2),
-          outcome: 'succeeded',
-          total: 32,
-        }),
-      ],
-      false
-    )
+it('ends with a warning icon whose tooltip names the commands left', () => {
+  const markup = render(
+    [
+      cut({
+        applied: 30,
+        effects: [edit('op_1')],
+        endedAt: at(2),
+        outcome: 'succeeded',
+        total: 32,
+      }),
+    ],
+    false
   );
+  const html = text(markup);
   expect(html).toContain('Edited grades.xlsx');
-  expect(html).toContain('2 commands not applied');
   expect(html).toContain('Undo');
+  // The warning is the icon's label and tooltip, not inline text.
+  expect(html).not.toContain('not applied');
+  expect(markup).toContain('aria-label="2 commands not applied"');
   // Once undone, nothing of the edit stands.
-  const undone = text(
-    render(
-      [
-        cut({
-          applied: 30,
-          effects: [{ ...edit('op_1'), operation: 'edit_undone' }],
-          endedAt: at(2),
-          outcome: 'succeeded',
-          total: 32,
-        }),
-      ],
-      false
-    )
+  const undone = render(
+    [
+      cut({
+        applied: 30,
+        effects: [{ ...edit('op_1'), operation: 'edit_undone' }],
+        endedAt: at(2),
+        outcome: 'succeeded',
+        total: 32,
+      }),
+    ],
+    false
   );
-  expect(undone).toContain('Undid the edit to grades.xlsx');
+  expect(text(undone)).toContain('Undid the edit to grades.xlsx');
   expect(undone).not.toContain('not applied');
 });
